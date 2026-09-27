@@ -13,6 +13,7 @@ import {
   desc,
   count,
   inArray,
+  notExists,
   getTableColumns,
   type SQL,
 } from 'drizzle-orm'
@@ -32,7 +33,7 @@ import type {
   CreateOrganizationInput,
   UpdateOrganizationInput,
 } from '@kukan/shared'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import { jobsFor, type QueueAdapter } from '@kukan/queue-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
@@ -261,6 +262,36 @@ export class OrganizationService {
       message: 'Organization has active packages. Delete or reassign them first.',
     })
     await deps.queue.enqueue(PURGE_ORG_JOB_TYPE, { organizationId: id })
+  }
+
+  /**
+   * Queue the purge again for every organization left `purging` with no job
+   * behind it. The claim is the job's own, so once taken nothing else asks for
+   * it: the purge route accepts only a `deleted` organization. A dead job still
+   * there is left alone for the admin screen.
+   */
+  async queueStrandedPurges(queue: QueueAdapter): Promise<{ queued: number }> {
+    const rows = await queue.transaction(this.db, async (tx) => {
+      const stranded = await tx
+        .select({ organizationId: organization.id })
+        .from(organization)
+        .where(
+          and(
+            eq(organization.state, 'purging'),
+            notExists(
+              jobsFor(
+                tx,
+                PURGE_ORG_JOB_TYPE,
+                sql`jsonb_build_object('organizationId', ${organization.id}::text)`
+              )
+            )
+          )
+        )
+        .for('update', { skipLocked: true })
+      await queue.enqueueMany(PURGE_ORG_JOB_TYPE, stranded, { tx })
+      return stranded
+    })
+    return { queued: rows.length }
   }
 
   /**

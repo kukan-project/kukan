@@ -40,7 +40,9 @@ import {
   passwordLengthSchema,
   REANALYSE_INDEX_JOB_TYPE,
   RECORD_ROW_GROUPS_JOB_TYPE,
+  JOB_STATUSES,
   SysadminRequiredError,
+  NotFoundError,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
@@ -675,10 +677,10 @@ const RECENT_ERROR_LIMIT = 10
 // GET /api/v1/admin/jobs/stats — Pipeline job statistics
 adminRouter.get('/jobs/stats', async (c) => {
   const db = c.get('db')
-  const queue = c.get('queue')
 
-  const [queueStats, statusCounts, recentErrors] = await Promise.all([
-    queue.getStats(),
+  // The job queue's own counts are on its page (/queue/counts): they span every
+  // job type, and set beside these per-resource ones they read as a mismatch
+  const [statusCounts, recentErrors] = await Promise.all([
     db
       .select({
         status: resourcePipeline.status,
@@ -706,7 +708,6 @@ adminRouter.get('/jobs/stats', async (c) => {
   }
 
   return c.json({
-    queue: queueStats,
     jobs: statusMap,
     recentErrors,
   })
@@ -750,6 +751,41 @@ adminRouter.get('/jobs', async (c) => {
     .offset(offset)
 
   return c.json(toPaginatedResponse(rows, offset, limit))
+})
+
+// --- Job queue (ADR-058): the job table itself, of every type ---
+
+const jobIdParam = z.object({ id: z.string().uuid() })
+const jobListQuery = z.object({
+  status: z.enum(JOB_STATUSES).optional(),
+  type: z.string().max(100).optional(),
+})
+
+// GET /api/v1/admin/queue/counts — Job counts by type and status
+adminRouter.get('/queue/counts', async (c) => {
+  return c.json({ items: await c.get('queue').countJobs() })
+})
+
+// GET /api/v1/admin/queue/jobs — Paginated jobs, newest change first
+adminRouter.get('/queue/jobs', zValidator('query', jobListQuery), async (c) => {
+  const { offset, limit } = parsePaginatedQuery(c)
+  const { status, type } = c.req.valid('query')
+  const { items, total } = await c.get('queue').listJobs({ status, type, limit, offset })
+  return c.json({ items, total, offset, limit })
+})
+
+// POST /api/v1/admin/queue/jobs/:id/retry — Put a dead job back, attempts reset
+adminRouter.post('/queue/jobs/:id/retry', zValidator('param', jobIdParam), async (c) => {
+  const { id } = c.req.valid('param')
+  if (!(await c.get('queue').retryDead(id))) throw new NotFoundError('Dead job', id)
+  return c.json({ retried: true })
+})
+
+// DELETE /api/v1/admin/queue/jobs/:id — Delete a dead job
+adminRouter.delete('/queue/jobs/:id', zValidator('param', jobIdParam), async (c) => {
+  const { id } = c.req.valid('param')
+  if (!(await c.get('queue').deleteDead(id))) throw new NotFoundError('Dead job', id)
+  return c.json({ deleted: true })
 })
 
 // DELETE /api/v1/admin/data — Delete all data (preserves users)

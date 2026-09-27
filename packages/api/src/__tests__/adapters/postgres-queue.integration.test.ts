@@ -16,6 +16,13 @@ function adapter(notify?: () => Promise<void>, onWaiting?: (count: number) => vo
   return queue
 }
 
+/** Jobs per status, summed over types. */
+async function byStatus(queue: PostgresQueueAdapter) {
+  const counts = { waiting: 0, running: 0, delayed: 0, dead: 0 }
+  for (const c of await queue.countJobs()) counts[c.status] += c.count
+  return counts
+}
+
 async function rows() {
   return db.select().from(job).orderBy(job.created)
 }
@@ -99,7 +106,7 @@ describe('PostgresQueueAdapter', () => {
     await queue.enqueue('t', {}, { delaySeconds: 3600 })
     await queue.process({ t: handler })
 
-    await vi.waitFor(async () => expect((await queue.getStats()).delayed).toBe(1))
+    await vi.waitFor(async () => expect((await byStatus(queue)).delayed).toBe(1))
     expect(handler).not.toHaveBeenCalled()
 
     await db.update(job).set({ runAt: sql`now()` })
@@ -128,7 +135,7 @@ describe('PostgresQueueAdapter', () => {
     await vi.waitFor(async () =>
       expect(await rows()).toEqual([expect.objectContaining({ state: 'dead', attempts: 3 })])
     )
-    expect((await queue.getStats()).dead).toBe(1)
+    expect((await byStatus(queue)).dead).toBe(1)
   })
 
   it('marks dead a job whose worker stopped answering on its last attempt', async () => {
@@ -188,7 +195,7 @@ describe('PostgresQueueAdapter', () => {
     const queue = adapter()
     await queue.process({ t: handler })
 
-    await vi.waitFor(async () => expect((await queue.getStats()).inFlight).toBe(1))
+    await vi.waitFor(async () => expect((await byStatus(queue)).running).toBe(1))
     expect(handler).not.toHaveBeenCalled()
   })
 
@@ -358,6 +365,69 @@ describe('PostgresQueueAdapter', () => {
     await vi.waitFor(() => expect(reports).toEqual([0, 1, 0]))
   })
 
+  it('lists jobs by where they stand', async () => {
+    const queue = adapter()
+    const [waiting, running, delayed, dead] = await Promise.all([
+      queue.enqueue('t', {}),
+      queue.enqueue('t', {}),
+      queue.enqueue('t', {}, { delaySeconds: 60 }),
+      queue.enqueue('t', {}),
+    ])
+    await db
+      .update(job)
+      .set({ lockedUntil: sql`now() + interval '5 minutes'`, lockedBy: 'w' })
+      .where(eq(job.id, running))
+    await db.update(job).set({ state: 'dead' }).where(eq(job.id, dead))
+
+    const all = await queue.listJobs({ limit: 10, offset: 0 })
+    expect(all.total).toBe(4)
+    expect(Object.fromEntries(all.items.map((j) => [j.id, j.status]))).toEqual({
+      [waiting]: 'waiting',
+      [running]: 'running',
+      [delayed]: 'delayed',
+      [dead]: 'dead',
+    })
+    expect(await queue.listJobs({ status: 'dead', limit: 10, offset: 0 })).toMatchObject({
+      total: 1,
+      items: [{ id: dead }],
+    })
+  })
+
+  it('reports the whole total on a page past the end', async () => {
+    // The last row of the last page retried or deleted: the page is empty,
+    // and the total must still say where the list now ends
+    const queue = adapter()
+    await queue.enqueue('t', {})
+    await queue.enqueue('t', {})
+    await db.update(job).set({ state: 'dead' })
+
+    expect(await queue.listJobs({ status: 'dead', limit: 20, offset: 20 })).toEqual({
+      items: [],
+      total: 2,
+    })
+  })
+
+  it('prunes dead jobs past their retention, and nothing else', async () => {
+    const queue = adapter()
+    const [old, recent, waiting] = await Promise.all([
+      queue.enqueue('t', {}),
+      queue.enqueue('t', {}),
+      queue.enqueue('t', {}),
+    ])
+    await db
+      .update(job)
+      .set({ state: 'dead', updated: sql`now() - interval '2 days'` })
+      .where(eq(job.id, old))
+    await db.update(job).set({ state: 'dead' }).where(eq(job.id, recent))
+    await db
+      .update(job)
+      .set({ updated: sql`now() - interval '2 days'` })
+      .where(eq(job.id, waiting))
+
+    expect(await queue.pruneDead(24 * 60 * 60 * 1000)).toBe(1)
+    expect((await rows()).map((r) => r.id).sort()).toEqual([recent, waiting].sort())
+  })
+
   it('counts jobs by where they are', async () => {
     const queue = adapter()
     const [, held, , dead] = await Promise.all([
@@ -372,6 +442,6 @@ describe('PostgresQueueAdapter', () => {
       .where(eq(job.id, held))
     await db.update(job).set({ state: 'dead' }).where(eq(job.id, dead))
 
-    expect(await queue.getStats()).toEqual({ pending: 1, inFlight: 1, delayed: 1, dead: 1 })
+    expect(await byStatus(queue)).toEqual({ waiting: 1, running: 1, delayed: 1, dead: 1 })
   })
 })

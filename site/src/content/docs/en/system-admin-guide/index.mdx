@@ -466,13 +466,15 @@ rather than regenerates.
 
 ## Reprocessing the search index
 
-The search admin page (Index management) rebuilds indexes and derived data.
-Each runs asynchronously through the job queue and proceeds in the background once queued.
+The search admin page (Index management) rebuilds indexes and derived data. Reprocess all
+resources is the exception: it lives on the Resource Processing page, since it reruns every resource's
+pipeline and that page follows the runs. Each runs asynchronously through the job queue and
+proceeds in the background once queued.
 
 | Action                  | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                                                                                                              |
 | ----------------------- | ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rebuild search index    | The metadata index                                         | No                      | Search results look inconsistent. **After an upgrade that changed a mapping or schema** (`POST /api/v1/admin/reindex-metadata`)                                                                                                          |
-| Reprocess content       | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                                                                                                        |
+| Reprocess all resources | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                                                                                                        |
 | Regenerate embeddings   | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped. **The dashboard also prompts while any resource is outside semantic search** (below) |
 | Re-analyse search index | The index itself, under a new analysis                     | No                      | The Japanese analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                          |
 

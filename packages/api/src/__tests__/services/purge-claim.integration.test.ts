@@ -11,7 +11,9 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
-import { resource, resourcePipeline } from '@kukan/db'
+import { job, organization, resource, resourcePipeline } from '@kukan/db'
+import { PostgresQueueAdapter } from '@kukan/queue-adapter'
+import { PURGE_ORG_JOB_TYPE } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { PackageService } from '../../services/package-service'
 import { OrganizationService } from '../../services/organization-service'
@@ -185,6 +187,27 @@ describe('OrganizationService.purgeDeletedOrg', () => {
     expect(result.purged).toBe(true)
     expect(duringSweep).not.toHaveLength(0)
     expect(duringSweep.every((s) => s.claimed)).toBe(true)
+  })
+})
+
+describe('OrganizationService.queueStrandedPurges', () => {
+  it('queues the purge again once its job is gone, and not while one stands behind it', async () => {
+    // Claimed by the job itself, so the purge route (which takes only a
+    // 'deleted' organization) cannot ask again
+    await db.update(organization).set({ state: 'purging' })
+    const service = new OrganizationService(db)
+    const queue = new PostgresQueueAdapter({ db })
+    await queue.enqueue(PURGE_ORG_JOB_TYPE, { organizationId: orgId })
+
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+    await db.update(job).set({ state: 'dead' })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+
+    await db.delete(job)
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 1 })
+    expect(await db.select({ payload: job.payload }).from(job)).toEqual([
+      { payload: { organizationId: orgId } },
+    ])
   })
 })
 

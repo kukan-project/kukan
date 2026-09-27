@@ -4,6 +4,7 @@
  */
 
 import type { Database, Transaction } from '@kukan/db'
+import type { JobStatus } from '@kukan/shared'
 
 export interface Job<T = unknown> {
   id: string
@@ -11,15 +12,17 @@ export interface Job<T = unknown> {
   data: T
 }
 
-export interface QueueStats {
-  /** Jobs ready to be taken now */
-  pending: number
-  /** Jobs a worker holds */
-  inFlight: number
-  /** Jobs waiting out a delay or a retry */
-  delayed: number
-  /** Jobs that failed every attempt and are no longer taken */
-  dead: number
+/** One job as the admin screen lists it. */
+export interface JobRecord {
+  id: string
+  type: string
+  payload: unknown
+  status: JobStatus
+  attempts: number
+  runAt: Date
+  lastError: string | null
+  created: Date
+  updated: Date
 }
 
 export interface EnqueueOptions {
@@ -55,9 +58,36 @@ export interface QueueAdapter {
   transaction<T>(db: Database, fn: (tx: Transaction) => Promise<T>): Promise<T>
 
   /**
-   * Get queue statistics (job counts)
+   * How many jobs of each type stand in each status; only the pairs that
+   * have any
    */
-  getStats(): Promise<QueueStats>
+  countJobs(): Promise<{ type: string; status: JobStatus; count: number }[]>
+
+  /**
+   * List jobs, newest change first, optionally of one status and one type
+   */
+  listJobs(options: {
+    status?: JobStatus
+    type?: string
+    limit: number
+    offset: number
+  }): Promise<{ items: JobRecord[]; total: number }>
+
+  /**
+   * Put a dead job back to be taken now, with its attempts reset.
+   * False when there is no such dead job.
+   */
+  retryDead(id: string): Promise<boolean>
+
+  /**
+   * Delete a dead job. False when there is no such dead job.
+   */
+  deleteDead(id: string): Promise<boolean>
+
+  /**
+   * Delete the dead jobs that have not changed for this long. Returns how many.
+   */
+  pruneDead(olderThanMs: number): Promise<number>
 
   /**
    * Start processing jobs. Dispatches each job to the handler matching its type.

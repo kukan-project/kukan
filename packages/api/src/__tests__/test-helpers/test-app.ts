@@ -108,7 +108,11 @@ export const mockQueue: QueueAdapter = {
   enqueue: vi.fn().mockResolvedValue('mock-job-id'),
   enqueueMany: vi.fn().mockResolvedValue([]),
   transaction: mockTransaction(),
-  getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0, dead: 0 }),
+  countJobs: vi.fn(),
+  listJobs: vi.fn(),
+  retryDead: vi.fn(),
+  deleteDead: vi.fn(),
+  pruneDead: vi.fn(),
   process: vi.fn().mockResolvedValue(undefined),
   stop: vi.fn().mockResolvedValue(undefined),
 }

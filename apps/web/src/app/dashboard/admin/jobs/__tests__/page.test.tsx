@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import AdminJobsPage from '../page'
@@ -55,7 +55,7 @@ describe('AdminJobsPage', () => {
 
   it('renders the page title', () => {
     render(<AdminJobsPage />)
-    expect(screen.getByText('Job Management')).toBeInTheDocument()
+    expect(screen.getByText('Resource Processing')).toBeInTheDocument()
   })
 
   it('displays stats cards when data loads', async () => {
@@ -71,14 +71,44 @@ describe('AdminJobsPage', () => {
     expect(screen.getByText('2')).toBeInTheDocument() // error
   })
 
-  it('displays job queue info when stats load', async () => {
+  it('reprocesses every resource from the content it holds', async () => {
     render(<AdminJobsPage />)
 
-    await waitFor(() => {
-      expect(
-        screen.getByText('Queue: pending 5 / in-flight 2 / delayed 0 / dead 1')
-      ).toBeInTheDocument()
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Reprocess all' }))
+    await waitFor(() =>
+      expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/admin/reindex-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ includeContent: true }),
+      })
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Reprocessing of all resources queued'
+    )
+  })
+
+  it('says so, and releases the row, when a resource cannot be queued', async () => {
+    mockPaginatedFetch.items = [
+      {
+        id: 'j1',
+        resourceId: 'r1',
+        status: 'complete',
+        error: null,
+        created: '2026-01-01T00:00:00Z',
+        updated: '2026-01-01T00:00:00Z',
+        resourceName: 'data.csv',
+        packageId: 'p1',
+        packageName: 'pkg',
+        packageTitle: null,
+      },
+    ]
+    render(<AdminJobsPage />)
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    fireEvent.click(screen.getByTitle('Reprocess'))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTitle('Reprocess')).toBeEnabled())
   })
 
   it('displays table items when data loads', () => {

@@ -6,7 +6,19 @@
 
 import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, countDistinct, desc, exists, inArray, ne, not, or, sql } from 'drizzle-orm'
+import {
+  eq,
+  and,
+  countDistinct,
+  desc,
+  exists,
+  inArray,
+  ne,
+  not,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import {
@@ -52,7 +64,7 @@ import type { Logger, ResourceColumn, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import { readyJobsFor, type QueueAdapter } from '@kukan/queue-adapter'
+import { jobsFor, readyJobsFor, type QueueAdapter } from '@kukan/queue-adapter'
 import { lakeStandDown, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
@@ -1607,6 +1619,37 @@ export class ResourceVersionService {
     // one the claim left, and it has to be described by the same snapshot as the
     // rest of the resource.
     return { claimed, view: await this.getVersion(resourceId, version) }
+  }
+
+  /**
+   * Queue the purge again for every version left `purging` with no job behind
+   * it — one deleted from the admin screen, or pruned after it gave up. Nothing
+   * else would: a repeat request finds the version claimed and queues nothing.
+   * A dead job still there is left alone; it is on the admin screen to retry.
+   * Rows another pass has locked are skipped, so two workers queue one job.
+   */
+  async queueStrandedPurges(queue: QueueAdapter): Promise<{ queued: number }> {
+    const rows = await queue.transaction(this.db, async (tx) => {
+      const stranded = await tx
+        .select({ resourceId: resourceVersion.resourceId, version: resourceVersion.version })
+        .from(resourceVersion)
+        .where(
+          and(
+            eq(resourceVersion.state, 'purging'),
+            notExists(
+              jobsFor(
+                tx,
+                PURGE_VERSION_JOB_TYPE,
+                sql`jsonb_build_object('resourceId', ${resourceVersion.resourceId}::text, 'version', ${resourceVersion.version})`
+              )
+            )
+          )
+        )
+        .for('update', { skipLocked: true })
+      await queue.enqueueMany(PURGE_VERSION_JOB_TYPE, stranded, { tx })
+      return stranded
+    })
+    return { queued: rows.length }
   }
 
   /**

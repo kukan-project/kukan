@@ -70,6 +70,7 @@ import {
   markUploadsThatNeverArrived,
 } from '@kukan/api/services/storage-pointer'
 import {
+  DEAD_JOB_RETENTION_MS,
   LAKE_INGEST_SWEEP_CRON,
   ORPHAN_CLEANUP_CRON,
   PENDING_UPLOAD_TTL_MS,
@@ -196,6 +197,17 @@ const orphanCleanupJob = startCronJob({
     // a signal that never arrived, or a lease whose worker died, waits no
     // longer than this (ADR-058 §2). First, so a failing sweep cannot skip it.
     queue.wakeHere()
+    const pruned = await queue.pruneDead(DEAD_JOB_RETENTION_MS)
+    if (pruned > 0) orphanSweepLog.info({ pruned }, 'Deleted dead jobs past their retention')
+    // After the prune, which is one way a purge loses its job
+    const versions = await new ResourceVersionService(db).queueStrandedPurges(queue)
+    const orgs = await new OrganizationService(db).queueStrandedPurges(queue)
+    if (versions.queued + orgs.queued > 0) {
+      orphanSweepLog.info(
+        { versions: versions.queued, organizations: orgs.queued },
+        'Queued purges left with no job'
+      )
+    }
     // Expire first: a key parked now still waits out the orphan retention
     // before it is deleted.
     const expired = await expirePendingUploads(db, PENDING_UPLOAD_TTL_MS)

@@ -23,7 +23,8 @@ describe('Sidebar', () => {
     render(<Sidebar />)
     expect(screen.getByText('System Admin')).toBeInTheDocument()
     expect(screen.getByText('Users')).toBeInTheDocument()
-    expect(screen.getByText('Job Management')).toBeInTheDocument()
+    expect(screen.getByText('Resource Processing')).toBeInTheDocument()
+    expect(screen.getByText('Background Jobs')).toBeInTheDocument()
     expect(screen.getByText('Health Check')).toBeInTheDocument()
     expect(screen.getByText('Index Management')).toBeInTheDocument()
     expect(screen.getByText('Access Analytics')).toBeInTheDocument()
@@ -51,9 +52,13 @@ describe('Sidebar', () => {
     mockUseUser.mockReturnValue({ sysadmin: true })
     render(<Sidebar />)
     expect(screen.getByText('Users').closest('a')).toHaveAttribute('href', '/dashboard/admin/users')
-    expect(screen.getByText('Job Management').closest('a')).toHaveAttribute(
+    expect(screen.getByText('Resource Processing').closest('a')).toHaveAttribute(
       'href',
       '/dashboard/admin/jobs'
+    )
+    expect(screen.getByText('Background Jobs').closest('a')).toHaveAttribute(
+      'href',
+      '/dashboard/admin/queue'
     )
   })
 })

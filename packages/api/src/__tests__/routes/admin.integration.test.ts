@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import {
+  job,
   packageTable,
   resource,
   resourcePipeline,
@@ -14,6 +15,8 @@ import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-h
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { generationKey } from '@kukan/shared'
+import { PostgresQueueAdapter } from '@kukan/queue-adapter'
+import { randomUUID } from 'node:crypto'
 
 const db = getTestDb()
 
@@ -1340,6 +1343,92 @@ describe('Admin API Routes', () => {
 
       // Numbers, not bigint strings — the count no longer carries an ::int cast.
       expect(body.jobs).toEqual({ complete: 2, error: 1 })
+    })
+  })
+
+  describe('/api/v1/admin/queue (ADR-058)', () => {
+    const queue = new PostgresQueueAdapter({ db })
+    const queueApp = createTestApp(db, { search: mockSearch, queue })
+
+    async function deadJob(type = 'embed-package') {
+      const id = await queue.enqueue(type, { packageId: randomUUID() })
+      await db
+        .update(job)
+        .set({ state: 'dead', attempts: 3, lastError: 'boom' })
+        .where(eq(job.id, id))
+      return id
+    }
+
+    it('should reject non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/queue/jobs')
+      expect(res.status).toBe(403)
+    })
+
+    it('lists the jobs of one status, with their last error', async () => {
+      const dead = await deadJob()
+      await queue.enqueue('embed-package', { packageId: randomUUID() }, { delaySeconds: 60 })
+
+      const res = await queueApp.request('/api/v1/admin/queue/jobs?status=dead')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        total: 1,
+        items: [
+          { id: dead, type: 'embed-package', status: 'dead', attempts: 3, lastError: 'boom' },
+        ],
+      })
+      const all = await (await queueApp.request('/api/v1/admin/queue/jobs')).json()
+      expect(all.items.map((j: { status: string }) => j.status).sort()).toEqual(['dead', 'delayed'])
+      expect((await queueApp.request('/api/v1/admin/queue/jobs?status=nope')).status).toBe(400)
+    })
+
+    it('counts jobs by type and status, and lists one type of one status', async () => {
+      await deadJob('embed-package')
+      await queue.enqueue('sync-resource-doc', { resourceId: randomUUID() })
+      await queue.enqueue('sync-resource-doc', { resourceId: randomUUID() })
+      await queue.enqueue('embed-package', { packageId: randomUUID() })
+
+      const counts = await (await queueApp.request('/api/v1/admin/queue/counts')).json()
+      expect(counts.items).toEqual(
+        expect.arrayContaining([
+          { type: 'embed-package', status: 'dead', count: 1 },
+          { type: 'embed-package', status: 'waiting', count: 1 },
+          { type: 'sync-resource-doc', status: 'waiting', count: 2 },
+        ])
+      )
+      expect(counts.items).toHaveLength(3)
+
+      const listed = await (
+        await queueApp.request('/api/v1/admin/queue/jobs?status=waiting&type=embed-package')
+      ).json()
+      expect(listed).toMatchObject({ total: 1, items: [{ type: 'embed-package' }] })
+    })
+
+    it('puts a dead job back with its attempts reset, and refuses one that is not dead', async () => {
+      const dead = await deadJob()
+      const res = await queueApp.request(`/api/v1/admin/queue/jobs/${dead}/retry`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(200)
+      const [row] = await db.select().from(job).where(eq(job.id, dead))
+      expect(row).toMatchObject({ state: 'ready', attempts: 0, lastError: 'boom' })
+
+      const again = await queueApp.request(`/api/v1/admin/queue/jobs/${dead}/retry`, {
+        method: 'POST',
+      })
+      expect(again.status).toBe(404)
+    })
+
+    it('deletes a dead job, and refuses one that is not dead', async () => {
+      const dead = await deadJob()
+      const waiting = await queue.enqueue('embed-package', {})
+
+      expect(
+        (await queueApp.request(`/api/v1/admin/queue/jobs/${waiting}`, { method: 'DELETE' })).status
+      ).toBe(404)
+      expect(
+        (await queueApp.request(`/api/v1/admin/queue/jobs/${dead}`, { method: 'DELETE' })).status
+      ).toBe(200)
+      expect((await db.select({ id: job.id }).from(job)).map((r) => r.id)).toEqual([waiting])
     })
   })
 

@@ -253,6 +253,27 @@ describe('claimPurge', () => {
   })
 })
 
+describe('queueStrandedPurges', () => {
+  it('queues the purge again once its job is gone, and not while one stands behind it', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const queue = new PostgresQueueAdapter({ db })
+    await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
+
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+    // Given up on, it is the admin screen's to retry
+    await db.update(job).set({ state: 'dead' })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+
+    await db.delete(job)
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 1 })
+    expect(await db.select({ payload: job.payload, state: job.state }).from(job)).toEqual([
+      { payload: { resourceId, version: 1 }, state: 'ready' },
+    ])
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+  })
+})
+
 describe('executePurge', () => {
   it('keeps the object live is standing on when a same-hash version is purged', async () => {
     // Live and a version share an object now (ADR-043 §1), and the copying path

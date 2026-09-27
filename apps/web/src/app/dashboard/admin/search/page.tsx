@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Database, RefreshCw, Search, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { Database, Search, Sparkles } from 'lucide-react'
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
 import {
@@ -200,8 +201,9 @@ export default function AdminSearchPage() {
   }
 
   // The reprocess actions, one at a time. Each names what it rebuilds and
-  // whether it fetches anything; the content one is the heavy one.
-  type ReprocessAction = 'index' | 'content' | 'embed'
+  // whether it fetches anything. All resources are reprocessed from the resource
+  // processing page, where its runs are followed.
+  type ReprocessAction = 'index' | 'embed'
   const [busy, setBusy] = useState<ReprocessAction | null>(null)
   const [outcome, setOutcome] = useState<{ action: ReprocessAction; ok: boolean } | null>(null)
   const vectorSettings = useVectorSearchSettings()
@@ -226,10 +228,10 @@ export default function AdminSearchPage() {
           : await clientFetch('/api/v1/admin/reindex-metadata', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ includeContent: action === 'content' }),
+              body: JSON.stringify({ includeContent: false }),
             })
       setOutcome({ action, ok: res.ok })
-      if (res.ok && (action === 'index' || action === 'content')) pollStats()
+      if (res.ok && action === 'index') pollStats()
     } catch {
       setOutcome({ action, ok: false })
     } finally {
@@ -496,7 +498,6 @@ export default function AdminSearchPage() {
           {(
             [
               { action: 'index', icon: Search, enabled: true },
-              { action: 'content', icon: RefreshCw, enabled: true },
               { action: 'embed', icon: Sparkles, enabled: embedModel !== null },
             ] as const
           ).map(({ action, icon: Icon, enabled }) => (
@@ -542,6 +543,11 @@ export default function AdminSearchPage() {
               </div>
             </div>
           ))}
+          <p className="pt-4 text-sm text-muted-foreground">
+            <Link href="/dashboard/admin/jobs" className="hover:underline">
+              {t('contentMoved')}
+            </Link>
+          </p>
         </CardContent>
       </Card>
 

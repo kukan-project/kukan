@@ -111,7 +111,11 @@ describe('AdminSearchPage', () => {
 
     expect(screen.getByText('Reprocessing')).toBeInTheDocument()
     expect(screen.getByText('Rebuild search index')).toBeInTheDocument()
-    expect(screen.getByText('Reprocess content')).toBeInTheDocument()
+    // Moved to the resource processing page, where its runs are followed
+    expect(screen.queryByText('Reprocess all resources')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('All resources are reprocessed from Resource Processing.').closest('a')
+    ).toHaveAttribute('href', '/dashboard/admin/jobs')
     expect(screen.getByText('Regenerate embeddings')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled()
     // Embedding is off in this test's settings, so its button is not.

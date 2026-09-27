@@ -7,6 +7,10 @@ import { Play, RefreshCw } from 'lucide-react'
 import {
   Badge,
   Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
   Table,
   TableBody,
   TableCell,
@@ -21,8 +25,7 @@ import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
 
-interface QueueStatsResponse {
-  queue: { pending: number; inFlight: number; delayed: number; dead: number }
+interface JobStatsResponse {
   jobs: Record<string, number>
 }
 
@@ -40,6 +43,14 @@ interface JobItem {
 }
 
 type StatusFilter = 'all' | 'queued' | 'processing' | 'complete' | 'error'
+
+/**
+ * How long a reprocessed row is followed. The row may be on another page or
+ * hidden by the filter, where its end is never seen; left running, the polls
+ * would keep the database awake for as long as the tab stays open.
+ */
+const POLL_INTERVAL_MS = 3000
+const POLL_LIMIT_MS = 5 * 60_000
 
 function statusBadgeVariant(status: string) {
   switch (status) {
@@ -60,11 +71,17 @@ export default function AdminJobsPage() {
   const tc = useTranslations('common')
 
   // Stats
-  const [stats, setStats] = useState<QueueStatsResponse | null>(null)
+  const [stats, setStats] = useState<JobStatsResponse | null>(null)
 
+  // Never throws: a refresh that fails keeps the counts shown, and must not
+  // leave whatever asked for it — the refresh button, a reprocess — stuck
   const fetchStats = useCallback(async () => {
-    const res = await clientFetch('/api/v1/admin/jobs/stats')
-    if (res.ok) setStats(await res.json())
+    try {
+      const res = await clientFetch('/api/v1/admin/jobs/stats')
+      if (res.ok) setStats(await res.json())
+    } catch {
+      // The cards keep their last counts; the next refresh tries again
+    }
   }, [])
 
   useEffect(() => {
@@ -92,6 +109,11 @@ export default function AdminJobsPage() {
     offsetRef.current = offset
   }, [offset])
 
+  const reload = useCallback(
+    () => Promise.all([fetchPage(offsetRef.current), fetchStats()]),
+    [fetchPage, fetchStats]
+  )
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPolling = useCallback(() => {
@@ -114,24 +136,60 @@ export default function AdminJobsPage() {
   // Cleanup on unmount
   useEffect(() => stopPolling, [stopPolling])
 
+  const [reprocessFailed, setReprocessFailed] = useState(false)
   const reprocess = useCallback(
     async (resourceId: string) => {
       stopPolling()
       setReprocessing(resourceId)
-      await clientFetch(`/api/v1/resources/${resourceId}/run-pipeline`, { method: 'POST' })
-      await Promise.all([fetchPage(offsetRef.current), fetchStats()])
-      pollingRef.current = setInterval(async () => {
-        await Promise.all([fetchPage(offsetRef.current), fetchStats()])
-      }, 3000)
+      setReprocessFailed(false)
+      // A network failure throws rather than answering; either way nothing was
+      // queued, and polling for a run that is not coming would never stop
+      const res = await clientFetch(`/api/v1/resources/${resourceId}/run-pipeline`, {
+        method: 'POST',
+      }).catch(() => null)
+      if (!res?.ok) {
+        setReprocessFailed(true)
+        setReprocessing(null)
+        return
+      }
+      const poll = () => reload().catch(() => {})
+      await poll()
+      const until = Date.now() + POLL_LIMIT_MS
+      pollingRef.current = setInterval(() => {
+        if (Date.now() > until) stopPolling()
+        else void poll()
+      }, POLL_INTERVAL_MS)
     },
-    [fetchPage, fetchStats, stopPolling]
+    [reload, stopPolling]
   )
+
+  // Every resource's pipeline again, from the file it holds — the runs this
+  // page then follows (ADR-044 §4)
+  const [contentBusy, setContentBusy] = useState(false)
+  const [contentOutcome, setContentOutcome] = useState<boolean | null>(null)
+  const reprocessContent = useCallback(async () => {
+    setContentBusy(true)
+    setContentOutcome(null)
+    try {
+      const res = await clientFetch('/api/v1/admin/reindex-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ includeContent: true }),
+      })
+      setContentOutcome(res.ok)
+      if (res.ok) await reload()
+    } catch {
+      setContentOutcome(false)
+    } finally {
+      setContentBusy(false)
+    }
+  }, [reload])
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
-    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+    await reload()
     setRefreshing(false)
-  }, [fetchPage, fetchStats])
+  }, [reload])
 
   return (
     <div className="flex flex-col gap-6">
@@ -182,15 +240,34 @@ export default function AdminJobsPage() {
         />
       </div>
 
-      {/* Job queue info (reference) */}
-      {stats && (
-        <p className="text-xs text-muted-foreground">
-          {t('queueInfo', {
-            pending: stats.queue.pending,
-            inFlight: stats.queue.inFlight,
-            delayed: stats.queue.delayed,
-            dead: stats.queue.dead,
-          })}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('contentTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">{t('contentDescription')}</p>
+          <div className="flex items-center gap-4">
+            <Button variant="outline" onClick={reprocessContent} disabled={contentBusy}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${contentBusy ? 'animate-spin' : ''}`} />
+              {contentBusy ? tc('queueing') : t('contentButton')}
+            </Button>
+            {contentOutcome === true && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t('contentQueued')}
+              </p>
+            )}
+            {contentOutcome === false && (
+              <p role="alert" className="text-sm text-destructive">
+                {tc('queueFailed')}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {reprocessFailed && (
+        <p role="alert" className="text-sm text-destructive">
+          {tc('queueFailed')}
         </p>
       )}
 

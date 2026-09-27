@@ -607,6 +607,10 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 | POST   | `/admin/jobs/enqueue-all`        | 全リソースのパイプライン一括予約                                             |
 | GET    | `/admin/jobs/stats`              | パイプラインジョブ統計                                                       |
 | GET    | `/admin/jobs`                    | パイプラインジョブ一覧                                                       |
+| GET    | `/admin/queue/counts`            | 種類と状態ごとのジョブの件数（処理中・待機・遅延・打ち切り）                 |
+| GET    | `/admin/queue/jobs`              | ジョブ一覧（`status` と `type` で絞り込み）                                  |
+| POST   | `/admin/queue/jobs/:id/retry`    | 打ち切りのジョブを試行回数を戻して再投入                                     |
+| DELETE | `/admin/queue/jobs/:id`          | 打ち切りのジョブを削除                                                       |
 | DELETE | `/admin/data`                    | 全データ削除（ユーザー除く）                                                 |
 | GET    | `/admin/health/stats`            | ヘルスチェック統計                                                           |
 | GET    | `/admin/health`                  | ヘルスチェック結果一覧                                                       |

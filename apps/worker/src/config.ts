@@ -311,6 +311,13 @@ export const HEALTH_CHECK_BATCH_BUDGET_MS = 240_000
  */
 export const CLAIM_RETRY_DELAY_S = 30
 
+/**
+ * How long a dead job is kept for an administrator to retry or delete
+ * (ADR-058). Long enough to span a holiday; past it, a job nobody acted on is
+ * one nobody will.
+ */
+export const DEAD_JOB_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+
 /** How often orphaned objects are swept (ADR-043); matches the retention. */
 export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 

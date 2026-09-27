@@ -10,10 +10,10 @@
  */
 
 import { randomUUID } from 'crypto'
-import { and, eq, gt, gte, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 import { job as jobTable, type Database, type Transaction } from '@kukan/db'
-import { createLogger, type Logger } from '@kukan/shared'
-import type { EnqueueOptions, Job, QueueAdapter, QueueStats } from './adapter'
+import { createLogger, type JobStatus, type Logger } from '@kukan/shared'
+import type { EnqueueOptions, Job, JobRecord, QueueAdapter } from './adapter'
 
 /**
  * How long a lease lasts, and how it is held while a handler runs.
@@ -73,6 +73,14 @@ const unleased = () => or(isNull(jobTable.lockedUntil), lt(jobTable.lockedUntil,
 
 const inSeconds = (s: number) => sql`now() + ${`${s} seconds`}::interval`
 
+/** A row's `JobStatus`, as the admin screen reads it. */
+const jobStatus = () => sql<JobStatus>`case
+  when ${jobTable.state} = 'dead' then 'dead'
+  when ${jobTable.lockedUntil} >= now() then 'running'
+  when ${jobTable.runAt} > now() then 'delayed'
+  else 'waiting'
+end`
+
 /**
  * The ready jobs of `type` whose payload names this resource, for an
  * `exists()`. Kept here so the table's shape stays with the queue; the index
@@ -89,6 +97,18 @@ export function readyJobsFor(db: Database | Transaction, type: string, resourceI
         sql`${jobTable.payload} ->> 'resourceId' = ${resourceId}`
       )
     )
+}
+
+/**
+ * The jobs of `type`, dead ones included, whose payload contains `match` (a
+ * jsonb), for an `exists()`: whether anything, even given up on, stands behind
+ * a claim.
+ */
+export function jobsFor(db: Database | Transaction, type: string, match: SQL) {
+  return db
+    .select({})
+    .from(jobTable)
+    .where(and(eq(jobTable.type, type), sql`${jobTable.payload} @> ${match}`))
 }
 
 /**
@@ -223,21 +243,85 @@ export class PostgresQueueAdapter implements QueueAdapter {
     if (this.handlers) this.requestPass()
   }
 
-  async getStats(): Promise<QueueStats> {
-    const ready = sql`${jobTable.state} = 'ready'`
-    const due = sql`${jobTable.runAt} <= now()`
-    const free = unleased()
-    const count = (where: ReturnType<typeof sql>) =>
-      sql<number>`count(*) filter (where ${where})`.mapWith(Number)
-    const [stats] = await this.db
+  async countJobs(): Promise<{ type: string; status: JobStatus; count: number }[]> {
+    const status = jobStatus()
+    return this.db
       .select({
-        pending: count(sql`${ready} and ${due} and ${free}`),
-        inFlight: count(sql`${ready} and not ${free}`),
-        delayed: count(sql`${ready} and not ${due} and ${free}`),
-        dead: count(sql`${jobTable.state} = 'dead'`),
+        type: jobTable.type,
+        status,
+        count: sql<number>`count(*)`.mapWith(Number),
       })
       .from(jobTable)
-    return stats
+      .groupBy(jobTable.type, status)
+      .orderBy(jobTable.type)
+  }
+
+  async listJobs(options: {
+    status?: JobStatus
+    type?: string
+    limit: number
+    offset: number
+  }): Promise<{ items: JobRecord[]; total: number }> {
+    const where = and(
+      options.status ? sql`${jobStatus()} = ${options.status}` : undefined,
+      options.type ? eq(jobTable.type, options.type) : undefined
+    )
+    // The total apart from the page: counted over the page's own rows, a page
+    // past the end — the last row on it just retried or deleted — reads 0
+    const [items, total] = await Promise.all([
+      this.db
+        .select({
+          id: jobTable.id,
+          type: jobTable.type,
+          payload: jobTable.payload,
+          status: jobStatus(),
+          attempts: jobTable.attempts,
+          runAt: jobTable.runAt,
+          lastError: jobTable.lastError,
+          created: jobTable.created,
+          updated: jobTable.updated,
+        })
+        .from(jobTable)
+        .where(where)
+        .orderBy(desc(jobTable.updated))
+        .limit(options.limit)
+        .offset(options.offset),
+      this.db.$count(jobTable, where),
+    ])
+    return { items, total }
+  }
+
+  async retryDead(id: string): Promise<boolean> {
+    // The last error is kept: it is what the admin retried over, and a job
+    // that succeeds is deleted with it
+    const rows = await this.db
+      .update(jobTable)
+      .set({ state: 'ready', attempts: 0, runAt: sql`now()`, updated: sql`now()` })
+      .where(and(eq(jobTable.id, id), eq(jobTable.state, 'dead')))
+      .returning({ id: jobTable.id })
+    if (rows.length > 0) this.wake()
+    return rows.length > 0
+  }
+
+  async deleteDead(id: string): Promise<boolean> {
+    const rows = await this.db
+      .delete(jobTable)
+      .where(and(eq(jobTable.id, id), eq(jobTable.state, 'dead')))
+      .returning({ id: jobTable.id })
+    return rows.length > 0
+  }
+
+  async pruneDead(olderThanMs: number): Promise<number> {
+    const rows = await this.db
+      .delete(jobTable)
+      .where(
+        and(
+          eq(jobTable.state, 'dead'),
+          lt(jobTable.updated, sql`now() - ${`${olderThanMs} milliseconds`}::interval`)
+        )
+      )
+      .returning({ id: jobTable.id })
+    return rows.length
   }
 
   async process(handlers: Handlers): Promise<void> {

@@ -37,7 +37,11 @@ function mockQueue() {
     enqueue: vi.fn(),
     enqueueMany: vi.fn().mockResolvedValue([]),
     transaction: mockTransaction(),
-    getStats: vi.fn(),
+    countJobs: vi.fn(),
+    listJobs: vi.fn(),
+    retryDead: vi.fn(),
+    deleteDead: vi.fn(),
+    pruneDead: vi.fn(),
     process: vi.fn(),
     stop: vi.fn(),
   } as QueueAdapter
