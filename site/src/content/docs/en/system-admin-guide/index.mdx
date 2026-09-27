@@ -56,7 +56,6 @@ On-premises deployments use the following alternative services:
 | AWS Service | On-Premises Alternative                          |
 | ----------- | ------------------------------------------------ |
 | S3          | MinIO-compatible (Compose default: `pgsty/silo`) |
-| SQS         | ElasticMQ                                        |
 | OpenSearch  | PostgreSQL full-text search                      |
 
 ### AWS Deployment
@@ -81,9 +80,9 @@ Key AWS resources:
 - **CloudFront** — CDN, WAF, TLS termination (the front layer)
 - **ALB (internal)** — load balancer (reachable only via the CloudFront VPC origin)
 - **ECS Fargate** — Web application + Pipeline Worker
-- **Aurora Serverless v2 / RDS** — PostgreSQL database
+- **Aurora Serverless v2 / RDS** — PostgreSQL database (the job queue lives here too)
 - **S3** — File storage
-- **SQS** — Pipeline queue
+- **Cloud Map** — how the web finds the worker to wake it (one private DNS namespace per environment)
 - **OpenSearch** — Full-text search engine
 - **AWS Backup** — Isolated backups (enabled on the large scale etc.)
 
@@ -468,7 +467,7 @@ rather than regenerates.
 ## Reprocessing the search index
 
 The search admin page (Index management) rebuilds indexes and derived data.
-Each runs asynchronously through SQS and proceeds in the background once queued.
+Each runs asynchronously through the job queue and proceeds in the background once queued.
 
 | Action                  | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                                                                                                              |
 | ----------------------- | ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -611,8 +610,7 @@ Key environment variables are listed below. See `.env.example` for the full list
 | `S3_ENDPOINT`          | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)                                            | -                       |
 | `SEARCH_TYPE`          | Search engine (`opensearch` / `postgres`)                                                          | `opensearch`            |
 | `OPENSEARCH_URL`       | OpenSearch endpoint                                                                                | `http://localhost:9200` |
-| `SQS_QUEUE_URL`        | SQS queue URL                                                                                      | -                       |
-| `SQS_ENDPOINT`         | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit)                                       | -                       |
+| `WORKER_WAKE_URL`      | Where the web tells the worker a job is waiting (the worker's `/wake`)                             | -                       |
 | `BETTER_AUTH_SECRET`   | Auth session secret (32+ characters)                                                               | -                       |
 | `BETTER_AUTH_URL`      | Public URL                                                                                         | `http://localhost:3000` |
 | `PASSWORD_MIN_SCORE`   | Password strength floor (zxcvbn score 0–4) — see below                                             | `3`                     |

@@ -109,7 +109,7 @@ const wasLost = (err: unknown) => typeof err === 'object' && err !== null && los
  * connection went away, or the S3 secret's temporary credentials expired —
  * rather than the statement being wrong. The cached instance is dropped so the
  * next caller rebuilds; the current call still fails, and its caller retries
- * (SQS redelivery for ingest, the user for a diff, or {@link withLakeSession}
+ * (the queue's retry for ingest, the user for a diff, or {@link withLakeSession}
  * itself where asked).
  *
  * A connect refused because the instance is closed is the same thing seen

@@ -28,12 +28,29 @@ describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
   })
 
   it('keeps env-prefixed physical names', () => {
-    template.hasResourceProperties('AWS::SQS::Queue', { QueueName: 'kukan-dev-pipeline' })
-    template.hasResourceProperties('AWS::SQS::Queue', { QueueName: 'kukan-dev-pipeline-dlq' })
+    template.hasResourceProperties('AWS::ServiceDiscovery::PrivateDnsNamespace', {
+      Name: 'kukan-dev.internal',
+    })
+    template.hasResourceProperties('AWS::ServiceDiscovery::Service', { Name: 'kukan-dev-worker' })
     template.hasResourceProperties('AWS::ECS::Cluster', { ClusterName: 'kukan-dev' })
     template.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-web' })
     template.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-worker' })
     template.hasResourceProperties('AWS::RDS::DBInstance', { DBInstanceIdentifier: 'kukan-dev' })
+  })
+
+  it('wakes the worker by its name in the namespace, with no queue beside it (ADR-058)', () => {
+    template.resourceCountIs('AWS::SQS::Queue', 0)
+    // The worker signals its own tasks as well as the web does
+    for (const container of ['Web', 'Worker']) {
+      expectContainerEnv(template, container, {
+        WORKER_WAKE_URL: 'http://kukan-dev-worker.kukan-dev.internal:8080/wake',
+      })
+    }
+    template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+      FromPort: 8080,
+      ToPort: 8080,
+      Description: 'Web wake',
+    })
   })
 
   it('puts the retention rule on the bootstrap container-assets repository', () => {
@@ -99,6 +116,16 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
 
   it('matches the golden template', () => {
     expect(normalize(template)).toMatchSnapshot()
+  })
+
+  it('scales the worker on the waiting jobs it reports (ADR-058 §4)', () => {
+    expectContainerEnv(template, 'Worker', { WORKER_METRIC_SITE: 'kukan-dev' })
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      Namespace: 'KUKAN/Worker',
+      MetricName: 'JobsWaiting',
+      Dimensions: [{ Name: 'Site', Value: 'kukan-dev' }],
+      Statistic: 'Maximum',
+    })
   })
 
   it('keeps env-prefixed physical names', () => {
@@ -280,3 +307,31 @@ describe('CloudFront access logs', () => {
     expect(() => synthStage({ cdnLogRetentionDays: 0 })).toThrow(/cdnLogRetentionDays must be/)
   })
 })
+
+/**
+ * Assert a container's environment: a string is the value it must have,
+ * `undefined` that the variable must be absent.
+ */
+function expectContainerEnv(
+  template: Template,
+  container: string,
+  expected: Record<string, string | undefined>
+) {
+  const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')).flatMap(
+    (r) =>
+      (
+        r as {
+          Properties: {
+            ContainerDefinitions: {
+              Name: string
+              Environment?: { Name: string; Value: unknown }[]
+            }[]
+          }
+        }
+      ).Properties.ContainerDefinitions
+  )
+  const env = defs.find((d) => d.Name === container)?.Environment ?? []
+  for (const [name, value] of Object.entries(expected)) {
+    expect(env.find((e) => e.Name === name)?.Value, name).toEqual(value)
+  }
+}

@@ -200,6 +200,14 @@ export const MAX_EMBED_TEXT_LENGTH = 8_000
 export const EMBED_BATCH_SIZE = 32
 
 /**
+ * How long one batch's embed request may take before it is abandoned. A
+ * runaway ceiling, not a service level: a local model on a CPU is the slow
+ * case, and a request that never answers would otherwise hold the worker —
+ * which, on a single-task site, is every job behind it (ADR-058 §5).
+ */
+export const EMBED_TIMEOUT_MS = 300_000
+
+/**
  * Characters of MAX_EMBED_TEXT_LENGTH held for the resource's own text
  * (section, name, description, abstract) before the package's title and tags
  * take theirs. Neither title nor tags is bounded by the API, so without a

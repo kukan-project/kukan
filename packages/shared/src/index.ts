@@ -53,6 +53,7 @@ export * from './password-strength'
 
 // Validators
 export * from './url'
+export * from './worker-metric'
 export * from './validators/messages'
 export * from './validators/package'
 export * from './validators/organization'

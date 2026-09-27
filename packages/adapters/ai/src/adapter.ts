@@ -143,6 +143,8 @@ export interface EmbedOptions {
   /** Distinguishes search queries from indexed documents so adapters can
    *  apply model-specific prefixes (e.g. e5's "query:" / "passage:"). */
   type?: 'query' | 'document'
+  /** Give up on the request after this long, as `CompleteOptions.timeoutMs` */
+  timeoutMs?: number
 }
 
 export interface EmbeddingInfo {

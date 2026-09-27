@@ -31,7 +31,6 @@ import {
   NotFoundError,
   ValidationError,
   PayloadTooLargeError,
-  PURGE_VERSION_JOB_TYPE,
   getMimeType,
   detectContentType,
   versionedFilename,
@@ -706,16 +705,13 @@ resourcesRouter.post(
     // 404 if the resource doesn't exist.
     await new ResourceService(db).getById(id)
 
-    const { claimed, view } = await new ResourceVersionService(db).claimPurge(
+    const { view } = await new ResourceVersionService(db).claimPurge(
       id,
       version,
       user.id,
-      reason
+      reason,
+      c.get('queue')
     )
-    // Only enqueue when we actually claimed it (idempotent on repeat calls).
-    if (claimed) {
-      await c.get('queue').enqueue(PURGE_VERSION_JOB_TYPE, { resourceId: id, version })
-    }
     return c.json(view, 202)
   }
 )

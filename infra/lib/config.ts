@@ -327,9 +327,11 @@ export interface SiteConfig {
    * Of `backup`, only the S3 (site bucket) settings are allowed: DB retention
    * and the AWS Backup schedule are environment-level settings (the DB plan
    * lives in the SharedStack, the per-site bucket plans follow the same
-   * schedule — ADR-041).
+   * schedule — ADR-041). Of `worker`, not the health port: the shared
+   * security groups open the environment's to the web (ADR-058).
    */
-  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'worker' | 'dbPool'>> & {
+  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'dbPool'>> & {
+    worker?: DeepPartial<Omit<ScaleComputed['worker'], 'healthPort'>>
     backup?: Partial<
       Pick<ScaleComputed['backup'], 's3Versioning' | 's3NoncurrentVersionExpirationDays'>
     >
@@ -671,6 +673,14 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
           `Site "${site.name}" must not override ${badSections.join('/')} — only ` +
             `${SITE_OVERRIDE_SECTIONS.join('/')} are per-site; db/opensearch sizing ` +
             'belongs to the shared boxes (set it on the environment entry, ADR-041)'
+        )
+      }
+      // The type leaves it out; this is the gate for what tsx does not check
+      const worker = site.overrides.worker as { healthPort?: unknown } | undefined
+      if (worker?.healthPort !== undefined) {
+        throw new Error(
+          `Site "${site.name}" must not override worker.healthPort — the shared ` +
+            "security groups open the environment's port to the web (ADR-058)"
         )
       }
       const badBackupKeys = Object.keys(site.overrides.backup ?? {}).filter(

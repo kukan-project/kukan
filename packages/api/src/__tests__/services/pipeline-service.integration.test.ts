@@ -1,13 +1,18 @@
+import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { job, resourcePipeline } from '@kukan/db'
 import { PipelineService } from '../../services/pipeline-service'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import { PostgresQueueAdapter, type QueueAdapter } from '@kukan/queue-adapter'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { mockTransaction } from '../test-helpers/test-app'
 
 function createMockQueue(): QueueAdapter {
   return {
     enqueue: vi.fn().mockResolvedValue('mock-job-id'),
-    getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0 }),
+    enqueueMany: vi.fn().mockResolvedValue([]),
+    transaction: mockTransaction(),
+    getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0, dead: 0 }),
     process: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
   }
@@ -93,20 +98,39 @@ describe('PipelineService', () => {
       await expect(service.enqueue(testResId)).rejects.toThrow('Queue adapter is required')
     })
 
-    it('should rollback DB status to error when queue.enqueue fails', async () => {
-      const queue = createMockQueue()
-      ;(queue.enqueue as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('SQS send failed'))
+    it('writes the job in the same transaction as the row, and wakes the worker after', async () => {
+      const queue = new PostgresQueueAdapter({ db })
+      const wake = vi.spyOn(queue, 'wake').mockImplementation(() => {})
       const service = new PipelineService(db, queue)
 
-      await expect(service.enqueue(testResId)).rejects.toThrow('SQS send failed')
+      const jobId = await service.enqueue(testResId, { rebuildOnly: true })
 
-      const status = await service.getStatus(testResId)
-      expect(status).not.toBeNull()
-      expect(status!.status).toBe('error')
-      expect(status!.error).toContain('Queue enqueue failed')
+      const [row] = await db.select().from(job).where(eq(job.id, jobId))
+      expect(row).toMatchObject({
+        type: 'resource-pipeline',
+        payload: { resourceId: testResId, rebuildOnly: true },
+      })
+      expect(wake).toHaveBeenCalledOnce()
     })
 
-    it('should preserve previewKey when queue.enqueue fails on re-enqueue', async () => {
+    it('refuses a resource that does not exist', async () => {
+      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+
+      await expect(service.enqueue(randomUUID())).rejects.toThrow('not found')
+      expect(await db.$count(job)).toBe(0)
+    })
+
+    it('leaves no row behind when the job cannot be written', async () => {
+      const queue = createMockQueue()
+      ;(queue.enqueue as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('insert failed'))
+      const service = new PipelineService(db, queue)
+
+      await expect(service.enqueue(testResId)).rejects.toThrow('insert failed')
+
+      expect(await service.getStatus(testResId)).toBeNull()
+    })
+
+    it('leaves a finished run as it was when the job cannot be written', async () => {
       const queue = createMockQueue()
       const service = new PipelineService(db, queue)
 
@@ -120,13 +144,11 @@ describe('PipelineService', () => {
         WHERE resource_id = ${testResId}
       `)
 
-      // Second enqueue fails at SQS
-      ;(queue.enqueue as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('SQS send failed'))
-      await expect(service.enqueue(testResId)).rejects.toThrow('SQS send failed')
+      ;(queue.enqueue as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('insert failed'))
+      await expect(service.enqueue(testResId)).rejects.toThrow('insert failed')
 
-      // previewKey and metadata should still be intact
       const status = await service.getStatus(testResId)
-      expect(status!.status).toBe('error')
+      expect(status!.status).toBe('complete')
       expect(status!.previewKey).toBe('previews/pkg-1/res-1.parquet')
       expect(status!.metadata).toEqual({ encoding: 'Shift_JIS' })
     })
@@ -134,13 +156,15 @@ describe('PipelineService', () => {
 
   describe('enqueueAll', () => {
     it('should enqueue all active resources', async () => {
-      const queue = createMockQueue()
-      const service = new PipelineService(db, queue)
+      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
 
       const result = await service.enqueueAll()
 
       expect(result).toEqual({ enqueued: 1, failed: 0 })
-      expect(queue.enqueue).toHaveBeenCalledOnce()
+      expect(await db.select({ payload: job.payload }).from(job)).toEqual([
+        { payload: { resourceId: testResId } },
+      ])
+      expect((await service.getStatus(testResId))!.status).toBe('queued')
     })
 
     it('should include resources under draft packages (ADR-040 addendum)', async () => {
@@ -157,41 +181,49 @@ describe('PipelineService', () => {
         VALUES (${draftPkgId}, 'draft-resource', 'CSV', 'active')
       `)
 
-      const queue = createMockQueue()
-      const service = new PipelineService(db, queue)
+      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
 
       const result = await service.enqueueAll()
       expect(result).toEqual({ enqueued: 2, failed: 0 })
-      expect(queue.enqueue).toHaveBeenCalledTimes(2)
+      expect(await db.$count(job)).toBe(2)
     })
 
     it('should return 0 when no active resources exist', async () => {
       await db.execute(sql`UPDATE resource SET state = 'deleted'`)
 
-      const queue = createMockQueue()
-      const service = new PipelineService(db, queue)
+      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
 
       const result = await service.enqueueAll()
       expect(result).toEqual({ enqueued: 0, failed: 0 })
-      expect(queue.enqueue).not.toHaveBeenCalled()
+      expect(await db.$count(job)).toBe(0)
     })
 
-    it('should continue even if individual enqueue fails', async () => {
-      // Add a second resource
+    it('skips a resource deleted since it was listed, and queues the rest', async () => {
+      // Listed, then gone before its batch is written: its foreign key must not
+      // refuse the whole batch.
+      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+
+      const result = await service.enqueueMany([{ id: randomUUID() }, { id: testResId }])
+
+      expect(result).toEqual({ enqueued: 1, failed: [] })
+      expect(await db.select({ payload: job.payload }).from(job)).toEqual([
+        { payload: { resourceId: testResId } },
+      ])
+    })
+
+    it('counts a refused batch as failed, and leaves none of its runs half-written', async () => {
       await db.execute(sql`
         INSERT INTO resource (package_id, url, url_type, name, state, position)
         VALUES (${testPkgId}, 'http://example.com/data2.csv', 'url', 'data2', 'active', 1)
       `)
 
       const queue = createMockQueue()
-      ;(queue.enqueue as ReturnType<typeof vi.fn>)
-        .mockRejectedValueOnce(new Error('fail'))
-        .mockResolvedValueOnce('job-2')
+      vi.mocked(queue.enqueueMany).mockRejectedValueOnce(new Error('connection lost'))
       const service = new PipelineService(db, queue)
 
       const result = await service.enqueueAll()
-      expect(result).toEqual({ enqueued: 1, failed: 1 })
-      expect(queue.enqueue).toHaveBeenCalledTimes(2)
+      expect(result).toEqual({ enqueued: 0, failed: 2 })
+      expect(await db.$count(resourcePipeline)).toBe(0)
     })
   })
 

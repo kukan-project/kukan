@@ -24,7 +24,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
 | 検索           | OpenSearch 3.x / PostgreSQL全文検索（フォールバック） |
 | ストレージ     | S3互換（AWS S3 / MinIO 統合アダプター）               |
-| キュー         | SQS互換（AWS SQS / ElasticMQ）                        |
+| キュー         | PostgreSQL の `job` 表（worker は直接起床、ADR-058）  |
 | キャッシュ     | lru-cache 11.x（インメモリ、全環境共通）              |
 | 認証           | Better Auth 1.x + OIDC プラグイン                     |
 | AI             | Bedrock / OpenAI / Ollama / NoOp                      |
@@ -39,7 +39,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 KUKAN/
 ├── CLAUDE.md               # ← このファイル
 ├── apps/
-│   ├── worker/             # Pipeline Worker（SQS consumer、ECS Fargate）          ※ Phase 3+
+│   ├── worker/             # Pipeline Worker（ジョブキュー consumer、ECS Fargate） ※ Phase 3+
 │   ├── web/                # Next.js フロントエンド + Hono API（単一オリジン）    ※ Phase 2+
 │   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 7+
 ├── packages/
@@ -49,7 +49,7 @@ KUKAN/
 │   ├── adapters/           # 環境差吸収アダプター（4つ）
 │   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
 │   │   ├── storage/        # @kukan/storage-adapter (S3互換: AWS S3 / MinIO)     ※ Phase 3+
-│   │   ├── queue/          # @kukan/queue-adapter (SQS互換: AWS SQS / ElasticMQ) ※ Phase 3+
+│   │   ├── queue/          # @kukan/queue-adapter (PostgreSQL job 表、ADR-058)     ※ Phase 3+
 │   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 5+
 │   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
 │   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
@@ -67,7 +67,7 @@ KUKAN/
 ├── Dockerfile              # マルチターゲット Docker ビルド（web / worker）
 ├── .dockerignore
 ├── compose.yml             # Docker Compose（開発 / オンプレ本番）
-├── docker/                 # Caddyfile, ElasticMQ, OpenSearch 設定
+├── docker/                 # Caddyfile, OpenSearch 設定
 ├── infra/                  # AWS CDK スタック（KukanStack）
 ├── turbo.json
 ├── pnpm-workspace.yaml
@@ -196,12 +196,12 @@ pnpm format        # Prettier フォーマット
 
 環境差がある4つだけアダプターを作る。それ以外は抽象化しない:
 
-| アダプター     | AWS        | 開発/オンプレ          |
-| -------------- | ---------- | ---------------------- |
-| StorageAdapter | S3         | MinIO (S3互換)         |
-| SearchAdapter  | OpenSearch | PostgreSQL全文検索     |
-| AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp |
-| QueueAdapter   | SQS        | ElasticMQ (SQS互換)    |
+| アダプター     | AWS        | 開発/オンプレ                     |
+| -------------- | ---------- | --------------------------------- |
+| StorageAdapter | S3         | MinIO (S3互換)                    |
+| SearchAdapter  | OpenSearch | PostgreSQL全文検索                |
+| AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp            |
+| QueueAdapter   | PostgreSQL | PostgreSQL（環境差なし、ADR-058） |
 
 キャッシュは lru-cache ユーティリティ（全環境共通、アダプター不要）。
 

@@ -20,7 +20,7 @@ export class NetworkConstruct extends Construct {
   readonly webSecurityGroup: ec2.ISecurityGroup
   readonly workerSecurityGroup: ec2.ISecurityGroup
 
-  constructor(scope: Construct, id: string, _props: NetworkProps) {
+  constructor(scope: Construct, id: string, props: NetworkProps) {
     super(scope, id)
 
     // ECS tasks run in public subnets (assignPublicIp: true) — no NAT needed.
@@ -100,6 +100,21 @@ export class NetworkConstruct extends Construct {
       this.workerSecurityGroup,
       ec2.Port.tcp(443),
       'Worker'
+    )
+    // The web tells the worker a job is waiting (ADR-058 §3). The SGs are
+    // shared by every site of an environment, so a site's web can reach
+    // another site's worker; the wake token, derived from each site's own
+    // auth secret, is what keeps it out.
+    this.workerSecurityGroup.connections.allowFrom(
+      this.webSecurityGroup,
+      ec2.Port.tcp(props.config.worker.healthPort),
+      'Web wake'
+    )
+    // And worker to worker, for the jobs a worker's jobs write
+    this.workerSecurityGroup.connections.allowFrom(
+      this.workerSecurityGroup,
+      ec2.Port.tcp(props.config.worker.healthPort),
+      'Worker wake'
     )
 
     cdk.Tags.of(this).add('kukan:component', 'network')

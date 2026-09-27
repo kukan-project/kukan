@@ -4,7 +4,6 @@ import { envSchema, loadEnv, databaseUrl, timeZoneSchema } from '../env'
 describe('envSchema', () => {
   it('should apply defaults for optional fields', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
     })
 
@@ -23,7 +22,6 @@ describe('envSchema', () => {
 
   it('should default TIME_ZONE to Asia/Tokyo and reject a name Intl does not know', () => {
     const base = {
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
     }
     const defaulted = envSchema.safeParse(base)
@@ -37,7 +35,6 @@ describe('envSchema', () => {
 
   it('should take USER_AGENT_URL as an ASCII http(s) URL, and leave it unset when blank', () => {
     const base = {
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
     }
     const parse = (USER_AGENT_URL: string) => envSchema.safeParse({ ...base, USER_AGENT_URL })
@@ -57,13 +54,11 @@ describe('envSchema', () => {
     expect(result.success).toBe(false)
     if (result.success) return
     const paths = result.error.issues.map((i) => i.path[0])
-    expect(paths).toContain('SQS_QUEUE_URL')
     expect(paths).toContain('BETTER_AUTH_SECRET')
   })
 
   it('should reject BETTER_AUTH_SECRET shorter than 32 chars', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'short',
     })
 
@@ -72,7 +67,6 @@ describe('envSchema', () => {
 
   it('should coerce string numbers to numbers', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       POSTGRES_PORT: '5433',
       PORT: '8080',
@@ -87,7 +81,6 @@ describe('envSchema', () => {
   it('should take a non-default POSTGRES_PORT and reject one no URL can hold', () => {
     const parse = (POSTGRES_PORT: string) =>
       envSchema.safeParse({
-        SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
         BETTER_AUTH_SECRET: 'a'.repeat(32),
         POSTGRES_PORT,
       })
@@ -103,7 +96,6 @@ describe('envSchema', () => {
   it('should parse boolean strings correctly', () => {
     const parse = (overrides: Record<string, string>) =>
       envSchema.safeParse({
-        SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
         BETTER_AUTH_SECRET: 'a'.repeat(32),
         ...overrides,
       })
@@ -121,7 +113,6 @@ describe('envSchema', () => {
 
   it('should reject invalid boolean strings', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       HEALTH_CHECK_ENABLED: 'yes',
     })
@@ -130,7 +121,6 @@ describe('envSchema', () => {
 
   it('should reject invalid SEARCH_TYPE', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       SEARCH_TYPE: 'elasticsearch',
     })
@@ -140,7 +130,6 @@ describe('envSchema', () => {
 
   it('should reject invalid NODE_ENV', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       NODE_ENV: 'staging',
     })
@@ -150,7 +139,6 @@ describe('envSchema', () => {
 
   it('should treat empty AI model vars as unset (compose ${VAR:-} injects empty strings)', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       AI_EMBEDDING_MODEL: '',
       AI_EMBEDDING_DIMENSIONS: '',
@@ -166,7 +154,6 @@ describe('envSchema', () => {
 
   it('should pass through non-empty AI model vars', () => {
     const result = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       AI_COMPLETION_MODELS: 'qwen3:8b,gemma4:e4b',
     })
@@ -178,14 +165,12 @@ describe('envSchema', () => {
 
   it('should validate OPENSEARCH_REPLICAS constraints', () => {
     const valid = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       OPENSEARCH_REPLICAS: '2',
     })
     expect(valid.success).toBe(true)
 
     const invalid = envSchema.safeParse({
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
       OPENSEARCH_REPLICAS: '-1',
     })
@@ -210,7 +195,6 @@ describe('loadEnv', () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
-      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
     }
   })
@@ -237,6 +221,21 @@ describe('loadEnv', () => {
     expect(env.DATABASE_URL).toBe('postgresql://myuser:mypass@db.example.com:5433/mydb')
   })
 
+  it('wakes the local worker by default in development only', () => {
+    delete process.env.WORKER_WAKE_URL
+    process.env.NODE_ENV = 'development'
+    expect(loadEnv().WORKER_WAKE_URL).toBe('http://localhost:8080/wake')
+
+    process.env.WORKER_WAKE_URL = 'http://worker:8080/wake'
+    expect(loadEnv().WORKER_WAKE_URL).toBe('http://worker:8080/wake')
+
+    delete process.env.WORKER_WAKE_URL
+    for (const nodeEnv of ['test', 'production']) {
+      process.env.NODE_ENV = nodeEnv
+      expect(loadEnv().WORKER_WAKE_URL).toBeUndefined()
+    }
+  })
+
   it('databaseUrl matches what loadEnv builds', () => {
     process.env.POSTGRES_HOST = 'db.example.com'
     process.env.POSTGRES_PORT = '5433'
@@ -245,9 +244,8 @@ describe('loadEnv', () => {
   })
 
   it('databaseUrl answers without the rest of the environment', () => {
-    // The test bootstrap and drizzle-kit have no queue and no auth secret, and
+    // The test bootstrap and drizzle-kit have no auth secret, and
     // asking them for one only breaks the migrations over an unrelated gap
-    delete process.env.SQS_QUEUE_URL
     delete process.env.BETTER_AUTH_SECRET
     process.env.POSTGRES_HOST = 'db.example.com'
 
@@ -256,7 +254,6 @@ describe('loadEnv', () => {
   })
 
   it('should throw on invalid environment', () => {
-    delete process.env.SQS_QUEUE_URL
     delete process.env.BETTER_AUTH_SECRET
 
     expect(() => loadEnv()).toThrow()

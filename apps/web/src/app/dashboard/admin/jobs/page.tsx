@@ -22,7 +22,7 @@ import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
 
 interface QueueStatsResponse {
-  queue: { pending: number; inFlight: number; delayed: number }
+  queue: { pending: number; inFlight: number; delayed: number; dead: number }
   jobs: Record<string, number>
 }
 
@@ -182,12 +182,14 @@ export default function AdminJobsPage() {
         />
       </div>
 
-      {/* SQS Queue Info (reference) */}
+      {/* Job queue info (reference) */}
       {stats && (
         <p className="text-xs text-muted-foreground">
-          {t('sqsInfo', {
+          {t('queueInfo', {
             pending: stats.queue.pending,
             inFlight: stats.queue.inFlight,
+            delayed: stats.queue.delayed,
+            dead: stats.queue.dead,
           })}
         </p>
       )}

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { scrubbedExtras } from '@kukan/db'
+import type { QueueAdapter } from '@kukan/queue-adapter'
 import { checkBatch } from '../../cron/health-check/check-batch'
 import * as headRequest from '../../cron/health-check/head-request'
 import type { HeadCheckResult } from '../../cron/health-check/types'
@@ -66,6 +67,8 @@ function makeMockDb(rows: Record<string, unknown>[] = [], writes: unknown[] = [{
 function makeMockQueue() {
   return {
     enqueue: vi.fn().mockResolvedValue('job-1'),
+    enqueueMany: vi.fn().mockResolvedValue([]),
+    transaction: vi.fn() as unknown as QueueAdapter['transaction'],
     getStats: vi.fn(),
     process: vi.fn(),
     stop: vi.fn(),

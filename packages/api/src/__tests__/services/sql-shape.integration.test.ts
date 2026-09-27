@@ -17,7 +17,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { packageTable, resource, resourceVersion } from '@kukan/db'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, mockTransaction } from '../test-helpers/test-app'
 import { PackageService } from '../../services/package-service'
 import { listPurgeTargets } from '../../services/package-cleanup'
 import {
@@ -187,7 +187,10 @@ describe('emitted SQL shape', () => {
     it('pins the scan shape', async () => {
       await new ResourceVersionService(recorder).createFirstVersions({
         storage: {} as never,
-        queue: { enqueue: async () => 'queued' } as never,
+        queue: {
+          enqueueMany: async () => [],
+          transaction: mockTransaction(),
+        } as never,
       })
       expect(recorded()).toMatchSnapshot()
     })
@@ -221,7 +224,10 @@ describe('emitted SQL shape', () => {
 
       await new ResourceVersionService(recorder).convertSetAsideVersions({
         storage: {} as never,
-        queue: { enqueue: async () => 'queued' } as never,
+        queue: {
+          enqueueMany: async () => [],
+          transaction: mockTransaction(),
+        } as never,
       })
       expect(recorded()).toMatchSnapshot()
     })
@@ -256,7 +262,12 @@ describe('emitted SQL shape', () => {
       await new ResourceVersionService(recorder).setColumnSettings(
         r.id,
         {},
-        { queue: { enqueue: async () => 'queued' } as never }
+        {
+          queue: {
+            enqueue: async () => 'queued',
+            transaction: mockTransaction(),
+          } as never,
+        }
       )
       expect(recorded()).toMatchSnapshot()
     })

@@ -197,7 +197,7 @@ describe('Packages API Routes', () => {
   describe('POST /api/v1/packages', () => {
     it('creates the resources sent with the package, in order', async () => {
       // The CKAN package_create shape.
-      vi.mocked(mockQueue.enqueue).mockClear()
+      vi.mocked(mockQueue.enqueueMany).mockClear()
       const res = await createPackage({
         name: 'with-resources',
         resources: [
@@ -222,10 +222,11 @@ describe('Packages API Routes', () => {
         ['to-upload', 1, null],
       ])
       // The link resource gets its pipeline run; the upload waits for its file.
-      expect(mockQueue.enqueue).toHaveBeenCalledTimes(1)
-      expect(mockQueue.enqueue).toHaveBeenCalledWith(
+      expect(mockQueue.enqueueMany).toHaveBeenCalledTimes(1)
+      expect(mockQueue.enqueueMany).toHaveBeenCalledWith(
         PIPELINE_JOB_TYPE,
-        expect.objectContaining({ resourceId: body.resources[0].id })
+        [expect.objectContaining({ resourceId: body.resources[0].id })],
+        { tx: expect.anything() }
       )
     })
 
@@ -262,22 +263,23 @@ describe('Packages API Routes', () => {
       expect(body.resources.map((r: { name: string }) => r.name)).toEqual(['to-upload'])
     })
 
-    it('still answers 201 when a run cannot be queued', async () => {
+    it('still answers 201 when a run cannot be recorded', async () => {
       // The rows are committed by then; failing the request would report a
       // package that exists as not created, and the retry would refuse its name.
-      vi.mocked(mockQueue.enqueue).mockRejectedValueOnce(new Error('queue down'))
+      vi.mocked(mockQueue.enqueueMany).mockRejectedValueOnce(new Error('connection lost'))
       const res = await createPackage({
-        name: 'queue-down',
+        name: 'run-not-recorded',
         resources: [{ url: 'https://example.com/a.csv', name: 'a' }],
       })
       expect(res.status).toBe(201)
 
       const body = await res.json()
-      // The run's own record says what became of it.
+      // Nothing half-written: the run's row and its job commit together
+      // (ADR-058), so the resource reads as never having been queued.
       expect(
         body.resources.map((r: { pipelineStatus: string | null }) => r.pipelineStatus)
-      ).toEqual(['error'])
-      expect((await app.request('/api/v1/packages/queue-down')).status).toBe(200)
+      ).toEqual([null])
+      expect((await app.request('/api/v1/packages/run-not-recorded')).status).toBe(200)
     })
 
     it('still answers 201 when the search index refuses the resource docs', async () => {
@@ -926,7 +928,7 @@ describe('Packages API Routes', () => {
     it('should retry the rebuild after the enqueue failed', async () => {
       const { pkg } = await deletedPackageWithStoredResource('restore-retry-pkg')
 
-      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      const enqueueMock = vi.mocked(mockQueue.enqueueMany)
       enqueueMock.mockRejectedValueOnce(new Error('queue unavailable'))
       const failed = await app.request(`/api/v1/packages/${pkg.id}/restore`, { method: 'POST' })
       expect(failed.status).toBe(500)
@@ -1034,17 +1036,16 @@ describe('Packages API Routes', () => {
     it('should rebuild from the stored content rather than fetching the url again', async () => {
       const { pkg, resourceId } = await deletedPackageWithStoredResource('restore-no-refetch-pkg')
 
-      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      const enqueueMock = vi.mocked(mockQueue.enqueueMany)
       enqueueMock.mockClear()
       const restored = await app.request(`/api/v1/packages/${pkg.id}/restore`, { method: 'POST' })
       expect(restored.status).toBe(200)
 
       // Restoring must not republish whatever the source serves now (ADR-044 §4)
-      const runs = enqueueMock.mock.calls.filter(
-        (call) => (call[1] as { resourceId?: string })?.resourceId === resourceId
-      )
-      expect(runs).toHaveLength(1)
-      expect(runs[0][1]).toMatchObject({ rebuildOnly: true })
+      const runs = enqueueMock.mock.calls
+        .flatMap((call) => call[1] as { resourceId?: string }[])
+        .filter((run) => run.resourceId === resourceId)
+      expect(runs).toEqual([expect.objectContaining({ rebuildOnly: true })])
     })
   })
 
@@ -1446,7 +1447,7 @@ describe('Packages API Routes', () => {
 
       // Queue outage: publish must not report success while the content
       // indexing job was never enqueued
-      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      const enqueueMock = vi.mocked(mockQueue.enqueueMany)
       enqueueMock.mockRejectedValueOnce(new Error('queue unavailable'))
       const failed = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
       expect(failed.status).toBe(500)

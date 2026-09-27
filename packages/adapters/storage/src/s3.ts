@@ -48,6 +48,17 @@ export interface S3Config {
   forcePathStyle?: boolean // auto-detected from endpoint presence if not set
 }
 
+/** How long to wait for the store to accept a connection. */
+const CONNECTION_TIMEOUT_MS = 10_000
+
+/**
+ * How long a connection may pass no bytes before it is given up. Idle time,
+ * not total: a 100 MB object is fine as long as it keeps moving. Minutes
+ * rather than seconds because a download the web relays to a slow client
+ * stops reading from the store whenever the client falls behind.
+ */
+const SOCKET_IDLE_TIMEOUT_MS = 5 * 60_000
+
 export class S3StorageAdapter implements StorageAdapter {
   private client: S3Client
   private bucket: string
@@ -65,6 +76,13 @@ export class S3StorageAdapter implements StorageAdapter {
           },
         }),
       forcePathStyle: config.forcePathStyle ?? !!config.endpoint,
+      // The SDK's defaults are no limit at all, so a store that accepts the
+      // connection and then says nothing holds the caller for ever — on a
+      // single-worker site, the whole job queue with it (ADR-058 §5).
+      requestHandler: {
+        connectionTimeout: CONNECTION_TIMEOUT_MS,
+        socketTimeout: SOCKET_IDLE_TIMEOUT_MS,
+      },
     })
   }
 

@@ -54,6 +54,8 @@ export type SharedParam =
   | 'sg/worker'
   | 'sg/db-access'
   | 'ecs/cluster-name'
+  | 'cloudmap/namespace-id'
+  | 'cloudmap/namespace-name'
   | 'alb/listener-arn'
   | 'alb/dns-name'
   | 'cloudfront/vpc-origin-id'

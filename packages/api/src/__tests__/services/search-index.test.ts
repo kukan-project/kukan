@@ -14,7 +14,10 @@ import type { AIAdapter } from '@kukan/ai-adapter'
 const EMBED_PACKAGE_ID = '00000000-0000-4000-8000-000000000001'
 
 function makeQueue() {
-  return { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter
+  return {
+    enqueueMany: vi.fn().mockResolvedValue(['job-1']),
+    transaction: ((db, fn) => db.transaction(fn)) as QueueAdapter['transaction'],
+  } as unknown as QueueAdapter
 }
 
 function makeAI(embeddingAvailable: boolean) {
@@ -233,28 +236,28 @@ describe('enqueuePackageEmbed', () => {
   it('enqueues an embed-package job when embedding is available', async () => {
     const queue = makeQueue()
     await enqueuePackageEmbed(dbTaking(true), queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueue).toHaveBeenCalledWith(
+    expect(queue.enqueueMany).toHaveBeenCalledWith(
       EMBED_JOB_TYPE,
-      { packageId: EMBED_PACKAGE_ID },
-      { delaySeconds: EMBED_DELAY_S }
+      [{ packageId: EMBED_PACKAGE_ID }],
+      { delaySeconds: EMBED_DELAY_S, tx: expect.anything() }
     )
   })
 
   it('queues nothing while a window is already held', async () => {
     const queue = makeQueue()
     await enqueuePackageEmbed(dbTaking(false), queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(queue.enqueueMany).not.toHaveBeenCalled()
   })
 
   it('does nothing when embedding is unavailable (NoOp)', async () => {
     const queue = makeQueue()
     await enqueuePackageEmbed(dbTaking(true), queue, makeAI(false), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(queue.enqueueMany).not.toHaveBeenCalled()
   })
 
   it('swallows enqueue failures (logs, never throws)', async () => {
     const queue = {
-      enqueue: vi.fn().mockRejectedValue(new Error('queue down')),
+      enqueueMany: vi.fn().mockRejectedValue(new Error('queue down')),
     } as unknown as QueueAdapter
     const logger = makeLogger()
 
@@ -297,10 +300,10 @@ describe('syncPackageMetadata', () => {
     )
 
     expect(adapter.indexPackage).toHaveBeenCalledOnce()
-    expect(queue.enqueue).toHaveBeenCalledWith(
+    expect(queue.enqueueMany).toHaveBeenCalledWith(
       EMBED_JOB_TYPE,
-      { packageId: EMBED_PACKAGE_ID },
-      { delaySeconds: EMBED_DELAY_S }
+      [{ packageId: EMBED_PACKAGE_ID }],
+      { delaySeconds: EMBED_DELAY_S, tx: expect.anything() }
     )
   })
 
@@ -317,6 +320,6 @@ describe('syncPackageMetadata', () => {
     )
 
     expect(adapter.indexPackage).not.toHaveBeenCalled()
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(queue.enqueueMany).not.toHaveBeenCalled()
   })
 })

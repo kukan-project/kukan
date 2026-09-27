@@ -6,12 +6,12 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
-import { auditLog, resource, resourcePipeline, resourceVersion } from '@kukan/db'
+import { auditLog, job, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { ResourceSchema, VersionState } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import { PostgresQueueAdapter, type QueueAdapter } from '@kukan/queue-adapter'
 import {
   ResourceVersionService,
   insertVersionIfHeld,
@@ -30,6 +30,13 @@ import {
   ensureTestUser,
   TEST_USER_ID,
 } from '../test-helpers/test-db'
+import { mockTransaction } from '../test-helpers/test-app'
+
+/** Where a claimed purge's job goes; the tests run the purge themselves. */
+const purgeQueue = {
+  enqueue: vi.fn(),
+  transaction: mockTransaction(),
+} as unknown as QueueAdapter
 
 const db = getTestDb()
 const silentLogger = createLogger({ name: 'test', level: 'silent' })
@@ -51,7 +58,10 @@ function mockDeps() {
       deleteMany: vi.fn().mockImplementation((keys: string[]) => Promise.resolve(keys)),
     } as unknown as StorageAdapter,
     search: { deleteContent: vi.fn() } as unknown as SearchAdapter,
-    queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter,
+    queue: {
+      enqueue: vi.fn().mockResolvedValue('job-1'),
+      transaction: mockTransaction(),
+    } as unknown as QueueAdapter,
   }
 }
 
@@ -155,7 +165,13 @@ afterAll(async () => {
 describe('claimPurge', () => {
   it('transitions active → purging and records who/why', async () => {
     await addVersion(1, 'sha256:v1')
-    const { claimed, view } = await service.claimPurge(resourceId, 1, userId, 'contains PII')
+    const { claimed, view } = await service.claimPurge(
+      resourceId,
+      1,
+      userId,
+      'contains PII',
+      purgeQueue
+    )
 
     expect(claimed).toBe(true)
     expect(view.state).toBe('purging')
@@ -175,6 +191,30 @@ describe('claimPurge', () => {
     expect(logged.changes).toMatchObject({ version: 1, reason: 'contains PII' })
   })
 
+  it('writes the purge job with the claim, and neither when the job cannot be', async () => {
+    // A version left `purging` with no job would stay there: a repeat request
+    // finds it claimed and queues nothing (ADR-058).
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const queue = new PostgresQueueAdapter({ db })
+
+    await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
+    expect(await db.select({ payload: job.payload }).from(job)).toEqual([
+      { payload: { resourceId, version: 1 } },
+    ])
+
+    const down = {
+      enqueue: vi.fn().mockRejectedValue(new Error('connection lost')),
+      transaction: mockTransaction(),
+    } as unknown as QueueAdapter
+    await expect(service.claimPurge(resourceId, 2, userId, 'again', down)).rejects.toThrow()
+    const [v2] = await db
+      .select({ state: resourceVersion.state })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    expect(v2.state).toBe('active')
+  })
+
   it('keeps calling the claimed version live, and the highest active one not', async () => {
     // The shape no state-based rule gets right (spec §9.6): live stands on a
     // version that is `purging`, so "the highest active version" and "the only
@@ -187,7 +227,7 @@ describe('claimPurge', () => {
       .set({ storageKey: getStorageKey(packageId, resourceId, 'v2'), hash: 'sha256:v2' })
       .where(eq(resource.id, resourceId))
 
-    const { view } = await service.claimPurge(resourceId, 2, userId, 'contains PII')
+    const { view } = await service.claimPurge(resourceId, 2, userId, 'contains PII', purgeQueue)
 
     // Read back once the claim has committed, so the state it reports and the
     // pointer it reports come from one snapshot.
@@ -201,13 +241,13 @@ describe('claimPurge', () => {
 
   it('is idempotent — a version already being purged is not re-claimed', async () => {
     await addVersion(1, 'sha256:v1', 'purging')
-    const { claimed } = await service.claimPurge(resourceId, 1, userId, 'again')
+    const { claimed } = await service.claimPurge(resourceId, 1, userId, 'again', purgeQueue)
     expect(claimed).toBe(false)
   })
 
   it('claims a superseded version — a revert is not a destruction', async () => {
     await addVersion(1, 'sha256:v1', 'superseded')
-    const { claimed, view } = await service.claimPurge(resourceId, 1, userId, 'illegal')
+    const { claimed, view } = await service.claimPurge(resourceId, 1, userId, 'illegal', purgeQueue)
     expect(claimed).toBe(true)
     expect(view.state).toBe('purging')
   })
@@ -227,7 +267,7 @@ describe('executePurge', () => {
       .update(resource)
       .set({ storageKey: v1Key, hash: 'sha256:same' })
       .where(eq(resource.id, resourceId))
-    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content', purgeQueue)
 
     const deps = mockDeps()
     await service.executePurge(resourceId, 2, deps)
@@ -251,7 +291,7 @@ describe('executePurge', () => {
       .update(resource)
       .set({ storageKey: v1Key, hash: 'sha256:same' })
       .where(eq(resource.id, resourceId))
-    await service.claimPurge(resourceId, 1, userId, 'illegal content')
+    await service.claimPurge(resourceId, 1, userId, 'illegal content', purgeQueue)
 
     const deps = mockDeps()
     const result = await service.executePurge(resourceId, 1, deps)
@@ -275,11 +315,11 @@ describe('executePurge', () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await addVersion(3, 'sha256:v3')
-    await service.claimPurge(resourceId, 3, userId, 'illegal content')
+    await service.claimPurge(resourceId, 3, userId, 'illegal content', purgeQueue)
 
-    await expect(service.claimPurge(resourceId, 2, userId, 'also illegal')).rejects.toThrow(
-      /being purged/
-    )
+    await expect(
+      service.claimPurge(resourceId, 2, userId, 'also illegal', purgeQueue)
+    ).rejects.toThrow(/being purged/)
 
     const [v2row] = await db
       .select({ state: resourceVersion.state })
@@ -297,8 +337,8 @@ describe('executePurge', () => {
     await addVersion(3, 'sha256:v3')
 
     const results = await Promise.allSettled([
-      service.claimPurge(resourceId, 3, userId, 'illegal content'),
-      service.claimPurge(resourceId, 2, userId, 'also illegal'),
+      service.claimPurge(resourceId, 3, userId, 'illegal content', purgeQueue),
+      service.claimPurge(resourceId, 2, userId, 'also illegal', purgeQueue),
     ])
 
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
@@ -322,7 +362,7 @@ describe('executePurge', () => {
       .update(resource)
       .set({ storageKey: getStorageKey(packageId, resourceId, 'v3'), hash: 'sha256:v3' })
       .where(eq(resource.id, resourceId))
-    await service.claimPurge(resourceId, 3, userId, 'illegal content')
+    await service.claimPurge(resourceId, 3, userId, 'illegal content', purgeQueue)
 
     await service.executePurge(resourceId, 3, mockDeps())
 
@@ -336,14 +376,15 @@ describe('executePurge', () => {
     // publish it straight back as a new version.
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2') // live
-    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content', purgeQueue)
 
     const deps = mockDeps()
     await service.executePurge(resourceId, 2, deps)
 
     expect(deps.queue.enqueue).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ resourceId, rebuildOnly: true })
+      expect.objectContaining({ resourceId, rebuildOnly: true }),
+      { tx: expect.anything() }
     )
   })
 
@@ -358,7 +399,7 @@ describe('executePurge', () => {
       status: 'complete',
       previewKey: 'previews/pkg/res.live.parquet',
     })
-    await service.claimPurge(resourceId, 1, userId, 'illegal content')
+    await service.claimPurge(resourceId, 1, userId, 'illegal content', purgeQueue)
 
     const deps = mockDeps()
     await service.executePurge(resourceId, 1, deps)
@@ -381,7 +422,7 @@ describe('executePurge', () => {
     const v1Key = getStorageKey(packageId, resourceId, 'v1')
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
-    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content', purgeQueue)
     // What the interrupted attempt left: derivatives already discarded, and the
     // pointer already back on v1.
     await db.insert(resourcePipeline).values({
@@ -409,7 +450,7 @@ describe('executePurge', () => {
   it('rolls the live version back to the previous one', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2') // live (matches resource.hash)
-    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content', purgeQueue)
 
     const deps = mockDeps()
     const result = await service.executePurge(resourceId, 2, deps)
@@ -443,7 +484,7 @@ describe('executePurge', () => {
   it('empties the resource when no previous active version remains', async () => {
     await addVersion(1, 'sha256:v2') // only version, live
     await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
-    await service.claimPurge(resourceId, 1, userId, 'illegal')
+    await service.claimPurge(resourceId, 1, userId, 'illegal', purgeQueue)
 
     const deps = mockDeps()
     const result = await service.executePurge(resourceId, 1, deps)
@@ -461,7 +502,7 @@ describe('executePurge', () => {
   it('purging a historical (non-live) version leaves the current key intact', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2') // live
-    await service.claimPurge(resourceId, 1, userId, 'old mistake')
+    await service.claimPurge(resourceId, 1, userId, 'old mistake', purgeQueue)
 
     const deps = mockDeps()
     const result = await service.executePurge(resourceId, 1, deps)
@@ -480,7 +521,7 @@ describe('executePurge', () => {
     // where it stands; purging v1 must not move it.
     await addVersion(1, 'sha256:v2')
     await addVersion(2, 'sha256:v2') // live
-    await service.claimPurge(resourceId, 1, userId, 'old mistake')
+    await service.claimPurge(resourceId, 1, userId, 'old mistake', purgeQueue)
 
     const deps = mockDeps()
     expect(await service.executePurge(resourceId, 1, deps)).toEqual({
@@ -511,7 +552,13 @@ describe('executePurge — after a revert (ADR-044 §4)', () => {
     await addVersion(2, 'sha256:v2')
     await revertFromLive()
 
-    const { claimed } = await service.claimPurge(resourceId, 2, userId, 'should never have run')
+    const { claimed } = await service.claimPurge(
+      resourceId,
+      2,
+      userId,
+      'should never have run',
+      purgeQueue
+    )
     expect(claimed).toBe(true)
 
     const deps = mockDeps()
@@ -541,7 +588,7 @@ describe('executePurge — after a revert (ADR-044 §4)', () => {
     await db.update(resource).set({ hash: 'sha256:v3' }).where(eq(resource.id, resourceId))
     expect(await revertFromLive()).toMatchObject({ restored: 2, published: 4 })
 
-    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content', purgeQueue)
     const deps = mockDeps()
     expect(await service.executePurge(resourceId, 2, deps)).toEqual({
       purged: true,
@@ -563,7 +610,7 @@ describe('executePurge — the resource claim (ADR-044)', () => {
     // would leave that object behind with nothing left to reclaim it.
     await db.insert(resourcePipeline).values({ resourceId })
     await addVersion(1, 'sha256:v2')
-    await service.claimPurge(resourceId, 1, userId, 'illegal')
+    await service.claimPurge(resourceId, 1, userId, 'illegal', purgeQueue)
     await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
 
     const deps = mockDeps()
@@ -577,7 +624,7 @@ describe('executePurge — the resource claim (ADR-044)', () => {
   it('holds the resource while it purges', async () => {
     const [pipe] = await db.insert(resourcePipeline).values({ resourceId }).returning()
     await addVersion(1, 'sha256:v2')
-    await service.claimPurge(resourceId, 1, userId, 'illegal')
+    await service.claimPurge(resourceId, 1, userId, 'illegal', purgeQueue)
 
     let heldDuringDelete = false
     const deps = mockDeps()
@@ -608,7 +655,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
       .update(resourceVersion)
       .set({ ducklakeSnapshotId: 9 })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
-    await service.claimPurge(resourceId, 2, userId, 'test')
+    await service.claimPurge(resourceId, 2, userId, 'test', purgeQueue)
     const [before] = await db.select().from(resource).where(eq(resource.id, resourceId))
 
     await expect(
@@ -627,7 +674,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
       .update(resourceVersion)
       .set({ ducklakeSnapshotId: 42 })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
-    await service.claimPurge(resourceId, 1, userId, 'test')
+    await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
 
     // No lake config: layer 2 is skipped, but the reference must still be dropped.
     await service.executePurge(resourceId, 1, mockDeps())
@@ -647,7 +694,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
       .update(resourceVersion)
       .set({ ducklakeSnapshotId: 7 })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
-    await service.claimPurge(resourceId, 1, userId, 'test')
+    await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
 
     // v2 stays live, so the contents do not change — but v1's snapshot still
     // holds its rows and has to be reclaimed, so the lake is contacted anyway
@@ -670,7 +717,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     // an unusable config proves the lake is never contacted.
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
-    await service.claimPurge(resourceId, 1, userId, 'test')
+    await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
 
     const result = await service.executePurge(resourceId, 1, {
       ...mockDeps(),
@@ -1333,7 +1380,8 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
 
     expect(deps.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ rebuildOnly: true })
+      expect.objectContaining({ rebuildOnly: true }),
+      { tx: expect.anything() }
     )
   })
 
@@ -1353,7 +1401,8 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect((await service.revertLiveContent(resourceId, request, resent)).queued).toBe(true)
     expect(resent.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ rebuildOnly: true })
+      expect.objectContaining({ rebuildOnly: true }),
+      { tx: expect.anything() }
     )
   })
 
@@ -1575,7 +1624,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await revertFromLive()
-    await service.claimPurge(resourceId, 3, userId, 'wrong content')
+    await service.claimPurge(resourceId, 3, userId, 'wrong content', purgeQueue)
     await service.executePurge(resourceId, 3, mockDeps())
 
     const view = await service.getVersion(resourceId, 3)
@@ -1597,7 +1646,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     await revertFromLive()
     expect((await service.getVersion(resourceId, 3)).restoredFrom).toBe(1)
 
-    await service.claimPurge(resourceId, 1, userId, 'personal data')
+    await service.claimPurge(resourceId, 1, userId, 'personal data', purgeQueue)
     await service.executePurge(resourceId, 1, mockDeps())
 
     expect((await service.getVersion(resourceId, 3)).restoredFrom).toBeNull()
@@ -1618,7 +1667,9 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(await service.getDownloadTarget(resourceId, 2)).toMatchObject({
       storageKey: getStorageKey(packageId, resourceId, 'v2'),
     })
-    expect((await service.claimPurge(resourceId, 2, userId, 'wrong file')).claimed).toBe(true)
+    expect(
+      (await service.claimPurge(resourceId, 2, userId, 'wrong file', purgeQueue)).claimed
+    ).toBe(true)
   })
 
   it('leaves the restored content on the highest active version', async () => {
@@ -1725,7 +1776,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
       .update(resource)
       .set({ storageKey: v2Key, hash: 'sha256:same' })
       .where(eq(resource.id, resourceId))
-    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content', purgeQueue)
 
     const { revertTarget, liveRevision } = await service.revertContext(resourceId)
 
@@ -1989,7 +2040,7 @@ describe('the key a version is read under (spec §6.4)', () => {
     await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
     await setKey(['id'])
 
-    await service.claimPurge(resourceId, 2, userId, 'test')
+    await service.claimPurge(resourceId, 2, userId, 'test', purgeQueue)
     await service.executePurge(resourceId, 2, { ...mockDeps(), lake: unreachableLake })
 
     expect(await resourceKey()).toEqual(['order'])
@@ -2168,7 +2219,8 @@ describe('repairDerivatives — the repair a screen can offer (ADR-044 §4)', ()
     })
     expect(deps.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ rebuildOnly: true })
+      expect.objectContaining({ rebuildOnly: true }),
+      { tx: expect.anything() }
     )
   })
 
@@ -2227,7 +2279,7 @@ describe('the artifacts derived from retracted content', () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     const deps = mockDeps()
-    await service.claimPurge(resourceId, 2, userId, 'legal')
+    await service.claimPurge(resourceId, 2, userId, 'legal', purgeQueue)
 
     await service.executePurge(resourceId, 2, deps)
 

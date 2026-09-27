@@ -4,7 +4,7 @@
  * Interprets the version again rather than reading something the first attempt
  * left behind (ADR-046). The version file is immutable, so the same input gives
  * the same table — which is why a failed ingest needs no pointer to a preview
- * kept alive on its behalf, and why the message is the fast path rather than
+ * kept alive on its behalf, and why the job is the fast path rather than
  * the record. An hourly sweep finds the same versions from the database.
  */
 
@@ -37,11 +37,11 @@ export async function retryLakeIngest(
   const source = await pendingLakeVersionSource(deps.db, job)
   if (!source) {
     log.info({ resourceId, version }, 'Lake ingest retry skipped (nothing outstanding)')
-    // Still hand on. This is where a redelivery lands after the chain's own
-    // enqueue failed: the version is already done, so without asking again the
-    // backlog stops until the hourly sweep — the wait the chain exists to
-    // remove. Duplicate messages reach it too and answer with the same next
-    // version, which costs a redelivery of something already queued.
+    // Still hand on. This is where a retry lands after the chain's own enqueue
+    // failed: the version is already done, so without asking again the backlog
+    // stops until the hourly sweep — the wait the chain exists to remove.
+    // Duplicate jobs reach it too and answer with the same next version, which
+    // costs a second run of something already queued.
     await chainToNext(deps, resourceId, version, log)
     return
   }
@@ -73,11 +73,11 @@ export async function retryLakeIngest(
     }
     return result
   }).catch(async (err: unknown) => {
-    // Counted on the version and let go, not rethrown: thrown, the message
-    // sits in flight for the visibility timeout and fails the same way, and
-    // the sweep reissues it next hour regardless. The count is what gives up
+    // Counted on the version and let go, not rethrown: thrown, the job waits
+    // out its retry delay and fails the same way, and the sweep reissues it
+    // next hour regardless. The count is what gives up
     // (`LAKE_INGEST_FAILURE_LIMIT`); a count that cannot be written throws
-    // through, leaving the redelivery as the retry. Not handed on either — the
+    // through, leaving the queue's retry as the retry. Not handed on either — the
     // next version loaded first would overtake this one for good.
     const failure = await recordLakeIngestFailure(deps.db, job)
     log.error(

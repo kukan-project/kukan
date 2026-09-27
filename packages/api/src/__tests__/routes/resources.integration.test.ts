@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { Readable } from 'stream'
 import { randomUUID } from 'node:crypto'
 import {
+  job,
   resource as resourceTable,
   resourcePipeline,
   resourcePipelineStep,
@@ -10,6 +11,7 @@ import {
 } from '@kukan/db'
 import { getStorageKey, MAX_UPLOAD_SIZE, JSON_PREVIEW_LIMIT } from '@kukan/shared'
 import type { ResourceColumnType } from '@kukan/shared'
+import { PostgresQueueAdapter } from '@kukan/queue-adapter'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
 import {
@@ -2103,8 +2105,12 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     return resource
   }
 
-  const setKey = (id: string, primaryKey: string[] | null) =>
-    app.request(`/api/v1/resources/${id}/column-settings`, {
+  /** A real queue, for the cases only the job table can answer (ADR-058). */
+  const appWithJobs = createTestApp(db, { queue: new PostgresQueueAdapter({ db }) })
+  const pipelineJobs = () => db.$count(job, eq(job.state, 'ready'))
+
+  const setKey = (id: string, primaryKey: string[] | null, via = app) =>
+    via.request(`/api/v1/resources/${id}/column-settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryKey }),
@@ -2152,12 +2158,13 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     // its way is what settles it — a second one would arrive to find the version
     // made and the gate with nothing to tell apart.
     const resource = await withColumns('key-double-send-pkg', ['id'])
-    vi.mocked(mockQueue.enqueue).mockClear()
 
-    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: true })
-    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: null })
+    const first = await setKey(resource.id, ['id'], appWithJobs)
+    expect(await first.json()).toMatchObject({ queued: true })
+    const second = await setKey(resource.id, ['id'], appWithJobs)
+    expect(await second.json()).toMatchObject({ queued: null })
 
-    expect(mockQueue.enqueue).toHaveBeenCalledTimes(1)
+    expect(await pipelineJobs()).toBe(1)
   })
 
   it('waits for a long run whose current step has just started', async () => {
@@ -2191,21 +2198,17 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     expect(mockQueue.enqueue).not.toHaveBeenCalled()
   })
 
-  it('re-queues once a row left `queued` is too old to be waiting for', async () => {
-    // The crash window `PipelineService.enqueue` leaves: the row is written
-    // before the message is sent, so a process that dies in between leaves
-    // `queued` with nothing in the queue. Trusted bare, that row would suppress
-    // every resend and the setting would have no way of reaching a version.
-    const resource = await withColumns('key-stale-queued-pkg', ['id'])
-    await setKey(resource.id, ['id'])
-    await db
-      .update(resourcePipeline)
-      .set({ updated: new Date(Date.now() - CLAIM_STALE_AFTER_MS - 1000) })
-      .where(eq(resourcePipeline.resourceId, resource.id))
-    vi.mocked(mockQueue.enqueue).mockClear()
+  it('re-queues when the row says `queued` but its job is gone', async () => {
+    // A job that died before its run started leaves the row saying `queued`.
+    // Trusted bare, that row would suppress every resend and the setting would
+    // have no way of reaching a version — so the job table is asked instead.
+    const resource = await withColumns('key-dead-job-pkg', ['id'])
+    await setKey(resource.id, ['id'], appWithJobs)
+    await db.update(job).set({ state: 'dead' })
 
-    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: true })
-    expect(mockQueue.enqueue).toHaveBeenCalledTimes(1)
+    const resend = await setKey(resource.id, ['id'], appWithJobs)
+    expect(await resend.json()).toMatchObject({ queued: true })
+    expect(await pipelineJobs()).toBe(1)
   })
 
   it('re-queues on a resend when the first enqueue failed', async () => {
@@ -2214,8 +2217,8 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     // Asking the version rather than the setting is what makes the resend the
     // repair.
     const resource = await withColumns('key-requeue-pkg', ['id'])
-    // The enqueue puts the row back to `error` when the queue refuses it, so the
-    // "a run is already on its way" guard does not catch this resend.
+    // A refused enqueue writes neither the row nor the job, so the "a run is
+    // already on its way" guard does not catch this resend.
     vi.mocked(mockQueue.enqueue).mockRejectedValueOnce(new Error('queue is down'))
 
     expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: false })

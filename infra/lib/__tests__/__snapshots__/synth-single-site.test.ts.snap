@@ -1543,45 +1543,47 @@ function expandV6(addr) {
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
-    "QueuePipelineDlq67F585DD": {
-      "DeletionPolicy": "Delete",
+    "NetworkWorkerSgfromDevKukanStackNetworkWebSg826CBD508080E30BB523": {
       "Properties": {
-        "MessageRetentionPeriod": 1209600,
-        "QueueName": "kukan-dev-pipeline-dlq",
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-      },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
-    },
-    "QueuePipelineQueue23DE33E9": {
-      "DeletionPolicy": "Delete",
-      "Properties": {
-        "QueueName": "kukan-dev-pipeline",
-        "ReceiveMessageWaitTimeSeconds": 20,
-        "RedrivePolicy": {
-          "deadLetterTargetArn": {
-            "Fn::GetAtt": [
-              "QueuePipelineDlq67F585DD",
-              "Arn",
-            ],
-          },
-          "maxReceiveCount": 3,
+        "Description": "Web wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
         },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-        "VisibilityTimeout": 600,
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
       },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanStackNetworkWorkerSgD384FF1F808089AEAE93": {
+      "Properties": {
+        "Description": "Worker wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
     },
     "SearchDomain62FD613E": {
       "DeletionPolicy": "Delete",
@@ -1775,6 +1777,15 @@ function expandV6(addr) {
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "ServiceNamespaceB29FC01B": {
+      "Properties": {
+        "Name": "kukan-dev.internal",
+        "Vpc": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
     },
     "StorageResourceBucketD8B2FEFB": {
       "DeletionPolicy": "Retain",
@@ -2106,18 +2117,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -2163,6 +2162,10 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
               {
                 "Name": "BETTER_AUTH_URL",
@@ -2442,30 +2445,6 @@ function expandV6(addr) {
               ],
             },
             {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": "sqs:GetQueueAttributes",
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": {
@@ -2652,6 +2631,16 @@ function expandV6(addr) {
           },
         },
         "ServiceName": "kukan-dev-worker",
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "WorkerServiceCloudmapService7AE9756B",
+                "Arn",
+              ],
+            },
+          },
+        ],
         "Tags": [
           {
             "Key": "kukan:component",
@@ -2663,6 +2652,46 @@ function expandV6(addr) {
         },
       },
       "Type": "AWS::ECS::Service",
+    },
+    "WorkerServiceCloudmapService7AE9756B": {
+      "DependsOn": [
+        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "WorkerServiceTaskDefTaskRoleF79140F1",
+      ],
+      "Properties": {
+        "DnsConfig": {
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A",
+            },
+          ],
+          "NamespaceId": {
+            "Fn::GetAtt": [
+              "ServiceNamespaceB29FC01B",
+              "Id",
+            ],
+          },
+          "RoutingPolicy": "MULTIVALUE",
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1,
+        },
+        "Name": "kukan-dev-worker",
+        "NamespaceId": {
+          "Fn::GetAtt": [
+            "ServiceNamespaceB29FC01B",
+            "Id",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::ServiceDiscovery::Service",
     },
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
@@ -2707,7 +2736,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerAlarm3AF45744": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -2715,66 +2744,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C",
           },
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -2785,13 +2770,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthLowerPolicyF75CED24",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingLowerPolicy821B77D7",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -2810,7 +2795,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperAlarmA3F78540": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -2818,66 +2803,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49",
           },
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -2888,13 +2829,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthUpperPolicy8825942E",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingUpperPolicyBF194FC2",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -2966,18 +2907,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -2988,6 +2917,10 @@ function expandV6(addr) {
               {
                 "Name": "HEALTH_PORT",
                 "Value": "8080",
+              },
+              {
+                "Name": "WORKER_METRIC_SITE",
+                "Value": "kukan-dev",
               },
               {
                 "Name": "AI_TYPE",
@@ -3023,6 +2956,10 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
             ],
             "Essential": true,
@@ -3261,36 +3198,6 @@ function expandV6(addr) {
                   ],
                 },
               ],
-            },
-            {
-              "Action": [
-                "sqs:ReceiveMessage",
-                "sqs:ChangeMessageVisibility",
-                "sqs:GetQueueUrl",
-                "sqs:DeleteMessage",
-                "sqs:GetQueueAttributes",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -5245,45 +5152,47 @@ function expandV6(addr) {
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
-    "QueuePipelineDlq67F585DD": {
-      "DeletionPolicy": "Delete",
+    "NetworkWorkerSgfromDevKukanStackNetworkWebSg826CBD508080E30BB523": {
       "Properties": {
-        "MessageRetentionPeriod": 1209600,
-        "QueueName": "kukan-dev-pipeline-dlq",
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-      },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
-    },
-    "QueuePipelineQueue23DE33E9": {
-      "DeletionPolicy": "Delete",
-      "Properties": {
-        "QueueName": "kukan-dev-pipeline",
-        "ReceiveMessageWaitTimeSeconds": 20,
-        "RedrivePolicy": {
-          "deadLetterTargetArn": {
-            "Fn::GetAtt": [
-              "QueuePipelineDlq67F585DD",
-              "Arn",
-            ],
-          },
-          "maxReceiveCount": 3,
+        "Description": "Web wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
         },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-        "VisibilityTimeout": 600,
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
       },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanStackNetworkWorkerSgD384FF1F808089AEAE93": {
+      "Properties": {
+        "Description": "Worker wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
     },
     "SearchDomain62FD613E": {
       "DeletionPolicy": "Delete",
@@ -5483,6 +5392,15 @@ function expandV6(addr) {
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "ServiceNamespaceB29FC01B": {
+      "Properties": {
+        "Name": "kukan-dev.internal",
+        "Vpc": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
     },
     "StorageResourceBucketD8B2FEFB": {
       "DeletionPolicy": "Retain",
@@ -5824,18 +5742,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -5885,6 +5791,10 @@ function expandV6(addr) {
               {
                 "Name": "BETTER_AUTH_URL",
                 "Value": "https://data.example.jp",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
             ],
             "Essential": true,
@@ -6195,30 +6105,6 @@ function expandV6(addr) {
               ],
             },
             {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": "sqs:GetQueueAttributes",
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": {
@@ -6405,6 +6291,16 @@ function expandV6(addr) {
           },
         },
         "ServiceName": "kukan-dev-worker",
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "WorkerServiceCloudmapService7AE9756B",
+                "Arn",
+              ],
+            },
+          },
+        ],
         "Tags": [
           {
             "Key": "kukan:component",
@@ -6416,6 +6312,46 @@ function expandV6(addr) {
         },
       },
       "Type": "AWS::ECS::Service",
+    },
+    "WorkerServiceCloudmapService7AE9756B": {
+      "DependsOn": [
+        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "WorkerServiceTaskDefTaskRoleF79140F1",
+      ],
+      "Properties": {
+        "DnsConfig": {
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A",
+            },
+          ],
+          "NamespaceId": {
+            "Fn::GetAtt": [
+              "ServiceNamespaceB29FC01B",
+              "Id",
+            ],
+          },
+          "RoutingPolicy": "MULTIVALUE",
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1,
+        },
+        "Name": "kukan-dev-worker",
+        "NamespaceId": {
+          "Fn::GetAtt": [
+            "ServiceNamespaceB29FC01B",
+            "Id",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::ServiceDiscovery::Service",
     },
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
@@ -6460,7 +6396,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerAlarm3AF45744": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -6468,66 +6404,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C",
           },
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -6538,13 +6430,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthLowerPolicyF75CED24",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingLowerPolicy821B77D7",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -6563,7 +6455,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperAlarmA3F78540": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -6571,66 +6463,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49",
           },
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -6641,13 +6489,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthUpperPolicy8825942E",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingUpperPolicyBF194FC2",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -6719,18 +6567,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -6741,6 +6577,10 @@ function expandV6(addr) {
               {
                 "Name": "HEALTH_PORT",
                 "Value": "8080",
+              },
+              {
+                "Name": "WORKER_METRIC_SITE",
+                "Value": "kukan-dev",
               },
               {
                 "Name": "AI_TYPE",
@@ -6776,6 +6616,10 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "1",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
               {
                 "Name": "USER_AGENT_URL",
@@ -7018,36 +6862,6 @@ function expandV6(addr) {
                   ],
                 },
               ],
-            },
-            {
-              "Action": [
-                "sqs:ReceiveMessage",
-                "sqs:ChangeMessageVisibility",
-                "sqs:GetQueueUrl",
-                "sqs:DeleteMessage",
-                "sqs:GetQueueAttributes",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -8816,45 +8630,56 @@ function expandV6(addr) {
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
-    "QueuePipelineDlq67F585DD": {
-      "DeletionPolicy": "Delete",
+    "NetworkWorkerSgfromDevKukanStackNetworkWebSg826CBD508080E30BB523": {
       "Properties": {
-        "MessageRetentionPeriod": 1209600,
-        "QueueName": "kukan-dev-pipeline-dlq",
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-      },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
-    },
-    "QueuePipelineQueue23DE33E9": {
-      "DeletionPolicy": "Delete",
-      "Properties": {
-        "QueueName": "kukan-dev-pipeline",
-        "ReceiveMessageWaitTimeSeconds": 20,
-        "RedrivePolicy": {
-          "deadLetterTargetArn": {
-            "Fn::GetAtt": [
-              "QueuePipelineDlq67F585DD",
-              "Arn",
-            ],
-          },
-          "maxReceiveCount": 3,
+        "Description": "Web wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
         },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-        "VisibilityTimeout": 600,
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
       },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanStackNetworkWorkerSgD384FF1F808089AEAE93": {
+      "Properties": {
+        "Description": "Worker wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "ServiceNamespaceB29FC01B": {
+      "Properties": {
+        "Name": "kukan-dev.internal",
+        "Vpc": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
     },
     "StorageResourceBucketD8B2FEFB": {
       "DeletionPolicy": "Retain",
@@ -9186,18 +9011,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "postgres",
               },
@@ -9208,6 +9021,10 @@ function expandV6(addr) {
               {
                 "Name": "AI_TYPE",
                 "Value": "none",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
               {
                 "Name": "BETTER_AUTH_URL",
@@ -9488,30 +9305,6 @@ function expandV6(addr) {
             },
             {
               "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": "sqs:GetQueueAttributes",
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": [
                 "ssmmessages:CreateControlChannel",
                 "ssmmessages:CreateDataChannel",
                 "ssmmessages:OpenControlChannel",
@@ -9611,6 +9404,16 @@ function expandV6(addr) {
           },
         },
         "ServiceName": "kukan-dev-worker",
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "WorkerServiceCloudmapService7AE9756B",
+                "Arn",
+              ],
+            },
+          },
+        ],
         "Tags": [
           {
             "Key": "kukan:component",
@@ -9622,6 +9425,46 @@ function expandV6(addr) {
         },
       },
       "Type": "AWS::ECS::Service",
+    },
+    "WorkerServiceCloudmapService7AE9756B": {
+      "DependsOn": [
+        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "WorkerServiceTaskDefTaskRoleF79140F1",
+      ],
+      "Properties": {
+        "DnsConfig": {
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A",
+            },
+          ],
+          "NamespaceId": {
+            "Fn::GetAtt": [
+              "ServiceNamespaceB29FC01B",
+              "Id",
+            ],
+          },
+          "RoutingPolicy": "MULTIVALUE",
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1,
+        },
+        "Name": "kukan-dev-worker",
+        "NamespaceId": {
+          "Fn::GetAtt": [
+            "ServiceNamespaceB29FC01B",
+            "Id",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::ServiceDiscovery::Service",
     },
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
@@ -9666,7 +9509,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerAlarm3AF45744": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -9674,66 +9517,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C",
           },
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -9744,13 +9543,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthLowerPolicyF75CED24",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingLowerPolicy821B77D7",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -9769,7 +9568,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperAlarmA3F78540": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -9777,66 +9576,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49",
           },
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -9847,13 +9602,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthUpperPolicy8825942E",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingUpperPolicyBF194FC2",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -9925,18 +9680,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "postgres",
               },
@@ -9949,8 +9692,16 @@ function expandV6(addr) {
                 "Value": "8080",
               },
               {
+                "Name": "WORKER_METRIC_SITE",
+                "Value": "kukan-dev",
+              },
+              {
                 "Name": "AI_TYPE",
                 "Value": "none",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
             ],
             "Essential": true,
@@ -10189,36 +9940,6 @@ function expandV6(addr) {
                   ],
                 },
               ],
-            },
-            {
-              "Action": [
-                "sqs:ReceiveMessage",
-                "sqs:ChangeMessageVisibility",
-                "sqs:GetQueueUrl",
-                "sqs:DeleteMessage",
-                "sqs:GetQueueAttributes",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
             },
             {
               "Action": [
@@ -12291,45 +12012,47 @@ function expandV6(addr) {
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
-    "QueuePipelineDlq67F585DD": {
-      "DeletionPolicy": "Delete",
+    "NetworkWorkerSgfromDevKukanStackNetworkWebSg826CBD508080E30BB523": {
       "Properties": {
-        "MessageRetentionPeriod": 1209600,
-        "QueueName": "kukan-dev-pipeline-dlq",
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-      },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
-    },
-    "QueuePipelineQueue23DE33E9": {
-      "DeletionPolicy": "Delete",
-      "Properties": {
-        "QueueName": "kukan-dev-pipeline",
-        "ReceiveMessageWaitTimeSeconds": 20,
-        "RedrivePolicy": {
-          "deadLetterTargetArn": {
-            "Fn::GetAtt": [
-              "QueuePipelineDlq67F585DD",
-              "Arn",
-            ],
-          },
-          "maxReceiveCount": 3,
+        "Description": "Web wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
         },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-        "VisibilityTimeout": 600,
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
       },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanStackNetworkWorkerSgD384FF1F808089AEAE93": {
+      "Properties": {
+        "Description": "Worker wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
     },
     "SearchDomain62FD613E": {
       "DeletionPolicy": "Delete",
@@ -12523,6 +12246,15 @@ function expandV6(addr) {
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "ServiceNamespaceB29FC01B": {
+      "Properties": {
+        "Name": "kukan-dev.internal",
+        "Vpc": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
     },
     "StorageResourceBucketD8B2FEFB": {
       "DeletionPolicy": "Retain",
@@ -12854,18 +12586,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -12915,6 +12635,10 @@ function expandV6(addr) {
               {
                 "Name": "BETTER_AUTH_URL",
                 "Value": "https://data.example.jp",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
             ],
             "Essential": true,
@@ -13177,30 +12901,6 @@ function expandV6(addr) {
               ],
             },
             {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": "sqs:GetQueueAttributes",
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": {
@@ -13387,6 +13087,16 @@ function expandV6(addr) {
           },
         },
         "ServiceName": "kukan-dev-worker",
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "WorkerServiceCloudmapService7AE9756B",
+                "Arn",
+              ],
+            },
+          },
+        ],
         "Tags": [
           {
             "Key": "kukan:component",
@@ -13398,6 +13108,46 @@ function expandV6(addr) {
         },
       },
       "Type": "AWS::ECS::Service",
+    },
+    "WorkerServiceCloudmapService7AE9756B": {
+      "DependsOn": [
+        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "WorkerServiceTaskDefTaskRoleF79140F1",
+      ],
+      "Properties": {
+        "DnsConfig": {
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A",
+            },
+          ],
+          "NamespaceId": {
+            "Fn::GetAtt": [
+              "ServiceNamespaceB29FC01B",
+              "Id",
+            ],
+          },
+          "RoutingPolicy": "MULTIVALUE",
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1,
+        },
+        "Name": "kukan-dev-worker",
+        "NamespaceId": {
+          "Fn::GetAtt": [
+            "ServiceNamespaceB29FC01B",
+            "Id",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::ServiceDiscovery::Service",
     },
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
@@ -13442,7 +13192,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerAlarm3AF45744": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -13450,66 +13200,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C",
           },
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -13520,13 +13226,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthLowerPolicyF75CED24",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingLowerPolicy821B77D7",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -13545,7 +13251,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperAlarmA3F78540": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -13553,66 +13259,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49",
           },
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -13623,13 +13285,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthUpperPolicy8825942E",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingUpperPolicyBF194FC2",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -13701,18 +13363,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -13723,6 +13373,10 @@ function expandV6(addr) {
               {
                 "Name": "HEALTH_PORT",
                 "Value": "8080",
+              },
+              {
+                "Name": "WORKER_METRIC_SITE",
+                "Value": "kukan-dev",
               },
               {
                 "Name": "AI_TYPE",
@@ -13758,6 +13412,10 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
             ],
             "Essential": true,
@@ -13996,36 +13654,6 @@ function expandV6(addr) {
                   ],
                 },
               ],
-            },
-            {
-              "Action": [
-                "sqs:ReceiveMessage",
-                "sqs:ChangeMessageVisibility",
-                "sqs:GetQueueUrl",
-                "sqs:DeleteMessage",
-                "sqs:GetQueueAttributes",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -15818,45 +15446,47 @@ function expandV6(addr) {
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
-    "QueuePipelineDlq67F585DD": {
-      "DeletionPolicy": "Delete",
+    "NetworkWorkerSgfromDevKukanStackNetworkWebSg826CBD508080E30BB523": {
       "Properties": {
-        "MessageRetentionPeriod": 1209600,
-        "QueueName": "kukan-dev-pipeline-dlq",
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-      },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
-    },
-    "QueuePipelineQueue23DE33E9": {
-      "DeletionPolicy": "Delete",
-      "Properties": {
-        "QueueName": "kukan-dev-pipeline",
-        "ReceiveMessageWaitTimeSeconds": 20,
-        "RedrivePolicy": {
-          "deadLetterTargetArn": {
-            "Fn::GetAtt": [
-              "QueuePipelineDlq67F585DD",
-              "Arn",
-            ],
-          },
-          "maxReceiveCount": 3,
+        "Description": "Web wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
         },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "queue",
-          },
-        ],
-        "VisibilityTimeout": 600,
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
       },
-      "Type": "AWS::SQS::Queue",
-      "UpdateReplacePolicy": "Delete",
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanStackNetworkWorkerSgD384FF1F808089AEAE93": {
+      "Properties": {
+        "Description": "Worker wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
     },
     "SearchDomain62FD613E": {
       "DeletionPolicy": "Delete",
@@ -16050,6 +15680,15 @@ function expandV6(addr) {
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "ServiceNamespaceB29FC01B": {
+      "Properties": {
+        "Name": "kukan-dev.internal",
+        "Vpc": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
     },
     "StorageResourceBucketD8B2FEFB": {
       "DeletionPolicy": "Retain",
@@ -16391,18 +16030,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -16448,6 +16075,10 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
               {
                 "Name": "BETTER_AUTH_URL",
@@ -16727,30 +16358,6 @@ function expandV6(addr) {
               ],
             },
             {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": "sqs:GetQueueAttributes",
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": {
@@ -16937,6 +16544,16 @@ function expandV6(addr) {
           },
         },
         "ServiceName": "kukan-dev-worker",
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "WorkerServiceCloudmapService7AE9756B",
+                "Arn",
+              ],
+            },
+          },
+        ],
         "Tags": [
           {
             "Key": "kukan:component",
@@ -16948,6 +16565,46 @@ function expandV6(addr) {
         },
       },
       "Type": "AWS::ECS::Service",
+    },
+    "WorkerServiceCloudmapService7AE9756B": {
+      "DependsOn": [
+        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "WorkerServiceTaskDefTaskRoleF79140F1",
+      ],
+      "Properties": {
+        "DnsConfig": {
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A",
+            },
+          ],
+          "NamespaceId": {
+            "Fn::GetAtt": [
+              "ServiceNamespaceB29FC01B",
+              "Id",
+            ],
+          },
+          "RoutingPolicy": "MULTIVALUE",
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1,
+        },
+        "Name": "kukan-dev-worker",
+        "NamespaceId": {
+          "Fn::GetAtt": [
+            "ServiceNamespaceB29FC01B",
+            "Id",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::ServiceDiscovery::Service",
     },
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
@@ -16992,7 +16649,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerAlarm3AF45744": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -17000,66 +16657,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C",
           },
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -17070,13 +16683,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthLowerPolicy9BFEB7E9": {
+    "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthLowerPolicyF75CED24",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingLowerPolicy821B77D7",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -17095,7 +16708,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperAlarmA3F78540": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
@@ -17103,66 +16716,22 @@ function expandV6(addr) {
       "Properties": {
         "AlarmActions": [
           {
-            "Ref": "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6",
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49",
           },
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "EvaluationPeriods": 1,
-        "Metrics": [
+        "Dimensions": [
           {
-            "Expression": "visible + inFlight",
-            "Id": "expr_1",
-            "Label": "Queue depth (visible + in flight)",
-            "ReturnData": true,
-          },
-          {
-            "Id": "visible",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
-          },
-          {
-            "Id": "inFlight",
-            "MetricStat": {
-              "Metric": {
-                "Dimensions": [
-                  {
-                    "Name": "QueueName",
-                    "Value": {
-                      "Fn::GetAtt": [
-                        "QueuePipelineQueue23DE33E9",
-                        "QueueName",
-                      ],
-                    },
-                  },
-                ],
-                "MetricName": "ApproximateNumberOfMessagesNotVisible",
-                "Namespace": "AWS/SQS",
-              },
-              "Period": 300,
-              "Stat": "Maximum",
-            },
-            "ReturnData": false,
+            "Name": "Site",
+            "Value": "kukan-dev",
           },
         ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -17173,13 +16742,13 @@ function expandV6(addr) {
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "WorkerServiceTaskCountTargetQueueDepthUpperPolicyC182C2F6": {
+    "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
         "WorkerServiceTaskDefTaskRoleF79140F1",
       ],
       "Properties": {
-        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetQueueDepthUpperPolicy8825942E",
+        "PolicyName": "DevKukanStackWorkerServiceTaskCountTargetJobsWaitingUpperPolicyBF194FC2",
         "PolicyType": "StepScaling",
         "ScalingTargetId": {
           "Ref": "WorkerServiceTaskCountTarget88861093",
@@ -17251,18 +16820,6 @@ function expandV6(addr) {
                 },
               },
               {
-                "Name": "SQS_REGION",
-                "Value": {
-                  "Ref": "AWS::Region",
-                },
-              },
-              {
-                "Name": "SQS_QUEUE_URL",
-                "Value": {
-                  "Ref": "QueuePipelineQueue23DE33E9",
-                },
-              },
-              {
                 "Name": "SEARCH_TYPE",
                 "Value": "opensearch",
               },
@@ -17273,6 +16830,10 @@ function expandV6(addr) {
               {
                 "Name": "HEALTH_PORT",
                 "Value": "8080",
+              },
+              {
+                "Name": "WORKER_METRIC_SITE",
+                "Value": "kukan-dev",
               },
               {
                 "Name": "AI_TYPE",
@@ -17308,6 +16869,10 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": "http://kukan-dev-worker.kukan-dev.internal:8080/wake",
               },
             ],
             "Essential": true,
@@ -17546,36 +17111,6 @@ function expandV6(addr) {
                   ],
                 },
               ],
-            },
-            {
-              "Action": [
-                "sqs:ReceiveMessage",
-                "sqs:ChangeMessageVisibility",
-                "sqs:GetQueueUrl",
-                "sqs:DeleteMessage",
-                "sqs:GetQueueAttributes",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
-            },
-            {
-              "Action": [
-                "sqs:SendMessage",
-                "sqs:GetQueueAttributes",
-                "sqs:GetQueueUrl",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "QueuePipelineQueue23DE33E9",
-                  "Arn",
-                ],
-              },
             },
             {
               "Action": "bedrock:InvokeModel",

@@ -29,10 +29,6 @@ x-app-environment: &app-environment
   SEARCH_TYPE: ${SEARCH_TYPE:-opensearch}
   OPENSEARCH_URL: http://kukan-shared-opensearch:9200
   OPENSEARCH_INDEX_PREFIX: kukan-${SITE}
-  SQS_ENDPOINT: http://kukan-shared-elasticmq:9324
-  SQS_QUEUE_URL: http://kukan-shared-elasticmq:9324/000000000000/kukan-${SITE}-pipeline
-  SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
-  SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
   AI_TYPE: ${AI_TYPE:-none}
   AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
   AI_COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-gemma4:e4b}
@@ -56,6 +52,8 @@ services:
     environment:
       <<: *app-environment
       PORT: '3000'
+      # This site's worker, by container name on the shared network (ADR-058)
+      WORKER_WAKE_URL: http://kukan-${SITE}-worker:8080/wake
     expose:
       - '3000'
     healthcheck:

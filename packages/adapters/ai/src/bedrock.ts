@@ -172,26 +172,30 @@ export class BedrockAIAdapter implements AIAdapter {
     return this.embeddingModel.startsWith('cohere.embed')
   }
 
-  private async invokeJson<T>(body: unknown): Promise<T> {
+  private async invokeJson<T>(body: unknown, timeoutMs?: number): Promise<T> {
     const response = await this.client.send(
       new InvokeModelCommand({
         modelId: this.embeddingModel,
         contentType: 'application/json',
         accept: 'application/json',
         body: JSON.stringify(body),
-      })
+      }),
+      timeoutMs ? { abortSignal: AbortSignal.timeout(timeoutMs) } : {}
     )
     return JSON.parse(new TextDecoder().decode(response.body)) as T
   }
 
   /** Cohere embed request (e.g. cohere.embed-v4) — real batch API, asymmetric input_type */
   private async invokeCohere(texts: string[], options?: EmbedOptions): Promise<number[][]> {
-    const payload = await this.invokeJson<{ embeddings: number[][] | { float?: number[][] } }>({
-      texts,
-      input_type: options?.type === 'query' ? 'search_query' : 'search_document',
-      output_dimension: this.embeddingDimensions,
-      truncate: 'RIGHT',
-    })
+    const payload = await this.invokeJson<{ embeddings: number[][] | { float?: number[][] } }>(
+      {
+        texts,
+        input_type: options?.type === 'query' ? 'search_query' : 'search_document',
+        output_dimension: this.embeddingDimensions,
+        truncate: 'RIGHT',
+      },
+      options?.timeoutMs
+    )
     // Bedrock returns embeddings_by_type even without embedding_types (contrary
     // to its docs, which promise a flat array) — accept both shapes and fail
     // loudly otherwise instead of an opaque destructuring TypeError in callers.
@@ -209,11 +213,10 @@ export class BedrockAIAdapter implements AIAdapter {
       const [embedding] = await this.invokeCohere([text], options)
       return embedding
     }
-    const payload = await this.invokeJson<{ embedding: number[] }>({
-      inputText: text,
-      dimensions: this.embeddingDimensions,
-      normalize: true,
-    })
+    const payload = await this.invokeJson<{ embedding: number[] }>(
+      { inputText: text, dimensions: this.embeddingDimensions, normalize: true },
+      options?.timeoutMs
+    )
     return payload.embedding
   }
 

@@ -21,7 +21,12 @@ import type { Database } from '@kukan/db'
 import { packageTable, resource, packageTag, tag } from '@kukan/db'
 import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
-import { EMBED_BATCH_SIZE, EMBED_RESOURCE_RESERVE_CHARS, MAX_EMBED_TEXT_LENGTH } from '../config'
+import {
+  EMBED_BATCH_SIZE,
+  EMBED_RESOURCE_RESERVE_CHARS,
+  EMBED_TIMEOUT_MS,
+  MAX_EMBED_TEXT_LENGTH,
+} from '../config'
 
 export interface ResourceEmbedSource {
   /**
@@ -188,7 +193,7 @@ export async function embedPackage(
     const batch = pending.slice(i, i + EMBED_BATCH_SIZE)
     const vectors = await ai.embedBatch(
       batch.map((p) => p.text),
-      { type: 'document' }
+      { type: 'document', timeoutMs: EMBED_TIMEOUT_MS }
     )
     const values = sql.join(
       batch.map((p, j) => sql`(${p.id}::uuid, ${JSON.stringify(vectors[j])}::vector, ${p.hash})`),

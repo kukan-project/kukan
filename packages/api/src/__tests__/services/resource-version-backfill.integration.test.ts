@@ -19,6 +19,7 @@ import {
 import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 import { mapStorage } from '../test-helpers/fixtures'
+import { mockTransaction } from '../test-helpers/test-app'
 
 const db = getTestDb()
 const service = new ResourceVersionService(db)
@@ -31,9 +32,22 @@ const objects = new Map<string, Buffer>()
 /** The backfill hands pending versions to the worker rather than loading them
  *  itself (ADR-046), so it needs somewhere to put them. */
 function mockQueue() {
-  return { enqueue: vi.fn(), getStats: vi.fn(), process: vi.fn(), stop: vi.fn() } as QueueAdapter
+  return {
+    enqueue: vi.fn(),
+    enqueueMany: vi.fn().mockResolvedValue([]),
+    transaction: mockTransaction(),
+    getStats: vi.fn(),
+    process: vi.fn(),
+    stop: vi.fn(),
+  } as QueueAdapter
 }
 
+/** Every version the sweep handed out, across its calls. */
+function handedOut(queue: QueueAdapter) {
+  return vi
+    .mocked(queue.enqueueMany)
+    .mock.calls.flatMap(([, data]) => data as { resourceId: string; version: number }[])
+}
 const mockStorage = (overrides: Record<string, unknown> = {}) => mapStorage(objects, overrides)
 
 /**
@@ -187,7 +201,7 @@ describe('createFirstVersions', () => {
     const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
     // Uploads with no format, so nothing for layer 2 to interpret.
-    expect(result).toEqual({ created: 2, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
+    expect(result).toEqual({ created: 2, skipped: 0, failed: 0, queued: 0 })
     // The bytes never move: v1 names the object the resource is already
     // serving, so there is nothing to copy and nothing to fetch.
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).not.toHaveBeenCalled()
@@ -244,7 +258,7 @@ describe('createFirstVersions', () => {
     const first = await service.createFirstVersions({ storage, queue: mockQueue() })
     expect(first.created).toBe(1)
     const second = await service.createFirstVersions({ storage, queue: mockQueue() })
-    expect(second).toEqual({ created: 0, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
+    expect(second).toEqual({ created: 0, skipped: 0, failed: 0, queued: 0 })
   })
 
   it('completes with more resources in flight than the pool has connections', async () => {
@@ -256,7 +270,7 @@ describe('createFirstVersions', () => {
 
     const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
-    expect(result).toEqual({ created: 12, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
+    expect(result).toEqual({ created: 12, skipped: 0, failed: 0, queued: 0 })
     expect(await service.countUnversioned()).toBe(0)
   }, 30_000)
 
@@ -470,8 +484,8 @@ describe('queuePendingLakeIngests', () => {
     await addResource({ name: 'a' })
     const queue = mockQueue()
 
-    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0, failed: 0 })
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0 })
+    expect(handedOut(queue)).toEqual([])
   })
 
   it('hands each outstanding version to the worker by id, on a lease', async () => {
@@ -480,11 +494,12 @@ describe('queuePendingLakeIngests', () => {
     await addTabularResource('a', [{ version: 1, snapshotId: null }])
     const queue = mockQueue()
 
-    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1, failed: 0 })
-    expect(queue.enqueue).toHaveBeenCalledWith('lake-ingest-version', {
-      resourceId: expect.any(String),
-      version: 1,
-    })
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1 })
+    expect(queue.enqueueMany).toHaveBeenCalledWith(
+      'lake-ingest-version',
+      [{ resourceId: expect.any(String), version: 1 }],
+      { tx: expect.anything() }
+    )
     expect(await versionRow(1)).toMatchObject({ queuedAt: expect.any(Date), failures: 0 })
   })
 
@@ -493,12 +508,12 @@ describe('queuePendingLakeIngests', () => {
     const queue = mockQueue()
 
     await service.queuePendingLakeIngests(queue)
-    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0, failed: 0 })
-    expect(queue.enqueue).toHaveBeenCalledTimes(1)
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0 })
+    expect(handedOut(queue)).toHaveLength(1)
 
     // The next hour's sweep sees an unfinished version again.
     await passLease('lake_ingest_queued_at')
-    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1, failed: 0 })
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1 })
   })
 
   it('holds the lease against a sweep that chose the same rows a moment earlier', async () => {
@@ -514,8 +529,8 @@ describe('queuePendingLakeIngests', () => {
       () => service.queuePendingLakeIngests(queue)
     )
 
-    expect(later).toEqual({ queued: 0, failed: 0 })
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(later).toEqual({ queued: 0 })
+    expect(handedOut(queue)).toEqual([])
   })
 
   it('does not lease a version a handler has refused in the meantime', async () => {
@@ -530,7 +545,7 @@ describe('queuePendingLakeIngests', () => {
       () => service.queuePendingLakeIngests(queue)
     )
 
-    expect(later).toEqual({ queued: 0, failed: 0 })
+    expect(later).toEqual({ queued: 0 })
     expect(await versionRow(1)).toMatchObject({ reason: 'key-null', queuedAt: null })
   })
 
@@ -560,12 +575,8 @@ describe('queuePendingLakeIngests', () => {
     const queue = mockQueue()
 
     await service.queuePendingLakeIngests(queue)
-    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0, failed: 0 })
-    expect(queue.enqueue).toHaveBeenCalledTimes(1)
-    expect(queue.enqueue).toHaveBeenCalledWith('lake-ingest-version', {
-      resourceId: expect.any(String),
-      version: 1,
-    })
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0 })
+    expect(handedOut(queue)).toEqual([{ resourceId: expect.any(String), version: 1 }])
   })
 
   it('keeps handing out a version a backlog has not let run', async () => {
@@ -575,7 +586,7 @@ describe('queuePendingLakeIngests', () => {
     const queue = mockQueue()
     for (let i = 0; i <= LAKE_INGEST_FAILURE_LIMIT; i++) {
       await passLease('lake_ingest_queued_at')
-      expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1, failed: 0 })
+      expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1 })
     }
     expect(await versionRow(1)).toMatchObject({ failures: 0, reason: null })
   })
@@ -636,7 +647,7 @@ describe('recordLakeIngestFailure', () => {
       reason: 'ingest-failed',
     })
     expect(await service.countPendingLakeIngest()).toBe(0)
-    expect(await service.queuePendingLakeIngests(mockQueue())).toEqual({ queued: 0, failed: 0 })
+    expect(await service.queuePendingLakeIngests(mockQueue())).toEqual({ queued: 0 })
   })
 
   it('counts nothing against a version that is no longer outstanding', async () => {

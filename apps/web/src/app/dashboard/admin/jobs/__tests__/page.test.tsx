@@ -44,7 +44,7 @@ describe('AdminJobsPage', () => {
     mockPaginatedFetch.total = 0
     mockClientFetch.mockResolvedValue(
       mockFetchResponse({
-        queue: { pending: 5, inFlight: 2, delayed: 0 },
+        queue: { pending: 5, inFlight: 2, delayed: 0, dead: 1 },
         jobs: { queued: 3, processing: 1, complete: 10, error: 2 },
       })
     )
@@ -71,11 +71,13 @@ describe('AdminJobsPage', () => {
     expect(screen.getByText('2')).toBeInTheDocument() // error
   })
 
-  it('displays SQS queue info when stats load', async () => {
+  it('displays job queue info when stats load', async () => {
     render(<AdminJobsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('SQS: pending 5 / in-flight 2')).toBeInTheDocument()
+      expect(
+        screen.getByText('Queue: pending 5 / in-flight 2 / delayed 0 / dead 1')
+      ).toBeInTheDocument()
     })
   })
 

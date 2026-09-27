@@ -39,6 +39,13 @@ import {
   ensureTestUser,
   TEST_USER_ID,
 } from '../test-helpers/test-db'
+import { mockTransaction } from '../test-helpers/test-app'
+
+/** Where a claimed purge's job goes; the tests run the purge themselves. */
+const purgeQueue = {
+  enqueue: vi.fn(),
+  transaction: mockTransaction(),
+} as unknown as QueueAdapter
 
 vi.mock('@kukan/lake', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kukan/lake')>()
@@ -68,7 +75,10 @@ function mockDeps() {
       deleteMany: vi.fn().mockImplementation((keys: string[]) => Promise.resolve(keys)),
     } as unknown as StorageAdapter,
     search: { deleteContent: vi.fn() } as unknown as SearchAdapter,
-    queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter,
+    queue: {
+      enqueue: vi.fn().mockResolvedValue('job-1'),
+      transaction: mockTransaction(),
+    } as unknown as QueueAdapter,
     lake: unreachableLake,
     logger: silentLogger,
   }
@@ -216,7 +226,7 @@ describe('a revert leaves DuckLake to the ingest (ADR-044 §4)', () => {
 
 describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
   async function purge(version: number, deps = mockDeps()) {
-    await service.claimPurge(resourceId, version, TEST_USER_ID, 'illegal content')
+    await service.claimPurge(resourceId, version, TEST_USER_ID, 'illegal content', purgeQueue)
     return service.executePurge(resourceId, version, deps)
   }
 

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_job_ready_resource" ON "job" USING btree ("type",("payload" ->> 'resourceId')) WHERE "job"."state" = 'ready';

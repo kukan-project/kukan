@@ -1,6 +1,6 @@
 /**
- * KUKAN Worker — SQS Queue Consumer
- * Processes resource pipeline jobs from the SQS queue.
+ * KUKAN Worker — Job Queue Consumer
+ * Processes resource pipeline jobs from the job table (ADR-058).
  */
 
 import { serve } from '@hono/node-server'
@@ -55,7 +55,7 @@ import type { SummaryDeps } from './pipeline/steps/summarize'
 import { enqueueSummarizePackages, summarizeNextInPackage } from './summary/backfill'
 import { createDb, runMigrations } from '@kukan/db'
 import { closeLakeInstances, lakeConfigFromEnv } from '@kukan/lake'
-import { SQSQueueAdapter } from '@kukan/queue-adapter'
+import { PostgresQueueAdapter, httpWake, isWakeAuthorized } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
@@ -79,6 +79,7 @@ import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage } from './embed/embed-package'
 import { setUserAgent } from './safe-fetch'
 import { buildUserAgent } from './user-agent'
+import { WAITING_METRIC_INTERVAL_MS, waitingMetricLine } from './queue/waiting-metric'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -105,19 +106,33 @@ const storage = new S3StorageAdapter({
   secretAccessKey: env.S3_SECRET_KEY,
 })
 
-// Initialize SQS queue adapter
-const queue = new SQSQueueAdapter({
-  region: env.SQS_REGION,
-  queueUrl: env.SQS_QUEUE_URL,
-  endpoint: env.SQS_ENDPOINT,
-  accessKeyId: env.SQS_ACCESS_KEY,
-  secretAccessKey: env.SQS_SECRET_KEY,
-  logger: log.child({ component: 'sqs' }),
+// Job queue (ADR-058): woken by the web's POST below and by its own enqueues,
+// which it also tells the other tasks about.
+// Where the service scales, the waiting jobs are reported as a metric: counted
+// while a job runs, 0 once idle, and written every minute either way, so the
+// scaling policy sees a series without the database being asked.
+const metricSite = env.WORKER_METRIC_SITE
+// Unknown until the first count: a fresh task must not report 0 over a backlog
+let waitingJobs: number | undefined
+const queue = new PostgresQueueAdapter({
+  db,
+  logger: log.child({ component: 'job-queue' }),
+  // The other tasks, told when a job this one runs writes another
+  ...(env.WORKER_WAKE_URL && {
+    notify: httpWake(env.WORKER_WAKE_URL, env.BETTER_AUTH_SECRET),
+  }),
+  ...(metricSite && { onWaiting: (count: number) => (waitingJobs = count) }),
 })
+const waitingMetricTimer = metricSite
+  ? setInterval(() => {
+      if (waitingJobs !== undefined) {
+        process.stdout.write(waitingMetricLine(metricSite, waitingJobs) + '\n')
+      }
+    }, WAITING_METRIC_INTERVAL_MS)
+  : undefined
 
-// --- Health check HTTP server (for ECS Fargate health monitoring) ---
+// --- Health check + wake HTTP server ---
 const HEALTH_PORT = parseInt(process.env.HEALTH_PORT || '8080', 10)
-const STALE_THRESHOLD_MS = 60_000 // 60 seconds
 let ready = false
 
 const health = new Hono()
@@ -127,28 +142,20 @@ health.get('/health', (c) => {
     return c.json({ status: 'starting' })
   }
 
-  const { lastPollAt, processingJobSince } = queue
-  const now = Date.now()
-
-  // Healthy if actively processing a job OR last poll was recent
-  const isProcessing = processingJobSince !== null
-  const isPollingHealthy = lastPollAt !== null && now - lastPollAt.getTime() < STALE_THRESHOLD_MS
-
-  if (isProcessing || isPollingHealthy) {
-    return c.json({
-      status: 'ok',
-      lastPollAt: lastPollAt?.toISOString() ?? null,
-      processingJobSince: processingJobSince?.toISOString() ?? null,
-    })
+  // Answering is the check: an event loop that has stopped cannot. Never a
+  // database query — every check would wake the database — and never how long
+  // the job in hand has run, which would stop a long job partway through and
+  // again on each retry (ADR-058 §5). A job that hangs lets its lease go after
+  // the hold limit, and another worker takes it.
+  return c.json({ status: 'ok' })
+})
+health.post('/wake', (c) => {
+  if (!isWakeAuthorized(c.req.header('authorization'), env.BETTER_AUTH_SECRET)) {
+    return c.body(null, 401)
   }
-  return c.json(
-    {
-      status: 'unhealthy',
-      lastPollAt: lastPollAt?.toISOString() ?? null,
-      processingJobSince: null,
-    },
-    503
-  )
+  // Here only: forwarded, the tasks would signal each other without end
+  queue.wakeHere()
+  return c.body(null, 202)
 })
 
 serve({ fetch: health.fetch, port: HEALTH_PORT })
@@ -185,6 +192,10 @@ const orphanCleanupJob = startCronJob({
   cronExpression: ORPHAN_CLEANUP_CRON,
   log: orphanSweepLog,
   run: async () => {
+    // A pass over the job table while the database is awake for this anyway:
+    // a signal that never arrived, or a lease whose worker died, waits no
+    // longer than this (ADR-058 §2). First, so a failing sweep cannot skip it.
+    queue.wakeHere()
     // Expire first: a key parked now still waits out the orphan retention
     // before it is deleted.
     const expired = await expirePendingUploads(db, PENDING_UPLOAD_TTL_MS)
@@ -202,12 +213,11 @@ const orphanCleanupJob = startCronJob({
 
 // --- Pending DuckLake ingest sweeper (ADR-043 layer 2) ---
 //
-// The retry job covers a Lake step that failed; nothing covers the enqueue of
-// that job failing, and the pipeline moves on to 'complete' either way with the
-// original message already deleted. The intent survives in the database — an
-// active version with no snapshot id — so this pass picks up what the queue
-// dropped. Cheap when there is nothing to do: the scan finds no rows and
-// nothing is enqueued.
+// The retry job covers a Lake step that failed; nothing covers that job failing
+// to be written, and the pipeline moves on to 'complete' either way. The intent
+// survives in the database — an active version with no snapshot id — so this
+// pass picks up what was never queued, or was queued and gave up. Cheap when
+// there is nothing to do: the scan finds no rows and nothing is enqueued.
 const lakeIngestSweepLog = log.child({ component: 'lake-ingest-sweep' })
 const lakeIngestSweepJob = startCronJob({
   name: 'Pending lake ingest',
@@ -215,7 +225,7 @@ const lakeIngestSweepJob = startCronJob({
   log: lakeIngestSweepLog,
   run: async () => {
     const result = await new ResourceVersionService(db).queuePendingLakeIngests(queue)
-    if (result.queued > 0 || result.failed > 0) {
+    if (result.queued > 0) {
       lakeIngestSweepLog.info(result, 'Queued versions layer 2 has not loaded')
     }
   },
@@ -291,7 +301,7 @@ function resolveSummaryDeps(): SummaryDeps | null {
 }
 
 // Validate a job payload against its schema; logs and returns null on mismatch so
-// the handler can bail without ever trusting an unvalidated SQS message body.
+// the handler can bail without ever trusting an unvalidated payload.
 function parseJobPayload<T>(
   job: Job,
   schema: {
@@ -306,7 +316,7 @@ function parseJobPayload<T>(
   return null
 }
 
-// --- SQS polling ---
+// --- Job handlers ---
 const ctx = buildPipelineContext(db, storage, search, lake, summaryDeps)
 await queue.process({
   // Pipeline (data-plane): process one resource.
@@ -379,7 +389,7 @@ await queue.process({
       log.warn({ jobId: job.id, type: job.type }, 'Reindex skipped — OpenSearch not configured')
     }
     // The embeddings too, through the job that owns that fan-out (and gates
-    // it) — on its own redelivery terms, since this message is already long.
+    // it) — on its own retry terms, since this job is already long.
     await queue.enqueue(EMBED_ALL_JOB_TYPE, {})
   },
   // Abstracts (ADR-053): fan out one walk per package.
@@ -430,9 +440,9 @@ await queue.process({
       return
     }
     const start = performance.now()
-    const { enqueued, failed } = await enqueueEmbeds(db, queue, ai, sql`true`, log)
+    const enqueued = await enqueueEmbeds(db, queue, ai, sql`true`)
     const elapsed = Math.round(performance.now() - start)
-    log.info({ jobId: job.id, type: job.type, enqueued, failed, elapsed }, 'Embed jobs enqueued')
+    log.info({ jobId: job.id, type: job.type, enqueued, elapsed }, 'Embed jobs enqueued')
   },
   // Semantic search: (re)generate the embedding vector for one package.
   [EMBED_JOB_TYPE]: async (job: Job) => {
@@ -523,10 +533,10 @@ await queue.process({
   // the set-aside rows back to `active`.
   //
   // Its own job rather than another call inside the backfill above, though one
-  // control enqueues both: each walks every resource it finds, and the queue
-  // does not extend a message's visibility mid-job, so joining them doubles the
-  // time one message has to finish in. Separate, each is redelivered on its own
-  // terms — and both are idempotent, so a redelivery costs a re-scan.
+  // control enqueues both: each walks every resource it finds, so joined, one
+  // job would run as long as both and a retry would repeat both. Separate, each
+  // is retried on its own — and both are idempotent, so a retry costs a
+  // re-scan.
   [CONVERT_SET_ASIDE_JOB_TYPE]: async (job: Job) => {
     if (!parseJobPayload(job, convertSetAsideJobSchema)) return
     log.info({ jobId: job.id, type: job.type }, 'Convert set-aside versions job started')
@@ -568,7 +578,7 @@ if (search) {
   }, INDEX_CHECK_INTERVAL_MS)
 }
 
-log.info({ queueUrl: env.SQS_QUEUE_URL, healthPort: HEALTH_PORT }, 'Worker started')
+log.info({ healthPort: HEALTH_PORT }, 'Worker started')
 
 // Graceful shutdown
 const shutdown = async () => {
@@ -578,6 +588,7 @@ const shutdown = async () => {
   lakeIngestSweepJob.stop()
   resourceDocSweepJob?.stop()
   if (indexCheckTimer) clearInterval(indexCheckTimer)
+  if (waitingMetricTimer) clearInterval(waitingMetricTimer)
   await queue.stop()
   // Before the pool: each holds a libpq connection of its own, opened by the
   // catalog ATTACH and invisible to Drizzle's accounting (ADR-043).

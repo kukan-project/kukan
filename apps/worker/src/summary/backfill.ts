@@ -9,9 +9,9 @@
  * **Per package, one resource at a time.** Three things follow from that shape,
  * and all three are the reason for it:
  *
- * - one job is one completion, so the visibility timeout covers it — a package
- *   of a hundred files in a single job would run for twenty minutes and be
- *   redelivered, billing every completion twice;
+ * - one job is one completion, so a retry repeats one — a package of a
+ *   hundred files in a single job would run for twenty minutes, and any
+ *   failure in it would bill every completion again;
  * - the embedding is enqueued once, at the end, with every abstract written.
  *   The debounce is leading-edge, so fanning out per resource would settle a
  *   package's vector on the first abstract of a hundred;
@@ -168,7 +168,7 @@ async function summarizeOne(
     }
     const result = await executeSummarize(input, deps)
     // Everything about the file goes on the resource; a refusal of the moment
-    // throws out of here and fails the job, which SQS retries.
+    // throws out of here and fails the job, which the queue retries.
     if (result.status === 'skipped') await recordSkip(input, deps, result.reason, result)
     // The abstract is in the keyword leg as well as the vector (ADR-053 §9.3),
     // and the walk is the only thing that will have written it here. The

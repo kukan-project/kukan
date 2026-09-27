@@ -55,7 +55,6 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 | AWS サービス | オンプレミス代替                            |
 | ------------ | ------------------------------------------- |
 | S3           | MinIO 互換（Compose の既定は `pgsty/silo`） |
-| SQS          | ElasticMQ                                   |
 | OpenSearch   | PostgreSQL 全文検索                         |
 
 ### AWS デプロイ
@@ -76,9 +75,9 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
 - **CloudFront** — CDN・WAF・TLS 終端（最前面）
 - **ALB（internal）** — ロードバランサー（CloudFront VPC Origin 経由でのみ到達）
 - **ECS Fargate** — Web アプリケーション + Pipeline Worker
-- **Aurora Serverless v2 / RDS** — PostgreSQL データベース
+- **Aurora Serverless v2 / RDS** — PostgreSQL データベース（ジョブキューもここに置く）
 - **S3** — ファイルストレージ
-- **SQS** — パイプラインキュー
+- **Cloud Map** — Web が Worker を起こすための名前解決（環境に 1 つのプライベート DNS 名前空間）
 - **OpenSearch** — 全文検索エンジン
 - **AWS Backup** — 隔離バックアップ（large スケール等で有効）
 
@@ -426,7 +425,7 @@ Docker Compose でも同じ分け方ができます — サイトごとの env �
 
 ## 検索インデックスの再処理
 
-検索管理画面（インデックス管理）から、索引や派生データを作り直せます。いずれも SQS 経由の非同期処理で、投入後はバックグラウンドで順次実行されます。
+検索管理画面（インデックス管理）から、索引や派生データを作り直せます。いずれもジョブキュー経由の非同期処理で、投入後はバックグラウンドで順次実行されます。
 
 | 操作                     | 作り直すもの                                     | 外部 URL の取得  | 実行するとき                                                                                                                                                                                                                                            |
 | ------------------------ | ------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -532,8 +531,7 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 | `S3_ENDPOINT`          | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略）                    | -                       |
 | `SEARCH_TYPE`          | 検索エンジン（`opensearch` / `postgres`）                                         | `opensearch`            |
 | `OPENSEARCH_URL`       | OpenSearch エンドポイント                                                         | `http://localhost:9200` |
-| `SQS_QUEUE_URL`        | SQS キュー URL                                                                    | -                       |
-| `SQS_ENDPOINT`         | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略）               | -                       |
+| `WORKER_WAKE_URL`      | web がジョブ投入を worker に知らせる先（worker の `/wake`）                       | -                       |
 | `BETTER_AUTH_SECRET`   | 認証セッション秘密鍵（32 文字以上）                                               | -                       |
 | `BETTER_AUTH_URL`      | 公開 URL                                                                          | `http://localhost:3000` |
 | `PASSWORD_MIN_SCORE`   | パスワード強度の下限（zxcvbn スコア 0〜4）— 下記                                  | `3`                     |

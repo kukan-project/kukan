@@ -36,10 +36,24 @@ describe('OpenAIAdapter', () => {
     const result = await adapter.embed('こんにちは')
 
     expect(result).toEqual([0.1, 0.2])
-    expect(mockCreate).toHaveBeenCalledWith({
-      model: 'text-embedding-3-small',
-      input: ['こんにちは'],
-      dimensions: 1536,
+    expect(mockCreate).toHaveBeenCalledWith(
+      {
+        model: 'text-embedding-3-small',
+        input: ['こんにちは'],
+        dimensions: 1536,
+      },
+      {}
+    )
+  })
+
+  it('gives up on an embed request after the timeout it is given', async () => {
+    mockCreate.mockResolvedValueOnce({ data: [{ embedding: [1] }] })
+    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+
+    await adapter.embedBatch(['a'], { timeoutMs: 1000 })
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.anything(), {
+      signal: expect.any(AbortSignal),
     })
   })
 
@@ -64,11 +78,14 @@ describe('OpenAIAdapter', () => {
 
     await adapter.embed('x')
 
-    expect(mockCreate).toHaveBeenCalledWith({
-      model: 'text-embedding-3-large',
-      input: ['x'],
-      dimensions: 1024,
-    })
+    expect(mockCreate).toHaveBeenCalledWith(
+      {
+        model: 'text-embedding-3-large',
+        input: ['x'],
+        dimensions: 1024,
+      },
+      {}
+    )
     expect(adapter.getEmbeddingInfo()).toEqual({
       model: 'text-embedding-3-large',
       dimensions: 1024,

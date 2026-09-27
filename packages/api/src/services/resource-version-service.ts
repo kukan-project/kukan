@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, countDistinct, desc, exists, inArray, ne, sql } from 'drizzle-orm'
+import { eq, and, countDistinct, desc, exists, inArray, ne, not, or, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import {
@@ -19,6 +19,8 @@ import {
   sameKeyColumns,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
+  PIPELINE_JOB_TYPE,
+  PURGE_VERSION_JOB_TYPE,
   NotFoundError,
   ValidationError,
   MAX_PARQUET_SOURCE_SIZE,
@@ -50,7 +52,7 @@ import type { Logger, ResourceColumn, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import { readyJobsFor, type QueueAdapter } from '@kukan/queue-adapter'
 import { lakeStandDown, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
@@ -768,8 +770,6 @@ export class ResourceVersionService {
     failed: number
     /** Versions handed to the worker to interpret and load (ADR-046). */
     queued: number
-    /** Versions the queue refused; the hourly pass finds them again. */
-    queueFailed: number
   }> {
     // Fetch every unversioned resource once (small rows), then process each
     // exactly once — no re-query, so a failure isn't retried into a success.
@@ -793,8 +793,8 @@ export class ResourceVersionService {
       this.createFirstVersion(r, deps.storage)
     )
 
-    const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
-    return { created: done, skipped, failed, queued, queueFailed }
+    const { queued } = await this.queuePendingLakeIngests(deps.queue)
+    return { created: done, skipped, failed, queued }
   }
 
   /**
@@ -935,8 +935,6 @@ export class ResourceVersionService {
     failed: number
     /** Versions this pass issued, handed to the worker to load (ADR-046). */
     queued: number
-    /** Versions the queue refused; the hourly sweep finds them again. */
-    queueFailed: number
   }> {
     const rows = await this.db
       .selectDistinct({ resourceId: resourceVersion.resourceId })
@@ -952,8 +950,8 @@ export class ResourceVersionService {
     // left to the hourly sweep, and by this job rather than the backfill's own
     // call: the two run side by side, so a backfill that finished its scan
     // first would leave this pass's versions for the next hour.
-    const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
-    return { converted: done, skipped, failed, queued, queueFailed }
+    const { queued } = await this.queuePendingLakeIngests(deps.queue)
+    return { converted: done, skipped, failed, queued }
   }
 
   /**
@@ -1253,7 +1251,7 @@ export class ResourceVersionService {
    * (`pendingLakeVersionSource`), for the copies the pipeline's own retry
    * still produces.
    */
-  async queuePendingLakeIngests(queue: QueueAdapter): Promise<{ queued: number; failed: number }> {
+  async queuePendingLakeIngests(queue: QueueAdapter): Promise<{ queued: number }> {
     // **One version per resource, the oldest.** A resource can have several
     // outstanding at once — the conversion flips rows into the eligible set and
     // issues a version above them in the same pass (ADR-044 §4) — and the queue
@@ -1268,45 +1266,36 @@ export class ResourceVersionService {
     // sweeps the same second both compute `due` from their snapshots, and the
     // one that blocks on the row lock re-checks only its own WHERE against what
     // the other writer left (`stillOutstanding`).
-    const result = await this.db.execute(sql`
-      WITH due AS (
-        SELECT "resourceId", version FROM (
-          SELECT DISTINCT ON ("resourceId") * FROM (${pendingLakeIngestQuery()}) pending
-          ORDER BY "resourceId", version
-        ) oldest
-        WHERE ${leasePassed('"queuedAt"')}
-      )
-      UPDATE resource_version rv
-      SET lake_ingest_queued_at = now(), updated = now()
-      FROM due
-      WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
-        AND ${stillOutstanding('rv')} AND ${leasePassed('rv.lake_ingest_queued_at')}
-      RETURNING rv.resource_id AS "resourceId", rv.version
-    `)
-    const pending = result.rows as unknown as PendingLakeIngest[]
-
-    // Batched-concurrent like `PipelineService.enqueueAll`: a sequential loop
-    // would block the single-threaded worker for minutes on the migration pass,
-    // which has a version per tabular resource in it. Settled per message, so
-    // one refusal costs its own row rather than the rest of the pass.
-    const BATCH_SIZE = 100
-    let queued = 0
-    let failed = 0
-    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-      const results = await Promise.allSettled(
-        pending.slice(i, i + BATCH_SIZE).map((row) =>
-          queue.enqueue(LAKE_INGEST_JOB_TYPE, {
-            resourceId: row.resourceId,
-            version: row.version,
-          })
+    //
+    // The jobs in the same transaction as the leases (ADR-058): a lease never
+    // holds a version back for an hour with no job behind it.
+    const pending = await queue.transaction(this.db, async (tx) => {
+      const result = await tx.execute(sql`
+        WITH due AS (
+          SELECT "resourceId", version FROM (
+            SELECT DISTINCT ON ("resourceId") * FROM (${pendingLakeIngestQuery()}) pending
+            ORDER BY "resourceId", version
+          ) oldest
+          WHERE ${leasePassed('"queuedAt"')}
         )
+        UPDATE resource_version rv
+        SET lake_ingest_queued_at = now(), updated = now()
+        FROM due
+        WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
+          AND ${stillOutstanding('rv')} AND ${leasePassed('rv.lake_ingest_queued_at')}
+        RETURNING rv.resource_id AS "resourceId", rv.version
+      `)
+      const rows = result.rows as unknown as PendingLakeIngest[]
+      // One INSERT: the leases' row locks are held until the commit, and the
+      // migration pass has a version per tabular resource in it
+      await queue.enqueueMany(
+        LAKE_INGEST_JOB_TYPE,
+        rows.map((row) => ({ resourceId: row.resourceId, version: row.version })),
+        { tx }
       )
-      for (const r of results) {
-        if (r.status === 'fulfilled') queued++
-        else failed++
-      }
-    }
-    return { queued, failed }
+      return rows
+    })
+    return { queued: pending.length }
   }
 
   /**
@@ -1334,19 +1323,22 @@ export class ResourceVersionService {
   ): Promise<boolean> {
     // Takes the sweep's lease, so the sweep does not hand out a version this
     // has just queued.
-    const result = await this.db.execute(sql`
-      UPDATE resource_version rv
-      SET lake_ingest_queued_at = now(), updated = now()
-      WHERE (rv.resource_id, rv.version) = (
-        SELECT "resourceId", version FROM (${pendingLakeIngestQuery({ resourceId })}) pending
-        WHERE version <> ${handled} ORDER BY version LIMIT 1
-      ) AND ${stillOutstanding('rv')} AND ${leasePassed('rv.lake_ingest_queued_at')}
-      RETURNING rv.version
-    `)
-    const [next] = result.rows as unknown as { version: number }[]
-    if (!next) return false
-    await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: next.version })
-    return true
+    return queue.transaction(this.db, async (tx) => {
+      const result = await tx.execute(sql`
+        UPDATE resource_version rv
+        SET lake_ingest_queued_at = now(), updated = now()
+        WHERE (rv.resource_id, rv.version) = (
+          SELECT "resourceId", version FROM (${pendingLakeIngestQuery({ resourceId })}) pending
+          WHERE version <> ${handled} ORDER BY version LIMIT 1
+        ) AND ${stillOutstanding('rv')} AND ${leasePassed('rv.lake_ingest_queued_at')}
+        RETURNING rv.version
+      `)
+      const [next] = result.rows as unknown as { version: number }[]
+      if (!next) return false
+      // With the lease, so a failure hands the version straight back
+      await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: next.version }, { tx })
+      return true
+    })
   }
 
   /** List a resource's versions, newest first. */
@@ -1538,13 +1530,16 @@ export class ResourceVersionService {
    * rung above (ADR-044 §4). Refusing it would make the version most likely to
    * need destroying the one that cannot be.
    *
-   * Returns { claimed } so the route knows whether to enqueue the worker job.
+   * The worker's job is written with the claim (ADR-058): a version left
+   * `purging` with no job behind it would stay there, since a repeat request
+   * finds it claimed and queues nothing.
    */
   async claimPurge(
     resourceId: string,
     version: number,
     userId: string,
-    reason: string
+    reason: string,
+    queue: QueueAdapter
   ): Promise<{ claimed: boolean; view: VersionView }> {
     // Two steps on purpose. The claim is a write and takes only the row it
     // changes, so reading the rest of the resource inside it reads whatever
@@ -1553,7 +1548,7 @@ export class ResourceVersionService {
     // The view is therefore built afterwards, from one snapshot
     // ({@link readSnapshot}), which is the only way its halves agree; it includes
     // this claim, since that has committed by then.
-    const claimed = await this.db.transaction(async (tx) => {
+    const claimed = await queue.transaction(this.db, async (tx) => {
       const [row] = await tx
         .select()
         .from(resourceVersion)
@@ -1604,6 +1599,7 @@ export class ResourceVersionService {
         changes: { version, reason },
       })
 
+      await queue.enqueue(PURGE_VERSION_JOB_TYPE, { resourceId, version }, { tx })
       return true
     })
 
@@ -1752,11 +1748,21 @@ export class ResourceVersionService {
     // conclude it owes nothing. Its own marker rather than `contentIndexed`,
     // which an unsupported format or a failed Index sets for reasons that have
     // nothing to do with a purge.
+    //
+    // The rebuild's job and the marker's clearing commit together (ADR-058):
+    // apart, an attempt that died between them would leave the marker for the
+    // next one to queue the rebuild a second time.
     if (await this.purgeRebuildPending(resourceId)) {
-      if (await this.hasLiveContent(resourceId)) {
-        await new PipelineService(this.db, deps.queue).enqueue(resourceId, { rebuildOnly: true })
-      }
-      await this.setPurgeRebuildPending(resourceId, false)
+      const rebuild = await this.hasLiveContent(resourceId)
+      await deps.queue.transaction(this.db, async (tx) => {
+        if (rebuild) {
+          await new PipelineService(this.db, deps.queue).enqueue(resourceId, {
+            rebuildOnly: true,
+            tx,
+          })
+        }
+        await this.setPurgeRebuildPending(resourceId, false, tx)
+      })
     }
 
     await this.db
@@ -2233,33 +2239,20 @@ export class ResourceVersionService {
   }
 
   /**
-   * Whether a run is on its way, or in the middle of one — and recently enough
-   * that it is still worth waiting for.
+   * Whether a run is on its way, or in the middle of one.
    *
-   * **`queued` alone is not evidence that a job exists.** `PipelineService.enqueue`
-   * writes the row first and sends the message second, so a process that dies in
-   * between leaves the row saying `queued` with nothing in the queue. Trusted
-   * bare, that row would suppress every later resend and the settings a version
-   * never carried would have no way back — the endpoint's whole recovery story
-   * rests on a resend being able to queue again.
+   * **On its way is a job, not a status.** A row says `queued` from the moment
+   * a run is asked for, and goes on saying it after the job behind it has died
+   * before starting — trusted bare, that row would suppress every later resend,
+   * and the settings a version never carried would have no way back; the
+   * endpoint's whole recovery story rests on a resend being able to queue
+   * again. The row and its job commit together (ADR-058), so the job table
+   * answers exactly, however long the queue in front of it is.
    *
-   * So the row also has to be recent. The window is the one the claim uses, for
-   * the same reason it has one value: after it, everything else in the system
-   * considers a run dead, and this cannot be the one place that goes on waiting.
-   *
-   * **The two states are dated differently, because they leave different marks.**
    * A run in flight is judged by {@link staleClaim}, the expression every other
    * claimer asks — its steps date it, and `updated` does not move when one
    * starts, so a long run whose current step is minutes old would otherwise read
-   * as dead here alone and have a second rebuild queued behind it (which
-   * `enqueue` would also put the row back to `queued` for, while it is still
-   * running).
-   *
-   * A queued job has neither a claim nor a step to date it from, so the
-   * enqueue's own write to `updated` is the only mark there is — the column the
-   * schema warns against for judging *claim* liveness. What that borrows is
-   * bounded: another writer refreshing the row delays a recovery by the window,
-   * where mis-judging a claim would extend a dead run for ever.
+   * as dead here alone and have a second rebuild queued behind it.
    */
   private async runPending(resourceId: string): Promise<boolean> {
     const [row] = await this.db
@@ -2268,14 +2261,18 @@ export class ResourceVersionService {
       .where(
         and(
           eq(resourcePipeline.resourceId, resourceId),
-          // In the predicate rather than the projection, which is where a
-          // correlated subquery keeps its table qualification (CLAUDE.md).
-          sql`CASE ${resourcePipeline.status}
-                WHEN 'queued' THEN ${resourcePipeline.updated} >
-                  NOW() - ${`${CLAIM_STALE_AFTER_MS} milliseconds`}::interval
-                WHEN 'processing' THEN NOT (${staleClaim(CLAIM_STALE_AFTER_MS, sql`resource_pipeline`)})
-                ELSE false
-              END`
+          or(
+            and(
+              eq(resourcePipeline.status, 'queued'),
+              exists(readyJobsFor(this.db, PIPELINE_JOB_TYPE, resourceId))
+            ),
+            // In the predicate rather than the projection, which is where a
+            // correlated subquery keeps its table qualification (CLAUDE.md).
+            and(
+              eq(resourcePipeline.status, 'processing'),
+              not(staleClaim(CLAIM_STALE_AFTER_MS, sql`resource_pipeline`))
+            )
+          )
         )
       )
       .limit(1)
@@ -2791,8 +2788,12 @@ export class ResourceVersionService {
    * an unsupported format, a draft, a step that failed — none of which is a
    * purge owing a rebuild.
    */
-  private async setPurgeRebuildPending(resourceId: string, pending: boolean): Promise<void> {
-    await this.db.execute(sql`
+  private async setPurgeRebuildPending(
+    resourceId: string,
+    pending: boolean,
+    db: Database | Transaction = this.db
+  ): Promise<void> {
+    await db.execute(sql`
       UPDATE resource_pipeline
       SET metadata = COALESCE(metadata, '{}'::jsonb) ||
             ${JSON.stringify({ purgeRebuildPending: pending })}::jsonb

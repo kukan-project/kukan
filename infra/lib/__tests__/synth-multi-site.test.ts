@@ -186,8 +186,9 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
   })
 
   it('extends physical names with the site segment', () => {
-    siteA.hasResourceProperties('AWS::SQS::Queue', { QueueName: 'kukan-dev-citya-pipeline' })
-    siteA.hasResourceProperties('AWS::SQS::Queue', { QueueName: 'kukan-dev-citya-pipeline-dlq' })
+    siteA.hasResourceProperties('AWS::ServiceDiscovery::Service', {
+      Name: 'kukan-dev-citya-worker',
+    })
     siteA.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-citya-web' })
     siteA.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-citya-worker' })
     siteB.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-cityb-web' })
@@ -867,6 +868,11 @@ describe('validateSites', () => {
     expect(() => validateSites(withOverrides({ opensearch: { instanceCount: 2 } }))).toThrow(
       /must not override opensearch/
     )
+    // Its port is opened in the shared security groups, not per site
+    expect(() => validateSites(withOverrides({ worker: { healthPort: 9090 } }))).toThrow(
+      /must not override worker\.healthPort/
+    )
+    expect(() => validateSites(withOverrides({ worker: { memory: 2048 } }))).not.toThrow()
   })
 
   it('merges per-site Bedrock onto the environment, and rejects it where AI is off', () => {

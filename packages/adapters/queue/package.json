@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "KUKAN queue adapter (SQS/InProcess)",
+  "description": "KUKAN queue adapter (PostgreSQL job table, ADR-058)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,8 +22,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.1136.0",
-    "@kukan/shared": "workspace:*"
+    "@kukan/db": "workspace:*",
+    "@kukan/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@types/node": "^24.12.2"

@@ -93,6 +93,8 @@ export class KukanSharedStack extends cdk.Stack {
     param('sg/worker', shared.network.workerSecurityGroup.securityGroupId)
     param('sg/db-access', dbAccessSg.securityGroupId)
     param('ecs/cluster-name', shared.cluster.clusterName)
+    param('cloudmap/namespace-id', shared.serviceNamespace.namespaceId)
+    param('cloudmap/namespace-name', shared.serviceNamespace.namespaceName)
     param('alb/listener-arn', alb.listener.listenerArn)
     param('alb/dns-name', alb.loadBalancer.loadBalancerDnsName)
     param('cloudfront/vpc-origin-id', alb.vpcOrigin.vpcOriginId)

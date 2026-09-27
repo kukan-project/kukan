@@ -273,7 +273,7 @@ export class OrganizationService {
    * created under it (creation requires an active org), so the package set is frozen
    * and a restore-mid-purge can't resurrect an org whose files are already gone.
    *
-   * Idempotent and safe to retry (SQS redelivery): the claim re-claims its own
+   * Idempotent and safe to retry (a job taken again): the claim re-claims its own
    * 'purging' org, an already-purged/active org is a no-op, and the destructive DB
    * delete only runs after every package's external cleanup succeeds — a failure
    * throws first, leaving the org 'purging' for a clean retry.

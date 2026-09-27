@@ -108,6 +108,8 @@ const STEP = {
 function createMockQueue(): QueueAdapter {
   return {
     enqueue: vi.fn().mockResolvedValue('job-requeue'),
+    enqueueMany: vi.fn().mockResolvedValue([]),
+    transaction: vi.fn() as unknown as QueueAdapter['transaction'],
     getStats: vi.fn(),
     process: vi.fn(),
     stop: vi.fn(),
@@ -526,7 +528,7 @@ describe('processResource', () => {
   })
 
   it('comes back later when another run holds the resource', async () => {
-    // SQS delivers at least once, and a replacement can arrive mid-run. The
+    // The queue delivers at least once, and a replacement can arrive mid-run. The
     // holder read what it read, so dropping this job would leave the newer
     // content with no run of its own (ADR-044).
     claim.answer = 'held'

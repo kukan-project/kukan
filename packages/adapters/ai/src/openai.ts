@@ -101,12 +101,11 @@ export class OpenAIAdapter implements AIAdapter {
     return embedding
   }
 
-  async embedBatch(texts: string[], _options?: EmbedOptions): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
-      model: this.embeddingModel,
-      input: texts,
-      dimensions: this.embeddingDimensions,
-    })
+  async embedBatch(texts: string[], options?: EmbedOptions): Promise<number[][]> {
+    const response = await this.client.embeddings.create(
+      { model: this.embeddingModel, input: texts, dimensions: this.embeddingDimensions },
+      options?.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}
+    )
     return response.data.map((item) => item.embedding)
   }
 

@@ -84,12 +84,14 @@ export const envSchema = z.object({
   // falling back to 0.45 for unmeasured models
   SEARCH_VECTOR_MIN_SIMILARITY: z.coerce.number().min(-1).max(1).optional(),
 
-  // Queue (SQS-compatible: AWS SQS or ElasticMQ, determined by SQS_ENDPOINT)
-  SQS_QUEUE_URL: z.string(),
-  SQS_ENDPOINT: z.string().optional(), // ElasticMQ: http://localhost:9324, SQS: omit
-  SQS_REGION: z.string().default('ap-northeast-1'),
-  SQS_ACCESS_KEY: z.string().optional(), // ElasticMQ: required, AWS SQS: use IAM role
-  SQS_SECRET_KEY: z.string().optional(),
+  // Queue (ADR-058). The jobs are in the database; this is where the web tells
+  // the worker to look. Unset → no signal, and a job waits for the worker's
+  // next start or hourly sweep — except in development (`loadEnv`).
+  WORKER_WAKE_URL: z.preprocess(emptyAsUndefined, z.string().url().optional()),
+  // The site the worker reports its waiting jobs for, as a CloudWatch metric
+  // to scale on (ADR-058 §4). Set by the AWS deployment where the worker
+  // scales; unset → nothing is reported.
+  WORKER_METRIC_SITE: z.preprocess(emptyAsUndefined, z.string().optional()),
 
   // Health Check
   HEALTH_CHECK_ENABLED: booleanString.default(true),
@@ -206,7 +208,20 @@ export function publicOrigin(env: Pick<Env, 'BETTER_AUTH_URL'>): string {
  */
 export function loadEnv(): Env {
   const parsed = envSchema.parse(process.env)
-  return { ...parsed, DATABASE_URL: urlFrom(parsed) }
+  return {
+    ...parsed,
+    DATABASE_URL: urlFrom(parsed),
+    WORKER_WAKE_URL: parsed.WORKER_WAKE_URL ?? devWakeUrl(parsed.NODE_ENV),
+  }
+}
+
+/**
+ * Where `pnpm dev` runs the worker, so a `.env` from before ADR-058 still
+ * wakes it. Development only: production deployments set it, and under test
+ * it would signal whatever dev worker happens to be running.
+ */
+function devWakeUrl(nodeEnv: Env['NODE_ENV']): string | undefined {
+  return nodeEnv === 'development' ? 'http://localhost:8080/wake' : undefined
 }
 
 function urlFrom(p: z.infer<typeof postgresSchema>): string {
@@ -217,9 +232,9 @@ function urlFrom(p: z.infer<typeof postgresSchema>): string {
  * The same DATABASE_URL {@link loadEnv} builds, for callers that need the
  * database and nothing else.
  *
- * The test bootstrap and drizzle-kit are not services: demanding a queue URL and
- * an auth secret of them, as the full schema does, only means an unrelated gap
- * in `.env` stops the migrations or the suite. They still must not invent their
+ * The test bootstrap and drizzle-kit are not services: demanding an auth secret
+ * of them, as the full schema does, only means an unrelated gap in `.env` stops
+ * the migrations or the suite. They still must not invent their
  * own reading of POSTGRES_* — that is how the tests came to sit on localhost
  * while the project pointed elsewhere.
  */

@@ -1,8 +1,8 @@
 /**
  * The per-resource execution claim (ADR-044).
  *
- * One resource, one writer. SQS delivers at least once and redelivers to a
- * second worker while the first is still going, so two runs do reach the same
+ * One resource, one writer. The queue delivers at least once and hands a job to a
+ * second worker once the first has lost its lease, so two runs do reach the same
  * resource — and a purge reaches it while a run is midway through writing the
  * derivatives the purge is there to destroy. The claim is what stops the second
  * from starting, rather than each write along the way having to notice it lost.

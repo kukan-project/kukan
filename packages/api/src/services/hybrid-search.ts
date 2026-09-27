@@ -73,24 +73,14 @@ async function embedQuery(
   const cached = queryEmbedCache.get(key) as number[] | undefined
   if (cached) return cached
 
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const vector = await Promise.race([
-      ai.embed(text, { type: 'query' }),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`query embedding timed out (${QUERY_EMBED_TIMEOUT_MS}ms)`)),
-          QUERY_EMBED_TIMEOUT_MS
-        )
-      }),
-    ])
+    // Aborted rather than raced: the request stops with the wait
+    const vector = await ai.embed(text, { type: 'query', timeoutMs: QUERY_EMBED_TIMEOUT_MS })
     queryEmbedCache.set(key, vector)
     return vector
   } catch (err) {
     logger.warn({ err }, 'Query embedding failed — degrading to keyword-only search')
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }
 

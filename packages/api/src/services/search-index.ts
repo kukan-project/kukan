@@ -86,7 +86,11 @@ export async function rebuildPackageSearch(
   await Promise.all([
     syncPackageMetadata(db, deps, packageId),
     deps.search.bulkIndexResources(resources.map(buildResourceDoc)),
-    ...runs.map((r) => pipeline.enqueue(r.id, { rebuildOnly: r.rebuildOnly })),
+    // In batches rather than a transaction per run; a refused batch still
+    // fails the sync, which is what lets the same request be the retry
+    pipeline.enqueueMany(runs).then(({ failed }) => {
+      if (failed.length > 0) throw failed[0].reason
+    }),
   ])
 }
 
@@ -141,7 +145,7 @@ export async function syncResourceDoc(
   //
   // As text, both ways. A Date round-trip keeps milliseconds where the column
   // keeps microseconds, so the mark would never match itself and every sync
-  // would leave the row due — the same trap the embed debounce documents.
+  // would leave the row due.
   const [before] = await db
     .select({ dueAt: sql<string | null>`${resource.docSyncDueAt}::text` })
     .from(resource)
@@ -164,7 +168,11 @@ export async function enqueuePackageEmbed(
   packageId: string,
   logger: Logger
 ): Promise<void> {
-  await enqueueEmbeds(db, queue, ai, eq(packageTable.id, packageId), logger)
+  try {
+    await enqueueEmbeds(db, queue, ai, eq(packageTable.id, packageId))
+  } catch (err) {
+    logger.error({ err, packageId }, 'Failed to enqueue embed-package job')
+  }
 }
 
 /**
@@ -212,71 +220,42 @@ export const EMBED_NOTICE_GRACE_MS = 15 * 60_000
  *
  * The claim is one statement on the rows, not anything in a process: two API
  * tasks handling the same edit, or a redelivery of the bulk job, find the
- * window already held. Enqueue failures are counted and logged, never thrown.
+ * window already held. The jobs are written in the same transaction (ADR-058),
+ * so a window never holds with no job behind it — which would suppress every
+ * change inside it, a bulk import's next resource say, until it ran out.
+ *
+ * Throws what the database refused, so the bulk job is retried; the
+ * single-package path is the one that swallows it.
  */
 export async function enqueueEmbeds(
   db: Database,
   queue: QueueAdapter,
   ai: AIAdapter,
-  where: SQL,
-  logger: Logger
-): Promise<{ enqueued: number; failed: number }> {
-  if (!ai.getEmbeddingInfo()) return { enqueued: 0, failed: 0 }
-  const claimed = await db
-    .update(packageTable)
-    .set({ embeddingQueuedAt: sql`now()` })
-    .where(
-      and(
-        where,
-        eq(packageTable.state, 'active'),
-        leasePassed(packageTable.embeddingQueuedAt, EMBED_DEBOUNCE_MS)
-      )
-    )
-    .returning({ id: packageTable.id, stamp: sql<string>`${packageTable.embeddingQueuedAt}::text` })
-
-  let enqueued = 0
-  const unqueued: string[] = []
-  for (let i = 0; i < claimed.length; i += ENQUEUE_BATCH_SIZE) {
-    const batch = claimed.slice(i, i + ENQUEUE_BATCH_SIZE)
-    const results = await Promise.allSettled(
-      batch.map(({ id }) =>
-        queue.enqueue(EMBED_JOB_TYPE, { packageId: id }, { delaySeconds: EMBED_DELAY_S })
-      )
-    )
-    results.forEach((result, j) => {
-      if (result.status === 'fulfilled') enqueued++
-      else {
-        unqueued.push(batch[j].id)
-        logger.error(
-          { err: result.reason, packageId: batch[j].id },
-          'Failed to enqueue embed-package job'
-        )
-      }
-    })
-  }
-
-  // A window with no job behind it would hold until it ran out, and every
-  // change inside it — a bulk import's next resource, say — would be the
-  // change that queued nothing. Given back only where the stamp is still ours:
-  // one statement claimed every row above at one `now()`, and a row another
-  // caller has claimed since carries a later one.
-  if (unqueued.length > 0) {
-    await db
+  where: SQL
+): Promise<number> {
+  if (!ai.getEmbeddingInfo()) return 0
+  return queue.transaction(db, async (tx) => {
+    const claimed = await tx
       .update(packageTable)
-      .set({ embeddingQueuedAt: null })
+      .set({ embeddingQueuedAt: sql`now()` })
       .where(
         and(
-          inArray(packageTable.id, unqueued),
-          // As text: a Date round-trip keeps milliseconds where the column
-          // keeps microseconds, and the stamp would never match itself.
-          sql`${packageTable.embeddingQueuedAt} = ${claimed[0].stamp}::timestamptz`
+          where,
+          eq(packageTable.state, 'active'),
+          leasePassed(packageTable.embeddingQueuedAt, EMBED_DEBOUNCE_MS)
         )
       )
-  }
-  return { enqueued, failed: unqueued.length }
+      .returning({ id: packageTable.id })
+    if (claimed.length > 0) {
+      await queue.enqueueMany(
+        EMBED_JOB_TYPE,
+        claimed.map(({ id }) => ({ packageId: id })),
+        { delaySeconds: EMBED_DELAY_S, tx }
+      )
+    }
+    return claimed.length
+  })
 }
-
-const ENQUEUE_BATCH_SIZE = 100
 
 /**
  * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).

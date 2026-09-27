@@ -20,6 +20,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53'
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
 import type { Construct } from 'constructs'
 import type { KukanConfig } from './config.js'
 import { athenaWorkGroupName, envPrefix } from './naming.js'
@@ -27,7 +28,6 @@ import { NetworkConstruct } from './constructs/network.js'
 import { EcrAssetRetentionConstruct } from './constructs/ecr-asset-retention.js'
 import { DatabaseConstruct, type DbAccess } from './constructs/database.js'
 import { StorageConstruct } from './constructs/storage.js'
-import { QueueConstruct } from './constructs/queue.js'
 import { SearchConstruct } from './constructs/search.js'
 import { WebServiceConstruct } from './constructs/web-service.js'
 import { WorkerServiceConstruct } from './constructs/worker-service.js'
@@ -41,6 +41,8 @@ export interface SharedResources {
   database: DatabaseConstruct
   search?: SearchConstruct
   cluster: ecs.Cluster
+  /** Where each site's worker is named, for the web to wake it (ADR-058 §3). */
+  serviceNamespace: servicediscovery.IPrivateDnsNamespace
 }
 
 /** The shared ALB as imported by a SiteStack (ADR-049). */
@@ -58,6 +60,7 @@ export interface SharedAlbSurface {
  */
 export interface SiteSurface {
   cluster: ecs.ICluster
+  serviceNamespace: servicediscovery.IPrivateDnsNamespace
   /** SG for the site's own ALB — not needed on the shared ALB. */
   albSecurityGroup?: ec2.ISecurityGroup
   webSecurityGroup: ec2.ISecurityGroup
@@ -120,7 +123,15 @@ export function composeShared(scope: Construct, config: KukanConfig): SharedReso
     createLogWorkGroup(scope)
   }
 
-  return { network, database, search, cluster }
+  // One private DNS namespace for the environment; each site's worker takes
+  // a name of its own in it (ADR-058 §3). DNS rather than Service Connect: the
+  // web resolves the name through the VPC resolver, with no proxy beside it.
+  const serviceNamespace = new servicediscovery.PrivateDnsNamespace(scope, 'ServiceNamespace', {
+    name: `${envPrefix(scope)}.internal`,
+    vpc: network.vpc,
+  })
+
+  return { network, database, search, cluster, serviceNamespace }
 }
 
 /** Create one site's resources on `scope` (ids unchanged from the pre-split stack). */
@@ -137,9 +148,6 @@ export function composeSite(
 
   // --- Storage (S3) ---
   const storage = new StorageConstruct(scope, 'Storage', { config })
-
-  // --- Queue (SQS) ---
-  const queue = new QueueConstruct(scope, 'Queue')
 
   // --- GA4 Analytics (optional) ---
   // After deploy, find the secret ARNs in the stack outputs or Secrets Manager console,
@@ -177,7 +185,6 @@ export function composeSite(
     database: surface.db,
     authSecret,
     bucket: storage.bucket,
-    queue: queue.queue,
     searchDomainEndpoint: surface.searchDomainEndpoint,
     searchIndexPrefix: surface.searchIndexPrefix,
     imageBuildArgs: surface.webImageBuildArgs,
@@ -199,10 +206,11 @@ export function composeSite(
     database: surface.db,
     authSecret,
     bucket: storage.bucket,
-    queue: queue.queue,
+    serviceNamespace: surface.serviceNamespace,
     searchDomainEndpoint: surface.searchDomainEndpoint,
     searchIndexPrefix: surface.searchIndexPrefix,
   })
+  webService.addEnvironment('WORKER_WAKE_URL', workerService.wakeUrl)
 
   // --- CDN (CloudFront with VPC origin) ---
   // Own ALB: the VpcOrigin resource is created at bind time under the

@@ -53,7 +53,6 @@ docker compose up -d
 | --------------------- | --------------------- | --------------------------------------- |
 | PostgreSQL 16         | 5432                  | Database                                |
 | MinIO                 | 9000 / 9001 (Console) | S3-compatible storage                   |
-| ElasticMQ             | 9324                  | SQS-compatible queue                    |
 | OpenSearch 3          | 9200                  | Full-text search engine                 |
 | OpenSearch Dashboards | 5601                  | Search management UI                    |
 | Ollama                | 11435                 | Local LLM (embeddings + AI suggestions) |
@@ -119,9 +118,7 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_   | S3 credentials (MinIO: `minioadmin`)                                 |
 | `SEARCH_TYPE`                     | `opensearch`            | `opensearch` or `postgres` (fallback)                                |
 | `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                                  |
-| `SQS_ENDPOINT`                    | _(omit for AWS)_        | SQS-compatible endpoint (ElasticMQ: `http://localhost:9324`)         |
-| `SQS_QUEUE_URL`                   | _(required)_            | SQS queue URL                                                        |
-| `SQS_REGION`                      | _(omit for local)_      | AWS region for SQS                                                   |
+| `WORKER_WAKE_URL`                 | _(dev: localhost:8080)_ | Where the web tells the worker a job is waiting (worker's `/wake`)   |
 | `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                             |
 | `AI_COMPLETION_MODELS`            | _(provider default)_    | Allow-list of generation models (comma-separated); first is default  |
 | `AI_SUMMARY_MODEL`                | _(off)_                 | Model writing AI resource descriptions; unset = off, and not billed  |
@@ -140,7 +137,7 @@ pnpm dev
 ```
 
 - Web: http://localhost:3000
-- Worker: Starts automatically via SQS polling / SQS ポーリングで自動起動
+- Worker: Woken by the web when a job is queued / ジョブ投入時に web から起こされる
 
 ## Common Commands / よく使うコマンド
 
@@ -317,15 +314,14 @@ curl http://localhost/api/health
 
 ### Services / サービス構成
 
-| Service    | Description                   | External Port |
-| ---------- | ----------------------------- | ------------- |
-| Caddy      | Reverse proxy (HTTP/HTTPS)    | 80, 443       |
-| Web        | Next.js application           | —             |
-| Worker     | Pipeline worker (SQS polling) | —             |
-| PostgreSQL | Database                      | 5432          |
-| MinIO      | S3-compatible storage         | 9000          |
-| ElasticMQ  | SQS-compatible queue          | 9324          |
-| OpenSearch | Full-text search (kuromoji)   | 9200          |
+| Service    | Description                 | External Port |
+| ---------- | --------------------------- | ------------- |
+| Caddy      | Reverse proxy (HTTP/HTTPS)  | 80, 443       |
+| Web        | Next.js application         | —             |
+| Worker     | Pipeline worker (job queue) | —             |
+| PostgreSQL | Database                    | 5432          |
+| MinIO      | S3-compatible storage       | 9000          |
+| OpenSearch | Full-text search (kuromoji) | 9200          |
 
 ### Environment / 環境変数
 

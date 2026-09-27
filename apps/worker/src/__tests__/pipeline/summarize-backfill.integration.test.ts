@@ -51,7 +51,15 @@ const deps: SummaryDeps = {
 
 function fakeQueue() {
   const enqueue = vi.fn().mockResolvedValue('job')
-  return { queue: { enqueue } as unknown as QueueAdapter, enqueue }
+  // One call per job either way, so the assertions need not know which the code used
+  const enqueueMany = vi.fn((type: string, data: unknown[], options?: unknown) =>
+    Promise.all(data.map((d) => enqueue(type, d, options)))
+  )
+  const transaction: QueueAdapter['transaction'] = (db, fn) => db.transaction(fn)
+  return {
+    queue: { enqueue, enqueueMany, transaction } as unknown as QueueAdapter,
+    enqueue,
+  }
 }
 
 /** One published text resource with a version holding its current content */

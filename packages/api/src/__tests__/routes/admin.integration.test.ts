@@ -95,7 +95,7 @@ describe('Admin API Routes', () => {
       expect(res.status).toBe(403)
     })
 
-    it('should enqueue reindex job via SQS', async () => {
+    it('should enqueue reindex job', async () => {
       const res = await app.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
       expect(res.status).toBe(200)
 

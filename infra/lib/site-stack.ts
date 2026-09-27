@@ -1,8 +1,9 @@
 /**
  * KUKAN Site Stack (ADR-041)
  * One site's resources on the shared boxes: site database + role, S3 bucket,
- * SQS queue, ECS web/worker services, target group + listener rule on the
- * shared ALB (ADR-049), CloudFront (+ domain), secrets, logs.
+ * ECS web/worker services (worker in the shared namespace), target group +
+ * listener rule on the shared ALB (ADR-049), CloudFront (+ domain), secrets,
+ * logs.
  * Reads the shared surface from SSM parameters written by KukanSharedStack —
  * never CloudFormation exports.
  */
@@ -12,6 +13,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
 import * as ssm from 'aws-cdk-lib/aws-ssm'
 import type { Construct } from 'constructs'
 import {
@@ -63,6 +65,22 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
       clusterName: read('ecs/cluster-name'),
       vpc,
     })
+    const importNamespace = () => {
+      const namespaceId = read('cloudmap/namespace-id')
+      return servicediscovery.PrivateDnsNamespace.fromPrivateDnsNamespaceAttributes(
+        this,
+        'SharedServiceNamespace',
+        {
+          namespaceId,
+          namespaceName: read('cloudmap/namespace-name'),
+          namespaceArn: this.formatArn({
+            service: 'servicediscovery',
+            resource: 'namespace',
+            resourceName: namespaceId,
+          }),
+        }
+      )
+    }
     const importSg = (importId: string, suffix: SharedParam) =>
       ec2.SecurityGroup.fromSecurityGroupId(this, importId, read(suffix), { mutable: false })
 
@@ -81,6 +99,7 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
       config,
       {
         cluster,
+        serviceNamespace: importNamespace(),
         sharedAlb: {
           listener: elbv2.ApplicationListener.fromApplicationListenerAttributes(
             this,

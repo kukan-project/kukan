@@ -36,6 +36,7 @@ export class KukanStack extends cdk.Stack {
       config,
       {
         cluster: shared.cluster,
+        serviceNamespace: shared.serviceNamespace,
         albSecurityGroup: shared.network.albSecurityGroup,
         webSecurityGroup: shared.network.webSecurityGroup,
         workerSecurityGroup: shared.network.workerSecurityGroup,

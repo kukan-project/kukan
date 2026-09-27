@@ -330,6 +330,20 @@
       "when": 1789561892135,
       "tag": "0046_nasty_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790477637128,
+      "tag": "0047_lively_baron_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1790484418645,
+      "tag": "0048_lying_guardsmen",
+      "breakpoints": true
     }
   ]
 }

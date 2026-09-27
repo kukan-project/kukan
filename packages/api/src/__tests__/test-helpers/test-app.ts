@@ -93,9 +93,22 @@ export const mockStorage: StorageAdapter = {
   deleteMany: async (keys: string[]) => keys,
 }
 
+/**
+ * A queue mock's `transaction`: the real transaction on the handle given,
+ * without the wake — the adapter's own suite covers that.
+ */
+export function mockTransaction() {
+  // Cast: a mock does not keep the method's type parameter
+  return vi.fn<QueueAdapter['transaction']>((db, fn) =>
+    db.transaction(fn)
+  ) as unknown as QueueAdapter['transaction']
+}
+
 export const mockQueue: QueueAdapter = {
   enqueue: vi.fn().mockResolvedValue('mock-job-id'),
-  getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0 }),
+  enqueueMany: vi.fn().mockResolvedValue([]),
+  transaction: mockTransaction(),
+  getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0, dead: 0 }),
   process: vi.fn().mockResolvedValue(undefined),
   stop: vi.fn().mockResolvedValue(undefined),
 }
@@ -136,7 +149,6 @@ export const testEnv = {
   DATABASE_URL: testDatabaseUrl(testDatabaseName(inject('testDbPrefix'))),
   SEARCH_TYPE: 'postgres',
   OPENSEARCH_URL: 'http://localhost:9200',
-  SQS_QUEUE_URL: 'http://localhost:9324/000000000000/kukan-pipeline',
   AI_TYPE: 'none',
   BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long!',
   BETTER_AUTH_URL: 'http://localhost:3000',
@@ -171,6 +183,8 @@ interface TestAppOverrides {
   analytics?: AnalyticsService | null
   /** Environment overrides, for the flags routes gate on (e.g. AI_SUMMARY_MODEL) */
   env?: Partial<Env>
+  /** Override the queue (e.g. a real one, where the job table has to answer). */
+  queue?: QueueAdapter
 }
 
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {
@@ -189,7 +203,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('search', overrides?.search ?? mockSearch)
     c.set('dbSearch', new PostgresSearchAdapter(db))
     c.set('storage', overrides?.storage ?? mockStorage)
-    c.set('queue', mockQueue)
+    c.set('queue', overrides?.queue ?? mockQueue)
     c.set('ai', overrides?.ai ?? mockAi)
     c.set('auth', overrides?.auth ?? mockAuth)
     c.set('env', overrides?.env ? { ...testEnv, ...overrides.env } : testEnv)

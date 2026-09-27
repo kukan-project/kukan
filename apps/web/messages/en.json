@@ -467,7 +467,7 @@
       "statsProcessing": "Processing",
       "statsComplete": "Complete",
       "statsError": "Errors",
-      "sqsInfo": "SQS: pending {pending} / in-flight {inFlight}",
+      "queueInfo": "Queue: pending {pending} / in-flight {inFlight} / delayed {delayed} / dead {dead}",
       "colStatus": "Status",
       "colResource": "Resource",
       "colDataset": "Dataset",

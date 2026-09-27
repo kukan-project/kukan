@@ -30,6 +30,9 @@ export * from './membership'
 export * from './fetch-rate-limit'
 export * from './orphaned-object'
 
+// Job queue (ADR-058)
+export * from './job'
+
 // Audit & Activity
 export * from './audit'
 export * from './activity'

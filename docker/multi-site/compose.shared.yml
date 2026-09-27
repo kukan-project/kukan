@@ -1,7 +1,7 @@
 # KUKAN multi-site — shared stack template (ADR-041)
 #
-# The hourly "boxes" shared by all sites: postgres / minio / elasticmq /
-# opensearch / ollama, plus one caddy edge routing per-site virtual hosts.
+# The hourly "boxes" shared by all sites: postgres / minio / opensearch /
+# ollama, plus one caddy edge routing per-site virtual hosts.
 # Start once per host:
 #
 #   docker compose -f docker/multi-site/compose.shared.yml up -d
@@ -70,22 +70,6 @@ services:
         for bucket in $$S3_BUCKETS; do
           mc mb --ignore-existing "local/$$bucket"
         done
-
-  elasticmq:
-    image: softwaremill/elasticmq-native:1.7.1
-    container_name: kukan-shared-elasticmq
-    volumes:
-      # Static queue definitions — add a block per site (see elasticmq.conf)
-      - ./elasticmq.conf:/opt/elasticmq.conf
-    healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          "wget -qO- 'http://localhost:9324/?Action=ListQueues&Version=2012-11-05' || exit 1",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   opensearch:
     build:

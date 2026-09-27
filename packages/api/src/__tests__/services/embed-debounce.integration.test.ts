@@ -4,16 +4,20 @@ import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import type { Logger } from '@kukan/shared'
 import { enqueueEmbeds, EMBED_DEBOUNCE_MS, EMBED_DELAY_S } from '../../services/search-index'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { mockTransaction } from '../test-helpers/test-app'
 
 const db = getTestDb()
 const ai = { getEmbeddingInfo: () => ({ model: 'm', dimension: 4 }) } as unknown as AIAdapter
-const logger = { error: vi.fn() } as unknown as Logger
 
 function mockQueue() {
-  return { enqueue: vi.fn().mockResolvedValue('job') } as unknown as QueueAdapter
+  return {
+    enqueueMany: vi
+      .fn()
+      .mockImplementation(async (_type: string, data: unknown[]) => data.map(() => 'job')),
+    transaction: mockTransaction(),
+  } as unknown as QueueAdapter
 }
 
 async function addPackage(name: string, state = 'active'): Promise<string> {
@@ -46,16 +50,15 @@ describe('enqueueEmbeds', () => {
     const queue = mockQueue()
     const forId = eq(packageTable.id, id)
 
-    expect(await enqueueEmbeds(db, queue, ai, forId, logger)).toEqual({ enqueued: 1, failed: 0 })
-    expect(queue.enqueue).toHaveBeenCalledWith(
-      'embed-package',
-      { packageId: id },
-      { delaySeconds: EMBED_DELAY_S }
-    )
-    expect(await enqueueEmbeds(db, queue, ai, forId, logger)).toEqual({ enqueued: 0, failed: 0 })
+    expect(await enqueueEmbeds(db, queue, ai, forId)).toBe(1)
+    expect(queue.enqueueMany).toHaveBeenCalledWith('embed-package', [{ packageId: id }], {
+      delaySeconds: EMBED_DELAY_S,
+      tx: expect.anything(),
+    })
+    expect(await enqueueEmbeds(db, queue, ai, forId)).toBe(0)
 
     await passWindow()
-    expect(await enqueueEmbeds(db, queue, ai, forId, logger)).toEqual({ enqueued: 1, failed: 0 })
+    expect(await enqueueEmbeds(db, queue, ai, forId)).toBe(1)
   })
 
   it('queues every active package whose window is open, and none twice', async () => {
@@ -63,58 +66,31 @@ describe('enqueueEmbeds', () => {
     const b = await addPackage('b')
     await addPackage('draft', 'draft')
     const queue = mockQueue()
-    await enqueueEmbeds(db, queue, ai, eq(packageTable.id, a), logger)
+    await enqueueEmbeds(db, queue, ai, eq(packageTable.id, a))
 
-    expect(await enqueueEmbeds(db, queue, ai, sql`true`, logger)).toEqual({
-      enqueued: 1,
-      failed: 0,
-    })
-    expect(queue.enqueue).toHaveBeenLastCalledWith(
+    expect(await enqueueEmbeds(db, queue, ai, sql`true`)).toBe(1)
+    expect(queue.enqueueMany).toHaveBeenLastCalledWith(
       'embed-package',
-      { packageId: b },
+      [{ packageId: b }],
       expect.anything()
     )
-    expect(await enqueueEmbeds(db, queue, ai, sql`true`, logger)).toEqual({
-      enqueued: 0,
-      failed: 0,
-    })
+    expect(await enqueueEmbeds(db, queue, ai, sql`true`)).toBe(0)
   })
 
-  it('gives the window back when the job could not be queued', async () => {
-    // A bulk import's next change inside the window is then the one that
-    // queues, rather than one more that is suppressed.
+  it('leaves the window open, and says so, when the jobs could not be written', async () => {
+    // The claim and the jobs commit together (ADR-058): a bulk import's next
+    // change inside the window is then the one that queues, rather than one
+    // more that is suppressed — and the bulk job that asked fails, to be retried.
     const id = await addPackage('a')
     const down = {
-      enqueue: vi.fn().mockRejectedValue(new Error('queue down')),
+      enqueueMany: vi.fn().mockRejectedValue(new Error('connection lost')),
+      transaction: mockTransaction(),
     } as unknown as QueueAdapter
     const forId = eq(packageTable.id, id)
 
-    expect(await enqueueEmbeds(db, down, ai, forId, logger)).toEqual({ enqueued: 0, failed: 1 })
+    await expect(enqueueEmbeds(db, down, ai, forId)).rejects.toThrow('connection lost')
 
-    const queue = mockQueue()
-    expect(await enqueueEmbeds(db, queue, ai, forId, logger)).toEqual({ enqueued: 1, failed: 0 })
-  })
-
-  it('does not give back a window another caller has claimed since', async () => {
-    // The stamp is the guard: released blindly, the other caller's job would
-    // be followed by a duplicate from the next change.
-    const id = await addPackage('a')
-    const forId = eq(packageTable.id, id)
-    const queue = mockQueue()
-    const down = {
-      enqueue: vi.fn().mockRejectedValue(new Error('queue down')),
-    } as unknown as QueueAdapter
-
-    await enqueueEmbeds(db, down, ai, forId, logger)
-    // The failed claim's stamp expires, and a fresh claim lands on the row...
-    await passWindow()
-    await enqueueEmbeds(db, queue, ai, forId, logger)
-    // ...so a release aimed at the old stamp must not clear it.
-    await db.execute(sql`
-      UPDATE package SET embedding_queued_at = NULL
-      WHERE id = ${id} AND embedding_queued_at = now() - ${`${EMBED_DEBOUNCE_MS + 1000} milliseconds`}::interval
-    `)
-    expect(await enqueueEmbeds(db, queue, ai, forId, logger)).toEqual({ enqueued: 0, failed: 0 })
+    expect(await enqueueEmbeds(db, mockQueue(), ai, forId)).toBe(1)
   })
 
   it('queues nothing when embedding is not configured', async () => {
@@ -122,10 +98,7 @@ describe('enqueueEmbeds', () => {
     const queue = mockQueue()
     const off = { getEmbeddingInfo: () => null } as unknown as AIAdapter
 
-    expect(await enqueueEmbeds(db, queue, off, sql`true`, logger)).toEqual({
-      enqueued: 0,
-      failed: 0,
-    })
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(await enqueueEmbeds(db, queue, off, sql`true`)).toBe(0)
+    expect(queue.enqueueMany).not.toHaveBeenCalled()
   })
 })

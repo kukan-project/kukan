@@ -1,7 +1,8 @@
 /**
  * KUKAN Worker Service Construct
- * ECS Fargate service for SQS-based pipeline processing.
- * Includes HTTP health check endpoint on port 8080.
+ * ECS Fargate service for the job queue (ADR-058). Its HTTP port answers the
+ * health check and the web's wake signal, which reaches it by the name it
+ * takes in the environment's Cloud Map namespace.
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -12,10 +13,11 @@ import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as logs from 'aws-cdk-lib/aws-logs'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
-import * as sqs from 'aws-cdk-lib/aws-sqs'
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
+import { WAITING_METRIC_NAME, WAITING_METRIC_NAMESPACE } from '@kukan/shared'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
-import { resourceName } from '../naming.js'
+import { envPrefix, resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
 
@@ -26,7 +28,8 @@ export interface WorkerServiceProps {
   database: DbAccess
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
-  queue: sqs.IQueue
+  /** Where the worker takes its name, for the web to wake it (ADR-058 §3). */
+  serviceNamespace: servicediscovery.IPrivateDnsNamespace
   searchDomainEndpoint?: string
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
   searchIndexPrefix?: string
@@ -34,6 +37,8 @@ export interface WorkerServiceProps {
 
 export class WorkerServiceConstruct extends Construct {
   readonly service: ecs.FargateService
+  /** Where the web POSTs to wake this site's worker. */
+  readonly wakeUrl: string
   private readonly workerContainer: ecs.ContainerDefinition
 
   /** Add an environment variable to the worker container after construction. */
@@ -51,9 +56,13 @@ export class WorkerServiceConstruct extends Construct {
       database,
       authSecret,
       bucket,
-      queue,
+      serviceNamespace,
       searchDomainEndpoint,
     } = props
+    const serviceName = resourceName(this, 'worker')
+    // The Site dimension of the metric it scales on (ADR-058 §4)
+    const metricSite = envPrefix(this)
+    const scales = config.worker.maxTasks > config.worker.minTasks
 
     // Docker image (built and pushed automatically by CDK).
     // CDK auto-loads the build context's .dockerignore into the asset-hash
@@ -77,19 +86,17 @@ export class WorkerServiceConstruct extends Construct {
 
     // Grant permissions to task role
     bucket.grantReadWrite(taskDef.taskRole)
-    queue.grantConsumeMessages(taskDef.taskRole)
-    queue.grantSendMessages(taskDef.taskRole)
     // Environment variables
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
       ...database.buildPostgresEnvironment(),
       S3_BUCKET: bucket.bucketName,
       S3_REGION: cdk.Aws.REGION,
-      SQS_REGION: cdk.Aws.REGION,
-      SQS_QUEUE_URL: queue.queueUrl,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WORKER_DB_POOL_MAX: String(config.dbPool.workerMax),
       HEALTH_PORT: String(config.worker.healthPort),
+      // Only where there is a policy to read it: a custom metric is billed
+      ...(scales && { WORKER_METRIC_SITE: metricSite }),
     }
     configureBedrockEmbedding(config, taskDef, environment)
     // Resource abstracts are written here, at the end of the pipeline (ADR-053).
@@ -140,7 +147,7 @@ export class WorkerServiceConstruct extends Construct {
     // Fargate Service
     this.service = new ecs.FargateService(this, 'Service', {
       cluster,
-      serviceName: resourceName(this, 'worker'),
+      serviceName,
       taskDefinition: taskDef,
       // Pinned on purpose — see WebServiceConstruct: deploys reset to minTasks,
       // which the multi-site connection budget relies on.
@@ -151,45 +158,52 @@ export class WorkerServiceConstruct extends Construct {
       enableExecuteCommand: true,
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
+      // An A record per task in the environment's namespace, for the web's
+      // wake (ADR-058 §3). A short TTL: a deploy replaces the tasks, and a
+      // signal sent to one that is gone is lost until the next.
+      cloudMapOptions: {
+        cloudMapNamespace: serviceNamespace,
+        name: serviceName,
+        dnsRecordType: servicediscovery.DnsRecordType.A,
+        dnsTtl: cdk.Duration.seconds(10),
+      },
     })
+    this.wakeUrl = `http://${serviceName}.${serviceNamespace.namespaceName}:${config.worker.healthPort}/wake`
+    // The worker signals its own tasks too, for the jobs its jobs write: busy
+    // with one, a task would otherwise hold them while another sat idle
+    this.workerContainer.addEnvironment('WORKER_WAKE_URL', this.wakeUrl)
 
     // Auto Scaling (medium/large)
-    if (config.worker.maxTasks > config.worker.minTasks) {
+    if (scales) {
       const scaling = this.service.autoScaleTaskCount({
         minCapacity: config.worker.minTasks,
         maxCapacity: config.worker.maxTasks,
       })
-      // Visible + in flight, not visible alone. A message being processed is
-      // not visible, and neither is one whose handler failed until its
-      // visibility timeout runs out — so with only visible messages counted,
-      // a queue holding a thousand jobs reads as empty the moment every one of
-      // them has been picked up once, and the service scales in with the work
-      // still there. Measured on a live site: 0 visible against 1,300 in
-      // flight, and the task count flapping 1↔2 every few minutes.
-      scaling.scaleOnMetric('QueueDepth', {
-        metric: new cloudwatch.MathExpression({
-          expression: 'visible + inFlight',
-          usingMetrics: {
-            visible: queue.metricApproximateNumberOfMessagesVisible(),
-            inFlight: queue.metricApproximateNumberOfMessagesNotVisible(),
-          },
-          label: 'Queue depth (visible + in flight)',
+      // Jobs waiting to be taken, held ones included: counting only the
+      // untaken, the service scales in with work still leased (ADR-058 §4).
+      // Written once a minute by every task, 0 from an idle one, so the
+      // series has no gaps for the policy to stall on.
+      scaling.scaleOnMetric('JobsWaiting', {
+        metric: new cloudwatch.Metric({
+          namespace: WAITING_METRIC_NAMESPACE,
+          metricName: WAITING_METRIC_NAME,
+          dimensionsMap: { Site: metricSite },
+          // A busy task reports the whole table's figure, its own held job
+          // included, and an idle one 0: the highest is what the busy see
+          statistic: cloudwatch.Stats.MAXIMUM,
+          period: cdk.Duration.minutes(1),
         }),
-        // Scale in only at zero. With in-flight messages counted, zero means
-        // no task received anything for five minutes, so a site with a steady
-        // trickle of jobs stays scaled out after a burst — accepted, because
-        // scaling in stops a task whatever it is doing, and stopTimeout does
-        // not cover a long interpretation. A job cut off costs a receive and
-        // comes back after the visibility timeout.
+        // Scale in only at zero. With held jobs counted, zero means nothing is
+        // waiting and nothing is running, so a site with a steady trickle of
+        // jobs stays scaled out after a burst — accepted, because scaling in
+        // stops a task whatever it is doing, and stopTimeout does not cover a
+        // long interpretation. A job cut off comes back when its lease runs out.
         scalingSteps: [
           { upper: 0, change: -1 },
           { lower: 5, change: +1 },
           { lower: 25, change: +2 },
         ],
         adjustmentType: cdk.aws_applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
-        // Stated because CDK reads it off a plain metric and cannot off an
-        // expression; unset, Application Auto Scaling averages instead.
-        metricAggregationType: cdk.aws_applicationautoscaling.MetricAggregationType.MAXIMUM,
         cooldown: cdk.Duration.seconds(300),
       })
     }

@@ -20,6 +20,7 @@ import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 import { mapStorage } from '../test-helpers/fixtures'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
+import { mockTransaction } from '../test-helpers/test-app'
 
 const db = getTestDb()
 const service = new ResourceVersionService(db)
@@ -32,7 +33,21 @@ const objects = new Map<string, Buffer>()
 /** Issued versions are handed to the worker to load (ADR-046), so the pass
  *  needs somewhere to put them. */
 function mockQueue() {
-  return { enqueue: vi.fn(), getStats: vi.fn(), process: vi.fn(), stop: vi.fn() } as QueueAdapter
+  return {
+    enqueue: vi.fn(),
+    enqueueMany: vi.fn().mockResolvedValue([]),
+    transaction: mockTransaction(),
+    getStats: vi.fn(),
+    process: vi.fn(),
+    stop: vi.fn(),
+  } as QueueAdapter
+}
+
+/** Every version the sweep handed out, across its calls. */
+function handedOut(queue: QueueAdapter) {
+  return vi
+    .mocked(queue.enqueueMany)
+    .mock.calls.flatMap(([, data]) => data as { resourceId: string; version: number }[])
 }
 
 const mockStorage = (overrides: Record<string, unknown> = {}) =>
@@ -627,11 +642,8 @@ describe('convertSetAsideVersions', () => {
 
     await service.convertSetAsideVersions({ storage: mockStorage(), queue })
 
-    const forThis = (queue.enqueue as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c) => (c[1] as { resourceId: string }).resourceId === id
-    )
-    expect(forThis).toHaveLength(1)
-    expect((forThis[0][1] as { version: number }).version).toBe(1)
+    const forThis = handedOut(queue).filter((j) => j.resourceId === id)
+    expect(forThis).toEqual([{ resourceId: id, version: 1 }])
   })
 
   it('hands on to the next version the resource owes layer 2', async () => {

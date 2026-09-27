@@ -11,13 +11,14 @@ opt-in テンプレート集。AWS 版(SharedStack / SiteStack)と同じ
 ## 構成
 
 ```
-共有スタック(1 回起動): postgres / minio / elasticmq / opensearch / ollama / caddy
+共有スタック(1 回起動): postgres / minio / opensearch / ollama / caddy
                           └ ネットワーク kukan-shared(attachable)
 サイトスタック × N       : web-<site> / worker-<site>(kukan-shared に join)
 ```
 
 - 分離の実体は AWS 版と同一: サイト別 DB + 専用ロール(`kukan_<site>`)、
-  OpenSearch インデックス prefix(`kukan-<site>-search`)、S3 バケット、SQS キュー
+  OpenSearch インデックス prefix(`kukan-<site>-search`)、S3 バケット。
+  ジョブキューはサイトの DB の中にある(ADR-058)
 - エッジは Caddy 1 本のバーチャルホスト(`Caddyfile`)
 
 ## セットアップ手順
@@ -26,7 +27,6 @@ opt-in テンプレート集。AWS 版(SharedStack / SiteStack)と同じ
 
 ```bash
 # サイト一覧に合わせて事前に編集するもの:
-#   - elasticmq.conf   … サイトごとのキュー定義(静的)
 #   - Caddyfile        … サイトごとの vhost
 #   - S3_BUCKETS       … サイトごとのバケット名(スペース区切り)
 S3_BUCKETS="kukan-citya kukan-cityb" \
@@ -76,11 +76,9 @@ docker compose -f docker/multi-site/compose.site.yml \
 
 ### 4. サイトの追加
 
-1. `elasticmq.conf` にキュー 2 本(`kukan-<site>-pipeline` / `-dlq`)を追記 →
-   `docker compose -f docker/multi-site/compose.shared.yml restart elasticmq`
-2. `S3_BUCKETS` に追加して `minio-init` を再実行(`up -d` で再走する)
-3. `Caddyfile` に vhost を追記 → `docker exec kukan-shared-caddy caddy reload -c /etc/caddy/Caddyfile`
-4. 手順 2〜3 を新サイトで実行
+1. `S3_BUCKETS` に追加して `minio-init` を再実行(`up -d` で再走する)
+2. `Caddyfile` に vhost を追記 → `docker exec kukan-shared-caddy caddy reload -c /etc/caddy/Caddyfile`
+3. 手順 2〜3 を新サイトで実行
 
 ## セキュリティ境界(重要)
 
@@ -88,14 +86,16 @@ docker compose -f docker/multi-site/compose.site.yml \
 ハードなマルチテナント境界ではない(ADR-041 のトレードオフに明記):
 
 - **資格情報レベルで分離されるのは PostgreSQL のみ**(サイト別ロール +
-  `REVOKE CONNECT`)。他サイトの DB には接続できない
-- **MinIO / ElasticMQ / OpenSearch は共有資格情報・認証なし**で、バケット名・
-  キュー名・インデックス prefix は命名規約にすぎない。サイトのコンテナが
-  侵害された場合、他サイトのオブジェクト・キュー・インデックスへ到達できる
+  `REVOKE CONNECT`)。他サイトの DB には接続できない。ジョブキューも DB の中に
+  あるので同様に分離される。worker の起床(`/wake`)はサイトの
+  `SITE_AUTH_SECRET` から導いたトークンで認証する
+- **MinIO / OpenSearch は共有資格情報・認証なし**で、バケット名・
+  インデックス prefix は命名規約にすぎない。サイトのコンテナが
+  侵害された場合、他サイトのオブジェクト・インデックスへ到達できる
 - 信頼できない相手にサイトを提供する用途には使わないこと。その要件が出た
   場合の強化パスは、MinIO のサイト別ユーザー + バケットポリシー
   (`mc admin user add` / `mc admin policy attach`)、OpenSearch security
-  plugin の有効化、サイト別 ElasticMQ 等 — もしくは AWS 版(SG + IAM)や
+  plugin の有効化等 — もしくは AWS 版(SG + IAM)や
   完全分離(ADR-041 選択肢 A)を検討する
 
 ## キャパシティ計画
@@ -113,5 +113,5 @@ docker compose -p kukan-<site> down            # web/worker の停止・削除
 docker exec -i kukan-shared-postgres psql -U kukan -d postgres \
   -c 'DROP DATABASE kukan_<site>' -c 'DROP ROLE kukan_<site>'
 # MinIO バケット・OpenSearch インデックス(kukan-<site>-search)・
-# elasticmq.conf / Caddyfile / S3_BUCKETS のエントリも忘れずに削除する
+# Caddyfile / S3_BUCKETS のエントリも忘れずに削除する
 ```

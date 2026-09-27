@@ -55,6 +55,7 @@ export function getTestDb() {
  */
 export async function cleanDatabase() {
   await truncateTables(getPool(), [
+    'job',
     'orphaned_object',
     'resource_pipeline_step',
     'resource_pipeline',

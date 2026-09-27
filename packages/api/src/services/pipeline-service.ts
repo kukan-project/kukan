@@ -4,9 +4,10 @@
  */
 
 import { eq, and, exists, inArray, isNotNull, sql } from 'drizzle-orm'
-import type { Database } from '@kukan/db'
+import type { Database, Transaction } from '@kukan/db'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import {
+  NotFoundError,
   ValidationError,
   PIPELINE_JOB_TYPE,
   primaryKeyOf,
@@ -57,7 +58,8 @@ function parseRowGroupRows(metadata: unknown): number | null {
   return typeof rows === 'number' && Number.isInteger(rows) && rows > 0 ? rows : null
 }
 
-const ENQUEUE_BATCH_SIZE = 100
+/** Runs per transaction in a bulk enqueue: few statements, row locks held briefly. */
+const ENQUEUE_BATCH_SIZE = 500
 
 export class PipelineService {
   constructor(
@@ -65,50 +67,57 @@ export class PipelineService {
     private queue?: QueueAdapter
   ) {}
 
-  /**
-   * Create or reset a pipeline for a resource and enqueue processing.
-   * Returns the queue job ID.
-   */
-  async enqueue(resourceId: string, opts: { rebuildOnly?: boolean } = {}): Promise<string> {
+  private requireQueue(): QueueAdapter {
     if (!this.queue) {
       throw new ValidationError('Queue adapter is required to enqueue pipelines')
     }
+    return this.queue
+  }
 
-    // Upsert pipeline record — preserve existing previewKey/metadata until Worker starts
-    const [pipeline] = await this.db
-      .insert(resourcePipeline)
-      .values({
-        resourceId,
-        status: 'queued' satisfies PipelineStatus,
-        error: null,
-        previewKey: null,
-        metadata: null,
-      })
-      .onConflictDoUpdate({
-        target: resourcePipeline.resourceId,
-        set: {
-          status: 'queued' satisfies PipelineStatus,
-          error: null,
-          updated: sql`NOW()`,
-        },
-      })
-      .returning()
+  /**
+   * Put these resources' pipeline rows back to `queued`, keeping the
+   * previewKey/metadata a finished run left until the worker starts. Returns
+   * the ids it marked.
+   *
+   * Chosen from `resource`, in id order, for the reasons `ensureClaimable`
+   * (pipeline-claim.ts) gives for the same statement: a resource deleted since
+   * the caller listed it drops out instead of refusing the batch on its
+   * foreign key, and writers that share rows take their locks in one order.
+   */
+  private async markQueued(tx: Transaction, resourceIds: string[]): Promise<Set<string>> {
+    const result = await tx.execute(sql`
+      INSERT INTO resource_pipeline (resource_id, status)
+      SELECT id, ${'queued' satisfies PipelineStatus} FROM resource
+      WHERE id = ANY(${sql.param(resourceIds)}::uuid[])
+      ORDER BY id
+      ON CONFLICT (resource_id) DO UPDATE SET status = excluded.status, error = NULL, updated = NOW()
+      RETURNING resource_id AS "resourceId"
+    `)
+    return new Set((result.rows as { resourceId: string }[]).map((r) => r.resourceId))
+  }
 
-    // Enqueue processing job — rollback DB status on failure
-    try {
-      const jobId = await this.queue.enqueue(PIPELINE_JOB_TYPE, { resourceId, ...opts })
-      return jobId
-    } catch (err) {
-      await this.db
-        .update(resourcePipeline)
-        .set({
-          status: 'error' satisfies PipelineStatus,
-          error: `Queue enqueue failed: ${err instanceof Error ? err.message : String(err)}`,
-          updated: sql`NOW()`,
-        })
-        .where(eq(resourcePipeline.id, pipeline.id))
-      throw err
+  /**
+   * Create or reset a pipeline for a resource and enqueue processing.
+   * Returns the queue job ID.
+   *
+   * The row and the job commit together (ADR-058): a row left `queued` with
+   * no job behind it is one nothing will ever process. Given `tx`, both are
+   * written in it, and whoever opened it with `queue.transaction` wakes the
+   * worker after the commit.
+   */
+  async enqueue(
+    resourceId: string,
+    opts: { rebuildOnly?: boolean; tx?: Transaction } = {}
+  ): Promise<string> {
+    const queue = this.requireQueue()
+    const { tx: callerTx, ...job } = opts
+    const write = async (tx: Transaction) => {
+      if (!(await this.markQueued(tx, [resourceId])).has(resourceId)) {
+        throw new NotFoundError('Resource', resourceId)
+      }
+      return queue.enqueue(PIPELINE_JOB_TYPE, { resourceId, ...job }, { tx })
     }
+    return callerTx ? write(callerTx) : queue.transaction(this.db, write)
   }
 
   /**
@@ -142,24 +151,38 @@ export class PipelineService {
   }
 
   /**
-   * Enqueue many runs, a hundred at a time, and settle each on its own: one
-   * refusal costs its row, not the rest. A sequential loop would block the
-   * single-threaded process for minutes on a catalog-sized list.
+   * Enqueue many runs, a batch per transaction: one refusal costs its batch,
+   * not the rest, and each batch is two statements however large it is. A
+   * resource deleted since it was listed is skipped, counted in neither.
    */
   async enqueueMany(
     items: { id: string; rebuildOnly?: boolean }[]
   ): Promise<{ enqueued: number; failed: { id: string; reason: unknown }[] }> {
+    const queue = this.requireQueue()
+    // One run per resource: the upsert cannot touch the same row twice
+    const unique = [...new Map(items.map((item) => [item.id, item])).values()]
     let enqueued = 0
     const failed: { id: string; reason: unknown }[] = []
-    for (let i = 0; i < items.length; i += ENQUEUE_BATCH_SIZE) {
-      const batch = items.slice(i, i + ENQUEUE_BATCH_SIZE)
-      const results = await Promise.allSettled(
-        batch.map((item) => this.enqueue(item.id, { rebuildOnly: item.rebuildOnly }))
-      )
-      results.forEach((r, j) => {
-        if (r.status === 'fulfilled') enqueued++
-        else failed.push({ id: batch[j].id, reason: r.reason })
-      })
+    for (let i = 0; i < unique.length; i += ENQUEUE_BATCH_SIZE) {
+      const batch = unique.slice(i, i + ENQUEUE_BATCH_SIZE)
+      try {
+        // A resource deleted since it was listed is neither: it has nothing to run
+        enqueued += await queue.transaction(this.db, async (tx) => {
+          const marked = await this.markQueued(
+            tx,
+            batch.map((item) => item.id)
+          )
+          const runs = batch.filter((item) => marked.has(item.id))
+          await queue.enqueueMany(
+            PIPELINE_JOB_TYPE,
+            runs.map((item) => ({ resourceId: item.id, rebuildOnly: item.rebuildOnly })),
+            { tx }
+          )
+          return runs.length
+        })
+      } catch (reason) {
+        failed.push(...batch.map((item) => ({ id: item.id, reason })))
+      }
     }
     return { enqueued, failed }
   }

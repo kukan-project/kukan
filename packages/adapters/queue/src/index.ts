@@ -1,7 +1,8 @@
 /**
  * KUKAN Queue Package
- * SQS-compatible job queue adapter (AWS SQS / ElasticMQ)
+ * Job queue adapter (PostgreSQL, ADR-058)
  */
 
 export * from './adapter'
-export * from './sqs'
+export * from './postgres'
+export * from './wake'

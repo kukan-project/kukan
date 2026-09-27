@@ -20,10 +20,6 @@ x-app-environment: &app-environment
   SEARCH_TYPE: ${SEARCH_TYPE:-opensearch}
   OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
   OPENSEARCH_INDEX_PREFIX: ${OPENSEARCH_INDEX_PREFIX:-kukan}
-  SQS_ENDPOINT: ${SQS_ENDPOINT:-http://elasticmq:9324}
-  SQS_QUEUE_URL: ${SQS_QUEUE_URL:-http://elasticmq:9324/000000000000/kukan-pipeline}
-  SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
-  SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
   AI_TYPE: ${AI_TYPE:-none}
   # Empty = adapter defaults (env.ts treats '' as unset). ollama-init pulls the
   # same vars, so the pulled models stay in sync with what the app uses.
@@ -91,25 +87,6 @@ services:
       - |
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
         mc mb --ignore-existing "local/$$S3_BUCKET"
-
-  elasticmq:
-    image: softwaremill/elasticmq-native:1.7.1
-    container_name: kukan-elasticmq
-    ports:
-      - '127.0.0.1:9324:9324'
-    volumes:
-      - ./docker/elasticmq.conf:/opt/elasticmq.conf
-    healthcheck:
-      # Probe the SQS REST API on 9324 (the only port elasticmq.conf serves);
-      # ListQueues returns HTTP 200 so wget exits 0 once the queue is ready.
-      test:
-        [
-          'CMD-SHELL',
-          "wget -qO- 'http://localhost:9324/?Action=ListQueues&Version=2012-11-05' || exit 1",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   opensearch:
     build:
@@ -222,11 +199,11 @@ services:
         condition: service_healthy
       opensearch:
         condition: service_healthy
-      elasticmq:
-        condition: service_healthy
     environment:
       <<: *app-environment
       PORT: '3000'
+      # Where the web tells the worker a job is waiting (ADR-058)
+      WORKER_WAKE_URL: http://worker:8080/wake
     # A memory limit is worth setting on a host that runs anything else. The
     # OData feed (ADR-055) reads as many pages at once as the memory it is given
     # affords, and with no limit it reads the host's — which on a box also
@@ -257,8 +234,6 @@ services:
       minio:
         condition: service_healthy
       opensearch:
-        condition: service_healthy
-      elasticmq:
         condition: service_healthy
     environment:
       <<: *app-environment

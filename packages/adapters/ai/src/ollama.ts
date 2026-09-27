@@ -113,6 +113,7 @@ export class OllamaAdapter implements AIAdapter {
         model: this.embeddingModel,
         input: texts.map((text) => this.applyPrefix(text, options?.type)),
       }),
+      ...(options?.timeoutMs && { signal: AbortSignal.timeout(options.timeoutMs) }),
     })
     if (!response.ok) {
       const detail = await response.text().catch(() => '')

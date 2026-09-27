@@ -73,6 +73,7 @@ export function createQueryRecorder() {
 export async function cleanDatabase() {
   await truncateTables(getPool(), [
     'fetch_rate_limit',
+    'job',
     'orphaned_object',
     'resource_pipeline_step',
     'resource_pipeline',
