@@ -2,6 +2,9 @@
 
 ## ステータス
 
+**置換済み（Superseded）** — ADR-058 に置換。ジョブキューは PostgreSQL の `job` 表に移り、
+SQS / ElasticMQ は廃止された。Redis/BullMQ を採らない判断は ADR-058 でも変わらない。
+
 承認済み（2026-03-01）
 
 ## コンテキスト

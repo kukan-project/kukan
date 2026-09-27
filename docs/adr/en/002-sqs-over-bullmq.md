@@ -4,6 +4,9 @@
 
 ## Status
 
+**Superseded** — by ADR-058. The job queue moved into the PostgreSQL `job` table and SQS /
+ElasticMQ were retired. Not adopting Redis/BullMQ still stands under ADR-058.
+
 Accepted (2026-03-01)
 
 ## Context

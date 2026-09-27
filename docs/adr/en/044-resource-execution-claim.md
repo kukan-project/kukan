@@ -59,7 +59,8 @@ guard, but that approach carries three properties:
 - **C) Move the queue to a DB backend and serialize on a singleton key**: withdrawn in
   ADR-022 (incompatible with Aurora Serverless at 0 ACU, multiplied per site). Being
   lease-based, it also leaves the window where a stalled run outlives its lease — so it
-  needs the same backstop as B.
+  needs the same backstop as B. (A DB queue was later adopted in ADR-058; waking the worker
+  directly removes the 0 ACU problem, and this ADR's claim stays.)
 
 ## Decision
 

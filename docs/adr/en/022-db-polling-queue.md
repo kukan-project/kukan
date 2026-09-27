@@ -6,6 +6,9 @@
 
 **Withdrawn** — 2026-04-19
 
+> A DB queue was adopted in ADR-058. The reason for withdrawal (polling keeps Aurora Serverless
+> v2 from reaching 0 ACU) is removed there by waking the worker directly instead of polling.
+
 ## Context
 
 The current pipeline job queue is implemented with SQS (AWS) / ElasticMQ (development/on-premises) (ADR-002).

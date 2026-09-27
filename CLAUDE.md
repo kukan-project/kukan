@@ -210,7 +210,7 @@ pnpm format        # Prettier フォーマット
 実装中に「なぜこの技術を選んだのか」迷ったら `docs/adr/jp/` を参照（英語版: `docs/adr/en/`）:
 
 - ORM選定 → `docs/adr/jp/001-drizzle-orm.md`
-- キュー方式 → `docs/adr/jp/002-sqs-over-bullmq.md`
+- キュー方式 → `docs/adr/jp/002-sqs-over-bullmq.md`（置換済み → ADR-058）
 - 認証方式 → `docs/adr/jp/003-better-auth.md`
 - キャッシュ方式 → `docs/adr/jp/004-lru-cache-no-adapter.md`
 - アダプター設計 → `docs/adr/jp/005-four-adapters-only.md`
@@ -265,6 +265,7 @@ pnpm format        # Prettier フォーマット
 - 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
 - BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、Step 1 実装済み） → `docs/adr/jp/055-bi-table-access-odata.md`
 - 素直な表の XLSX をテーブルとして解釈（判定は規則、AI は範囲の提案に限り人が確定、提案） → `docs/adr/jp/057-xlsx-table-interpretation.md`
+- ジョブキューの PostgreSQL 化（worker は直接起床、SQS 廃止、ADR-002 を置換） → `docs/adr/jp/058-db-queue-direct-wake.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
