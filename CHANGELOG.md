@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.32.1] - 2026-09-27
+
+**Upgrade Notes**
+
+- AWS: the Athena workgroup for CloudFront access logs is now one per environment, `kukan-<env>-logs`, instead of one per site (#733). A workgroup does not limit which databases a query can read, so a per-site workgroup looked like a site boundary it was not; which site's log you read is set by the database name in `FROM` (`kukan_<env>_<site>_logs.cloudfront`). On a multi-site environment the deploy creates the shared workgroup and deletes the per-site ones (`kukan-<env>-<site>-logs`), together with their query history. The tables and the logs themselves are unchanged, and each site's `CdnLogWorkGroup` stack output now names the shared workgroup.
+
+---
+
+**アップグレード時の注意**
+
+- AWS: CloudFront アクセスログ用の Athena ワークグループを、サイトごとから環境に 1 つ（`kukan-<env>-logs`）にしました（#733）。ワークグループはクエリが読めるデータベースを制限しないため、サイトごとに分けると実際にはないサイトの境界があるように見えていました。どのサイトのログを読むかは `FROM` のデータベース名（`kukan_<env>_<site>_logs.cloudfront`）で決まります。マルチサイト環境ではデプロイ時に共通のワークグループが作られ、サイトごとのワークグループ（`kukan-<env>-<site>-logs`）はクエリ履歴とともに削除されます。テーブルとログ自体は変わらず、各サイトのスタック出力 `CdnLogWorkGroup` は共通のワークグループ名を指します。
+
 ## [0.32.0] - 2026-09-27
 
 **Highlights**
