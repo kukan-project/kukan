@@ -77,7 +77,7 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
 - **ECS Fargate** — Web アプリケーション + Pipeline Worker
 - **Aurora Serverless v2 / RDS** — PostgreSQL データベース（ジョブキューもここに置く）
 - **S3** — ファイルストレージ
-- **Cloud Map** — Web が Worker を起こすための名前解決（環境に 1 つのプライベート DNS 名前空間）
+- **Cloud Map** — Web が Worker に通知するための名前解決（環境に 1 つのプライベート DNS 名前空間）
 - **OpenSearch** — 全文検索エンジン
 - **AWS Backup** — 隔離バックアップ（large スケール等で有効）
 

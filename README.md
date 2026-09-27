@@ -137,7 +137,7 @@ pnpm dev
 ```
 
 - Web: http://localhost:3000
-- Worker: Woken by the web when a job is queued / ジョブ投入時に web から起こされる
+- Worker: Woken by the web when a job is queued / ジョブ投入時に web から通知を受ける
 
 ## Common Commands / よく使うコマンド
 

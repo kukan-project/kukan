@@ -87,7 +87,7 @@ docker compose -f docker/multi-site/compose.site.yml \
 
 - **資格情報レベルで分離されるのは PostgreSQL のみ**(サイト別ロール +
   `REVOKE CONNECT`)。他サイトの DB には接続できない。ジョブキューも DB の中に
-  あるので同様に分離される。worker の起床(`/wake`)はサイトの
+  あるので同様に分離される。worker への通知(`/wake`)はサイトの
   `SITE_AUTH_SECRET` から導いたトークンで認証する
 - **MinIO / OpenSearch は共有資格情報・認証なし**で、バケット名・
   インデックス prefix は命名規約にすぎない。サイトのコンテナが

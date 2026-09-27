@@ -24,7 +24,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
 | 検索           | OpenSearch 3.x / PostgreSQL全文検索（フォールバック） |
 | ストレージ     | S3互換（AWS S3 / MinIO 統合アダプター）               |
-| キュー         | PostgreSQL の `job` 表（worker は直接起床、ADR-058）  |
+| キュー         | PostgreSQL の `job` 表（worker へ直接通知、ADR-058）  |
 | キャッシュ     | lru-cache 11.x（インメモリ、全環境共通）              |
 | 認証           | Better Auth 1.x + OIDC プラグイン                     |
 | AI             | Bedrock / OpenAI / Ollama / NoOp                      |
@@ -265,7 +265,7 @@ pnpm format        # Prettier フォーマット
 - 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
 - BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、Step 1 実装済み） → `docs/adr/jp/055-bi-table-access-odata.md`
 - 素直な表の XLSX をテーブルとして解釈（判定は規則、AI は範囲の提案に限り人が確定、提案） → `docs/adr/jp/057-xlsx-table-interpretation.md`
-- ジョブキューの PostgreSQL 化（worker は直接起床、SQS 廃止、ADR-002 を置換） → `docs/adr/jp/058-db-queue-direct-wake.md`
+- ジョブキューの PostgreSQL 化（worker へは直接通知、SQS 廃止、ADR-002 を置換） → `docs/adr/jp/058-db-queue-direct-wake.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
