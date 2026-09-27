@@ -559,9 +559,12 @@ regions, so that a traffic burst can be traced to its source, its URLs, and why 
 
 - **Queryable from Athena straight away** (`AccessLogConstruct`). Each site gets a Glue database
   `kukan_<env>[_<site>]_logs` with a table `cloudfront` (the 33 legacy standard-log fields, TSV,
-  first 2 lines skipped) and an Athena workgroup `kukan-<env>[-<site>]-logs`. The workgroup uses
-  Athena-managed result storage, so there is no results bucket. This removes the step of running
-  a DDL at the moment a burst is noticed. Both are deleted with the site's stack
+  first 2 lines skipped). This removes the step of running a DDL at the moment a burst is
+  noticed. Both are deleted with the site's stack
+- **One Athena workgroup per environment** (`kukan-<env>-logs`, created by `composeShared`). It
+  uses Athena-managed result storage, so there is no results bucket. A workgroup can query any
+  database, so it is not a site boundary, and one per site would only make it look like one. The
+  site is chosen by the database name in `FROM`
 
 How to read them (an example query) is in the public admin guide
 (System Admin Guide → Access logs).

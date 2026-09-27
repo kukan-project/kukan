@@ -102,6 +102,19 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
       },
       "Type": "AWS::IAM::Role",
     },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "AuthSecretC13F30CE": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -339,25 +352,6 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -3534,6 +3528,19 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
       },
       "Type": "AWS::IAM::Role",
     },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "AuthSecretC13F30CE": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -3937,25 +3944,6 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -7287,6 +7275,19 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
       },
       "Type": "AWS::IAM::Role",
     },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "AuthSecretC13F30CE": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -7524,25 +7525,6 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -10729,6 +10711,19 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       },
       "Type": "AWS::IAM::Role",
     },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "AuthSecretC13F30CE": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -10966,25 +10961,6 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -14277,6 +14253,19 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
       },
       "Type": "AWS::IAM::Role",
     },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "AuthSecretC13F30CE": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -14514,25 +14503,6 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {

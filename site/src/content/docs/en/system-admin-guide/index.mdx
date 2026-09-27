@@ -176,16 +176,17 @@ string, status, time taken (`time_taken`), and whether the cache served it (`x_e
 - Times are in UTC
 - The User-Agent and query string are URL-encoded (`url_decode` in Athena restores them)
 
-The stack also creates an Athena table and workgroup for each site. Their names are in the
-stack outputs:
+The stack also creates an Athena table for each site and one workgroup for the environment.
+Their names are in the stack outputs:
 
 | Stack output      | Example (single site)       | Multiple sites                     |
 | ----------------- | --------------------------- | ---------------------------------- |
-| `CdnLogWorkGroup` | `kukan-prd-logs`            | `kukan-prd-<site>-logs`            |
+| `CdnLogWorkGroup` | `kukan-prd-logs`            | `kukan-prd-logs` (all sites)       |
 | `CdnLogTable`     | `kukan_prd_logs.cloudfront` | `kukan_prd_<site>_logs.cloudfront` |
 
-In the Athena query editor, pick that workgroup and query the table. Query results go to
-Athena-managed storage, so no results bucket is needed.
+In the Athena query editor, pick that workgroup and query the table. Which site's log you read is
+set by the database name in `FROM`. Query results go to Athena-managed storage, so no results
+bucket is needed.
 
 Counting clients and cache results during a burst:
 

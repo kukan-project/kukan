@@ -276,9 +276,10 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     })
   })
 
-  it('gives each site its own CloudFront log bucket and table, none on the shared stack', () => {
+  it('gives each site its own CloudFront log bucket and table, and the environment one workgroup', () => {
     shared.resourceCountIs('AWS::CloudFront::Distribution', 0)
     shared.resourceCountIs('AWS::Glue::Database', 0)
+    shared.hasResourceProperties('AWS::Athena::WorkGroup', { Name: 'kukan-dev-logs' })
     for (const [template, site] of [
       [siteA, 'citya'],
       [siteB, 'cityb'],
@@ -286,7 +287,8 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       template.hasResourceProperties('AWS::Glue::Database', {
         DatabaseInput: { Name: `kukan_dev_${site}_logs` },
       })
-      template.hasResourceProperties('AWS::Athena::WorkGroup', { Name: `kukan-dev-${site}-logs` })
+      template.resourceCountIs('AWS::Athena::WorkGroup', 0)
+      template.hasOutput('CdnLogWorkGroup', { Value: 'kukan-dev-logs' })
       template.hasResourceProperties('AWS::CloudFront::Distribution', {
         DistributionConfig: Match.objectLike({
           Logging: Match.objectLike({ Bucket: CDN_LOG_BUCKET }),

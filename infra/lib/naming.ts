@@ -72,6 +72,15 @@ export function sharedParamName(scope: Construct, suffix: SharedParam): string {
   return `/kukan/${stageName.toLowerCase()}/shared/${suffix}`
 }
 
+/**
+ * The environment's Athena workgroup, e.g. `kukan-dev-logs`. Derived from the
+ * Stage only, like sharedParamName: every site of the environment names the same one.
+ */
+export function athenaWorkGroupName(scope: Construct): string {
+  const stageName = cdk.Stage.of(scope)?.stageName
+  return `${stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'}-logs`
+}
+
 /** Capitalize the first letter (e.g. `dev` → `Dev`) for Stage / construct ids. */
 export function pascal(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)

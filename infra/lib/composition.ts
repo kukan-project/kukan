@@ -22,7 +22,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import type { Construct } from 'constructs'
 import type { KukanConfig } from './config.js'
-import { envPrefix } from './naming.js'
+import { athenaWorkGroupName, envPrefix } from './naming.js'
 import { NetworkConstruct } from './constructs/network.js'
 import { EcrAssetRetentionConstruct } from './constructs/ecr-asset-retention.js'
 import { DatabaseConstruct, type DbAccess } from './constructs/database.js'
@@ -32,6 +32,7 @@ import { SearchConstruct } from './constructs/search.js'
 import { WebServiceConstruct } from './constructs/web-service.js'
 import { WorkerServiceConstruct } from './constructs/worker-service.js'
 import { CdnConstruct } from './constructs/cdn.js'
+import { createLogWorkGroup, supportsLegacyCdnLogging } from './constructs/access-log.js'
 import { SITE_ROUTING_HEADER } from './constructs/shared-alb.js'
 
 /** The hourly-billed "boxes" shared across sites (ADR-041). */
@@ -112,6 +113,12 @@ export function composeShared(scope: Construct, config: KukanConfig): SharedReso
   // Not a box: an account/region-wide side effect (lifecycle policy on the
   // bootstrap container-assets repository), applied once per environment.
   new EcrAssetRetentionConstruct(scope, 'EcrAssetRetention', { keep: config.ecrImageRetention })
+
+  // Where the sites' access log tables are queried from (CdnConstruct makes the
+  // tables under the same region condition)
+  if (supportsLegacyCdnLogging(cdk.Stack.of(scope).region)) {
+    createLogWorkGroup(scope)
+  }
 
   return { network, database, search, cluster }
 }
@@ -269,7 +276,7 @@ export function composeSite(
       description: 'CloudFront access log table (Athena)',
     })
     new cdk.CfnOutput(scope, 'CdnLogWorkGroup', {
-      value: cdn.accessLog.workGroupName,
+      value: athenaWorkGroupName(scope),
       description: 'Athena workgroup for the access log table',
     })
   }

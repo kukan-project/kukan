@@ -62,6 +62,19 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::IAM::Role",
     },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "ClusterEB0386A7": {
       "Properties": {
         "ClusterName": "kukan-dev",
@@ -1552,7 +1565,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     },
     "CdnLogWorkGroup": {
       "Description": "Athena workgroup for the access log table",
-      "Value": "kukan-dev-citya-logs",
+      "Value": "kukan-dev-logs",
     },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
@@ -1873,25 +1886,6 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-citya-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -4418,7 +4412,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     },
     "CdnLogWorkGroup": {
       "Description": "Athena workgroup for the access log table",
-      "Value": "kukan-dev-cityb-logs",
+      "Value": "kukan-dev-logs",
     },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
@@ -4739,25 +4733,6 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         },
       },
       "Type": "AWS::Glue::Table",
-    },
-    "CDNAccessLogWorkGroup75760BDA": {
-      "Properties": {
-        "Name": "kukan-dev-cityb-logs",
-        "RecursiveDeleteOption": true,
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "WorkGroupConfiguration": {
-          "EnforceWorkGroupConfiguration": true,
-          "ManagedQueryResultsConfiguration": {
-            "Enabled": true,
-          },
-        },
-      },
-      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {

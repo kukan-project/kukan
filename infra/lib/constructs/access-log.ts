@@ -1,8 +1,8 @@
 /**
  * KUKAN Access Log Construct
- * The site's CloudFront access log bucket, plus the Glue table and Athena
- * workgroup that read it — so the logs can be queried the moment a burst is
- * noticed, without first pasting a DDL.
+ * The site's CloudFront access log bucket, plus the Glue table that reads it —
+ * so the logs can be queried the moment a burst is noticed, without first
+ * pasting a DDL. The Athena workgroup is the environment's (createLogWorkGroup).
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -11,7 +11,7 @@ import * as glue from 'aws-cdk-lib/aws-glue'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import { RegionInfo } from 'aws-cdk-lib/region-info'
 import { Construct } from 'constructs'
-import { envPrefix, resourceName } from '../naming.js'
+import { athenaWorkGroupName, envPrefix } from '../naming.js'
 
 export interface AccessLogProps {
   /** Days before a log file expires. */
@@ -70,7 +70,6 @@ export class AccessLogConstruct extends Construct {
   readonly bucket: s3.Bucket
   /** `<database>.<table>` as written in an Athena query. */
   readonly tableRef: string
-  readonly workGroupName: string
 
   constructor(scope: Construct, id: string, props: AccessLogProps) {
     super(scope, id)
@@ -121,16 +120,21 @@ export class AccessLogConstruct extends Construct {
       },
     })
     table.addDependency(database)
-
-    // Athena-managed result storage: no results bucket to create or clean up
-    this.workGroupName = resourceName(this, 'logs')
-    new athena.CfnWorkGroup(this, 'WorkGroup', {
-      name: this.workGroupName,
-      recursiveDeleteOption: true,
-      workGroupConfiguration: {
-        enforceWorkGroupConfiguration: true,
-        managedQueryResultsConfiguration: { enabled: true },
-      },
-    })
   }
+}
+
+/**
+ * The environment's Athena workgroup, one for all sites. Athena-managed result
+ * storage: no results bucket to create or clean up. Not a site boundary — a
+ * query reaches whichever database its FROM names.
+ */
+export function createLogWorkGroup(scope: Construct): athena.CfnWorkGroup {
+  return new athena.CfnWorkGroup(scope, 'AthenaWorkGroup', {
+    name: athenaWorkGroupName(scope),
+    recursiveDeleteOption: true,
+    workGroupConfiguration: {
+      enforceWorkGroupConfiguration: true,
+      managedQueryResultsConfiguration: { enabled: true },
+    },
+  })
 }
