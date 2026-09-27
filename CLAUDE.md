@@ -10,6 +10,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 
 設計書全文: `docs/design-v4.md`
 パイプラインの実行時挙動（書き込みと条件の対応、オブジェクトの一生）: `docs/pipeline.md`
+ジョブの依存関係（誰が何を積むか、全件と個別、claim の有無）: `docs/jobs.md`
 
 ## 技術スタック
 
@@ -58,6 +59,7 @@ KUKAN/
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
 │   ├── pipeline.md         # パイプライン実行時リファレンス（書き込みと条件の対応）
+│   ├── jobs.md             # ジョブ実行時リファレンス（依存関係・全件と個別・claim）
 │   ├── adr/                # Architecture Decision Records
 │   │   ├── jp/             # 日本語（正本）
 │   │   └── en/             # English（機械翻訳・参考）
