@@ -255,8 +255,8 @@ SQS and ElasticMQ are removed in one release. Messages left in the queue are not
    to share a transaction with
 2. Deduplicating identical jobs. Is the current mechanism for the 60-second embed debounce
    (a per-package claim) enough, or should the `job` table carry a unique key?
-3. ~~Retention of `dead` rows, and re-enqueueing them from the admin UI~~ → the admin Background Jobs
-   page lists jobs by status; a dead one can be put back with its attempts reset, or deleted. Dead
+3. ~~Retention of `dead` rows, and re-enqueueing them from the admin UI~~ → the admin Background Job
+   Status page lists jobs by status; a dead one can be put back with its attempts reset, or deleted. Dead
    jobs untouched for 30 days are deleted by the hourly pass
 4. ~~How Service Connect namespaces are split per site under multi-site~~ → §3 (Cloud Map DNS, one
    namespace per environment, sites told apart by service name)

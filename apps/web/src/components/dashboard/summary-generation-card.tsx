@@ -11,12 +11,12 @@ import { useSummaryEstimate } from '@/hooks/use-summary-estimate'
 type SummaryAction = 'summaryFill' | 'summaryRefresh'
 
 /**
- * Bulk generation of resource abstracts (ADR-053). Beside the model settings
- * rather than the search index: what it rebuilds is what the AI wrote about a
- * dataset, and the price below is the price of the model chosen just above.
+ * Bulk generation of resource abstracts (ADR-053). With the other bulk AI
+ * action rather than the search index: what it rebuilds is what the AI wrote
+ * about a dataset. The price below is that of the abstract model.
  */
 export function SummaryGenerationCard() {
-  const t = useTranslations('dashboard.adminSite')
+  const t = useTranslations('dashboard.adminAi')
   const tc = useTranslations('common')
   const { resourceSummaryEnabled } = useSiteSettings()
   // Asked for only where abstracts exist, and read before either button is

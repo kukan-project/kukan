@@ -19,10 +19,13 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { RefreshButton } from '@/components/dashboard/refresh-button'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useLatestJson } from '@/hooks/use-latest-json'
 import { formatDateTimeCompact } from '@/components/date-time'
 
 interface JobStatsResponse {
@@ -45,12 +48,10 @@ interface JobItem {
 type StatusFilter = 'all' | 'queued' | 'processing' | 'complete' | 'error'
 
 /**
- * How long a reprocessed row is followed. The row may be on another page or
- * hidden by the filter, where its end is never seen; left running, the polls
- * would keep the database awake for as long as the tab stays open.
+ * How long a reprocessed row is marked as running. The row may be on another
+ * page or hidden by the filter, where its end is never seen.
  */
-const POLL_INTERVAL_MS = 3000
-const POLL_LIMIT_MS = 5 * 60_000
+const REPROCESS_MARK_MS = 5 * 60_000
 
 function statusBadgeVariant(status: string) {
   switch (status) {
@@ -70,23 +71,9 @@ export default function AdminJobsPage() {
   const t = useTranslations('dashboard.adminJobs')
   const tc = useTranslations('common')
 
-  // Stats
-  const [stats, setStats] = useState<JobStatsResponse | null>(null)
-
-  // Never throws: a refresh that fails keeps the counts shown, and must not
-  // leave whatever asked for it — the refresh button, a reprocess — stuck
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await clientFetch('/api/v1/admin/jobs/stats')
-      if (res.ok) setStats(await res.json())
-    } catch {
-      // The cards keep their last counts; the next refresh tries again
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchStats()
-  }, [fetchStats])
+  const { data: stats, fetch: fetchStats } = useLatestJson<JobStatsResponse>(
+    '/api/v1/admin/jobs/stats'
+  )
 
   // Status filter
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -97,53 +84,61 @@ export default function AdminJobsPage() {
     [statusFilter]
   )
 
-  const { items, loading, error, fetchPage, offset, total, pageSize, totalPages, currentPage } =
-    usePaginatedFetch<JobItem>(jobsUrl)
+  const {
+    items,
+    loading,
+    error,
+    fetchPage,
+    refresh: refreshPage,
+    offset,
+    total,
+    pageSize,
+    totalPages,
+    currentPage,
+  } = usePaginatedFetch<JobItem>(jobsUrl)
 
-  const [refreshing, setRefreshing] = useState(false)
-  const [reprocessing, setReprocessing] = useState<string | null>(null)
-
-  // Track current offset for use in callbacks without stale closures
-  const offsetRef = useRef(offset)
-  useEffect(() => {
-    offsetRef.current = offset
-  }, [offset])
-
-  const reload = useCallback(
-    () => Promise.all([fetchPage(offsetRef.current), fetchStats()]),
-    [fetchPage, fetchStats]
+  // The row reprocessed, and when it last changed before the press: its old
+  // complete or error is still on screen until the next fetch, and must not
+  // count as the new run's end
+  const [reprocessing, setReprocessing] = useState<{ resourceId: string; since: string } | null>(
+    null
   )
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const reload = useCallback(
+    () => Promise.all([fetchPage(offset), fetchStats()]),
+    [fetchPage, fetchStats, offset]
+  )
 
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-      pollingRef.current = null
-    }
+  const { spinning, refreshing, refresh } = useAutoRefresh({
+    poll: () => Promise.all([refreshPage(), fetchStats()]),
+    reload,
+  })
+
+  // A reprocessed row is marked until the polls show it done, or for a while
+  const markTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearMark = useCallback(() => {
+    if (markTimer.current) clearTimeout(markTimer.current)
+    markTimer.current = null
     setReprocessing(null)
   }, [])
 
-  // Stop polling when job reaches terminal state
   useEffect(() => {
-    if (!reprocessing || !pollingRef.current) return
-    const job = items.find((j) => j.resourceId === reprocessing)
-    if (job && (job.status === 'complete' || job.status === 'error')) {
-      stopPolling()
-    }
-  }, [items, reprocessing, stopPolling])
+    if (!reprocessing) return
+    const job = items.find((j) => j.resourceId === reprocessing.resourceId)
+    if (!job || job.updated === reprocessing.since) return
+    if (job.status === 'complete' || job.status === 'error') clearMark()
+  }, [items, reprocessing, clearMark])
 
-  // Cleanup on unmount
-  useEffect(() => stopPolling, [stopPolling])
+  useEffect(() => clearMark, [clearMark])
 
   const [reprocessFailed, setReprocessFailed] = useState(false)
   const reprocess = useCallback(
-    async (resourceId: string) => {
-      stopPolling()
-      setReprocessing(resourceId)
+    async ({ resourceId, updated }: JobItem) => {
+      clearMark()
+      setReprocessing({ resourceId, since: updated })
       setReprocessFailed(false)
       // A network failure throws rather than answering; either way nothing was
-      // queued, and polling for a run that is not coming would never stop
+      // queued, and the row must not stay marked for a run that is not coming
       const res = await clientFetch(`/api/v1/resources/${resourceId}/run-pipeline`, {
         method: 'POST',
       }).catch(() => null)
@@ -152,15 +147,10 @@ export default function AdminJobsPage() {
         setReprocessing(null)
         return
       }
-      const poll = () => reload().catch(() => {})
-      await poll()
-      const until = Date.now() + POLL_LIMIT_MS
-      pollingRef.current = setInterval(() => {
-        if (Date.now() > until) stopPolling()
-        else void poll()
-      }, POLL_INTERVAL_MS)
+      await reload().catch(() => {})
+      markTimer.current = setTimeout(clearMark, REPROCESS_MARK_MS)
     },
-    [reload, stopPolling]
+    [reload, clearMark]
   )
 
   // Every resource's pipeline again, from the file it holds — the runs this
@@ -185,25 +175,36 @@ export default function AdminJobsPage() {
     }
   }, [reload])
 
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    await reload()
-    setRefreshing(false)
-  }, [reload])
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')}>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          onClick={refresh}
-          disabled={refreshing}
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-        </Button>
+        <RefreshButton onClick={refresh} disabled={refreshing} spinning={spinning} />
       </PageHeader>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('contentTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">{t('contentDescription')}</p>
+          <div className="flex items-center gap-4">
+            <Button variant="outline" onClick={reprocessContent} disabled={contentBusy}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${contentBusy ? 'animate-spin' : ''}`} />
+              {contentBusy ? tc('queueing') : t('contentButton')}
+            </Button>
+            {contentOutcome === true && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t('contentQueued')}
+              </p>
+            )}
+            {contentOutcome === false && (
+              <p role="alert" className="text-sm text-destructive">
+                {tc('queueFailed')}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats Cards (DB-based) */}
       <div className="grid gap-4 sm:grid-cols-5">
@@ -239,31 +240,6 @@ export default function AdminJobsPage() {
           onClick={() => setStatusFilter('error')}
         />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('contentTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">{t('contentDescription')}</p>
-          <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={reprocessContent} disabled={contentBusy}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${contentBusy ? 'animate-spin' : ''}`} />
-              {contentBusy ? tc('queueing') : t('contentButton')}
-            </Button>
-            {contentOutcome === true && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t('contentQueued')}
-              </p>
-            )}
-            {contentOutcome === false && (
-              <p role="alert" className="text-sm text-destructive">
-                {tc('queueFailed')}
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       {reprocessFailed && (
         <p role="alert" className="text-sm text-destructive">
@@ -335,12 +311,12 @@ export default function AdminJobsPage() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      disabled={reprocessing === job.resourceId}
-                      onClick={() => reprocess(job.resourceId)}
+                      disabled={reprocessing?.resourceId === job.resourceId}
+                      onClick={() => reprocess(job)}
                       title={t('reprocess')}
                     >
                       <Play
-                        className={`h-3.5 w-3.5 ${reprocessing === job.resourceId ? 'animate-pulse' : ''}`}
+                        className={`h-3.5 w-3.5 ${reprocessing?.resourceId === job.resourceId ? 'animate-pulse' : ''}`}
                       />
                     </Button>
                   </TableCell>

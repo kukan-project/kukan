@@ -25,6 +25,7 @@ function mockPaginatedReturn(overrides: Record<string, unknown> = {}) {
     totalPages: 0,
     currentPage: 1,
     fetchPage: mockFetchPage,
+    refresh: vi.fn(),
     pageSize: 20,
     ...overrides,
   } as ReturnType<typeof usePaginatedFetch>)

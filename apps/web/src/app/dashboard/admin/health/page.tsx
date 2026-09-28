@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useLocale, useTranslations } from 'next-intl'
-import { RefreshCw } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -15,6 +14,8 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { RefreshButton } from '@/components/dashboard/refresh-button'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { clientFetch } from '@/lib/client-api'
@@ -79,35 +80,16 @@ export default function AdminHealthPage() {
   const { items, loading, error, fetchPage, offset, total, pageSize, totalPages, currentPage } =
     usePaginatedFetch<HealthItem>(healthUrl)
 
-  const [refreshing, setRefreshing] = useState(false)
-  const offsetRef = useRef(offset)
-  useEffect(() => {
-    offsetRef.current = offset
-  }, [offset])
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      await Promise.all([fetchPage(offsetRef.current), fetchStats()])
-    } finally {
-      setRefreshing(false)
-    }
-  }, [fetchPage, fetchStats])
+  const { refreshing, refresh } = useAutoRefresh({
+    reload: () => Promise.all([fetchPage(offset), fetchStats()]),
+  })
 
   const totalAll = stats ? Object.values(stats).reduce((sum, n) => sum + n, 0) : undefined
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')}>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          onClick={refresh}
-          disabled={refreshing}
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-        </Button>
+        <RefreshButton onClick={refresh} disabled={refreshing} spinning={refreshing} />
       </PageHeader>
 
       {/* Stats Cards */}

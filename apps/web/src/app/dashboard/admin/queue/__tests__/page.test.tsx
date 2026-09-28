@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import AdminQueuePage from '../page'
 
 vi.mock('@/lib/client-api', () => ({
@@ -18,6 +19,7 @@ const mockPaginatedFetch = {
   loading: false,
   error: null as Error | null,
   fetchPage: vi.fn(),
+  refresh: vi.fn(),
   offset: 0,
   total: 0,
   pageSize: 20,
@@ -28,7 +30,13 @@ vi.mock('@/hooks/use-paginated-fetch', () => ({
   usePaginatedFetch: vi.fn(() => mockPaginatedFetch),
 }))
 
+vi.mock('@/hooks/use-visible-interval', () => ({
+  useVisibleInterval: vi.fn(),
+}))
+
 const mockClientFetch = vi.mocked(clientFetch)
+const mockUseVisibleInterval = vi.mocked(useVisibleInterval)
+const lastPoll = () => mockUseVisibleInterval.mock.calls.at(-1)!
 const mockUsePaginatedFetch = vi.mocked(usePaginatedFetch)
 
 const ok = (data: unknown) => ({ ok: true, json: async () => data }) as Response
@@ -64,10 +72,10 @@ describe('AdminQueuePage', () => {
     )
   })
 
-  it('opens on the running jobs of every type', () => {
+  it('opens on the scheduled jobs of every type', () => {
     render(<AdminQueuePage />)
 
-    expect(mockUsePaginatedFetch).toHaveBeenCalledWith('/api/v1/admin/queue/jobs?status=running')
+    expect(mockUsePaginatedFetch).toHaveBeenCalledWith('/api/v1/admin/queue/jobs?status=scheduled')
   })
 
   it('counts jobs by type and status, with a total row', async () => {
@@ -152,20 +160,54 @@ describe('AdminQueuePage', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('steps back a page when the one shown has emptied', () => {
-    mockPaginatedFetch.items = []
-    mockPaginatedFetch.total = 20
-    mockPaginatedFetch.offset = 20
-    render(<AdminQueuePage />)
-
-    expect(mockPaginatedFetch.fetchPage).toHaveBeenCalledWith(0)
-  })
-
   it('offers no actions on a job that is still queued', () => {
     mockPaginatedFetch.items = [{ ...deadJob, status: 'waiting', attempts: 0, lastError: null }]
     render(<AdminQueuePage />)
 
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+  it('polls the counts and the page shown, spinning the refresh icon meanwhile', async () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = render(<AdminQueuePage />)
+      await act(async () => {})
+      const spinning = () => container.querySelector('svg.animate-spin')
+      mockClientFetch.mockClear()
+
+      const [poll, , enabled] = lastPoll()
+      expect(enabled).toBe(true)
+      let settled = false
+      act(() => {
+        ;(poll() as Promise<void>).then(() => (settled = true))
+      })
+
+      expect(mockPaginatedFetch.refresh).toHaveBeenCalled()
+      expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/admin/queue/counts')
+      expect(spinning()).not.toBeNull()
+
+      // Held for a full turn, however fast the requests came back
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(999)
+      })
+      expect(spinning()).not.toBeNull()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+      expect(settled).toBe(true)
+      expect(spinning()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops polling while the delete dialog is open', async () => {
+    mockPaginatedFetch.items = [deadJob]
+    render(<AdminQueuePage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await screen.findByRole('dialog')
+
+    expect(lastPoll()[2]).toBe(false)
   })
 })

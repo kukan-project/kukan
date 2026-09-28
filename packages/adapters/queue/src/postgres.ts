@@ -77,7 +77,7 @@ const inSeconds = (s: number) => sql`now() + ${`${s} seconds`}::interval`
 const jobStatus = () => sql<JobStatus>`case
   when ${jobTable.state} = 'dead' then 'dead'
   when ${jobTable.lockedUntil} >= now() then 'running'
-  when ${jobTable.runAt} > now() then 'delayed'
+  when ${jobTable.runAt} > now() then 'scheduled'
   else 'waiting'
 end`
 

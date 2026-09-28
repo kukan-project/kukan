@@ -838,8 +838,8 @@ wrote.
 An abstract **stands while its version stands**. It regenerates when a new version arrives and
 not when someone fixes a title. How it was written — model, generation version, language — is a
 separate key that only the dashboard's "rewrite everything" acts on (the shape
-`embedding_model` + `embedding_hash` already uses). A full run lives on the site admin screen, directly below the
-settings that choose the model it would use.
+`embedding_model` + `embedding_hash` already uses). A full run lives on the AI admin screen, beside the
+embedding regeneration.
 
 **The material itself must not be the digest.** The first implementation hashed the facts the
 model was shown, and that was a path for **an internal change of the pipeline to regenerate the

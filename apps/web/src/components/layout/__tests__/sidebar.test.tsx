@@ -24,9 +24,10 @@ describe('Sidebar', () => {
     expect(screen.getByText('System Admin')).toBeInTheDocument()
     expect(screen.getByText('Users')).toBeInTheDocument()
     expect(screen.getByText('Resource Processing')).toBeInTheDocument()
-    expect(screen.getByText('Background Jobs')).toBeInTheDocument()
+    expect(screen.getByText('Background Job Status')).toBeInTheDocument()
     expect(screen.getByText('Health Check')).toBeInTheDocument()
     expect(screen.getByText('Index Management')).toBeInTheDocument()
+    expect(screen.getByText('AI Management')).toBeInTheDocument()
     expect(screen.getByText('Access Analytics')).toBeInTheDocument()
     expect(screen.getByText('Site Management')).toBeInTheDocument()
   })
@@ -56,9 +57,43 @@ describe('Sidebar', () => {
       'href',
       '/dashboard/admin/jobs'
     )
-    expect(screen.getByText('Background Jobs').closest('a')).toHaveAttribute(
+    expect(screen.getByText('Background Job Status').closest('a')).toHaveAttribute(
       'href',
       '/dashboard/admin/queue'
     )
+    expect(screen.getByText('AI Management').closest('a')).toHaveAttribute(
+      'href',
+      '/dashboard/admin/ai'
+    )
+  })
+
+  it('gives every link an icon, hidden from screen readers', () => {
+    mockUseUser.mockReturnValue({ sysadmin: true })
+    render(<Sidebar />)
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(13)
+    for (const link of links) {
+      expect(link.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+    }
+  })
+
+  it('lists the admin pages by what they are for: people, status, rebuilding, then settings', () => {
+    mockUseUser.mockReturnValue({ sysadmin: true })
+    render(<Sidebar />)
+    const admin = screen
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'))
+      .filter((href) => href?.startsWith('/dashboard/admin/'))
+    expect(admin).toEqual([
+      '/dashboard/admin/users',
+      '/dashboard/admin/announcements',
+      '/dashboard/admin/health',
+      '/dashboard/admin/jobs',
+      '/dashboard/admin/queue',
+      '/dashboard/admin/analytics',
+      '/dashboard/admin/search',
+      '/dashboard/admin/ai',
+      '/dashboard/admin/site',
+    ])
   })
 })

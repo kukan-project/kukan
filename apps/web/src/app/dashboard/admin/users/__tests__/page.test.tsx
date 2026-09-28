@@ -22,6 +22,7 @@ const mockPaginatedFetch = {
   loading: false,
   error: null as Error | null,
   fetchPage: vi.fn(),
+  refresh: vi.fn(),
   offset: 0,
   total: 0,
   pageSize: 20,

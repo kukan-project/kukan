@@ -302,4 +302,227 @@ describe('usePaginatedFetch', () => {
     expect(result.current.error).toBeNull()
     expect(result.current.items).toEqual(page1.items)
   })
+
+  describe('an emptied page', () => {
+    it('steps back to the page that now ends the list', async () => {
+      vi.mocked(clientFetch)
+        .mockResolvedValueOnce(mockResponse(page1))
+        .mockResolvedValueOnce(mockResponse({ items: [], total: 3 }))
+        .mockResolvedValueOnce(mockResponse({ items: [{ id: '3' }], total: 3 }))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages', 2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      await act(async () => {
+        await result.current.fetchPage(4)
+      })
+
+      await waitFor(() => expect(result.current.offset).toBe(2))
+      expect(clientFetch).toHaveBeenLastCalledWith('/api/v1/packages?limit=2&offset=2')
+    })
+
+    it('goes back to the first page when nothing is left', async () => {
+      vi.mocked(clientFetch)
+        .mockResolvedValueOnce(mockResponse(page1))
+        .mockResolvedValueOnce(mockResponse({ items: [], total: 0 }))
+        .mockResolvedValueOnce(mockResponse({ items: [], total: 0 }))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages', 2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      await act(async () => {
+        await result.current.fetchPage(4)
+      })
+
+      await waitFor(() => expect(result.current.offset).toBe(0))
+      expect(clientFetch).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not retry at once when the step back fails', async () => {
+      vi.mocked(clientFetch)
+        .mockResolvedValueOnce(mockResponse(page1))
+        .mockResolvedValueOnce(mockResponse({ items: [], total: 3 }))
+        .mockRejectedValue(new Error('Network error'))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages', 2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      await act(async () => {
+        await result.current.fetchPage(4)
+      })
+      await waitFor(() => expect(result.current.error).not.toBeNull())
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 50))
+      })
+
+      // The first page, the emptied one, and one step back — then it waits
+      expect(clientFetch).toHaveBeenCalledTimes(3)
+    })
+
+    it('stays on an empty first page', async () => {
+      vi.mocked(clientFetch).mockResolvedValue(mockResponse({ items: [], total: 0 }))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      expect(clientFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('refresh', () => {
+    it('fetches the page shown again', async () => {
+      vi.mocked(clientFetch).mockImplementation(async () => mockResponse(page2))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages', 2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      await act(async () => {
+        await result.current.fetchPage(2)
+      })
+
+      await act(async () => {
+        await result.current.refresh()
+      })
+
+      expect(clientFetch).toHaveBeenLastCalledWith('/api/v1/packages?limit=2&offset=2')
+    })
+
+    it('keeps the same array when the page has not changed', async () => {
+      vi.mocked(clientFetch).mockImplementation(async () =>
+        mockResponse({ items: [{ id: '1' }], total: 1 })
+      )
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const before = result.current.items
+
+      await act(async () => {
+        await result.current.refresh()
+      })
+
+      expect(result.current.items).toBe(before)
+    })
+
+    it('takes a changed page without showing loading', async () => {
+      vi.mocked(clientFetch)
+        .mockResolvedValueOnce(mockResponse(page1))
+        .mockResolvedValueOnce(mockResponse(page2))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let promise: Promise<void>
+      act(() => {
+        promise = result.current.refresh()
+      })
+      expect(result.current.loading).toBe(false)
+      await act(async () => {
+        await promise
+      })
+
+      expect(result.current.items).toEqual(page2.items)
+    })
+
+    it('keeps what is shown, and no error, when it fails', async () => {
+      vi.mocked(clientFetch)
+        .mockResolvedValueOnce(mockResponse(page1))
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce(mockResponse(null, false))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      await act(async () => {
+        await result.current.refresh()
+        await result.current.refresh()
+      })
+
+      expect(result.current.items).toEqual(page1.items)
+      expect(result.current.error).toBeNull()
+    })
+
+    it('gives way to a real fetch in flight', async () => {
+      vi.mocked(clientFetch).mockResolvedValueOnce(mockResponse(page1))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages', 2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let resolvePage2: (res: Response) => void
+      vi.mocked(clientFetch).mockReturnValueOnce(
+        new Promise((r) => {
+          resolvePage2 = r
+        })
+      )
+      act(() => {
+        result.current.fetchPage(2)
+      })
+      await act(async () => {
+        await result.current.refresh()
+      })
+      expect(clientFetch).toHaveBeenCalledTimes(2)
+
+      await act(async () => {
+        resolvePage2!(mockResponse(page2))
+      })
+      expect(result.current.items).toEqual(page2.items)
+    })
+
+    it('clears an earlier error once it succeeds', async () => {
+      vi.mocked(clientFetch)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce(mockResponse(page1))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages'))
+      await waitFor(() => expect(result.current.error).not.toBeNull())
+
+      await act(async () => {
+        await result.current.refresh()
+      })
+
+      expect(result.current.error).toBeNull()
+      expect(result.current.items).toEqual(page1.items)
+    })
+
+    it('is dropped when a later refresh has started', async () => {
+      vi.mocked(clientFetch).mockResolvedValueOnce(mockResponse(page1))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages'))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let resolveOld: (res: Response) => void
+      vi.mocked(clientFetch)
+        .mockReturnValueOnce(
+          new Promise((r) => {
+            resolveOld = r
+          })
+        )
+        .mockResolvedValueOnce(mockResponse(page2))
+      act(() => {
+        result.current.refresh()
+      })
+      await act(async () => {
+        await result.current.refresh()
+      })
+      await act(async () => {
+        resolveOld!(mockResponse({ items: [{ id: 'old' }], total: 5 }))
+      })
+
+      expect(result.current.items).toEqual(page2.items)
+    })
+
+    it('is dropped when a real fetch starts after it', async () => {
+      vi.mocked(clientFetch).mockResolvedValueOnce(mockResponse(page1))
+      const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages', 2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let resolvePoll: (res: Response) => void
+      vi.mocked(clientFetch)
+        .mockReturnValueOnce(
+          new Promise((r) => {
+            resolvePoll = r
+          })
+        )
+        .mockResolvedValueOnce(mockResponse(page2))
+      act(() => {
+        result.current.refresh()
+      })
+      await act(async () => {
+        await result.current.fetchPage(2)
+      })
+      await act(async () => {
+        resolvePoll!(mockResponse({ items: [{ id: 'poll' }], total: 5 }))
+      })
+
+      expect(result.current.items).toEqual(page2.items)
+      expect(result.current.offset).toBe(2)
+    })
+  })
 })

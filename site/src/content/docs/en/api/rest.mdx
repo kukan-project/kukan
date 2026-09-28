@@ -635,7 +635,7 @@ All sysadmin only.
 | POST   | `/admin/jobs/enqueue-all`        | Enqueue pipeline for all resources                                       |
 | GET    | `/admin/jobs/stats`              | Pipeline job statistics                                                  |
 | GET    | `/admin/jobs`                    | List pipeline jobs                                                       |
-| GET    | `/admin/queue/counts`            | Job counts by type and status (running / waiting / delayed / dead)       |
+| GET    | `/admin/queue/counts`            | Job counts by type and status (scheduled / waiting / running / dead)     |
 | GET    | `/admin/queue/jobs`              | List queued jobs (`status` and `type` filters)                           |
 | POST   | `/admin/queue/jobs/:id/retry`    | Put a dead job back, attempts reset                                      |
 | DELETE | `/admin/queue/jobs/:id`          | Delete a dead job                                                        |

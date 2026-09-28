@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import AdminSearchPage from '../page'
 
@@ -106,20 +106,42 @@ describe('AdminSearchPage', () => {
     })
   })
 
-  it('renders the reprocess actions, each saying what it rebuilds', () => {
+  it('rebuilds the index first, and points to where the other reprocessing moved', () => {
     render(<AdminSearchPage />)
 
-    expect(screen.getByText('Reprocessing')).toBeInTheDocument()
     expect(screen.getByText('Rebuild search index')).toBeInTheDocument()
-    // Moved to the resource processing page, where its runs are followed
-    expect(screen.queryByText('Reprocess all resources')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled()
+    expect(screen.queryByText('Regenerate embeddings')).not.toBeInTheDocument()
     expect(
       screen.getByText('All resources are reprocessed from Resource Processing.').closest('a')
     ).toHaveAttribute('href', '/dashboard/admin/jobs')
-    expect(screen.getByText('Regenerate embeddings')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled()
-    // Embedding is off in this test's settings, so its button is not.
-    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeDisabled()
+    expect(
+      screen.getByText('Embeddings are regenerated from AI Management.').closest('a')
+    ).toHaveAttribute('href', '/dashboard/admin/ai')
+  })
+
+  it('places the rebuild above the index it rebuilds', async () => {
+    render(<AdminSearchPage />)
+    await waitFor(() => expect(screen.getByText('resources')).toBeInTheDocument())
+
+    const rebuild = screen.getByText('Rebuild search index')
+    const indexCard = screen.getByText('resources')
+    expect(
+      rebuild.compareDocumentPosition(indexCard) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('queues a rebuild', async () => {
+    render(<AdminSearchPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Rebuild job queued')
+    expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/admin/reindex-metadata', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ includeContent: false }),
+    })
   })
 
   it('has a search input and button', () => {
@@ -127,5 +149,62 @@ describe('AdminSearchPage', () => {
 
     expect(screen.getByPlaceholderText('Search documents...')).toBeInTheDocument()
     expect(screen.getByText('Search')).toBeInTheDocument()
+  })
+
+  describe('refresh', () => {
+    const statsCalls = () =>
+      mockClientFetch.mock.calls.filter(([path]) => path === '/api/v1/admin/search/stats').length
+    const browseCalls = () =>
+      mockClientFetch.mock.calls.filter(([path]) => String(path).includes('/browse/')).length
+
+    beforeEach(() => {
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    })
+
+    async function open() {
+      vi.useFakeTimers()
+      render(<AdminSearchPage />)
+      await act(async () => {})
+      mockClientFetch.mockClear()
+    }
+
+    it('does not refresh on its own', async () => {
+      await open()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+
+      expect(statsCalls()).toBe(0)
+      expect(browseCalls()).toBe(0)
+    })
+
+    it('does not follow the counts after a rebuild either', async () => {
+      await open()
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Rebuild' }))
+      })
+      mockClientFetch.mockClear()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+
+      expect(statsCalls()).toBe(0)
+    })
+
+    it('reloads the counts and the document list from the refresh button', async () => {
+      await open()
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      })
+
+      expect(statsCalls()).toBe(1)
+      expect(browseCalls()).toBe(1)
+    })
   })
 })

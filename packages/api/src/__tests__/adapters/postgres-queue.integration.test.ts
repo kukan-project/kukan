@@ -18,7 +18,7 @@ function adapter(notify?: () => Promise<void>, onWaiting?: (count: number) => vo
 
 /** Jobs per status, summed over types. */
 async function byStatus(queue: PostgresQueueAdapter) {
-  const counts = { waiting: 0, running: 0, delayed: 0, dead: 0 }
+  const counts = { waiting: 0, running: 0, scheduled: 0, dead: 0 }
   for (const c of await queue.countJobs()) counts[c.status] += c.count
   return counts
 }
@@ -106,7 +106,7 @@ describe('PostgresQueueAdapter', () => {
     await queue.enqueue('t', {}, { delaySeconds: 3600 })
     await queue.process({ t: handler })
 
-    await vi.waitFor(async () => expect((await byStatus(queue)).delayed).toBe(1))
+    await vi.waitFor(async () => expect((await byStatus(queue)).scheduled).toBe(1))
     expect(handler).not.toHaveBeenCalled()
 
     await db.update(job).set({ runAt: sql`now()` })
@@ -408,7 +408,7 @@ describe('PostgresQueueAdapter', () => {
 
   it('lists jobs by where they stand', async () => {
     const queue = adapter()
-    const [waiting, running, delayed, dead] = await Promise.all([
+    const [waiting, running, scheduled, dead] = await Promise.all([
       queue.enqueue('t', {}),
       queue.enqueue('t', {}),
       queue.enqueue('t', {}, { delaySeconds: 60 }),
@@ -425,7 +425,7 @@ describe('PostgresQueueAdapter', () => {
     expect(Object.fromEntries(all.items.map((j) => [j.id, j.status]))).toEqual({
       [waiting]: 'waiting',
       [running]: 'running',
-      [delayed]: 'delayed',
+      [scheduled]: 'scheduled',
       [dead]: 'dead',
     })
     expect(await queue.listJobs({ status: 'dead', limit: 10, offset: 0 })).toMatchObject({
@@ -483,6 +483,6 @@ describe('PostgresQueueAdapter', () => {
       .where(eq(job.id, held))
     await db.update(job).set({ state: 'dead' }).where(eq(job.id, dead))
 
-    expect(await byStatus(queue)).toEqual({ waiting: 1, running: 1, delayed: 1, dead: 1 })
+    expect(await byStatus(queue)).toEqual({ waiting: 1, running: 1, scheduled: 1, dead: 1 })
   })
 })

@@ -457,10 +457,10 @@ export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
 export const SYNC_RESOURCE_DOC_JOB_TYPE = 'sync-resource-doc' as const
 
 /**
- * Where a job stands (ADR-058), in the order a job moves through them: held by
- * a worker, taken by nobody yet, held back, or given up on.
+ * Where a job stands (ADR-058), in the order a job moves through them: due
+ * later, due and taken by nobody yet, held by a worker, or given up on.
  */
-export const JOB_STATUSES = ['running', 'waiting', 'delayed', 'dead'] as const
+export const JOB_STATUSES = ['scheduled', 'waiting', 'running', 'dead'] as const
 export type JobStatus = (typeof JOB_STATUSES)[number]
 
 // ── Job payload schemas (the worker validates against these before acting) ──

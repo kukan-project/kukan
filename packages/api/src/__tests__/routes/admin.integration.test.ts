@@ -1406,7 +1406,10 @@ describe('Admin API Routes', () => {
         ],
       })
       const all = await (await queueApp.request('/api/v1/admin/queue/jobs')).json()
-      expect(all.items.map((j: { status: string }) => j.status).sort()).toEqual(['dead', 'delayed'])
+      expect(all.items.map((j: { status: string }) => j.status).sort()).toEqual([
+        'dead',
+        'scheduled',
+      ])
       expect((await queueApp.request('/api/v1/admin/queue/jobs?status=nope')).status).toBe(400)
     })
 

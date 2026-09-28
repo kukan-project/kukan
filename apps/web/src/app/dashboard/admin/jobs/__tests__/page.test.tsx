@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import AdminJobsPage from '../page'
 
 vi.mock('@/lib/client-api', () => ({
@@ -18,6 +19,7 @@ const mockPaginatedFetch = {
   loading: false,
   error: null as Error | null,
   fetchPage: vi.fn(),
+  refresh: vi.fn(),
   offset: 0,
   total: 0,
   pageSize: 20,
@@ -28,7 +30,13 @@ vi.mock('@/hooks/use-paginated-fetch', () => ({
   usePaginatedFetch: vi.fn(() => mockPaginatedFetch),
 }))
 
+vi.mock('@/hooks/use-visible-interval', () => ({
+  useVisibleInterval: vi.fn(),
+}))
+
 const mockClientFetch = vi.mocked(clientFetch)
+const mockUseVisibleInterval = vi.mocked(useVisibleInterval)
+const lastPoll = () => mockUseVisibleInterval.mock.calls.at(-1)!
 const mockUsePaginatedFetch = vi.mocked(usePaginatedFetch)
 
 function mockFetchResponse(data: unknown) {
@@ -42,9 +50,9 @@ describe('AdminJobsPage', () => {
     mockPaginatedFetch.loading = false
     mockPaginatedFetch.error = null
     mockPaginatedFetch.total = 0
+    mockPaginatedFetch.offset = 0
     mockClientFetch.mockResolvedValue(
       mockFetchResponse({
-        queue: { pending: 5, inFlight: 2, delayed: 0, dead: 1 },
         jobs: { queued: 3, processing: 1, complete: 10, error: 2 },
       })
     )
@@ -69,6 +77,14 @@ describe('AdminJobsPage', () => {
     expect(screen.getByText('1')).toBeInTheDocument() // processing
     expect(screen.getByText('10')).toBeInTheDocument() // complete
     expect(screen.getByText('2')).toBeInTheDocument() // error
+  })
+
+  it('places the reprocess of every resource above the status cards', () => {
+    render(<AdminJobsPage />)
+
+    const reprocess = screen.getByText('Reprocess all resources')
+    const cards = screen.getByText('All')
+    expect(reprocess.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('reprocesses every resource from the content it holds', async () => {
@@ -165,5 +181,67 @@ describe('AdminJobsPage', () => {
 
     expect(screen.getByText('Failed to load data')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('polls the stats and the page shown, spinning the refresh icon meanwhile', async () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = render(<AdminJobsPage />)
+      await act(async () => {})
+      const spinning = () => container.querySelector('svg.animate-spin')
+      mockClientFetch.mockClear()
+
+      let settled = false
+      act(() => {
+        ;(lastPoll()[0]() as Promise<void>).then(() => (settled = true))
+      })
+
+      expect(mockPaginatedFetch.refresh).toHaveBeenCalled()
+      expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/admin/jobs/stats')
+      expect(spinning()).not.toBeNull()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(settled).toBe(true)
+      expect(spinning()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks a reprocessed row until the polls show it done', async () => {
+    const row = {
+      id: 'j1',
+      resourceId: 'r1',
+      status: 'complete',
+      error: null,
+      created: '2026-01-01T00:00:00Z',
+      updated: '2026-01-01T00:00:00Z',
+      resourceName: 'data.csv',
+      packageId: 'p1',
+      packageName: 'pkg',
+      packageTitle: null,
+    }
+    mockPaginatedFetch.items = [row]
+    const { rerender } = render(<AdminJobsPage />)
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByTitle('Reprocess'))
+    await waitFor(() =>
+      expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/run-pipeline', {
+        method: 'POST',
+      })
+    )
+    // The run before it, still on screen until the next fetch, is not its end
+    rerender(<AdminJobsPage />)
+    await waitFor(() => expect(screen.getByTitle('Reprocess')).toBeDisabled())
+
+    mockPaginatedFetch.items = [{ ...row, status: 'queued', updated: '2026-01-01T00:01:00Z' }]
+    rerender(<AdminJobsPage />)
+    expect(screen.getByTitle('Reprocess')).toBeDisabled()
+
+    mockPaginatedFetch.items = [{ ...row, status: 'complete', updated: '2026-01-01T00:02:00Z' }]
+    rerender(<AdminJobsPage />)
+    await waitFor(() => expect(screen.getByTitle('Reprocess')).toBeEnabled())
   })
 })

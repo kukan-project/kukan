@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
-import { RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowRight, RotateCcw, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -14,10 +14,13 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { RefreshButton } from '@/components/dashboard/refresh-button'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useLatestJson } from '@/hooks/use-latest-json'
 import { formatDateTimeCompact } from '@/components/date-time'
 import {
   BACKFILL_VERSIONS_JOB_TYPE,
@@ -59,6 +62,9 @@ const TYPE_ORDER: string[] = [
   CONVERT_SET_ASIDE_JOB_TYPE,
   RECORD_ROW_GROUPS_JOB_TYPE,
 ]
+
+/** The statuses a job reaches from the one before it; dead is where it ends up, not a next step. */
+const FLOW_STEPS: JobStatus[] = ['waiting', 'running']
 
 /** Where there are jobs, in the accent; dead ones in red; empty cells recede. */
 function cellTone(status: JobStatus, value: number): string {
@@ -113,42 +119,33 @@ export default function AdminQueuePage() {
   const t = useTranslations('dashboard.adminQueue')
   const tc = useTranslations('common')
 
-  const [counts, setCounts] = useState<JobCount[] | null>(null)
-  // Never throws: a refresh that fails keeps the counts shown, and must not
-  // cut short whatever asked for it — a delete's dialog closing, say
-  const fetchCounts = useCallback(async () => {
-    try {
-      const res = await clientFetch('/api/v1/admin/queue/counts')
-      if (res.ok) setCounts((await res.json()).items)
-    } catch {
-      // The table keeps its last counts; the next refresh tries again
-    }
-  }, [])
-  useEffect(() => {
-    fetchCounts()
-  }, [fetchCounts])
+  const { data: countsData, fetch: fetchCounts } = useLatestJson<{ items: JobCount[] }>(
+    '/api/v1/admin/queue/counts'
+  )
+  const counts = countsData?.items ?? null
 
-  // What the worker is on now, of every type; dead jobs show as red counts
+  // What is coming next, of every type; dead jobs show as red counts
   const [filter, setFilter] = useState<{ status: JobStatus; type?: string }>({
-    status: 'running',
+    status: 'scheduled',
   })
   const jobsUrl = useMemo(() => {
     const params = new URLSearchParams({ status: filter.status })
     if (filter.type) params.set('type', filter.type)
     return `/api/v1/admin/queue/jobs?${params}`
   }, [filter])
-  const { items, loading, error, fetchPage, offset, total, pageSize, totalPages, currentPage } =
-    usePaginatedFetch<JobItem>(jobsUrl)
+  const {
+    items,
+    loading,
+    error,
+    fetchPage,
+    refresh: refreshPage,
+    offset,
+    total,
+    pageSize,
+    totalPages,
+    currentPage,
+  } = usePaginatedFetch<JobItem>(jobsUrl)
 
-  // The last row of the last page retried or deleted leaves that page empty;
-  // step back to the page that now ends the list
-  useEffect(() => {
-    if (!loading && items.length === 0 && total > 0 && offset >= total) {
-      fetchPage(Math.floor((total - 1) / pageSize) * pageSize)
-    }
-  }, [loading, items.length, total, offset, pageSize, fetchPage])
-
-  const [refreshing, setRefreshing] = useState(false)
   const [acting, setActing] = useState<string | null>(null)
   const [actionFailed, setActionFailed] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -158,11 +155,12 @@ export default function AdminQueuePage() {
     [fetchPage, fetchCounts, offset]
   )
 
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    await reload()
-    setRefreshing(false)
-  }, [reload])
+  const { spinning, refreshing, refresh } = useAutoRefresh({
+    poll: () => Promise.all([refreshPage(), fetchCounts()]),
+    reload,
+    // The table holds still behind the delete dialog
+    enabled: deleteTarget === null,
+  })
 
   const act = useCallback(
     async (id: string, request: () => Promise<Response>) => {
@@ -206,15 +204,7 @@ export default function AdminQueuePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')}>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          onClick={refresh}
-          disabled={refreshing}
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-        </Button>
+        <RefreshButton onClick={refresh} disabled={refreshing} spinning={spinning} />
       </PageHeader>
       <p className="-mt-3 text-sm text-muted-foreground">{t('description')}</p>
 
@@ -224,6 +214,12 @@ export default function AdminQueuePage() {
             <TableHead>{t('colJobType')}</TableHead>
             {JOB_STATUSES.map((status) => (
               <TableHead key={status} className="w-[100px] text-right">
+                {FLOW_STEPS.includes(status) && (
+                  <ArrowRight
+                    aria-hidden
+                    className="mr-2 inline h-3.5 w-3.5 align-[-2px] text-muted-foreground"
+                  />
+                )}
                 {t(status)}
               </TableHead>
             ))}

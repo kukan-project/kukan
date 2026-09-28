@@ -28,6 +28,12 @@ describe('AdminSitePage', () => {
     expect(screen.getByText('Site Management')).toBeInTheDocument()
   })
 
+  it('leaves the bulk AI actions to the AI page', () => {
+    render(<AdminSitePage />)
+    expect(screen.queryByText('Generate AI descriptions in bulk')).not.toBeInTheDocument()
+    expect(screen.queryByText('Regenerate embeddings')).not.toBeInTheDocument()
+  })
+
   it('renders the data reset card with warning', () => {
     render(<AdminSitePage />)
     expect(screen.getByText('Data Reset')).toBeInTheDocument()

@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
-import { Database, Search, Sparkles } from 'lucide-react'
+import { Database, Search } from 'lucide-react'
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
 import {
@@ -26,10 +26,12 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { RefreshButton } from '@/components/dashboard/refresh-button'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { FormatBadge } from '@/components/format-badge'
 import { clientFetch } from '@/lib/client-api'
-import { useVectorSearchSettings } from '@/hooks/use-vector-search-settings'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useLatestJson } from '@/hooks/use-latest-json'
 
 interface IndexStatsEntry {
   docCount: number
@@ -93,27 +95,15 @@ const MAX_FETCH_SIZE = 100 * 1024 * 1024
 const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 
 const PAGE_SIZE = 20
-const STATS_POLL_COUNT = 20
 
 export default function AdminSearchPage() {
   const t = useTranslations('dashboard.adminSearch')
   const tc = useTranslations('common')
 
   // Index stats
-  const [stats, setStats] = useState<IndexStatsResponse | null>(null)
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await clientFetch('/api/v1/admin/search/stats')
-      if (res.ok) setStats(await res.json())
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchStats()
-  }, [fetchStats])
+  const { data: stats, fetch: fetchStats } = useLatestJson<IndexStatsResponse>(
+    '/api/v1/admin/search/stats'
+  )
 
   // Tab
   const [activeTab, setActiveTab] = useState<IndexTab>('packages')
@@ -149,13 +139,12 @@ export default function AdminSearchPage() {
     [activeTab]
   )
 
-  // Reset search, refresh stats, and fetch on tab change
+  // Reset search and fetch on tab change
   useEffect(() => {
     setSearchQuery('')
     setSubmittedQuery('')
-    fetchStats()
     fetchBrowse(0, '')
-  }, [activeTab, fetchBrowse, fetchStats])
+  }, [activeTab, fetchBrowse])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -179,7 +168,6 @@ export default function AdminSearchPage() {
     }
   }
 
-  // Reindex
   // Contents tree view: expanded resource → chunk list
   const [expandedResourceId, setExpandedResourceId] = useState<string | null>(null)
   const [expandedChunks, setExpandedChunks] = useState<
@@ -200,83 +188,76 @@ export default function AdminSearchPage() {
     }
   }
 
-  // The reprocess actions, one at a time. Each names what it rebuilds and
-  // whether it fetches anything. All resources are reprocessed from the resource
-  // processing page, where its runs are followed.
-  type ReprocessAction = 'index' | 'embed'
-  const [busy, setBusy] = useState<ReprocessAction | null>(null)
-  const [outcome, setOutcome] = useState<{ action: ReprocessAction; ok: boolean } | null>(null)
-  const vectorSettings = useVectorSearchSettings()
-  const embedModel = vectorSettings.data?.model ?? null
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) clearInterval(pollingRef.current)
-    pollingRef.current = null
-  }, [])
-
-  // Cleanup polling on unmount
-  useEffect(() => stopPolling, [stopPolling])
-
-  async function reprocess(action: ReprocessAction) {
-    setBusy(action)
+  // Rebuilding the index. All resources are reprocessed from the resource
+  // processing page, where its runs are followed, and embeddings regenerated
+  // from the AI page.
+  const [busy, setBusy] = useState(false)
+  const [outcome, setOutcome] = useState<boolean | null>(null)
+  async function rebuild() {
+    setBusy(true)
     setOutcome(null)
     try {
-      const res =
-        action === 'embed'
-          ? await clientFetch('/api/v1/admin/reindex-embeddings', { method: 'POST' })
-          : await clientFetch('/api/v1/admin/reindex-metadata', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ includeContent: false }),
-            })
-      setOutcome({ action, ok: res.ok })
-      if (res.ok && action === 'index') pollStats()
+      const res = await clientFetch('/api/v1/admin/reindex-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ includeContent: false }),
+      })
+      setOutcome(res.ok)
     } catch {
-      setOutcome({ action, ok: false })
+      setOutcome(false)
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
 
-  // Poll stats so the index cards update live while Worker processes
-  function pollStats() {
-    stopPolling()
-    let pollCount = 0
-    pollingRef.current = setInterval(async () => {
-      pollCount++
-      if (pollCount >= STATS_POLL_COUNT) {
-        stopPolling()
-        fetchBrowse(0, submittedQuery)
-        return
-      }
-      try {
-        const statsRes = await clientFetch('/api/v1/admin/search/stats')
-        if (!statsRes.ok) return
-        const latest: IndexStatsResponse = await statsRes.json()
-
-        setStats((prev) => {
-          if (
-            prev?.stats?.packages.docCount === latest.stats?.packages.docCount &&
-            prev?.stats?.resources.docCount === latest.stats?.resources.docCount
-          ) {
-            return prev
-          }
-          return latest
-        })
-      } catch {
-        // ignore transient errors
-      }
-    }, 3000)
-  }
-
   const activeBrowse = activeTab === 'contents' ? contentBrowseData : browseData
+  const { spinning, refreshing, refresh } = useAutoRefresh({
+    reload: () =>
+      Promise.all([fetchStats(), fetchBrowse(activeBrowse?.offset ?? 0, submittedQuery)]),
+  })
+
   const totalPages = activeBrowse ? Math.ceil(activeBrowse.total / PAGE_SIZE) : 0
   const currentPage = activeBrowse ? Math.floor(activeBrowse.offset / PAGE_SIZE) + 1 : 1
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('title')} />
+      <PageHeader title={t('title')}>
+        <RefreshButton onClick={refresh} disabled={refreshing} spinning={spinning} />
+      </PageHeader>
+
+      {/* Rebuild — above the index it rebuilds */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('indexTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">{t('indexDescription')}</p>
+          <div className="flex items-center gap-4">
+            <Button variant="outline" onClick={rebuild} disabled={busy}>
+              <Search className={`mr-2 h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              {busy ? tc('queueing') : t('indexButton')}
+            </Button>
+            {outcome === true && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t('indexQueued')}
+              </p>
+            )}
+            {outcome === false && (
+              <p role="alert" className="text-sm text-destructive">
+                {tc('queueFailed')}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1 pt-2 text-sm text-muted-foreground">
+            <Link href="/dashboard/admin/jobs" className="hover:underline">
+              {t('contentMoved')}
+            </Link>
+            <Link href="/dashboard/admin/ai" className="hover:underline">
+              {t('embeddingsMoved')}
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Index Stats */}
       {stats?.stats && (
@@ -486,68 +467,6 @@ export default function AdminSearchPage() {
           ) : (
             <p className="py-8 text-center text-muted-foreground">{t('noDocuments')}</p>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Reprocess — what each action rebuilds, and whether it fetches */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('reprocessTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col divide-y">
-          {(
-            [
-              { action: 'index', icon: Search, enabled: true },
-              { action: 'embed', icon: Sparkles, enabled: embedModel !== null },
-            ] as const
-          ).map(({ action, icon: Icon, enabled }) => (
-            <div key={action} className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0">
-              <p className="text-sm font-medium">{t(`${action}Title`)}</p>
-              <p className="text-sm text-muted-foreground">{t(`${action}Description`)}</p>
-              {action === 'embed' && embedModel && (
-                <p className="text-sm">
-                  <span className="text-muted-foreground">{t('embedModel')}: </span>
-                  <span className="font-mono text-xs">{embedModel}</span>
-                </p>
-              )}
-              {action === 'embed' && vectorSettings.error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {t('settingsUnavailable')}
-                </p>
-              )}
-              {action === 'embed' &&
-                !vectorSettings.loading &&
-                !vectorSettings.error &&
-                !embedModel && (
-                  <p className="text-sm text-muted-foreground">{t('embedUnavailable')}</p>
-                )}
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="outline"
-                  onClick={() => reprocess(action)}
-                  disabled={!enabled || busy !== null}
-                >
-                  <Icon className={`mr-2 h-4 w-4 ${busy === action ? 'animate-spin' : ''}`} />
-                  {busy === action ? tc('queueing') : t(`${action}Button`)}
-                </Button>
-                {outcome?.action === action && outcome.ok && (
-                  <p role="status" className="text-sm text-muted-foreground">
-                    {t(`${action}Queued`)}
-                  </p>
-                )}
-                {outcome?.action === action && !outcome.ok && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {tc('queueFailed')}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-          <p className="pt-4 text-sm text-muted-foreground">
-            <Link href="/dashboard/admin/jobs" className="hover:underline">
-              {t('contentMoved')}
-            </Link>
-          </p>
         </CardContent>
       </Card>
 

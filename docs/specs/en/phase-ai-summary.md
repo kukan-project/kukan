@@ -769,10 +769,9 @@ over drops the resource out of a generation somebody asked for, silently.
 
 ### 11.2 The admin screen
 
-A **"Generate AI descriptions"** card sits on `/dashboard/admin/site`, directly below the
-model settings that choose the model whose rate the estimate is quoted at. It is kept apart
+A **"Generate AI descriptions"** card sits on `/dashboard/admin/ai` (AI Management). It is kept apart
 from the search index actions, because what it rebuilds is what the AI wrote about a dataset,
-not an index. "Regenerate embedding vectors", over on index management, **stays a free
+not an index. "Regenerate embedding vectors", on the same page, **stays a free
 action** — folding abstract generation into it would bill every resource to an LLM just
 because the embedding model changed.
 
