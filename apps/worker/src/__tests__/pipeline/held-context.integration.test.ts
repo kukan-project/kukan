@@ -65,11 +65,11 @@ describe('heldContext', () => {
     const inner = createPipelineContextMock()
     const held = heldContext(inner, claim, db)
 
-    await held.indexContent(doc)
+    await held.indexContent(doc, { waitForRefresh: false })
     await held.deleteContent(resourceId)
     await held.ingestLakeVersion({ resourceId, version: 1, sourcePath: '/tmp/t.parquet' })
 
-    expect(inner.indexContent).toHaveBeenCalledWith(doc)
+    expect(inner.indexContent).toHaveBeenCalledWith(doc, { waitForRefresh: false })
     expect(inner.deleteContent).toHaveBeenCalledWith(resourceId)
     expect(inner.ingestLakeVersion).toHaveBeenCalled()
   })

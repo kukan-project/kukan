@@ -70,9 +70,9 @@ export async function enqueueSummarizePackages(
  * package to the next job.
  *
  * The walk is ordered by id and carries where it got to, so nothing has to be
- * marked as done: a resource whose abstract already describes its material
- * costs the material read and no completion, which is also what makes the
- * whole chain safe to start again.
+ * marked as done: a resource whose abstract already describes its version
+ * costs a row read and no completion, which is also what makes the whole chain
+ * safe to start again.
  */
 export async function summarizeNextInPackage(
   packageId: string,
@@ -173,15 +173,12 @@ async function summarizeOne(
     // The abstract is in the keyword leg as well as the vector (ADR-053 §9.3),
     // and the walk is the only thing that will have written it here. The
     // package's vector is settled once, at the end of the chain; the document
-    // is per resource, so it goes now.
+    // goes now, through the one job that works through the marks.
     //
-    // **Whatever the outcome, not only a write.** The document is a statement
-    // about the row, so making it say what the row says is right either way —
-    // and only that makes it recoverable: written and then failed to index,
-    // the retry finds the abstract unchanged and would step past it for ever,
-    // leaving the sentences out of the index with nothing left to notice. The
-    // walk repairs the index for the same reason pressing it again is free.
-    await enqueueResourceDocSync(queue, next.id, deps.log)
+    // **Only on a write.** The write marked the row; nothing else here changed
+    // the document. Written and then failed to index, the mark stays, and the
+    // sweep comes back for it — the walk does not have to restate it.
+    if (result.status === 'written') await enqueueResourceDocSync(queue, deps.log)
     return result.status
   })
 

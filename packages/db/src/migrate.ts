@@ -62,7 +62,7 @@ const DEFAULTS: Required<MigrationOptions> = {
 export const MIGRATIONS_FOLDER = resolve(__dirname, '../drizzle')
 
 /** Whether an error, or anything it wraps, is a `lock_timeout` expiry. */
-function isLockTimeout(err: unknown): boolean {
+export function isLockTimeout(err: unknown): boolean {
   for (let e = err; e instanceof Error; e = e.cause) {
     if ((e as { code?: unknown }).code === LOCK_NOT_AVAILABLE) return true
   }

@@ -478,6 +478,34 @@ describe('executeIndexContent', () => {
       expect(indexedDoc.extractedText).toBe(smallContent)
     })
 
+    it('waits for the index to refresh on the last chunk only, in order', async () => {
+      // A chunk not yet searchable is invisible to the delete-by-query that
+      // clears a resource's content, so the step ends on a write that waits
+      const line = 'x'.repeat(400 * 1024)
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(
+        bufferToStream(Buffer.from([line, line, line].join('\n')))
+      )
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultInterpretResult,
+        ctx
+      )
+
+      expect(result!.contentChunks).toBe(3)
+      const calls = vi.mocked(ctx.indexContent).mock.calls
+      expect(calls.map(([doc]) => (doc as ContentDoc).chunkIndex)).toEqual([0, 1, 2])
+      expect(calls.map(([, options]) => options?.waitForRefresh !== false)).toEqual([
+        false,
+        false,
+        true,
+      ])
+    })
+
     it('should set chunk metadata for single-chunk content', async () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('small')))

@@ -333,16 +333,12 @@ describe('PostgresSearchAdapter', () => {
   describe('no-op resource/content methods', () => {
     const adapter = new PostgresSearchAdapter(createMockDb([]))
 
-    it('indexResource should be a no-op', async () => {
-      await expect(adapter.indexResource({ id: 'r1', packageId: 'p1' })).resolves.toBeUndefined()
-    })
-
     it('bulkIndexResources should be a no-op', async () => {
       await expect(adapter.bulkIndexResources([])).resolves.toBeUndefined()
     })
 
-    it('deleteResource should be a no-op', async () => {
-      await expect(adapter.deleteResource('r1')).resolves.toBeUndefined()
+    it('deleteResources should be a no-op', async () => {
+      await expect(adapter.deleteResources(['r1'])).resolves.toBeUndefined()
     })
 
     it('deleteAllResources should be a no-op', async () => {

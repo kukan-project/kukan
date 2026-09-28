@@ -191,6 +191,23 @@ export interface SearchResult {
 // Adapter Interface
 // ============================================================
 
+/** How a content chunk is written (see `SearchAdapter.indexContent`) */
+export interface IndexContentOptions {
+  /** False: return without waiting for the chunk to become searchable */
+  waitForRefresh?: boolean
+}
+
+/**
+ * A bulk write the index refused some documents of. The others were written:
+ * a caller clearing what it wrote can clear everything but these.
+ */
+export class BulkIndexError extends Error {
+  constructor(readonly failedIds: string[]) {
+    super(`Bulk resource indexing failed for ${failedIds.length} documents`)
+    this.name = 'BulkIndexError'
+  }
+}
+
 export interface SearchAdapter {
   // ---- Dataset-level index (kukan-packages) ----
 
@@ -208,11 +225,8 @@ export interface SearchAdapter {
 
   // ---- Resource-level index (kukan-resources) ----
 
-  /** Index a resource document (metadata only). Upsert semantics. */
-  indexResource(doc: ResourceDoc): Promise<void>
-
-  /** Delete a resource from the resource index */
-  deleteResource(resourceId: string): Promise<void>
+  /** Delete several resources from the resource index in one request */
+  deleteResources(resourceIds: string[]): Promise<void>
 
   /** Bulk index multiple resource documents */
   bulkIndexResources(docs: ResourceDoc[]): Promise<void>
@@ -222,8 +236,15 @@ export interface SearchAdapter {
 
   // ---- Content-level index (kukan-contents) ----
 
-  /** Index extracted text content for a resource. Upsert semantics. */
-  indexContent(doc: ContentDoc): Promise<void>
+  /**
+   * Index extracted text content for a resource. Upsert semantics.
+   *
+   * Waits for the write to become searchable unless `waitForRefresh` is false.
+   * A writer of several chunks waits on its last only: a chunk not yet
+   * searchable is also invisible to the delete-by-query that clears a
+   * resource's content, so the last write of a batch is the one that waits.
+   */
+  indexContent(doc: ContentDoc, options?: IndexContentOptions): Promise<void>
 
   /** Delete content for a resource */
   deleteContent(resourceId: string): Promise<void>

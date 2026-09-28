@@ -76,11 +76,14 @@ function dropContentWithoutResource(
 ): Promise<number> {
   return dropIndexedWithoutRow(
     (after, limit) => search.indexedContentResources(after, limit),
-    (ids) => db.select({ id: resource.id }).from(resource).where(inArray(resource.id, ids)),
-    async (id) => {
-      log.warn({ resourceId: id }, 'Dropping content indexed for a resource that is gone')
-      await search.deleteContent(id)
-    }
+    (ids, q) => q.select({ id: resource.id }).from(resource).where(inArray(resource.id, ids)),
+    async (ids) => {
+      for (const id of ids) {
+        log.warn({ resourceId: id }, 'Dropping content indexed for a resource that is gone')
+        await search.deleteContent(id)
+      }
+    },
+    (page) => page(db)
   )
 }
 

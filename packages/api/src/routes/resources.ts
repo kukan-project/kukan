@@ -16,7 +16,7 @@ import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
-import { enqueuePackageEmbed, enqueueResourceDocSync } from '../services/search-index'
+import { enqueuePackageEmbed } from '../services/search-index'
 import { setResourceSummary } from '../services/resource-summary-service'
 import {
   updateResourceSchema,
@@ -56,7 +56,11 @@ import {
   MANAGE_ROLE,
   type AuthUser,
 } from '../auth/permissions'
-import { syncPackageMetadata, settleResourceWrites } from '../services/search-index'
+import {
+  syncPackageMetadata,
+  settleResourceWrites,
+  writeMarkedResourceDocs,
+} from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
@@ -785,8 +789,12 @@ resourcesRouter.post('/:id/upload', async (c) => {
       'upload-superseded'
     )
   }
-
-  return c.json(await enqueuePipeline(c, id), 200)
+  // The promotion marked the row: the replacement's name and format
+  const [, queued] = await Promise.all([
+    writeMarkedResourceDocs(c.get('db'), c.var, { resourceIds: [id] }),
+    enqueuePipeline(c, id),
+  ])
+  return c.json(queued, 200)
 })
 
 // POST /api/v1/resources/:id/upload-complete - Notify upload done, enqueue pipeline
@@ -844,8 +852,12 @@ resourcesRouter.post(
         'upload-not-pending'
       )
     }
-
-    return c.json(await enqueuePipeline(c, id), 200)
+    // The promotion marked the row: the replacement's name and format
+    const [, queued] = await Promise.all([
+      writeMarkedResourceDocs(c.get('db'), c.var, { resourceIds: [id] }),
+      enqueuePipeline(c, id),
+    ])
+    return c.json(queued, 200)
   }
 )
 
@@ -1022,11 +1034,11 @@ resourcesRouter.put('/:id/summary', zValidator('json', resourceSummaryBodySchema
   // failed. Gated on it, a queue blip could never be repaired by sending the
   // request again — the only handle anyone has. Neither is expensive to
   // repeat: the embed enqueue is behind a debounce that drops a second claim
-  // inside its window, and the document is a statement about the row that is
-  // true to restate.
+  // inside its window, and the service marks the row on every call, so the
+  // document is written from it again under the sync's lock.
   await Promise.all([
     enqueuePackageEmbed(db, c.get('queue'), c.get('ai'), result.packageId, c.get('logger')),
-    enqueueResourceDocSync(c.get('queue'), id, c.get('logger')),
+    writeMarkedResourceDocs(db, c.var, { resourceIds: [id] }),
   ])
   return c.json(result)
 })
@@ -1067,7 +1079,9 @@ resourcesRouter.delete('/:id', async (c) => {
   const res = await resourceService.delete(id)
   await Promise.all([
     syncPackageMetadata(db, c.var, res.packageId),
-    search.deleteResource(id),
+    // The delete marked the row: the document is removed under the sync's
+    // lock, so a sync that read the row while it was live cannot restore it
+    writeMarkedResourceDocs(db, c.var, { resourceIds: [id] }),
     search.deleteContent(id),
   ])
   return c.json(res)

@@ -10,4 +10,4 @@ export * from './client'
 export * from './schema'
 
 // Migration utility
-export { runMigrations, MIGRATIONS_FOLDER } from './migrate'
+export { runMigrations, isLockTimeout, MIGRATIONS_FOLDER } from './migrate'

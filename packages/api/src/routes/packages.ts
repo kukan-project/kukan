@@ -31,6 +31,7 @@ import {
   type AuthUser,
 } from '../auth/permissions'
 import {
+  writeMarkedResourceDocs,
   syncPackageMetadata,
   syncPackageResources,
   rebuildPackageSearch,
@@ -405,6 +406,8 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   // their content is indexed — a restore rebuilds from what they claim
   await c.get('search').deletePackage(pkg.id)
   await markContentUnindexed(db, { packageId: pkg.id })
+  // The delete marked the resources: any document written back meanwhile goes
+  await writeMarkedResourceDocs(db, c.var, { packageId: pkg.id })
   return c.json(pkg)
 })
 

@@ -7,7 +7,7 @@ import { eq, and, ne, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
+import type { SearchAdapter, ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
@@ -101,9 +101,9 @@ export function buildPipelineContext(
       return result.rows.length > 0
     },
 
-    async indexContent(doc: ContentDoc): Promise<void> {
+    async indexContent(doc: ContentDoc, options?: IndexContentOptions): Promise<void> {
       if (search) {
-        await search.indexContent(doc)
+        await search.indexContent(doc, options)
       }
     },
 

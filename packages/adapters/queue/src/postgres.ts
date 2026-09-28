@@ -184,6 +184,16 @@ export class PostgresQueueAdapter implements QueueAdapter {
   }
 
   async enqueue<T>(type: string, data: T, options?: EnqueueOptions): Promise<string> {
+    if (options?.unlessWaiting) {
+      // Two statements: two callers can both find nothing and write one each,
+      // which costs a job that finds its work already done
+      const [waiting] = await (options.tx ?? this.db)
+        .select({ id: jobTable.id })
+        .from(jobTable)
+        .where(and(eq(jobTable.type, type), ready(), unleased(), eq(jobTable.attempts, 0)))
+        .limit(1)
+      if (waiting) return waiting.id
+    }
     const [id] = await this.enqueueMany(type, [data], options)
     return id
   }

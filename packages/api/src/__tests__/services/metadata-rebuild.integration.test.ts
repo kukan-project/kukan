@@ -34,8 +34,8 @@ function memoryIndex() {
       for (const [rid, r] of resources) if (r.packageId === id) resources.delete(rid)
       record()
     },
-    deleteResource: async (id: string) => {
-      resources.delete(id)
+    deleteResources: async (ids: string[]) => {
+      for (const id of ids) resources.delete(id)
     },
     indexedDocumentIds: async (type: 'package' | 'resource', after?: string, limit?: number) =>
       page((type === 'package' ? packages : resources).keys(), after, limit),

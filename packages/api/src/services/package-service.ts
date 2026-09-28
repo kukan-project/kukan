@@ -48,7 +48,12 @@ import type {
 } from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
-import { latestLiveVersionAgg, publicResourceColumns, ResourceService } from './resource-service'
+import {
+  latestLiveVersionAgg,
+  markPackageResourceDocs,
+  publicResourceColumns,
+  ResourceService,
+} from './resource-service'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { reclaimLakeStorage } from './lake-reclaim'
@@ -711,6 +716,10 @@ export class PackageService {
         })
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
+      // The route removes the documents, but a writer that read a resource
+      // while the dataset was live can write one back; marked, the next sync
+      // removes it again
+      await markPackageResourceDocs(tx, existing.id)
 
       return deleted!
     })
@@ -861,6 +870,10 @@ export class PackageService {
         .set({ state: 'active', ...input, updated: sql`NOW()` })
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
+      // In the same transaction: committed without it, a crash before the
+      // caller's sync leaves live resources with no document and nothing to
+      // say so (ADR-053 §9.3)
+      await markPackageResourceDocs(tx, existing.id)
 
       return restored!
     })
@@ -923,6 +936,8 @@ export class PackageService {
           'package-state-changed'
         )
       }
+      // In the same transaction, as for restore
+      await markPackageResourceDocs(tx, existing.id)
 
       return published
     })

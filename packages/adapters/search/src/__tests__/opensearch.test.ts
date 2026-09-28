@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { errors as osErrors } from '@opensearch-project/opensearch'
 import { OpenSearchAdapter } from '../opensearch'
+import { BulkIndexError } from '../adapter'
 
 // Mock only the OpenSearch client; keep the real `errors` export so error-type
 // classification (instanceof checks) behaves identically to production.
@@ -285,13 +286,13 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('indexResource', () => {
+  describe('resource writes', () => {
     it('brings an existing index up to the current mapping once, before the first write', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
-      mockClient.index.mockResolvedValue({ body: {} })
+      mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
 
-      await adapter.indexResource({ id: 'res-1', packageId: 'pkg-1', section: 'docs' })
-      await adapter.indexResource({ id: 'res-2', packageId: 'pkg-1' })
+      await adapter.bulkIndexResources([{ id: 'res-1', packageId: 'pkg-1', section: 'docs' }])
+      await adapter.bulkIndexResources([{ id: 'res-2', packageId: 'pkg-1' }])
 
       expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(1)
       expect(mockClient.indices.putMapping).toHaveBeenCalledWith(
@@ -310,51 +311,28 @@ describe('OpenSearchAdapter', () => {
           },
         })
       )
-      expect(mockClient.index).toHaveBeenCalledTimes(2)
+      expect(mockClient.bulk).toHaveBeenCalledTimes(2)
     })
 
     it('writes even when the index refuses the mapping, and does not ask again', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
       mockClient.indices.putMapping.mockRejectedValue(new Error('cluster_block_exception'))
-      mockClient.index.mockResolvedValue({ body: {} })
+      mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
 
-      await adapter.indexResource({ id: 'res-1', packageId: 'pkg-1', section: 'docs' })
-      await adapter.indexResource({ id: 'res-2', packageId: 'pkg-1' })
+      await adapter.bulkIndexResources([{ id: 'res-1', packageId: 'pkg-1', section: 'docs' }])
+      await adapter.bulkIndexResources([{ id: 'res-2', packageId: 'pkg-1' }])
 
       expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(1)
-      expect(mockClient.index).toHaveBeenCalledTimes(2)
+      expect(mockClient.bulk).toHaveBeenCalledTimes(2)
     })
 
     it('does not touch the mapping of an index it just created', async () => {
-      mockClient.index.mockResolvedValue({ body: {} })
+      mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
 
-      await adapter.indexResource({ id: 'res-1', packageId: 'pkg-1' })
+      await adapter.bulkIndexResources([{ id: 'res-1', packageId: 'pkg-1' }])
 
       expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
       expect(mockClient.indices.putMapping).not.toHaveBeenCalled()
-    })
-
-    it('should index a resource document with join_field and routing', async () => {
-      mockClient.index.mockResolvedValue({ body: {} })
-
-      await adapter.indexResource({
-        id: 'res-1',
-        packageId: 'pkg-1',
-        name: 'data.csv',
-        format: 'CSV',
-      })
-
-      expect(mockClient.index).toHaveBeenCalledWith({
-        index: 'kukan-search',
-        id: 'res-1',
-        body: expect.objectContaining({
-          id: 'res-1',
-          packageId: 'pkg-1',
-          join_field: { name: 'resource', parent: 'pkg-1' },
-        }),
-        routing: 'pkg-1',
-        refresh: 'wait_for',
-      })
     })
   })
 
@@ -637,23 +615,32 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('deleteResource', () => {
-    it('should delete from search index using deleteByQuery', async () => {
+  describe('deleteResources', () => {
+    it('deletes them all in one deleteByQuery', async () => {
       mockClient.deleteByQuery.mockResolvedValue({ body: {} })
 
-      await adapter.deleteResource('res-1')
+      await adapter.deleteResources(['res-1', 'res-2'])
 
+      expect(mockClient.deleteByQuery).toHaveBeenCalledOnce()
       expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
         index: 'kukan-search',
         body: {
           query: {
             bool: {
-              filter: [{ term: { _id: 'res-1' } }, { term: { join_field: 'resource' } }],
+              filter: [
+                { ids: { values: ['res-1', 'res-2'] } },
+                { term: { join_field: 'resource' } },
+              ],
             },
           },
         },
         refresh: true,
       })
+    })
+
+    it('asks nothing for none', async () => {
+      await adapter.deleteResources([])
+      expect(mockClient.deleteByQuery).not.toHaveBeenCalled()
     })
   })
 
@@ -709,6 +696,26 @@ describe('OpenSearchAdapter', () => {
         ],
         refresh: 'wait_for',
       })
+    })
+
+    it('names the documents the index refused, the others being written', async () => {
+      mockClient.bulk.mockResolvedValue({
+        body: {
+          errors: true,
+          items: [
+            { index: { _id: 'res-1', status: 201 } },
+            { index: { _id: 'res-2', status: 400, error: { type: 'mapper_parsing_exception' } } },
+          ],
+        },
+      })
+
+      const write = adapter.bulkIndexResources([
+        { id: 'res-1', packageId: 'pkg-1' },
+        { id: 'res-2', packageId: 'pkg-1' },
+      ])
+
+      await expect(write).rejects.toBeInstanceOf(BulkIndexError)
+      await expect(write).rejects.toMatchObject({ failedIds: ['res-2'] })
     })
   })
 

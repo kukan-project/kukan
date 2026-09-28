@@ -129,18 +129,23 @@ describe('the backfill walk', () => {
       after: resourceId,
       refresh: false,
     })
-    // The abstract is in the keyword leg as well as the vector, and this step
-    // runs after Index — nothing else comes back to write the document. Queued
-    // rather than written, so the retry belongs to the queue.
-    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, { resourceId })
+    // The abstract is in the keyword leg as well as the vector, and Index
+    // never writes that document — nothing else comes back for it. The write
+    // marked the row, and the sync works through the marks; queued rather than
+    // written, so the retry belongs to the queue.
+    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, {}, { unlessWaiting: true })
+    const [marked] = await db
+      .select({ due: resource.docSyncDueAt })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+    expect(marked.due).not.toBeNull()
   })
 
-  it('restates the document even when the abstract did not move', async () => {
-    // Written and then failed to index, the retry finds the abstract unchanged
-    // and would step past it for ever — the sentences left out of the index
-    // with nothing left to notice. The document is a statement about the row,
-    // so the walk restates it and repairs what a failed sync lost.
-    const { packageId, resourceId } = await seedPackage()
+  it('asks for no sync when the abstract did not move', async () => {
+    // Nothing about the document changed. Written and then failed to index,
+    // the first write's mark is still on the row, and the sweep comes back for
+    // it — the walk has nothing to restate.
+    const { packageId } = await seedPackage()
     const { queue, enqueue } = fakeQueue()
     await summarizeNextInPackage(packageId, undefined, deps, queue)
     enqueue.mockClear()
@@ -148,7 +153,7 @@ describe('the backfill walk', () => {
     // Second pass over the same resource: nothing to generate
     await summarizeNextInPackage(packageId, undefined, deps, queue)
 
-    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, { resourceId })
+    expect(enqueue.mock.calls.map(([type]) => type)).not.toContain(SYNC_RESOURCE_DOC_JOB_TYPE)
   })
 
   it('waits for a resource another run is holding instead of passing it over', async () => {

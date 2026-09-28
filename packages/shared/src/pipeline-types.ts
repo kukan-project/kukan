@@ -443,18 +443,20 @@ export const SUMMARIZE_ALL_JOB_TYPE = 'summarize-all' as const
 export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
 
 /**
- * Rewrite one resource's document in the search index.
+ * Rewrite the search documents of every resource marked due (`doc_sync_due_at`).
  *
- * A job rather than a call, because the write that makes it stale is not the
- * one that can retry it. The abstract is written by the Summarize step, which
- * runs *after* Index and is best-effort like every step that follows Fetch: a
- * failure there is recorded and the run completes, so a search index that was
- * briefly unreachable is never asked again and the sentences stay out of the
- * keyword leg (ADR-053 §9.3). The editor's endpoint has the same shape — a
- * retried request changes nothing, so nothing re-triggers.
+ * The abstract is the one field of a resource's document written outside the
+ * API's own edits — by the Summarize step, which is best-effort, and by the
+ * editor hiding it (ADR-053 §9.3). Neither can retry the index write, so each
+ * marks the row in the statement that makes the document stale and queues
+ * this; the retry is the queue's, and the hourly sweep answers a job that was
+ * never written.
  *
- * Queued, the retry belongs to the queue, which is where every other retry in
- * this pipeline already lives.
+ * One job for all of them rather than one per resource: the job works through
+ * the marks, not its payload, so one waiting job covers every mark set before
+ * it runs (`unlessWaiting`), and one bulk write replaces a write — and a wait
+ * for the index to refresh — per resource. `resourceId` is accepted from jobs
+ * queued before and ignored.
  */
 export const SYNC_RESOURCE_DOC_JOB_TYPE = 'sync-resource-doc' as const
 
@@ -483,7 +485,7 @@ export const reindexJobSchema = z.object({ includeContent: z.boolean().optional(
 export const reanalyseIndexJobSchema = z.object({})
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({ packageId: z.uuid() })
-export const syncResourceDocJobSchema = z.object({ resourceId: z.uuid() })
+export const syncResourceDocJobSchema = z.object({ resourceId: z.uuid().optional() })
 export const embedAllJobSchema = z.object({})
 export const purgeVersionJobSchema = z.object({
   resourceId: z.uuid(),

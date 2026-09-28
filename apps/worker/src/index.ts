@@ -41,14 +41,18 @@ import {
 import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
-import { enqueueEmbeds, rebuildMetadataIndex } from '@kukan/api/services/search-index'
+import {
+  enqueueEmbeds,
+  enqueueResourceDocSyncIfDue,
+  rebuildMetadataIndex,
+  syncDueResourceDocs,
+} from '@kukan/api/services/search-index'
 import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createAIAdapter } from '@kukan/api/adapters'
-import { syncResourceDoc } from '@kukan/api/services/search-index'
 import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
 import { reanalyseSearchIndex } from './search/reanalyse-index'
 import type { SummaryDeps } from './pipeline/steps/summarize'
@@ -57,7 +61,7 @@ import { createDb, runMigrations } from '@kukan/db'
 import { closeLakeInstances, lakeConfigFromEnv } from '@kukan/lake'
 import { PostgresQueueAdapter, httpWake, isWakeAuthorized } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
-import { OpenSearchAdapter } from '@kukan/search-adapter'
+import { OpenSearchAdapter, PostgresSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { retryLakeIngest } from './pipeline/retry-lake-ingest'
@@ -246,8 +250,7 @@ const lakeIngestSweepJob = startCronJob({
 // --- Stale search documents (ADR-053 §9.3) ---
 //
 // The queue owns the retry for a sync that failed; this owns the one it never
-// heard about. Registered below the search adapter it needs, so it is started
-// there rather than here.
+// heard about. Started below, beside the search adapter the handler uses.
 const resourceDocSweepLog = log.child({ component: 'resource-doc-sweep' })
 
 // --- Search adapter (optional, for content indexing) ---
@@ -261,17 +264,20 @@ const search =
         logger: osLogger,
       })
     : undefined
+// What the document sync writes to. Without an index the marks are cleared all
+// the same, through an adapter that writes nothing: a mark nobody clears is
+// asked for again by every run of the resource.
+const docSearch = search ?? new PostgresSearchAdapter(db)
 
-const resourceDocSweepJob = search
-  ? startCronJob({
-      name: 'Stale search documents',
-      cronExpression: RESOURCE_DOC_SWEEP_CRON,
-      log: resourceDocSweepLog,
-      run: async () => {
-        await sweepResourceDocs(db, queue, resourceDocSweepLog)
-      },
-    })
-  : undefined
+// With or without an index: the marks are cleared either way
+const resourceDocSweepJob = startCronJob({
+  name: 'Stale search documents',
+  cronExpression: RESOURCE_DOC_SWEEP_CRON,
+  log: resourceDocSweepLog,
+  run: async () => {
+    await sweepResourceDocs(db, queue, resourceDocSweepLog)
+  },
+})
 
 // --- AI adapter (embedding; NoOp when AI_TYPE=none) ---
 const ai = createAIAdapter(env)
@@ -339,6 +345,9 @@ await queue.process({
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
     await processResource(resourceId, ctx, db, queue, { rebuildOnly })
+    // Once, whatever in the run marked the document: an abstract written, a
+    // format the version settled
+    await enqueueResourceDocSyncIfDue(db, queue, resourceId, log)
     const elapsed = Math.round(performance.now() - start)
     log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
   },
@@ -400,9 +409,6 @@ await queue.process({
     } else {
       log.warn({ jobId: job.id, type: job.type }, 'Reindex skipped — OpenSearch not configured')
     }
-    // The embeddings too, through the job that owns that fan-out (and gates
-    // it) — on its own retry terms, since this job is already long.
-    await queue.enqueue(EMBED_ALL_JOB_TYPE, {})
   },
   // Abstracts (ADR-053): fan out one walk per package.
   [SUMMARIZE_ALL_JOB_TYPE]: async (job: Job) => {
@@ -437,12 +443,16 @@ await queue.process({
   // The abstract reaches the keyword leg here (ADR-053 §9.3). Its own job so
   // the queue owns the retry: the step that makes the document stale runs
   // after Index and is best-effort, so a failure there would otherwise never
-  // be asked again.
+  // be asked again. Every marked resource, whatever the payload names.
   [SYNC_RESOURCE_DOC_JOB_TYPE]: async (job: Job) => {
-    const data = parseJobPayload(job, syncResourceDocJobSchema)
-    if (!data) return
-    if (!search) return
-    await syncResourceDoc(db, search, data.resourceId)
+    if (!parseJobPayload(job, syncResourceDocJobSchema)) return
+    const { synced, refused } = await syncDueResourceDocs(db, docSearch)
+    if (synced > 0) log.info({ jobId: job.id, type: job.type, synced }, 'Resource documents synced')
+    // Not thrown: every other mark was cleared, and a retry would refuse the
+    // same documents. Their marks stay, so the sweep keeps asking.
+    if (refused.length > 0) {
+      log.error({ jobId: job.id, type: job.type, refused }, 'The index refused resource documents')
+    }
   },
   // Semantic search: queue an embed for every package (ADR-034).
   [EMBED_ALL_JOB_TYPE]: async (job: Job) => {
@@ -598,7 +608,7 @@ const shutdown = async () => {
   healthCheckJob?.stop()
   orphanCleanupJob.stop()
   lakeIngestSweepJob.stop()
-  resourceDocSweepJob?.stop()
+  resourceDocSweepJob.stop()
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   if (waitingMetricTimer) clearInterval(waitingMetricTimer)
   await queue.stop()

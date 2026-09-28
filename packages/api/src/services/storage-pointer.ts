@@ -139,7 +139,12 @@ export async function publishLiveContent(
           size = ${size}::bigint,
           -- Every move is a new generation.
           content_revision = gen_random_uuid()
-          ${'format' in content ? sql`, format = ${content.format}::varchar` : sql``}
+          ${
+            'format' in content
+              ? // The format is in the search document: marked with it (ADR-053 §9.3)
+                sql`, format = ${content.format}::varchar, doc_sync_due_at = NOW()`
+              : sql``
+          }
           ${'keyColumns' in content ? sql`, column_settings = ${keySetting(content.keyColumns)}` : sql``}
           ${changed ? sql`, last_modified = NOW()` : sql``}
       WHERE id = ${resourceId}::uuid

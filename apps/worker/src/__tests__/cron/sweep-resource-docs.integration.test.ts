@@ -45,30 +45,32 @@ afterAll(async () => {
 })
 
 describe('sweepResourceDocs', () => {
-  it('re-queues a document nobody heard about', async () => {
-    const id = await seed()
+  it('asks for one sync however many documents nobody heard about', async () => {
+    // The sync works through every mark, so one waiting job covers them all
+    await seed()
+    await seed()
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(1)
-    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, { resourceId: id })
+    expect(await sweepResourceDocs(db, queue, log)).toBe(true)
+    expect(enqueue).toHaveBeenCalledOnce()
+    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, {}, { unlessWaiting: true })
   })
 
   it('leaves a document that already agrees with its row', async () => {
     await seed({ synced: true })
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(0)
+    expect(await sweepResourceDocs(db, queue, log)).toBe(false)
     expect(enqueue).not.toHaveBeenCalled()
   })
 
-  it('leaves a draft alone, which the index does not hold', async () => {
-    // Indexed at publish (ADR-039), so a marked draft would be asked for for
-    // ever — the sync would write nothing and never clear the mark.
+  it("asks for a draft's mark too, which the sync clears without a write", async () => {
+    // Left alone, the marks of drafts never published would pile up
     await seed({ packageState: 'draft' })
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(0)
-    expect(enqueue).not.toHaveBeenCalled()
+    expect(await sweepResourceDocs(db, queue, log)).toBe(true)
+    expect(enqueue).toHaveBeenCalledOnce()
   })
 
   it('leaves a row marked seconds ago to the job it was marked for', async () => {
@@ -81,7 +83,7 @@ describe('sweepResourceDocs', () => {
       .values({ packageId: pkg.id, name: 'fresh.csv', state: 'active', docSyncDueAt: sql`NOW()` })
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(0)
+    expect(await sweepResourceDocs(db, queue, log)).toBe(false)
     expect(enqueue).not.toHaveBeenCalled()
   })
 })

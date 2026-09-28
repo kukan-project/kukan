@@ -22,12 +22,12 @@
 
 所要時間はジョブによって、また同じジョブでも中身によって 4〜5 桁違う。同じ列に並ぶ。
 
-| ジョブ              | 空振りのとき                                              | 仕事があるとき                                   |
-| ------------------- | --------------------------------------------------------- | ------------------------------------------------ |
-| `embed-package`     | 全リソースのハッシュが一致。DB を読むだけで AI を呼ばない | 変わったリソースを 32 件ずつ埋め込み API へ送る  |
-| `sync-resource-doc` | 印が無くても書き（印の確認が書き込みの後）、約 1 秒待つ   | 約 1 秒。ほとんどが `refresh: 'wait_for'` の待ち |
-| `summarize-package` | 抄録があり版が同じ（ただし材料は読む）                    | LLM を呼ぶ。数秒〜数十秒                         |
-| `resource-pipeline` | 同じバイト列で Interpret と Index を飛ばす                | 大きいファイルで十数分                           |
+| ジョブ              | 空振りのとき                                              | 仕事があるとき                                                            |
+| ------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `embed-package`     | 全リソースのハッシュが一致。DB を読むだけで AI を呼ばない | 変わったリソースを 32 件ずつ埋め込み API へ送る                           |
+| `sync-resource-doc` | 印の立った行が無い。DB を読むだけで何も書かない           | 印の立った行を 200 件ずつ bulk で書く。待つのは 1 回の書き込みにつき 1 回 |
+| `summarize-package` | 抄録があり版が同じ。行を読むだけで材料は読まない          | LLM を呼ぶ。数秒〜数十秒                                                  |
+| `resource-pipeline` | 同じバイト列で Interpret と Index を飛ばす                | 大きいファイル（数十 MB）で数十秒                                         |
 
 `resource-pipeline` 以外の空振りは、積まなくてよかったジョブである。積む側は、材料が変わったかを
 書き込みの時点で知っている。`resource-pipeline` は取得してみるまで中身が同じか分からないので、
@@ -54,11 +54,14 @@ title・tags が入ることと、debounce（`package.embedding_queued_at`）を
 4. Interpret。プレビュー（Parquet など）と schema を作る。表があればその場で Lake に取り込み、失敗したら
    `lake-ingest-version` を積む。版を作らず、派生物がこのバイト列から作られていれば、Interpret と Index を
    飛ばす（`derivativesReused`。`rebuildOnly` はこの判定を通らない）。
-5. Index。テキストを抽出し、500 KB のチャンクに分けて 1 件ずつ OpenSearch に書く（各 `wait_for`）。
-   書くのは本文チャンクだけで、リソース文書は書かない。
-6. Summarize（`AI_SUMMARY_MODEL` があるサイトだけ）。抄録を書いたら `embed-package` と `sync-resource-doc`
-   を積み、書かなかったら `sync-resource-doc` だけを積む。
+5. Index。テキストを抽出し、500 KB のチャンクに分けて 1 件ずつ OpenSearch に書く。索引の再読み込みを
+   待つ（`wait_for`）のは最後のチャンクだけ。再読み込み前のチャンクは、次の実行で本文を消す
+   delete-by-query から見えないので、ステップは待つ書き込みで終える。書くのは本文チャンクだけで、
+   リソース文書は書かない。
+6. Summarize（`AI_SUMMARY_MODEL` があるサイトだけ）。抄録を書いたら（同じ文で印が立つ）`embed-package`
+   を積む。書かなかったら何も積まない（文書は変わっていない）。
 7. claim を返す。
+8. リソースに印が立っていれば（抄録を書いた、版の公開で形式が変わった）、`sync-resource-doc` を 1 件積む。
 
 **`lake-ingest-version`** `{ resourceId, version }` — 層 2 への取り込みをやり直す。
 
@@ -68,18 +71,57 @@ title・tags が入ることと、debounce（`package.embedding_queued_at`）を
 4. 失敗したら版の失敗回数を数えて終わる（例外にしない。上限に達したら諦める）。
 5. 同じリソースで次に未取込の版があれば、その `lake-ingest-version` を積む。
 
-**`sync-resource-doc`** `{ resourceId }` — 1 リソースの検索文書を行から書き直す。OpenSearch が無い
-サイトでは何もしない。
+**`sync-resource-doc`** `{}` — 印（`doc_sync_due_at`）の立ったリソースの検索文書を、行からまとめて書き直す。
+ペイロードは見ない（以前の `{ resourceId }` も受け付けて無視する）。OpenSearch が無いサイトでも、
+何も書かないアダプターで同じ処理を回し、印を消す。
 
-1. 印（`doc_sync_due_at`）を読む。
-2. リソースとデータセットがどちらも `active` の行を読む。無ければ書かない（下書きは公開時に書かれる）。
-3. 文書を組み立てる。`id` / `packageId` / `name` / `description` / `format` / `section` / `summary`。
-   `summary` は編集者が非表示にしていれば null（ページの表示と同じ判定）。
-4. `index` API で文書全体を上書きする（データセットの子、`routing` はデータセット id、`wait_for`）。
-   **印の有無にかかわらず書く。**
-5. 1 で印があれば、同じ値のときだけ消す（CAS）。処理中に立った新しい印は残す。
+1. トランザクションを開き、同期用の advisory lock を取る。別の書き手が持っていれば待つ。ロックは
+   バッチごとに取り直すので、待つのは長くても相手の 1 バッチ分で、その後は交互に進む。
+2. 印の立った行を、印の古い順に 200 件読む（印も読む）。無ければ終わる。
+3. 行の状態に応じて処理する。公開中のデータセットの有効なリソースは、文書（`id` / `packageId` /
+   `name` / `description` / `format` / `section` / `summary`。非表示の抄録は null）を bulk で書く
+   （`wait_for` は 1 回）。下書きのデータセットのリソースは、何も書かない（公開時にまとめて書かれる）。
+   それ以外（削除済みのリソース、削除済みのデータセットのリソース）は、文書をまとめて 1 回の
+   delete-by-query で消す。削除の失敗は索引そのものの失敗なので、例外にしてキューの再試行に任せる。
+4. 2 で読んだ印と同じ値の行だけ、印を消す（CAS）。索引が拒否した文書は印を残し、ログに出す。
+   消す行を他のトランザクションが 10 秒以上握っていたら（`lock_timeout`、ロックを取った後に設定する）、
+   そのバッチはロールバックして印を残し、ジョブを失敗させる。書いた文書は残る。キューの再試行か
+   sweep が拾い直す。
+5. コミットして 1 に戻る。途中で印を立て直された行は次の回でもう一度読む。拒否された行は、
+   その実行の中では読み直さない。
 
-7 つのフィールドのうち、API の外で変わるのは `summary` だけである（ほかは API の編集が直接書く）。
+**印を立てる書き込み**は、文書を古くする書き込みで、同じ文の中で立てる。
+
+| 書き込み                                                                                | 文書を書くのは                                                  |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| リソースの作成・編集・削除・セクション変更、アップロードの差し替え、抄録の非表示（API） | API がその場で（下記）                                          |
+| データセットの公開・復元・削除（API）                                                   | API がその場で（下記）                                          |
+| 抄録の書き込み（Summarize）、版の公開で形式が変わったとき（パイプライン）               | ジョブ。パイプラインは実行の終わりに、印が立っていれば 1 件積む |
+| 抄録の一括生成で抄録を書いたとき                                                        | ジョブ（書いたときだけ積む）                                    |
+
+**印を消すのは同期用のロックの下だけ。** 2 つの書き手が同じ文書を並んで書くと、先に行を読んだ側の
+書き込みが後に届いて古い文書が残りうる。ロックの下で書いて印を消す書き手を 1 つずつにすれば、
+最後に印を消した書き込みが最新の行を反映している。
+
+- API は、ジョブと同じ処理（上の 2〜4、対象はそのリソースかデータセットだけ、1 バッチまで）を
+  その場で行う。ロックは**待たずに**取る（待つと DB 接続を握ったままになり、同期のバッチの後ろに
+  編集が数件並ぶだけで他のリクエストが接続を得られなくなる）。取れなければ**書かない**。ロックの外で
+  書くと、先に読んだ古い内容が、ジョブが後の編集を書いて印を消した後に届き、直すものが残らない
+  （非表示にした抄録が検索に戻る、など）。ロックが取れない・印を消せない・1 バッチを超える・失敗した
+  ときは、ジョブを積む。対象に印の立った行が無ければ何もしない
+- 全件再構築（`reindex-metadata`）は、リソース文書を 200 件ずつ、その都度このロックを取って読んで書く。
+  DB に行の無いデータセット文書・リソース文書を消す処理も、ページごとにこのロックを取る
+  （データセット文書の削除は子のリソース文書も消すため）
+
+積む側は、一度も取られていない待機中の同期ジョブが無いときだけ積む（`unlessWaiting`）。待機中のジョブは、
+それより前に立った印を全部処理するからである。再試行を待っているジョブは数えない（数分先か、二度と
+走らないかもしれない）。印を立てたトランザクションの中では積まない（コミット前にジョブが走りうる）。
+
+advisory lock は文書の書き手どうしの排他で、印を立てる書き手はロックを取らない（索引の往復を
+待たせないため）。そのため途中でも印は立て直されうるので、印は CAS で消す。
+
+データセット文書（`formats` などを持つ）は、この仕組みの外にある。API のデータセット・リソースの編集と
+全件再構築が、どちらもロックを取らずに直接書く。
 
 **`purge-resource-version`** `{ resourceId, version }` — 版を 1 つ取得不能にする（ADR-043 §5）。
 
@@ -108,10 +150,10 @@ title・tags が入ることと、debounce（`package.embedding_queued_at`）を
 2. 無ければ `embed-package` を積んで終わる（書いた件数にかかわらず積む）。
 3. claim を取る。取れなければ、同じ `after` のまま遅延つきで積み直して終わる。
 4. 抄録を判定・生成する（`executeSummarize`）。判定の順は、プロバイダが使えるか → 公開されているか →
-   非表示でないか → 人が書いたものでないか → **材料をストレージから読む** → 同じ生成（モデル・プロンプト版・
-   言語）で同じ版の抄録があるか → 同じ生成で拒否済みでないか → 生成。書くときは同じ文で印を立てる。
+   非表示でないか → 人が書いたものでないか → 同じ生成（モデル・プロンプト版・言語）で同じ版の抄録があるか →
+   同じ生成で拒否済みでないか → 材料をストレージから読む → 生成。書くときは同じ文で印を立てる。
 5. ファイルに理由がある skip は、理由を `summaryMeta` に記録する。
-6. 結果にかかわらず `sync-resource-doc` を積む。
+6. 抄録を書いたときだけ `sync-resource-doc` を積む。
 7. 次のリソースの `summarize-package` を積む。
 
 **`purge-organization`** `{ organizationId }` — 削除済みの組織を完全に消す（ADR-028）。
@@ -139,14 +181,14 @@ title・tags が入ることと、debounce（`package.embedding_queued_at`）を
 
 **`reindex-metadata`** `{ includeContent }` — 検索索引のデータセット文書とリソース文書を作り直す。
 
-1. OpenSearch が無いサイトでは 1〜3 を飛ばす。
+1. OpenSearch が無いサイトでは何もしない。
 2. `active` なデータセットを 100 件ずつ、行・配下リソース・グループ・タグ・組織名を読んでデータセット文書と
-   リソース文書を組み立て、bulk で上書きする。先に空にはしない（空の索引は §3 の 60 秒タイマーが「失われた」と
-   読むため）。その後、DB に `active` な行が無い文書を消す。
+   リソース文書を組み立て、bulk で上書きする。バッチごとに同期用のロックを取り、読み取りと書き込みを
+   その中で行う。先に空にはしない（空の索引は §3 の 60 秒タイマーが「失われた」と読むため）。その後、
+   同じロックの下で、DB に `active` な行が無い文書を消す。
 3. `includeContent` なら、本文チャンクを全件消し、全リソースの `contentIndexed` を false にし、`active` と
    下書きのデータセットの全リソースに `resource-pipeline` を積む（保存済みのオブジェクトがあれば
    `rebuildOnly`）。
-4. `embed-all-packages` を積む（OpenSearch の有無にかかわらず）。
 
 **`reanalyse-search-index`** — 解析設定（kuromoji など）が変わった索引を作り直す（ADR-025）。
 
@@ -189,33 +231,33 @@ title・tags が入ることと、debounce（`package.embedding_queued_at`）を
 ```
 [API: 個別の操作]
   リソースの作成・更新・再処理、アップロード完了 ──→ resource-pipeline
-  データセットの公開・復元 ─────────────────────→ resource-pipeline × 配下（＋ リソース文書は直接書く）
+  データセットの公開・復元 ─────────────────────→ resource-pipeline × 配下（＋ リソース文書はロックの下で書く）
   巻き戻し / 主キー / 列設定の変更 ──────────────→ resource-pipeline(rebuildOnly)
   データセット・リソースのメタデータ編集 ────────→ embed-package（60 秒の窓）
-  抄録の非表示 ─────────────────────────────────→ embed-package ＋ sync-resource-doc
+  リソースの作成・編集・削除・セクション変更 ────→ （文書をロックの下でその場で書く）
+                                                   sync-resource-doc（ロックを待ちきれなかったときだけ）
+  抄録の非表示 ─────────────────────────────────→ embed-package（＋ 文書はロックの下で書く）
+  データセットの削除 ───────────────────────────→ （配下の文書をロックの下で消す）
   版の削除 / 組織の完全削除 ─────────────────────→ purge-resource-version / purge-organization
 
 resource-pipeline
   ├ claim が取れない / 取得がレート制限 ──→ resource-pipeline（遅延つきで積み直す）
   ├ Lake が失敗 ─────────────────────────→ lake-ingest-version
-  └ Summarize
-      ├ 抄録を書いた ────────────────────→ embed-package ＋ sync-resource-doc
-      └ 書かなかった（unchanged/skipped）─→ sync-resource-doc
+  ├ Summarize で抄録を書いた ─────────────→ embed-package
+  └ 実行の終わりに印が立っていれば ──────→ sync-resource-doc
 
 lake-ingest-version ──→ 同じリソースの次の未取込版 / claim が取れなければ自分を積み直す
 purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の版を消したとき）
 
 [全件ジョブ: 管理画面から]
-  reindex-metadata{includeContent:false}   「検索インデックスの再構築」
-      └──→ embed-all-packages
+  reindex-metadata{includeContent:false}   「検索インデックスの再構築」（何も積まない）
   reindex-metadata{includeContent:true}    「全リソースの再処理」
       ├ 本文を全件削除し、contentIndexed を全件 false に
-      ├──→ resource-pipeline(rebuildOnly) × 全リソース
-      └──→ embed-all-packages
+      └──→ resource-pipeline(rebuildOnly) × 全リソース
   embed-all-packages        「埋め込みの再生成」 ──→ embed-package × 全データセット
   summarize-all{refresh}    「不足分を生成」「すべて作り直す」 ──→ summarize-package × 公開中の全データセット
       summarize-package ──→ 次の summarize-package（データセット内を 1 リソースずつ）
-                         ├──→ sync-resource-doc（1 リソースごと）
+                         ├──→ sync-resource-doc（抄録を書いたとき）
                          └──→ 連鎖の終わりに embed-package
   reanalyse-search-index ──→ resource-pipeline(rebuildOnly)（コピー中に索引されたものだけ）
   backfill-resource-versions / convert-set-aside-versions ──→ lake-ingest-version（未取込のものだけ）
@@ -226,7 +268,7 @@ purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の�
   5 分ごと（HEALTH_CHECK_CRON）──→ resource-pipeline（変化を検知したもの、定期の全取得）
   毎時 17 分 ──→ 取り残された purge-*（ジョブを失った purging の版・組織）
   毎時 37 分 ──→ lake-ingest-version（層 2 に入っていない版）
-  毎時 47 分 ──→ sync-resource-doc（docSyncDueAt が立ったままの行、1 回 200 件まで）
+  毎時 47 分 ──→ sync-resource-doc（doc_sync_due_at が 10 分以上立ったままの行があれば 1 件）
   60 秒ごと ───→ reindex-metadata{includeContent:true}（索引が空で DB に公開中のデータセットがあるとき）
 ```
 
@@ -237,14 +279,20 @@ purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の�
 | 本文チャンク       | そのリソースのファイル（パイプラインの Index が書く）                            | しない                   |
 | リソース文書       | そのリソースの行。抄録を含む（`buildResourceDoc`）                               | しない                   |
 | リソースの埋め込み | データセットの title・tags ＋ そのリソースの section / name / description / 抄録 | しない                   |
-| データセット文書   | データセットの行 ＋ 配下リソースの `format`（`formats` ファセット）              | `format` だけ            |
+| データセット文書   | データセットの行 ＋ 配下リソースの `format`（`formats`。索引の中だけのコピー）   | `format` だけ            |
 
 - パイプラインの Index が書くのは本文チャンクだけで、リソース文書には触れない。
-  リソース文書を書くのは API の編集、公開・復元、`sync-resource-doc`、索引の再構築である。
-- データセット文書が集める `format` は API の編集で書かれる宣言上の形式で、パイプラインは書かない。
-  API はリソースの作成・更新・削除のたびにデータセット文書を同期する。
-- 依存が他へ広がるのは「データセットの title・tags が変わると、配下の全リソースの埋め込みが古くなる」
-  の一方向だけである。**全リソースが終わるのを待ってから作るもの**は無い。
+  リソース文書を書くのは同期用ロックの下の書き手（API、`sync-resource-doc`、索引の再構築）だけである（§2）。
+- データセットとリソースの間の依存は 2 方向ある。
+  - **リソース → データセット（集約）**：データセット文書の `formats` は、配下リソースの `format` を
+    集めた索引の中だけのコピーで、形式の絞り込みとファセットに使う（DB のデータセットに形式の列は無い）。
+    リソースの形式は API の作成・編集・削除のほか、アップロードの差し替え（API）と版の公開
+    （パイプライン）でも変わる。前者だけがデータセット文書を同期し、後の 2 つは同期しない。また
+    データセット文書の書き手はロックも印も使わないので、同じデータセットへの書き込みが重なると
+    古い内容が残りうる。
+  - **データセット → リソース（展開）**：データセットの title・tags が変わると、配下の全リソースの
+    埋め込みが古くなる。
+- **全リソースが終わるのを待ってから作るもの**は無い。
 
 ## 5. 全件と個別
 
@@ -280,19 +328,19 @@ purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の�
 2. **リソースの実行 claim**（`resource_pipeline.claim_owner`、`docs/pipeline.md` §2）— 一部のジョブ。
 3. **ジョブごとの仕組み** — 状態遷移、積む時点の窓、CAS の印。
 
-| ジョブ                                                      | リソースの claim                         | 代わりに / 加えて                              |
-| ----------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------- |
-| `resource-pipeline`                                         | 取る（`run`）                            | 取れなければ遅延つきで積み直す                 |
-| `summarize-package`                                         | 取る（1 リソースずつ）                   | 取れなければ同じ位置で積み直す                 |
-| `lake-ingest-version`                                       | 取る（`job`）                            | 版の `lake_ingest_queued_at` のリース          |
-| `backfill-resource-versions` / `convert-set-aside-versions` | 取る（取れなければそのリソースを飛ばす） | 冪等。再実行で拾う                             |
-| `purge-resource-version`                                    | 取る（取れなければ Conflict）            | 版の状態 `purging`                             |
-| `purge-organization`                                        | 取る（配下の全リソース）                 | 組織の状態 `purging`（ADR-028）                |
-| `sync-resource-doc`                                         | 取らない                                 | `docSyncDueAt` の CAS                          |
-| `embed-package`                                             | 取らない                                 | 積む時点の窓（`embeddingQueuedAt`、60 秒）     |
-| `reindex-metadata` / `reanalyse-search-index`               | 取らない                                 | reanalyse はコピー中に書かれたものを後から直す |
-| `record-preview-row-groups`                                 | 取らない                                 | フッターを読むだけ。再解釈は run に任せる      |
-| `embed-all-packages` / `summarize-all`                      | 取らない                                 | 積むだけ                                       |
+| ジョブ                                                      | リソースの claim                         | 代わりに / 加えて                                               |
+| ----------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| `resource-pipeline`                                         | 取る（`run`）                            | 取れなければ遅延つきで積み直す                                  |
+| `summarize-package`                                         | 取る（1 リソースずつ）                   | 取れなければ同じ位置で積み直す                                  |
+| `lake-ingest-version`                                       | 取る（`job`）                            | 版の `lake_ingest_queued_at` のリース                           |
+| `backfill-resource-versions` / `convert-set-aside-versions` | 取る（取れなければそのリソースを飛ばす） | 冪等。再実行で拾う                                              |
+| `purge-resource-version`                                    | 取る（取れなければ Conflict）            | 版の状態 `purging`                                              |
+| `purge-organization`                                        | 取る（配下の全リソース）                 | 組織の状態 `purging`（ADR-028）                                 |
+| `sync-resource-doc`                                         | 取らない                                 | 文書の書き手どうしは advisory lock で 1 つずつ。印は CAS で消す |
+| `embed-package`                                             | 取らない                                 | 積む時点の窓（`embeddingQueuedAt`、60 秒）                      |
+| `reindex-metadata` / `reanalyse-search-index`               | 取らない                                 | reanalyse はコピー中に書かれたものを後から直す                  |
+| `record-preview-row-groups`                                 | 取らない                                 | フッターを読むだけ。再解釈は run に任せる                       |
+| `embed-all-packages` / `summarize-all`                      | 取らない                                 | 積むだけ                                                        |
 
 基準は一貫している。**リソースの派生物（ストレージのオブジェクト、版、Parquet、層 2）に書くジョブは
 claim を取る。** 行や索引を「行の今の状態」に合わせ直すだけのジョブは取らない。

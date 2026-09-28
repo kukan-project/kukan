@@ -519,6 +519,26 @@ describe('Packages API Routes', () => {
       expect(body.state).toBe('deleted')
     })
 
+    it('marks its resources for the sync and clears them once their documents are gone', async () => {
+      // A writer that read a resource while the dataset was live can write its
+      // document back after the delete; the mark is what removes it again
+      const pkg = await (await createPackage({ name: 'delete-doc-sync' })).json()
+      const created = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'r.csv', format: 'CSV' }),
+      })
+      expect(created.status).toBe(201)
+
+      const res = await app.request('/api/v1/packages/delete-doc-sync', { method: 'DELETE' })
+      expect(res.status).toBe(200)
+
+      const rows = await db.execute(
+        sql`SELECT count(*)::int AS n FROM resource WHERE package_id = ${pkg.id} AND doc_sync_due_at IS NOT NULL`
+      )
+      expect((rows.rows[0] as { n: number }).n).toBe(0)
+    })
+
     it('should not appear in list after deletion', async () => {
       await createPackage({ name: 'will-delete' })
 
@@ -1363,6 +1383,26 @@ describe('Packages API Routes', () => {
 
       const show = await app.request(`/api/v1/packages/ready-draft`)
       expect(show.status).toBe(200)
+    })
+
+    it("leaves none of its resources' search documents marked once published", async () => {
+      // Publish writes them all under the sync lock; a mark left behind would
+      // have the sweep write them again for nothing
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({ name: 'marked-draft', ownerOrg: orgId, licenseId: 'cc-by' })
+      const created = await app.request(
+        `/api/v1/packages/${draft.id}/resources`,
+        json({ name: 'r.csv', format: 'CSV' })
+      )
+      expect(created.status).toBe(201)
+
+      const res = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(res.status).toBe(200)
+
+      const rows = await db.execute(
+        sql`SELECT count(*)::int AS n FROM resource WHERE package_id = ${draft.id} AND doc_sync_due_at IS NOT NULL`
+      )
+      expect((rows.rows[0] as { n: number }).n).toBe(0)
     })
 
     it('should reject publish by a creator who lost editor rights in ownerOrg', async () => {

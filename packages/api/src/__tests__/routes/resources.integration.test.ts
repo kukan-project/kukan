@@ -111,6 +111,20 @@ async function createResource(packageId: string, data: Record<string, unknown> =
   return created
 }
 
+/** The mark the edit set, cleared by its own write under the sync's lock — no job asked for */
+async function expectDocSettled(resourceId: string) {
+  const [row] = await db
+    .select({ due: resourceTable.docSyncDueAt })
+    .from(resourceTable)
+    .where(eq(resourceTable.id, resourceId))
+  expect(row.due).toBeNull()
+  expect(mockQueue.enqueue).not.toHaveBeenCalledWith(
+    'sync-resource-doc',
+    {},
+    { unlessWaiting: true }
+  )
+}
+
 describe('Resources API Routes', () => {
   // A rejected request has to say what was wrong: the raw ZodError the
   // validator used to return carries no `detail`, so clients reading Problem
@@ -619,7 +633,42 @@ describe('Resources API Routes', () => {
     })
   })
 
+  describe('POST /api/v1/packages/:packageId/resources', () => {
+    it('writes the new document under the sync lock and leaves no mark', async () => {
+      const pkg = await createPackage('create-doc-sync-pkg')
+      vi.mocked(mockQueue.enqueue).mockClear()
+      vi.mocked(mockSearch.bulkIndexResources).mockClear()
+
+      const resource = await createResource(pkg.id)
+
+      expect(mockSearch.bulkIndexResources).toHaveBeenCalledWith([
+        expect.objectContaining({ id: resource.id }),
+      ])
+      await expectDocSettled(resource.id)
+    })
+  })
+
   describe('PUT /api/v1/resources/:id', () => {
+    it('writes the document under the sync lock, clearing the mark the edit set', async () => {
+      // Through the lock, no sync can land an older document after this one
+      const pkg = await createPackage('put-doc-sync-pkg')
+      const resource = await createResource(pkg.id)
+      vi.mocked(mockQueue.enqueue).mockClear()
+      vi.mocked(mockSearch.bulkIndexResources).mockClear()
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'renamed' }),
+      })
+      expect(res.status).toBe(200)
+
+      expect(mockSearch.bulkIndexResources).toHaveBeenCalledWith([
+        expect.objectContaining({ id: resource.id, name: 'renamed' }),
+      ])
+      await expectDocSettled(resource.id)
+    })
+
     it('leaves the pipeline-owned columns untouched', async () => {
       // size/hash/extras are measured or produced by the worker. An edit must
       // not carry them at all — writing back what the request read would revert
@@ -818,7 +867,7 @@ describe('Resources API Routes', () => {
       const pkg = await createPackage('delete-res-pkg')
       const resource = await createResource(pkg.id)
 
-      vi.mocked(mockSearch.deleteResource).mockClear()
+      vi.mocked(mockSearch.deleteResources).mockClear()
       vi.mocked(mockSearch.deleteContent).mockClear()
 
       const res = await app.request(`/api/v1/resources/${resource.id}`, { method: 'DELETE' })
@@ -826,8 +875,19 @@ describe('Resources API Routes', () => {
 
       const body = await res.json()
       expect(body.state).toBe('deleted')
-      expect(mockSearch.deleteResource).toHaveBeenCalledWith(resource.id)
+      expect(mockSearch.deleteResources).toHaveBeenCalledWith([resource.id])
       expect(mockSearch.deleteContent).toHaveBeenCalledWith(resource.id)
+    })
+
+    it('removes the document under the sync lock, clearing the mark the delete set', async () => {
+      const pkg = await createPackage('delete-doc-sync-pkg')
+      const resource = await createResource(pkg.id)
+      vi.mocked(mockQueue.enqueue).mockClear()
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+
+      await expectDocSettled(resource.id)
     })
   })
 
@@ -969,6 +1029,50 @@ describe('Resources API Routes', () => {
       expect(body[2].position).toBe(2)
     })
 
+    it('rewrites the documents when the labels change, and not for the order alone', async () => {
+      // The section is in the search document; the position is not
+      const pkg = await createPackage('reorder-doc-sync-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+      const reorder = (body: unknown) =>
+        app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      vi.mocked(mockSearch.bulkIndexResources).mockClear()
+      vi.mocked(mockQueue.enqueue).mockClear()
+
+      expect((await reorder({ resourceIds: [res2.id, res1.id] })).status).toBe(200)
+      expect(mockSearch.bulkIndexResources).not.toHaveBeenCalled()
+      await expectDocSettled(res1.id)
+      await expectDocSettled(res2.id)
+
+      const relabel = await reorder({
+        resourceIds: [res2.id, res1.id],
+        sections: [
+          { resourceId: res2.id, section: 'A' },
+          { resourceId: res1.id, section: 'A' },
+        ],
+      })
+      expect(relabel.status).toBe(200)
+      // Marked by the relabel, then written and cleared under the lock
+      expect(mockSearch.bulkIndexResources).toHaveBeenCalledOnce()
+      await expectDocSettled(res1.id)
+      await expectDocSettled(res2.id)
+
+      // The same labels sent again change no document
+      const same = await reorder({
+        resourceIds: [res1.id, res2.id],
+        sections: [
+          { resourceId: res1.id, section: 'A' },
+          { resourceId: res2.id, section: 'A' },
+        ],
+      })
+      expect(same.status).toBe(200)
+      expect(mockSearch.bulkIndexResources).toHaveBeenCalledOnce()
+    })
+
     it('should reject partial resourceIds (missing IDs)', async () => {
       const pkg = await createPackage('reorder-partial-pkg')
       const res1 = await createResource(pkg.id, { name: 'first' })
@@ -1069,12 +1173,10 @@ describe('Resources API Routes', () => {
       })
       expect(res.status).toBe(200)
       expect(indexSpy).toHaveBeenCalledTimes(1)
-      expect(indexSpy.mock.calls[0][0]).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ id: res2.id, section: 'docs' }),
-          expect.objectContaining({ id: res1.id, section: undefined }),
-        ])
-      )
+      // Only the resource whose label moved: `res1` had none and still has none
+      expect(indexSpy.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ id: res2.id, section: 'docs' }),
+      ])
       indexSpy.mockRestore()
     })
 
@@ -1393,6 +1495,32 @@ describe('Resources API Routes', () => {
       const body = await res.json()
       expect(body.pipeline_status).toBe('queued')
       expect(body.job_id).toBeDefined()
+    })
+
+    it("writes the replacement's document under the sync lock and leaves no mark", async () => {
+      // The promotion lands the replacement's name and format, both in the
+      // document; nothing in the pipeline rewrites it
+      const pkg = await createPackage('complete-doc-sync-pkg')
+      const resource = await createResource(pkg.id)
+      await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
+      })
+      vi.mocked(mockQueue.enqueue).mockClear()
+      vi.mocked(mockSearch.bulkIndexResources).mockClear()
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size: 2048 }),
+      })
+      expect(res.status).toBe(200)
+
+      expect(mockSearch.bulkIndexResources).toHaveBeenCalledWith([
+        expect.objectContaining({ id: resource.id }),
+      ])
+      await expectDocSettled(resource.id)
     })
 
     it('drops the health verdict — the promoted row serves an upload, not that URL', async () => {
@@ -2608,6 +2736,20 @@ describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
       body: JSON.stringify(body),
     })
   }
+
+  it('takes the hidden abstract out of the search document before returning', async () => {
+    // Through the sync lock like any other edit, not left to the queue
+    const { resource } = await withAbstract('summary-hide-doc')
+    vi.mocked(mockQueue.enqueue).mockClear()
+    vi.mocked(mockSearch.bulkIndexResources).mockClear()
+
+    expect((await hide(resource.id, { hidden: true })).status).toBe(200)
+
+    expect(mockSearch.bulkIndexResources).toHaveBeenCalledWith([
+      expect.objectContaining({ id: resource.id, summary: undefined }),
+    ])
+    await expectDocSettled(resource.id)
+  })
 
   it('keeps hidden as state, so the next run does not undo it', async () => {
     const { resource } = await withAbstract('summary-hide')

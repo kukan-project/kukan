@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { eq, and, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
+import type { PgInsertValue } from 'drizzle-orm/pg-core'
 import type { Database, Transaction } from '@kukan/db'
 import {
   resource,
@@ -77,6 +78,21 @@ export const publicResourceColumns = {
   extras: scrubbedExtras,
   summary: publicSummary,
   summaryMeta: publicSummaryMeta,
+}
+
+/**
+ * Mark the search documents of a dataset's live resources stale, for a change
+ * to the dataset that changes what the index should hold of them — a delete,
+ * a publish, a restore (ADR-053 §9.3).
+ */
+export async function markPackageResourceDocs(
+  db: Pick<Database, 'update'>,
+  packageId: string
+): Promise<void> {
+  await db
+    .update(resource)
+    .set({ docSyncDueAt: sql`NOW()` })
+    .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
 }
 
 /** What a resource's search document is built from (see search-index.ts) — one
@@ -186,7 +202,7 @@ export class ResourceService {
   async listForSearchRebuild(packageId: string) {
     return await this.db
       .select({
-        ...resourceDocColumns,
+        id: resource.id,
         url: resource.url,
         hasStoredContent: isNotNull(resource.storageKey),
       })
@@ -408,7 +424,7 @@ export class ResourceService {
     packageId: string,
     item: Omit<CreateResourceInput, 'packageId'>,
     position: number
-  ): typeof resource.$inferInsert {
+  ): PgInsertValue<typeof resource> {
     return {
       packageId,
       url: item.url,
@@ -421,6 +437,9 @@ export class ResourceService {
       resourceType: item.resourceType,
       section: item.section,
       state: 'active',
+      // Its document is written after the commit, under the sync's lock like
+      // every other (see `update`)
+      docSyncDueAt: sql`NOW()`,
     }
   }
 
@@ -456,6 +475,11 @@ export class ResourceService {
           // whatever the worker or the health check recorded in between — and an
           // upload is not reprocessed on edit, so a stale hash would persist.
           updated: sql`NOW()`,
+          // The search document is written by the route straight after, but a
+          // sync that read this row before the edit can land after that write
+          // and put the old document back. Marked here, that sync's clear
+          // misses and the next one writes this (ADR-053 §9.3).
+          docSyncDueAt: sql`NOW()`,
         })
         .where(eq(resource.id, id))
         .returning(publicResourceColumns)
@@ -520,13 +544,19 @@ export class ResourceService {
       const labelOf = sectionOf ?? new Map(existing.map((r) => [r.id, r.section]))
       this.assertUnsplit(resourceIds.map((id) => labelOf.get(id) ?? null))
 
+      const sectionNow = new Map(existing.map((r) => [r.id, r.section ?? null]))
       for (let i = 0; i < resourceIds.length; i++) {
         const id = resourceIds[i]
+        const section = sectionOf && (sectionOf.get(id) ?? null)
+        // A label is in the search document, the position is not — so only a
+        // label that moved leaves it stale (see `update`)
+        const relabelled = sectionOf !== undefined && section !== sectionNow.get(id)
         await tx
           .update(resource)
           .set({
             position: i,
-            ...(sectionOf && { section: sectionOf.get(id) ?? null }),
+            ...(sectionOf && { section }),
+            ...(relabelled && { docSyncDueAt: sql`NOW()` }),
             updated: sql`NOW()`,
           })
           .where(eq(resource.id, id))
@@ -551,6 +581,9 @@ export class ResourceService {
       .set({
         state: 'deleted',
         updated: sql`NOW()`,
+        // The route removes the document, but a sync that read the row while it
+        // was active can write it back; marked, the next sync removes it again
+        docSyncDueAt: sql`NOW()`,
       })
       .where(eq(resource.id, existing.id))
       .returning(publicResourceColumns)
@@ -693,6 +726,8 @@ export class ResourceService {
             hash = NULL,
             -- The live pointer's other writer, so it mints a generation too.
             content_revision = gen_random_uuid(),
+            -- The name and format are in the search document (see update)
+            doc_sync_due_at = NOW(),
             updated = NOW()
         FROM before b
         WHERE r.id = b.id

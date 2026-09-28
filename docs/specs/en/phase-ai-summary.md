@@ -598,31 +598,62 @@ abstract it does not exist.
 
 #### Having nowhere to write it is the point
 
-**Summarize runs after Index.** The document Index wrote describes a resource with no abstract,
-and nothing comes back for it — left alone, the abstract **never reaches the index at all**.
+**Summarize runs after Index**, and Index writes only the content chunks, never the resource's
+document. Nothing rewrites the document after an abstract is written — left alone, the abstract
+**never reaches the index at all**.
 
-Three paths enqueue a `sync-resource-doc` job.
+So a write that makes the document stale **marks the row in the same statement**
+(`doc_sync_due_at`), and the `sync-resource-doc` job rewrites the documents of the marked rows and
+clears their marks.
 
-| Path                 | Where                                                     |
-| -------------------- | --------------------------------------------------------- |
-| the pipeline step    | beside the embedding enqueue                              |
-| the backfill walk    | per resource (the vector waits)                           |
-| an editor hiding one | `PUT /resources/:id/summary` (override not served, §10.2) |
+| The write that marks                                                                                        | Who writes the document                                          |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| the pipeline step (an abstract written; a format a published version changed)                               | the job (enqueued at the end of the run when the row is marked)  |
+| the backfill walk                                                                                           | the job (enqueued only on a write; the vector waits for the end) |
+| an editor hiding one (`PUT /resources/:id/summary`; override not served, §10.2)                             | the API, there and then                                          |
+| a resource create, edit, delete, relabel or upload replacement; publishing, restoring or deleting a dataset | the API, there and then (writing or removing)                    |
 
-**Queued rather than written, to settle who retries.** The write that makes the document stale
-is not one that can retry it: Summarize runs after Index and is best-effort, so a search index
-briefly unreachable is recorded as a failed step, the run completes, and **nothing asks again**.
-The editor's path is the same — a retried request changes nothing to re-trigger on.
+When the API cannot take the lock or settle the write, it leaves the mark to the job.
 
-Queued, the retry belongs to the queue, where every other retry in this pipeline already lives,
-and **a search-index blip does not fail a pipeline run** — which rethrowing would have done.
+**One job, writing the marked rows together.** The job looks at the marks, not its payload, so one
+waiting job that no worker has taken covers every mark set before it runs, and a caller enqueues
+only when there is none. It writes 200 at a time in one bulk request, waiting for the index to
+refresh once per write.
 
-**Enqueued whatever the outcome.** The document is a statement about the row, so restating it is
-right even when nothing moved; gated on a write, a sync that failed right after one would find
-the abstract unchanged on the retry and never be repaired.
+**Queued rather than written, to settle who retries.** The write that makes the document stale is
+not one that can retry it: Summarize runs after Index and is best-effort, so a search index briefly
+unreachable is recorded as a failed step, the run completes, and **nothing asks again**. The
+editor's path is the same — a retried request changes nothing to re-trigger on. Queued, the retry
+belongs to the queue, and **a search-index blip does not fail a pipeline run**. A failed write
+leaves the mark, so even a job that was never enqueued is found again by the hourly sweep.
 
-**The last matters most for hiding.** The public projection takes a hidden abstract off the
-document, so a document that keeps it is **text somebody took down still answering searches**.
+**Nothing is enqueued when the abstract did not move.** The document did not change. If an earlier
+write failed, its mark is still there, and the sweep picks it up.
+
+**Documents are written under one lock only.** The job, the API's own write and the full rebuild all take the sync's
+advisory lock before reading the row and writing the document: two writers side by side can land
+out of order, the one that read first writing last. The writers that mark a row (writing or hiding
+an abstract) do not take the lock — they would wait on the index — so a mark is **cleared only if it
+still holds the value read** (compare-and-set). One set again meanwhile stays, and the next batch
+writes the newer content. The API **does not wait** for the lock: waiting holds a database
+connection, and a few edits queued behind one batch would leave other requests without one.
+Without it the API writes nothing and leaves the marks to the job: written outside the lock, an
+older read could land after the job had written a later edit and cleared its mark, leaving nothing
+to put it right. The API writes one batch (200) at most, and leaves the rest to the job.
+
+What a mark asks for depends on the row.
+
+| The row                                                | The job and the API                           |
+| ------------------------------------------------------ | --------------------------------------------- |
+| a live resource of a public dataset                    | write the document                            |
+| a deleted resource, or a resource of a deleted dataset | remove the document                           |
+| a resource of a draft dataset                          | clear the mark only (publish writes them all) |
+
+A document the index refuses keeps its mark and is logged, and the rest of the batch is cleared:
+one bad document must not stop every mark behind it.
+
+**This matters most for hiding.** The public projection takes a hidden abstract off the document,
+so a document that keeps it is **text somebody took down still answering searches**.
 
 ## 10. Step 6: API and web
 

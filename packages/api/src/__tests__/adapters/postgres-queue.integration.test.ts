@@ -251,6 +251,33 @@ describe('PostgresQueueAdapter', () => {
     await vi.waitFor(() => expect(notify).toHaveBeenCalledOnce())
   })
 
+  it('writes no second job unless-waiting while one waits, and does once a worker holds it', async () => {
+    const queue = adapter()
+    const first = await queue.enqueue('t', {}, { unlessWaiting: true })
+    expect(await queue.enqueue('t', {}, { unlessWaiting: true })).toBe(first)
+    expect(await rows()).toHaveLength(1)
+
+    // Taken: the holder may already have looked, so what comes after needs a job
+    await db.update(job).set({ lockedUntil: sql`now() + interval '5 minutes'`, lockedBy: 'other' })
+    const second = await queue.enqueue('t', {}, { unlessWaiting: true })
+
+    expect(second).not.toBe(first)
+    expect(await rows()).toHaveLength(2)
+  })
+
+  it('writes a job unless-waiting past one that failed and waits to be retried', async () => {
+    // Its retry may be minutes away, or it may never run again
+    const queue = adapter()
+    const failed = await queue.enqueue('t', {})
+    await db
+      .update(job)
+      .set({ attempts: 1, runAt: sql`now() + interval '5 minutes'` })
+      .where(eq(job.id, failed))
+
+    expect(await queue.enqueue('t', {}, { unlessWaiting: true })).not.toBe(failed)
+    expect(await rows()).toHaveLength(2)
+  })
+
   it('tells the other tasks about a job a worker writes, and makes a pass itself', async () => {
     // Busy with one job, it would otherwise hold what it queued while another sat idle
     const notify = vi.fn(async () => {})

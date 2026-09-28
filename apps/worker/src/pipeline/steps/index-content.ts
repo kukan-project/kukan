@@ -196,6 +196,7 @@ async function indexDocument(
       await ctx.deleteContent(resourceId)
 
       chunks = splitIntoChunks(text, MAX_CONTENT_CHUNK_SIZE, Infinity)
+      const writer = chunkWriter(ctx)
       for (let i = 0; i < chunks.length; i++) {
         const chunkSize = Buffer.byteLength(chunks[i], 'utf-8')
         const doc: ContentDoc = {
@@ -206,9 +207,10 @@ async function indexDocument(
           chunkIndex: i,
           chunkSize,
         }
-        await ctx.indexContent(doc)
+        await writer.write(doc)
         totalIndexedBytes += chunkSize
       }
+      await writer.close()
     }
 
     return {
@@ -236,6 +238,24 @@ async function indexDocument(
 async function extractDocumentText(filePath: string): Promise<string> {
   const ast = await OfficeParser.parseOffice(filePath)
   return (await ast.to('text', { textConfig: { preserveLayout: false } })).value
+}
+
+/**
+ * Write a stream of chunks, waiting for the index to refresh on the last one
+ * only (see `indexContent`). Which chunk is last is known only when the text
+ * ends, so each is held back until the next arrives.
+ */
+function chunkWriter(ctx: PipelineContext) {
+  let pending: ContentDoc | undefined
+  return {
+    async write(doc: ContentDoc) {
+      if (pending) await ctx.indexContent(pending, { waitForRefresh: false })
+      pending = doc
+    },
+    async close() {
+      if (pending) await ctx.indexContent(pending)
+    },
+  }
 }
 
 /** Stream text content line-by-line, chunking and indexing incrementally */
@@ -273,6 +293,7 @@ async function indexTextStream(
   let chunkIndex = 0
   let totalOriginalBytes = 0
   let totalIndexedBytes = 0
+  const writer = chunkWriter(ctx)
 
   async function flushChunk() {
     const text = chunkLines.join('\n')
@@ -286,7 +307,7 @@ async function indexTextStream(
       chunkIndex,
       chunkSize: textBytes,
     }
-    await ctx.indexContent(doc)
+    await writer.write(doc)
 
     totalIndexedBytes += textBytes
     chunkIndex++
@@ -332,6 +353,7 @@ async function indexTextStream(
   if (chunkLines.length > 0) {
     await flushChunk()
   }
+  await writer.close()
 
   return {
     contentIndexed: chunkIndex > 0,

@@ -15,7 +15,7 @@ import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
-import { enqueuePackageEmbed, enqueueResourceDocSync } from '@kukan/api/services/search-index'
+import { enqueuePackageEmbed } from '@kukan/api/services/search-index'
 import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
@@ -429,16 +429,15 @@ async function runSummarizeStep(
       // The abstract is an input to the embedding text, so writing one makes
       // the package's vector stale (ADR-053 §9.2). Through the ordinary
       // debounce: one resource changing is one change to the dataset.
+      // The write marked the row; the handler asks for the document at the
+      // end of the run. Index writes only the content chunks, never this
+      // document — nothing else brings the abstract to the keyword leg.
       await enqueuePackageEmbed(deps.db, queue, deps.ai, input.packageId, deps.log)
-      await enqueueResourceDocSync(queue, input.resourceId, deps.log)
       return
     }
-    // A write returned above; this is the rest. **The step runs after Index**,
-    // so the document written there describes a resource with no abstract and
-    // nothing else comes back for it — and a write whose indexing failed looks
-    // unchanged on the retry, which would step past it for ever. The document
-    // is a statement about the row, so restating it is right either way.
-    await enqueueResourceDocSync(queue, input.resourceId, deps.log)
+    // A write returned above; this is the rest, and none of it changed the
+    // document. A write whose indexing failed on an earlier run left its mark,
+    // which the sweep comes back for — so nothing here is queued to restate it.
     if (outcome.status === 'skipped') {
       // Everything the step calls skipped is about the file, so it goes on the
       // resource, where the page shows it as the reason there is no abstract.

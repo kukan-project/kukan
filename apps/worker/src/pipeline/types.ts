@@ -4,7 +4,7 @@
  */
 
 import type { Readable } from 'node:stream'
-import type { ContentDoc } from '@kukan/search-adapter'
+import type { ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { ObjectMeta } from '@kukan/storage-adapter'
 import type { IngestResult } from '@kukan/lake'
 import type { NoTableReason, PackageDbState, ResourceSchema } from '@kukan/shared'
@@ -72,9 +72,10 @@ export interface PipelineContext {
    * Returns false if rate-limited (another fetch happened within the last second).
    */
   acquireFetchSlot(fqdn: string): Promise<boolean>
-  /** Index extracted content into the search index.
+  /** Index extracted content into the search index, waiting for it to become
+   *  searchable unless told not to (see `SearchAdapter.indexContent`).
    *  No-op when OpenSearch is not configured. */
-  indexContent(doc: ContentDoc): Promise<void>
+  indexContent(doc: ContentDoc, options?: IndexContentOptions): Promise<void>
   /** Delete all content chunks for a resource.
    *  No-op when OpenSearch is not configured. */
   deleteContent(resourceId: string): Promise<void>

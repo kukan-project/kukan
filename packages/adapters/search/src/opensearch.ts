@@ -23,6 +23,7 @@ import type {
   DatasetDoc,
   ResourceDoc,
   ContentDoc,
+  IndexContentOptions,
   MatchedResource,
   IndexStats,
   BrowseResult,
@@ -30,7 +31,7 @@ import type {
   ContentBrowseItem,
   MatchedResourcesCount,
 } from './adapter'
-import { MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS } from './adapter'
+import { BulkIndexError, MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS } from './adapter'
 
 /** The one shape of the search index: the create body, and what an index
  *  created under an older shape is brought up to (see ensureWritableIndex). */
@@ -878,18 +879,8 @@ export class OpenSearchAdapter implements SearchAdapter {
   // Resource-level operations (child documents of package)
   // ------------------------------------------------------------------
 
-  async indexResource(doc: ResourceDoc): Promise<void> {
-    await this.ensureWritableIndex()
-    await this.client.index({
-      index: this.searchIndex,
-      id: doc.id,
-      body: { ...doc, join_field: { name: 'resource', parent: doc.packageId } },
-      routing: doc.packageId,
-      refresh: 'wait_for',
-    })
-  }
-
-  async deleteResource(resourceId: string): Promise<void> {
+  async deleteResources(resourceIds: string[]): Promise<void> {
+    if (resourceIds.length === 0) return
     await this.ensureIndex()
     // deleteByQuery scatters to all shards — works without explicit routing
     await this.client.deleteByQuery({
@@ -897,7 +888,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       body: {
         query: {
           bool: {
-            filter: [{ term: { _id: resourceId } }, { term: { join_field: 'resource' } }],
+            filter: [{ ids: { values: resourceIds } }, { term: { join_field: 'resource' } }],
           },
         },
       },
@@ -919,10 +910,10 @@ export class OpenSearchAdapter implements SearchAdapter {
     ])
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {
-      const failed = response.body.items.filter(
-        (item: { index?: { error?: unknown } }) => item.index?.error
+      const failed = response.body.items.flatMap((item) =>
+        item.index?.error && item.index._id ? [item.index._id] : []
       )
-      throw new Error(`Bulk resource indexing failed for ${failed.length} documents`)
+      throw new BulkIndexError(failed)
     }
   }
 
@@ -930,7 +921,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   // Content-level operations (child documents of package)
   // ------------------------------------------------------------------
 
-  async indexContent(doc: ContentDoc): Promise<void> {
+  async indexContent(doc: ContentDoc, options?: IndexContentOptions): Promise<void> {
     await this.ensureWritableIndex()
     const docId = `${doc.resourceId}_chunk_${doc.chunkIndex}`
     await this.client.index({
@@ -938,7 +929,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       id: docId,
       body: { ...doc, join_field: { name: 'content', parent: doc.packageId } },
       routing: doc.packageId,
-      refresh: 'wait_for',
+      refresh: options?.waitForRefresh === false ? false : 'wait_for',
     })
   }
 

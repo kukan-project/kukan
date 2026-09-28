@@ -22,6 +22,16 @@ export const RESOURCE_POSITION_LOCK = 'resource_position'
 export const LAKE_INGEST_LOCK = 'lake_ingest'
 
 /**
+ * Serialize the search-document sync (ADR-053 §9.3).
+ *
+ * Two writers of the same resource's document — the sync job, an edit — can
+ * land out of order: the one that read the row first can write last, putting
+ * the older document back after the newer one cleared the mark. One at a time,
+ * each batch's write lands before the next batch reads.
+ */
+export const RESOURCE_DOC_SYNC_LOCK = 'resource_doc_sync'
+
+/**
  * Hold `<namespace>:<id>` for the rest of the transaction.
  *
  * Every query inside must run on `tx`: the lock *is* a pooled connection, and
@@ -50,11 +60,26 @@ export async function withGlobalAdvisoryLock<T>(
   return withAdvisoryLock(db, namespace, '', fn)
 }
 
+/** The 64-bit key a namespaced lock is held under — one derivation for both ways of taking it */
+const lockKey = (namespace: string, id: string) => sql`hashtextextended(${`${namespace}:${id}`}, 0)`
+
 /** Take the lock inside a transaction the caller already owns. */
 export async function lockInTransaction(
   tx: Pick<Database, 'execute'>,
   namespace: string,
   id: string
 ): Promise<void> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${namespace}:${id}`}, 0))`)
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey(namespace, id)})`)
+}
+
+/** Take the lock inside a transaction if nobody holds it; false if somebody does. */
+export async function tryLockInTransaction(
+  tx: Pick<Database, 'execute'>,
+  namespace: string,
+  id: string
+): Promise<boolean> {
+  const result = await tx.execute(
+    sql`SELECT pg_try_advisory_xact_lock(${lockKey(namespace, id)}) AS locked`
+  )
+  return (result.rows[0] as { locked: boolean }).locked
 }

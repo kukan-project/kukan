@@ -15,6 +15,7 @@ import type {
   MatchedResource,
   ResourceDoc,
   ContentDoc,
+  IndexContentOptions,
   VectorHit,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS, type SearchFilters } from './adapter'
@@ -424,11 +425,10 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async deletePackage(_id: string): Promise<void> {}
   async deleteAllPackages(): Promise<void> {}
   async bulkIndexPackages(_docs: DatasetDoc[]): Promise<void> {}
-  async indexResource(_doc: ResourceDoc): Promise<void> {}
   async bulkIndexResources(_docs: ResourceDoc[]): Promise<void> {}
-  async deleteResource(_resourceId: string): Promise<void> {}
+  async deleteResources(_resourceIds: string[]): Promise<void> {}
   async deleteAllResources(): Promise<void> {}
-  async indexContent(_doc: ContentDoc): Promise<void> {}
+  async indexContent(_doc: ContentDoc, _options?: IndexContentOptions): Promise<void> {}
   async deleteContent(_resourceId: string): Promise<void> {}
   async deleteAllContents(): Promise<void> {}
 

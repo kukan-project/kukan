@@ -54,9 +54,9 @@ export function heldContext(
       // lands on a row the resource keeps.
       return ctx.recordVersionSchema({ ...opts, claim })
     },
-    async indexContent(doc) {
+    async indexContent(doc, options) {
       await assertHeld()
-      return ctx.indexContent(doc)
+      return ctx.indexContent(doc, options)
     },
     async deleteContent(resourceId) {
       await assertHeld()

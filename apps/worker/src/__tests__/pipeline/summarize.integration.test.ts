@@ -227,6 +227,25 @@ describe('the Summarize step', () => {
     expect(await executeSummarize(input, deps)).toEqual({ status: 'unchanged' })
   })
 
+  it('reads no material to find an abstract already describes its version', async () => {
+    // The row answers it: a catalogue that has its abstracts is otherwise
+    // read file by file to be told so
+    const input = await seed('complete', { format: 'ZIP' })
+    const deps = depsWith(aiThat(async () => abstract))
+    await executeSummarize(input, deps)
+    const download = vi.fn(storage.download)
+    const downloadRange = vi.fn(storage.downloadRange)
+
+    const outcome = await executeSummarize(input, {
+      ...deps,
+      storage: { ...storage, download, downloadRange } as unknown as StorageAdapter,
+    })
+
+    expect(outcome).toEqual({ status: 'unchanged' })
+    expect(download).not.toHaveBeenCalled()
+    expect(downloadRange).not.toHaveBeenCalled()
+  })
+
   it('regenerates when the version moved', async () => {
     const input = await seed('complete', { format: 'ZIP' })
     const complete = vi.fn(async () => abstract)

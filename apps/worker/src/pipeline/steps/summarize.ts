@@ -153,18 +153,6 @@ export async function executeSummarize(
   // A person's text is never overwritten, and never regenerated over.
   if (row.meta.source === 'human') return { status: 'unchanged' }
 
-  const plan = await planMaterial(input, row.artifacts, row.usable, deps)
-  if ('reason' in plan) return { status: 'skipped', reason: plan.reason }
-
-  const material: ResourceMaterial = {
-    id: input.resourceId,
-    name: row.name,
-    description: row.description,
-    format: input.format,
-    size: input.size,
-    ...EMPTY_MATERIAL,
-    ...plan.material,
-  }
   const locale = await deps.locale()
   const genKey = generationKey(deps.model, locale)
   // An abstract stands while its version does. Not while a digest of the
@@ -186,6 +174,22 @@ export async function executeSummarize(
   // file worth trying again.
   if (row.meta.skipReason === 'rejected' && sameVersion && sameGeneration) {
     return { status: 'unchanged' }
+  }
+
+  // After the two answers above, which the row gives on its own: the material
+  // is read from storage, and a catalogue that has its abstracts would
+  // otherwise read every file to be told so.
+  const plan = await planMaterial(input, row.artifacts, row.usable, deps)
+  if ('reason' in plan) return { status: 'skipped', reason: plan.reason }
+
+  const material: ResourceMaterial = {
+    id: input.resourceId,
+    name: row.name,
+    description: row.description,
+    format: input.format,
+    size: input.size,
+    ...EMPTY_MATERIAL,
+    ...plan.material,
   }
 
   let output: SummaryLlmOutput
