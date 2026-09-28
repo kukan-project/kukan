@@ -609,7 +609,7 @@
     },
     "searchAnalysis": {
       "title": "Re-analyse the search index",
-      "description": "The Japanese analysis settings have changed. An analyzer is fixed when an index is created, so the change reaches this deployment only by rebuilding it. The stored text is re-read in place — nothing is fetched and no file is processed again. This is a one-time step after an upgrade, and it disappears once it is done.",
+      "description": "The search analysis settings have changed (such as the Japanese analysis, or how formats are matched regardless of case). Analysis is fixed when an index is created, so the change reaches this deployment only by rebuilding it. The stored text is re-read in place — nothing is fetched and no file is processed again. This is a one-time step after an upgrade, and it disappears once it is done.",
       "reanalyse": "Re-analyse",
       "reanalysing": "Running…",
       "queued": "Re-analysis queued. This notice goes away once it finishes. Anything saved while it runs can be restored with \"Rebuild search index\" under Index Management."

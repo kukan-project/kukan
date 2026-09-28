@@ -96,7 +96,6 @@ export interface DatasetDoc {
   organization?: string
   license_id?: string
   groups?: string[]
-  formats?: string[]
   matchedResources?: MatchedResource[]
   /** How many resources matched in all — `atLeast` when the adapter could not
    *  settle it: it carried fewer than matched, or content hits past its cap are

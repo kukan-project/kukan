@@ -178,6 +178,21 @@ describe('MCP Server', () => {
       expect(text).toContain('Total: 2 datasets found (showing 1)')
     })
 
+    it("lists each dataset's formats, read from its resources", async () => {
+      // The search index keeps formats on the resources alone, so the tool
+      // asks the database for the datasets it shows
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-formats', title: 'Station Map' })
+      await createResource(app, pkg.id, { name: 'stations.csv', format: 'csv' })
+      await createResource(app, pkg.id, { name: 'stations.geojson', format: 'GeoJSON' })
+      await createResource(app, pkg.id, { name: 'more.csv', format: 'CSV' })
+
+      const result = await mcpToolCall(app, 'search_datasets', { q: 'station' })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Formats: CSV, GEOJSON')
+    })
+
     it('names which file in a dataset matched, and on what account', async () => {
       // The dataset is the unit of the result and the wrong unit to act on:
       // without this the caller's next move is to fetch it and guess (ADR-054).

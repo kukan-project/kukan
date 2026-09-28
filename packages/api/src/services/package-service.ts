@@ -296,6 +296,35 @@ export class PackageService {
   }
 
   /**
+   * The formats of each package's active resources, capitalised as `list`
+   * gives them — for callers holding search results, which carry none.
+   */
+  async formatsByPackage(packageIds: string[]): Promise<Map<string, string[]>> {
+    const byPackage = new Map<string, string[]>()
+    if (packageIds.length === 0) return byPackage
+    const rows = await this.db
+      .selectDistinct({
+        packageId: resource.packageId,
+        format: sql<string>`UPPER(${resource.format})`,
+      })
+      .from(resource)
+      .where(
+        and(
+          inArray(resource.packageId, packageIds),
+          eq(resource.state, 'active'),
+          sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
+        )
+      )
+      .orderBy(resource.packageId, sql`UPPER(${resource.format})`)
+    for (const r of rows) {
+      const list = byPackage.get(r.packageId)
+      if (list) list.push(r.format)
+      else byPackage.set(r.packageId, [r.format])
+    }
+    return byPackage
+  }
+
+  /**
    * Enrich SearchAdapter facets with all possible values from DB.
    * SearchAdapter only returns non-zero buckets; this supplements with
    * all active orgs/groups/tags/formats/licenses (count=0 for missing).

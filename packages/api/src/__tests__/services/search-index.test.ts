@@ -80,11 +80,9 @@ describe('indexPackageMetadata', () => {
     ])
     // 2. Promise.all: organization (explicit .then() consumes result before Promise.all resolves)
     addResult([{ name: 'my-org' }])
-    // 3. Promise.all: resources (format only, for facets)
-    addResult([{ format: 'csv' }, { format: 'PDF' }])
-    // 4. Promise.all: groups
+    // 3. Promise.all: groups
     addResult([{ name: 'science' }, { name: 'open-data' }])
-    // 5. Promise.all: tags
+    // 4. Promise.all: tags
     addResult([{ name: 'environment' }, { name: 'tokyo' }])
 
     await indexPackageMetadata(db, adapter, 'pkg-1')
@@ -104,7 +102,8 @@ describe('indexPackageMetadata', () => {
     expect(doc.creator_user_id).toBe('user-1')
     expect(doc.groups).toEqual(['science', 'open-data'])
     expect(doc.tags).toEqual(['environment', 'tokyo'])
-    expect(doc.formats).toEqual(expect.arrayContaining(['CSV', 'PDF']))
+    // Formats live on the resource documents alone
+    expect(doc['formats']).toBeUndefined()
     // Resources should NOT be included in dataset doc
     expect(doc['resources']).toBeUndefined()
   })
@@ -138,8 +137,6 @@ describe('indexPackageMetadata', () => {
         updated: now,
       },
     ])
-    // resources (format only)
-    addResult([])
     // ownerOrg is null, so org query is skipped (Promise.resolve(null))
     // groups
     addResult([])
@@ -156,71 +153,14 @@ describe('indexPackageMetadata', () => {
     expect(doc.license_id).toBeUndefined()
     expect(doc.groups).toEqual([])
     expect(doc.tags).toEqual([])
-    expect(doc.formats).toEqual([])
     expect(doc['resources']).toBeUndefined()
-  })
-
-  it('should deduplicate formats (case-insensitive uppercase)', async () => {
-    const { db, addResult } = createMockDb()
-    const { adapter, indexed } = createMockSearch()
-
-    addResult([
-      {
-        id: 'pkg-3',
-        name: 'dup-formats',
-        title: null,
-        notes: null,
-        ownerOrg: null,
-        private: false,
-        creatorUserId: 'user-1',
-        licenseId: null,
-        created: now,
-        updated: now,
-      },
-    ])
-    // resources with duplicate formats (different casing)
-    addResult([{ format: 'csv' }, { format: 'CSV' }, { format: 'json' }])
-    addResult([]) // groups
-    addResult([]) // tags
-
-    await indexPackageMetadata(db, adapter, 'pkg-3')
-
-    const doc = indexed[0]
-    expect(doc.formats).toEqual(['CSV', 'JSON'])
-  })
-
-  it('should exclude resources with null format from formats list', async () => {
-    const { db, addResult } = createMockDb()
-    const { adapter, indexed } = createMockSearch()
-
-    addResult([
-      {
-        id: 'pkg-4',
-        name: 'null-fmt',
-        title: null,
-        notes: null,
-        ownerOrg: null,
-        private: false,
-        creatorUserId: 'user-1',
-        licenseId: null,
-        created: now,
-        updated: now,
-      },
-    ])
-    addResult([{ format: null }])
-    addResult([]) // groups
-    addResult([]) // tags
-
-    await indexPackageMetadata(db, adapter, 'pkg-4')
-
-    expect(indexed[0].formats).toEqual([])
   })
 })
 
 describe('syncPackageMetadata', () => {
   it('asks for the embed job after indexing an active package with a resource marked', async () => {
     const { db, addResult } = createMockDb()
-    // Same query sequence as indexPackageMetadata: package, org, resources, groups, tags
+    // Same query sequence as indexPackageMetadata: package, groups, tags (no org)
     addResult([
       {
         id: EMBED_PACKAGE_ID,
@@ -235,7 +175,6 @@ describe('syncPackageMetadata', () => {
         updated: now,
       },
     ])
-    addResult([])
     addResult([])
     addResult([])
     addResult([{ id: 'marked-resource' }])

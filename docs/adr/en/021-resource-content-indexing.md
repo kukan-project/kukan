@@ -156,6 +156,7 @@ By performing resource name/description search and content search in the same in
 - Easier to support future resource-level search API
 
 Nested `resources` field is removed from `kukan-packages`, keeping only the `formats` array (for facets).
+(`formats` was later removed too; the format filter and facet are derived from the resource documents' `format`.)
 
 ### Scoring Design
 

@@ -68,7 +68,6 @@ const SEARCH_PROPERTIES: MappingProperties = {
   organization: { type: 'keyword' },
   license_id: { type: 'keyword' },
   groups: { type: 'keyword' },
-  formats: { type: 'keyword' },
   private: { type: 'boolean' },
   owner_org_id: { type: 'keyword' },
   creator_user_id: { type: 'keyword' },
@@ -81,7 +80,10 @@ const SEARCH_PROPERTIES: MappingProperties = {
     analyzer: 'kuromoji_analyzer',
     search_analyzer: 'kuromoji_query_analyzer',
   },
-  format: { type: 'keyword' },
+  // As the publisher wrote it in `_source`, so a matched resource reads as it
+  // does from the database; matched and counted in capitals, as the dataset
+  // search's format filter and facet always have been
+  format: { type: 'keyword', normalizer: 'format_upper' },
   // The section a resource is drawn under (ADR-050): a search term, not a facet
   section: {
     type: 'text',
@@ -111,6 +113,14 @@ const SEARCH_PROPERTIES: MappingProperties = {
   chunkIndex: { type: 'integer' },
   chunkSize: { type: 'integer' },
 }
+
+/**
+ * What a live index is sent to catch up: every field but `format`, which every
+ * index already has and one from before `format_upper` cannot take the
+ * normalizer on — putMapping is all or nothing, and one refusal would hold
+ * back every field added after it until the index is re-analysed.
+ */
+const { format: _format, ...ADDITIVE_PROPERTIES } = SEARCH_PROPERTIES
 
 /** Highlight config for a short field marked whole rather than in fragments */
 const WHOLE_FIELD_HIGHLIGHT = {
@@ -158,10 +168,27 @@ function isBackendUnavailable(err: unknown): boolean {
 }
 
 /**
- * Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags.
- * The output is parsed downstream on `/` with `</mark>` spared (a section label
- * drawn as a trail), so it must stay bare `<mark>` and `</mark>` and nothing else.
+ * The format facet from its `children` → `terms` → `parent` aggregation.
+ *
+ * Keys are capitalised and merged because an index created before
+ * `format_upper` keeps the publisher's spelling until it is re-analysed; the
+ * merge sums, so a dataset holding both "GeoJSON" and "GEOJSON" counts twice
+ * there, and only there.
  */
+function parseFormatBuckets(agg: unknown): SearchFacetBucket[] {
+  const buckets =
+    (agg as { byFormat?: { buckets?: { key: string; datasets: { doc_count: number } }[] } })
+      ?.byFormat?.buckets ?? []
+  const counts = new Map<string, number>()
+  for (const b of buckets) {
+    const name = b.key.toUpperCase()
+    counts.set(name, (counts.get(name) ?? 0) + b.datasets.doc_count)
+  }
+  return [...counts]
+    .map(([name, count]) => ({ name, count }))
+    .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
+}
+
 /** `hits.total` as a number, whichever shape the engine sent it in */
 function hitsTotal(total: unknown): number {
   return typeof total === 'number' ? total : ((total as { value?: number })?.value ?? 0)
@@ -188,6 +215,11 @@ function matchedResourcesCount(hit: {
   return { total, atLeast: truncated || hit.contentCapped || relation === 'gte' }
 }
 
+/**
+ * Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags.
+ * The output is parsed downstream on `/` with `</mark>` spared (a section label
+ * drawn as a trail), so it must stay bare `<mark>` and `</mark>` and nothing else.
+ */
 function sanitizeHighlight(html: string): string {
   return html.replace(/<mark\b[^>]*>/gi, '<mark>').replace(/<\/?(?!mark\b)[a-z][^>]*>/gi, '')
 }
@@ -458,6 +490,9 @@ export class OpenSearchAdapter implements SearchAdapter {
           ],
         },
       },
+      normalizer: {
+        format_upper: { type: 'custom' as const, filter: ['uppercase'] },
+      },
     },
   }
 
@@ -615,7 +650,13 @@ export class OpenSearchAdapter implements SearchAdapter {
     const started = await this.client.reindex({
       wait_for_completion: false,
       refresh: true,
-      body: { source: { index: from, size: REINDEX_BATCH_DOCS }, dest: { index: to } },
+      body: {
+        source: { index: from, size: REINDEX_BATCH_DOCS },
+        dest: { index: to },
+        // Dataset documents once carried their formats; the copy would map
+        // the field again, dynamically
+        script: { source: "ctx._source.remove('formats')", lang: 'painless' },
+      },
     })
     const taskId = (started.body as unknown as { task?: string }).task
     if (!taskId) throw new Error('OpenSearch accepted the copy without naming a task')
@@ -777,7 +818,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   private async ensureWritableIndex(): Promise<void> {
     await this.ensureIndex()
     this.mapping ??= this.client.indices
-      .putMapping({ index: this.searchIndex, body: { properties: SEARCH_PROPERTIES } })
+      .putMapping({ index: this.searchIndex, body: { properties: ADDITIVE_PROPERTIES } })
       .then(
         () => undefined,
         (err: unknown) =>
@@ -1041,9 +1082,17 @@ export class OpenSearchAdapter implements SearchAdapter {
         clauses.push({ term: { tags: t } })
       }
     }
+    // A dataset has a format when one of its resources does: the resource
+    // documents are the only place formats are kept. Case-insensitive rather
+    // than capitalised, so an index from before `format_upper` still matches
     if (filters?.formats?.length) {
       for (const fmt of filters.formats) {
-        clauses.push({ term: { formats: fmt.toUpperCase() } })
+        clauses.push({
+          has_child: {
+            type: 'resource',
+            query: { term: { format: { value: fmt, case_insensitive: true } } },
+          },
+        })
       }
     }
     if (filters?.licenses?.length) {
@@ -1199,7 +1248,24 @@ export class OpenSearchAdapter implements SearchAdapter {
       ? {
           organizations: { terms: { field: 'organization', size: 200 } },
           tags: { terms: { field: 'tags', size: 200 } },
-          formats: { terms: { field: 'formats', size: 200 } },
+          // Datasets per format, from their resources. Ranked by datasets, not
+          // resources, so the 200 kept are the 200 the old field would keep
+          formats: {
+            children: { type: 'resource' },
+            aggs: {
+              byFormat: {
+                terms: {
+                  field: 'format',
+                  size: 200,
+                  order: [{ datasets: 'desc' }, { _key: 'asc' }] as Record<
+                    string,
+                    'asc' | 'desc'
+                  >[],
+                },
+                aggs: { datasets: { parent: { type: 'resource' } } },
+              },
+            },
+          },
           licenses: { terms: { field: 'license_id', size: 200 } },
           groups: { terms: { field: 'groups', size: 200 } },
         }
@@ -1260,7 +1326,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => {
-      const { join_field: _, ...source } = hit._source
+      // `formats` is on dataset documents written before they lost it
+      const { join_field: _, formats: _formats, ...source } = hit._source
       const doc: DatasetDoc = { ...source, id: hit._id }
 
       // Package-level highlights
@@ -1355,7 +1422,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       facets = {
         organizations: parseBuckets('organizations'),
         tags: parseBuckets('tags'),
-        formats: parseBuckets('formats'),
+        formats: parseFormatBuckets(aggregations.formats),
         licenses: parseBuckets('licenses'),
         groups: parseBuckets('groups'),
       }

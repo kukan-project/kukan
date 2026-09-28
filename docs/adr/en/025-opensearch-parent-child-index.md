@@ -53,7 +53,7 @@ Maintaining consistency of scoring, pagination, and highlights is difficult.
 ```
 kukan-search (single index)
   ├── type: "package"   (parent)
-  │     title, name, notes, organization, tags, formats, ...
+  │     title, name, notes, organization, tags, ...
   ├── type: "resource"  (child of package)
   │     name, description, section, format
   └── type: "content"   (child of package)

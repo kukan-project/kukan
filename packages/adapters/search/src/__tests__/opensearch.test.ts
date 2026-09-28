@@ -311,6 +311,10 @@ describe('OpenSearchAdapter', () => {
           },
         })
       )
+      // An index from before the normalizer cannot take it on `format`, and
+      // one refusal would hold back every other field in the request
+      const sent = mockClient.indices.putMapping.mock.calls[0][0].body.properties
+      expect(sent).not.toHaveProperty('format')
       expect(mockClient.bulk).toHaveBeenCalledTimes(2)
     })
 
@@ -337,6 +341,27 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('search', () => {
+    it('leaves out the formats a dataset document written before this still carries', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'old', join_field: 'package', formats: ['PDF'] },
+                _score: 1,
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: '' })
+
+      expect(result.items[0]).not.toHaveProperty('formats')
+    })
+
     it('should use single search with has_child for keyword queries', async () => {
       mockClient.search.mockResolvedValue({
         body: {
@@ -536,6 +561,74 @@ describe('OpenSearchAdapter', () => {
       )
     })
 
+    it('filters formats through the resources, case-insensitively', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.search({ q: '', filters: { formats: ['geojson', 'CSV'] } })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.query.bool.filter).toEqual(
+        expect.arrayContaining(
+          ['geojson', 'CSV'].map((value) => ({
+            has_child: {
+              type: 'resource',
+              query: { term: { format: { value, case_insensitive: true } } },
+            },
+          }))
+        )
+      )
+    })
+
+    it('counts datasets per format from their resources, merging spellings', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: { total: { value: 0 }, hits: [] },
+          aggregations: {
+            organizations: { buckets: [] },
+            tags: { buckets: [] },
+            // An index from before the normalizer keeps the publisher's spelling
+            formats: {
+              doc_count: 9,
+              byFormat: {
+                buckets: [
+                  { key: 'CSV', doc_count: 5, datasets: { doc_count: 3 } },
+                  { key: 'GeoJSON', doc_count: 2, datasets: { doc_count: 1 } },
+                  { key: 'GEOJSON', doc_count: 2, datasets: { doc_count: 2 } },
+                ],
+              },
+            },
+            licenses: { buckets: [] },
+            groups: { buckets: [] },
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: '', facets: true })
+
+      const aggs = mockClient.search.mock.calls[0][0].body.aggs
+      expect(aggs.formats).toEqual({
+        children: { type: 'resource' },
+        aggs: {
+          byFormat: {
+            // Ranked by datasets, so a format on many datasets with few files
+            // each is not cut behind one on few datasets with many
+            terms: {
+              field: 'format',
+              size: 200,
+              order: [{ datasets: 'desc' }, { _key: 'asc' }],
+            },
+            aggs: { datasets: { parent: { type: 'resource' } } },
+          },
+        },
+      })
+      expect(result.facets?.formats).toEqual([
+        { name: 'CSV', count: 3 },
+        { name: 'GEOJSON', count: 3 },
+      ])
+    })
+
     it('should include aggregations when facets=true', async () => {
       mockClient.search.mockResolvedValue({
         body: {
@@ -543,7 +636,7 @@ describe('OpenSearchAdapter', () => {
           aggregations: {
             organizations: { buckets: [{ key: 'org-a', doc_count: 5 }] },
             tags: { buckets: [] },
-            formats: { buckets: [] },
+            formats: { byFormat: { buckets: [] } },
             licenses: { buckets: [] },
             groups: { buckets: [] },
           },
@@ -1742,6 +1835,10 @@ describe('OpenSearchAdapter', () => {
         // Polled, rather than asking the cluster to hold one request open: a
         // copy still running answers that with a 500 the transport raises
         expect(mockClient.reindex.mock.calls[0][0].wait_for_completion).toBe(false)
+        // The copy leaves behind the formats dataset documents once carried
+        expect(mockClient.reindex.mock.calls[0][0].body.script.source).toBe(
+          "ctx._source.remove('formats')"
+        )
         expect(mockClient.tasks.get.mock.calls[0][0].wait_for_completion).toBeUndefined()
         expect(mockClient.tasks.get).toHaveBeenCalledTimes(2)
         expect(result?.documents).toBe(7)

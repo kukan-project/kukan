@@ -373,12 +373,7 @@ export async function indexPackageMetadata(
 
   if (!pkg) return false
 
-  const [resources, orgRow, groups, tags] = await Promise.all([
-    // Only fetch format for the formats facet
-    db
-      .select({ format: resource.format })
-      .from(resource)
-      .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active'))),
+  const [orgRow, groups, tags] = await Promise.all([
     pkg.ownerOrg
       ? db
           .select({ name: organization.name })
@@ -400,10 +395,6 @@ export async function indexPackageMetadata(
       .orderBy(tag.name),
   ])
 
-  const formatSet = new Set(
-    resources.map((r) => r.format?.toUpperCase()).filter((f): f is string => !!f)
-  )
-
   const doc: DatasetDoc = {
     id: pkg.id,
     name: pkg.name,
@@ -413,7 +404,6 @@ export async function indexPackageMetadata(
     license_id: pkg.licenseId ?? undefined,
     groups: groups.map((g) => g.name),
     tags: tags.map((t) => t.name),
-    formats: [...formatSet],
     private: pkg.private,
     owner_org_id: pkg.ownerOrg ?? undefined,
     creator_user_id: pkg.creatorUserId ?? undefined,
@@ -542,7 +532,7 @@ export async function rebuildMetadataIndex(
     const batch = packages.slice(i, i + BATCH_SIZE)
     const batchIds = batch.map((p) => p.id)
 
-    const [details, allResources, allGroups, allTags] = await Promise.all([
+    const [details, allGroups, allTags] = await Promise.all([
       db
         .select({
           id: packageTable.id,
@@ -558,11 +548,6 @@ export async function rebuildMetadataIndex(
         })
         .from(packageTable)
         .where(inArray(packageTable.id, batchIds)),
-      // Only the formats facet: the resources' own documents are written below
-      db
-        .select({ packageId: resource.packageId, format: resource.format })
-        .from(resource)
-        .where(and(inArray(resource.packageId, batchIds), eq(resource.state, 'active'))),
       db
         .select({ packageId: packageGroup.packageId, name: group.name })
         .from(packageGroup)
@@ -586,15 +571,6 @@ export async function rebuildMetadataIndex(
       for (const o of orgs) orgMap.set(o.id, o.name)
     }
 
-    const resourcesByPkg = new Map<string, typeof allResources>()
-    for (const r of allResources) {
-      let arr = resourcesByPkg.get(r.packageId)
-      if (!arr) {
-        arr = []
-        resourcesByPkg.set(r.packageId, arr)
-      }
-      arr.push(r)
-    }
     const groupsByPkg = new Map<string, string[]>()
     for (const g of allGroups) {
       let arr = groupsByPkg.get(g.packageId)
@@ -615,10 +591,6 @@ export async function rebuildMetadataIndex(
     }
 
     const packageDocs: DatasetDoc[] = details.map((detail) => {
-      const pkgResources = resourcesByPkg.get(detail.id) ?? []
-      const formatSet = new Set(
-        pkgResources.map((r) => r.format?.toUpperCase()).filter((f): f is string => !!f)
-      )
       return {
         id: detail.id,
         name: detail.name,
@@ -628,7 +600,6 @@ export async function rebuildMetadataIndex(
         license_id: detail.licenseId ?? undefined,
         groups: groupsByPkg.get(detail.id) ?? [],
         tags: tagsByPkg.get(detail.id) ?? [],
-        formats: [...formatSet],
         private: detail.private,
         owner_org_id: detail.ownerOrg ?? undefined,
         creator_user_id: detail.creatorUserId ?? undefined,

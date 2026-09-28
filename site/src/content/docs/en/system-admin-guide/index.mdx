@@ -477,7 +477,7 @@ proceeds in the background once queued.
 | Rebuild search index    | The metadata index (not file content)                      | No                      | Search results look inconsistent. **After an upgrade that changed a mapping or schema** (`POST /api/v1/admin/reindex-metadata`)                                                                                                          |
 | Reprocess all resources | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                                                                                                        |
 | Regenerate embeddings   | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped. **The dashboard also prompts while any resource is outside semantic search** (below) |
-| Re-analyse search index | The index itself, under a new analysis                     | No                      | The Japanese analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                          |
+| Re-analyse search index | The index itself, under a new analysis                     | No                      | The search analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                            |
 
 None of this is ordinarily needed: the metadata index updates as datasets are
 created, updated, and deleted, and text and previews are built when the pipeline
@@ -485,8 +485,9 @@ processes a file.
 
 ### Re-analysing the search index
 
-Upgrading to a release that changed the Japanese morphological analysis puts a
-**re-analysis** notice on the search admin page. The analysis is **fixed when an
+Upgrading to a release that changed the search analysis settings (the Japanese
+morphological analysis, or how formats are matched regardless of case) puts a
+**re-analysis** notice on the dashboard. The analysis is **fixed when an
 index is created**, so an existing index has to be rebuilt before the new
 analysis takes effect. "Rebuild" above re-sends documents to the same index and
 leaves its analysis as it was, so this is the only action that applies one.

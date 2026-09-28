@@ -51,7 +51,7 @@ aggs（集計）はパッケージインデックスの検索結果にのみ基�
 ```
 kukan-search (単一インデックス)
   ├── type: "package"   (parent)
-  │     title, name, notes, organization, tags, formats, ...
+  │     title, name, notes, organization, tags, ...
   ├── type: "resource"  (child of package)
   │     name, description, section, format
   └── type: "content"   (child of package)

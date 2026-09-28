@@ -111,13 +111,18 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         },
       })
 
+      // Search results carry no formats: the index keeps them on the
+      // resources, and the database says it for the datasets shown
+      const formatsById = await new PackageService(db).formatsByPackage(
+        result.items.map((i) => i.id)
+      )
       const text =
         result.items.length === 0
           ? `No datasets found for "${q}".`
           : result.items
               .map((item, i) => {
                 const org = item.organization || ''
-                const formats = item.formats?.join(', ') || ''
+                const formats = formatsById.get(item.id)?.join(', ') || ''
                 return [
                   `${i + 1}. ${item.title || item.name}`,
                   `   Name: ${item.name}`,
