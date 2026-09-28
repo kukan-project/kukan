@@ -36,7 +36,7 @@ says is unknowable without opening it. Excel is the same: it never enters the CS
 has neither a preview nor a schema.
 
 **Search.** The embedding material is assembled by `buildEmbeddingText`
-(`apps/worker/src/embed/embed-package.ts`) from `title` + `notes` + `tags` plus each
+(`apps/worker/src/embed/embed-resources.ts`) from `title` + `notes` + `tags` plus each
 resource's `name` / `description`. Municipal dataset titles are administrative
 (`年齢別推計人口【年齢5歳階級別、年齢3区分別】`) and sit far from the everyday words people
 search with. Tested against a public open-data catalogue, semantic search works where

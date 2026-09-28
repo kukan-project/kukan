@@ -15,7 +15,6 @@ import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
-import { enqueuePackageEmbed } from '@kukan/api/services/search-index'
 import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
@@ -289,7 +288,7 @@ async function runPipeline(
     // each step to decide which artifacts describe this content, and the
     // originals it may still send need none of them.
     if (ctx.summary && summarySource) {
-      await runSummarizeStep(tracker, ctx.summary, queue, {
+      await runSummarizeStep(tracker, ctx.summary, {
         resourceId,
         packageId: fetchResult.packageId,
         version: summarySource.version,
@@ -418,21 +417,17 @@ async function runLakeStep(
 async function runSummarizeStep(
   tracker: StepTracker,
   deps: SummaryDeps,
-  queue: QueueAdapter,
   input: SummaryInput
 ): Promise<void> {
   const stepId = await tracker.startStep('summarize')
   try {
     const outcome = await executeSummarize(input, deps)
     if (outcome.status === 'written') {
+      // The write marked the row's document and vector (ADR-053 §9.2); the
+      // handler asks for both at the end of the run. Index writes only the
+      // content chunks, never this document — nothing else brings the abstract
+      // to the keyword leg.
       await tracker.completeStep(stepId)
-      // The abstract is an input to the embedding text, so writing one makes
-      // the package's vector stale (ADR-053 §9.2). Through the ordinary
-      // debounce: one resource changing is one change to the dataset.
-      // The write marked the row; the handler asks for the document at the
-      // end of the run. Index writes only the content chunks, never this
-      // document — nothing else brings the abstract to the keyword leg.
-      await enqueuePackageEmbed(deps.db, queue, deps.ai, input.packageId, deps.log)
       return
     }
     // A write returned above; this is the rest, and none of it changed the

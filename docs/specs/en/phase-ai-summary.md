@@ -18,7 +18,7 @@
 - **ADR-046**: the abstract is made from the version (the immutable canonical file). The same
   input always yields the same material
 - **ADR-044**: generation happens under the resource's execution claim, like every other step
-- **ADR-034 / the embedding debounce**: the abstract becomes an input to `embedding_hash`. One
+- **ADR-054 / the embedding mark**: the abstract becomes an input to `embedding_hash`. One
   more link is added to the chain of dependencies (§9)
 - **The Index step already persists the first 64KB of extracted text for document formats**
   (`TEXT_HEAD_ARTIFACT_SIZE`, ADR-040 addendum). **PDF extracted text uses that artifact; no new
@@ -69,27 +69,22 @@ There are two entry points for generation and **one implementation** (`summarize
 Incremental (ADR-053 decision 4)
 [Worker] resource-pipeline job
   Fetch → Version → Interpret → Lake → Index → Summarize  ← added (best effort)
-                                                    └─ when the abstract changed,
-                                                       enqueueEmbeds (through the debounce)
+                                                    └─ when the abstract changed, marks the vector;
+                                                       the run's end enqueues embed-resources
 
 Backfill (§11)
 [API] POST /api/v1/admin/generate-summaries
   └─ summarize-all job
         └─ one summarize-package job per package
-              └─ processes one ungenerated resource, then requeues itself
-                 when none remain, enqueues embed-package once and ends
+              └─ processes one ungenerated resource; enqueues embed-resources if it wrote
+                 requeues itself while any remain, and ends when none do
 ```
 
-**The backfill is a per-package serial chain for three reasons.**
+**The backfill is a per-package serial chain for two reasons.**
 
 - **Visibility timeout.** One job = one resource (3–11s). Running a package in a single job would
   take up to 18 minutes for a 102-resource package, and a redelivery would bill the same
   generation twice
-- **It prevents a partial embedding.** The embedding debounce is **leading-edge**: a change that
-  arrives inside the 60-second window is dropped
-  ([search-index.ts](../../../packages/api/src/services/search-index.ts), `enqueueEmbeds`).
-  Fanning out per resource could settle a package's vector on only the first of its 102
-  abstracts. Per package, the window is never hit
 - **Completion is self-evident.** "Nothing left" is the terminal condition — no counter, no flag
 
 ## 3. What gets generated, and from what
@@ -551,7 +546,7 @@ decision 5). It never switches a path.
 
 ### 9.1 Assembly order (ADR-053 decision 8)
 
-`buildEmbeddingText` in [embed-package.ts](../../../apps/worker/src/embed/embed-package.ts) is
+`buildEmbeddingText` in [embed-resources.ts](../../../apps/worker/src/embed/embed-resources.ts) is
 replaced. **Nothing existing is dropped.**
 
 | Order | Content                                             |
@@ -574,8 +569,9 @@ replaced. **Nothing existing is dropped.**
 the resource's content changes → the abstract is regenerated → the embedding text changes → re-embed
 ```
 
-On the incremental side, Summarize calls `enqueueEmbeds` (through the debounce) when it writes an
-abstract. On the backfill side, the chain in §11 enqueues once at its terminus.
+The statement that writes an abstract also marks the vector (`embedding_due_at`) when the abstract
+changed. The incremental side enqueues `embed-resources` at the end of the run, the backfill right
+after the write, whenever the mark stands (ADR-054 decision 8).
 
 **Enabling the feature changes every package's embedding hash.** Nothing changes on a site where
 it is off.
@@ -750,10 +746,10 @@ export const SUMMARIZE_ALL_JOB_TYPE = 'summarize-all' as const
 export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
 ```
 
-| Job                 | Payload                          | What it does                                                                                                               |
-| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `summarize-all`     | `{ refresh }`                    | Fans out one `summarize-package` per `active`, non-private package                                                         |
-| `summarize-package` | `{ packageId, after?, refresh }` | Processes the **next one**, advances `after` and requeues itself; when none remain, enqueues `embed-package` once and ends |
+| Job                 | Payload                          | What it does                                                                            |
+| ------------------- | -------------------------------- | --------------------------------------------------------------------------------------- |
+| `summarize-all`     | `{ refresh }`                    | Fans out one `summarize-package` per `active`, non-private package                      |
+| `summarize-package` | `{ packageId, after?, refresh }` | Processes the **next one**, advances `after` and requeues itself; ends when none remain |
 
 **One job, one completion.** A hundred resources in a single job would run for twenty minutes,
 be redelivered on the visibility timeout, and **bill every completion twice**.
@@ -762,9 +758,6 @@ be redelivered on the visibility timeout, and **bill every completion twice**.
 chain that dies is restarted by pressing the button again. A resource whose abstract already
 describes its material costs the material read and no completion, which is what makes the chain
 safe to start over.
-
-**The embedding is enqueued once, at the end.** The debounce is leading-edge, so fanning out
-per resource would settle the package's vector on the first abstract of a hundred.
 
 **A resource somebody else is processing is waited for, not passed over.** The run holding it
 writes the abstract only if it reaches the step, and a failed Fetch means it does not. Passing

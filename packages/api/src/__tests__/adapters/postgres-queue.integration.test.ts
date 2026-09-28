@@ -265,6 +265,20 @@ describe('PostgresQueueAdapter', () => {
     expect(await rows()).toHaveLength(2)
   })
 
+  it('writes a job unless-waiting past one delayed beyond it, and none past one due sooner', async () => {
+    // Wanted now, it cannot wait out another's delay; wanted later, one due
+    // sooner sees what the caller wrote
+    const queue = adapter()
+    const delayed = await queue.enqueue('t', {}, { delaySeconds: 60 })
+
+    const now = await queue.enqueue('t', {}, { unlessWaiting: true })
+    expect(now).not.toBe(delayed)
+    expect([now, delayed]).toContain(
+      await queue.enqueue('t', {}, { delaySeconds: 60, unlessWaiting: true })
+    )
+    expect(await rows()).toHaveLength(2)
+  })
+
   it('writes a job unless-waiting past one that failed and waits to be retried', async () => {
     // Its retry may be minutes away, or it may never run again
     const queue = adapter()

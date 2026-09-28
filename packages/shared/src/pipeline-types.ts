@@ -390,19 +390,17 @@ export const REANALYSE_INDEX_JOB_TYPE = 'reanalyse-search-index' as const
 /** Maintenance: permanently erase a soft-deleted organization (externals then DB rows). */
 export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
 
-/** Semantic search: (re)generate the embedding vector for one package (ADR-034). */
-export const EMBED_JOB_TYPE = 'embed-package' as const
-
 /**
- * Maintenance: queue an embed for every package (ADR-034).
+ * Semantic search: build the vectors of every resource marked due
+ * (`embedding_due_at`, ADR-054).
  *
- * Its own job rather than a flag on the reindex above, because the two are
- * asked for separately: turning embedding on for a catalog that was loaded
- * without it is a question about vectors, and answering it through the search
- * rebuild made it conditional on OpenSearch — which embedding does not use —
- * and put a fetch of every resource ahead of it.
+ * The same shape as the document sync below: the write that changes a
+ * resource's text marks the row in the same statement, and this job works
+ * through the marks, not a payload — so one waiting job covers every mark set
+ * before it runs (`unlessWaiting`), and the marks it reads together go to the
+ * provider in one call rather than one call each.
  */
-export const EMBED_ALL_JOB_TYPE = 'embed-all-packages' as const
+export const EMBED_JOB_TYPE = 'embed-resources' as const
 
 /** Make one resource version unobtainable; layer 2 may keep its rows (ADR-043 §5). */
 export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
@@ -434,10 +432,8 @@ export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
  * reuse check and would regenerate every Parquet and re-ingest all of DuckLake
  * to arrive at a sentence. The material is already in storage.
  *
- * Fanned out per package, not per resource, and each package's resources are
- * done one at a time: the embedding debounce is leading-edge, so a per-resource
- * fan-out would settle a package's vector on the first abstract of a hundred.
- * The chain enqueues the embed once, when there is nothing left to write.
+ * Fanned out per package, and each package's resources are done one at a
+ * time, one completion to a job (see `summary/backfill.ts` in the worker).
  */
 export const SUMMARIZE_ALL_JOB_TYPE = 'summarize-all' as const
 export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
@@ -484,9 +480,8 @@ export const pipelineJobSchema = z.object({
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const reanalyseIndexJobSchema = z.object({})
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
-export const embedJobSchema = z.object({ packageId: z.uuid() })
+export const embedJobSchema = z.object({})
 export const syncResourceDocJobSchema = z.object({ resourceId: z.uuid().optional() })
-export const embedAllJobSchema = z.object({})
 export const purgeVersionJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),

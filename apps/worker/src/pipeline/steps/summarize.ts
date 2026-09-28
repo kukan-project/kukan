@@ -53,6 +53,7 @@ import {
   declaredFormatMismatch,
 } from '@kukan/shared'
 import { stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
+import { embeddingDueIf } from '@kukan/api/services/resource-embedding'
 import {
   loadMaterial,
   materialKind,
@@ -713,8 +714,14 @@ async function write(
     // The mark rides with the write that earns it. Two statements leave a
     // window where a new abstract exists and nothing says the index has not
     // heard of it — invisible to the sweep, which is the thing that was
-    // supposed to catch this (ADR-053 §9.3).
-    .set({ summary, summaryMeta: meta, docSyncDueAt: sql`NOW()` })
+    // supposed to catch this (ADR-053 §9.3). The vector's too, when the text
+    // moved: the condition below leaves no hidden abstract to compare against.
+    .set({
+      summary,
+      summaryMeta: meta,
+      docSyncDueAt: sql`NOW()`,
+      embeddingDueAt: embeddingDueIf(sql`${resource.summary} IS DISTINCT FROM ${summary}`),
+    })
     .where(
       and(
         eq(resource.id, input.resourceId),

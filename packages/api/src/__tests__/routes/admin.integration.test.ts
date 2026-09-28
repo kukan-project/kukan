@@ -15,7 +15,7 @@ import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-h
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { generationKey } from '@kukan/shared'
-import { PostgresQueueAdapter } from '@kukan/queue-adapter'
+import { PostgresQueueAdapter, type QueueAdapter } from '@kukan/queue-adapter'
 import { randomUUID } from 'node:crypto'
 
 const db = getTestDb()
@@ -128,14 +128,34 @@ describe('Admin API Routes', () => {
       expect(res.status).toBe(403)
     })
 
-    it('queues the embed-all job, with or without OpenSearch', async () => {
+    it('marks every live resource and queues the embed job, with or without OpenSearch', async () => {
+      const orgId = await ensureOrg('reindex-embeddings-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'reindex-embeddings', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const [row] = await db
+        .insert(resource)
+        .values({ packageId: pkg.id, name: 'r', state: 'active' })
+        .returning({ id: resource.id })
       const pgSearch: SearchAdapter = { ...mockSearch, getIndexStats: async () => null }
-      const embedApp = createTestApp(db, { search: pgSearch, ai: embeddingAi })
+      const queue = { enqueue: vi.fn().mockResolvedValue('job') } as unknown as QueueAdapter
+      const embedApp = createTestApp(db, { search: pgSearch, ai: embeddingAi, queue })
 
       const res = await embedApp.request('/api/v1/admin/reindex-embeddings', { method: 'POST' })
 
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ queued: true })
+      const [marked] = await db
+        .select({ due: resource.embeddingDueAt })
+        .from(resource)
+        .where(eq(resource.id, row.id))
+      expect(marked.due).not.toBeNull()
+      expect(queue.enqueue).toHaveBeenCalledWith(
+        'embed-resources',
+        {},
+        { delaySeconds: 0, unlessWaiting: true }
+      )
     })
 
     it('returns 400 when embedding is not configured', async () => {
@@ -154,8 +174,7 @@ describe('Admin API Routes', () => {
     const KEY = 'test-model@4'
     const statusApp = createTestApp(db, { search: mockSearch, ai: embedAi })
 
-    /** A package whose embed claim is old enough to count as settled */
-    async function seedPackage(name: string, queuedAt: string | null = null) {
+    async function seedPackage(name: string) {
       const orgId = await ensureOrg(`${name}-org`)
       const [pkg] = await db
         .insert(packageTable)
@@ -166,7 +185,6 @@ describe('Admin API Routes', () => {
           title: name,
           ownerOrg: orgId,
           state: 'active',
-          embeddingQueuedAt: queuedAt === null ? null : sql`now() - ${queuedAt}::interval`,
         })
         .returning({ id: packageTable.id })
       return pkg.id
@@ -230,21 +248,33 @@ describe('Admin API Routes', () => {
       expect(await res.json()).toEqual({ missing: 0 })
     })
 
-    it('does not count a package whose embed claim is still outstanding', async () => {
-      // The ordinary gap between an edit and its debounced job. Reporting it
+    it('does not count a resource marked moments ago', async () => {
+      // The ordinary gap between an edit and its delayed job. Reporting it
       // would put a prompt in front of an administrator for work already on
       // its way.
-      const packageId = await seedPackage('embed-status-pending', '1 minute')
-      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'active' })
+      const packageId = await seedPackage('embed-status-pending')
+      await db.insert(resource).values({
+        packageId,
+        name: 'r',
+        format: 'CSV',
+        state: 'active',
+        embeddingDueAt: sql`now() - interval '1 minute'`,
+      })
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
       expect(await res.json()).toEqual({ missing: 0 })
     })
 
-    it('counts a package whose claim went quiet without producing a vector', async () => {
-      const packageId = await seedPackage('embed-status-abandoned', '1 hour')
-      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'active' })
+    it('counts a resource whose mark went quiet without producing a vector', async () => {
+      const packageId = await seedPackage('embed-status-abandoned')
+      await db.insert(resource).values({
+        packageId,
+        name: 'r',
+        format: 'CSV',
+        state: 'active',
+        embeddingDueAt: sql`now() - interval '1 hour'`,
+      })
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
@@ -1349,7 +1379,7 @@ describe('Admin API Routes', () => {
     const queue = new PostgresQueueAdapter({ db })
     const queueApp = createTestApp(db, { search: mockSearch, queue })
 
-    async function deadJob(type = 'embed-package') {
+    async function deadJob(type = 'summarize-package') {
       const id = await queue.enqueue(type, { packageId: randomUUID() })
       await db
         .update(job)
@@ -1365,14 +1395,14 @@ describe('Admin API Routes', () => {
 
     it('lists the jobs of one status, with their last error', async () => {
       const dead = await deadJob()
-      await queue.enqueue('embed-package', { packageId: randomUUID() }, { delaySeconds: 60 })
+      await queue.enqueue('summarize-package', { packageId: randomUUID() }, { delaySeconds: 60 })
 
       const res = await queueApp.request('/api/v1/admin/queue/jobs?status=dead')
       expect(res.status).toBe(200)
       expect(await res.json()).toMatchObject({
         total: 1,
         items: [
-          { id: dead, type: 'embed-package', status: 'dead', attempts: 3, lastError: 'boom' },
+          { id: dead, type: 'summarize-package', status: 'dead', attempts: 3, lastError: 'boom' },
         ],
       })
       const all = await (await queueApp.request('/api/v1/admin/queue/jobs')).json()
@@ -1381,25 +1411,25 @@ describe('Admin API Routes', () => {
     })
 
     it('counts jobs by type and status, and lists one type of one status', async () => {
-      await deadJob('embed-package')
+      await deadJob('summarize-package')
       await queue.enqueue('sync-resource-doc', { resourceId: randomUUID() })
       await queue.enqueue('sync-resource-doc', { resourceId: randomUUID() })
-      await queue.enqueue('embed-package', { packageId: randomUUID() })
+      await queue.enqueue('summarize-package', { packageId: randomUUID() })
 
       const counts = await (await queueApp.request('/api/v1/admin/queue/counts')).json()
       expect(counts.items).toEqual(
         expect.arrayContaining([
-          { type: 'embed-package', status: 'dead', count: 1 },
-          { type: 'embed-package', status: 'waiting', count: 1 },
+          { type: 'summarize-package', status: 'dead', count: 1 },
+          { type: 'summarize-package', status: 'waiting', count: 1 },
           { type: 'sync-resource-doc', status: 'waiting', count: 2 },
         ])
       )
       expect(counts.items).toHaveLength(3)
 
       const listed = await (
-        await queueApp.request('/api/v1/admin/queue/jobs?status=waiting&type=embed-package')
+        await queueApp.request('/api/v1/admin/queue/jobs?status=waiting&type=summarize-package')
       ).json()
-      expect(listed).toMatchObject({ total: 1, items: [{ type: 'embed-package' }] })
+      expect(listed).toMatchObject({ total: 1, items: [{ type: 'summarize-package' }] })
     })
 
     it('puts a dead job back with its attempts reset, and refuses one that is not dead', async () => {
@@ -1419,7 +1449,7 @@ describe('Admin API Routes', () => {
 
     it('deletes a dead job, and refuses one that is not dead', async () => {
       const dead = await deadJob()
-      const waiting = await queue.enqueue('embed-package', {})
+      const waiting = await queue.enqueue('summarize-package', {})
 
       expect(
         (await queueApp.request(`/api/v1/admin/queue/jobs/${waiting}`, { method: 'DELETE' })).status

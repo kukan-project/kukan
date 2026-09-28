@@ -21,12 +21,15 @@ import {
 } from '@kukan/db'
 import { embeddingKey } from '@kukan/ai-adapter'
 import { leasePassed } from '../services/lease'
-import { EMBED_NOTICE_GRACE_MS } from '../services/search-index'
+import {
+  EMBED_NOTICE_GRACE_MS,
+  markAllResourceEmbeddings,
+  requestResourceEmbeds,
+} from '../services/resource-embedding'
 import { DEFAULT_VECTOR_MIN_SIMILARITY } from '@kukan/search-adapter'
 import {
   UnauthorizedError,
   REINDEX_JOB_TYPE,
-  EMBED_ALL_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
@@ -514,8 +517,12 @@ adminRouter.post('/generate-summaries', zValidator('json', generateSummariesSche
   return c.json({ queued: true, refresh })
 })
 
-// POST /api/v1/admin/reindex-embeddings — Queue an embed for every package.
-// Its own job, not a reindex flag — see EMBED_ALL_JOB_TYPE.
+// POST /api/v1/admin/reindex-embeddings — Mark every searchable resource's
+// vector stale, and ask for them to be built. Its own entry, not a reindex
+// flag: turning embedding on, or changing the model, is a question about
+// vectors, and the search rebuild answers it only by way of OpenSearch — which
+// embedding does not use. A resource whose text and model are unchanged costs
+// the job a row read, not a provider call.
 adminRouter.post('/reindex-embeddings', async (c) => {
   const ai = c.get('ai')
   if (!ai.getEmbeddingInfo()) {
@@ -530,7 +537,8 @@ adminRouter.post('/reindex-embeddings', async (c) => {
     )
   }
 
-  await c.get('queue').enqueue(EMBED_ALL_JOB_TYPE, {})
+  await markAllResourceEmbeddings(c.get('db'))
+  await requestResourceEmbeds(c.get('queue'), ai, { delaySeconds: 0 })
   return c.json({ queued: true })
 })
 
@@ -541,9 +549,9 @@ adminRouter.post('/reindex-embeddings', async (c) => {
 // vectors are gone, nothing rebuilds them on its own, and a search that finds
 // nothing looks exactly like a search that found nothing.
 //
-// Counts resources whose package has no embed claim outstanding, so the
-// ordinary gap between an edit and its debounced job is not reported as work
-// an administrator has to do. A model switch is counted too — that also leaves
+// Leaves out resources marked within the grace period, so the ordinary gap
+// between an edit and its delayed job is not reported as work an
+// administrator has to do. A model switch is counted too — that also leaves
 // the catalogue half-reachable, and the same button fixes it.
 adminRouter.get('/embedding-status', async (c) => {
   const info = c.get('ai').getEmbeddingInfo()
@@ -584,17 +592,12 @@ adminRouter.get('/embedding-status', async (c) => {
             .where(and(eq(packageTag.packageId, resource.packageId), sql`${tag.name} <> ''`))
         )
       ),
+      leasePassed(resource.embeddingDueAt, EMBED_NOTICE_GRACE_MS),
       exists(
         db
           .select({})
           .from(packageTable)
-          .where(
-            and(
-              eq(packageTable.id, resource.packageId),
-              eq(packageTable.state, 'active'),
-              leasePassed(packageTable.embeddingQueuedAt, EMBED_NOTICE_GRACE_MS)
-            )
-          )
+          .where(and(eq(packageTable.id, resource.packageId), eq(packageTable.state, 'active')))
       )
     )
   )

@@ -18,7 +18,6 @@ import {
   CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
-  EMBED_ALL_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,
   SYNC_RESOURCE_DOC_JOB_TYPE,
@@ -31,22 +30,24 @@ import {
   convertSetAsideJobSchema,
   lakeIngestJobSchema,
   embedJobSchema,
-  embedAllJobSchema,
   summarizeAllJobSchema,
   summarizePackageJobSchema,
   syncResourceDocJobSchema,
   REANALYSE_INDEX_JOB_TYPE,
   reanalyseIndexJobSchema,
 } from '@kukan/shared'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
 import {
-  enqueueEmbeds,
   enqueueResourceDocSyncIfDue,
   rebuildMetadataIndex,
   syncDueResourceDocs,
 } from '@kukan/api/services/search-index'
+import {
+  enqueueResourceEmbedsIfDue,
+  requestResourceEmbeds,
+} from '@kukan/api/services/resource-embedding'
 import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
@@ -68,7 +69,7 @@ import { retryLakeIngest } from './pipeline/retry-lake-ingest'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
 import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
-import { sweepResourceDocs } from './cron/sweep-resource-docs'
+import { sweepResourceDocs, sweepResourceEmbeds } from './cron/sweep-resource-marks'
 import {
   expirePendingUploads,
   markUploadsThatNeverArrived,
@@ -79,9 +80,11 @@ import {
   ORPHAN_CLEANUP_CRON,
   PENDING_UPLOAD_TTL_MS,
   RESOURCE_DOC_SWEEP_CRON,
+  RESOURCE_EMBED_SWEEP_CRON,
+  START_SWEEP_DELAY_MS,
 } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
-import { embedPackage } from './embed/embed-package'
+import { embedDueResources } from './embed/embed-resources'
 import { setUserAgent } from './safe-fetch'
 import { buildUserAgent } from './user-agent'
 import { WAITING_METRIC_INTERVAL_MS, waitingMetricLine } from './queue/waiting-metric'
@@ -281,7 +284,32 @@ const resourceDocSweepJob = startCronJob({
 
 // --- AI adapter (embedding; NoOp when AI_TYPE=none) ---
 const ai = createAIAdapter(env)
-const embeddingEnabled = ai.getEmbeddingInfo() !== null
+
+// --- Stale vectors (ADR-054) ---
+// As for the documents above: the queue owns the retry, this the job it never
+// heard about. Nothing is asked for where embedding is unavailable.
+const resourceEmbedSweepLog = log.child({ component: 'resource-embed-sweep' })
+const resourceEmbedSweepJob = startCronJob({
+  name: 'Stale vectors',
+  cronExpression: RESOURCE_EMBED_SWEEP_CRON,
+  log: resourceEmbedSweepLog,
+  run: async () => {
+    await sweepResourceEmbeds(db, queue, ai, resourceEmbedSweepLog)
+  },
+})
+
+// Both sweeps once after start, without the grace period: a job queued for
+// marks can be lost across a deploy — taken by a worker of the previous
+// version, which has no handler for it and deletes it — and a migration that
+// leaves marks leaves them to this. After the rollout rather than at once:
+// a job queued at start is one the previous version is still there to take.
+const startSweep = setTimeout(() => {
+  void Promise.all([
+    sweepResourceDocs(db, queue, resourceDocSweepLog, 0),
+    sweepResourceEmbeds(db, queue, ai, resourceEmbedSweepLog, 0),
+  ]).catch((err) => log.warn({ err }, 'Post-start sweep failed; the hourly one will retry'))
+}, START_SWEEP_DELAY_MS)
+startSweep.unref()
 
 // --- Resource abstracts (ADR-053) ---
 // The named model is the switch: unset writes nothing, so a site that sets it
@@ -345,9 +373,12 @@ await queue.process({
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
     await processResource(resourceId, ctx, db, queue, { rebuildOnly })
-    // Once, whatever in the run marked the document: an abstract written, a
-    // format the version settled
-    await enqueueResourceDocSyncIfDue(db, queue, resourceId, log)
+    // Once, whatever in the run marked the document or the vector: an abstract
+    // written, a format the version settled, a replacement upload's name
+    await Promise.all([
+      enqueueResourceDocSyncIfDue(db, queue, resourceId, log),
+      enqueueResourceEmbedsIfDue(db, { queue, ai, logger: log }, { resourceIds: [resourceId] }),
+    ])
     const elapsed = Math.round(performance.now() - start)
     log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
   },
@@ -454,27 +485,28 @@ await queue.process({
       log.error({ jobId: job.id, type: job.type, refused }, 'The index refused resource documents')
     }
   },
-  // Semantic search: queue an embed for every package (ADR-034).
-  [EMBED_ALL_JOB_TYPE]: async (job: Job) => {
-    if (!parseJobPayload(job, embedAllJobSchema)) return
-    if (!embeddingEnabled) {
-      log.warn({ jobId: job.id, type: job.type }, 'Embed all skipped — embedding not configured')
-      return
-    }
-    const start = performance.now()
-    const enqueued = await enqueueEmbeds(db, queue, ai, sql`true`)
-    const elapsed = Math.round(performance.now() - start)
-    log.info({ jobId: job.id, type: job.type, enqueued, elapsed }, 'Embed jobs enqueued')
-  },
-  // Semantic search: (re)generate the embedding vector for one package.
+  // Semantic search: build the vectors of every resource marked due (ADR-054).
   [EMBED_JOB_TYPE]: async (job: Job) => {
-    const data = parseJobPayload(job, embedJobSchema)
-    if (!data) return
-    const { packageId } = data
+    if (!parseJobPayload(job, embedJobSchema)) return
     const start = performance.now()
-    const result = await embedPackage(packageId, db, ai, log)
+    const { embedded, settled, rejected, more, busy } = await embedDueResources(db, ai)
+    // More: at once, these marks have waited. Busy: after the delay, for marks
+    // the run holding the lock may have read past. A provider failure was
+    // thrown, for the queue's retry.
+    if (more || busy) await requestResourceEmbeds(queue, ai, busy ? {} : { delaySeconds: 0 })
     const elapsed = Math.round(performance.now() - start)
-    log.info({ jobId: job.id, type: job.type, packageId, result, elapsed }, 'Embed job finished')
+    log.info(
+      { jobId: job.id, type: job.type, embedded, settled, more, busy, elapsed },
+      'Embed job finished'
+    )
+    // Recorded as refused, their marks cleared: the same text would be refused
+    // again. A new text or a new model sends each again.
+    if (rejected.length > 0) {
+      log.warn(
+        { jobId: job.id, type: job.type, rejected },
+        'Texts too long for the embedding model'
+      )
+    }
   },
   // Maintenance (control-plane): erase a soft-deleted org. Runs the destructive
   // work in the worker (retried on failure) — see OrganizationService.purgeDeletedOrg.
@@ -609,6 +641,8 @@ const shutdown = async () => {
   orphanCleanupJob.stop()
   lakeIngestSweepJob.stop()
   resourceDocSweepJob.stop()
+  resourceEmbedSweepJob.stop()
+  clearTimeout(startSweep)
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   if (waitingMetricTimer) clearInterval(waitingMetricTimer)
   await queue.stop()

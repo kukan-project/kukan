@@ -15,6 +15,7 @@ import {
   DocumentInfo,
   EmbedOptions,
   EmbeddingInfo,
+  AiInputRejectedError,
   resolveCompletionModels,
 } from './adapter'
 
@@ -102,10 +103,14 @@ export class OpenAIAdapter implements AIAdapter {
   }
 
   async embedBatch(texts: string[], options?: EmbedOptions): Promise<number[][]> {
-    const response = await this.client.embeddings.create(
-      { model: this.embeddingModel, input: texts, dimensions: this.embeddingDimensions },
-      options?.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}
-    )
+    const response = await this.client.embeddings
+      .create(
+        { model: this.embeddingModel, input: texts, dimensions: this.embeddingDimensions },
+        options?.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}
+      )
+      .catch((err: unknown) => {
+        throw classifyEmbedRejection(err) ?? err
+      })
     return response.data.map((item) => item.embedding)
   }
 
@@ -117,4 +122,24 @@ export class OpenAIAdapter implements AIAdapter {
   getDocumentInfo(): DocumentInfo | null {
     return null
   }
+}
+
+/**
+ * An input too long for the model — the one refusal about the text that will
+ * happen again. OpenAI cannot truncate an embedding input, and the compatible
+ * servers this adapter mostly talks to answer it their own way: OpenAI and vLLM
+ * with a 400 naming the maximum context length, TEI with a 413 or 422 saying
+ * the input must have fewer tokens. Any other 4xx is the request's fault or the
+ * setup's, and goes up as it is.
+ */
+function classifyEmbedRejection(err: unknown): AiInputRejectedError | null {
+  // The SDK's APIError carries the HTTP status; read it off the error rather
+  // than by class, which a bundled second copy of the SDK would not match
+  if (!(err instanceof Error)) return null
+  const status = (err as { status?: unknown }).status
+  if (typeof status !== 'number' || ![400, 413, 422].includes(status)) return null
+  if (!/maximum context length|too many tokens|less than \d+ tokens|too long/i.test(err.message)) {
+    return null
+  }
+  return new AiInputRejectedError(err.message, 'too-long')
 }

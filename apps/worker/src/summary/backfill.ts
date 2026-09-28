@@ -6,15 +6,11 @@
  * to arrive at a sentence. Everything an abstract is made from is already in
  * storage.
  *
- * **Per package, one resource at a time.** Three things follow from that shape,
- * and all three are the reason for it:
+ * **Per package, one resource at a time.** Two things follow from that shape:
  *
  * - one job is one completion, so a retry repeats one — a package of a
  *   hundred files in a single job would run for twenty minutes, and any
  *   failure in it would bill every completion again;
- * - the embedding is enqueued once, at the end, with every abstract written.
- *   The debounce is leading-edge, so fanning out per resource would settle a
- *   package's vector on the first abstract of a hundred;
  * - "nothing left" is the terminal condition, so no counter has to be kept
  *   anywhere, and a chain that dies is restarted by pressing the button again.
  *
@@ -27,7 +23,8 @@ import { and, asc, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourceVersion } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { enqueuePackageEmbed, enqueueResourceDocSync } from '@kukan/api/services/search-index'
+import { enqueueResourceDocSync } from '@kukan/api/services/search-index'
+import { enqueueResourceEmbedsIfDue } from '@kukan/api/services/resource-embedding'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { SUMMARIZE_PACKAGE_JOB_TYPE, type Logger } from '@kukan/shared'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
@@ -116,12 +113,7 @@ export async function summarizeNextInPackage(
     .orderBy(asc(resource.id), sql`${resourceVersion.version} desc`)
     .limit(1)
 
-  if (!next) {
-    // Every abstract in the package is written, so the vector can be built from
-    // all of them at once — the one enqueue this chain makes.
-    await enqueuePackageEmbed(deps.db, queue, deps.ai, packageId, deps.log)
-    return { done: true }
-  }
+  if (!next) return { done: true }
 
   const held = await summarizeOne(packageId, next, deps, queue, refresh)
   // Held, the walk stays where it is and comes back. The run holding it writes
@@ -171,14 +163,25 @@ async function summarizeOne(
     // throws out of here and fails the job, which the queue retries.
     if (result.status === 'skipped') await recordSkip(input, deps, result.reason, result)
     // The abstract is in the keyword leg as well as the vector (ADR-053 §9.3),
-    // and the walk is the only thing that will have written it here. The
-    // package's vector is settled once, at the end of the chain; the document
-    // goes now, through the one job that works through the marks.
+    // and the walk is the only thing that will have written it here: both go
+    // through the jobs that work through the marks.
     //
     // **Only on a write.** The write marked the row; nothing else here changed
-    // the document. Written and then failed to index, the mark stays, and the
-    // sweep comes back for it — the walk does not have to restate it.
-    if (result.status === 'written') await enqueueResourceDocSync(queue, deps.log)
+    // the document or the vector. Written and then failed to index, the mark
+    // stays, and the sweep comes back for it — the walk does not have to
+    // restate it.
+    if (result.status === 'written') {
+      await Promise.all([
+        enqueueResourceDocSync(queue, deps.log),
+        enqueueResourceEmbedsIfDue(
+          deps.db,
+          { queue, ai: deps.ai, logger: deps.log },
+          {
+            resourceIds: [next.id],
+          }
+        ),
+      ])
+    }
     return result.status
   })
 

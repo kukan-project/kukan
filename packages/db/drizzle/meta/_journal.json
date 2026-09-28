@@ -344,6 +344,13 @@
       "when": 1790484418645,
       "tag": "0048_lying_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1790588049710,
+      "tag": "0049_overrated_rockslide",
+      "breakpoints": true
     }
   ]
 }

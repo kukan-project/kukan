@@ -57,6 +57,31 @@ describe('OpenAIAdapter', () => {
     })
   })
 
+  it.each([
+    [400, "This model's maximum context length is 8192 tokens, however you requested 9000 tokens"],
+    [413, 'Input validation error: `inputs` must have less than 512 tokens. Given: 900'],
+  ])('reports an input too long for the model as refused (%i)', async (status, message) => {
+    mockCreate.mockRejectedValueOnce(Object.assign(new Error(message), { status }))
+    const adapter = new OpenAIAdapter({ apiKey: 'k' })
+
+    await expect(adapter.embedBatch(['long'])).rejects.toMatchObject({
+      name: 'AiInputRejectedError',
+      reason: 'too-long',
+    })
+  })
+
+  it.each([
+    [400, 'Invalid value for dimensions'],
+    [429, 'Rate limit reached, requests are too long in coming'],
+    [undefined, 'Connection error.'],
+  ])('passes any other failure through as it is (%s)', async (status, message) => {
+    const err = Object.assign(new Error(message), { status })
+    mockCreate.mockRejectedValueOnce(err)
+    const adapter = new OpenAIAdapter({ apiKey: 'k' })
+
+    await expect(adapter.embedBatch(['x'])).rejects.toBe(err)
+  })
+
   it('embedBatch sends all texts in one request and preserves order', async () => {
     mockCreate.mockResolvedValueOnce({
       data: [{ embedding: [1] }, { embedding: [2] }],

@@ -187,6 +187,13 @@ export const resource = pgTable(
     // this so vectors from other models/dimensions are never compared.
     embeddingModel: text('embedding_model'),
     embeddingHash: text('embedding_hash'),
+    // When what this row's vector is built from last changed — the package's
+    // title or tags, or the resource's own words — null once the vector is
+    // built from it again. The same contract as `docSyncDueAt`: set in the
+    // statement that changed the text, and the token the embed job clears
+    // against, so a vector computed from text that has since moved on is never
+    // written over the newer one's turn.
+    embeddingDueAt: timestamp('embedding_due_at', { withTimezone: true }),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
@@ -209,6 +216,10 @@ export const resource = pgTable(
     index('idx_resource_doc_sync_due')
       .on(table.docSyncDueAt)
       .where(sql`${table.docSyncDueAt} IS NOT NULL`),
+    // Read by the embed job and its sweep, for the same reason
+    index('idx_resource_embedding_due')
+      .on(table.embeddingDueAt)
+      .where(sql`${table.embeddingDueAt} IS NOT NULL`),
   ]
 )
 

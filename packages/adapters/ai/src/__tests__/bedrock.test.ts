@@ -159,6 +159,35 @@ describe('BedrockAIAdapter', () => {
     results.forEach((embedding, i) => expect(embedding).toEqual([i]))
   })
 
+  it("reports Titan's refusal of too many input tokens as the text's, with the count", async () => {
+    // The message as Bedrock returns it, measured against Titan v2
+    mockSend.mockRejectedValueOnce(
+      Object.assign(
+        new Error(
+          '400 Bad Request: Too many input tokens. Max input tokens: 8192, request input token count: 30001 '
+        ),
+        { name: 'ValidationException' }
+      )
+    )
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+
+    const err = await adapter.embedBatch(['long']).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(AiInputRejectedError)
+    expect(err).toMatchObject({ reason: 'too-long', actualTokens: 30001 })
+  })
+
+  it.each([
+    // A request built wrong, not a fact about the text: both measured
+    'Malformed input request: expected minLength: 1, actual: 0, please reformat your input and try again.',
+    'The provided model identifier is invalid.',
+  ])('passes any other refusal of an embed request through: %s', async (message) => {
+    const err = Object.assign(new Error(message), { name: 'ValidationException' })
+    mockSend.mockRejectedValueOnce(err)
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+
+    await expect(adapter.embedBatch(['x'])).rejects.toBe(err)
+  })
+
   it('exposes embedding info as capability', () => {
     const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
     expect(adapter.getEmbeddingInfo()).toEqual({

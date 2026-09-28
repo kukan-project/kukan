@@ -62,6 +62,7 @@ export async function cleanDatabase() {
     'resource_version',
     'resource',
     'package',
+    'tag',
   ])
 }
 

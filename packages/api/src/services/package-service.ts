@@ -57,6 +57,7 @@ import {
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { reclaimLakeStorage } from './lake-reclaim'
+import { markPackageResourceEmbeddings } from './resource-embedding'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
 import { withResourceClaimsOrConflict } from './pipeline-claim'
 
@@ -98,11 +99,9 @@ function pickDefined<T extends object, K extends keyof T>(obj: T, keys: readonly
   return out
 }
 
-// Public column set — the embed queue's debounce timestamp is its own
-// bookkeeping, so no package row this service returns includes it
-const { embeddingQueuedAt: _embeddingQueuedAt, ...packageColumns } = getTableColumns(packageTable)
+const packageColumns = getTableColumns(packageTable)
 
-type PackageRow = Omit<typeof packageTable.$inferSelect, 'embeddingQueuedAt'>
+type PackageRow = typeof packageTable.$inferSelect
 export type PackageAuthorize = (pkg: PackageRow) => Promise<void>
 
 export interface PackageFilterParams {
@@ -689,14 +688,26 @@ export class PackageService {
       // Drafts relink tags/groups only when the request includes them
       const tags = isDraft ? input.tags : (input.tags ?? [])
       const groups = isDraft ? input.groups : (input.groups ?? [])
+      let tagsChanged = false
       if (tags) {
-        await tx.delete(packageTag).where(eq(packageTag.packageId, existing.id))
-        await this.linkTags(tx, existing.id, tags)
+        const before = await tx
+          .delete(packageTag)
+          .where(eq(packageTag.packageId, existing.id))
+          .returning({ tagId: packageTag.tagId })
+        const after = await this.linkTags(tx, existing.id, tags)
         await deleteOrphanFreeTags(tx)
+        // Relinking a name finds the tag it unlinked, so the same names are the same ids
+        const was = new Set(before.map((t) => t.tagId))
+        tagsChanged = after.length !== was.size || after.some((id) => !was.has(id))
       }
       if (groups) {
         await tx.delete(packageGroup).where(eq(packageGroup.packageId, existing.id))
         await this.linkGroups(tx, existing.id, groups)
+      }
+      // The title and tags head every resource's embedding text (ADR-054). A
+      // draft's resources are built at publish, which marks them all
+      if (!isDraft && (tagsChanged || updated.title !== existing.title)) {
+        await markPackageResourceEmbeddings(tx, existing.id)
       }
 
       return updated
@@ -775,8 +786,9 @@ export class PackageService {
     return purged
   }
 
-  /** Find-or-create tags by name and link them to a package. */
+  /** Find-or-create tags by name and link them to a package. Returns their ids. */
   private async linkTags(tx: Transaction, packageId: string, tags: { name: string }[]) {
+    const ids: string[] = []
     for (const tagInput of tags) {
       let [existingTag] = await tx
         .select()
@@ -793,7 +805,9 @@ export class PackageService {
       }
 
       await tx.insert(packageTag).values({ packageId, tagId: existingTag.id })
+      ids.push(existingTag.id)
     }
+    return ids
   }
 
   /** Look up active groups by name and link them to a package. Throws if any group is missing. */
@@ -872,8 +886,9 @@ export class PackageService {
         .returning(packageColumns)
       // In the same transaction: committed without it, a crash before the
       // caller's sync leaves live resources with no document and nothing to
-      // say so (ADR-053 §9.3)
-      await markPackageResourceDocs(tx, existing.id)
+      // say so (ADR-053 §9.3). Their vectors likewise: built, if ever, from
+      // what the dataset said before it went
+      await markPackageResourceDocs(tx, existing.id, { embeddings: true })
 
       return restored!
     })
@@ -936,8 +951,9 @@ export class PackageService {
           'package-state-changed'
         )
       }
-      // In the same transaction, as for restore
-      await markPackageResourceDocs(tx, existing.id)
+      // In the same transaction, as for restore. A draft's resources have
+      // no vectors yet: their marks were cleared unbuilt (ADR-039)
+      await markPackageResourceDocs(tx, existing.id, { embeddings: true })
 
       return published
     })

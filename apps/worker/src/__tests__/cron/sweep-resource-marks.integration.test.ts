@@ -6,7 +6,7 @@ import { sql } from 'drizzle-orm'
 import { packageTable, resource } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { createLogger, SYNC_RESOURCE_DOC_JOB_TYPE } from '@kukan/shared'
-import { sweepResourceDocs } from '../../cron/sweep-resource-docs'
+import { sweepResourceDocs } from '../../cron/sweep-resource-marks'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()

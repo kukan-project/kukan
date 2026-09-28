@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { eq, and, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
+import { eq, and, or, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
 import type { PgInsertValue } from 'drizzle-orm/pg-core'
 import type { Database, Transaction } from '@kukan/db'
 import {
@@ -32,6 +32,7 @@ import type {
 import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { cancelResourceRun } from './pipeline-claim'
+import { embeddingDueIf } from './resource-embedding'
 import { PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import {
   hasOrgMembership,
@@ -60,6 +61,7 @@ const {
   embedding: _embedding,
   embeddingModel: _embeddingModel,
   embeddingHash: _embeddingHash,
+  embeddingDueAt: _embeddingDueAt,
   storageKey: _storageKey,
   pendingStorageKey: _pendingStorageKey,
   pendingMetadata: _pendingMetadata,
@@ -83,15 +85,17 @@ export const publicResourceColumns = {
 /**
  * Mark the search documents of a dataset's live resources stale, for a change
  * to the dataset that changes what the index should hold of them — a delete,
- * a publish, a restore (ADR-053 §9.3).
+ * a publish, a restore (ADR-053 §9.3). With `embeddings`, their vectors too,
+ * in the same statement: a publish or a restore is when they are built.
  */
 export async function markPackageResourceDocs(
   db: Pick<Database, 'update'>,
-  packageId: string
+  packageId: string,
+  { embeddings = false }: { embeddings?: boolean } = {}
 ): Promise<void> {
   await db
     .update(resource)
-    .set({ docSyncDueAt: sql`NOW()` })
+    .set({ docSyncDueAt: sql`NOW()`, ...(embeddings && { embeddingDueAt: sql`NOW()` }) })
     .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
 }
 
@@ -440,6 +444,7 @@ export class ResourceService {
       // Its document is written after the commit, under the sync's lock like
       // every other (see `update`)
       docSyncDueAt: sql`NOW()`,
+      embeddingDueAt: sql`NOW()`,
     }
   }
 
@@ -452,6 +457,16 @@ export class ResourceService {
     // The health columns describe the URL they were recorded against, so they
     // do not survive it changing (see their declaration in `@kukan/db`).
     const urlChanged = sql`(${resource.url} IS DISTINCT FROM ${url} OR ${resource.urlType} IS DISTINCT FROM ${urlType})`
+    const name = input.name ?? null
+    const description = input.description ?? null
+    // What the vector is built from, of what this write can change
+    const textChanged = or(
+      sql`${resource.name} IS DISTINCT FROM ${name}`,
+      sql`${resource.description} IS DISTINCT FROM ${description}`,
+      input.section !== undefined
+        ? sql`${resource.section} IS DISTINCT FROM ${input.section}`
+        : undefined
+    )!
 
     const write = async (db: Pick<Database, 'update'>) => {
       const [updated] = await db
@@ -462,8 +477,8 @@ export class ResourceService {
           healthStatus: sql`CASE WHEN ${urlChanged} THEN 'unknown' ELSE ${resource.healthStatus} END`,
           healthCheckedAt: sql`CASE WHEN ${urlChanged} THEN NULL ELSE ${resource.healthCheckedAt} END`,
           healthCheckState: sql`CASE WHEN ${urlChanged} THEN '{}'::jsonb ELSE ${resource.healthCheckState} END`,
-          name: input.name ?? null,
-          description: input.description ?? null,
+          name,
+          description,
           format: input.format ? normalizeFormat(input.format) : null,
           mimetype: input.mimetype ?? null,
           resourceType: input.resourceType ?? null,
@@ -480,6 +495,7 @@ export class ResourceService {
           // and put the old document back. Marked here, that sync's clear
           // misses and the next one writes this (ADR-053 §9.3).
           docSyncDueAt: sql`NOW()`,
+          embeddingDueAt: embeddingDueIf(textChanged),
         })
         .where(eq(resource.id, id))
         .returning(publicResourceColumns)
@@ -548,15 +564,15 @@ export class ResourceService {
       for (let i = 0; i < resourceIds.length; i++) {
         const id = resourceIds[i]
         const section = sectionOf && (sectionOf.get(id) ?? null)
-        // A label is in the search document, the position is not — so only a
-        // label that moved leaves it stale (see `update`)
+        // A label is in the search document and the vector, the position in
+        // neither — so only a label that moved leaves them stale (see `update`)
         const relabelled = sectionOf !== undefined && section !== sectionNow.get(id)
         await tx
           .update(resource)
           .set({
             position: i,
             ...(sectionOf && { section }),
-            ...(relabelled && { docSyncDueAt: sql`NOW()` }),
+            ...(relabelled && { docSyncDueAt: sql`NOW()`, embeddingDueAt: sql`NOW()` }),
             updated: sql`NOW()`,
           })
           .where(eq(resource.id, id))
@@ -728,6 +744,9 @@ export class ResourceService {
             content_revision = gen_random_uuid(),
             -- The name and format are in the search document (see update)
             doc_sync_due_at = NOW(),
+            -- The name is in the vector, the format is not
+            embedding_due_at = CASE WHEN COALESCE(b.pending_metadata ->> 'name', r.name) IS DISTINCT FROM r.name
+                               THEN NOW() ELSE r.embedding_due_at END,
             updated = NOW()
         FROM before b
         WHERE r.id = b.id

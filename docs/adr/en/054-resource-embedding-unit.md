@@ -190,6 +190,36 @@ change ADR-036's notch offset exists for, adjustable from the dashboard.
 re-tuning**: the leg weight's plateau overlaps between the units, and λ = 3–4 is inside the best
 region for both.
 
+### 8. What starts a rebuild is the resource too (added 2026-09-28)
+
+As first implemented, the vector moved to the resource but **what started its rebuild stayed with the
+package**: the job (`embed-package`) was per package, and so was the 60-second window
+(`package.embedding_queued_at`). A change to one resource read every resource of the package, an edit
+that changed nothing embedded (`notes`, the licence, a reorder) still queued a job, and an enqueue
+that failed left nothing on the row.
+
+It now has the shape of the search-document sync (ADR-053 §9.3):
+
+- **The mark is on the resource** (`resource.embedding_due_at`), set **in the same statement** as a
+  write that actually changed the text — the package's title or tags, or the resource's section, name,
+  description or abstract — by comparing old and new. A change to the package's title or tags marks
+  every resource under it.
+- **The job works through the marks** (`embed-resources`, no payload): 32 at a time, oldest mark
+  first, across packages, with the changed ones sent in one call (Cohere takes up to 96 per call).
+  The write-back is a compare-and-set on the mark, so a vector of text edited while it was being
+  built is not written. One job runs at a time (an advisory lock). The adapter tells failures apart:
+  a text refused as too long — refused again whenever it is sent — is found by sending the batch a
+  text at a time, and is recorded as refused (no vector, but the model key and the text's hash) with
+  its mark cleared; anything else (the provider down,
+  expired credentials, a request built wrong) is thrown for the queue's retry.
+- **The window gives way to the mark and `unlessWaiting`**: while one job waits out its 60-second
+  delay, no other is queued, so a burst of edits is one run. The hourly sweep catches an enqueue that
+  was lost.
+- "Regenerate embeddings" only marks every resource; its own job (`embed-all-packages`) is gone.
+
+One job per resource was considered and not taken: it parallelises well but calls the provider one
+text at a time. With marks and batches, parallelism can come later by sharing out the batches.
+
 ## Considered and deferred: fusing at the resource level
 
 Taken to its conclusion, decision 1 would have the package order come from **fusing resources and

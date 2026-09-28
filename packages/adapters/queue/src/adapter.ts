@@ -37,11 +37,12 @@ export interface EnqueueOptions {
   tx?: Transaction
   /**
    * Write nothing when a job of this type is waiting that no worker has ever
-   * taken, and return that job's id. For a job whose handler works through
-   * everything outstanding rather than its payload: the waiting one will see
-   * what the caller just wrote. One a worker holds does not count — it may
-   * already have looked — and neither does one waiting to be retried, which
-   * may be minutes away or never run again.
+   * taken, due no later than this one would be, and return that job's id. For
+   * a job whose handler works through everything outstanding rather than its
+   * payload: the waiting one will see what the caller just wrote. One a worker
+   * holds does not count — it may already have looked — and neither does one
+   * waiting to be retried, which may be minutes away or never run again, nor
+   * one delayed past `delaySeconds`: it would hold the work back to its time.
    *
    * Not with `tx` for the write the job is to see: the waiting job can run
    * before that transaction commits and miss it. Enqueue after the commit.

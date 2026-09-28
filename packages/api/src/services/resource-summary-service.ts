@@ -10,21 +10,15 @@
 
 import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource } from '@kukan/db'
+import { publicSummary, resource } from '@kukan/db'
 import { NotFoundError, type ResourceSummaryMeta } from '@kukan/shared'
+import { embeddingDueIf } from './resource-embedding'
 
 export interface SummaryUpdate {
   id: string
   packageId: string
   summary: string | null
   summaryMeta: ResourceSummaryMeta
-  /**
-   * Whether what a reader — and the embedding — sees has changed. Hiding an
-   * abstract and rewriting one both change it; toggling hidden back on text
-   * that was never there does not, and re-embedding for that would be work for
-   * nothing.
-   */
-  embeddingChanged: boolean
 }
 
 /**
@@ -100,18 +94,24 @@ export async function setResourceSummary(
   // the case that matters — the projection takes a hidden abstract off the
   // document, and one that kept it answers searches with text somebody took
   // down (ADR-053 §9.3).
+  //
+  // The vector is marked only when what it is built from moved — against the
+  // row as it stands, not as read above.
+  const visibleAfter = meta.hidden ? null : summary
   await db
     .update(resource)
-    .set({ summary, summaryMeta: meta, docSyncDueAt: sql`NOW()` })
+    .set({
+      summary,
+      summaryMeta: meta,
+      docSyncDueAt: sql`NOW()`,
+      embeddingDueAt: embeddingDueIf(sql`${publicSummary} IS DISTINCT FROM ${visibleAfter}`),
+    })
     .where(eq(resource.id, id))
 
-  const visibleBefore = current.meta?.hidden ? null : current.summary
-  const visibleAfter = meta.hidden ? null : summary
   return {
     id,
     packageId: current.packageId,
     summary,
     summaryMeta: meta,
-    embeddingChanged: visibleBefore !== visibleAfter,
   }
 }

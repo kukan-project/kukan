@@ -33,15 +33,8 @@ export const packageTable = pgTable(
     aiSummary: text('ai_summary'),
     aiTags: text('ai_tags'),
 
-    // **The vector lives on the resource, not here (ADR-054).** A centroid of
-    // a package's resources holds no per-resource score, so it cannot answer
-    // which of nineteen sheets to open — and nothing queries a package vector
-    // once the resources have their own.
-    //
-    // What stays is the debounce: the embed job is still enqueued per package,
-    // and now embeds that package's resources. See EMBED_DEBOUNCE_MS in
-    // @kukan/api.
-    embeddingQueuedAt: timestamp('embedding_queued_at', { withTimezone: true }),
+    // The vector lives on the resource, not here (ADR-054): a centroid of a
+    // package's resources cannot answer which of nineteen sheets to open.
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),

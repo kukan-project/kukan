@@ -27,10 +27,10 @@ import {
 } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { EMBED_JOB_TYPE, SYNC_RESOURCE_DOC_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
+import { SYNC_RESOURCE_DOC_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
-import { leasePassed } from './lease'
+import { enqueueResourceEmbedsIfDue } from './resource-embedding'
 import {
   RESOURCE_DOC_SYNC_LOCK,
   tryLockInTransaction,
@@ -47,11 +47,11 @@ export interface PackageSyncDeps {
 }
 
 /**
- * Sync one package after a metadata change: upsert its search doc and
- * (re)enqueue its embedding. Always use this from routes (rather than calling
- * indexPackageMetadata directly) so a new call site cannot forget the embed
- * half of the pair. Non-active packages (drafts, ADR-039) are skipped entirely,
- * so callers can invoke unconditionally.
+ * Sync one package after a metadata change: upsert its search doc and ask for
+ * the vectors the change marked. Always use this from routes (rather than
+ * calling indexPackageMetadata directly) so a new call site cannot forget the
+ * embed half of the pair. Non-active packages (drafts, ADR-039) are skipped
+ * entirely, so callers can invoke unconditionally.
  */
 export async function syncPackageMetadata(
   db: Database,
@@ -59,9 +59,7 @@ export async function syncPackageMetadata(
   packageId: string
 ): Promise<void> {
   const indexed = await indexPackageMetadata(db, deps.search, packageId)
-  if (indexed) {
-    await enqueuePackageEmbed(db, deps.queue, deps.ai, packageId, deps.logger)
-  }
+  if (indexed) await enqueueResourceEmbedsIfDue(db, deps, { packageId })
 }
 
 /**
@@ -347,110 +345,6 @@ export async function writeMarkedResourceDocs(
 }
 
 /**
- * Enqueue embedding (re)generation for a package whose metadata (or whose
- * resources' metadata) changed. No-op when embedding is unavailable (NoOp
- * adapter). Deliberately not gated on any search-side toggle — disabling hybrid
- * search only stops reading vectors at query time; writes continue so vectors
- * stay fresh. Enqueue failures are logged but never fail the request —
- * embeddings are eventually consistent (ADR-034).
- */
-export async function enqueuePackageEmbed(
-  db: Database,
-  queue: QueueAdapter,
-  ai: AIAdapter,
-  packageId: string,
-  logger: Logger
-): Promise<void> {
-  try {
-    await enqueueEmbeds(db, queue, ai, eq(packageTable.id, packageId))
-  } catch (err) {
-    logger.error({ err, packageId }, 'Failed to enqueue embed-package job')
-  }
-}
-
-/**
- * How long one queued embed stands for every change to a package.
- *
- * The embedding covers the dataset and its resources together, so adding a
- * resource is a change to it — and a bulk import is one change per resource,
- * measured at ~5,500 jobs for 298 datasets. The worker takes one message at a
- * time, so those queue behind the pipeline runs the same import is producing.
- *
- * The job is queued to run after the window ({@link EMBED_DELAY_S}), which is
- * what makes suppressing the rest of it safe: the one job reads the dataset as
- * it stands once the changes it stands for are in. Long enough to collapse an
- * import's per-resource writes, short enough that a single edit is embedded
- * while the editor is still looking at it.
- */
-export const EMBED_DEBOUNCE_MS = 60_000
-
-/**
- * The delay on the job, past the window by a few seconds. The window is kept
- * on the database clock and the delay on the queue's; a job that ran before
- * the window closed would miss a change that landed between the two, and
- * these seconds are the room the clocks are allowed to disagree by.
- */
-export const EMBED_DELAY_S = EMBED_DEBOUNCE_MS / 1000 + 5
-
-/**
- * How long a package's embed claim has to have been quiet before the resources
- * under it count as work someone has to start.
- *
- * Generously past {@link EMBED_DELAY_S}, because the question this answers is
- * not "is a job pending" — it is "will one arrive on its own". An edit's job
- * is queued with a delay and then has to be delivered and run, and a prompt
- * that appears in that gap tells an administrator to fix something already
- * fixing itself. After a migration that dropped the vectors, nothing is coming
- * and the wait costs a quarter of an hour once.
- */
-export const EMBED_NOTICE_GRACE_MS = 15 * 60_000
-
-/**
- * Queue an embed for every active package matching `where` whose window is
- * open, and hold the window for each. The single-package path and the bulk
- * job both come through here, so a claim always has exactly one job behind it
- * and a job never goes out without a claim.
- *
- * The claim is one statement on the rows, not anything in a process: two API
- * tasks handling the same edit, or a redelivery of the bulk job, find the
- * window already held. The jobs are written in the same transaction (ADR-058),
- * so a window never holds with no job behind it — which would suppress every
- * change inside it, a bulk import's next resource say, until it ran out.
- *
- * Throws what the database refused, so the bulk job is retried; the
- * single-package path is the one that swallows it.
- */
-export async function enqueueEmbeds(
-  db: Database,
-  queue: QueueAdapter,
-  ai: AIAdapter,
-  where: SQL
-): Promise<number> {
-  if (!ai.getEmbeddingInfo()) return 0
-  return queue.transaction(db, async (tx) => {
-    const claimed = await tx
-      .update(packageTable)
-      .set({ embeddingQueuedAt: sql`now()` })
-      .where(
-        and(
-          where,
-          eq(packageTable.state, 'active'),
-          leasePassed(packageTable.embeddingQueuedAt, EMBED_DEBOUNCE_MS)
-        )
-      )
-      .returning({ id: packageTable.id })
-    if (claimed.length > 0) {
-      await queue.enqueueMany(
-        EMBED_JOB_TYPE,
-        claimed.map(({ id }) => ({ packageId: id })),
-        { delaySeconds: EMBED_DELAY_S, tx }
-      )
-    }
-    return claimed.length
-  })
-}
-
-/**
  * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).
  * Does NOT include resource-level data — resource documents are written apart.
  * Returns false when the package is not active (nothing indexed).
@@ -556,12 +450,10 @@ function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
 }
 
 /**
- * Sync a package after its arrangement changed (ADR-050): the embedding text
- * is built in the resources' order, so it is re-enqueued either way; the
- * resource docs carry the labels and not the order, so they are rewritten —
- * through the sync's lock, the relabel having marked them — only when
- * `relabelled`. A package that is not active has nothing in the index
- * (ADR-039), so callers can invoke unconditionally.
+ * Sync a package after its arrangement changed (ADR-050). The order is in
+ * neither the resource documents nor the vectors; the section labels are in
+ * both, so only a relabel has anything to write — the documents through the
+ * sync's lock, and the vectors through the embed job. The relabel marked both.
  */
 export async function syncPackageResources(
   db: Database,
@@ -569,19 +461,12 @@ export async function syncPackageResources(
   packageId: string,
   { relabelled }: { relabelled: boolean }
 ): Promise<void> {
+  if (!relabelled) return
   await Promise.all([
     // Every resource the relabel marked, a draft's included: cleared there
     // without a write (see `syncMarkedDocs`)
-    relabelled && writeMarkedResourceDocs(db, deps, { packageId }),
-    db
-      .select({ id: resource.id })
-      .from(resource)
-      .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
-      .where(and(eq(resource.packageId, packageId), indexedResource()))
-      .limit(1)
-      .then(([indexed]) =>
-        indexed ? enqueuePackageEmbed(db, deps.queue, deps.ai, packageId, deps.logger) : undefined
-      ),
+    writeMarkedResourceDocs(db, deps, { packageId }),
+    enqueueResourceEmbedsIfDue(db, deps, { packageId }),
   ])
 }
 

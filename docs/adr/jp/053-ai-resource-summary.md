@@ -30,7 +30,7 @@
 プレビューもスキーマも無い。
 
 **検索。** 埋め込みの材料は `buildEmbeddingText`
-（`apps/worker/src/embed/embed-package.ts`）が組み立てる
+（`apps/worker/src/embed/embed-resources.ts`）が組み立てる
 `title` + `notes` + `tags` + 各リソースの `name` / `description` だけである。
 自治体のデータセット名は事務的で（`年齢別推計人口【年齢5歳階級別、年齢3区分別】`）、
 利用者が使う生活語（「お年寄り」「小さい子」）からの距離が遠い。公開データカタログで

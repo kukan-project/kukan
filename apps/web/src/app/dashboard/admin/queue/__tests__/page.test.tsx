@@ -35,11 +35,11 @@ const ok = (data: unknown) => ({ ok: true, json: async () => data }) as Response
 
 const deadJob = {
   id: 'job-1',
-  type: 'embed-package',
+  type: 'summarize-package',
   payload: { packageId: 'p1' },
   status: 'dead',
   attempts: 3,
-  lastError: 'embedding timed out',
+  lastError: 'completion timed out',
   updated: '2026-09-27T00:00:00Z',
 }
 
@@ -55,7 +55,7 @@ describe('AdminQueuePage', () => {
           { type: 'resource-pipeline', status: 'running', count: 1 },
           { type: 'resource-pipeline', status: 'waiting', count: 392 },
           { type: 'sync-resource-doc', status: 'waiting', count: 113 },
-          { type: 'embed-package', status: 'dead', count: 3 },
+          { type: 'summarize-package', status: 'dead', count: 3 },
         ],
       })
     )
@@ -99,10 +99,10 @@ describe('AdminQueuePage', () => {
     mockPaginatedFetch.total = 1
     render(<AdminQueuePage />)
 
-    expect(screen.getAllByText('Dataset embedding').length).toBeGreaterThan(0)
-    expect(screen.getByText('embed-package')).toBeInTheDocument()
+    expect(screen.getAllByText('Dataset abstracts').length).toBeGreaterThan(0)
+    expect(screen.getByText('summarize-package')).toBeInTheDocument()
     expect(screen.getByText('packageId=p1')).toBeInTheDocument()
-    expect(screen.getByText('embedding timed out')).toBeInTheDocument()
+    expect(screen.getByText('completion timed out')).toBeInTheDocument()
   })
 
   it('retries a dead job', async () => {

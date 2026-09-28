@@ -16,7 +16,7 @@ import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
-import { enqueuePackageEmbed } from '../services/search-index'
+import { enqueueResourceEmbedsIfDue } from '../services/resource-embedding'
 import { setResourceSummary } from '../services/resource-summary-service'
 import {
   updateResourceSchema,
@@ -1025,19 +1025,13 @@ resourcesRouter.put('/:id/summary', zValidator('json', resourceSummaryBodySchema
 
   const result = await setResourceSummary(db, id, c.req.valid('json'))
   // The projection takes a hidden abstract off the resource's search document
-  // and out of what the package's vector is built from, so both are stale the
-  // moment it is hidden — and a document that kept it answers searches with
-  // text somebody took down (ADR-053 §9.2).
-  //
-  // Both unconditionally: `embeddingChanged` answers "did this request change
-  // anything", which is false on the retry of a request whose side effects
-  // failed. Gated on it, a queue blip could never be repaired by sending the
-  // request again — the only handle anyone has. Neither is expensive to
-  // repeat: the embed enqueue is behind a debounce that drops a second claim
-  // inside its window, and the service marks the row on every call, so the
-  // document is written from it again under the sync's lock.
+  // and out of what its vector is built from, so both are stale the moment it
+  // is hidden — and a document that kept it answers searches with text
+  // somebody took down (ADR-053 §9.2). The service marked both; each is asked
+  // for whenever its mark stands, so the retry of a request whose side effects
+  // failed still asks again.
   await Promise.all([
-    enqueuePackageEmbed(db, c.get('queue'), c.get('ai'), result.packageId, c.get('logger')),
+    enqueueResourceEmbedsIfDue(db, c.var, { resourceIds: [id] }),
     writeMarkedResourceDocs(db, c.var, { resourceIds: [id] }),
   ])
   return c.json(result)

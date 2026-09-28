@@ -14,7 +14,13 @@ import { packageTable, resource, resourcePipeline, resourceVersion } from '@kuka
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { createLogger, SUMMARIZE_PACKAGE_JOB_TYPE, SYNC_RESOURCE_DOC_JOB_TYPE } from '@kukan/shared'
+import {
+  createLogger,
+  EMBED_JOB_TYPE,
+  SUMMARIZE_PACKAGE_JOB_TYPE,
+  SYNC_RESOURCE_DOC_JOB_TYPE,
+} from '@kukan/shared'
+import { EMBED_DELAY_S } from '@kukan/api/services/resource-embedding'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '@kukan/api/services/pipeline-claim'
 import { summarizeNextInPackage } from '../../summary/backfill'
 import type { SummaryDeps } from '../../pipeline/steps/summarize'
@@ -35,7 +41,7 @@ const ai = {
   complete: async () => JSON.stringify({ summary: '抄録。', groundedInMaterial: true }),
   getCompletionInfo: () => ({ provider: 'bedrock', defaultModel: MODEL, allowlist: [MODEL] }),
   getDocumentInfo: () => null,
-  // Available, so the walk's terminal embed is actually enqueued
+  // Available, so the embed a written abstract asks for is actually enqueued
   getEmbeddingInfo: () => ({ model: 'test-embed', dimensions: 4 }),
   embed: async () => [0, 0, 0, 0],
 } as unknown as AIAdapter
@@ -134,11 +140,18 @@ describe('the backfill walk', () => {
     // marked the row, and the sync works through the marks; queued rather than
     // written, so the retry belongs to the queue.
     expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, {}, { unlessWaiting: true })
+    // And in the vector, which the embed job builds from the marks likewise
+    expect(enqueue).toHaveBeenCalledWith(
+      EMBED_JOB_TYPE,
+      {},
+      { delaySeconds: EMBED_DELAY_S, unlessWaiting: true }
+    )
     const [marked] = await db
-      .select({ due: resource.docSyncDueAt })
+      .select({ doc: resource.docSyncDueAt, vector: resource.embeddingDueAt })
       .from(resource)
       .where(eq(resource.id, resourceId))
-    expect(marked.due).not.toBeNull()
+    expect(marked.doc).not.toBeNull()
+    expect(marked.vector).not.toBeNull()
   })
 
   it('asks for no sync when the abstract did not move', async () => {
@@ -154,6 +167,7 @@ describe('the backfill walk', () => {
     await summarizeNextInPackage(packageId, undefined, deps, queue)
 
     expect(enqueue.mock.calls.map(([type]) => type)).not.toContain(SYNC_RESOURCE_DOC_JOB_TYPE)
+    expect(enqueue.mock.calls.map(([type]) => type)).not.toContain(EMBED_JOB_TYPE)
   })
 
   it('waits for a resource another run is holding instead of passing it over', async () => {
@@ -175,7 +189,8 @@ describe('the backfill walk', () => {
     )
   })
 
-  it('enqueues the package embed once there is nothing left', async () => {
+  it('ends without queuing anything once there is nothing left', async () => {
+    // Each abstract asked for its own vector as it was written
     const { packageId, resourceId } = await seedPackage()
     const { queue, enqueue } = fakeQueue()
 
@@ -183,7 +198,6 @@ describe('the backfill walk', () => {
     const result = await summarizeNextInPackage(packageId, resourceId, deps, queue)
 
     expect(result).toEqual({ done: true })
-    expect(enqueue).toHaveBeenCalledTimes(1)
-    expect(enqueue.mock.calls[0][0]).not.toBe(SUMMARIZE_PACKAGE_JOB_TYPE)
+    expect(enqueue).not.toHaveBeenCalled()
   })
 })

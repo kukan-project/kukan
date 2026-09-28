@@ -28,7 +28,11 @@ export interface AIAdapter {
   embed(text: string, options?: EmbedOptions): Promise<number[]>
 
   /**
-   * Generate embedding vectors for multiple texts (order preserved)
+   * Generate embedding vectors for multiple texts (order preserved).
+   *
+   * Throws {@link AiInputRejectedError} (`too-long`) when a text is longer than
+   * the model takes and the provider refuses rather than truncates — the same
+   * text will be refused again. Everything else goes up as it is.
    */
   embedBatch(texts: string[], options?: EmbedOptions): Promise<number[][]>
 

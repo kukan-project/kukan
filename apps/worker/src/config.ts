@@ -190,14 +190,20 @@ export const TEXT_HEAD_ARTIFACT_SIZE = 64 * 1024
 export const MAX_EMBED_TEXT_LENGTH = 8_000
 
 /**
- * Resources embedded per provider call. A package holds up to 500 resources
- * (MAX_RESOURCES_PER_PACKAGE) of up to MAX_EMBED_TEXT_LENGTH each, and the
- * OpenAI and Ollama adapters send `embedBatch`'s whole array as one request —
- * unbounded, a large package is a payload no retry can ever get through.
- * Each batch is written back before the next, so a package that fails halfway
- * keeps what it has and the next run resumes past it by hash.
+ * Resources embedded per provider call. The OpenAI and Ollama adapters send
+ * `embedBatch`'s whole array as one request, of up to MAX_EMBED_TEXT_LENGTH
+ * per text — unbounded, a catalog-wide mark is a payload no retry can ever get
+ * through. Each batch is written back, its marks cleared, before the next.
  */
 export const EMBED_BATCH_SIZE = 32
+
+/**
+ * Batches one embed job builds before handing the rest to a job of its own.
+ * The worker takes one job at a time, and a catalog-wide mark — a model
+ * change, a regenerate — is thousands of resources: in one job, every
+ * pipeline run queued behind it would wait for all of them.
+ */
+export const EMBED_JOB_MAX_BATCHES = 8
 
 /**
  * How long one batch's embed request may take before it is abandoned. A
@@ -338,6 +344,16 @@ export const LAKE_INGEST_SWEEP_CRON = '37 * * * *'
  * would contend for the same worker on the same minute.
  */
 export const RESOURCE_DOC_SWEEP_CRON = '47 * * * *'
+
+/** Re-queue the vectors whose embed was never heard (ADR-054); off the others, as above */
+export const RESOURCE_EMBED_SWEEP_CRON = '52 * * * *'
+
+/**
+ * When both mark sweeps run once after the worker starts. Long enough for a
+ * rolling deploy to have stopped the previous version's tasks, which would
+ * take a job of a type they do not know and delete it.
+ */
+export const START_SWEEP_DELAY_MS = 10 * 60_000
 
 /**
  * How long an upload URL's object is kept before the sweep reclaims it. Bounds

@@ -32,6 +32,13 @@ export const LAKE_INGEST_LOCK = 'lake_ingest'
 export const RESOURCE_DOC_SYNC_LOCK = 'resource_doc_sync'
 
 /**
+ * One embed job at a time (ADR-054). The job holds no row while the provider
+ * works, so two of them read the same oldest marks and pay for the same texts
+ * twice; the compare-and-set keeps the result right, not the bill.
+ */
+export const RESOURCE_EMBED_LOCK = 'resource_embed'
+
+/**
  * Hold `<namespace>:<id>` for the rest of the transaction.
  *
  * Every query inside must run on `tx`: the lock *is* a pooled connection, and

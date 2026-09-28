@@ -14,6 +14,7 @@
     ".": "./dist/index.js",
     "./adapters": "./dist/adapters.js",
     "./services/search-index": "./dist/services/search-index.js",
+    "./services/resource-embedding": "./dist/services/resource-embedding.js",
     "./services/pipeline-service": "./dist/services/pipeline-service.js",
     "./services/odata/row-group-backfill": "./dist/services/odata/row-group-backfill.js",
     "./services/lake-ingest": "./dist/services/lake-ingest.js",

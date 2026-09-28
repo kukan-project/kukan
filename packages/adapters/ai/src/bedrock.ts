@@ -173,15 +173,19 @@ export class BedrockAIAdapter implements AIAdapter {
   }
 
   private async invokeJson<T>(body: unknown, timeoutMs?: number): Promise<T> {
-    const response = await this.client.send(
-      new InvokeModelCommand({
-        modelId: this.embeddingModel,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify(body),
-      }),
-      timeoutMs ? { abortSignal: AbortSignal.timeout(timeoutMs) } : {}
-    )
+    const response = await this.client
+      .send(
+        new InvokeModelCommand({
+          modelId: this.embeddingModel,
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify(body),
+        }),
+        timeoutMs ? { abortSignal: AbortSignal.timeout(timeoutMs) } : {}
+      )
+      .catch((err: unknown) => {
+        throw classifyEmbedRejection(err) ?? err
+      })
     return JSON.parse(new TextDecoder().decode(response.body)) as T
   }
 
@@ -309,6 +313,24 @@ function documentName(raw: string, index: number): string {
     .trim()
     .slice(0, MAX_DOCUMENT_NAME_CHARS)
   return `${cleaned || 'file'} ${index + 1}`
+}
+
+/**
+ * The one refusal of an embedding input that is about the text and will happen
+ * again: too many tokens. Titan says so (measured: "Too many input tokens. Max
+ * input tokens: 8192, request input token count: 30001"); Cohere truncates
+ * (`truncate: 'RIGHT'`) and takes 30,000 characters either way.
+ *
+ * Narrower than {@link classifyInputRejection}, on purpose: an embedding
+ * request carries no file, and Titan's other refusal — "Malformed input
+ * request" — also answers a request built wrong, a bad dimension say. Read as
+ * the text's, it would drop every vector in the catalog.
+ */
+function classifyEmbedRejection(err: unknown): AiInputRejectedError | null {
+  if (!(err instanceof Error) || err.name !== 'ValidationException') return null
+  if (!/too many input tokens|too long/i.test(err.message)) return null
+  const counted = /input token count:\s*(\d+)/i.exec(err.message)
+  return new AiInputRejectedError(err.message, 'too-long', counted ? Number(counted[1]) : undefined)
 }
 
 /**

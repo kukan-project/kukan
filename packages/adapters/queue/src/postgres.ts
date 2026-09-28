@@ -190,7 +190,17 @@ export class PostgresQueueAdapter implements QueueAdapter {
       const [waiting] = await (options.tx ?? this.db)
         .select({ id: jobTable.id })
         .from(jobTable)
-        .where(and(eq(jobTable.type, type), ready(), unleased(), eq(jobTable.attempts, 0)))
+        .where(
+          and(
+            eq(jobTable.type, type),
+            ready(),
+            unleased(),
+            eq(jobTable.attempts, 0),
+            // No later than the one asked for: a job an hour out is no stand-in
+            // for one wanted now
+            lte(jobTable.runAt, inSeconds(options.delaySeconds ?? 0))
+          )
+        )
         .limit(1)
       if (waiting) return waiting.id
     }

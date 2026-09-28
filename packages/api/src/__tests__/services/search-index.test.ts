@@ -1,11 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
-import {
-  indexPackageMetadata,
-  enqueuePackageEmbed,
-  EMBED_DELAY_S,
-  syncPackageMetadata,
-} from '../../services/search-index'
+import { indexPackageMetadata, syncPackageMetadata } from '../../services/search-index'
+import { EMBED_DELAY_S } from '../../services/resource-embedding'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
 import type { SearchAdapter, DatasetDoc } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
@@ -14,10 +10,7 @@ import type { AIAdapter } from '@kukan/ai-adapter'
 const EMBED_PACKAGE_ID = '00000000-0000-4000-8000-000000000001'
 
 function makeQueue() {
-  return {
-    enqueueMany: vi.fn().mockResolvedValue(['job-1']),
-    transaction: ((db, fn) => db.transaction(fn)) as QueueAdapter['transaction'],
-  } as unknown as QueueAdapter
+  return { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter
 }
 
 function makeAI(embeddingAvailable: boolean) {
@@ -224,51 +217,8 @@ describe('indexPackageMetadata', () => {
   })
 })
 
-describe('enqueuePackageEmbed', () => {
-  /** The debounce claim's UPDATE ... RETURNING: a row means the window is ours. */
-  function dbTaking(window: boolean) {
-    const { db, addResult } = createMockDb()
-    addResult(window ? [{ id: EMBED_PACKAGE_ID }] : [])
-    return db
-  }
-
-  it('enqueues an embed-package job when embedding is available', async () => {
-    const queue = makeQueue()
-    await enqueuePackageEmbed(dbTaking(true), queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueueMany).toHaveBeenCalledWith(
-      EMBED_JOB_TYPE,
-      [{ packageId: EMBED_PACKAGE_ID }],
-      { delaySeconds: EMBED_DELAY_S, tx: expect.anything() }
-    )
-  })
-
-  it('queues nothing while a window is already held', async () => {
-    const queue = makeQueue()
-    await enqueuePackageEmbed(dbTaking(false), queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueueMany).not.toHaveBeenCalled()
-  })
-
-  it('does nothing when embedding is unavailable (NoOp)', async () => {
-    const queue = makeQueue()
-    await enqueuePackageEmbed(dbTaking(true), queue, makeAI(false), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueueMany).not.toHaveBeenCalled()
-  })
-
-  it('swallows enqueue failures (logs, never throws)', async () => {
-    const queue = {
-      enqueueMany: vi.fn().mockRejectedValue(new Error('queue down')),
-    } as unknown as QueueAdapter
-    const logger = makeLogger()
-
-    await expect(
-      enqueuePackageEmbed(dbTaking(true), queue, makeAI(true), EMBED_PACKAGE_ID, logger)
-    ).resolves.toBeUndefined()
-    expect(logger.error).toHaveBeenCalled()
-  })
-})
-
 describe('syncPackageMetadata', () => {
-  it('enqueues the embed job after indexing an active package', async () => {
+  it('asks for the embed job after indexing an active package with a resource marked', async () => {
     const { db, addResult } = createMockDb()
     // Same query sequence as indexPackageMetadata: package, org, resources, groups, tags
     addResult([
@@ -288,7 +238,7 @@ describe('syncPackageMetadata', () => {
     addResult([])
     addResult([])
     addResult([])
-    addResult([{ id: EMBED_PACKAGE_ID }]) // the debounce window, taken
+    addResult([{ id: 'marked-resource' }])
     const { adapter } = createMockSearch()
     const queue = makeQueue()
 
@@ -299,10 +249,10 @@ describe('syncPackageMetadata', () => {
     )
 
     expect(adapter.indexPackage).toHaveBeenCalledOnce()
-    expect(queue.enqueueMany).toHaveBeenCalledWith(
+    expect(queue.enqueue).toHaveBeenCalledWith(
       EMBED_JOB_TYPE,
-      [{ packageId: EMBED_PACKAGE_ID }],
-      { delaySeconds: EMBED_DELAY_S, tx: expect.anything() }
+      {},
+      { delaySeconds: EMBED_DELAY_S, unlessWaiting: true }
     )
   })
 
@@ -319,6 +269,6 @@ describe('syncPackageMetadata', () => {
     )
 
     expect(adapter.indexPackage).not.toHaveBeenCalled()
-    expect(queue.enqueueMany).not.toHaveBeenCalled()
+    expect(queue.enqueue).not.toHaveBeenCalled()
   })
 })
