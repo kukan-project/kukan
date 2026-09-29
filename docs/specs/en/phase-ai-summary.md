@@ -599,7 +599,7 @@ document. Nothing rewrites the document after an abstract is written — left al
 **never reaches the index at all**.
 
 So a write that makes the document stale **marks the row in the same statement**
-(`doc_sync_due_at`), and the `sync-resource-doc` job rewrites the documents of the marked rows and
+(`doc_sync_due_at`), and the `sync-search-docs` job rewrites the documents of the marked rows and
 clears their marks.
 
 | The write that marks                                                                                        | Who writes the document                                          |

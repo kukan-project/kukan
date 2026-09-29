@@ -18,7 +18,7 @@ import {
   createLogger,
   EMBED_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,
-  SYNC_RESOURCE_DOC_JOB_TYPE,
+  SYNC_SEARCH_DOCS_JOB_TYPE,
 } from '@kukan/shared'
 import { EMBED_DELAY_S } from '@kukan/api/services/resource-embedding'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '@kukan/api/services/pipeline-claim'
@@ -139,7 +139,7 @@ describe('the backfill walk', () => {
     // never writes that document — nothing else comes back for it. The write
     // marked the row, and the sync works through the marks; queued rather than
     // written, so the retry belongs to the queue.
-    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, {}, { unlessWaiting: true })
+    expect(enqueue).toHaveBeenCalledWith(SYNC_SEARCH_DOCS_JOB_TYPE, {}, { unlessWaiting: true })
     // And in the vector, which the embed job builds from the marks likewise
     expect(enqueue).toHaveBeenCalledWith(
       EMBED_JOB_TYPE,
@@ -166,7 +166,7 @@ describe('the backfill walk', () => {
     // Second pass over the same resource: nothing to generate
     await summarizeNextInPackage(packageId, undefined, deps, queue)
 
-    expect(enqueue.mock.calls.map(([type]) => type)).not.toContain(SYNC_RESOURCE_DOC_JOB_TYPE)
+    expect(enqueue.mock.calls.map(([type]) => type)).not.toContain(SYNC_SEARCH_DOCS_JOB_TYPE)
     expect(enqueue.mock.calls.map(([type]) => type)).not.toContain(EMBED_JOB_TYPE)
   })
 

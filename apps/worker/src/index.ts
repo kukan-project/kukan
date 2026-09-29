@@ -20,7 +20,7 @@ import {
   EMBED_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,
-  SYNC_RESOURCE_DOC_JOB_TYPE,
+  SYNC_SEARCH_DOCS_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
@@ -32,7 +32,7 @@ import {
   embedJobSchema,
   summarizeAllJobSchema,
   summarizePackageJobSchema,
-  syncResourceDocJobSchema,
+  syncSearchDocsJobSchema,
   REANALYSE_INDEX_JOB_TYPE,
   reanalyseIndexJobSchema,
 } from '@kukan/shared'
@@ -42,7 +42,7 @@ import type { Job } from '@kukan/queue-adapter'
 import {
   enqueueResourceDocSyncIfDue,
   rebuildMetadataIndex,
-  syncDueResourceDocs,
+  syncDueSearchDocs,
 } from '@kukan/api/services/search-index'
 import {
   enqueueResourceEmbedsIfDue,
@@ -69,7 +69,7 @@ import { retryLakeIngest } from './pipeline/retry-lake-ingest'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
 import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
-import { sweepResourceDocs, sweepResourceEmbeds } from './cron/sweep-resource-marks'
+import { sweepSearchDocs, sweepResourceEmbeds } from './cron/sweep-resource-marks'
 import {
   expirePendingUploads,
   markUploadsThatNeverArrived,
@@ -278,7 +278,7 @@ const resourceDocSweepJob = startCronJob({
   cronExpression: RESOURCE_DOC_SWEEP_CRON,
   log: resourceDocSweepLog,
   run: async () => {
-    await sweepResourceDocs(db, queue, resourceDocSweepLog)
+    await sweepSearchDocs(db, queue, resourceDocSweepLog)
   },
 })
 
@@ -305,7 +305,7 @@ const resourceEmbedSweepJob = startCronJob({
 // a job queued at start is one the previous version is still there to take.
 const startSweep = setTimeout(() => {
   void Promise.all([
-    sweepResourceDocs(db, queue, resourceDocSweepLog, 0),
+    sweepSearchDocs(db, queue, resourceDocSweepLog, 0),
     sweepResourceEmbeds(db, queue, ai, resourceEmbedSweepLog, 0),
   ]).catch((err) => log.warn({ err }, 'Post-start sweep failed; the hourly one will retry'))
 }, START_SWEEP_DELAY_MS)
@@ -360,6 +360,21 @@ function parseJobPayload<T>(
   if (parsed.success) return parsed.data
   log.error({ jobId: job.id, type: job.type, err: parsed.error.message }, 'Invalid job payload')
   return null
+}
+
+// The search documents the API left marked, and those of the writers that
+// cannot retry — the abstract (ADR-053 §9.3), a renamed organization or
+// group. Its own job so the queue owns the retry. Every marked resource and
+// dataset, whatever the payload names.
+const syncSearchDocsJob = async (job: Job) => {
+  if (!parseJobPayload(job, syncSearchDocsJobSchema)) return
+  const { synced, refused } = await syncDueSearchDocs(db, docSearch)
+  if (synced > 0) log.info({ jobId: job.id, type: job.type, synced }, 'Search documents synced')
+  // Not thrown: every other mark was cleared, and a retry would refuse the
+  // same documents. Their marks stay, so the sweep keeps asking.
+  if (refused.length > 0) {
+    log.error({ jobId: job.id, type: job.type, refused }, 'The index refused search documents')
+  }
 }
 
 // --- Job handlers ---
@@ -471,20 +486,7 @@ await queue.process({
       'Summarize step finished'
     )
   },
-  // The abstract reaches the keyword leg here (ADR-053 §9.3). Its own job so
-  // the queue owns the retry: the step that makes the document stale runs
-  // after Index and is best-effort, so a failure there would otherwise never
-  // be asked again. Every marked resource, whatever the payload names.
-  [SYNC_RESOURCE_DOC_JOB_TYPE]: async (job: Job) => {
-    if (!parseJobPayload(job, syncResourceDocJobSchema)) return
-    const { synced, refused } = await syncDueResourceDocs(db, docSearch)
-    if (synced > 0) log.info({ jobId: job.id, type: job.type, synced }, 'Resource documents synced')
-    // Not thrown: every other mark was cleared, and a retry would refuse the
-    // same documents. Their marks stay, so the sweep keeps asking.
-    if (refused.length > 0) {
-      log.error({ jobId: job.id, type: job.type, refused }, 'The index refused resource documents')
-    }
-  },
+  [SYNC_SEARCH_DOCS_JOB_TYPE]: syncSearchDocsJob,
   // Semantic search: build the vectors of every resource marked due (ADR-054).
   [EMBED_JOB_TYPE]: async (job: Job) => {
     if (!parseJobPayload(job, embedJobSchema)) return

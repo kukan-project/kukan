@@ -33,12 +33,14 @@ import {
 import {
   writeMarkedResourceDocs,
   syncPackageMetadata,
+  writeMarkedPackageDoc,
   syncPackageResources,
   rebuildPackageSearch,
   settleResourceWrites,
 } from '../services/search-index'
 import { markContentUnindexed } from '../services/content-index-record'
 import { hybridSearch } from '../services/hybrid-search'
+import { enqueueResourceEmbedsIfDue } from '../services/resource-embedding'
 import { lakeConfigFromEnv } from '@kukan/lake'
 import { MetadataSuggestService } from '../services/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
@@ -312,10 +314,10 @@ async function settleAfterCreate(
 ): Promise<void> {
   const db = c.get('db')
   try {
-    await Promise.all([
-      syncPackageMetadata(db, c.var, pkg.id),
-      settleResourceWrites(db, c.var, pkg.resources),
-    ])
+    // One after the other: both take the sync's lock, and side by side the
+    // second would find it held and leave its documents to the job
+    await syncPackageMetadata(db, c.var, pkg.id)
+    await settleResourceWrites(db, c.var, pkg.resources)
   } catch (err) {
     c.get('logger').error({ err, packageId: pkg.id }, 'Best-effort post-create sync failed')
   }
@@ -402,9 +404,11 @@ packagesRouter.delete('/:nameOrId', async (c) => {
 
   const pkg = await service.delete(nameOrId, makePackageAuthorize(db, user, 'editor'))
 
-  // Takes the resource and content documents with it, so the rows stop saying
-  // their content is indexed — a restore rebuilds from what they claim
-  await c.get('search').deletePackage(pkg.id)
+  // The delete marked the dataset: its document goes under the sync's lock,
+  // taking the resource and content documents with it — or, the lock held,
+  // with the job. The rows stop saying their content is indexed either way: a
+  // restore rebuilds from what they claim
+  await writeMarkedPackageDoc(db, c.var, pkg.id)
   await markContentUnindexed(db, { packageId: pkg.id })
   // The delete marked the resources: any document written back meanwhile goes
   await writeMarkedResourceDocs(db, c.var, { packageId: pkg.id })
@@ -569,10 +573,11 @@ packagesRouter.post(
       packageId: pkg.id,
     })
 
-    // Both sync helpers skip drafts — metadata/resources are indexed at publish (ADR-039)
+    // A draft's resources are indexed at publish (ADR-039); the dataset's own
+    // document does not carry its resources, so only their vectors are asked for
     await Promise.all([
       settleResourceWrites(db, c.var, [resource]),
-      syncPackageMetadata(db, c.var, pkg.id),
+      enqueueResourceEmbedsIfDue(db, c.var, { packageId: pkg.id }),
     ])
     return c.json(resource, 201)
   }

@@ -39,7 +39,6 @@ import { ODATA_BASE_PATH } from '@kukan/shared'
 // Minimal mock adapters (search/storage are no-ops for route tests)
 export const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
-  indexPackage: async () => {},
   deletePackage: async () => {},
   bulkIndexPackages: async () => {},
   deleteAllPackages: async () => {},

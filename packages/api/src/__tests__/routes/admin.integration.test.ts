@@ -21,7 +21,6 @@ import { randomUUID } from 'node:crypto'
 const db = getTestDb()
 
 const mockSearch: SearchAdapter = {
-  indexPackage: async () => {},
   deletePackage: async () => {},
   bulkIndexPackages: vi.fn().mockResolvedValue(undefined),
   deleteAllPackages: vi.fn().mockResolvedValue(undefined),
@@ -1415,8 +1414,8 @@ describe('Admin API Routes', () => {
 
     it('counts jobs by type and status, and lists one type of one status', async () => {
       await deadJob('summarize-package')
-      await queue.enqueue('sync-resource-doc', { resourceId: randomUUID() })
-      await queue.enqueue('sync-resource-doc', { resourceId: randomUUID() })
+      await queue.enqueue('sync-search-docs', {})
+      await queue.enqueue('sync-search-docs', {})
       await queue.enqueue('summarize-package', { packageId: randomUUID() })
 
       const counts = await (await queueApp.request('/api/v1/admin/queue/counts')).json()
@@ -1424,7 +1423,7 @@ describe('Admin API Routes', () => {
         expect.arrayContaining([
           { type: 'summarize-package', status: 'dead', count: 1 },
           { type: 'summarize-package', status: 'waiting', count: 1 },
-          { type: 'sync-resource-doc', status: 'waiting', count: 2 },
+          { type: 'sync-search-docs', status: 'waiting', count: 2 },
         ])
       )
       expect(counts.items).toHaveLength(3)

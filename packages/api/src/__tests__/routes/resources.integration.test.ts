@@ -119,7 +119,7 @@ async function expectDocSettled(resourceId: string) {
     .where(eq(resourceTable.id, resourceId))
   expect(row.due).toBeNull()
   expect(mockQueue.enqueue).not.toHaveBeenCalledWith(
-    'sync-resource-doc',
+    'sync-search-docs',
     {},
     { unlessWaiting: true }
   )

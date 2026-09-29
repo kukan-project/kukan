@@ -202,16 +202,13 @@ export interface IndexContentOptions {
  */
 export class BulkIndexError extends Error {
   constructor(readonly failedIds: string[]) {
-    super(`Bulk resource indexing failed for ${failedIds.length} documents`)
+    super(`Bulk indexing failed for ${failedIds.length} documents`)
     this.name = 'BulkIndexError'
   }
 }
 
 export interface SearchAdapter {
   // ---- Dataset-level index (kukan-packages) ----
-
-  /** Index a dataset document */
-  indexPackage(doc: DatasetDoc): Promise<void>
 
   /** Delete a dataset from the index */
   deletePackage(id: string): Promise<void>

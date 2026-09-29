@@ -22,6 +22,7 @@ import { resource, resourceVersion } from '@kukan/db'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
+import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 
 /**
  * What a purge of these packages has to account for, read while the rows still
@@ -67,14 +68,39 @@ export async function listPurgeTargets(
 }
 
 export async function purgePackageExternals(
+  db: Database,
   packageId: string,
   deps: { search?: SearchAdapter; storage: StorageAdapter }
 ): Promise<void> {
-  // deletePackage removes the package doc and its resource/content children.
-  // search is undefined when OpenSearch is not configured (nothing indexed).
-  if (deps.search) await deps.search.deletePackage(packageId)
+  await purgePackagesSearchDocs(db, [packageId], deps.search)
+  await purgePackageStorage(packageId, deps.storage)
+}
+
+/**
+ * Remove the search documents of packages whose rows are going, with their
+ * resource and content children. `search` is undefined when OpenSearch is not
+ * configured (nothing indexed). Under the sync's lock, taken once for them
+ * all: a writer that read a dataset before its row went cannot land the
+ * document after this, and nothing is left marked to undo it.
+ */
+export async function purgePackagesSearchDocs(
+  db: Database,
+  packageIds: string[],
+  search: SearchAdapter | undefined
+): Promise<void> {
+  if (!search || packageIds.length === 0) return
+  await withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, async () => {
+    for (const id of packageIds) await search.deletePackage(id)
+  })
+}
+
+/** Remove the storage objects of a package whose rows are going */
+export async function purgePackageStorage(
+  packageId: string,
+  storage: StorageAdapter
+): Promise<void> {
   await Promise.all([
-    deps.storage.deleteByPrefix(`${RESOURCE_PREFIX}${packageId}/`),
-    deps.storage.deleteByPrefix(`${PREVIEW_PREFIX}${packageId}/`),
+    storage.deleteByPrefix(`${RESOURCE_PREFIX}${packageId}/`),
+    storage.deleteByPrefix(`${PREVIEW_PREFIX}${packageId}/`),
   ])
 }

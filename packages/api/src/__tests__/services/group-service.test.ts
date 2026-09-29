@@ -69,6 +69,7 @@ describe('GroupService', () => {
     it('should update and return the group', async () => {
       const grp = createGroupFixture()
       mock.addResult([grp]) // getByNameOrId
+      mock.addResult([{ name: grp.name }]) // the name, read under the row's lock
       mock.addResult([{ ...grp, title: 'Updated Title' }]) // update returning
 
       const result = await service.update('test-group', {

@@ -44,10 +44,6 @@ describe('PostgresSearchAdapter', () => {
   describe('no-op methods', () => {
     const adapter = new PostgresSearchAdapter(createMockDb([]))
 
-    it('indexPackage should be a no-op', async () => {
-      await expect(adapter.indexPackage({ id: '1', name: 'test' })).resolves.toBeUndefined()
-    })
-
     it('deletePackage should be a no-op', async () => {
       await expect(adapter.deletePackage('1')).resolves.toBeUndefined()
     })

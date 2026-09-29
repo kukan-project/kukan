@@ -1458,14 +1458,14 @@ describe('Packages API Routes', () => {
       expect(first.status).toBe(200)
 
       // A second publish is the retry entry point for a failed publish-time sync
-      const indexSpy = vi.spyOn(search, 'indexPackage')
+      const indexSpy = vi.spyOn(search, 'bulkIndexPackages')
       try {
         const again = await app.request(`/api/v1/packages/${draft.id}/publish`, {
           method: 'POST',
         })
         expect(again.status).toBe(200)
         expect((await again.json()).state).toBe('active')
-        expect(indexSpy).toHaveBeenCalledWith(expect.objectContaining({ id: draft.id }))
+        expect(indexSpy).toHaveBeenCalledWith([expect.objectContaining({ id: draft.id })])
       } finally {
         indexSpy.mockRestore()
       }

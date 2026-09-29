@@ -23,7 +23,7 @@ import { and, asc, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourceVersion } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { enqueueResourceDocSync } from '@kukan/api/services/search-index'
+import { enqueueSearchDocSync } from '@kukan/api/services/search-index'
 import { enqueueResourceEmbedsIfDue } from '@kukan/api/services/resource-embedding'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { SUMMARIZE_PACKAGE_JOB_TYPE, type Logger } from '@kukan/shared'
@@ -172,7 +172,7 @@ async function summarizeOne(
     // restate it.
     if (result.status === 'written') {
       await Promise.all([
-        enqueueResourceDocSync(queue, deps.log),
+        enqueueSearchDocSync(queue, deps.log),
         enqueueResourceEmbedsIfDue(
           deps.db,
           { queue, ai: deps.ai, logger: deps.log },

@@ -3,6 +3,7 @@
  * CKAN-compatible dataset/package table
  */
 
+import { sql } from 'drizzle-orm'
 import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
 import { organization } from './organization'
 import { user } from './user'
@@ -36,6 +37,12 @@ export const packageTable = pgTable(
     // The vector lives on the resource, not here (ADR-054): a centroid of a
     // package's resources cannot answer which of nineteen sheets to open.
 
+    // When this row, or a name its search document carries (its organization's,
+    // its groups'), last changed in a way the document has not heard of — null
+    // once it has. The resource's `docSyncDueAt` contract: set in the statement
+    // that made them disagree, and the token the sync clears against.
+    docSyncDueAt: timestamp('doc_sync_due_at', { withTimezone: true }),
+
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -48,5 +55,9 @@ export const packageTable = pgTable(
     index('idx_package_title_trgm').using('gin', table.title.op('gin_trgm_ops')),
     index('idx_package_notes_trgm').using('gin', table.notes.op('gin_trgm_ops')),
     index('idx_package_name_trgm').using('gin', table.name.op('gin_trgm_ops')),
+    // Read by the document sync and its sweep, as the resource's is
+    index('idx_package_doc_sync_due')
+      .on(table.docSyncDueAt)
+      .where(sql`${table.docSyncDueAt} IS NOT NULL`),
   ]
 )

@@ -45,7 +45,8 @@ import {
   type AuthUser,
 } from '../auth/permissions'
 import { reclaimLakeStorage } from './lake-reclaim'
-import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
+import { listPurgeTargets, purgePackageStorage, purgePackagesSearchDocs } from './package-cleanup'
+import { markPackageDocs } from './doc-marks'
 import { withResourceClaimsOrConflict } from './pipeline-claim'
 import { deleteOrphanFreeTags } from './tag-service'
 
@@ -198,20 +199,43 @@ export class OrganizationService {
   async update(nameOrId: string, input: UpdateOrganizationInput) {
     const existing = await this.getByNameOrId(nameOrId)
 
-    const [updated] = await this.db
-      .update(organization)
-      .set({
-        name: input.name,
-        title: input.title ?? null,
-        description: input.description ?? null,
-        imageUrl: input.imageUrl ?? null,
-        extras: input.extras,
-        updated: new Date(),
-      })
-      .where(eq(organization.id, existing.id))
-      .returning()
-
-    return updated
+    return await this.db.transaction(async (tx) => {
+      // The name the documents carry now, read under the row's lock: compared
+      // with a read before the transaction, a rename that landed in between
+      // would leave this one looking like no rename at all. No-key: a dataset
+      // write checking its foreign key to the organization does not wait on it
+      const [before] = await tx
+        .select({ name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, existing.id))
+        .for('no key update')
+      // Its live datasets' search documents carry the name. Marked before the
+      // rename takes the row's full lock, so a dataset edit holding its own row
+      // while it checks its key here is never waited on from behind that lock
+      if (before && input.name !== before.name) {
+        await markPackageDocs(tx, eq(packageTable.ownerOrg, existing.id))
+      }
+      const [updated] = await tx
+        .update(organization)
+        .set({
+          name: input.name,
+          title: input.title ?? null,
+          description: input.description ?? null,
+          imageUrl: input.imageUrl ?? null,
+          extras: input.extras,
+          updated: new Date(),
+        })
+        .where(eq(organization.id, existing.id))
+        .returning()
+      // Again, now the rename holds the row whole: a dataset that joined since
+      // the first pass took the key share its insert needs, and the update
+      // waited for it to commit. One joining from here waits for this commit
+      // and reads the new name
+      if (before && input.name !== before.name) {
+        await markPackageDocs(tx, eq(packageTable.ownerOrg, existing.id))
+      }
+      return updated
+    })
   }
 
   /** Throws ConflictError if packages are still linked. Accepts the db or a tx. */
@@ -345,13 +369,13 @@ export class OrganizationService {
       // and skips the DB delete below, leaving the org 'purging' for a retry.
       // DuckLake is left out of the per-package pass and done once below: opening
       // a lake session is expensive, and one per package would mean hundreds.
+      // The search documents one chunk at a time under the sync's lock, taken
+      // once per chunk: it serialises them anyway, and a caller per package
+      // waiting on it would hold a pooled connection each
       for (let i = 0; i < packageIds.length; i += EXTERNALS_CLEANUP_CONCURRENCY) {
         const chunk = packageIds.slice(i, i + EXTERNALS_CLEANUP_CONCURRENCY)
-        await Promise.all(
-          chunk.map((pkgId) =>
-            purgePackageExternals(pkgId, { search: deps.search, storage: deps.storage })
-          )
-        )
+        await purgePackagesSearchDocs(this.db, chunk, deps.search)
+        await Promise.all(chunk.map((pkgId) => purgePackageStorage(pkgId, deps.storage)))
       }
       if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
 

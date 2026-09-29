@@ -13,6 +13,7 @@ import {
   SysadminRequiredError,
 } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
+import { enqueueSearchDocSync } from '../services/search-index'
 import { checkOrgRole, ROSTER_ROLE } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
@@ -108,6 +109,9 @@ organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchem
 
   const input = c.req.valid('json')
   const updated = await service.update(nameOrId, input)
+  // A rename marked the organization's datasets; the job rewrites their
+  // documents. Asked for every time, as for groups
+  await enqueueSearchDocSync(c.get('queue'), c.get('logger'))
   return c.json(updated)
 })
 

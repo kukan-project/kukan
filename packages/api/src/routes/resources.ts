@@ -56,11 +56,7 @@ import {
   MANAGE_ROLE,
   type AuthUser,
 } from '../auth/permissions'
-import {
-  syncPackageMetadata,
-  settleResourceWrites,
-  writeMarkedResourceDocs,
-} from '../services/search-index'
+import { settleResourceWrites, writeMarkedResourceDocs } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
@@ -1054,7 +1050,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
 
   await Promise.all([
     settleResourceWrites(db, c.var, [res]),
-    syncPackageMetadata(db, c.var, res.packageId),
+    enqueueResourceEmbedsIfDue(db, c.var, { packageId: res.packageId }),
   ])
   return c.json(res)
 })
@@ -1072,7 +1068,7 @@ resourcesRouter.delete('/:id', async (c) => {
 
   const res = await resourceService.delete(id)
   await Promise.all([
-    syncPackageMetadata(db, c.var, res.packageId),
+    enqueueResourceEmbedsIfDue(db, c.var, { packageId: res.packageId }),
     // The delete marked the row: the document is removed under the sync's
     // lock, so a sync that read the row while it was live cannot restore it
     writeMarkedResourceDocs(db, c.var, { resourceIds: [id] }),

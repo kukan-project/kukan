@@ -351,6 +351,13 @@
       "when": 1790588049710,
       "tag": "0049_overrated_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790612911949,
+      "tag": "0050_flimsy_dorian_gray",
+      "breakpoints": true
     }
   ]
 }

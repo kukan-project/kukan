@@ -439,22 +439,23 @@ export const SUMMARIZE_ALL_JOB_TYPE = 'summarize-all' as const
 export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
 
 /**
- * Rewrite the search documents of every resource marked due (`doc_sync_due_at`).
+ * Rewrite the search documents of every resource and dataset marked due
+ * (`doc_sync_due_at`).
  *
- * The abstract is the one field of a resource's document written outside the
- * API's own edits — by the Summarize step, which is best-effort, and by the
- * editor hiding it (ADR-053 §9.3). Neither can retry the index write, so each
- * marks the row in the statement that makes the document stale and queues
- * this; the retry is the queue's, and the hourly sweep answers a job that was
- * never written.
+ * The API writes the documents its edits marked when the sync's lock is free,
+ * and leaves them to this when it is not. The rest of the marks come from
+ * writers that cannot retry the index write — the Summarize step, which is
+ * best-effort, the editor hiding an abstract (ADR-053 §9.3), a renamed
+ * organization or group — so each marks the row in the statement that makes
+ * the document stale and queues this; the retry is the queue's, and the hourly
+ * sweep answers a job that was never written.
  *
- * One job for all of them rather than one per resource: the job works through
- * the marks, not its payload, so one waiting job covers every mark set before
- * it runs (`unlessWaiting`), and one bulk write replaces a write — and a wait
- * for the index to refresh — per resource. `resourceId` is accepted from jobs
- * queued before and ignored.
+ * One job for all of them rather than one per row: the job works through the
+ * marks, not its payload, so one waiting job covers every mark set before it
+ * runs (`unlessWaiting`), and one bulk write replaces a write — and a wait for
+ * the index to refresh — per row.
  */
-export const SYNC_RESOURCE_DOC_JOB_TYPE = 'sync-resource-doc' as const
+export const SYNC_SEARCH_DOCS_JOB_TYPE = 'sync-search-docs' as const
 
 /**
  * Where a job stands (ADR-058), in the order a job moves through them: due
@@ -481,7 +482,7 @@ export const reindexJobSchema = z.object({ includeContent: z.boolean().optional(
 export const reanalyseIndexJobSchema = z.object({})
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({})
-export const syncResourceDocJobSchema = z.object({ resourceId: z.uuid().optional() })
+export const syncSearchDocsJobSchema = z.object({})
 export const purgeVersionJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),

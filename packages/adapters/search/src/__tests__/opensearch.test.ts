@@ -263,26 +263,27 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('indexPackage', () => {
-    it('should index a document to search index with join_field', async () => {
-      mockClient.index.mockResolvedValue({ body: {} })
-
-      await adapter.indexPackage({
-        id: 'pkg-1',
-        name: 'test-dataset',
-        title: 'Test Dataset',
+  describe('bulkIndexPackages', () => {
+    it('names the dataset documents the index refused, so the rest can settle', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.bulk.mockResolvedValue({
+        body: {
+          errors: true,
+          items: [
+            { index: { _id: 'pkg-1' } },
+            { index: { _id: 'pkg-2', error: { type: 'mapper_parsing_exception' } } },
+          ],
+        },
       })
 
-      expect(mockClient.index).toHaveBeenCalledWith({
-        index: 'kukan-search',
-        id: 'pkg-1',
-        body: expect.objectContaining({
-          id: 'pkg-1',
-          name: 'test-dataset',
-          join_field: 'package',
-        }),
-        refresh: 'wait_for',
-      })
+      const writing = adapter.bulkIndexPackages([
+        { id: 'pkg-1', name: 'one' },
+        { id: 'pkg-2', name: 'two' },
+      ])
+
+      await expect(writing).rejects.toBeInstanceOf(BulkIndexError)
+      await expect(writing).rejects.toMatchObject({ failedIds: ['pkg-2'] })
+      expect(mockClient.bulk.mock.calls[0][0].body[1]).toMatchObject({ join_field: 'package' })
     })
   })
 

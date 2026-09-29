@@ -62,6 +62,7 @@ describe('OrganizationService', () => {
     it('should update and return the organization', async () => {
       const org = createOrganizationFixture()
       mock.addResult([org]) // getByNameOrId
+      mock.addResult([{ name: org.name }]) // the name, read under the row's lock
       mock.addResult([{ ...org, title: 'Updated' }]) // update returning
 
       const result = await service.update('test-org', {

@@ -1,8 +1,8 @@
 /**
  * Search index helpers.
- * - indexPackageMetadata: single-record upsert for package CUD operations
- * - settleResourceWrites / syncDueResourceDocs: resource documents, after an edit
- *   and after a marked write
+ * - syncPackageMetadata / writeMarkedPackageDoc: a dataset's document, after an edit
+ * - settleResourceWrites / writeMarkedResourceDocs: resource documents, after an edit
+ * - syncDueSearchDocs: every marked document, for the sync job
  * - rebuildMetadataIndex: batch rebuild of all packages + resources
  */
 
@@ -27,15 +27,11 @@ import {
 } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { SYNC_RESOURCE_DOC_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
+import { SYNC_SEARCH_DOCS_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
 import { enqueueResourceEmbedsIfDue } from './resource-embedding'
-import {
-  RESOURCE_DOC_SYNC_LOCK,
-  tryLockInTransaction,
-  withGlobalAdvisoryLock,
-} from './advisory-lock'
+import { SEARCH_DOC_SYNC_LOCK, tryLockInTransaction, withGlobalAdvisoryLock } from './advisory-lock'
 
 /** The adapters every package-metadata sync needs — a structural subset of the
  *  route context vars, so routes can pass `c.var` directly. */
@@ -47,19 +43,25 @@ export interface PackageSyncDeps {
 }
 
 /**
- * Sync one package after a metadata change: upsert its search doc and ask for
- * the vectors the change marked. Always use this from routes (rather than
- * calling indexPackageMetadata directly) so a new call site cannot forget the
- * embed half of the pair. Non-active packages (drafts, ADR-039) are skipped
- * entirely, so callers can invoke unconditionally.
+ * Sync one package after a write that marked it: its search document, through
+ * the sync's lock, and the vectors the write marked. Always use this from
+ * routes so a new call site cannot forget the embed half of the pair. A
+ * draft's mark is only cleared and its vectors not asked for (ADR-039), so
+ * callers can invoke unconditionally.
  */
 export async function syncPackageMetadata(
   db: Database,
   deps: PackageSyncDeps,
   packageId: string
 ): Promise<void> {
-  const indexed = await indexPackageMetadata(db, deps.search, packageId)
-  if (indexed) await enqueueResourceEmbedsIfDue(db, deps, { packageId })
+  const [pkg] = await db
+    .select({ state: packageTable.state })
+    .from(packageTable)
+    .where(eq(packageTable.id, packageId))
+  await Promise.all([
+    writeMarkedPackageDoc(db, deps, packageId),
+    pkg?.state === 'active' && enqueueResourceEmbedsIfDue(db, deps, { packageId }),
+  ])
 }
 
 /**
@@ -97,9 +99,13 @@ export async function rebuildPackageSearch(
     ? resources.filter((r) => r.hasStoredContent).map((r) => ({ id: r.id, rebuildOnly: true }))
     : resources.filter((r) => r.url).map((r) => ({ id: r.id, rebuildOnly: false }))
 
+  // One after the other: each takes the sync's lock, and side by side the
+  // second would find it held by the first and leave its documents to the job
+  const docs = syncPackageMetadata(db, deps, packageId).then(() =>
+    writeMarkedResourceDocs(db, deps, { packageId })
+  )
   await Promise.all([
-    syncPackageMetadata(db, deps, packageId),
-    writeMarkedResourceDocs(db, deps, { packageId }),
+    docs,
     // In batches rather than a transaction per run; a refused batch still
     // fails the sync, which is what lets the same request be the retry
     pipeline.enqueueMany(runs).then(({ failed }) => {
@@ -123,21 +129,21 @@ export async function rebuildPackageSearch(
  * runs, so none is written while one is waiting. The enqueue is best-effort — a
  * queue that never heard leaves the row due, and the sweep comes back for it.
  */
-export async function enqueueResourceDocSync(queue: QueueAdapter, log: Logger): Promise<void> {
+export async function enqueueSearchDocSync(queue: QueueAdapter, log: Logger): Promise<void> {
   try {
-    await requestResourceDocSync(queue)
+    await requestSearchDocSync(queue)
   } catch (err) {
-    log.error({ err }, 'Resource document sync enqueue failed; the sweep will retry')
+    log.error({ err }, 'Search document sync enqueue failed; the sweep will retry')
   }
 }
 
 /** The enqueue itself, for a caller that wants the failure (the sweep) */
-export async function requestResourceDocSync(queue: QueueAdapter): Promise<void> {
-  await queue.enqueue(SYNC_RESOURCE_DOC_JOB_TYPE, {}, { unlessWaiting: true })
+export async function requestSearchDocSync(queue: QueueAdapter): Promise<void> {
+  await queue.enqueue(SYNC_SEARCH_DOCS_JOB_TYPE, {}, { unlessWaiting: true })
 }
 
 /**
- * {@link enqueueResourceDocSync}, when this resource is marked — for a caller
+ * {@link enqueueSearchDocSync}, when this resource is marked — for a caller
  * whose writes to the row are several and scattered, such as a pipeline run
  * (an abstract, a format a version settled), and which asks once at its end.
  */
@@ -151,7 +157,7 @@ export async function enqueueResourceDocSyncIfDue(
     .select({ id: resource.id })
     .from(resource)
     .where(and(eq(resource.id, resourceId), isNotNull(resource.docSyncDueAt)))
-  if (due) await enqueueResourceDocSync(queue, log)
+  if (due) await enqueueSearchDocSync(queue, log)
 }
 
 /** How many marked resources one bulk write carries */
@@ -178,7 +184,7 @@ const indexedResource = () => and(eq(resource.state, 'active'), eq(packageTable.
 /**
  * Bring the documents of the marked resources `where` selects in line with
  * their rows, oldest mark first, and clear each mark only if it is still the
- * one read here. Called holding {@link RESOURCE_DOC_SYNC_LOCK}, which is what
+ * one read here. Called holding {@link SEARCH_DOC_SYNC_LOCK}, which is what
  * keeps two writers of one document from landing out of order.
  *
  * **Compare-and-set, not a plain clear.** The writers that mark a row do not
@@ -203,7 +209,7 @@ async function syncMarkedDocs(
   tx: Transaction,
   search: SearchAdapter,
   where?: SQL
-): Promise<{ read: number; cleared: number; refused: string[] }> {
+): Promise<SyncBatch> {
   const rows = await tx
     .select({
       ...resourceDocColumns,
@@ -222,71 +228,165 @@ async function syncMarkedDocs(
     .limit(DOC_SYNC_BATCH)
   if (rows.length === 0) return { read: 0, cleared: 0, refused: [] }
 
-  // Written before the marks are cleared, so a write that fails leaves them.
-  // Side by side: each waits on the index, and the lock is held throughout.
-  const refused = new Set<string>()
   const written = rows.filter((r) => r.action === 'write')
   const gone = rows.filter((r) => r.action === 'remove').map((r) => r.id)
-  const [write, removal] = await Promise.allSettled([
+  return settleBatch(tx, 'resource', rows, [
     written.length > 0 && search.bulkIndexResources(written.map(buildResourceDoc)),
     gone.length > 0 && search.deleteResources(gone),
   ])
-  // A removal failing is the index's failure, not one document's: thrown, for
-  // the retry, as a bulk request refused whole is
+}
+
+/**
+ * A batch's writes and removals, then the marks of what landed. Written before
+ * the marks are cleared, so a write that fails leaves them; side by side, as
+ * each waits on the index and the lock is held throughout. A document the
+ * index refuses keeps its mark; a removal failing is the index's failure, not
+ * one document's, and is thrown for the retry, as a bulk request refused whole is.
+ */
+async function settleBatch(
+  tx: Transaction,
+  table: 'resource' | 'package',
+  rows: { id: string; dueAt: string }[],
+  [writing, removing]: [Promise<unknown> | false, Promise<unknown> | false]
+): Promise<SyncBatch> {
+  const [write, removal] = await Promise.allSettled([writing, removing])
   if (removal.status === 'rejected') throw removal.reason
+  const refused = new Set<string>()
   if (write.status === 'rejected') {
     if (!(write.reason instanceof BulkIndexError)) throw write.reason
     for (const id of write.reason.failedIds) refused.add(id)
   }
+  const cleared = await clearMarks(
+    tx,
+    table,
+    rows.filter((r) => !refused.has(r.id))
+  )
+  return { read: rows.length, cleared, refused: [...refused] }
+}
 
-  const settled = rows.filter((r) => !refused.has(r.id))
-  if (settled.length === 0) return { read: rows.length, cleared: 0, refused: [...refused] }
+/**
+ * Clear the marks read, each only if it is still the one read — see
+ * {@link syncMarkedDocs} for why a plain clear would lose an edit.
+ */
+async function clearMarks(
+  tx: Transaction,
+  table: 'resource' | 'package',
+  settled: { id: string; dueAt: string }[]
+): Promise<number> {
+  if (settled.length === 0) return 0
   const marks = sql.join(
     settled.map((r) => sql`(${r.id}::uuid, ${r.dueAt}::timestamptz)`),
     sql`, `
   )
+  // The rows locked in id order first, as the writers that mark many at once
+  // lock them (see doc-marks): each in its own order, the two could deadlock
+  const ids = sql.join(
+    settled.map((r) => sql`${r.id}::uuid`),
+    sql`, `
+  )
+  await tx.execute(
+    sql`SELECT FROM ${sql.identifier(table)} WHERE id IN (${ids}) ORDER BY id FOR UPDATE`
+  )
   const cleared = await tx.execute(sql`
-    UPDATE resource r SET doc_sync_due_at = NULL
+    UPDATE ${sql.identifier(table)} t SET doc_sync_due_at = NULL
     FROM (VALUES ${marks}) AS d(id, due_at)
-    WHERE r.id = d.id AND r.doc_sync_due_at = d.due_at
-    RETURNING r.id
+    WHERE t.id = d.id AND t.doc_sync_due_at = d.due_at
+    RETURNING t.id
   `)
-  return { read: rows.length, cleared: cleared.rows.length, refused: [...refused] }
+  return cleared.rows.length
+}
+
+/**
+ * {@link syncMarkedDocs} for the datasets' own documents. A live dataset's is
+ * written, a deleted one's removed — with its children, which the delete
+ * marked for removal anyway — and a draft's mark only cleared: the index
+ * holds nothing of a draft until publish writes it (ADR-039).
+ */
+async function syncMarkedPackageDocs(
+  tx: Transaction,
+  search: SearchAdapter,
+  where?: SQL
+): Promise<SyncBatch> {
+  const rows = await tx
+    .select({
+      id: packageTable.id,
+      action: sql<'write' | 'remove' | 'clear'>`CASE ${packageTable.state}
+        WHEN 'active' THEN 'write' WHEN 'deleted' THEN 'remove' ELSE 'clear' END`,
+      dueAt: sql<string>`${packageTable.docSyncDueAt}::text`,
+    })
+    .from(packageTable)
+    .where(and(isNotNull(packageTable.docSyncDueAt), where))
+    .orderBy(asc(packageTable.docSyncDueAt))
+    .limit(DOC_SYNC_BATCH)
+  if (rows.length === 0) return { read: 0, cleared: 0, refused: [] }
+
+  const docs = await buildDatasetDocs(
+    tx,
+    rows.filter((r) => r.action === 'write').map((r) => r.id)
+  )
+  const gone = rows.filter((r) => r.action === 'remove').map((r) => r.id)
+  return settleBatch(tx, 'package', rows, [
+    search.bulkIndexPackages(docs),
+    // One at a time: each is a delete-by-query that refreshes the index
+    (async () => {
+      for (const id of gone) await search.deletePackage(id)
+    })(),
+  ])
+}
+
+/** What one batch of a sync did: rows read, marks cleared, documents refused */
+interface SyncBatch {
+  read: number
+  cleared: number
+  refused: string[]
 }
 
 /** Whether a batch left nothing behind: short of a full one, and every row settled */
-const drained = (batch: { read: number; cleared: number; refused: string[] }) =>
+const drained = (batch: SyncBatch) =>
   batch.read < DOC_SYNC_BATCH && batch.cleared + batch.refused.length === batch.read
 
 /**
- * The job's side: every marked resource, a batch at a time, until none is
- * left. A row marked again while its batch was written is read again by the
- * next; one the index refused is not, or a batch of refusals would stop the
- * rest behind it.
+ * The job's side: every marked resource, then every marked dataset, a batch
+ * at a time, until none is left. A row marked again while its batch was
+ * written is read again by the next; one the index refused is not, or a batch
+ * of refusals would stop the rest behind it.
  *
  * The lock is taken per batch, so a job behind another, or behind an edit,
  * waits one batch and then takes turns with it. Refused documents are
  * returned for the log; their marks stay. A row held by another transaction
  * past {@link DOC_SYNC_ROW_LOCK_WAIT_MS} throws, for the queue to retry.
  */
-export async function syncDueResourceDocs(
+export async function syncDueSearchDocs(
   db: Database,
   search: SearchAdapter,
   { rowLockWaitMs = DOC_SYNC_ROW_LOCK_WAIT_MS }: { rowLockWaitMs?: number } = {}
 ): Promise<{ synced: number; refused: string[] }> {
+  const kinds = [
+    { id: resource.id, sync: syncMarkedDocs },
+    { id: packageTable.id, sync: syncMarkedPackageDocs },
+  ]
   let synced = 0
-  const refused = new Set<string>()
-  for (;;) {
-    const skip = refused.size > 0 ? notInArray(resource.id, [...refused]) : undefined
-    const batch = await withGlobalAdvisoryLock(db, RESOURCE_DOC_SYNC_LOCK, async (tx) => {
-      // After the lock, not before: waiting a rebuild's batch out is expected
-      await lockTimeout(tx, rowLockWaitMs)
-      return syncMarkedDocs(tx, search, skip)
-    })
-    synced += batch.cleared
-    for (const id of batch.refused) refused.add(id)
-    if (drained(batch)) return { synced, refused: [...refused] }
+  const refused = kinds.map(() => new Set<string>())
+  let pending = kinds.map((_, i) => i)
+  // A batch of each in turn, until neither has any left: resources first to
+  // the end, a steady stream of their marks would hold the datasets' back
+  while (pending.length > 0) {
+    const next: number[] = []
+    for (const i of pending) {
+      const { id, sync } = kinds[i]
+      const skip = [...refused[i]]
+      const batch = await withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, async (tx) => {
+        // After the lock, not before: waiting a rebuild's batch out is expected
+        await lockTimeout(tx, rowLockWaitMs)
+        return sync(tx, search, skip.length > 0 ? notInArray(id, skip) : undefined)
+      })
+      synced += batch.cleared
+      for (const r of batch.refused) refused[i].add(r)
+      if (!drained(batch)) next.push(i)
+    }
+    pending = next
   }
+  return { synced, refused: refused.flatMap((r) => [...r]) }
 }
 
 /**
@@ -319,100 +419,127 @@ export async function writeMarkedResourceDocs(
     'packageId' in scope
       ? eq(resource.packageId, scope.packageId)
       : inArray(resource.id, scope.resourceIds)
+  await writeMarkedUnderLock(db, deps, resource, where, (tx) =>
+    syncMarkedDocs(tx, deps.search, where)
+  )
+}
+
+/** {@link writeMarkedResourceDocs} for a dataset's own document */
+export async function writeMarkedPackageDoc(
+  db: Database,
+  deps: PackageSyncDeps,
+  packageId: string
+): Promise<void> {
+  const where = eq(packageTable.id, packageId)
+  await writeMarkedUnderLock(db, deps, packageTable, where, (tx) =>
+    syncMarkedPackageDocs(tx, deps.search, where)
+  )
+}
+
+/**
+ * The edit's write, under the sync's lock if it is free and one batch at most;
+ * whatever it does not settle is asked of the job, as long as something in
+ * scope is marked.
+ */
+async function writeMarkedUnderLock(
+  db: Database,
+  deps: PackageSyncDeps,
+  table: typeof resource | typeof packageTable,
+  where: SQL,
+  sync: (tx: Transaction) => Promise<SyncBatch>
+): Promise<void> {
   let settled = false
   try {
     settled = await db.transaction(async (tx) => {
-      if (!(await tryLockInTransaction(tx, RESOURCE_DOC_SYNC_LOCK, ''))) {
-        // Nothing marked is nothing for the job either
+      // Nothing marked is nothing for the job either
+      if (!(await tryLockInTransaction(tx, SEARCH_DOC_SYNC_LOCK, ''))) {
         const [due] = await tx
-          .select({ id: resource.id })
-          .from(resource)
-          .where(and(isNotNull(resource.docSyncDueAt), where))
+          .select({ id: table.id })
+          .from(table)
+          .where(and(isNotNull(table.docSyncDueAt), where))
           .limit(1)
         return !due
       }
       await lockTimeout(tx, DOC_SYNC_EDIT_ROW_LOCK_WAIT_MS)
-      const batch = await syncMarkedDocs(tx, deps.search, where)
+      const batch = await sync(tx)
       // A refusal is the job's to report
       return batch.read === 0 || (drained(batch) && batch.refused.length === 0)
     })
   } catch (err) {
     if (!isLockTimeout(err)) {
-      deps.logger.error({ err }, 'Resource document write failed; the sync job will retry')
+      deps.logger.error({ err }, 'Search document write failed; the sync job will retry')
     }
   }
-  if (!settled) await enqueueResourceDocSync(deps.queue, deps.logger)
+  if (!settled) await enqueueSearchDocSync(deps.queue, deps.logger)
+}
+
+/** How a list of `{ packageId, name }` rows groups by package */
+function namesByPackage(rows: { packageId: string; name: string }[]): Map<string, string[]> {
+  const byPackage = new Map<string, string[]>()
+  for (const r of rows) {
+    const names = byPackage.get(r.packageId)
+    if (names) names.push(r.name)
+    else byPackage.set(r.packageId, [r.name])
+  }
+  return byPackage
 }
 
 /**
- * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).
- * Does NOT include resource-level data — resource documents are written apart.
- * Returns false when the package is not active (nothing indexed).
+ * The search documents of the live packages among `ids`, read from their rows
+ * — with the names of the organization and groups they carry, which is why a
+ * rename marks the packages that carry the name. Resource-level data is in
+ * the resources' own documents. Called under {@link SEARCH_DOC_SYNC_LOCK} by
+ * every writer, so a document read before an edit cannot land after it.
  */
-export async function indexPackageMetadata(
-  db: Database,
-  search: SearchAdapter,
-  packageId: string
-): Promise<boolean> {
-  const [pkg] = await db
-    .select({
-      id: packageTable.id,
-      name: packageTable.name,
-      title: packageTable.title,
-      notes: packageTable.notes,
-      ownerOrg: packageTable.ownerOrg,
-      private: packageTable.private,
-      creatorUserId: packageTable.creatorUserId,
-      licenseId: packageTable.licenseId,
-      created: packageTable.created,
-      updated: packageTable.updated,
-    })
-    .from(packageTable)
-    .where(and(eq(packageTable.id, packageId), eq(packageTable.state, 'active')))
-    .limit(1)
-
-  if (!pkg) return false
-
-  const [orgRow, groups, tags] = await Promise.all([
-    pkg.ownerOrg
-      ? db
-          .select({ name: organization.name })
-          .from(organization)
-          .where(eq(organization.id, pkg.ownerOrg))
-          .limit(1)
-          .then(([r]) => r ?? null)
-      : Promise.resolve(null),
-    db
-      .select({ name: group.name })
+async function buildDatasetDocs(q: Database | Transaction, ids: string[]): Promise<DatasetDoc[]> {
+  if (ids.length === 0) return []
+  const [details, groups, tags] = await Promise.all([
+    q
+      .select({
+        id: packageTable.id,
+        name: packageTable.name,
+        title: packageTable.title,
+        notes: packageTable.notes,
+        ownerOrg: packageTable.ownerOrg,
+        organization: organization.name,
+        private: packageTable.private,
+        creatorUserId: packageTable.creatorUserId,
+        licenseId: packageTable.licenseId,
+        created: packageTable.created,
+        updated: packageTable.updated,
+      })
+      .from(packageTable)
+      .leftJoin(organization, eq(organization.id, packageTable.ownerOrg))
+      .where(and(inArray(packageTable.id, ids), eq(packageTable.state, 'active'))),
+    q
+      .select({ packageId: packageGroup.packageId, name: group.name })
       .from(packageGroup)
       .innerJoin(group, eq(packageGroup.groupId, group.id))
-      .where(eq(packageGroup.packageId, packageId)),
-    db
-      .select({ name: tag.name })
+      .where(inArray(packageGroup.packageId, ids)),
+    q
+      .select({ packageId: packageTag.packageId, name: tag.name })
       .from(packageTag)
       .innerJoin(tag, eq(packageTag.tagId, tag.id))
-      .where(eq(packageTag.packageId, packageId))
+      .where(inArray(packageTag.packageId, ids))
       .orderBy(tag.name),
   ])
-
-  const doc: DatasetDoc = {
-    id: pkg.id,
-    name: pkg.name,
-    title: pkg.title ?? undefined,
-    notes: pkg.notes ?? undefined,
-    organization: orgRow?.name ?? undefined,
-    license_id: pkg.licenseId ?? undefined,
-    groups: groups.map((g) => g.name),
-    tags: tags.map((t) => t.name),
-    private: pkg.private,
-    owner_org_id: pkg.ownerOrg ?? undefined,
-    creator_user_id: pkg.creatorUserId ?? undefined,
-    created: pkg.created,
-    updated: pkg.updated,
-  }
-
-  await search.indexPackage(doc)
-  return true
+  const groupsByPkg = namesByPackage(groups)
+  const tagsByPkg = namesByPackage(tags)
+  return details.map((d) => ({
+    id: d.id,
+    name: d.name,
+    title: d.title ?? undefined,
+    notes: d.notes ?? undefined,
+    organization: d.organization ?? undefined,
+    license_id: d.licenseId ?? undefined,
+    groups: groupsByPkg.get(d.id) ?? [],
+    tags: tagsByPkg.get(d.id) ?? [],
+    private: d.private,
+    owner_org_id: d.ownerOrg ?? undefined,
+    creator_user_id: d.creatorUserId ?? undefined,
+    created: d.created,
+    updated: d.updated,
+  }))
 }
 
 /** Resource rows the index may hold: active, under an active package (ADR-039). */
@@ -532,90 +659,14 @@ export async function rebuildMetadataIndex(
     const batch = packages.slice(i, i + BATCH_SIZE)
     const batchIds = batch.map((p) => p.id)
 
-    const [details, allGroups, allTags] = await Promise.all([
-      db
-        .select({
-          id: packageTable.id,
-          name: packageTable.name,
-          title: packageTable.title,
-          notes: packageTable.notes,
-          ownerOrg: packageTable.ownerOrg,
-          private: packageTable.private,
-          creatorUserId: packageTable.creatorUserId,
-          licenseId: packageTable.licenseId,
-          created: packageTable.created,
-          updated: packageTable.updated,
-        })
-        .from(packageTable)
-        .where(inArray(packageTable.id, batchIds)),
-      db
-        .select({ packageId: packageGroup.packageId, name: group.name })
-        .from(packageGroup)
-        .innerJoin(group, eq(packageGroup.groupId, group.id))
-        .where(inArray(packageGroup.packageId, batchIds)),
-      db
-        .select({ packageId: packageTag.packageId, name: tag.name })
-        .from(packageTag)
-        .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(inArray(packageTag.packageId, batchIds))
-        .orderBy(tag.name),
-    ])
-
-    const orgIds = [...new Set(details.map((d) => d.ownerOrg).filter((id): id is string => !!id))]
-    const orgMap = new Map<string, string>()
-    if (orgIds.length > 0) {
-      const orgs = await db
-        .select({ id: organization.id, name: organization.name })
-        .from(organization)
-        .where(inArray(organization.id, orgIds))
-      for (const o of orgs) orgMap.set(o.id, o.name)
-    }
-
-    const groupsByPkg = new Map<string, string[]>()
-    for (const g of allGroups) {
-      let arr = groupsByPkg.get(g.packageId)
-      if (!arr) {
-        arr = []
-        groupsByPkg.set(g.packageId, arr)
-      }
-      arr.push(g.name)
-    }
-    const tagsByPkg = new Map<string, string[]>()
-    for (const t of allTags) {
-      let arr = tagsByPkg.get(t.packageId)
-      if (!arr) {
-        arr = []
-        tagsByPkg.set(t.packageId, arr)
-      }
-      arr.push(t.name)
-    }
-
-    const packageDocs: DatasetDoc[] = details.map((detail) => {
-      return {
-        id: detail.id,
-        name: detail.name,
-        title: detail.title ?? undefined,
-        notes: detail.notes ?? undefined,
-        organization: detail.ownerOrg ? orgMap.get(detail.ownerOrg) : undefined,
-        license_id: detail.licenseId ?? undefined,
-        groups: groupsByPkg.get(detail.id) ?? [],
-        tags: tagsByPkg.get(detail.id) ?? [],
-        private: detail.private,
-        owner_org_id: detail.ownerOrg ?? undefined,
-        creator_user_id: detail.creatorUserId ?? undefined,
-        created: detail.created,
-        updated: detail.updated,
-      }
-    })
-
     // The resources' documents a batch at a time, each read and written under
     // the sync's lock: a resource edited between the read and the write would
     // otherwise get the older document back after its own write had cleared
-    // its mark. Held per batch, not for the datasets', which are not written
-    // through it — holding it longer would only keep the others waiting.
+    // its mark. Held per batch — holding it longer would only keep the others
+    // waiting. The datasets' go the same way, below.
     let after: string | undefined
     for (;;) {
-      const written = await withGlobalAdvisoryLock(db, RESOURCE_DOC_SYNC_LOCK, async (tx) => {
+      const written = await withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, async (tx) => {
         const rows = await activeResourceDocRows(
           tx,
           and(inArray(resource.packageId, batchIds), after ? gt(resource.id, after) : undefined)
@@ -630,10 +681,11 @@ export async function rebuildMetadataIndex(
       after = written[written.length - 1].id
     }
 
-    if (packageDocs.length > 0) {
-      await search.bulkIndexPackages(packageDocs)
-      packagesIndexed += packageDocs.length
-    }
+    packagesIndexed += await withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, async (tx) => {
+      const docs = await buildDatasetDocs(tx, batchIds)
+      await search.bulkIndexPackages(docs)
+      return docs.length
+    })
   }
 
   // Packages first: deleting one takes its children with it, so the resource
@@ -642,7 +694,7 @@ export async function rebuildMetadataIndex(
   // documents under it, and a delete — this one takes the children with it —
   // landing between a page's check and its deletes would lose them
   const underLock = <T>(page: (q: Database | Transaction) => Promise<T>) =>
-    withGlobalAdvisoryLock(db, RESOURCE_DOC_SYNC_LOCK, page)
+    withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, page)
   const packagesRemoved = await dropIndexedWithoutRow(
     (after, limit) => search.indexedDocumentIds('package', after, limit),
     (ids, q) =>

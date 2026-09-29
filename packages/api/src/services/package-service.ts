@@ -54,6 +54,7 @@ import {
   publicResourceColumns,
   ResourceService,
 } from './resource-service'
+import { markPackageDocs } from './doc-marks'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { reclaimLakeStorage } from './lake-reclaim'
@@ -99,9 +100,11 @@ function pickDefined<T extends object, K extends keyof T>(obj: T, keys: readonly
   return out
 }
 
-const packageColumns = getTableColumns(packageTable)
+// Whether the search index has caught up is this deployment's business, not a
+// reader's — and a column added to the table is public the moment it is added
+const { docSyncDueAt: _docSyncDueAt, ...packageColumns } = getTableColumns(packageTable)
 
-type PackageRow = typeof packageTable.$inferSelect
+type PackageRow = Omit<typeof packageTable.$inferSelect, 'docSyncDueAt'>
 export type PackageAuthorize = (pkg: PackageRow) => Promise<void>
 
 export interface PackageFilterParams {
@@ -134,6 +137,15 @@ export interface PackageFilterParams {
   isPrivate?: boolean
   sortBy?: 'updated' | 'created' | 'name'
   sortOrder?: 'asc' | 'desc'
+}
+
+/**
+ * Mark a live package and its resources again, for a publish or restore sent
+ * again: its caller's sync is the retry, and the sync writes only what is marked.
+ */
+async function markForSyncRetry(tx: Transaction, packageId: string): Promise<void> {
+  await markPackageDocs(tx, eq(packageTable.id, packageId))
+  await markPackageResourceDocs(tx, packageId)
 }
 
 export class PackageService {
@@ -590,6 +602,8 @@ export class PackageService {
         extras: input.extras ?? {},
         creatorUserId: opts.creatorUserId,
         state: opts.state,
+        // A draft is written to the index by publish (ADR-039)
+        ...(opts.state !== 'draft' && { docSyncDueAt: sql`NOW()` }),
       })
       .returning(packageColumns)
 
@@ -710,7 +724,7 @@ export class PackageService {
 
       const [updated] = await tx
         .update(packageTable)
-        .set({ ...setValues, updated: sql`NOW()` })
+        .set({ ...setValues, updated: sql`NOW()`, docSyncDueAt: sql`NOW()` })
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
 
@@ -753,10 +767,11 @@ export class PackageService {
         .set({
           state: 'deleted',
           updated: sql`NOW()`,
+          docSyncDueAt: sql`NOW()`,
         })
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
-      // The route removes the documents, but a writer that read a resource
+      // The sync removes the documents, and a writer that read a resource
       // while the dataset was live can write one back; marked, the next sync
       // removes it again
       await markPackageResourceDocs(tx, existing.id)
@@ -803,7 +818,7 @@ export class PackageService {
         await deleteOrphanFreeTags(tx)
         return deleted
       })
-      await purgePackageExternals(target.id, deps)
+      await purgePackageExternals(this.db, target.id, deps)
       if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
       return row
     })
@@ -892,7 +907,10 @@ export class PackageService {
       if (authorize) await authorize(existing)
       // The input is ignored: a retry must not become a way to change the
       // visibility of a package that is no longer in the trash
-      if (existing.state === 'active') return existing
+      if (existing.state === 'active') {
+        await markForSyncRetry(tx, existing.id)
+        return existing
+      }
 
       // Closes a purge race: restoring a package under a 'purging' org would let the
       // in-flight org purge delete the just-restored package and wipe its files.
@@ -910,7 +928,7 @@ export class PackageService {
 
       const [restored] = await tx
         .update(packageTable)
-        .set({ state: 'active', ...input, updated: sql`NOW()` })
+        .set({ state: 'active', ...input, updated: sql`NOW()`, docSyncDueAt: sql`NOW()` })
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
       // In the same transaction: committed without it, a crash before the
@@ -928,8 +946,9 @@ export class PackageService {
    * Requires a real name (not the auto-generated placeholder), an ownerOrg
    * and a licenseId.
    * Search-index / embed / content-index side effects belong to the caller.
-   * Idempotent: an already-active package is returned as-is so the caller can
-   * re-run the publish-time sync (retry after a search-sync failure).
+   * Idempotent: an already-active package is returned as it is, marked again,
+   * so the caller can re-run the publish-time sync (retry after a search-sync
+   * failure) — the sync writes only what is marked.
    */
   async publish(nameOrId: string, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
@@ -939,7 +958,10 @@ export class PackageService {
       })
       if (authorize) await authorize(existing)
 
-      if (existing.state === 'active') return existing
+      if (existing.state === 'active') {
+        await markForSyncRetry(tx, existing.id)
+        return existing
+      }
 
       // Shared precondition check (ADR-039) — the license requirement keeps the
       // UI invariant that active packages always carry a license
@@ -969,6 +991,7 @@ export class PackageService {
         .set({
           state: 'active',
           updated: sql`NOW()`,
+          docSyncDueAt: sql`NOW()`,
         })
         .where(and(eq(packageTable.id, existing.id), eq(packageTable.state, 'draft')))
         .returning(packageColumns)
@@ -1046,7 +1069,7 @@ export class PackageService {
     // Held across the whole erasure (ADR-044). A refusal leaves the row
     // 'purging', which is exactly the state a re-run recovers from.
     const purged = await withResourceClaimsOrConflict(this.db, resourceIds, async () => {
-      await purgePackageExternals(claimed.id, deps)
+      await purgePackageExternals(this.db, claimed.id, deps)
       if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
       return this.finalizeDraftPurge(claimed.id)
     })

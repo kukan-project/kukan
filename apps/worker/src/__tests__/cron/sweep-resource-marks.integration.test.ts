@@ -5,8 +5,8 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { packageTable, resource } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { createLogger, SYNC_RESOURCE_DOC_JOB_TYPE } from '@kukan/shared'
-import { sweepResourceDocs } from '../../cron/sweep-resource-marks'
+import { createLogger, SYNC_SEARCH_DOCS_JOB_TYPE } from '@kukan/shared'
+import { sweepSearchDocs } from '../../cron/sweep-resource-marks'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -44,23 +44,36 @@ afterAll(async () => {
   await closeTestDb()
 })
 
-describe('sweepResourceDocs', () => {
+describe('sweepSearchDocs', () => {
   it('asks for one sync however many documents nobody heard about', async () => {
     // The sync works through every mark, so one waiting job covers them all
     await seed()
     await seed()
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(true)
+    expect(await sweepSearchDocs(db, queue, log)).toBe(true)
     expect(enqueue).toHaveBeenCalledOnce()
-    expect(enqueue).toHaveBeenCalledWith(SYNC_RESOURCE_DOC_JOB_TYPE, {}, { unlessWaiting: true })
+    expect(enqueue).toHaveBeenCalledWith(SYNC_SEARCH_DOCS_JOB_TYPE, {}, { unlessWaiting: true })
+  })
+
+  it("asks for a dataset's own document nobody heard about", async () => {
+    // A renamed organization marks its datasets, and nothing else
+    await db.insert(packageTable).values({
+      name: 'pkg-renamed-org',
+      state: 'active',
+      docSyncDueAt: sql`NOW() - interval '1 hour'`,
+    })
+    const { queue, enqueue } = fakeQueue()
+
+    expect(await sweepSearchDocs(db, queue, log)).toBe(true)
+    expect(enqueue).toHaveBeenCalledWith(SYNC_SEARCH_DOCS_JOB_TYPE, {}, { unlessWaiting: true })
   })
 
   it('leaves a document that already agrees with its row', async () => {
     await seed({ synced: true })
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(false)
+    expect(await sweepSearchDocs(db, queue, log)).toBe(false)
     expect(enqueue).not.toHaveBeenCalled()
   })
 
@@ -69,7 +82,7 @@ describe('sweepResourceDocs', () => {
     await seed({ packageState: 'draft' })
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(true)
+    expect(await sweepSearchDocs(db, queue, log)).toBe(true)
     expect(enqueue).toHaveBeenCalledOnce()
   })
 
@@ -83,7 +96,7 @@ describe('sweepResourceDocs', () => {
       .values({ packageId: pkg.id, name: 'fresh.csv', state: 'active', docSyncDueAt: sql`NOW()` })
     const { queue, enqueue } = fakeQueue()
 
-    expect(await sweepResourceDocs(db, queue, log)).toBe(false)
+    expect(await sweepSearchDocs(db, queue, log)).toBe(false)
     expect(enqueue).not.toHaveBeenCalled()
   })
 })

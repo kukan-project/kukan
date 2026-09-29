@@ -22,14 +22,17 @@ export const RESOURCE_POSITION_LOCK = 'resource_position'
 export const LAKE_INGEST_LOCK = 'lake_ingest'
 
 /**
- * Serialize the search-document sync (ADR-053 §9.3).
+ * Serialize the search-document sync (ADR-053 §9.3): resources' documents and
+ * datasets'.
  *
- * Two writers of the same resource's document — the sync job, an edit — can
+ * Two writers of the same document — the sync job, an edit, the rebuild — can
  * land out of order: the one that read the row first can write last, putting
  * the older document back after the newer one cleared the mark. One at a time,
- * each batch's write lands before the next batch reads.
+ * each batch's write lands before the next batch reads. The key is the one it
+ * had when it held resources alone, so processes on either side of an upgrade
+ * still take turns.
  */
-export const RESOURCE_DOC_SYNC_LOCK = 'resource_doc_sync'
+export const SEARCH_DOC_SYNC_LOCK = 'resource_doc_sync'
 
 /**
  * One embed job at a time (ADR-054). The job holds no row while the provider

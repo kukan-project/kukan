@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { GroupService } from '../services/group-service'
+import { enqueueSearchDocSync } from '../services/search-index'
 import {
   createGroupSchema,
   updateGroupSchema,
@@ -76,6 +77,10 @@ groupsRouter.put('/:nameOrId', zValidator('json', updateGroupSchema), async (c) 
 
   const input = c.req.valid('json')
   const grp = await service.update(nameOrId, input)
+  // A rename marked the group's datasets; the job rewrites their documents.
+  // Asked for every time: whether it was a rename is the service's to tell,
+  // read under the row's lock, and a job with nothing marked does nothing
+  await enqueueSearchDocSync(c.get('queue'), c.get('logger'))
   return c.json(grp)
 })
 
@@ -106,6 +111,8 @@ groupsRouter.post('/:nameOrId/purge', async (c) => {
   const existing = await service.getByNameOrId(nameOrId, 'deleted')
 
   const result = await service.purge(existing.id)
+  // The purge marked the group's datasets; the job drops the name from them
+  await enqueueSearchDocSync(c.get('queue'), c.get('logger'))
   return c.json(result)
 })
 

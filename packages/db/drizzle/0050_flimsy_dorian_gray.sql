@@ -1,0 +1,2 @@
+ALTER TABLE "package" ADD COLUMN "doc_sync_due_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "idx_package_doc_sync_due" ON "package" USING btree ("doc_sync_due_at") WHERE "package"."doc_sync_due_at" IS NOT NULL;

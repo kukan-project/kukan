@@ -36,7 +36,7 @@ import {
   REINDEX_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,
-  SYNC_RESOURCE_DOC_JOB_TYPE,
+  SYNC_SEARCH_DOCS_JOB_TYPE,
   type JobStatus,
 } from '@kukan/shared'
 
@@ -49,7 +49,7 @@ interface JobCount {
 /** Every job type, in the order they matter day to day; one not listed goes last. */
 const TYPE_ORDER: string[] = [
   PIPELINE_JOB_TYPE,
-  SYNC_RESOURCE_DOC_JOB_TYPE,
+  SYNC_SEARCH_DOCS_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,

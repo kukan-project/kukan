@@ -62,7 +62,7 @@ describe('AdminQueuePage', () => {
         items: [
           { type: 'resource-pipeline', status: 'running', count: 1 },
           { type: 'resource-pipeline', status: 'waiting', count: 392 },
-          { type: 'sync-resource-doc', status: 'waiting', count: 113 },
+          { type: 'sync-search-docs', status: 'waiting', count: 113 },
           { type: 'summarize-package', status: 'dead', count: 3 },
         ],
       })
@@ -98,7 +98,7 @@ describe('AdminQueuePage', () => {
     const sync = (await screen.findByText('Search document sync')).closest('tr')!
     fireEvent.click(within(sync).getByRole('button', { name: '113' }))
     expect(mockUsePaginatedFetch).toHaveBeenLastCalledWith(
-      '/api/v1/admin/queue/jobs?status=waiting&type=sync-resource-doc'
+      '/api/v1/admin/queue/jobs?status=waiting&type=sync-search-docs'
     )
   })
 

@@ -509,7 +509,7 @@
       "total": "合計",
       "types": {
         "resource-pipeline": "リソースのパイプライン",
-        "sync-resource-doc": "検索文書の同期",
+        "sync-search-docs": "検索文書の同期",
         "lake-ingest-version": "版の差分取り込み",
         "embed-resources": "リソースの埋め込み生成",
         "summarize-package": "データセットの抄録生成",

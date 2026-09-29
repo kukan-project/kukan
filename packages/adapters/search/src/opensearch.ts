@@ -858,16 +858,6 @@ export class OpenSearchAdapter implements SearchAdapter {
   // Dataset-level operations (package documents)
   // ------------------------------------------------------------------
 
-  async indexPackage(doc: DatasetDoc): Promise<void> {
-    await this.ensureWritableIndex()
-    await this.client.index({
-      index: this.searchIndex,
-      id: doc.id,
-      body: { ...doc, join_field: 'package' },
-      refresh: 'wait_for',
-    })
-  }
-
   async deletePackage(id: string): Promise<void> {
     await this.ensureIndex()
     // Delete all child documents (resources + contents) routed to this package
@@ -909,10 +899,10 @@ export class OpenSearchAdapter implements SearchAdapter {
     ])
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {
-      const failed = response.body.items.filter(
-        (item: { index?: { error?: unknown } }) => item.index?.error
+      const failed = response.body.items.flatMap((item) =>
+        item.index?.error && item.index._id ? [item.index._id] : []
       )
-      throw new Error(`Bulk indexing failed for ${failed.length} documents`)
+      throw new BulkIndexError(failed)
     }
   }
 

@@ -32,6 +32,7 @@ import type {
 import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { cancelResourceRun } from './pipeline-claim'
+import { lockedInIdOrder } from './doc-marks'
 import { embeddingDueIf } from './resource-embedding'
 import { PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import {
@@ -89,14 +90,24 @@ export const publicResourceColumns = {
  * in the same statement: a publish or a restore is when they are built.
  */
 export async function markPackageResourceDocs(
-  db: Pick<Database, 'update'>,
+  db: Pick<Database, 'select' | 'update'>,
   packageId: string,
   { embeddings = false }: { embeddings?: boolean } = {}
 ): Promise<void> {
   await db
     .update(resource)
     .set({ docSyncDueAt: sql`NOW()`, ...(embeddings && { embeddingDueAt: sql`NOW()` }) })
-    .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
+    .where(
+      inArray(
+        resource.id,
+        // In id order, as the sync clears them (see doc-marks)
+        lockedInIdOrder(
+          db,
+          resource,
+          and(eq(resource.packageId, packageId), eq(resource.state, 'active'))
+        )
+      )
+    )
 }
 
 /** What a resource's search document is built from (see search-index.ts) — one

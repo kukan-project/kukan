@@ -3,8 +3,8 @@
  * Business logic for group management
  */
 
-import { eq, ilike, and, or, sql, asc, desc, count, getTableColumns } from 'drizzle-orm'
-import type { Database } from '@kukan/db'
+import { eq, ilike, and, or, sql, asc, desc, count, getTableColumns, inArray } from 'drizzle-orm'
+import type { Database, Transaction } from '@kukan/db'
 import { group, userGroupMembership, user, packageTable, packageGroup } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type {
@@ -13,7 +13,22 @@ import type {
   CreateGroupInput,
   UpdateGroupInput,
 } from '@kukan/shared'
+import { markPackageDocs } from './doc-marks'
 import { groupMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
+
+/** Mark a group's datasets for the sync: their search documents carry its name */
+async function markGroupPackages(tx: Transaction, groupId: string): Promise<void> {
+  await markPackageDocs(
+    tx,
+    inArray(
+      packageTable.id,
+      tx
+        .select({ id: packageGroup.packageId })
+        .from(packageGroup)
+        .where(eq(packageGroup.groupId, groupId))
+    )
+  )
+}
 
 export class GroupService {
   constructor(private db: Database) {}
@@ -131,20 +146,33 @@ export class GroupService {
   async update(nameOrId: string, input: UpdateGroupInput) {
     const existing = await this.getByNameOrId(nameOrId)
 
-    const [updated] = await this.db
-      .update(group)
-      .set({
-        name: input.name,
-        title: input.title ?? null,
-        description: input.description ?? null,
-        imageUrl: input.imageUrl ?? null,
-        extras: input.extras,
-        updated: new Date(),
-      })
-      .where(eq(group.id, existing.id))
-      .returning()
-
-    return updated
+    return await this.db.transaction(async (tx) => {
+      // The name the documents carry now, and the datasets marked before the
+      // rename — see OrganizationService.update. Here it matters most: a
+      // dataset edit relinks its groups, checking its key to this row while
+      // holding its own
+      const [before] = await tx
+        .select({ name: group.name })
+        .from(group)
+        .where(eq(group.id, existing.id))
+        .for('no key update')
+      if (before && input.name !== before.name) await markGroupPackages(tx, existing.id)
+      const [updated] = await tx
+        .update(group)
+        .set({
+          name: input.name,
+          title: input.title ?? null,
+          description: input.description ?? null,
+          imageUrl: input.imageUrl ?? null,
+          extras: input.extras,
+          updated: new Date(),
+        })
+        .where(eq(group.id, existing.id))
+        .returning()
+      // Again, now the rename holds the row whole — see OrganizationService.update
+      if (before && input.name !== before.name) await markGroupPackages(tx, existing.id)
+      return updated
+    })
   }
 
   async delete(nameOrId: string) {
@@ -163,10 +191,20 @@ export class GroupService {
 
   /** Hard-delete a soft-deleted group and all related data (CASCADE). */
   async purge(id: string) {
-    const [purged] = await this.db.delete(group).where(eq(group.id, id)).returning()
+    return await this.db.transaction(async (tx) => {
+      // Before the links go with it: the documents still name the group. As
+      // for a rename, twice: once ahead of the row's full lock, against the
+      // edit that relinks while holding its own row, and again once it is
+      // held, for a link that committed in between — after the delete, the
+      // link is gone and the dataset cannot be found
+      await markGroupPackages(tx, id)
+      await tx.select({ id: group.id }).from(group).where(eq(group.id, id)).for('update')
+      await markGroupPackages(tx, id)
+      const [purged] = await tx.delete(group).where(eq(group.id, id)).returning()
 
-    if (!purged) throw new NotFoundError('Group', id)
-    return purged
+      if (!purged) throw new NotFoundError('Group', id)
+      return purged
+    })
   }
 
   /** Restore a soft-deleted group back to active state. */

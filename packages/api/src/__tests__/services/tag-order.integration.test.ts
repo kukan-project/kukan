@@ -10,7 +10,7 @@ import { sql } from 'drizzle-orm'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import type { DatasetDoc, SearchAdapter } from '@kukan/search-adapter'
 import { PackageService } from '../../services/package-service'
-import { indexPackageMetadata } from '../../services/search-index'
+import { syncDueSearchDocs } from '../../services/search-index'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -61,11 +61,18 @@ describe('tag display order', () => {
   })
 
   it('sorts the tags of an indexed search document by name', async () => {
-    const indexPackage = vi.fn()
+    const bulkIndexPackages = vi.fn()
 
-    await indexPackageMetadata(db, { indexPackage } as unknown as SearchAdapter, packageId)
+    await syncDueSearchDocs(db, {
+      bulkIndexPackages,
+      bulkIndexResources: vi.fn(),
+      deleteResources: vi.fn(),
+      deletePackage: vi.fn(),
+    } as unknown as SearchAdapter)
 
-    expect((indexPackage.mock.calls[0][0] as DatasetDoc).tags).toEqual(SORTED)
+    const [doc] = bulkIndexPackages.mock.calls[0][0] as DatasetDoc[]
+    expect(doc.id).toBe(packageId)
+    expect(doc.tags).toEqual(SORTED)
   })
 
   it('sorts the tags of a PostgreSQL search result by name', async () => {

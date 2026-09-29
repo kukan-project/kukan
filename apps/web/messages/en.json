@@ -509,7 +509,7 @@
       "total": "Total",
       "types": {
         "resource-pipeline": "Resource pipeline",
-        "sync-resource-doc": "Search document sync",
+        "sync-search-docs": "Search document sync",
         "lake-ingest-version": "Version lake ingest",
         "embed-resources": "Resource embeddings",
         "summarize-package": "Dataset abstracts",

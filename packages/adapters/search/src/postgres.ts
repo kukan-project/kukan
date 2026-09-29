@@ -69,10 +69,6 @@ export class PostgresSearchAdapter implements SearchAdapter {
     this.vectorMinSimilarity = options?.vectorMinSimilarity ?? DEFAULT_VECTOR_MIN_SIMILARITY
   }
 
-  async indexPackage(_doc: DatasetDoc): Promise<void> {
-    // No-op: data lives directly in the package table
-  }
-
   /** Build WHERE conditions from search query and filters */
   private buildConditions(query: SearchQuery): SQL[] {
     const state = query.filters?.state ?? 'active'
