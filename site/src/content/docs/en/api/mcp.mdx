@@ -17,20 +17,35 @@ Operates in stateless mode using the Streamable HTTP transport.
 
 ## Connecting
 
-### Claude Code / Claude Desktop
+### Claude Code
 
-Add the following to your settings:
+Add it with the CLI:
+
+```bash
+claude mcp add --transport http kukan https://your-kukan-site/api/mcp
+```
+
+To write it in a project's `.mcp.json`, set `type` to `http`:
 
 ```json
 {
   "mcpServers": {
     "kukan": {
-      "type": "url",
+      "type": "http",
       "url": "https://your-kukan-site/api/mcp"
     }
   }
 }
 ```
+
+To include private datasets of your organizations, pass an [API token](/en/api/authentication/) as a header (`--header "Authorization: Bearer kukan_..."` on the CLI, or `"headers": { "Authorization": "Bearer kukan_..." }` in `.mcp.json`).
+
+### Claude Desktop / claude.ai
+
+Add `https://your-kukan-site/api/mcp` as a custom connector under **Connectors** in the settings (see the Claude Help Center for which plans allow it).
+
+- The connection comes from Anthropic's cloud, not from your computer. **A site the internet cannot reach (a closed network, behind a VPN) cannot be connected.** Use a client that connects from your computer, such as Claude Code, instead
+- A custom connector cannot carry an API token header, so it reaches public datasets only
 
 ### Testing with curl
 

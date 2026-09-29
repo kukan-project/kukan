@@ -17,20 +17,35 @@ Streamable HTTP トランスポートを使用したステートレスモード�
 
 ## 接続方法
 
-### Claude Code / Claude Desktop
+### Claude Code
 
-設定ファイルに以下を追加します。
+コマンドで追加します。
+
+```bash
+claude mcp add --transport http kukan https://your-kukan-site/api/mcp
+```
+
+プロジェクトの `.mcp.json` に書く場合は、`type` を `http` にします。
 
 ```json
 {
   "mcpServers": {
     "kukan": {
-      "type": "url",
+      "type": "http",
       "url": "https://your-kukan-site/api/mcp"
     }
   }
 }
 ```
+
+所属組織の非公開データセットも扱う場合は、[API トークン](/ja/api/authentication/)をヘッダーで渡します（コマンドなら `--header "Authorization: Bearer kukan_..."`、`.mcp.json` なら `"headers": { "Authorization": "Bearer kukan_..." }`）。
+
+### Claude Desktop / claude.ai
+
+設定の「コネクタ」から、カスタムコネクタとして `https://your-kukan-site/api/mcp` を追加します（使えるプランは Claude のヘルプセンターを参照してください）。
+
+- 接続は利用者の PC からではなく Anthropic のクラウドから行われます。**インターネットから届かないサイト（閉域網・VPN の内側など）には接続できません**。その場合は、利用者の PC から接続する Claude Code などのクライアントを使ってください
+- カスタムコネクタには API トークンのヘッダーを設定できないため、公開データセットだけを扱います
 
 ### curl でのテスト
 
