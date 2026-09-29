@@ -454,7 +454,7 @@ When the upstream adds new fields to `src/types/brand.ts`, you may need to add t
 The upstream unit tests are designed to be brand-independent: inside tests, the contents of `brands/default/` are pinned to the KUKAN defaults. **No matter how you customize the brand, the upstream tests (CI) will keep passing.**
 
 - **Do not modify upstream test files.** If a customization breaks an upstream test, report it to the upstream repository via an issue instead of patching it in your fork
-- **Place tests for your custom components in `apps/web/brands/default/__tests__/`.** Files named `*.test.ts` / `*.test.tsx` are discovered automatically and run with `pnpm test`. Whether to write tests is up to your fork
+- **Place tests for your custom components in `apps/web/brands/default/__tests__/`** (with several brands, in each brand's `brands/<name>/__tests__/`). Files named `*.test.ts` / `*.test.tsx` are discovered automatically and run with `pnpm test`. In tests, `@/brand` always points at `brands/default/`, so import a brand's files by relative path (such as `../overrides/header`). Whether to write tests is up to your fork
 
 ```tsx
 // apps/web/brands/default/__tests__/header.test.tsx

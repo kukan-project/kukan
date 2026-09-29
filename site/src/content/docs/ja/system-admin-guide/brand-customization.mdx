@@ -455,7 +455,7 @@ git merge upstream/main
 本体のユニットテストはブランド非依存に設計されており、テスト内では `brands/default/` の内容が KUKAN デフォルト値に固定されます。**ブランドをどうカスタマイズしても本体のテスト（CI）はそのまま通ります**。
 
 - **本体のテストファイルは変更しないでください**。カスタマイズによって本体のテストが失敗する場合は、フォーク側で修正せず、本体リポジトリへ issue で報告してください
-- **カスタムコンポーネント自体のテストは `apps/web/brands/default/__tests__/` に配置します**。`*.test.ts` / `*.test.tsx` は自動的に検出され、`pnpm test` で実行されます。テストを書くかどうかはフォーク側の裁量です
+- **カスタムコンポーネント自体のテストは `apps/web/brands/default/__tests__/` に配置します**（複数ブランドでは各ブランドの `brands/<name>/__tests__/`）。`*.test.ts` / `*.test.tsx` は自動的に検出され、`pnpm test` で実行されます。テスト内の `@/brand` は常に `brands/default/` を指すので、ブランドのファイルは相対パス（`../overrides/header` など）で読み込んでください。テストを書くかどうかはフォーク側の裁量です
 
 ```tsx
 // apps/web/brands/default/__tests__/header.test.tsx

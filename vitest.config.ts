@@ -236,7 +236,8 @@ export default defineConfig({
           environment: 'happy-dom',
           globals: true,
           setupFiles: ['./src/__tests__/setup.ts'],
-          include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+          // A brand's own tests sit beside it (brands/<name>/__tests__)
+          include: ['src/**/__tests__/**/*.test.{ts,tsx}', 'brands/*/__tests__/**/*.test.{ts,tsx}'],
         },
         resolve: {
           alias: {
