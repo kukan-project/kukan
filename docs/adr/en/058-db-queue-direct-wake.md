@@ -88,6 +88,7 @@ One row per job. Proposed columns:
 | `type`         | Job type (the existing `*_JOB_TYPE`)                          |
 | `payload`      | JSONB                                                         |
 | `run_at`       | Can be taken from this time on (delayed delivery, retry wait) |
+| `priority`     | The order jobs are taken in (§6)                              |
 | `attempts`     | Number of times taken                                         |
 | `locked_until` | Lease expiry; NULL when not taken                             |
 | `locked_by`    | Identifier of the taking worker (checked on extend/complete)  |
@@ -97,7 +98,8 @@ One row per job. Proposed columns:
 - **Enqueue** is an INSERT. If the caller passes a transaction, it joins the same transaction as
   the business-data update (the defect in §1 goes away).
 - **Take** one row with `FOR UPDATE SKIP LOCKED` where `run_at <= now()` and the lease has
-  expired, advance `locked_until`, and increment `attempts`.
+  expired, in `priority` then `run_at` order (§6), advance `locked_until`, and increment
+  `attempts`.
 - **Extend** `locked_until` at the same cadence as SQS today (every 2 minutes, up to 90). The DB
   is awake while work is in progress, so the extending UPDATE does not block 0 ACU.
 - **Complete** is a DELETE. As with SQS, succeeded jobs are not kept.
@@ -213,6 +215,70 @@ waits meanwhile. The SQS receive loop was a single loop with the same property; 
 closed instead: waits on anything external are bounded (fetching external URLs, OpenSearch, AI
 abstracts and embeddings, S3 connection and idle time).
 
+### 6. The order jobs are taken in (addendum, 2026-09-29)
+
+At the migration, jobs were taken by `run_at` alone. Work a person was waiting for queued behind
+bulk work nobody was waiting for: an editor who updated one resource right after "Reprocess all
+resources" had queued several hundred `resource-pipeline` runs found that run behind all of them.
+
+`job.priority` is added, and jobs are taken in `priority` then `run_at` order (jobs queued
+together with the same `run_at` by `id`). The criterion is
+**who waits for the result**, not the job type. The same `resource-pipeline` has a person waiting
+when queued from an editor's save, and nobody waiting when fanned out from a catalog-wide button.
+Deciding by type would raise the jobs a bulk action fans out too, and achieve nothing.
+
+| Priority | Queued by                     | Examples                                                                                                                                                |
+| -------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| High     | Individual API operations     | Creating, updating, uploading or reprocessing a resource; reverting; changing the primary key; deleting a version                                       |
+| Normal   | Everything else (the default) | The runs queued for a dataset's resources on publish, restore or create-with-resources; hourly recovery; batch jobs; the index-loss recovery job itself |
+| Low      | Bulk work nobody waits for    | Catalog-wide actions an admin started and their fan-out; fan-out to every resource (including from index-loss recovery); health-check re-fetches        |
+
+- **The default is normal.** High and low are set explicitly by whoever queues. A queueing site
+  that forgets falls on the harmless side (making every API request high by default would flood
+  the queue with bulk work at high when a catalog-wide button forgot to say low).
+- **A job queued inside a handler inherits that job's priority.** Unless one is given, it is
+  queued at the priority of the running job (`AsyncLocalStorage`). Requeues on a held claim or a
+  fetch rate limit, lake ingests, the abstract chain and the rebuild after a version purge keep
+  the place of what set them off without their callers changing. A failed job waiting to retry
+  only has its row updated, so it keeps its priority.
+- **A job queued with `unlessWaiting` inherits nothing, and is normal unless told otherwise.**
+  These are jobs like the search document sync and the embedding job, which work through every
+  mark that is set rather than the caller's. Inherited from bulk work, they would wait behind it
+  holding an editor's mark; inherited from an individual operation, the continuation of a
+  catalog-wide rewrite (regenerating embeddings, say) would hold high for as long as it lasted.
+  At normal they run ahead of bulk work (low), so an editor's change does not wait. The queue
+  decides this, so a new batch job that forgets to say gets the same.
+- **`unlessWaiting` takes a waiting job of the same type and payload as a stand-in at any
+  priority, and raises it to the caller's if lower.** Left low, it would hold the caller back
+  behind bulk work; passed over, the same work would run twice (an index-loss recovery queued at
+  normal while a rebuild an admin queued at low waits, say). A different payload is different
+  work and stands in for nothing (a metadata-only rebuild is no stand-in for one that re-indexes
+  content).
+- Waiting runs for the same resource are not merged. Merging runs that differ in `rebuildOnly`
+  would make a new mode ("fetch again, and always rebuild the derivatives"). Unmerged, nothing
+  goes wrong; the low run costs one more run later.
+- **Fan-out to every resource is low wherever it is queued from.** The search index rebuild is
+  also queued when the worker finds the index lost. That recovery job itself is queued at normal
+  (so the dataset documents come back soon), and not at all while one is waiting (so the
+  once-a-minute check does not queue copies while the queue is busy). What fans out to every
+  resource (`PipelineService.enqueueAll`) always queues at low.
+- **No ageing.** Low progresses only when high and normal are empty, so normal is kept to what
+  people's actions bound (the fan-out of a publish or restore) and what has a bounded count
+  (batch jobs, hourly recovery). Health-check re-fetches can queue up to 200 every five minutes,
+  so they are low (at normal, while one task could not keep up, catalog-wide work would never
+  run). Ageing is at odds with the aim of letting people's work through for the hours a
+  catalog-wide action takes: an aged low job would overtake a high one.
+- The admin screen lists waiting jobs in the order they will be taken (`priority`, `run_at`,
+  `id`) and shows each job's priority.
+- A dead job retried from the admin screen keeps its priority. It is the same kind of work as
+  before, so it goes back to the same place.
+- The column is a PostgreSQL enum (`job_priority`), whose declared order is the order jobs are
+  taken in. A tier added with `ADD VALUE ... BEFORE` does not change what existing rows mean.
+
+Priority decides only the order jobs are taken in. A worker still runs one job at a time, so even
+a high job waits behind a long one in progress. Running several jobs at once in one worker is a
+separate matter (open issue 8).
+
 ## Consequences
 
 - Removed: `SQSQueueAdapter`, `@aws-sdk/client-sqs`, the ElasticMQ container and
@@ -272,6 +338,10 @@ SQS and ElasticMQ are removed in one release. Messages left in the queue are not
 7. Measure that Aurora's auto-pause actually drops to 0 ACU once the pool has closed its idle
    connections (the worker health-check cron's default 5-minute interval may already be
    preventing pause)
+8. Whether one worker should run K jobs at once. Correctness already rests on the same grounds as
+   a multi-task deployment (`SKIP LOCKED`, the resource claim, the batch jobs' advisory locks).
+   Only the memory-hungry DuckDB sections (Interpret, lake ingest) would be held to one at a time
+   within a process. Running K at once means K times as many jobs are caught when a task goes down
 
 ## Related ADRs
 

@@ -1611,7 +1611,8 @@ export class ResourceVersionService {
         changes: { version, reason },
       })
 
-      await queue.enqueue(PURGE_VERSION_JOB_TYPE, { resourceId, version }, { tx })
+      // The editor waits, and so does the rebuild the purge may queue from it
+      await queue.enqueue(PURGE_VERSION_JOB_TYPE, { resourceId, version }, { tx, priority: 'high' })
       return true
     })
 
@@ -2545,7 +2546,11 @@ export class ResourceVersionService {
     log: Logger
   ): Promise<boolean> {
     try {
-      await new PipelineService(this.db, deps.queue).enqueue(resourceId, { rebuildOnly: true })
+      // Every caller is an editor's request, waiting on the preview (ADR-058 §6)
+      await new PipelineService(this.db, deps.queue).enqueue(resourceId, {
+        rebuildOnly: true,
+        priority: 'high',
+      })
       return true
     } catch (err) {
       log.error({ err, resourceId }, 'Content is in place, but its rebuild was not queued')

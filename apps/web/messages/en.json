@@ -476,6 +476,7 @@
       "statsError": "Errors",
       "colStatus": "Status",
       "colResource": "Resource",
+      "colSize": "Size",
       "colDataset": "Dataset",
       "colUpdated": "Updated",
       "colError": "Error",
@@ -495,6 +496,7 @@
       "title": "Background Job Status",
       "description": "What runs in the background: data ingestion, metadata search index sync, embeddings and AI descriptions, purges and more. A job that fails three times is dead and stays here for 30 days; it can be retried from here.",
       "colStatus": "Status",
+      "colPriority": "Priority",
       "colType": "Type",
       "colTarget": "Target",
       "colAttempts": "Attempts",
@@ -531,6 +533,11 @@
         "admin": "Admin actions and recovery",
         "migration": "Migrations after an upgrade",
         "other": "Other"
+      },
+      "priorities": {
+        "high": "High",
+        "normal": "Normal",
+        "low": "Low"
       }
     },
     "adminUsers": {

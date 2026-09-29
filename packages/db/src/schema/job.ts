@@ -10,7 +10,21 @@
  */
 
 import { sql } from 'drizzle-orm'
-import { pgTable, uuid, text, varchar, jsonb, integer, timestamp, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  varchar,
+  jsonb,
+  integer,
+  timestamp,
+  index,
+  pgEnum,
+} from 'drizzle-orm/pg-core'
+import { JOB_PRIORITIES } from '@kukan/shared'
+
+/** Ordered as declared, which is the order jobs are taken in (ADR-058 §6). */
+export const jobPriority = pgEnum('job_priority', JOB_PRIORITIES)
 
 export const job = pgTable(
   'job',
@@ -20,6 +34,7 @@ export const job = pgTable(
     payload: jsonb('payload').notNull(),
     /** Not taken before this: a delayed job, or a failed one waiting to be retried. */
     runAt: timestamp('run_at', { withTimezone: true }).defaultNow().notNull(),
+    priority: jobPriority('priority').notNull().default('normal'),
     /** How many times it has been taken, the one that is running included. */
     attempts: integer('attempts').notNull().default(0),
     /** The lease. Null when no worker holds it; a passed one may be taken over. */
@@ -32,8 +47,9 @@ export const job = pgTable(
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_job_ready_run_at')
-      .on(table.runAt)
+    // In the order jobs are taken, which the admin screen lists them in too
+    index('idx_job_ready_priority_run_at')
+      .on(table.priority, table.runAt, table.id)
       .where(sql`${table.state} = 'ready'`),
     // "Is a job for this resource still on its way?" — asked per request
     // (`readyJobsFor`), and the table holds a whole catalog after a re-enqueue

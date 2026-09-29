@@ -9,10 +9,11 @@
  * writing to it is not, since the writer has woken it anyway.
  */
 
+import { AsyncLocalStorage } from 'async_hooks'
 import { randomUUID } from 'crypto'
-import { and, desc, eq, gt, gte, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 import { job as jobTable, type Database, type Transaction } from '@kukan/db'
-import { createLogger, type JobStatus, type Logger } from '@kukan/shared'
+import { createLogger, type JobPriority, type JobStatus, type Logger } from '@kukan/shared'
 import type { EnqueueOptions, Job, JobRecord, QueueAdapter } from './adapter'
 
 /**
@@ -65,7 +66,13 @@ export interface PostgresQueueConfig {
 
 type Handlers = Record<string, (job: Job<unknown>) => Promise<void>>
 
+/** A job as taken, with the priority its handler runs under. */
+type Taken = Job & { priority: JobPriority }
+
 const ready = () => eq(jobTable.state, 'ready')
+
+/** The order jobs are taken in (ADR-058 §6); the admin screen lists them so too. */
+const takeOrder = () => [asc(jobTable.priority), asc(jobTable.runAt), asc(jobTable.id)]
 const due = () => lte(jobTable.runAt, sql`now()`)
 
 /** Rows no worker holds: never leased, or leased by one that stopped answering. */
@@ -155,6 +162,8 @@ export class PostgresQueueAdapter implements QueueAdapter {
   private readonly owner = randomUUID()
   /** Transactions a job was written in, to be woken for once they commit. */
   private readonly written = new WeakSet<Transaction>()
+  /** The priority of the job whose handler is running, for what it writes. */
+  private readonly running = new AsyncLocalStorage<JobPriority>()
 
   private handlers?: Handlers
   private stopped = false
@@ -187,7 +196,8 @@ export class PostgresQueueAdapter implements QueueAdapter {
     if (options?.unlessWaiting) {
       // Two statements: two callers can both find nothing and write one each,
       // which costs a job that finds its work already done
-      const [waiting] = await (options.tx ?? this.db)
+      const db = options.tx ?? this.db
+      const standIn = db
         .select({ id: jobTable.id })
         .from(jobTable)
         .where(
@@ -196,12 +206,25 @@ export class PostgresQueueAdapter implements QueueAdapter {
             ready(),
             unleased(),
             eq(jobTable.attempts, 0),
+            // The same work: a metadata-only rebuild is no stand-in for one
+            // that re-indexes content
+            sql`${jobTable.payload} = ${JSON.stringify(data ?? {})}::jsonb`,
             // No later than the one asked for: a job an hour out is no stand-in
             // for one wanted now
             lte(jobTable.runAt, inSeconds(options.delaySeconds ?? 0))
           )
         )
         .limit(1)
+        .for('update', { skipLocked: true })
+      // At any priority, raised to this one's: left behind the bulk runs, it
+      // would hold back the caller who waits; passed over, the work runs twice
+      const [waiting] = await db
+        .update(jobTable)
+        .set({
+          priority: sql`least(${jobTable.priority}, ${this.priorityOf(options)}::job_priority)`,
+        })
+        .where(sql`${jobTable.id} = (${standIn})`)
+        .returning({ id: jobTable.id })
       if (waiting) return waiting.id
     }
     const [id] = await this.enqueueMany(type, [data], options)
@@ -210,6 +233,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
 
   async enqueueMany<T>(type: string, data: T[], options?: EnqueueOptions): Promise<string[]> {
     const runAt = options?.delaySeconds ? inSeconds(options.delaySeconds) : undefined
+    const priority = this.priorityOf(options)
     const ids: string[] = []
     for (let i = 0; i < data.length; i += INSERT_BATCH_SIZE) {
       const rows = await (options?.tx ?? this.db)
@@ -217,7 +241,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
         .values(
           data
             .slice(i, i + INSERT_BATCH_SIZE)
-            .map((payload) => ({ type, payload: payload ?? {}, ...(runAt && { runAt }) }))
+            .map((payload) => ({ type, payload: payload ?? {}, priority, ...(runAt && { runAt }) }))
         )
         .returning({ id: jobTable.id })
       ids.push(...rows.map((r) => r.id))
@@ -227,6 +251,14 @@ export class PostgresQueueAdapter implements QueueAdapter {
       else this.wake()
     }
     return ids
+  }
+
+  /** Asked for, else that of the job whose handler is writing it, else normal. */
+  private priorityOf(options?: EnqueueOptions): JobPriority {
+    if (options?.priority) return options.priority
+    // A job that works through everything outstanding is nobody's in particular
+    if (options?.unlessWaiting) return 'normal'
+    return this.running.getStore() ?? 'normal'
   }
 
   async transaction<T>(db: Database, fn: (tx: Transaction) => Promise<T>): Promise<T> {
@@ -295,6 +327,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
           type: jobTable.type,
           payload: jobTable.payload,
           status: jobStatus(),
+          priority: jobTable.priority,
           attempts: jobTable.attempts,
           runAt: jobTable.runAt,
           lastError: jobTable.lastError,
@@ -303,7 +336,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
         })
         .from(jobTable)
         .where(where)
-        .orderBy(desc(jobTable.updated))
+        .orderBy(...(options.status === 'waiting' ? takeOrder() : [desc(jobTable.updated)]))
         .limit(options.limit)
         .offset(options.offset),
       this.db.$count(jobTable, where),
@@ -449,12 +482,12 @@ export class PostgresQueueAdapter implements QueueAdapter {
       )
   }
 
-  private async claim(): Promise<Job | null> {
+  private async claim(): Promise<Taken | null> {
     const candidate = this.db
       .select({ id: jobTable.id })
       .from(jobTable)
       .where(and(ready(), due(), lt(jobTable.attempts, MAX_ATTEMPTS), unleased()))
-      .orderBy(jobTable.runAt)
+      .orderBy(...takeOrder())
       .limit(1)
       .for('update', { skipLocked: true })
     const [row] = await this.db
@@ -469,11 +502,16 @@ export class PostgresQueueAdapter implements QueueAdapter {
       // `IN` the planner may rescan it, and SKIP LOCKED then answers with a
       // different row each time — leasing jobs this worker never runs.
       .where(sql`${jobTable.id} = (${candidate})`)
-      .returning({ id: jobTable.id, type: jobTable.type, data: jobTable.payload })
+      .returning({
+        id: jobTable.id,
+        type: jobTable.type,
+        data: jobTable.payload,
+        priority: jobTable.priority,
+      })
     return row ?? null
   }
 
-  private async run(job: Job): Promise<void> {
+  private async run(job: Taken): Promise<void> {
     const handler = this.handlers![job.type]
     if (!handler) {
       this.log.warn({ type: job.type, jobId: job.id }, 'Unknown job type, deleting')
@@ -488,7 +526,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
       : undefined
     counting?.unref?.()
     try {
-      await handler(job)
+      await this.running.run(job.priority, () => handler(job))
       await this.complete(job.id)
     } catch (err) {
       // Payload included: some handlers log nothing of their own before

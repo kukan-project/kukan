@@ -110,7 +110,7 @@ const UPLOAD_TOO_LARGE = `File exceeds the maximum upload size of ${MAX_UPLOAD_S
 /** Create pipeline record and enqueue processing job */
 async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
   const pipelineService = new PipelineService(c.get('db'), c.get('queue'))
-  const jobId = await pipelineService.enqueue(resourceId)
+  const jobId = await pipelineService.enqueue(resourceId, { priority: 'high' })
   return { pipeline_status: 'queued' as const, job_id: jobId }
 }
 
@@ -1049,7 +1049,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   const res = await resourceService.update(id, input)
 
   await Promise.all([
-    settleResourceWrites(db, c.var, [res]),
+    settleResourceWrites(db, c.var, [res], 'high'),
     enqueueResourceEmbedsIfDue(db, c.var, { packageId: res.packageId }),
   ])
   return c.json(res)

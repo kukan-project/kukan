@@ -14,7 +14,7 @@ import {
   resourceSchemaSchema,
 } from '@kukan/shared'
 import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { EnqueueOptions, QueueAdapter } from '@kukan/queue-adapter'
 
 /**
  * Validate `resource_pipeline.metadata.schema` (persisted by the Interpret step,
@@ -107,15 +107,15 @@ export class PipelineService {
    */
   async enqueue(
     resourceId: string,
-    opts: { rebuildOnly?: boolean; tx?: Transaction } = {}
+    opts: { rebuildOnly?: boolean } & Pick<EnqueueOptions, 'tx' | 'priority'> = {}
   ): Promise<string> {
     const queue = this.requireQueue()
-    const { tx: callerTx, ...job } = opts
+    const { tx: callerTx, priority, ...job } = opts
     const write = async (tx: Transaction) => {
       if (!(await this.markQueued(tx, [resourceId])).has(resourceId)) {
         throw new NotFoundError('Resource', resourceId)
       }
-      return queue.enqueue(PIPELINE_JOB_TYPE, { resourceId, ...job }, { tx })
+      return queue.enqueue(PIPELINE_JOB_TYPE, { resourceId, ...job }, { tx, priority })
     }
     return callerTx ? write(callerTx) : queue.transaction(this.db, write)
   }
@@ -145,7 +145,9 @@ export class PipelineService {
       .where(and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft'])))
 
     const { enqueued, failed } = await this.enqueueMany(
-      resources.map((r) => ({ id: r.id, rebuildOnly: opts.rebuildOnly && r.hasStoredContent }))
+      resources.map((r) => ({ id: r.id, rebuildOnly: opts.rebuildOnly && r.hasStoredContent })),
+      // The whole catalog, whoever asks: nobody waits for any one run (ADR-058 §6)
+      { priority: 'low' }
     )
     return { enqueued, failed: failed.length }
   }
@@ -156,7 +158,8 @@ export class PipelineService {
    * resource deleted since it was listed is skipped, counted in neither.
    */
   async enqueueMany(
-    items: { id: string; rebuildOnly?: boolean }[]
+    items: { id: string; rebuildOnly?: boolean }[],
+    opts: Pick<EnqueueOptions, 'priority'> = {}
   ): Promise<{ enqueued: number; failed: { id: string; reason: unknown }[] }> {
     const queue = this.requireQueue()
     // One run per resource: the upsert cannot touch the same row twice
@@ -176,7 +179,7 @@ export class PipelineService {
           await queue.enqueueMany(
             PIPELINE_JOB_TYPE,
             runs.map((item) => ({ resourceId: item.id, rebuildOnly: item.rebuildOnly })),
-            { tx }
+            { tx, priority: opts.priority }
           )
           return runs.length
         })

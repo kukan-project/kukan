@@ -37,6 +37,7 @@ import {
   SUMMARIZE_ALL_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,
   SYNC_SEARCH_DOCS_JOB_TYPE,
+  type JobPriority,
   type JobStatus,
 } from '@kukan/shared'
 
@@ -96,6 +97,7 @@ interface JobItem {
   type: string
   payload: unknown
   status: JobStatus
+  priority: JobPriority
   attempts: number
   lastError: string | null
   updated: string
@@ -313,6 +315,7 @@ export default function AdminQueuePage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[90px]">{t('colStatus')}</TableHead>
+                <TableHead className="w-[70px]">{t('colPriority')}</TableHead>
                 <TableHead className="w-[210px]">{t('colType')}</TableHead>
                 <TableHead className="w-[20%]">{t('colTarget')}</TableHead>
                 <TableHead className="w-[60px]">{t('colAttempts')}</TableHead>
@@ -326,6 +329,12 @@ export default function AdminQueuePage() {
                 <TableRow key={job.id}>
                   <TableCell>
                     <Badge variant={statusBadgeVariant(job.status)}>{t(job.status)}</Badge>
+                  </TableCell>
+                  {/* Normal recedes: the other two are what moved a job in the line */}
+                  <TableCell
+                    className={`text-sm ${job.priority === 'normal' ? 'text-muted-foreground' : ''}`}
+                  >
+                    {t(`priorities.${job.priority}`)}
                   </TableCell>
                   <TableCell className="truncate">
                     <div className="truncate text-sm">{typeLabel(job.type)}</div>

@@ -300,7 +300,8 @@ describe('Packages API Routes', () => {
       expect(mockQueue.enqueueMany).toHaveBeenCalledWith(
         PIPELINE_JOB_TYPE,
         [expect.objectContaining({ resourceId: body.resources[0].id })],
-        { tx: expect.anything() }
+        // Created with its dataset: as often a harvest's as a person's
+        { tx: expect.anything(), priority: 'normal' }
       )
     })
 

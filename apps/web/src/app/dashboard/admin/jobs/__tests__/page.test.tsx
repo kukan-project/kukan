@@ -137,6 +137,7 @@ describe('AdminJobsPage', () => {
         created: '2026-01-01T00:00:00Z',
         updated: '2026-01-01T01:00:00Z',
         resourceName: 'data.csv',
+        resourceSize: 1_572_864,
         packageId: 'p1',
         packageName: 'my-dataset',
         packageTitle: 'My Dataset',
@@ -149,6 +150,7 @@ describe('AdminJobsPage', () => {
         created: '2026-01-02T00:00:00Z',
         updated: '2026-01-02T01:00:00Z',
         resourceName: 'broken.csv',
+        resourceSize: null,
         packageId: 'p2',
         packageName: 'other-dataset',
         packageTitle: 'Other Dataset',
@@ -163,6 +165,8 @@ describe('AdminJobsPage', () => {
     expect(screen.getByText('My Dataset')).toBeInTheDocument()
     expect(screen.getByText('Other Dataset')).toBeInTheDocument()
     expect(screen.getByText('Timeout exceeded')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Size' })).toBeInTheDocument()
+    expect(screen.getByText('1.5 MB')).toBeInTheDocument()
   })
 
   it('shows loading state', () => {

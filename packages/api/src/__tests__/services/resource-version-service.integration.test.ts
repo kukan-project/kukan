@@ -1402,7 +1402,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(deps.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ rebuildOnly: true }),
-      { tx: expect.anything() }
+      { tx: expect.anything(), priority: 'high' }
     )
   })
 
@@ -1423,7 +1423,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(resent.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ rebuildOnly: true }),
-      { tx: expect.anything() }
+      { tx: expect.anything(), priority: 'high' }
     )
   })
 
@@ -2241,7 +2241,7 @@ describe('repairDerivatives — the repair a screen can offer (ADR-044 §4)', ()
     expect(deps.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ rebuildOnly: true }),
-      { tx: expect.anything() }
+      { tx: expect.anything(), priority: 'high' }
     )
   })
 

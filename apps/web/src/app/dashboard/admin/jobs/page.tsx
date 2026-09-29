@@ -27,6 +27,7 @@ import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { useLatestJson } from '@/hooks/use-latest-json'
 import { formatDateTimeCompact } from '@/components/date-time'
+import { formatBytes } from '@/lib/format-utils'
 
 interface JobStatsResponse {
   jobs: Record<string, number>
@@ -40,6 +41,7 @@ interface JobItem {
   created: string
   updated: string
   resourceName: string | null
+  resourceSize: number | null
   packageId: string
   packageName: string
   packageTitle: string | null
@@ -273,6 +275,7 @@ export default function AdminJobsPage() {
                     <span>{t('colResource')}</span>
                   </div>
                 </TableHead>
+                <TableHead className="w-[90px] text-right">{t('colSize')}</TableHead>
                 <TableHead className="w-[120px]">{t('colUpdated')}</TableHead>
                 <TableHead className="w-[15%]">{t('colError')}</TableHead>
                 <TableHead className="w-[72px]">{t('reprocess')}</TableHead>
@@ -299,6 +302,9 @@ export default function AdminJobsPage() {
                         {job.resourceName || job.resourceId.slice(0, 8)}
                       </Link>
                     </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right text-sm tabular-nums text-muted-foreground">
+                    {formatBytes(job.resourceSize) ?? '—'}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                     {formatDateTimeCompact(job.updated, locale)}

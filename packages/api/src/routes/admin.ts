@@ -77,6 +77,9 @@ import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
 
+/** A catalog-wide button's job, and what it fans out: nobody waits for it (ADR-058 §6) */
+const BULK = { priority: 'low' } as const
+
 // All admin endpoints require sysadmin role — enforced at the router level
 adminRouter.use('*', async (c, next) => {
   const user = c.get('user')
@@ -441,7 +444,7 @@ adminRouter.post('/search/reanalyse', async (c) => {
       400
     )
   }
-  await c.get('queue').enqueue(REANALYSE_INDEX_JOB_TYPE, {})
+  await c.get('queue').enqueue(REANALYSE_INDEX_JOB_TYPE, {}, BULK)
   return c.json({ queued: true })
 })
 
@@ -466,7 +469,7 @@ adminRouter.post(
 
     const { includeContent } = c.req.valid('json')
     const queue = c.get('queue')
-    await queue.enqueue(REINDEX_JOB_TYPE, { includeContent })
+    await queue.enqueue(REINDEX_JOB_TYPE, { includeContent }, BULK)
     return c.json({ queued: true })
   }
 )
@@ -513,7 +516,7 @@ adminRouter.post('/generate-summaries', zValidator('json', generateSummariesSche
     )
   }
   const refresh = c.req.valid('json')?.refresh ?? false
-  await c.get('queue').enqueue(SUMMARIZE_ALL_JOB_TYPE, { refresh })
+  await c.get('queue').enqueue(SUMMARIZE_ALL_JOB_TYPE, { refresh }, BULK)
   return c.json({ queued: true, refresh })
 })
 
@@ -632,8 +635,8 @@ adminRouter.get('/version-backfill-status', async (c) => {
 adminRouter.post('/backfill-versions', async (c) => {
   const queue = c.get('queue')
   await Promise.all([
-    queue.enqueue(BACKFILL_VERSIONS_JOB_TYPE, {}),
-    queue.enqueue(CONVERT_SET_ASIDE_JOB_TYPE, {}),
+    queue.enqueue(BACKFILL_VERSIONS_JOB_TYPE, {}, BULK),
+    queue.enqueue(CONVERT_SET_ASIDE_JOB_TYPE, {}, BULK),
   ])
   return c.json({ queued: true })
 })
@@ -653,7 +656,7 @@ adminRouter.get('/row-group-status', async (c) => {
 // POST /api/v1/admin/record-row-groups — Enqueue the one-time recording. Reads
 // each preview's footer; no re-fetch, no re-interpretation.
 adminRouter.post('/record-row-groups', async (c) => {
-  await c.get('queue').enqueue(RECORD_ROW_GROUPS_JOB_TYPE, {})
+  await c.get('queue').enqueue(RECORD_ROW_GROUPS_JOB_TYPE, {}, BULK)
   return c.json({ queued: true })
 })
 
@@ -740,6 +743,8 @@ adminRouter.get('/jobs', async (c) => {
       created: resourcePipeline.created,
       updated: resourcePipeline.updated,
       resourceName: resource.name,
+      // The current version's; a run fetching a URL shows the previous one until its version lands
+      resourceSize: resource.size,
       packageId: resource.packageId,
       packageName: packageTable.name,
       packageTitle: packageTable.title,

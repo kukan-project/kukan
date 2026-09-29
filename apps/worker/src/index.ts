@@ -626,7 +626,9 @@ if (search) {
       if (dbCount > 0 && Date.now() - lastRebuildEnqueuedAt > REBUILD_COOLDOWN_MS) {
         osLogger.warn({ dbCount, osCount }, 'Index out of sync — enqueuing auto-recovery')
         lastRebuildEnqueuedAt = Date.now()
-        await queue.enqueue(REINDEX_JOB_TYPE, { includeContent: true })
+        // One waiting rebuild does it all: this check runs every minute, and a
+        // queue busy for longer than the cooldown would otherwise collect copies
+        await queue.enqueue(REINDEX_JOB_TYPE, { includeContent: true }, { unlessWaiting: true })
       }
     } catch (err) {
       osLogger.error({ err }, 'Periodic index check failed')

@@ -325,7 +325,7 @@ async function settleAfterCreate(
     // One after the other: both take the sync's lock, and side by side the
     // second would find it held and leave its documents to the job
     await syncPackageMetadata(db, c.var, pkg.id)
-    await settleResourceWrites(db, c.var, pkg.resources)
+    await settleResourceWrites(db, c.var, pkg.resources, 'normal')
   } catch (err) {
     c.get('logger').error({ err, packageId: pkg.id }, 'Best-effort post-create sync failed')
   }
@@ -590,7 +590,7 @@ packagesRouter.post(
     // A draft's resources are indexed at publish (ADR-039); the dataset's own
     // document does not carry its resources, so only their vectors are asked for
     await Promise.all([
-      settleResourceWrites(db, c.var, [resource]),
+      settleResourceWrites(db, c.var, [resource], 'high'),
       enqueueResourceEmbedsIfDue(db, c.var, { packageId: pkg.id }),
     ])
     return c.json(resource, 201)

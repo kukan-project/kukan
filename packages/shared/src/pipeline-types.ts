@@ -464,6 +464,15 @@ export const SYNC_SEARCH_DOCS_JOB_TYPE = 'sync-search-docs' as const
 export const JOB_STATUSES = ['scheduled', 'waiting', 'running', 'dead'] as const
 export type JobStatus = (typeof JOB_STATUSES)[number]
 
+/**
+ * Which jobs are taken first (ADR-058 §6), by who waits for the result rather
+ * than by what the job does: a person who just made an edit, nobody in
+ * particular, or nobody at all — the runs a catalog-wide button fans out.
+ * Taken in this order, and by `run_at` within one.
+ */
+export const JOB_PRIORITIES = ['high', 'normal', 'low'] as const
+export type JobPriority = (typeof JOB_PRIORITIES)[number]
+
 // ── Job payload schemas (the worker validates against these before acting) ──
 
 export const pipelineJobSchema = z.object({

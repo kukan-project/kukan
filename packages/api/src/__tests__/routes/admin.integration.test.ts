@@ -1374,6 +1374,38 @@ describe('Admin API Routes', () => {
     })
   })
 
+  describe('GET /api/v1/admin/jobs', () => {
+    it("lists each run with its resource's size, and none where nothing is stored", async () => {
+      const orgId = await ensureOrg('jobs-size-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'jobs-size-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const [stored, linked] = await db
+        .insert(resource)
+        .values([
+          { packageId: pkg.id, name: 'stored', state: 'active' as const, size: 1_572_864 },
+          { packageId: pkg.id, name: 'linked', state: 'active' as const },
+        ])
+        .returning({ id: resource.id })
+      await db.insert(resourcePipeline).values([
+        { resourceId: stored.id, status: 'processing' },
+        { resourceId: linked.id, status: 'processing' },
+      ])
+
+      const res = await app.request('/api/v1/admin/jobs')
+      expect(res.status).toBe(200)
+      const { items } = await res.json()
+
+      expect(items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ resourceName: 'stored', resourceSize: 1_572_864 }),
+          expect.objectContaining({ resourceName: 'linked', resourceSize: null }),
+        ])
+      )
+    })
+  })
+
   describe('/api/v1/admin/queue (ADR-058)', () => {
     const queue = new PostgresQueueAdapter({ db })
     const queueApp = createTestApp(db, { search: mockSearch, queue })

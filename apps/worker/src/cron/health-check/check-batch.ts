@@ -26,6 +26,9 @@ import {
 import { executeHeadCheck } from './head-request'
 import type { ResourceForHealthCheck, BatchSummary } from './types'
 
+/** Nobody waits for a re-fetch, and a batch every few minutes would starve low (ADR-058 §6) */
+const REFETCH = { priority: 'low' } as const
+
 /**
  * How many of one host's requests may be in flight.
  *
@@ -400,7 +403,7 @@ export async function checkBatch(
           { resourceId: res.id, etag: result.etag, lastModified: result.lastModified },
           'Resource changed, enqueueing to pipeline'
         )
-        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: res.id })
+        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: res.id }, REFETCH)
         return true
       }
 
@@ -413,7 +416,7 @@ export async function checkBatch(
         if (needsFullFetch) {
           summary.enqueuedForFullFetch++
           log.info({ resourceId: res.id }, 'No change headers, enqueueing periodic full fetch')
-          await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: res.id })
+          await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: res.id }, REFETCH)
           // Record the enqueue time so we don't re-enqueue until next interval
           await updateHealthStatus(db, res, null, { lastFullFetchAt: Date.now() })
         }

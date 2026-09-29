@@ -292,6 +292,102 @@ describe('PostgresQueueAdapter', () => {
     expect(await rows()).toHaveLength(2)
   })
 
+  it('raises a job waiting unless-waiting at a lower priority rather than writing a second', async () => {
+    // Left behind the bulk runs it would hold the caller back; passed over,
+    // the same work would run twice
+    const queue = adapter()
+    const waiting = await queue.enqueue('t', {}, { priority: 'low' })
+
+    expect(await queue.enqueue('t', {}, { unlessWaiting: true, priority: 'normal' })).toBe(waiting)
+    expect(await queue.enqueue('t', {}, { unlessWaiting: true, priority: 'low' })).toBe(waiting)
+
+    expect(await rows()).toEqual([expect.objectContaining({ id: waiting, priority: 'normal' })])
+  })
+
+  it('writes a job unless-waiting past one waiting with other work in its payload', async () => {
+    const queue = adapter()
+    const metadataOnly = await queue.enqueue('t', { includeContent: false })
+
+    const withContent = await queue.enqueue('t', { includeContent: true }, { unlessWaiting: true })
+    expect(withContent).not.toBe(metadataOnly)
+    expect(await queue.enqueue('t', { includeContent: true }, { unlessWaiting: true })).toBe(
+      withContent
+    )
+    expect(await rows()).toHaveLength(2)
+  })
+
+  it('takes the higher priority first, and the earlier within one', async () => {
+    const writer = adapter()
+    await writer.enqueue('t', { n: 'low' }, { priority: 'low' })
+    await writer.enqueue('t', { n: 'normal, earlier' })
+    await writer.enqueue('t', { n: 'high' }, { priority: 'high' })
+    await writer.enqueue('t', { n: 'normal, later' }, { priority: 'normal' })
+    await db
+      .update(job)
+      .set({ runAt: sql`now() - interval '1 minute'` })
+      .where(sql`${job.payload} ->> 'n' = 'normal, earlier'`)
+
+    const seen: unknown[] = []
+    await adapter().process({ t: async (j) => void seen.push((j.data as { n: string }).n) })
+
+    await vi.waitFor(() =>
+      expect(seen).toEqual(['high', 'normal, earlier', 'normal, later', 'low'])
+    )
+  })
+
+  it('takes a batch written in one statement in the order the admin screen lists it', async () => {
+    const writer = adapter()
+    await writer.enqueueMany(
+      't',
+      Array.from({ length: 8 }, (_, n) => ({ n }))
+    )
+    const { items } = await writer.listJobs({ status: 'waiting', limit: 10, offset: 0 })
+
+    const seen: unknown[] = []
+    await adapter().process({ t: async (j) => void seen.push(j.data) })
+
+    await vi.waitFor(() => expect(seen).toHaveLength(8))
+    expect(seen).toEqual(items.map((j) => j.payload))
+  })
+
+  it("writes what a handler queues at that job's priority unless asked otherwise, and the rest at normal", async () => {
+    const queue = adapter()
+    const later = { delaySeconds: 3600 }
+    await queue.enqueue('parent', {}, { priority: 'high' })
+    await queue.enqueue('outside', {}, later)
+
+    await queue.process({
+      parent: async () => {
+        await queue.enqueue('inherited', {}, later)
+        await queue.enqueue('asked', {}, { ...later, priority: 'low' })
+        // Works through everything outstanding, so nobody's in particular
+        await queue.enqueue('everyones', {}, { ...later, unlessWaiting: true })
+      },
+    })
+
+    await vi.waitFor(async () => expect(await rows()).toHaveLength(4))
+    const byType = Object.fromEntries((await rows()).map((r) => [r.type, r.priority]))
+    expect(byType).toEqual({
+      outside: 'normal',
+      inherited: 'high',
+      asked: 'low',
+      everyones: 'normal',
+    })
+  })
+
+  it('keeps its priority through a failed attempt', async () => {
+    const queue = adapter()
+    await queue.enqueue('t', {}, { priority: 'low' })
+    await queue.process({
+      t: async () => {
+        throw new Error('boom')
+      },
+    })
+
+    await vi.waitFor(async () => expect((await rows())[0]).toMatchObject({ attempts: 1 }))
+    expect((await rows())[0].priority).toBe('low')
+  })
+
   it('tells the other tasks about a job a worker writes, and makes a pass itself', async () => {
     // Busy with one job, it would otherwise hold what it queued while another sat idle
     const notify = vi.fn(async () => {})
@@ -432,6 +528,20 @@ describe('PostgresQueueAdapter', () => {
       total: 1,
       items: [{ id: dead }],
     })
+  })
+
+  it('lists waiting jobs in the order they will be taken, with their priority', async () => {
+    const queue = adapter()
+    const low = await queue.enqueue('t', {}, { priority: 'low' })
+    const normal = await queue.enqueue('t', {})
+    const high = await queue.enqueue('t', {}, { priority: 'high' })
+
+    const { items } = await queue.listJobs({ status: 'waiting', limit: 10, offset: 0 })
+    expect(items.map((j) => [j.id, j.priority])).toEqual([
+      [high, 'high'],
+      [normal, 'normal'],
+      [low, 'low'],
+    ])
   })
 
   it('reports the whole total on a page past the end', async () => {

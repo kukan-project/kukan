@@ -49,6 +49,7 @@ const deadJob = {
   type: 'summarize-package',
   payload: { packageId: 'p1' },
   status: 'dead',
+  priority: 'low',
   attempts: 3,
   lastError: 'completion timed out',
   updated: '2026-09-27T00:00:00Z',
@@ -170,6 +171,20 @@ describe('AdminQueuePage', () => {
     expect(screen.getByText('summarize-package')).toBeInTheDocument()
     expect(screen.getByText('packageId=p1')).toBeInTheDocument()
     expect(screen.getByText('completion timed out')).toBeInTheDocument()
+  })
+
+  it('says which jobs are taken ahead of the rest and which behind', () => {
+    mockPaginatedFetch.items = [
+      { ...deadJob, id: 'a', status: 'waiting', priority: 'high', lastError: null },
+      { ...deadJob, id: 'b', status: 'waiting', priority: 'normal', lastError: null },
+      { ...deadJob, id: 'c', status: 'waiting', priority: 'low', lastError: null },
+    ]
+    render(<AdminQueuePage />)
+
+    expect(screen.getByRole('columnheader', { name: 'Priority' })).toBeInTheDocument()
+    for (const label of ['High', 'Normal', 'Low']) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
   })
 
   it('retries a dead job', async () => {

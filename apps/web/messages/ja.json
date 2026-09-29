@@ -476,6 +476,7 @@
       "statsError": "エラー",
       "colStatus": "ステータス",
       "colResource": "リソース",
+      "colSize": "サイズ",
       "colDataset": "データセット",
       "colUpdated": "更新日時",
       "colError": "エラー詳細",
@@ -495,6 +496,7 @@
       "title": "バックグラウンド処理状況",
       "description": "データの取り込みやメタデータの検索インデックスの同期、埋め込みベクトル・AI による説明の生成、削除など、裏で実行される処理の状況です。3 回失敗した処理は打ち切りになり、30 日間ここに残ります。打ち切られた処理はここから再実行できます。",
       "colStatus": "状態",
+      "colPriority": "優先度",
       "colType": "種類",
       "colTarget": "対象",
       "colAttempts": "試行",
@@ -531,6 +533,11 @@
         "admin": "管理者の操作・自動復旧",
         "migration": "システム更新時の移行",
         "other": "その他"
+      },
+      "priorities": {
+        "high": "高",
+        "normal": "通常",
+        "low": "低"
       }
     },
     "adminUsers": {

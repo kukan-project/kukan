@@ -310,7 +310,11 @@ describe('checkBatch', () => {
     const summary = await checkBatch(db as never, queue, 24, 168, log as never)
 
     expect(summary.changed).toBe(1)
-    expect(queue.enqueue).toHaveBeenCalledWith('resource-pipeline', { resourceId: 'res-1' })
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      { priority: 'low' }
+    )
   })
 
   it('takes the keys it used to write off extras as it writes', async () => {
@@ -355,7 +359,11 @@ describe('checkBatch', () => {
     const summary = await checkBatch(db as never, queue, 24, 168, log as never)
 
     expect(summary.enqueuedForFullFetch).toBe(1)
-    expect(queue.enqueue).toHaveBeenCalledWith('resource-pipeline', { resourceId: 'res-1' })
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      { priority: 'low' }
+    )
   })
 
   it('does not enqueue no-header resources within full fetch interval', async () => {

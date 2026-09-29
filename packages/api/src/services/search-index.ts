@@ -27,7 +27,7 @@ import {
 } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { SYNC_SEARCH_DOCS_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
+import { SYNC_SEARCH_DOCS_JOB_TYPE, isUuid, type JobPriority, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
 import { enqueueResourceEmbedsIfDue } from './resource-embedding'
@@ -649,16 +649,19 @@ export async function syncPackageResources(
  * rebuild. Callers keep the whole post-commit tail best-effort for the same
  * reason — a request that fails after the commit reports a package that
  * exists as not created, and the retry then refuses its name.
+ *
+ * `priority` is the caller's to say (ADR-058 §6): who waits for the runs.
  */
 export async function settleResourceWrites(
   db: Database,
   deps: PackageSyncDeps,
-  resources: { id: string; url: string | null; urlType: string | null }[]
+  resources: { id: string; url: string | null; urlType: string | null }[],
+  priority: JobPriority
 ): Promise<void> {
   if (resources.length === 0) return
   const runs = resources.filter((r) => r.url && r.urlType !== 'upload').map((r) => ({ id: r.id }))
   await Promise.all([
-    new PipelineService(db, deps.queue).enqueueMany(runs).then(({ failed }) => {
+    new PipelineService(db, deps.queue).enqueueMany(runs, { priority }).then(({ failed }) => {
       for (const { id, reason } of failed) {
         deps.logger.error({ err: reason, resourceId: id }, 'Best-effort pipeline enqueue failed')
       }
