@@ -88,6 +88,51 @@ describe('SummaryGenerationCard', () => {
     })
   })
 
+  it('saves the language, then counts again what it leaves to rewrite', async () => {
+    let saved = 'ja'
+    vi.mocked(clientFetch).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes('/site/settings')) {
+        return mockFetchResponse({ resourceSummaryEnabled: true })
+      }
+      if (path === '/api/v1/admin/settings/ai-summary-locale') {
+        saved = JSON.parse(String(init?.body)).value
+        return mockFetchResponse({ key: 'ai-summary-locale', value: saved })
+      }
+      if (path.includes('/summary-estimate')) {
+        // Every abstract was written in Japanese, so English leaves them all to rewrite
+        return mockFetchResponse({
+          ...estimate,
+          locale: saved,
+          refresh: { ...estimate.fill, resources: saved === 'en' ? 40 : 0 },
+        })
+      }
+      return mockFetchResponse({})
+    })
+    render(<SummaryGenerationCard />)
+
+    const picker = await screen.findByRole('combobox', { name: 'Language' })
+    expect(picker).toHaveTextContent('Japanese')
+    // Nothing picked, nothing to save
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    fireEvent.keyDown(picker, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('option', { name: 'English' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(clientFetch).toHaveBeenCalledWith(
+        '/api/v1/admin/settings/ai-summary-locale',
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ value: 'en' }) })
+      )
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent(/Saved/)
+    // Asked again, the estimate prices the rewrite the new language calls for
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Rewrite all/ })).toBeEnabled()
+    })
+    expect(screen.getByRole('combobox', { name: 'Language' })).toHaveTextContent('English')
+  })
+
   it('does not offer to spend on an estimate it could not read', async () => {
     vi.mocked(clientFetch).mockImplementation(async (path: string) =>
       path.includes('/site/settings')

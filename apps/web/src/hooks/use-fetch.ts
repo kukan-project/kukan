@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clientFetch } from '@/lib/client-api'
 
 interface UseFetchResult<T> {
@@ -11,14 +11,20 @@ interface UseFetchResult<T> {
  * Simple fetch hook with cancellation support.
  * Fetches JSON from the given API path on mount.
  * A `null` path fetches nothing — for data only some callers need.
+ * A change of `version` fetches the same path again — after a write it depends on
+ * — and keeps what is shown until the new answer lands.
  */
-export function useFetch<T>(path: string | null): UseFetchResult<T> {
+export function useFetch<T>(path: string | null, version = 0): UseFetchResult<T> {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const shownPath = useRef(path)
 
   useEffect(() => {
-    setData(null)
+    if (shownPath.current !== path) {
+      shownPath.current = path
+      setData(null)
+    }
     setLoading(path !== null)
     setError(false)
     if (path === null) return
@@ -46,7 +52,7 @@ export function useFetch<T>(path: string | null): UseFetchResult<T> {
     return () => {
       controller.abort()
     }
-  }, [path])
+  }, [path, version])
 
   return { data, loading, error }
 }

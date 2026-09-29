@@ -16,11 +16,9 @@ import {
   FieldLabel,
   Input,
 } from '@kukan/ui'
-import { AiSuggestCard } from '@/components/dashboard/ai-suggest-card'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { RegistrationCard } from '@/components/dashboard/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/search-examples-card'
-import { VectorSimilarityCard } from '@/components/dashboard/vector-similarity-card'
 import { clientFetch } from '@/lib/client-api'
 
 interface ResetResult {
@@ -68,12 +66,6 @@ export default function AdminSitePage() {
 
       {/* Example Query Chips */}
       <SearchExamplesCard />
-
-      {/* Vector Search Settings */}
-      <VectorSimilarityCard />
-
-      {/* AI Metadata Suggestions */}
-      <AiSuggestCard />
 
       {/* Self-Registration */}
       <RegistrationCard />

@@ -6,7 +6,6 @@ import { Loader2, PlugZap } from 'lucide-react'
 import {
   Alert,
   AlertDescription,
-  Badge,
   Button,
   Card,
   CardContent,
@@ -56,12 +55,12 @@ const HINT_KEYS: Record<string, string> = {
   'openai-model-missing': 'aiSuggestHintOpenaiModelMissing',
 }
 
-/** Generative-AI model settings. The card is the umbrella for every AI use of a
- *  completion model; today it holds one section — metadata suggestions (ADR-040,
- *  on/off + model ID + connection test). Renders nothing when the AI adapter
- *  cannot generate (AI_TYPE=none). */
+/** AI metadata suggestions (ADR-040): on/off, the generation model and a
+ *  connection test. The one AI use whose model is chosen at runtime — the
+ *  embedding and abstract models are fixed by the deployment. Renders nothing
+ *  when the AI adapter cannot generate (AI_TYPE=none). */
 export function AiSuggestCard() {
-  const t = useTranslations('dashboard.adminSite')
+  const t = useTranslations('dashboard.adminAi')
   const tc = useTranslations('common')
 
   const [settings, setSettings] = useState<AiSuggestSettings | null>(null)
@@ -156,135 +155,117 @@ export function AiSuggestCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{t('aiModelsTitle')}</CardTitle>
+        <CardTitle className="text-base">{t('aiSuggestTitle')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">{t('aiModelsDescription')}</p>
+        <p className="text-sm text-muted-foreground">{t('aiSuggestDescription')}</p>
+
+        {/* Static caveat — role note, not a live region */}
+        {isLocalAIProvider(settings.provider) && (
+          <Alert variant="warning" role="note">
+            <AlertDescription>{t('aiSuggestOllamaQualityNote')}</AlertDescription>
+          </Alert>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted-foreground">{t('aiSuggestProvider')}</span>
-          <Badge variant="outline" className="text-xs">
-            {settings.provider}
-          </Badge>
+          <span className="text-muted-foreground">{t('aiSuggestEffectiveModel')}</span>
+          <span className="font-mono text-xs">{settings.effectiveModel}</span>
         </div>
 
-        {/* Metadata suggestions — one AI use of the completion model. Future uses
-            are sibling sections under the same card. */}
-        <section className="flex flex-col gap-4 rounded-md border p-4">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-medium">{t('aiSuggestSectionTitle')}</h3>
-            <p className="text-sm text-muted-foreground">{t('aiSuggestDescription')}</p>
-          </div>
+        <SwitchField
+          label={t('aiSuggestEnabled')}
+          checked={selectedEnabled}
+          onCheckedChange={(checked) => {
+            setSelectedEnabled(checked)
+            setSaved(false)
+          }}
+        />
 
-          {/* Static caveat — role note, not a live region */}
-          {isLocalAIProvider(settings.provider) && (
-            <Alert variant="warning" role="note">
-              <AlertDescription>{t('aiSuggestOllamaQualityNote')}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">{t('aiSuggestEffectiveModel')}</span>
-            <span className="font-mono text-xs">{settings.effectiveModel}</span>
-          </div>
-
-          <SwitchField
-            label={t('aiSuggestEnabled')}
-            checked={selectedEnabled}
-            onCheckedChange={(checked) => {
-              setSelectedEnabled(checked)
-              setSaved(false)
-            }}
-          />
-
-          <Field
-            // Only the free-text input has an empty state; the picker offers
-            // an explicit "provider default" option instead.
-            description={
-              settings.availableModels.length === 0 ? t('aiSuggestModelHint') : undefined
-            }
-          >
-            <FieldLabel>{t('aiSuggestModelLabel')}</FieldLabel>
-            {settings.availableModels.length > 0 ? (
-              <Select
-                value={selectedModel || DEFAULT_MODEL_VALUE}
-                onValueChange={(value) => {
-                  setSelectedModel(value === DEFAULT_MODEL_VALUE ? '' : value)
+        <Field
+          // Only the free-text input has an empty state; the picker offers
+          // an explicit "provider default" option instead.
+          description={settings.availableModels.length === 0 ? t('aiSuggestModelHint') : undefined}
+        >
+          <FieldLabel>{t('aiSuggestModelLabel')}</FieldLabel>
+          {settings.availableModels.length > 0 ? (
+            <Select
+              value={selectedModel || DEFAULT_MODEL_VALUE}
+              onValueChange={(value) => {
+                setSelectedModel(value === DEFAULT_MODEL_VALUE ? '' : value)
+                setSaved(false)
+              }}
+            >
+              <FieldControl>
+                <SelectTrigger className="max-w-2xl font-mono text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+              </FieldControl>
+              <SelectContent>
+                <SelectItem value={DEFAULT_MODEL_VALUE}>
+                  {t('aiSuggestModelDefaultOption', { model: settings.defaultModel ?? '' })}
+                </SelectItem>
+                {modelOptions.map((model) => (
+                  <SelectItem key={model} value={model} className="font-mono">
+                    {model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <FieldControl>
+              <Input
+                value={selectedModel}
+                onChange={(e) => {
+                  setSelectedModel(e.target.value)
                   setSaved(false)
                 }}
-              >
-                <FieldControl>
-                  <SelectTrigger className="max-w-2xl font-mono text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FieldControl>
-                <SelectContent>
-                  <SelectItem value={DEFAULT_MODEL_VALUE}>
-                    {t('aiSuggestModelDefaultOption', { model: settings.defaultModel ?? '' })}
-                  </SelectItem>
-                  {modelOptions.map((model) => (
-                    <SelectItem key={model} value={model} className="font-mono">
-                      {model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder={settings.defaultModel ?? ''}
+                className="max-w-2xl font-mono text-sm"
+              />
+            </FieldControl>
+          )}
+        </Field>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <Button onClick={handleSave} disabled={saving || !dirty}>
+            {tc('save')}
+          </Button>
+          <Button variant="outline" onClick={handleTest} disabled={testing || dirty}>
+            {testing ? (
+              <>
+                <Loader2 className="mr-1 size-4 animate-spin" />
+                {t('aiSuggestTesting')}
+              </>
             ) : (
-              <FieldControl>
-                <Input
-                  value={selectedModel}
-                  onChange={(e) => {
-                    setSelectedModel(e.target.value)
-                    setSaved(false)
-                  }}
-                  placeholder={settings.defaultModel ?? ''}
-                  className="max-w-2xl font-mono text-sm"
-                />
-              </FieldControl>
+              <>
+                <PlugZap className="mr-1 size-4" />
+                {t('aiSuggestTest')}
+              </>
             )}
-          </Field>
+          </Button>
+          {saved && <span className="text-sm text-muted-foreground">{t('saved')}</span>}
+        </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <Button onClick={handleSave} disabled={saving || !dirty}>
-              {tc('save')}
-            </Button>
-            <Button variant="outline" onClick={handleTest} disabled={testing || dirty}>
-              {testing ? (
-                <>
-                  <Loader2 className="mr-1 size-4 animate-spin" />
-                  {t('aiSuggestTesting')}
-                </>
-              ) : (
-                <>
-                  <PlugZap className="mr-1 size-4" />
-                  {t('aiSuggestTest')}
-                </>
-              )}
-            </Button>
-            {saved && <span className="text-sm text-muted-foreground">{t('saved')}</span>}
-          </div>
-
-          {testResult &&
-            (testResult.ok ? (
-              <Alert role="status">
-                <AlertDescription>
-                  {t('aiSuggestTestOk', { model: testResult.model, latency: testResult.latencyMs })}
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  {t('aiSuggestTestFailed')}
-                  {testResult.code && HINT_KEYS[testResult.code] && (
-                    <span className="block font-normal">{t(HINT_KEYS[testResult.code])}</span>
-                  )}
-                  {testResult.error && (
-                    <span className="block font-mono text-xs">{testResult.error}</span>
-                  )}
-                </AlertDescription>
-              </Alert>
-            ))}
-        </section>
+        {testResult &&
+          (testResult.ok ? (
+            <Alert role="status">
+              <AlertDescription>
+                {t('aiSuggestTestOk', { model: testResult.model, latency: testResult.latencyMs })}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert variant="destructive">
+              <AlertDescription>
+                {t('aiSuggestTestFailed')}
+                {testResult.code && HINT_KEYS[testResult.code] && (
+                  <span className="block font-normal">{t(HINT_KEYS[testResult.code])}</span>
+                )}
+                {testResult.error && (
+                  <span className="block font-mono text-xs">{testResult.error}</span>
+                )}
+              </AlertDescription>
+            </Alert>
+          ))}
       </CardContent>
     </Card>
   )

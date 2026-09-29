@@ -27,9 +27,10 @@ export interface SummaryEstimate {
  * This is the one control in the catalog that spends money per resource, so
  * the numbers come before the button rather than after it.
  */
-export function useSummaryEstimate(enabled: boolean) {
+export function useSummaryEstimate(enabled: boolean, version = 0) {
   const { data, loading, error } = useFetch<SummaryEstimate>(
-    enabled ? '/api/v1/admin/summary-estimate' : null
+    enabled ? '/api/v1/admin/summary-estimate' : null,
+    version
   )
   return { estimate: data ?? null, loading, error }
 }

@@ -303,18 +303,19 @@ system administrators create users from the admin dashboard. While no
 users exist, self-registration is enabled regardless of the setting so the
 instance can be bootstrapped.
 
-## Site settings (runtime)
+## Runtime settings
 
-Some settings can be **changed from the admin dashboard without redeploying** (Site Management → `/dashboard/admin/site`, system administrators only). Changes are stored in the database, recorded in the audit log, and take 30 seconds to a minute to take effect.
+Some settings can be **changed from the admin dashboard without redeploying** (Site Management `/dashboard/admin/site` and AI Management `/dashboard/admin/ai`, system administrators only). Changes are stored in the database, recorded in the audit log, and take 30 seconds to a minute to take effect.
 
-| Setting                                     | Description                                                                                                                                                                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Example search queries                      | Example queries shown under the search box                                                                                                                                                                                                  |
-| Semantic search settings                    | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available) |
-| Generative AI models → Metadata suggestions | AI metadata suggestions: feature toggle (kill switch), generation model ID (blank = provider default), and a connection test                                                                                                                |
-| User self-registration                      | See "[Self-registration control](#self-registration-control)" above                                                                                                                                                                         |
+| Page            | Setting                                     | Description                                                                                                                                                                                                                                 |
+| --------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site Management | Example search queries                      | Example queries shown under the search box                                                                                                                                                                                                  |
+| Site Management | User self-registration                      | See "[Self-registration control](#self-registration-control)" above                                                                                                                                                                         |
+| AI Management   | Generate AI descriptions in bulk → Language | The language AI descriptions are written in (Japanese / English, Japanese by default). See "[AI-written descriptions](#ai-written-descriptions)" below                                                                                      |
+| AI Management   | AI metadata suggestions                     | Feature toggle (kill switch), generation model ID (blank = provider default), and a connection test                                                                                                                                         |
+| AI Management   | Semantic search → Search settings           | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available) |
 
-**Data Reset** on the same page permanently deletes every dataset, resource, organization, group, tag, pipeline job, and associated file (user accounts are kept). It asks you to type `RESET` to confirm. It cannot be undone, so do not use it in production.
+**Data Reset** on Site Management permanently deletes every dataset, resource, organization, group, tag, pipeline job, and associated file (user accounts are kept). It asks you to type `RESET` to confirm. It cannot be undone, so do not use it in production.
 
 ### Announcements
 
@@ -328,7 +329,7 @@ Semantic search (embeddings) and AI metadata suggestions use the provider chosen
 - **On-premises / development**: Ollama (`AI_TYPE=ollama`) or OpenAI-compatible (`AI_TYPE=openai`)
 - **Disabled**: `AI_TYPE=none` (NoOp) — semantic search falls back to keyword search, and AI suggestions are unavailable
 
-The AI metadata suggestion model can be switched from the admin dashboard (Site Management → Generative AI models) without redeploying. The embedding model cannot be changed from the dashboard: it is set by `AI_EMBEDDING_MODEL` (on AWS, `bedrock.embeddingModel` in `environments.ts`), and changing it needs a redeploy and regenerated embeddings. Candidate generation models are set via the `AI_COMPLETION_MODELS` environment variable (comma-separated). This is **the list of models approved for the deployment**: across all providers it becomes the admin picker options, with the first entry as the default (the dashboard's "provider default"). A model being available on the server does not put it in the picker — only listed models appear. On **Bedrock**, CDK injects this variable from `bedrock.completionModels` in `environments.ts` (the models granted `InvokeModel` in IAM), so add candidates there and redeploy. On **Ollama**, Docker Compose's `ollama-init` pulls every listed model at startup, so listed models become available automatically. When unset, only the built-in default model is offered (Ollama: gemma4:e4b / OpenAI-compatible: gpt-4o-mini). To run Ollama on a GPU, see the [Getting Started guide](/en/getting-started/).
+The AI metadata suggestion model can be switched from the admin dashboard (AI Management → AI metadata suggestions) without redeploying. The embedding model cannot be changed from the dashboard: it is set by `AI_EMBEDDING_MODEL` (on AWS, `bedrock.embeddingModel` in `environments.ts`), and changing it needs a redeploy and regenerated embeddings. Candidate generation models are set via the `AI_COMPLETION_MODELS` environment variable (comma-separated). This is **the list of models approved for the deployment**: across all providers it becomes the admin picker options, with the first entry as the default (the dashboard's "provider default"). A model being available on the server does not put it in the picker — only listed models appear. On **Bedrock**, CDK injects this variable from `bedrock.completionModels` in `environments.ts` (the models granted `InvokeModel` in IAM), so add candidates there and redeploy. On **Ollama**, Docker Compose's `ollama-init` pulls every listed model at startup, so listed models become available automatically. When unset, only the built-in default model is offered (Ollama: gemma4:e4b / OpenAI-compatible: gpt-4o-mini). To run Ollama on a GPU, see the [Getting Started guide](/en/getting-started/).
 
 :::caution[Suggestion quality of small local models]
 Small local models aimed at on-premises / CPU-only deployments (effective 4–8B class, such as Gemma 4 E4B) are **underpowered at metadata suggestion quality**. Even when they return valid JSON, the content tends to degrade — descriptions miss the point, tags are off-target, and Japanese output is unstable. Treat AI suggestions strictly as a **draft starting point** and keep a human in the loop to review and correct before adopting (every field is OFF by default; only the fields you accept are written to the metadata). Where generation quality matters, choose Bedrock (Amazon Nova Lite and up, or Claude Haiku class if needed) or a larger Ollama model given sufficient VRAM (larger Gemma 4 sizes, Qwen3-class). The generation model can be switched from the admin dashboard without redeploying.
@@ -338,7 +339,7 @@ Even on an on-premises deployment without AWS, you can secure quality by connect
 
 #### When AI suggestions don't work (Bedrock)
 
-The **connection test** in Site Management runs one attempt through the same path as real generation (structured output) and, on failure, shows the error plus a fix hint. Common Bedrock-specific causes:
+The **connection test** under AI metadata suggestions on AI Management runs one attempt through the same path as real generation (structured output) and, on failure, shows the error plus a fix hint. Common Bedrock-specific causes:
 
 | Symptom (connection-test error)                       | Cause                                                      | Fix                                                                                                                                                                                                                                                                                                                          |
 | ----------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -447,19 +448,12 @@ covers and what it is estimated to cost**. Read that before pressing the button.
 
 The abstract model must be one from the completion allow-list. The
 **language** is the runtime setting `ai-summary-locale` instead (`ja` / `en`,
-default `ja`) — language is free, the model is money. There is no control for it
-on the dashboard yet; change it through the API with a system administrator's
-[API token](/en/api/authentication/). The bulk-generation card on AI Management
-shows the current language.
+default `ja`) — language is free, the model is money. Switch it with
+**Language** on the bulk-generation card on AI Management (through the API:
+`PUT /api/v1/admin/settings/ai-summary-locale` with body `{"value":"en"}`).
 
-```bash
-curl -X PUT https://<site>/api/v1/admin/settings/ai-summary-locale \
-  -H "Authorization: Bearer <token>" \
-  -H 'Content-Type: application/json' -d '{"value":"en"}'
-```
-
-Changing it does not rewrite existing descriptions — that takes "Rewrite all"
-in the bulk generation below.
+Changing it does not rewrite existing descriptions. Saving recounts the card's
+estimate for the new language; to rewrite them, run "Rewrite all" next.
 
 #### Bulk generation (AI Management → Generate AI descriptions in bulk)
 
@@ -485,8 +479,8 @@ rather than regenerates.
 ## Reprocessing the search index
 
 Indexes and derived data are rebuilt from the admin page for what each one covers: Rebuild
-metadata search index on Index Management, Regenerate embeddings on AI Management, and Reprocess
-all resources on Resource Processing. The last reruns every resource's pipeline, and that page
+metadata search index on Index Management, Regenerate embeddings in the Semantic search
+card on AI Management, and Reprocess all resources on Resource Processing. The last reruns every resource's pipeline, and that page
 follows the runs. Each runs asynchronously through the job queue and
 proceeds in the background once queued.
 

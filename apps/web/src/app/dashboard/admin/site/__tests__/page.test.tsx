@@ -12,6 +12,10 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
+vi.mock('@/components/dashboard/ai-suggest-card', () => ({
+  AiSuggestCard: () => <section>suggestions</section>,
+}))
+
 const mockClientFetch = vi.mocked(clientFetch)
 
 function mockFetchResponse(data: unknown) {
@@ -28,10 +32,12 @@ describe('AdminSitePage', () => {
     expect(screen.getByText('Site Management')).toBeInTheDocument()
   })
 
-  it('leaves the bulk AI actions to the AI page', () => {
+  it('leaves everything about AI to the AI page', () => {
     render(<AdminSitePage />)
     expect(screen.queryByText('Generate AI descriptions in bulk')).not.toBeInTheDocument()
     expect(screen.queryByText('Regenerate embeddings')).not.toBeInTheDocument()
+    expect(screen.queryByText('suggestions')).not.toBeInTheDocument()
+    expect(screen.queryByText('Semantic search')).not.toBeInTheDocument()
   })
 
   it('renders the data reset card with warning', () => {

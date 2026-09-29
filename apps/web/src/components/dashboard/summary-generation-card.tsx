@@ -3,12 +3,29 @@
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Sparkles } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Field,
+  FieldControl,
+  FieldLabel,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { useSiteSettings } from '@/hooks/use-site-settings'
-import { useSummaryEstimate } from '@/hooks/use-summary-estimate'
+import { useSummaryEstimate, type SummaryEstimate } from '@/hooks/use-summary-estimate'
 
 type SummaryAction = 'summaryFill' | 'summaryRefresh'
+type SummaryLocale = SummaryEstimate['locale']
+
+const SUMMARY_LOCALES: SummaryLocale[] = ['ja', 'en']
 
 /**
  * Bulk generation of resource abstracts (ADR-053). With the other bulk AI
@@ -21,13 +38,42 @@ export function SummaryGenerationCard() {
   const { resourceSummaryEnabled } = useSiteSettings()
   // Asked for only where abstracts exist, and read before either button is
   // pressed: this is the one control that spends per resource (ADR-053 §11.2)
-  const summaryEstimate = useSummaryEstimate(resourceSummaryEnabled === true)
+  // Bumped after the language is saved: the estimate counts what that
+  // language leaves to rewrite, so it is asked for again
+  const [estimateVersion, setEstimateVersion] = useState(0)
+  const summaryEstimate = useSummaryEstimate(resourceSummaryEnabled === true, estimateVersion)
   const estimate = summaryEstimate.estimate
   const skippedCount = estimate
     ? estimate.skipped.tooLarge + estimate.skipped.unsupportedFormat + estimate.skipped.noMaterial
     : 0
   const [busy, setBusy] = useState<SummaryAction | null>(null)
   const [outcome, setOutcome] = useState<{ action: SummaryAction; ok: boolean } | null>(null)
+  // The language picked but not yet saved; null follows the saved one
+  const [locale, setLocale] = useState<SummaryLocale | null>(null)
+  const [localeSave, setLocaleSave] = useState<'saving' | 'saved' | 'failed' | null>(null)
+  const localeDirty = locale !== null && locale !== estimate?.locale
+
+  async function saveLocale() {
+    if (!locale) return
+    setLocaleSave('saving')
+    try {
+      const res = await clientFetch('/api/v1/admin/settings/ai-summary-locale', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: locale }),
+      })
+      if (!res.ok) {
+        setLocaleSave('failed')
+        return
+      }
+      setLocaleSave('saved')
+      setLocale(null)
+      setOutcome(null)
+      setEstimateVersion((v) => v + 1)
+    } catch {
+      setLocaleSave('failed')
+    }
+  }
 
   async function generate(action: SummaryAction) {
     setBusy(action)
@@ -59,16 +105,56 @@ export function SummaryGenerationCard() {
       <CardContent className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">{t('summaryDescription')}</p>
         {estimate?.model && (
-          <p className="flex flex-wrap gap-x-4 text-sm">
-            <span>
-              <span className="text-muted-foreground">{t('summaryModel')}: </span>
-              <span className="font-mono text-xs">{estimate.model}</span>
-            </span>
-            <span>
-              <span className="text-muted-foreground">{t('summaryLocale')}: </span>
-              {t(`summaryLocaleName.${estimate.locale}`)}
-            </span>
+          <p className="text-sm">
+            <span className="text-muted-foreground">{t('summaryModel')}: </span>
+            <span className="font-mono text-xs">{estimate.model}</span>
           </p>
+        )}
+        {estimate && (
+          // Changing it rewrites nothing on its own: the rewrite is the second
+          // button below, whose count the saved language changes
+          <Field description={t('summaryLocaleHint')}>
+            <FieldLabel>{t('summaryLocale')}</FieldLabel>
+            <div className="flex flex-wrap items-center gap-4">
+              <Select
+                value={locale ?? estimate.locale}
+                onValueChange={(value) => {
+                  setLocale(value as SummaryLocale)
+                  setLocaleSave(null)
+                }}
+              >
+                <FieldControl>
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                </FieldControl>
+                <SelectContent>
+                  {SUMMARY_LOCALES.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {t(`summaryLocaleName.${l}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                onClick={saveLocale}
+                disabled={!localeDirty || localeSave === 'saving'}
+              >
+                {tc('save')}
+              </Button>
+              {localeSave === 'saved' && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {t('summaryLocaleSaved')}
+                </p>
+              )}
+              {localeSave === 'failed' && (
+                <p role="alert" className="text-sm text-destructive">
+                  {t('summaryLocaleSaveFailed')}
+                </p>
+              )}
+            </div>
+          </Field>
         )}
 
         {summaryEstimate.loading && (

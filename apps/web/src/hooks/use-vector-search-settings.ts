@@ -14,6 +14,6 @@ export interface VectorSearchSettings {
 }
 
 /** The one place the admin UI learns whether embedding is configured. */
-export function useVectorSearchSettings() {
-  return useFetch<VectorSearchSettings>('/api/v1/admin/settings/vector-search')
+export function useVectorSearchSettings(version = 0) {
+  return useFetch<VectorSearchSettings>('/api/v1/admin/settings/vector-search', version)
 }
