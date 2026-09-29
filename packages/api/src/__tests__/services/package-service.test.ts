@@ -18,7 +18,7 @@ describe('PackageService', () => {
       const pkg = { ...createPackageFixture(), total: 1 }
       mock.addResult([pkg])
 
-      const result = await service.list({ offset: 0, limit: 20 })
+      const result = await service.list({ offset: 0, limit: 20, viewer: undefined })
       expect(result.total).toBe(1)
       expect(result.items).toHaveLength(1)
       expect(result.offset).toBe(0)
@@ -28,9 +28,15 @@ describe('PackageService', () => {
     it('should use default offset and limit', async () => {
       mock.addResult([])
 
-      const result = await service.list({})
+      const result = await service.list({ viewer: undefined })
       expect(result.offset).toBe(0)
       expect(result.limit).toBe(20)
+    })
+
+    it('refuses a draft listing with no draft rule, rather than list every draft', async () => {
+      await expect(service.list({ state: 'draft', viewer: undefined })).rejects.toThrow(
+        /draftAccess/
+      )
     })
   })
 

@@ -55,7 +55,7 @@ describe('tag display order', () => {
   })
 
   it('sorts the tags of a dataset list row by name', async () => {
-    const { items } = await new PackageService(db).list({})
+    const { items } = await new PackageService(db).list({ viewer: undefined })
 
     expect(items[0].tags).toBe(SORTED.join(','))
   })

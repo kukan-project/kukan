@@ -22,6 +22,7 @@ import {
   splitSection,
   detectFormat,
   getStorageKey,
+  isUuid,
 } from '@kukan/shared'
 import type {
   CreateResourceInput,
@@ -312,6 +313,26 @@ export class ResourceService {
     }
 
     return { resource: row.resource, pkg }
+  }
+
+  /** Which of `ids` are active resources of active datasets `viewer` may see —
+   *  checked in the database, for ids a caller supplies or an index returned */
+  async readableIds(ids: string[], viewer: AuthUser | undefined): Promise<Set<string>> {
+    const valid = ids.filter(isUuid)
+    if (valid.length === 0) return new Set()
+    const rows = await this.db
+      .select({ id: resource.id })
+      .from(resource)
+      .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
+      .where(
+        and(
+          inArray(resource.id, valid),
+          eq(resource.state, 'active'),
+          eq(packageTable.state, 'active'),
+          await packageVisibilitySql(this.db, viewer)
+        )
+      )
+    return new Set(rows.map((r) => r.id))
   }
 
   /**

@@ -138,7 +138,7 @@ describe('emitted SQL shape', () => {
   // reaches the database (packages/api/src/services/package-service.ts).
   describe('PackageService.list', () => {
     it('pins the list shape', async () => {
-      await new PackageService(recorder).list({ limit: 20 })
+      await new PackageService(recorder).list({ limit: 20, viewer: undefined })
       expect(recorded()).toMatchSnapshot()
     })
   })

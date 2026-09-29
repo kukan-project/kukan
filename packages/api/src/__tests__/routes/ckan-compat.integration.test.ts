@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { createTestApp, mockSearch } from '../test-helpers/test-app'
+import { createTestApp, rankingSearch } from '../test-helpers/test-app'
 import {
   getTestDb,
   cleanDatabase,
@@ -99,6 +99,19 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const names = (body.result as string[]).sort()
       expect(names).toEqual(['ckan-pkg-one', 'ckan-pkg-two'])
     })
+
+    it('does not name a dataset the index still ranks after it was made private', async () => {
+      const shown = await createPackage('list-shown')
+      const hidden = await createPackage('list-hidden', { private: true })
+      const ranked = [hidden.id, shown.id]
+      const staleIndex = createTestApp(db, {
+        user: null,
+        search: rankingSearch(ranked),
+      })
+
+      const body = await (await staleIndex.request('/api/3/action/package_list')).json()
+      expect(body.result).toEqual(['list-shown'])
+    })
   })
 
   describe('package_show', () => {
@@ -189,15 +202,7 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const ids = [second.id, hidden.id, '00000000-0000-0000-0000-00000000dead', first.id]
       const staleIndex = createTestApp(db, {
         user: null,
-        search: {
-          ...mockSearch,
-          search: async () => ({
-            items: ids.map((id) => ({ id, name: '' })),
-            total: ids.length,
-            offset: 0,
-            limit: 20,
-          }),
-        },
+        search: rankingSearch(ids),
       })
 
       const res = await staleIndex.request('/api/3/action/package_search?q=search')
@@ -216,15 +221,7 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const ranked = [hidden.id, shown.id]
       const staleIndex = createTestApp(db, {
         user: null,
-        search: {
-          ...mockSearch,
-          search: async ({ offset = 0, limit = 20 }) => ({
-            items: ranked.slice(offset, offset + limit).map((id) => ({ id, name: '' })),
-            total: ranked.length,
-            offset,
-            limit,
-          }),
-        },
+        search: rankingSearch(ranked),
       })
       const page = async (start: number) =>
         (

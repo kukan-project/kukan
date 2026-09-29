@@ -63,6 +63,23 @@ export const mockSearch: SearchAdapter = {
   fetchContentHighlights: async () => ({}),
 }
 
+/**
+ * A search that ranks `ids` whatever it is asked, paging through them — an
+ * index that has yet to hear of a write, such as a dataset made private, for
+ * checking that the database has the last word on what is served.
+ */
+export function rankingSearch(ids: string[]): SearchAdapter {
+  return {
+    ...mockSearch,
+    search: async ({ offset = 0, limit = 20 }) => ({
+      items: ids.slice(offset, offset + limit).map((id) => ({ id, name: '' })),
+      total: ids.length,
+      offset,
+      limit,
+    }),
+  }
+}
+
 export const mockStorage: StorageAdapter = {
   // Drained like the real adapter would: a streamed upload's parser waits on
   // the consumer, and one that never reads would hold the request open.

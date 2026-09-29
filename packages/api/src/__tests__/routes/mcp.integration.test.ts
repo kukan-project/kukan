@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
-import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
+import { createTestApp, mockCompletionAi, rankingSearch } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { resource, resourceVersion } from '@kukan/db'
@@ -157,6 +157,26 @@ describe('MCP Server', () => {
   })
 
   describe('search_datasets', () => {
+    it('does not describe a dataset the index still ranks after it was made private', async () => {
+      const owner = mcpApp()
+      const shown = await createPackage(owner, { name: 'mcp-shown', title: 'Shown Survey' })
+      const hidden = await createPackage(owner, {
+        name: 'mcp-hidden',
+        title: 'Hidden Survey',
+        private: true,
+      })
+      const ranked = [hidden.id, shown.id]
+      const staleIndex = createTestApp(db, {
+        user: null,
+        search: rankingSearch(ranked),
+      })
+
+      const result = await mcpToolCall(staleIndex, 'search_datasets', { q: 'survey' })
+      const text = result.result.content[0].text as string
+      expect(text).toContain('Shown Survey')
+      expect(text).not.toContain('Hidden Survey')
+    })
+
     it('should return empty results for no match', async () => {
       const app = mcpApp()
       const result = await mcpToolCall(app, 'search_datasets', { q: 'nonexistent' })

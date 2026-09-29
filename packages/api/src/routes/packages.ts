@@ -154,6 +154,7 @@ packagesRouter.get(
         sortBy: sort_by,
         sortOrder: sort_order,
         state: ['draft', 'purging'],
+        viewer: user,
         ...(editorOrgIds !== undefined && {
           draftAccess: { userId: user.id, editorOrgIds },
         }),
@@ -233,7 +234,7 @@ packagesRouter.get(
       }
     }
 
-    // SearchAdapter handles visibility + name filter; service.list only does DB enrichment
+    // SearchAdapter ranks and filters; service.list re-checks visibility and enriches
     const result = await service.list({
       searchMatchIds: searchResult.items.map((i) => i.id),
       searchTotal: searchResult.total,
@@ -244,6 +245,7 @@ packagesRouter.get(
         .filter((i) => i.matchSource === 'semantic')
         .map((i) => i.id),
       state: effectiveState,
+      viewer: user,
     })
 
     // What the search actually did, not what was asked of it. A failed query
@@ -252,7 +254,7 @@ packagesRouter.get(
     // where the vector leg simply cleared nothing (ADR-053 §8.1).
     const semantic = searchResult.semantic
     if (include_facets && searchResult.facets) {
-      const facets = await service.enrichFacets(searchResult.facets)
+      const facets = await service.enrichFacets(searchResult.facets, user)
       return c.json({ ...result, facets, semantic })
     }
     return c.json({ ...result, semantic })
@@ -281,7 +283,13 @@ packagesRouter.post(
     const userOrgIds = await resolveUserOrgIds(db, user)
     const filters: SearchFilters = buildVisibilityFilters(user, userOrgIds)
 
-    const result = await search.fetchContentHighlights(chunks, q, filters)
+    // …and again in the database, as the index can lag a dataset made private
+    const resourceOf = (chunk: string) => chunk.slice(0, chunk.lastIndexOf('_chunk_'))
+    const readable = await new ResourceService(db).readableIds(chunks.map(resourceOf), user)
+    const allowed = chunks.filter((chunk) => readable.has(resourceOf(chunk)))
+    if (allowed.length === 0) return c.json({})
+
+    const result = await search.fetchContentHighlights(allowed, q, filters)
     return c.json(result)
   }
 )
@@ -368,7 +376,9 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
   const input = c.req.valid('json')
   const service = new PackageService(db)
 
+  let before: { private: boolean; ownerOrg: string | null } | undefined
   const pkg = await service.update(nameOrId, input, async (existing) => {
+    before = existing
     await makePackageAuthorize(db, user, 'editor')(existing)
     // Changing ownerOrg requires editor role in the target org
     if (input.ownerOrg && input.ownerOrg !== existing.ownerOrg) {
@@ -376,8 +386,12 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
     }
   })
 
+  // Made private, or moved while private: fewer may see it now, and the index
+  // must say so before the edit returns (see writeMarkedPackageDoc)
+  const hides =
+    pkg.state === 'active' && pkg.private && (!before?.private || before.ownerOrg !== pkg.ownerOrg)
   // syncPackageMetadata skips drafts — they stay out of the index until publish (ADR-039)
-  await syncPackageMetadata(db, c.var, pkg.id)
+  await syncPackageMetadata(db, c.var, pkg.id, { hides })
   return c.json(pkg)
 })
 
@@ -408,7 +422,7 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   // taking the resource and content documents with it — or, the lock held,
   // with the job. The rows stop saying their content is indexed either way: a
   // restore rebuilds from what they claim
-  await writeMarkedPackageDoc(db, c.var, pkg.id)
+  await writeMarkedPackageDoc(db, c.var, pkg.id, { hides: true })
   await markContentUnindexed(db, { packageId: pkg.id })
   // The delete marked the resources: any document written back meanwhile goes
   await writeMarkedResourceDocs(db, c.var, { packageId: pkg.id })

@@ -92,10 +92,11 @@ CKAN-compatible API.
 semantic results. Each entry in `results` has the same shape as a `package_show` result, with
 `resources`, `tags`, `groups` and `organization`. Entries come in the order the search ranked them,
 read from the database at the time of the search.
-`count` and the pages (`start`, `rows`) are the search index's. Until a change reaches the index
-(usually a few seconds) — a dataset just made private, say — that dataset is left out of the
-results, so a page can come back short and `count` can run high. Paging on to `count` neither
-repeats nor skips a dataset.
+`count` and the pages (`start`, `rows`) are the search index's. A change that makes a dataset
+private, or deletes it, usually reaches the index before the change is answered. Where it lags —
+while the index sync is busy or unavailable — that dataset is left out of the results meanwhile, so
+a page can come back short and `count` can run high. Paging on to `count` neither repeats nor skips
+a dataset.
 
 ## Usage examples
 

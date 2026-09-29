@@ -40,6 +40,9 @@ function getPool() {
   return pool
 }
 
+/** This process's database URL, for a connection outside the capped pool */
+export const getTestDatabaseUrl = () => testDatabaseUrl(name())
+
 export function getTestDb() {
   db ??= drizzle(getPool(), { schema })
   return db

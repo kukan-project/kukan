@@ -111,31 +111,33 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         },
       })
 
-      // Search results carry no formats: the index keeps them on the
-      // resources, and the database says it for the datasets shown
-      const formatsById = await new PackageService(db).formatsByPackage(
-        result.items.map((i) => i.id)
-      )
+      // The search ranks; the database says what each dataset is and whether
+      // this caller may see it — the index's copy can lag a write
+      const hitById = new Map(result.items.map((hit) => [hit.id, hit]))
+      const { items } = await new PackageService(db).list({
+        searchMatchIds: result.items.map((i) => i.id),
+        searchTotal: result.total,
+        viewer: user,
+      })
       const text =
-        result.items.length === 0
+        items.length === 0
           ? `No datasets found for "${q}".`
-          : result.items
+          : items
               .map((item, i) => {
-                const org = item.organization || ''
-                const formats = formatsById.get(item.id)?.join(', ') || ''
+                const org = item.orgName || ''
+                const formats = item.formats.split(',').filter(Boolean).join(', ')
                 return [
                   `${i + 1}. ${item.title || item.name}`,
                   `   Name: ${item.name}`,
                   org && `   Organization: ${org}`,
                   item.notes && `   Description: ${item.notes.slice(0, 200)}`,
                   formats && `   Formats: ${formats}`,
-                  ...matchedResourceLines(item),
+                  ...matchedResourceLines(hitById.get(item.id) ?? {}),
                 ]
                   .filter(Boolean)
                   .join('\n')
               })
-              .join('\n\n') +
-            `\n\nTotal: ${result.total} datasets found (showing ${result.items.length})`
+              .join('\n\n') + `\n\nTotal: ${result.total} datasets found (showing ${items.length})`
 
       return { content: [{ type: 'text' as const, text }] }
     }

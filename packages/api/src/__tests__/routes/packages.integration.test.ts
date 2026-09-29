@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { createTestApp, mockSearch, mockQueue } from '../test-helpers/test-app'
+import { createTestApp, mockSearch, mockQueue, rankingSearch } from '../test-helpers/test-app'
 import { PIPELINE_JOB_TYPE, problemTypeUri } from '@kukan/shared'
 import {
   getTestDb,
@@ -13,19 +13,18 @@ import {
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { ServiceUnavailableError } from '@kukan/shared'
 import { packageGroup } from '@kukan/db'
+import { holdDocSyncLock, packageDueAt } from '../test-helpers/doc-sync'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
 const app = createTestApp(db, { search })
-const outsiderApp = createTestApp(db, {
-  search,
-  user: {
-    id: OUTSIDER_USER_ID,
-    email: 'outsider@example.com',
-    name: 'outsider',
-    sysadmin: false,
-  },
-})
+const member = {
+  id: OUTSIDER_USER_ID,
+  email: 'outsider@example.com',
+  name: 'outsider',
+  sysadmin: false,
+}
+const outsiderApp = createTestApp(db, { search, user: member })
 
 let testOrgId: string
 
@@ -71,6 +70,44 @@ async function createResource(packageId: string, data: Record<string, unknown>) 
 
 describe('Packages API Routes', () => {
   describe('GET /api/v1/packages', () => {
+    it('does not serve a dataset the index still ranks after it was made private', async () => {
+      const shown = await (await createPackage({ name: 'stale-shown' })).json()
+      const hidden = await (await createPackage({ name: 'stale-hidden', private: true })).json()
+      // The index has yet to hear the dataset went private
+      const search = rankingSearch([hidden.id, shown.id])
+      const names = async (user: null | typeof member) =>
+        (
+          await (
+            await createTestApp(db, { user, search }).request('/api/v1/packages?q=stale')
+          ).json()
+        ).items.map((p: { name: string }) => p.name)
+
+      expect(await names(null)).toEqual(['stale-shown'])
+      // A member of the owning organization, in any role, still sees it
+      await app.request(`/api/v1/organizations/${testOrgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+      })
+      expect(await names(member)).toEqual(['stale-hidden', 'stale-shown'])
+    })
+
+    it('does not name facet values that only private datasets carry', async () => {
+      await createPackage({ name: 'facet-open', tags: [{ name: 'open-tag' }] })
+      await createPackage({
+        name: 'facet-secret',
+        private: true,
+        licenseId: 'ODbL-1.0',
+        tags: [{ name: 'secret-tag' }],
+      })
+
+      const anon = createTestApp(db, { search, user: null })
+      const { facets } = await (await anon.request('/api/v1/packages?include_facets=true')).json()
+
+      expect(facets.tags.map((t: { name: string }) => t.name)).toEqual(['open-tag'])
+      expect(facets.licenses.map((l: { name: string }) => l.name)).not.toContain('ODbL-1.0')
+    })
+
     it('should return 200 with empty list', async () => {
       const res = await app.request('/api/v1/packages')
       expect(res.status).toBe(200)
@@ -191,6 +228,43 @@ describe('Packages API Routes', () => {
         const body = await res.json()
         expect(body.items.map((p: { name: string }) => p.name)).toContain('members-private-pkg')
       })
+    })
+  })
+
+  describe('POST /api/v1/packages/highlights', () => {
+    it('does not highlight a dataset the index still shows after it was made private', async () => {
+      const addResource = async (pkgName: string, extra?: Record<string, unknown>) => {
+        const pkg = await (await createPackage({ name: pkgName, ...extra })).json()
+        const res = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: `${pkgName}.csv`, format: 'CSV' }),
+        })
+        return (await res.json()).id as string
+      }
+      const shown = await addResource('hl-shown')
+      const hidden = await addResource('hl-hidden', { private: true })
+      // The index has yet to hear: it would highlight whatever it is asked for
+      const asked: string[][] = []
+      const anon = createTestApp(db, {
+        user: null,
+        search: {
+          ...mockSearch,
+          fetchContentHighlights: async (chunks) => {
+            asked.push(chunks)
+            return Object.fromEntries(chunks.map((c) => [c, '<mark>x</mark>']))
+          },
+        },
+      })
+
+      const res = await anon.request('/api/v1/packages/highlights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: 'x', chunks: [`${hidden}_chunk_0`, `${shown}_chunk_0`] }),
+      })
+
+      expect(Object.keys(await res.json())).toEqual([`${shown}_chunk_0`])
+      expect(asked).toEqual([[`${shown}_chunk_0`]])
     })
   })
 
@@ -434,6 +508,35 @@ describe('Packages API Routes', () => {
   })
 
   describe('PUT /api/v1/packages/:nameOrId', () => {
+    it('writes the document before answering when an edit makes the dataset private', async () => {
+      const pkg = await (await createPackage({ name: 'going-private' })).json()
+      const dueAt = () => packageDueAt(pkg.id)
+      const put = (body: Record<string, unknown>) =>
+        app.request(`/api/v1/packages/${pkg.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'going-private', ownerOrg: testOrgId, ...body }),
+        })
+
+      // Another edit leaves its document to the job rather than wait
+      let release = await holdDocSyncLock()
+      expect((await put({ title: 'Renamed' })).status).toBe(200)
+      expect(await dueAt()).not.toBeNull()
+      await release()
+
+      // Hiding it waits for the lock, so the index knows before the answer does
+      release = await holdDocSyncLock()
+      let answered = false
+      const hiding = Promise.resolve(put({ title: 'Renamed', private: true })).finally(
+        () => (answered = true)
+      )
+      await new Promise((r) => setTimeout(r, 200))
+      expect(answered).toBe(false)
+      await release()
+      expect((await hiding).status).toBe(200)
+      expect(await dueAt()).toBeNull()
+    })
+
     it('should update package', async () => {
       await createPackage({ name: 'update-test', title: 'Original' })
       const orgId = await ensureTestOrg()
@@ -509,6 +612,21 @@ describe('Packages API Routes', () => {
   })
 
   describe('DELETE /api/v1/packages/:nameOrId', () => {
+    it('writes the document before answering, as a delete hides the dataset', async () => {
+      const pkg = await (await createPackage({ name: 'going-away' })).json()
+
+      const release = await holdDocSyncLock()
+      let answered = false
+      const deleting = Promise.resolve(
+        app.request(`/api/v1/packages/${pkg.id}`, { method: 'DELETE' })
+      ).finally(() => (answered = true))
+      await new Promise((r) => setTimeout(r, 200))
+      expect(answered).toBe(false)
+      await release()
+      expect((await deleting).status).toBe(200)
+      expect(await packageDueAt(pkg.id)).toBeNull()
+    })
+
     it('should soft delete package', async () => {
       await createPackage({ name: 'delete-test' })
 

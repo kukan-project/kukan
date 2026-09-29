@@ -10,11 +10,7 @@ import { ResourceService, omitStoragePointers } from '../services/resource-servi
 import { OrganizationService } from '../services/organization-service'
 import { GroupService } from '../services/group-service'
 import { TagService } from '../services/tag-service'
-import {
-  resolveUserOrgIds,
-  buildVisibilityFilters,
-  packageVisibilitySql,
-} from '../auth/permissions'
+import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
@@ -120,6 +116,9 @@ ckanCompatRouter.get('/package_list', async (c) => {
   const result = await service.list({
     searchMatchIds: searchResult.items.map((i) => i.id),
     searchTotal: searchResult.total,
+    viewer: user,
+    // Public packages only, as CKAN has it — held in the database too
+    ...(!user?.sysadmin && { isPrivate: false }),
   })
   const names = result.items.map((pkg) => pkg.name)
   return ckanResponse(names, c)
@@ -169,7 +168,7 @@ ckanCompatRouter.get('/package_search', async (c) => {
   // like every other listing, not from the index's own summary of it
   const packages = await new PackageService(db).getDetailsByIds(
     result.items.map((item) => item.id),
-    await packageVisibilitySql(db, user)
+    user
   )
 
   return ckanResponse(

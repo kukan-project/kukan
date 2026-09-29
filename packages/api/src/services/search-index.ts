@@ -31,7 +31,12 @@ import { SYNC_SEARCH_DOCS_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
 import { enqueueResourceEmbedsIfDue } from './resource-embedding'
-import { SEARCH_DOC_SYNC_LOCK, tryLockInTransaction, withGlobalAdvisoryLock } from './advisory-lock'
+import {
+  SEARCH_DOC_SYNC_LOCK,
+  lockInTransaction,
+  tryLockInTransaction,
+  withGlobalAdvisoryLock,
+} from './advisory-lock'
 
 /** The adapters every package-metadata sync needs — a structural subset of the
  *  route context vars, so routes can pass `c.var` directly. */
@@ -52,14 +57,15 @@ export interface PackageSyncDeps {
 export async function syncPackageMetadata(
   db: Database,
   deps: PackageSyncDeps,
-  packageId: string
+  packageId: string,
+  opts: { hides?: boolean } = {}
 ): Promise<void> {
   const [pkg] = await db
     .select({ state: packageTable.state })
     .from(packageTable)
     .where(eq(packageTable.id, packageId))
   await Promise.all([
-    writeMarkedPackageDoc(db, deps, packageId),
+    writeMarkedPackageDoc(db, deps, packageId, opts),
     pkg?.state === 'active' && enqueueResourceEmbedsIfDue(db, deps, { packageId }),
   ])
 }
@@ -165,6 +171,21 @@ const DOC_SYNC_BATCH = 200
 
 /** How long an edit, having the lock, waits for a row another transaction holds */
 const DOC_SYNC_EDIT_ROW_LOCK_WAIT_MS = 2_000
+
+/**
+ * How long an edit that hides a dataset waits for the lock, rather than leave
+ * its document to the job: until the document is written, the index still
+ * ranks the dataset for those who may no longer see it, and counts it for
+ * them. Past it, the job takes it as for any edit.
+ */
+const DOC_SYNC_HIDING_LOCK_WAIT_MS = 5_000
+
+/**
+ * Edits waiting for the lock in this process. A waiter holds a pooled
+ * connection, and a long sync batch could otherwise let a burst of hiding edits
+ * take the whole pool; past one, an edit leaves its document to the job.
+ */
+let hidingWaiters = 0
 
 /**
  * How long the job waits for a row another transaction holds, once it has the
@@ -424,35 +445,59 @@ export async function writeMarkedResourceDocs(
   )
 }
 
-/** {@link writeMarkedResourceDocs} for a dataset's own document */
+/**
+ * {@link writeMarkedResourceDocs} for a dataset's own document. With `hides` —
+ * an edit that narrows who may see the dataset — it waits for the lock rather
+ * than leave the document to the job ({@link DOC_SYNC_HIDING_LOCK_WAIT_MS}), one
+ * such edit at a time per process ({@link hidingWaiters}).
+ */
 export async function writeMarkedPackageDoc(
   db: Database,
   deps: PackageSyncDeps,
-  packageId: string
+  packageId: string,
+  { hides = false }: { hides?: boolean } = {}
 ): Promise<void> {
   const where = eq(packageTable.id, packageId)
-  await writeMarkedUnderLock(db, deps, packageTable, where, (tx) =>
-    syncMarkedPackageDocs(tx, deps.search, where)
-  )
+  const waits = hides && hidingWaiters === 0
+  if (waits) hidingWaiters++
+  try {
+    await writeMarkedUnderLock(
+      db,
+      deps,
+      packageTable,
+      where,
+      (tx) => syncMarkedPackageDocs(tx, deps.search, where),
+      waits ? { lockWaitMs: DOC_SYNC_HIDING_LOCK_WAIT_MS, packageId } : {}
+    )
+  } finally {
+    if (waits) hidingWaiters--
+  }
 }
 
 /**
- * The edit's write, under the sync's lock if it is free and one batch at most;
- * whatever it does not settle is asked of the job, as long as something in
- * scope is marked.
+ * The edit's write, under the sync's lock if it is free — or once it is, within
+ * `lockWaitMs` — and one batch at most; whatever it does not settle is asked of
+ * the job, as long as something in scope is marked.
  */
 async function writeMarkedUnderLock(
   db: Database,
   deps: PackageSyncDeps,
   table: typeof resource | typeof packageTable,
   where: SQL,
-  sync: (tx: Transaction) => Promise<SyncBatch>
+  sync: (tx: Transaction) => Promise<SyncBatch>,
+  { lockWaitMs, packageId }: { lockWaitMs?: number; packageId?: string } = {}
 ): Promise<void> {
   let settled = false
+  let locked = false
   try {
     settled = await db.transaction(async (tx) => {
-      // Nothing marked is nothing for the job either
-      if (!(await tryLockInTransaction(tx, SEARCH_DOC_SYNC_LOCK, ''))) {
+      if (lockWaitMs !== undefined) {
+        // A timeout lands in the catch below, and the job takes it
+        await lockTimeout(tx, lockWaitMs)
+        await lockInTransaction(tx, SEARCH_DOC_SYNC_LOCK, '')
+        locked = true
+      } else if (!(await tryLockInTransaction(tx, SEARCH_DOC_SYNC_LOCK, ''))) {
+        // Nothing marked is nothing for the job either
         const [due] = await tx
           .select({ id: table.id })
           .from(table)
@@ -468,6 +513,11 @@ async function writeMarkedUnderLock(
   } catch (err) {
     if (!isLockTimeout(err)) {
       deps.logger.error({ err }, 'Search document write failed; the sync job will retry')
+    } else if (lockWaitMs !== undefined && !locked) {
+      deps.logger.warn(
+        { lockWaitMs, packageId },
+        'Search sync lock stayed held; a hidden dataset stays counted until the job writes it'
+      )
     }
   }
   if (!settled) await enqueueSearchDocSync(deps.queue, deps.logger)

@@ -22,11 +22,7 @@ import {
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { createLogger } from '@kukan/shared'
-import {
-  lockInTransaction,
-  SEARCH_DOC_SYNC_LOCK,
-  withGlobalAdvisoryLock,
-} from '../../services/advisory-lock'
+import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from '../../services/advisory-lock'
 import { GroupService } from '../../services/group-service'
 import { OrganizationService } from '../../services/organization-service'
 import { PackageService } from '../../services/package-service'
@@ -42,6 +38,12 @@ import {
 import { purgePackagesSearchDocs } from '../../services/package-cleanup'
 import { markPackageDocs } from '../../services/doc-marks'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import {
+  holdDocSyncLock,
+  holdDocSyncLockOffPool,
+  holdInTransaction,
+  packageDueAt,
+} from '../test-helpers/doc-sync'
 
 const db = getTestDb()
 
@@ -104,27 +106,6 @@ function deps(search: SearchAdapter, ai: AIAdapter = {} as AIAdapter) {
     enqueue,
   }
 }
-
-/** Run `take` in another transaction and hold what it took until the returned release */
-async function holdInTransaction(take: (tx: Transaction) => Promise<unknown>) {
-  let release!: () => void
-  const held = new Promise<void>((r) => (release = r))
-  let taken!: () => void
-  const isTaken = new Promise<void>((r) => (taken = r))
-  const holder = db.transaction(async (tx) => {
-    await take(tx)
-    taken()
-    await held
-  })
-  await isTaken
-  return async () => {
-    release()
-    await holder
-  }
-}
-
-const holdDocSyncLock = () =>
-  holdInTransaction((tx) => lockInTransaction(tx, SEARCH_DOC_SYNC_LOCK, ''))
 
 /**
  * Run `body` with every `event` on `table` taking half a second to finish, so
@@ -491,14 +472,6 @@ describe('publish and restore', () => {
   )
 })
 
-const packageDueAt = async (id: string) =>
-  (
-    await db
-      .select({ d: packageTable.docSyncDueAt })
-      .from(packageTable)
-      .where(eq(packageTable.id, id))
-  )[0]?.d
-
 /** A dataset of an organization, in one group, marked due unless `due: false` */
 async function seedDatasetDoc(opts: { state?: string; due?: boolean } = {}) {
   const [org] = await db
@@ -618,6 +591,42 @@ describe('writeMarkedPackageDoc', () => {
     expect(await packageDueAt(packageId)).not.toBeNull()
     expect(enqueue).toHaveBeenCalledWith('sync-search-docs', {}, { unlessWaiting: true })
     await release()
+  })
+
+  it('waits for the lock when the edit hides the dataset, and writes it itself', async () => {
+    const { packageId } = await seedDatasetDoc()
+    const { search, bulkIndexPackages } = fakeSearch()
+    const { deps: d, enqueue } = deps(search)
+    const release = await holdDocSyncLock()
+
+    const write = writeMarkedPackageDoc(db, d, packageId, { hides: true })
+    // Still waiting while the sync holds the lock
+    await new Promise((r) => setTimeout(r, 200))
+    expect(bulkIndexPackages).not.toHaveBeenCalled()
+    await release()
+    await write
+
+    expect(bulkIndexPackages.mock.calls[0][0].map((doc) => doc.id)).toEqual([packageId])
+    expect(await packageDueAt(packageId)).toBeNull()
+    expect(enqueue).not.toHaveBeenCalled()
+  })
+
+  it('lets one hiding edit wait at a time, and leaves the next to the job', async () => {
+    const first = await seedDatasetDoc()
+    const second = await seedDatasetDoc()
+    const { search, bulkIndexPackages } = fakeSearch()
+    const { deps: d, enqueue } = deps(search)
+    const release = await holdDocSyncLockOffPool()
+
+    const waiting = writeMarkedPackageDoc(db, d, first.packageId, { hides: true })
+    // Answers at once, rather than take a second pooled connection to wait on
+    await writeMarkedPackageDoc(db, d, second.packageId, { hides: true })
+    expect(enqueue).toHaveBeenCalledWith('sync-search-docs', {}, { unlessWaiting: true })
+    expect(await packageDueAt(second.packageId)).not.toBeNull()
+
+    await release()
+    await waiting
+    expect(bulkIndexPackages.mock.calls.flat(2).map((doc) => doc.id)).toEqual([first.packageId])
   })
 })
 

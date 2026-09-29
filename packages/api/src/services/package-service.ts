@@ -46,7 +46,12 @@ import type {
   UpdatePackageInput,
   RestorePackageInput,
 } from '@kukan/shared'
-import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
+import {
+  hasOrgMembership,
+  hasDraftAccess,
+  packageVisibilitySql,
+  type AuthUser,
+} from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
 import {
   latestLiveVersionAgg,
@@ -171,8 +176,7 @@ export class PackageService {
   }
 
   /** Build WHERE conditions for package list query */
-  private buildConditions(params: PackageFilterParams): SQL[] {
-    const states = Array.isArray(params.state) ? params.state : [params.state ?? 'active']
+  private buildConditions(params: PackageFilterParams, states: PackageDbState[]): SQL[] {
     const conditions: SQL[] = [this.stateCondition(states)]
 
     // When search results are provided, filter by matched IDs
@@ -216,7 +220,10 @@ export class PackageService {
     return conditions
   }
 
-  async list(params: PaginationParams & PackageFilterParams) {
+  /** `viewer` is required: the index that chose `searchMatchIds` can lag a
+   *  write, so the database has the last word on visibility. Drafts go by
+   *  `draftAccess` instead (ADR-039). */
+  async list(params: PaginationParams & PackageFilterParams & { viewer: AuthUser | undefined }) {
     const { offset = 0, limit = 20 } = params
 
     // When search was used but returned no matches, return empty result immediately
@@ -231,8 +238,17 @@ export class PackageService {
 
     const hasSearchResults = params.searchMatchIds && params.searchMatchIds.length > 0
 
-    const conditions = this.buildConditions(params)
-    const where = and(...conditions)
+    const states = Array.isArray(params.state) ? params.state : [params.state ?? 'active']
+    const isDraftListing =
+      states.length > 0 && states.every((s) => s === 'draft' || s === 'purging')
+    // The draft rule stands in for visibility only where it is given; closed otherwise
+    if (isDraftListing && !params.draftAccess && !params.viewer?.sysadmin) {
+      throw new Error('A draft listing needs draftAccess unless the viewer is a sysadmin')
+    }
+    const visibility = isDraftListing
+      ? undefined
+      : await packageVisibilitySql(this.db, params.viewer)
+    const where = and(...this.buildConditions(params, states), visibility)
 
     const selectFields = {
       ...packageColumns,
@@ -319,40 +335,11 @@ export class PackageService {
   }
 
   /**
-   * The formats of each package's active resources, capitalised as `list`
-   * gives them — for callers holding search results, which carry none.
-   */
-  async formatsByPackage(packageIds: string[]): Promise<Map<string, string[]>> {
-    const byPackage = new Map<string, string[]>()
-    if (packageIds.length === 0) return byPackage
-    const rows = await this.db
-      .selectDistinct({
-        packageId: resource.packageId,
-        format: sql<string>`UPPER(${resource.format})`,
-      })
-      .from(resource)
-      .where(
-        and(
-          inArray(resource.packageId, packageIds),
-          eq(resource.state, 'active'),
-          sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
-        )
-      )
-      .orderBy(resource.packageId, sql`UPPER(${resource.format})`)
-    for (const r of rows) {
-      const list = byPackage.get(r.packageId)
-      if (list) list.push(r.format)
-      else byPackage.set(r.packageId, [r.format])
-    }
-    return byPackage
-  }
-
-  /**
    * Enrich SearchAdapter facets with all possible values from DB.
    * SearchAdapter only returns non-zero buckets; this supplements with
    * all active orgs/groups/tags/formats/licenses (count=0 for missing).
    */
-  async enrichFacets(facets: SearchFacets): Promise<FacetCounts> {
+  async enrichFacets(facets: SearchFacets, viewer: AuthUser | undefined): Promise<FacetCounts> {
     // The list is rebuilt from the DB below, so the count order has to be
     // applied here or an empty organization outranks a busy one. Stable
     // sort, so equal counts keep the DB's order.
@@ -364,6 +351,8 @@ export class PackageService {
     const formatCountMap = new Map(facets.formats.map((f) => [f.name, f.count]))
     const licenseCountMap = new Map(facets.licenses.map((l) => [l.name, l.count]))
 
+    // Values only other viewers' private datasets carry are not named, even at 0
+    const visibility = await packageVisibilitySql(this.db, viewer)
     const [allOrgs, allGroups, allTags, allFormats, allLicenses] = await Promise.all([
       this.db
         .select({ name: organization.name, title: organization.title })
@@ -382,7 +371,7 @@ export class PackageService {
         .from(tag)
         .innerJoin(packageTag, eq(packageTag.tagId, tag.id))
         .innerJoin(packageTable, eq(packageTable.id, packageTag.packageId))
-        .where(and(sql`${tag.vocabularyId} IS NULL`, eq(packageTable.state, 'active')))
+        .where(and(sql`${tag.vocabularyId} IS NULL`, eq(packageTable.state, 'active'), visibility))
         .orderBy(tag.name),
       this.db
         .selectDistinct({ format: sql<string>`UPPER(${resource.format})`.as('format') })
@@ -392,6 +381,7 @@ export class PackageService {
           and(
             eq(resource.state, 'active'),
             eq(packageTable.state, 'active'),
+            visibility,
             sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
           )
         )
@@ -402,6 +392,7 @@ export class PackageService {
         .where(
           and(
             eq(packageTable.state, 'active'),
+            visibility,
             sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
           )
         )
@@ -519,14 +510,14 @@ export class PackageService {
   }
 
   /**
-   * The active datasets among `ids` that `visibility` lets through, each as
+   * The active datasets among `ids` that `viewer` may see, each as
    * {@link getDetailByNameOrId} returns it, in the order of `ids` — for a page
-   * of search results served whole (CKAN `package_search`). The search chose
-   * the ids from an index that can lag a write; `visibility` is checked again
-   * here, so a dataset made private since is not served with its resources.
+   * of search results served whole (CKAN `package_search`). Like {@link list},
+   * visibility is checked again here, as the index can lag a write.
    */
-  async getDetailsByIds(ids: string[], visibility?: SQL) {
+  async getDetailsByIds(ids: string[], viewer: AuthUser | undefined) {
     if (ids.length === 0) return []
+    const visibility = await packageVisibilitySql(this.db, viewer)
     const rows = await this.db
       .select(packageColumns)
       .from(packageTable)
