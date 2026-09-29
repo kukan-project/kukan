@@ -89,9 +89,13 @@ CKAN-compatible API.
 ### package_search results
 
 `package_search` accepts `rows` (default 20, max 1000) and `start`. It is keyword-only, with no
-semantic results. Each entry in `results` is a search-index summary, shaped differently from a
-`package_show` result: it has no `resources`, and `tags`, `groups` and `organization` are plain
-name strings. Call `package_show` for resources and formats.
+semantic results. Each entry in `results` has the same shape as a `package_show` result, with
+`resources`, `tags`, `groups` and `organization`. Entries come in the order the search ranked them,
+read from the database at the time of the search.
+`count` and the pages (`start`, `rows`) are the search index's. Until a change reaches the index
+(usually a few seconds) — a dataset just made private, say — that dataset is left out of the
+results, so a page can come back short and `count` can run high. Paging on to `count` neither
+repeats nor skips a dataset.
 
 ## Usage examples
 

@@ -88,9 +88,11 @@ KUKAN は内部で camelCase のフィールドを使用しますが、CKAN 互�
 ### package_search の結果
 
 `package_search` は `rows`（既定 20、最大 1000）と `start` を受け付けます。キーワード一致のみで、
-意味検索は行いません。`results` の各要素は検索インデックスの要約で、`package_show` の結果とは
-形が異なります。`resources` は含まず、`tags`・`groups`・`organization` は名前の文字列です。
-リソースやフォーマットが必要な場合は `package_show` を呼んでください。
+意味検索は行いません。`results` の各要素は `package_show` の結果と同じ形で、`resources`・`tags`・
+`groups`・`organization` を含みます。検索で決まった順に並び、内容は検索時点のデータベースから読みます。
+`count` とページの区切り（`start`・`rows`）は検索インデックスのものです。非公開にした直後など、
+インデックスへの反映（通常は数秒）が済むまでの間は、そのデータセットを結果から外すため、ページが
+短くなり `count` が多めになることがあります。`count` までページを送れば、重複や取りこぼしはありません。
 
 ## 使用例
 

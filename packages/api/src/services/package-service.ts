@@ -104,6 +104,17 @@ function pickDefined<T extends object, K extends keyof T>(obj: T, keys: readonly
 // reader's — and a column added to the table is public the moment it is added
 const { docSyncDueAt: _docSyncDueAt, ...packageColumns } = getTableColumns(packageTable)
 
+/** Rows grouped by the package they belong to, each group in the rows' order */
+function byPackage<T extends { packageId: string }>(rows: T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>()
+  for (const row of rows) {
+    const list = out.get(row.packageId)
+    if (list) list.push(row)
+    else out.set(row.packageId, [row])
+  }
+  return out
+}
+
 type PackageRow = Omit<typeof packageTable.$inferSelect, 'docSyncDueAt'>
 export type PackageAuthorize = (pkg: PackageRow) => Promise<void>
 
@@ -503,10 +514,35 @@ export class PackageService {
     state: PackageState | PackageState[] = 'active'
   ) {
     const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer, state)
+    const [detail] = await this.withDetails([pkg])
+    return detail
+  }
 
+  /**
+   * The active datasets among `ids` that `visibility` lets through, each as
+   * {@link getDetailByNameOrId} returns it, in the order of `ids` — for a page
+   * of search results served whole (CKAN `package_search`). The search chose
+   * the ids from an index that can lag a write; `visibility` is checked again
+   * here, so a dataset made private since is not served with its resources.
+   */
+  async getDetailsByIds(ids: string[], visibility?: SQL) {
+    if (ids.length === 0) return []
+    const rows = await this.db
+      .select(packageColumns)
+      .from(packageTable)
+      .where(and(inArray(packageTable.id, ids), eq(packageTable.state, 'active'), visibility))
+    const rowById = new Map(rows.map((r) => [r.id, r]))
+    return this.withDetails(ids.flatMap((id) => rowById.get(id) ?? []))
+  }
+
+  /** Resources, tags, groups and the owner organization of each of `pkgs`,
+   *  in one query each however many there are */
+  private async withDetails<P extends { id: string; ownerOrg: string | null }>(pkgs: P[]) {
+    const ids = pkgs.map((p) => p.id)
+    const orgIds = [...new Set(pkgs.flatMap((p) => (p.ownerOrg ? [p.ownerOrg] : [])))]
     const versionAgg = latestLiveVersionAgg(this.db)
 
-    const [resources, tags, groups, org] = await Promise.all([
+    const [resources, tags, groups, orgs] = await Promise.all([
       this.db
         .select({
           ...publicResourceColumns,
@@ -516,20 +552,25 @@ export class PackageService {
         .from(resource)
         .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
         .leftJoin(versionAgg, eq(versionAgg.resourceId, resource.id))
-        .where(and(eq(resource.packageId, pkg.id), eq(resource.state, 'active')))
+        .where(and(inArray(resource.packageId, ids), eq(resource.state, 'active')))
         .orderBy(resource.position),
       this.db
-        .select({ id: tag.id, name: tag.name })
+        .select({ packageId: packageTag.packageId, id: tag.id, name: tag.name })
         .from(packageTag)
         .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(eq(packageTag.packageId, pkg.id))
+        .where(inArray(packageTag.packageId, ids))
         .orderBy(tag.name),
       this.db
-        .select({ id: group.id, name: group.name, title: group.title })
+        .select({
+          packageId: packageGroup.packageId,
+          id: group.id,
+          name: group.name,
+          title: group.title,
+        })
         .from(packageGroup)
         .innerJoin(group, eq(packageGroup.groupId, group.id))
-        .where(eq(packageGroup.packageId, pkg.id)),
-      pkg.ownerOrg
+        .where(inArray(packageGroup.packageId, ids)),
+      orgIds.length > 0
         ? this.db
             .select({
               id: organization.id,
@@ -539,13 +580,21 @@ export class PackageService {
               imageUrl: organization.imageUrl,
             })
             .from(organization)
-            .where(and(eq(organization.id, pkg.ownerOrg), eq(organization.state, 'active')))
-            .limit(1)
-            .then(([r]) => r ?? null)
-        : Promise.resolve(null),
+            .where(and(inArray(organization.id, orgIds), eq(organization.state, 'active')))
+        : Promise.resolve([]),
     ])
 
-    return { ...pkg, resources, tags, groups, organization: org }
+    const resourcesBy = byPackage(resources)
+    const tagsBy = byPackage(tags)
+    const groupsBy = byPackage(groups)
+    const orgById = new Map(orgs.map((o) => [o.id, o]))
+    return pkgs.map((pkg) => ({
+      ...pkg,
+      resources: resourcesBy.get(pkg.id) ?? [],
+      tags: (tagsBy.get(pkg.id) ?? []).map(({ packageId: _, ...t }) => t),
+      groups: (groupsBy.get(pkg.id) ?? []).map(({ packageId: _, ...g }) => g),
+      organization: (pkg.ownerOrg && orgById.get(pkg.ownerOrg)) || null,
+    }))
   }
 
   /**

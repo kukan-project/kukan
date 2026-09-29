@@ -10,7 +10,11 @@ import { ResourceService, omitStoragePointers } from '../services/resource-servi
 import { OrganizationService } from '../services/organization-service'
 import { GroupService } from '../services/group-service'
 import { TagService } from '../services/tag-service'
-import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
+import {
+  resolveUserOrgIds,
+  buildVisibilityFilters,
+  packageVisibilitySql,
+} from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
@@ -161,12 +165,21 @@ ckanCompatRouter.get('/package_search', async (c) => {
     filters: buildVisibilityFilters(user, userOrgIds),
   })
 
+  // Each result whole, as package_show serves one — read from the database
+  // like every other listing, not from the index's own summary of it
+  const packages = await new PackageService(db).getDetailsByIds(
+    result.items.map((item) => item.id),
+    await packageVisibilitySql(db, user)
+  )
+
   return ckanResponse(
     {
+      // The index's count, the same on every page and true to its pages: a
+      // client paging by it reaches every result. While the index lags, a page
+      // can hold fewer than it ranked; filling it would shift the next one and
+      // repeat a dataset, and a visible total would need every id checked.
       count: result.total,
-      results: result.items.map((item) =>
-        toCkanPackage(item as unknown as Record<string, unknown>)
-      ),
+      results: packages.map((pkg) => toCkanPackage(pkg as unknown as Record<string, unknown>)),
     },
     c
   )

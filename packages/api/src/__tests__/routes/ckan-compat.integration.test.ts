@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
   getTestDb,
   cleanDatabase,
@@ -9,6 +9,7 @@ import {
   OUTSIDER_USER_ID,
 } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { findLicense } from '@kukan/shared'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
@@ -140,6 +141,108 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       expect(body.success).toBe(true)
       expect(body.result.count).toBe(0)
       expect(body.result.results).toEqual([])
+    })
+
+    it('serves each result whole, as package_show does', async () => {
+      const pkg = await createPackage('search-license', {
+        title: 'Search license',
+        licenseId: 'ODbL-1.0',
+        tags: [{ name: 'traffic' }],
+      })
+      await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'counts', format: 'CSV' }),
+      })
+
+      const res = await app.request('/api/3/action/package_search?q=search-license')
+      const body = await res.json()
+
+      expect(body.result.count).toBe(1)
+      const [result] = body.result.results
+      expect(result).toMatchObject({
+        id: pkg.id,
+        name: 'search-license',
+        license_id: 'ODbL-1.0',
+        license_title: findLicense('ODbL-1.0')!.title,
+        owner_org: testOrgId,
+        creator_user_id: pkg.creatorUserId,
+        metadata_created: expect.any(String),
+        metadata_modified: expect.any(String),
+        tags: [expect.objectContaining({ name: 'traffic' })],
+        organization: expect.objectContaining({ name: 'test-org-ckan' }),
+        resources: [expect.objectContaining({ name: 'counts', package_id: pkg.id })],
+      })
+      // What the search adapter adds for the web cards stays out of CKAN's shape
+      expect(result).not.toHaveProperty('matchedResources')
+      expect(result).not.toHaveProperty('highlightedTitle')
+
+      const show = await app.request(`/api/3/action/package_show?id=${pkg.id}`)
+      expect(result).toEqual((await show.json()).result)
+    })
+
+    it('keeps the order the search chose, and checks visibility again in the database', async () => {
+      const first = await createPackage('search-first')
+      const second = await createPackage('search-second')
+      // Private since the index last saw it: the search still answers its id
+      const hidden = await createPackage('search-hidden', { private: true })
+      const ids = [second.id, hidden.id, '00000000-0000-0000-0000-00000000dead', first.id]
+      const staleIndex = createTestApp(db, {
+        user: null,
+        search: {
+          ...mockSearch,
+          search: async () => ({
+            items: ids.map((id) => ({ id, name: '' })),
+            total: ids.length,
+            offset: 0,
+            limit: 20,
+          }),
+        },
+      })
+
+      const res = await staleIndex.request('/api/3/action/package_search?q=search')
+      const body = await res.json()
+
+      expect(body.result.results.map((r: { name: string }) => r.name)).toEqual([
+        'search-second',
+        'search-first',
+      ])
+    })
+
+    it('pages by the index while it lags, so paging on to the count misses nothing', async () => {
+      const shown = await createPackage('search-shown')
+      const hidden = await createPackage('search-hidden', { private: true })
+      // The index still ranks the now-private dataset first, of two in all
+      const ranked = [hidden.id, shown.id]
+      const staleIndex = createTestApp(db, {
+        user: null,
+        search: {
+          ...mockSearch,
+          search: async ({ offset = 0, limit = 20 }) => ({
+            items: ranked.slice(offset, offset + limit).map((id) => ({ id, name: '' })),
+            total: ranked.length,
+            offset,
+            limit,
+          }),
+        },
+      })
+      const page = async (start: number) =>
+        (
+          await (
+            await staleIndex.request(`/api/3/action/package_search?q=search&rows=1&start=${start}`)
+          ).json()
+        ).result
+
+      const first = await page(0)
+      expect(first.results).toEqual([])
+      expect(first.count).toBe(2)
+      const seen: string[] = []
+      for (let start = 0; start < first.count; start++) {
+        const { count, results } = await page(start)
+        expect(count).toBe(first.count)
+        seen.push(...results.map((r: { name: string }) => r.name))
+      }
+      expect(seen).toEqual(['search-shown'])
     })
   })
 
