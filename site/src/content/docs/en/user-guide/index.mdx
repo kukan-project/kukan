@@ -27,11 +27,11 @@ When a dataset holds several files, the results say **which file matched** —
 in a dataset of many files, what you are looking for is usually in one of them.
 Each matched resource carries a label saying why it matched.
 
-| Label            | Meaning                                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------- |
-| Semantic match   | The file's meaning is close to the query. The number beside it is that closeness (0–1, higher is closer) |
-| AI summary match | The query appears in that file's [AI-written description](#ai-written-descriptions)                      |
-| Content match    | The query appears in the file's contents (the body of a CSV or text file)                                |
+| Label                      | Meaning                                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Semantic match             | The file's meaning is close to the query. The number beside it is that closeness (0–1, higher is closer) |
+| Matched the AI description | The query appears in that file's [AI-written description](#ai-written-descriptions)                      |
+| Content match              | The query appears in the file's contents (the body of a CSV or text file)                                |
 
 When many files match, the list folds and shows the count.
 
@@ -40,10 +40,12 @@ When many files match, the list folds and shows the count.
 - **Organization** — Filter by the organization that published the data
 - **Category** — Filter by data classification
 - **Tags** — Filter by keyword tags
+- **Format** — Filter by the formats of the dataset's resources
+- **License** — Filter by license
 
 ### Sorting
 
-Search results can be sorted by relevance, last updated, or name.
+Search results can be sorted by relevance, last updated, date created (newest/oldest), or URL identifier.
 
 ## Browsing datasets
 
@@ -61,11 +63,12 @@ The resource page provides format-specific previews:
 | Format                                     | Preview                |
 | ------------------------------------------ | ---------------------- |
 | CSV / TSV                                  | Table view + text view |
-| JSON / XML / TXT                           | Text view              |
+| JSON / XML / TXT / HTML / Markdown         | Text view              |
 | GeoJSON                                    | Map view + text view   |
 | PDF                                        | PDF viewer             |
 | Excel / Word / PowerPoint                  | Office Online Viewer   |
 | PNG / JPEG / GIF / WebP / SVG / BMP / TIFF | Image viewer           |
+| ZIP                                        | File list              |
 
 A resource that gets a table view can also be opened straight from a BI tool such as Excel or
 Tableau ([Opening the table in a BI tool](#opening-the-table-in-a-bi-tool)).
@@ -75,7 +78,7 @@ Tableau ([Opening the table in a BI tool](#opening-the-table-in-a-bi-tool)).
 :::note
 **This appears only where the site has the feature enabled.** On a site without
 it, nothing described in this section appears on a resource page — nor does the
-"AI summary match" label in search results.
+"Matched the AI description" label in search results.
 :::
 
 An **AI-written description** on a resource page is a short piece of prose an AI
@@ -84,8 +87,11 @@ it.
 
 Below the description, a line says **how much of the file it was written from**.
 A table is read as its column layout and first rows ("Read the column layout and
-the first 100 of 1,200 rows"), while a PDF or an image that fit is simply "Read
-the whole file" (a very long PDF stops partway). **Anything written from a part
+the first 100 of 1,200 rows"), while a PDF that fit is simply "Read the whole
+file" and an image "Read the whole image" (a very long PDF stops partway). Text
+files are read from their opening, Office documents and the like from the start
+of their extracted text, and ZIP archives from their file names, each with a
+line saying how much was read. **Anything written from a part
 of a file always says so**, so the extent is never left to guesswork.
 
 :::caution
@@ -95,7 +101,7 @@ check the original file for the authoritative content.
 
 The description also names the version it was written from. If the file has
 been replaced and the description has not caught up, the page says so: "This
-file is now v3. The description has not been updated."
+file is now at v3; the description has not been rewritten."
 
 Some files get no description and a stated reason instead (over the size limit,
 a format the AI cannot read, and so on).
@@ -133,7 +139,7 @@ If you sign in with a password, you can change it yourself from the profile page
 A new password has to be:
 
 - **at least 15 characters**, and
-- **hard to guess** — a zxcvbn strength score of 3 out of 4.
+- **hard to guess** — a zxcvbn strength score of at least 3 (on a 0–4 scale).
 
 Length alone is not enough. Common word sequences and keyboard patterns are rejected however long they are, and so is anything built out of your own email address, username, or display name. The strength meter updates as you type, so use it to gauge where you stand.
 
@@ -141,7 +147,7 @@ If you sign in through an external identity provider (OIDC), your password lives
 
 ## API access
 
-KUKAN provides a REST API for programmatic data access.
+KUKAN provides a REST API for programmatic data access. See the [API documentation](/en/api/).
 
 The rows of a tabular resource are also readable as an OData feed
 (`/odata/v1/resources/{id}/Rows`). To use one from a BI tool, see

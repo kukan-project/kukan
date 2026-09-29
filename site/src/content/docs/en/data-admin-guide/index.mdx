@@ -11,7 +11,7 @@ Datasets start as a **draft** and are published once their resources and metadat
 Drafts never appear in search results or dataset listings until published.
 
 1. Log in to the dashboard
-2. Click "Create Draft" — the name (URL identifier), organization, and license can be set later
+2. Click "Create Draft" (dropping files also creates a draft and adds them as resources) — the name (URL identifier), organization, and license can be set later
 3. Add resources on the edit page (file upload / external URL) — the pipeline runs while the dataset is still a draft, so you can check previews before publishing
 4. Finalize the metadata and click "Save & Publish"
 
@@ -53,6 +53,8 @@ Resources are files or URLs associated with a dataset.
 - **File upload** — Upload directly from the browser (up to 100 MB)
 - **External URL** — Specify a URL to an external file
 
+Adding, editing, replacing or deleting a resource is saved right away. Only a new order needs "Save order".
+
 ### Grouping resources into sections
 
 When a dataset has many resources, **section** headings group them. "Add section" in the
@@ -87,6 +89,9 @@ Uploaded files are automatically processed through the pipeline:
 - Text file encoding detection and conversion
 - CSV/TSV to Parquet conversion (for table preview)
 - ZIP file manifest generation
+- Recording a version ([Version history](#version-history))
+- Text extraction for search (so a file's contents can match a query)
+- An AI-written description, where the site has it enabled ([AI-written descriptions](#ai-written-descriptions))
 
 ### Tables a BI tool can open
 
@@ -174,6 +179,7 @@ the reason is shown.
 | A key column is not in v○, so its rows cannot be identified and no diff is available.           | A column named in the primary key is missing from that version |
 | A key column of v○ has empty values, so its rows cannot be identified and no diff is available. | The key columns contain empty values                           |
 | The key of v○ does not identify a row, so no diff is available.                                 | Rows repeat the same key values                                |
+| Loading v○ for row-level diffs failed repeatedly, so no diff is available.                      | Loading that version into the diff store kept failing          |
 
 The three key-related reasons clear up **from the next version on** once the key is corrected.
 A version left out is never loaded retroactively.
@@ -239,17 +245,17 @@ previous content — it is never kept as a version.**
 
 ## AI metadata suggestions
 
-Once you add resources and their pipeline processing completes, the **"Let AI suggest metadata"** button on the edit page can propose a title, notes, tags, and per-resource names and descriptions (only when AI is enabled for the site — see the [System Administrator Guide](/en/system-admin-guide/#site-settings-runtime)).
+Once you add resources and their pipeline processing completes, the **"Suggest metadata with AI"** button on the edit page can propose a title, notes, tags, categories (and, for a draft, the URL identifier), and per-resource names and descriptions (only when AI is enabled for the site — see the [System Administrator Guide](/en/system-admin-guide/#site-settings-runtime)).
 
-- **Prerequisite**: at least one resource whose pipeline has completed. Otherwise the button is disabled and prompts you to upload resources.
+- **Prerequisite**: at least one resource whose pipeline has completed, and none still processing. Otherwise the button is disabled. When processing finishes, a prompt with a "Generate suggestions" button appears.
 - **How to use**:
-  1. Click "Let AI suggest metadata" on the edit page (generation can take from tens of seconds to a few minutes).
-  2. In the dialog, compare the current values with the AI proposals, grouped into "Dataset" and "Resource" sections.
+  1. Click "Suggest metadata with AI" on the edit page (generation can take from tens of seconds to a few minutes).
+  2. In the dialog, compare the current values with the AI proposals, grouped into "Dataset" and "Resources" sections.
   3. Turn on the adoption toggle for each field you want to adopt (**all toggles start off** — overwriting existing values is opt-in).
   4. Optionally edit an adopted proposal inline before applying.
-  5. Click "Adopt".
-- **How adoptions apply**: title, notes, and tags are applied to the edit form and **committed when you save the dataset**; resource names and descriptions are **saved immediately** on adoption.
-- **What suggestions are based on**: CSV/TSV use the columns and the first rows of content; PDF, Excel, and similar files use the filename and format. The generated text follows your display language.
+  5. Click "Adopt selected fields".
+- **How adoptions apply**: adopted fields are **saved as soon as you adopt them** (this does not publish — a draft stays a draft; if the form has a validation error they stay in the form for you to fix and save). Resource names and descriptions are saved immediately too. Tags and categories are only ever added; adopting never removes an existing one.
+- **What suggestions are based on**: CSV/TSV use the columns and the first rows; text files their opening; PDF and Office documents (docx, xlsx, pptx and the like) the start of their extracted text; ZIP archives their file list. Anything else is suggested from filename and format. The generated text follows your display language.
 - Suggestions are never persisted (only adopted values are saved as ordinary updates). A per-user rate limit prevents overuse.
 
 ## AI-written descriptions
@@ -259,7 +265,9 @@ description written from the file's contents**, shown on the resource page (see
 the [System Administrator Guide](/en/system-admin-guide/#ai-written-descriptions)).
 Unlike metadata suggestions, **there is nothing to adopt** — it is written at
 the end of the pipeline and published as it is. Replace the file and it is
-rewritten from the new contents.
+rewritten from the new contents. Resources that predate enabling it get their
+descriptions from a system administrator, via "Generate AI descriptions in bulk"
+under AI Management.
 
 The description also feeds search. When someone searches for "newly opened hair
 salons", it is often the description that leads them to the right file.
@@ -268,8 +276,9 @@ salons", it is often the description that leads them to the right file.
   types, primary keys, or where the header row is. It writes prose; your data
   is never rewritten.
 - **How much is read depends on the format** — a table's column layout and first
-  rows, a PDF whole unless it is very long, an image whole. The resource page always
-  states the extent.
+  rows, a PDF whole unless it is very long, an image whole, a text file's opening, the
+  start of the text extracted from an Office document and the like, a ZIP archive's file
+  names. The resource page always states the extent.
 - **A description a person wrote is never overwritten.** This sits in its own
   block, apart from the resource's own description field.
 
@@ -290,7 +299,7 @@ If nothing was written, the resource page states why.
 
 Replacing a file rewrites its description from the new version, but **until
 that finishes** the previous version's description stands. While it does, the
-resource page says "This file is now v3. The description has not been updated",
+resource page says "This file is now at v3; the description has not been rewritten",
 so nobody mistakes an old description for a current one.
 
 ## Organization management

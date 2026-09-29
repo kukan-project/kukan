@@ -66,7 +66,7 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 | `scale`               | `small` \| `medium` \| `large` | `small`                                      | デプロイ規模(リソースサイズを一括制御)                                                                                                     |
 | `dbEngine`            | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora) | DB エンジン                                                                                                                                |
 | `enableOpenSearch`    | boolean                        | `true`                                       | `false` → PostgreSQL 全文検索フォールバック                                                                                                |
-| `bedrock`             | object \| `false`              | 有効(Titan v2)                               | セマンティック検索と AI メタデータ提案。`false` で無効(`AI_TYPE=none`)                                                                     |
+| `bedrock`             | object \| `false`              | 有効(Titan v2)                               | セマンティック検索・AI メタデータ提案・AI による説明(抄録)。`false` で無効(`AI_TYPE=none`)。フィールドは下記「`bedrock` のフィールド」     |
 | `githubRepo`          | string                         | なし                                         | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外                                                          |
 | `deployBranch`        | string                         | `main`                                       | この env を pipeline でデプロイするブランチ                                                                                                |
 | `deployNotification`  | boolean                        | なし                                         | デプロイの成否を Slack に投稿する(パイプラインモードのみ)。webhook URL はスタックが作るシークレットに貼る                                  |
@@ -75,6 +75,17 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 | `deployConcurrency`   | number                         | `2`                                          | カナリア後に同時デプロイするサイト数。同時更新分の DB 接続数がバジェットに計上され、収まらなければ synth エラー                            |
 | `ecrImageRetention`   | number                         | `100`                                        | CDK bootstrap の ECR リポジトリに残すイメージ数(新しい順)。同一アカウントの環境はリポジトリを共有するため同じ値にする(違えば synth エラー) |
 | `cdnLogRetentionDays` | number                         | `90`                                         | CloudFront のアクセスログを残す日数(環境内の全サイトに適用)                                                                                |
+
+### `bedrock` のフィールド
+
+| フィールド            | 型       | デフォルト                       | 説明                                                                                                                                |
+| --------------------- | -------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `region`              | string   | デプロイ先リージョン             | Bedrock API のリージョン                                                                                                            |
+| `embeddingModel`      | string   | `amazon.titan-embed-text-v2:0`   | 埋め込みモデル ID。変えたら再デプロイのうえ埋め込みベクトルの再生成が要る                                                           |
+| `embeddingDimensions` | number   | アダプター既定(1024)             | 埋め込みの次元数                                                                                                                    |
+| `vectorMinSimilarity` | number   | モデルごとの実測推奨値           | 意味検索に含める類似度の下限の上書き                                                                                                |
+| `completionModels`    | string[] | `['jp.amazon.nova-2-lite-v1:0']` | タスクロールに `InvokeModel` を許可する生成モデル。管理画面のモデル選択肢も兼ね、先頭が AI メタデータ提案の既定。変更には再デプロイ |
+| `summaryModel`        | string   | なし(AI による説明を生成しない)  | AI による説明(抄録)を書くモデル。`completionModels` に含まれないと synth エラー                                                     |
 
 ## サイトエントリのフィールド(`sites[]`)
 
@@ -97,6 +108,7 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 | `enableGa4DataApi`    | boolean                  | `false`                                          | GA4 アクセス統計ダッシュボード                                                                                                                                                                                                                          |
 | `nameSiteInUserAgent` | boolean                  | `false`                                          | worker の User-Agent にサイトの URL を載せる(`USER_AGENT_URL`)。取得先のサーバー管理者が連絡できるように、誰でも閲覧でき検索エンジンに載せてよいサイトでだけ `true` にする。`allowedIpRanges` / `basicAuth` と同時に指定すると synth が拒否します       |
 | `timeZone`            | string                   | `Asia/Tokyo`                                     | 日時を事前描画するタイムゾーン(IANA 名)。ブラウザ側で閲覧者のゾーンに置き換わる                                                                                                                                                                         |
+| `bedrock`             | object \| `false`        | 環境の設定                                       | 環境の `bedrock` への上書き(deep-merge、配列は置換)。`false` でこのサイトだけ AI 無効。環境側が `bedrock: false` だと synth エラー                                                                                                                      |
 | `overrides`           | 部分指定                 | なし                                             | サイト所有セクションのみ(下記「overrides」)                                                                                                                                                                                                             |
 
 `certificateArn` / `webAclArn` を後から外部の ARN に切り替えても、それまで
@@ -135,7 +147,7 @@ RETAIN が付くため、一度のデプロイで切り替えられます):
 - **環境エントリ**: 全セクション(`web` / `worker` / `db` / `opensearch` /
   `dbPool` / `backup`)。共有リソースのサイズと DB 保持期間・AWS Backup
   スケジュールは環境レベルでのみ設定できます
-- **サイトエントリ**: サイト所有分のみ(`web` / `worker` / `dbPool` と、
+- **サイトエントリ**: サイト所有分のみ(`web` / `worker`(`healthPort` を除く)/ `dbPool` と、
   `backup` のうち S3 バージョニング関連)。`db` / `opensearch` /
   `backup.awsBackup` / `backup.dbBackupRetentionDays` の上書きは synth 時に
   拒否されます
@@ -145,7 +157,7 @@ RETAIN が付くため、一度のデプロイで切り替えられます):
 
 ## 過去互換: シングルサイト形状
 
-サイトエントリのフィールドのうち `name` / `brand` を除くものは、**`sites` を
+サイトエントリのフィールドのうち `name` / `brand` / `albPriority` を除くものは、**`sites` を
 宣言しない環境に限り** env 直下にも書けます。これは `sites` 導入前の
 シングルサイト形状(全部入り単一スタック)との**過去互換**で、デプロイ済みの
 既存環境のために残されています。

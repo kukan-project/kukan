@@ -50,7 +50,7 @@ build (or a dev-server restart) to take effect** (see [Static Files](#static-fil
 
 ## Tier 1: Colors and Sizing
 
-Write CSS variables in `brand/theme.css` to change colors and sizes across the entire site.
+Write CSS variables in `brands/default/theme.css` to change colors and sizes across the entire site.
 
 ```css
 /* apps/web/brands/default/theme.css */
@@ -88,6 +88,7 @@ Each variable carries an **override rating** to make the go/no-go decision easie
 | `--destructive` / `--destructive-foreground`              | Not recommended | Semantic color for errors and deletion (destructive buttons, form errors, delete menu items). Solid fill and text on it                              |
 | `--success` / `--warning`                                 | Not recommended | Semantic colors for success / warning states (alerts, pipeline status, form warnings). Used for borders, tinted backgrounds, icons                   |
 | `--success-tint-foreground` / `--warning-tint-foreground` | Not recommended | Text color **on the tinted (/10–/15)** success / warning surfaces; not for solid fills                                                               |
+| `--ai` / `--ai-tint-foreground`                           | Not recommended | Semantic color marking what AI generated (abstract badge, search cards, etc.). `-tint-foreground` is the text color on the tinted surface            |
 
 ### Rules for Overriding
 
@@ -102,7 +103,7 @@ Follow these rules to swap colors safely:
 
 ### Adding Custom Tokens (`--brand-*`)
 
-When a designer-specified palette includes colors that do not fit any official token role (primary, accent, etc.), you can add custom tokens with the `--brand-` prefix in `brand/theme.css`.
+When a designer-specified palette includes colors that do not fit any official token role (primary, accent, etc.), you can add custom tokens with the `--brand-` prefix in `brands/default/theme.css`.
 
 ```css
 /* apps/web/brands/default/theme.css */
@@ -114,7 +115,7 @@ When a designer-specified palette includes colors that do not fit any official t
 
 - **`--brand-*` is a fork-only namespace** — upstream never defines or references `--brand-*` tokens, so they cannot conflict with upstream updates. Conversely, `--kukan-*` is reserved for upstream; do not use it for custom tokens
 - **Use the same bare HSL triplet format as official tokens** (so opacity modifiers like `/10` work at usage sites)
-- **Custom tokens can only be consumed in fork-owned components** (`brand/overrides/` / `brand/pages/`). Upstream components never reference them
+- **Custom tokens can only be consumed in fork-owned components** (`brands/default/overrides/` / `brands/default/pages/`). Upstream components never reference them
 - **No Tailwind utility classes are generated** — `theme.css` is a separate CSS unit from `globals.css`, so `@theme` cannot generate classes for it. Reference custom tokens with the arbitrary value syntax:
 
 ```tsx
@@ -127,7 +128,7 @@ If you want to recolor a single component on an upstream screen you have not ove
 
 ## Tier 2: Text and Metadata
 
-Edit `brand/brand-config.ts` to change the site name, copyright, and metadata.
+Edit `brands/default/brand-config.ts` to change the site name, copyright, and metadata.
 
 ```typescript
 // apps/web/brands/default/brand-config.ts
@@ -156,18 +157,19 @@ export const brandConfig: BrandConfig = {
 
 ### Field Reference
 
-| Field             | Description                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `siteName`        | Site title (browser tab, header, etc.)                                                 |
-| `siteDescription` | meta description (for search engines)                                                  |
-| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)                            |
-| `copyrightUrl`    | Link target for the site name in the footer (omit for no link)                         |
-| `logo`            | Header logo configuration (see below)                                                  |
-| `headerNavExtra`  | Additional navigation items for the header                                             |
-| `footerLinks`     | Footer link list                                                                       |
-| `ogImage`         | OGP image path (relative to `public/`)                                                 |
-| `faviconPath`     | Favicon path                                                                           |
-| `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none) |
+| Field             | Description                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `siteName`        | Site title (browser tab, header, etc.)                                                                                     |
+| `siteDescription` | meta description (for search engines)                                                                                      |
+| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)                                                                |
+| `copyrightUrl`    | Link target for the site name in the footer (omit for no link)                                                             |
+| `logo`            | Header logo configuration (see below)                                                                                      |
+| `headerNavExtra`  | Additional navigation items for the header                                                                                 |
+| `footerLinks`     | Footer link list                                                                                                           |
+| `ogImage`         | OGP image path (relative to `public/`)                                                                                     |
+| `faviconPath`     | Favicon path                                                                                                               |
+| `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none)                                     |
+| `gaMeasurementId` | GA4 Measurement ID (`G-XXXXXXXXXX`). `null` / omitted disables GA4 ([Access Analytics](/en/system-admin-guide/analytics/)) |
 
 Text fields (`siteName`, `siteDescription`, `copyright`, `logo.alt`, `headerNavExtra[].label`, `footerLinks[].label`) accept either a plain string or a locale map (e.g. `{ ja: '利用規約', en: 'Terms of Use' }`). A plain string applies to all locales; a map follows locale switching. Missing locales fall back to English (the default locale), then to any defined entry.
 
@@ -189,7 +191,7 @@ logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: 'Cit
 
 ## i18n Message Overrides
 
-You can override UI translation text for your organization. Specify only the keys you want to change in `brand/messages/{locale}.json`.
+You can override UI translation text for your organization. Specify only the keys you want to change in `brands/default/messages/{locale}.json`.
 
 ```json
 // apps/web/brands/default/messages/ja.json
@@ -220,7 +222,7 @@ You can override UI translation text for your organization. Specify only the key
 | Use case                                                | Where to configure                                    |
 | ------------------------------------------------------- | ----------------------------------------------------- |
 | Brand-specific values (site name, nav items, copyright) | `brand-config.ts` (locale maps for multilingual text) |
-| Overriding the main UI's translated text                | `brand/messages/{locale}.json`                        |
+| Overriding the main UI's translated text                | `brands/default/messages/{locale}.json`               |
 
 ## Tier 3: Component Replacement
 
@@ -327,7 +329,7 @@ Locale-map support widened the text field types from `string` to `LocalizedText`
 If you have many overrides, organize them into subdirectories:
 
 ```
-brand/overrides/
+brands/default/overrides/
 ├── index.ts
 ├── layout/
 │   ├── header.tsx
@@ -345,7 +347,7 @@ A sample terms page (`/terms`) is included by default. Remove it if not needed.
 
 ### Steps
 
-**1. Create a page component in `brand/pages/`**
+**1. Create a page component in `brands/default/pages/`**
 
 ```tsx
 // apps/web/brands/default/pages/privacy.tsx
@@ -365,7 +367,7 @@ export default function PrivacyPage() {
 }
 ```
 
-**2. Register in `brand/pages/index.ts`**
+**2. Register in `brands/default/pages/index.ts`**
 
 ```typescript
 export const pages: Record<string, () => Promise<BrandPage>> = {
@@ -390,7 +392,7 @@ footerLinks: [
 
 ### Removing Pages
 
-To remove a page, delete its entry from the `pages` map in `brand/pages/index.ts` and delete the corresponding `.tsx` file.
+To remove a page, delete its entry from the `pages` map in `brands/default/pages/index.ts` and delete the corresponding `.tsx` file.
 
 ## Static Files
 
@@ -425,6 +427,9 @@ and you want a different look per site, you can hold multiple brands (ADR-042).
   pipeline builds a web image per site with the matching `KUKAN_BRAND`
   ([Environment Configuration Reference](/en/system-admin-guide/environment-config/)).
   An unknown brand fails the image build
+- With Docker Compose, pass `--build-arg KUKAN_BRAND=<name>` when building the
+  web image (for multi-site, uncomment `KUKAN_BRAND` in
+  `docker/multi-site/compose.site.yml`)
 - The `BrandConfig` / `BrandOverrides` contract and the CSS variable rules are
   common to all brands; each brand only supplies values and override components
 
@@ -467,13 +472,13 @@ describe('Custom Header', () => {
 
 ## Summary
 
-| Goal                                      | Method                                               | Estimated time |
-| ----------------------------------------- | ---------------------------------------------------- | -------------- |
-| Change colors                             | Write CSS variables in `brand/theme.css`             | 5 min          |
-| Use custom colors outside official tokens | Define `--brand-*` tokens in `brand/theme.css`       | 5 min          |
-| Change site name and text                 | Edit `brand/brand-config.ts`                         | 30 min         |
-| Override UI translation text              | Add override keys to `brand/messages/{locale}.json`  | 10 min         |
-| Replace logo                              | Place file in `brands/default/public/` + edit config | 10 min         |
-| Change header/footer structure            | Create components in `brand/overrides/`              | A few hours    |
-| Replace the top page                      | Create component in `brand/overrides/`               | A few hours    |
-| Add static pages                          | Create components in `brand/pages/` + register       | 30 min         |
+| Goal                                      | Method                                                       | Estimated time |
+| ----------------------------------------- | ------------------------------------------------------------ | -------------- |
+| Change colors                             | Write CSS variables in `brands/default/theme.css`            | 5 min          |
+| Use custom colors outside official tokens | Define `--brand-*` tokens in `brands/default/theme.css`      | 5 min          |
+| Change site name and text                 | Edit `brands/default/brand-config.ts`                        | 30 min         |
+| Override UI translation text              | Add override keys to `brands/default/messages/{locale}.json` | 10 min         |
+| Replace logo                              | Place file in `brands/default/public/` + edit config         | 10 min         |
+| Change header/footer structure            | Create components in `brands/default/overrides/`             | A few hours    |
+| Replace the top page                      | Create component in `brands/default/overrides/`              | A few hours    |
+| Add static pages                          | Create components in `brands/default/pages/` + register      | 30 min         |

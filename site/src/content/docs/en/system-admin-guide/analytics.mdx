@@ -16,7 +16,7 @@ This feature is designed for internet-facing deployments. In closed networks (LG
 | File downloads       | Custom event on download button click                    |
 | Site search keywords | Automatic (Enhanced Measurement detects `?q=` parameter) |
 
-Analytics data can be viewed in the GA4 console. With GA4 Data API configured, you can also view analytics in the KUKAN admin dashboard.
+Analytics data can be viewed in the GA4 console. With GA4 Data API configured, you can also view analytics on the KUKAN admin **Access Analytics** page.
 
 ## Step 1: Create a GA4 Property
 
@@ -44,7 +44,7 @@ Enhanced Measurement is usually enabled by default. Verify:
 Set the Measurement ID in your brand configuration file:
 
 ```typescript
-// apps/web/src/brand/brand-config.ts
+// apps/web/brands/default/brand-config.ts (or brands/<name>/ for other brands)
 export const brandConfig: BrandConfig = {
   // ...other settings
   gaMeasurementId: 'G-XXXXXXXXXX', // your Measurement ID
@@ -54,6 +54,8 @@ export const brandConfig: BrandConfig = {
 Redeploy after saving the file. When `gaMeasurementId` is set, the gtag.js script is automatically loaded on every page.
 
 When `gaMeasurementId` is `null` (the default), no external scripts are loaded and no data is sent to Google.
+
+The Measurement ID is part of the brand, so to use a different Measurement ID per site in a [multi-site](/en/system-admin-guide/multi-site/) setup, give each site its own brand (see [Multiple Brands](/en/system-admin-guide/brand-customization/#multiple-brands-multiple-sites-in-one-fork)).
 
 ## Step 4: Register Custom Dimensions (Optional)
 
@@ -72,7 +74,7 @@ This step is optional but recommended for detailed download analysis.
 
 ## Step 5: Set Up the Admin Dashboard
 
-The KUKAN admin dashboard shows dataset view counts, download counts, and search keyword rankings fetched from the GA4 Data API. This requires a Google Cloud service account:
+The KUKAN admin **Access Analytics** page shows dataset view counts, resource view counts, download counts, and search keyword rankings fetched from the GA4 Data API. This requires a Google Cloud service account:
 
 1. Create a **Service Account** in a GCP project (new or existing)
 2. Enable the **Google Analytics Data API** in the GCP project
@@ -85,7 +87,7 @@ The KUKAN admin dashboard shows dataset view counts, download counts, and search
 | `GA4_CLIENT_EMAIL` | Service account email address                                                     |
 | `GA4_PRIVATE_KEY`  | Service account private key (PEM format, from the JSON key's `private_key` field) |
 
-On AWS, add `enableGa4DataApi=true` to the CDK context and store the values in Secrets Manager.
+On AWS, set `enableGa4DataApi: true` on the environment in `environments.ts` (on the site entry in a multi-site environment), deploy, and store the values in the three Secrets Manager secrets it creates.
 
 ## Verifying the Setup
 
@@ -105,11 +107,11 @@ No. GA4 requires internet access to send data to Google servers. In closed netwo
 
 ### Can I use Google Tag Manager instead?
 
-KUKAN uses gtag.js directly for simplicity and performance. GTM is not needed since the only tracking tag is GA4. If you have a specific need for GTM, you can replace the gtag.js scripts in a component override (see [Appearance Customization](/en/system-admin-guide/brand-customization/)).
+KUKAN uses gtag.js directly for simplicity and performance. GTM is not needed since the only tracking tag is GA4. If you have a specific need for GTM, leave `gaMeasurementId` as `null` and place the GTM snippet in a Header (or other) override component (see [Appearance Customization](/en/system-admin-guide/brand-customization/)).
 
 ### What about API access statistics?
 
-GA4 only tracks browser-based access. API calls made directly (e.g. via `curl` or programmatic clients) are not captured. Server-side API analytics is planned as a separate feature.
+GA4 only tracks browser-based access. API calls made directly (e.g. via `curl` or programmatic clients) are not captured. On AWS, CloudFront access logs are stored per site, API calls included, and can be queried with Athena (see [Access logs (CloudFront)](/en/system-admin-guide/#access-logs-cloudfront)).
 
 ### How long until data appears?
 

@@ -445,7 +445,7 @@
       "backendSetupStep1": "Create a service account in a GCP project (new or existing)",
       "backendSetupStep2": "Enable the Google Analytics Data API in the GCP project",
       "backendSetupStep3": "Grant the service account 'Viewer' access in GA4 Property Access Management",
-      "backendSetupStep4": "Set environment variables: GA4_PROPERTY_ID, GA4_CLIENT_EMAIL, GA4_PRIVATE_KEY (on AWS, add enableGa4DataApi=true to CDK context and store values in Secrets Manager)",
+      "backendSetupStep4": "Set environment variables: GA4_PROPERTY_ID, GA4_CLIENT_EMAIL, GA4_PRIVATE_KEY (on AWS, set enableGa4DataApi: true on the environment or site in environments.ts, deploy, and store the values in the Secrets Manager secrets it creates)",
       "tabDatasetViews": "Dataset Views",
       "tabResourceViews": "Resource Views",
       "tabDownloads": "Downloads",

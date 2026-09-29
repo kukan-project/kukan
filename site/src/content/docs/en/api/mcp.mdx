@@ -60,7 +60,7 @@ All tools are read-only. Access to private datasets is controlled based on the a
 | `get_dataset`         | Get detailed dataset information including resource list                                                  |
 | `get_resource`        | Get resource (file) metadata, URL, and its AI-written description                                         |
 | `get_resource_schema` | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only |
-| `query_resource`      | Run a read-only SQL query (SELECT only) over a resource's data. CSV/TSV only                              |
+| `query_resource`      | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                         |
 | `list_organizations`  | List organizations                                                                                        |
 | `list_groups`         | List groups (categories)                                                                                  |
 | `list_tags`           | List tags                                                                                                 |
@@ -77,7 +77,8 @@ When a dataset holds several files, the result says **which of them matched**, u
 description`, `in its contents`, `in its AI-written description`, or `by meaning 0.42`
 (the number is the similarity). **A match by meaning means the query's words appear
 nowhere in that file**, so do not go looking for them there. The first five are named
-and the rest are counted.
+and the rest are counted. Each result also carries its organization, description (first
+200 characters), and formats (read from the database).
 
 | Parameter      | Type     | Required | Description                                                      |
 | -------------- | -------- | -------- | ---------------------------------------------------------------- |
@@ -183,11 +184,11 @@ The MCP endpoint integrates with KUKAN's authentication system.
 - **Authenticated**: Access to private datasets within your organizations
 - **System admin**: Access to all datasets
 
-Include authentication headers in your request when authentication is needed.
+To authenticate, send an API token in the `Authorization: Bearer kukan_...` header (see [Authentication](/en/api/authentication/)).
 
 ## Technical Specifications
 
-- **Protocol**: MCP (Model Context Protocol) 2025-03-26
+- **Protocol**: MCP (Model Context Protocol). The version is negotiated with the client at initialization (2024-11-05 and later)
 - **Transport**: Streamable HTTP
 - **Mode**: Stateless (no session management)
 - **Response format**: JSON-RPC 2.0

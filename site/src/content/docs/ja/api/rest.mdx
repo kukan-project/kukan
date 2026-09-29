@@ -22,39 +22,43 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 
 ## データセット (packages)
 
-| Method | Path                               | 説明                                                                                                                                                | 認証        |
-| ------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| GET    | `/packages`                        | データセット一覧（検索・絞り込み対応）                                                                                                              | 公開        |
-| POST   | `/packages`                        | データセット作成（`resources` 配列でリソース同時作成可。各項目は `POST /packages/{id}/resources` と同じ検証で、1 件でも拒否されれば何も作られない） | 組織 editor |
-| POST   | `/packages/drafts`                 | 下書き作成（全フィールド任意）                                                                                                                      | 認証        |
-| GET    | `/packages/{nameOrId}`             | データセット詳細                                                                                                                                    | 公開        |
-| PUT    | `/packages/{nameOrId}`             | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外）                                                                        | 組織 editor |
-| DELETE | `/packages/{nameOrId}`             | データセット削除（active は論理削除 / draft は即時完全削除）                                                                                        | 組織 editor |
-| POST   | `/packages/{nameOrId}/publish`     | 下書きを公開（`draft` → `active`）                                                                                                                  | 組織 editor |
-| POST   | `/packages/{nameOrId}/restore`     | 論理削除済みを復元                                                                                                                                  | sysadmin    |
-| POST   | `/packages/{nameOrId}/purge`       | 論理削除済みを完全削除                                                                                                                              | 組織 admin  |
-| GET    | `/packages/{id}/resources`         | リソース一覧                                                                                                                                        | 公開        |
-| POST   | `/packages/{id}/resources`         | リソース追加                                                                                                                                        | 組織 editor |
-| PUT    | `/packages/{id}/resources/reorder` | リソース順序変更                                                                                                                                    | 組織 editor |
+| Method | Path                                    | 説明                                                                                                                                                | 認証        |
+| ------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| GET    | `/packages`                             | データセット一覧（検索・絞り込み対応）                                                                                                              | 公開        |
+| POST   | `/packages`                             | データセット作成（`resources` 配列でリソース同時作成可。各項目は `POST /packages/{id}/resources` と同じ検証で、1 件でも拒否されれば何も作られない） | 組織 editor |
+| POST   | `/packages/drafts`                      | 下書き作成（全フィールド任意）                                                                                                                      | 認証        |
+| POST   | `/packages/highlights`                  | 本文ハイライトの遅延取得（`{ q, chunks }`、閲覧可能な範囲のみ）                                                                                     | 公開        |
+| GET    | `/packages/{nameOrId}`                  | データセット詳細                                                                                                                                    | 公開        |
+| PUT    | `/packages/{nameOrId}`                  | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外）                                                                        | 組織 editor |
+| DELETE | `/packages/{nameOrId}`                  | データセット削除（active は論理削除 / draft は即時完全削除）                                                                                        | 組織 editor |
+| POST   | `/packages/{nameOrId}/publish`          | 下書きを公開（`draft` → `active`）                                                                                                                  | 組織 editor |
+| POST   | `/packages/{nameOrId}/suggest-metadata` | AI によるメタデータ提案（保存はしない。使えない場合は 503）                                                                                         | 組織 editor |
+| POST   | `/packages/{nameOrId}/restore`          | 論理削除済みを復元（本文 `{ private: true }` で非公開のまま復元）                                                                                   | 組織 admin  |
+| POST   | `/packages/{nameOrId}/purge`            | 論理削除済みを完全削除                                                                                                                              | 組織 admin  |
+| GET    | `/packages/{id}/resources`              | リソース一覧                                                                                                                                        | 公開        |
+| POST   | `/packages/{id}/resources`              | リソース追加                                                                                                                                        | 組織 editor |
+| PUT    | `/packages/{id}/resources/reorder`      | リソース順序変更                                                                                                                                    | 組織 editor |
 
 ### 主なクエリパラメータ（GET /packages）
 
-| パラメータ         | 説明                                                     |
-| ------------------ | -------------------------------------------------------- |
-| `q`                | 検索クエリ（キーワードまたは自然文。ハイブリッド検索）   |
-| `semantic`         | `false` でキーワード一致のみ（デフォルト: `true`）       |
-| `offset` / `limit` | ページネーション（最大 100）                             |
-| `organization[]`   | 組織で絞り込み                                           |
-| `groups[]`         | カテゴリーで絞り込み                                     |
-| `tags[]`           | タグで絞り込み                                           |
-| `res_format[]`     | リソース形式で絞り込み（例: `CSV`）                      |
-| `license_id[]`     | ライセンスで絞り込み                                     |
-| `state`            | `active` / `deleted` / `draft`（`draft` は要認証・後述） |
-| `my_org`           | 自分が `editor` 以上の組織に限定                         |
-| `private`          | 非公開データを含む                                       |
-| `sort_by`          | `updated` / `created` / `name`                           |
-| `sort_order`       | `asc` / `desc`                                           |
-| `include_facets`   | ファセット情報を含める                                   |
+| パラメータ         | 説明                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `q`                | 検索クエリ（キーワードまたは自然文。ハイブリッド検索）                                                                         |
+| `name`             | データセット名の前方一致                                                                                                       |
+| `semantic`         | `false` でキーワード一致のみ（デフォルト: `true`）                                                                             |
+| `offset` / `limit` | ページネーション（最大 100）                                                                                                   |
+| `organization[]`   | 組織で絞り込み                                                                                                                 |
+| `groups[]`         | カテゴリーで絞り込み                                                                                                           |
+| `tags[]`           | タグで絞り込み                                                                                                                 |
+| `res_format[]`     | リソース形式で絞り込み（例: `CSV`）                                                                                            |
+| `license_id[]`     | ライセンスで絞り込み                                                                                                           |
+| `creator_user_id`  | 作成者のユーザー ID で絞り込み                                                                                                 |
+| `state`            | `active` / `deleted` / `draft`（`draft` は要認証・後述。`deleted` は `my_org=true` かつ認証時のみ有効で、それ以外は `active`） |
+| `my_org`           | 自分が `editor` 以上の組織に限定                                                                                               |
+| `private`          | `true` で非公開のみ、`false` で公開のみに絞り込み（省略時は閲覧可能なすべて）                                                  |
+| `sort_by`          | `updated` / `created` / `name`                                                                                                 |
+| `sort_order`       | `asc` / `desc`                                                                                                                 |
+| `include_facets`   | ファセット情報を含める                                                                                                         |
 
 ### 例: データセット検索
 
@@ -115,10 +119,11 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 
 | Method | Path                                    | 説明                                                                         | 認証        |
 | ------ | --------------------------------------- | ---------------------------------------------------------------------------- | ----------- |
-| GET    | `/resources/count`                      | アクティブなリソース数                                                       | 公開        |
-| GET    | `/resources/formats`                    | 使われているフォーマット一覧                                                 | 公開        |
+| GET    | `/resources/count`                      | アクティブなリソース数（`my_org=true` で自分が `editor` 以上の組織に限定）   | 公開        |
+| GET    | `/resources/formats`                    | 閲覧可能なリソースのフォーマット一覧                                         | 公開        |
 | GET    | `/resources/{id}`                       | リソース詳細                                                                 | 公開        |
 | GET    | `/resources/{id}/text`                  | テキストコンテンツ取得（プレビューサイズ制限）                               | 公開        |
+| GET    | `/resources/{id}/json`                  | JSON/GeoJSON を最小化して返す（JSON 以外は 415、上限超過は 413）             | 公開        |
 | GET    | `/resources/{id}/download`              | ファイルダウンロード（外部 URL は 302 リダイレクト）                         | 公開        |
 | GET    | `/resources/{id}/preview`               | サーバー経由プレビュー（Range 対応）                                         | 公開        |
 | GET    | `/resources/{id}/pipeline-status`       | パイプライン処理状態                                                         | 公開        |
@@ -195,6 +200,7 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
   "queryable": true,
   "primaryKey": null,
   "odataRefusal": null,
+  "odataWideRows": false,
   "odataKey": { "names": ["RowId"], "synthetic": true, "fallback": "not-designated" },
   "schema": {
     "rowCount": 1688,
@@ -212,9 +218,11 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
 }
 ```
 
-`odataRefusal` と `odataKey` は OData フィード（後述）のためのものです。前者はフィードが
+`odataRefusal`・`odataWideRows`・`odataKey` は OData フィード（後述）のためのものです。`odataRefusal` はフィードが
 出せない理由（`not-public` / `unsupported-columns` / `duplicate-columns`）と該当する見出し、
-後者はフィードが行を同定するキーです。フィードが無いリソースでは `odataKey` が `null` になります。
+`odataWideRows` は行が広すぎてフィードの 1 ページが読めない恐れがあるか（拒否ではなく注意）、
+`odataKey` はフィードが行を同定するキーです。フィードが無いリソースでは `odataKey` が、表そのものが無いリソースでは
+`odataRefusal` も `null` になります。
 
 クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
 スキーマはあるがクエリの実体が無い場合（プレビューが削除済み・列ゼロのスキーマ・
@@ -365,7 +373,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 | `purgeFallsBackTo` | この版をパージしたとき配信が戻る版。`isLive` の版だけに入ります（他の版のパージでは配信が動かないため）                           |
 | `format`           | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません                                                        |
 | `schema`           | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                                                                            |
-| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）                                                           |
+| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large` / `ragged-rows`）                                           |
 | `keyColumns`       | その版の行を同定した主キー列。主キーなしで読まれた版は `null`。リソースの現在の設定は「**次の**版が何で読まれるか」なので別物です |
 
 完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` / `keyColumns` は
@@ -410,7 +418,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
   取り込まれなかった**ことを、`ingest-failed` は**取り込みを繰り返し試みて断念した**ことを
   意味します。`not-ingested` は原因ではありません — 片端に行レベルのスナップショットが
   無く、主キー由来の理由も無い、というだけで、版の作成から取り込みが走るまでの通常の待ち時間も
-  含みます。**原因が版側に記録されていてもこの理由になります** — 解釈が決める 3 つは
+  含みます。**原因が版側に記録されていてもこの理由になります** — 解釈が決める 4 つは
   `noTableReason` にあり、そちらが答えます
 - `reasonVersion` は **その理由がどちらの版についてのものか**です。**開いた版とは限りません** —
   主キーを直した次の版を開けば断られたのは直前の版ですし、`not-ingested` も片端の性質です。
@@ -534,18 +542,18 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 
 ## 組織 (organizations)
 
-| Method | Path                                         | 説明                                       | 認証        |
-| ------ | -------------------------------------------- | ------------------------------------------ | ----------- |
-| GET    | `/organizations`                             | 組織一覧                                   | 公開        |
-| POST   | `/organizations`                             | 組織作成                                   | sysadmin    |
-| GET    | `/organizations/{nameOrId}`                  | 組織詳細                                   | 公開        |
-| PUT    | `/organizations/{nameOrId}`                  | 組織更新（全フィールド置換）               | 組織 admin  |
-| DELETE | `/organizations/{nameOrId}`                  | 組織論理削除                               | 組織 admin  |
-| POST   | `/organizations/{nameOrId}/restore`          | 論理削除済みを復元                         | sysadmin    |
-| POST   | `/organizations/{nameOrId}/purge`            | 論理削除済みを完全削除（SQS 経由、非同期） | sysadmin    |
-| GET    | `/organizations/{nameOrId}/members`          | メンバー一覧                               | 組織 member |
-| POST   | `/organizations/{nameOrId}/members`          | メンバー追加・ロール変更                   | 組織 admin  |
-| DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除                               | 組織 admin  |
+| Method | Path                                         | 説明                                               | 認証        |
+| ------ | -------------------------------------------- | -------------------------------------------------- | ----------- |
+| GET    | `/organizations`                             | 組織一覧                                           | 公開        |
+| POST   | `/organizations`                             | 組織作成                                           | sysadmin    |
+| GET    | `/organizations/{nameOrId}`                  | 組織詳細                                           | 公開        |
+| PUT    | `/organizations/{nameOrId}`                  | 組織更新（全フィールド置換）                       | 組織 admin  |
+| DELETE | `/organizations/{nameOrId}`                  | 組織論理削除                                       | 組織 admin  |
+| POST   | `/organizations/{nameOrId}/restore`          | 論理削除済みを復元                                 | sysadmin    |
+| POST   | `/organizations/{nameOrId}/purge`            | 論理削除済みを完全削除（ジョブキュー経由、非同期） | sysadmin    |
+| GET    | `/organizations/{nameOrId}/members`          | メンバー一覧                                       | 組織 member |
+| POST   | `/organizations/{nameOrId}/members`          | メンバー追加・ロール変更                           | 組織 admin  |
+| DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除                                       | 組織 admin  |
 
 メンバーのロールは `admin` / `editor` / `member` のいずれか。
 
@@ -577,6 +585,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 | ------ | ------------------------- | ------------------------------ | ---- |
 | GET    | `/users/me`               | 自分の情報                     | 認証 |
 | GET    | `/users/me/organizations` | 所属組織一覧                   | 認証 |
+| GET    | `/users/me/groups`        | 所属カテゴリー一覧             | 認証 |
 | GET    | `/users`                  | ユーザー検索（メンバー管理用） | 認証 |
 
 ## API トークン (api-tokens)
@@ -587,40 +596,60 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 | GET    | `/api-tokens`      | 自分のトークン一覧 | 認証 |
 | DELETE | `/api-tokens/{id}` | トークン失効       | 認証 |
 
+## お知らせ (announcements)
+
+| Method | Path                  | 説明                                                                           | 認証     |
+| ------ | --------------------- | ------------------------------------------------------------------------------ | -------- |
+| GET    | `/announcements`      | お知らせ一覧（公開済みのみ。sysadmin は `publishedOnly=false` で未公開も含む） | 公開     |
+| GET    | `/announcements/{id}` | お知らせ詳細（未公開は sysadmin のみ）                                         | 公開     |
+| POST   | `/announcements`      | お知らせ作成                                                                   | sysadmin |
+| PUT    | `/announcements/{id}` | お知らせ更新（全フィールド置換）                                               | sysadmin |
+| DELETE | `/announcements/{id}` | お知らせ削除                                                                   | sysadmin |
+
 ## 管理 (admin)
 
 すべて sysadmin 限定。
 
-| Method | Path                             | 説明                                                                         |
-| ------ | -------------------------------- | ---------------------------------------------------------------------------- |
-| GET    | `/admin/search/stats`            | 検索インデックス統計（件数・サイズ・DB カウント）                            |
-| GET    | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources` / `contents`） |
-| GET    | `/admin/search/browse/{index}`   | インデックスドキュメント一覧（ページング・検索対応）                         |
-| POST   | `/admin/reindex-metadata`        | メタデータの検索インデックス再構築（ジョブキュー経由、非同期）               |
-| POST   | `/admin/reindex-embeddings`      | 全リソースの埋め込みベクトル再生成（SQS 経由、非同期）                       |
-| GET    | `/admin/search/analysis-status`  | 日本語解析の設定が更新され再解析が要るか（`{ stale }`）                      |
-| POST   | `/admin/search/reanalyse`        | 新しい解析設定でインデックスを作り直す（SQS 経由、非同期）                   |
-| GET    | `/admin/summary-estimate`        | AI による説明の一括生成の対象件数・推定トークン・推定費用                    |
-| POST   | `/admin/generate-summaries`      | AI による説明の一括生成（`{ refresh }` で書き直しも含む。SQS 経由、非同期）  |
-| GET    | `/admin/version-backfill-status` | 版の補完の残件数（層1: 版なし / 層2: 差分未取り込み）                        |
-| POST   | `/admin/backfill-versions`       | 一度きりの版の補完を予約（SQS 経由、非同期）                                 |
-| POST   | `/admin/jobs/enqueue-all`        | 全リソースのパイプライン一括予約                                             |
-| GET    | `/admin/jobs/stats`              | パイプラインジョブ統計                                                       |
-| GET    | `/admin/jobs`                    | パイプラインジョブ一覧                                                       |
-| GET    | `/admin/queue/counts`            | 種類と状態ごとのジョブの件数（予約・待機・処理中・打ち切り）                 |
-| GET    | `/admin/queue/jobs`              | ジョブ一覧（`status` と `type` で絞り込み）                                  |
-| POST   | `/admin/queue/jobs/:id/retry`    | 打ち切りのジョブを試行回数を戻して再投入                                     |
-| DELETE | `/admin/queue/jobs/:id`          | 打ち切りのジョブを削除                                                       |
-| DELETE | `/admin/data`                    | 全データ削除（ユーザー除く）                                                 |
-| GET    | `/admin/health/stats`            | ヘルスチェック統計                                                           |
-| GET    | `/admin/health`                  | ヘルスチェック結果一覧                                                       |
-| GET    | `/admin/users/stats`             | ユーザー統計                                                                 |
-| GET    | `/admin/users`                   | ユーザー一覧                                                                 |
-| POST   | `/admin/users`                   | ユーザー作成                                                                 |
-| PATCH  | `/admin/users/{userId}`          | ユーザー更新                                                                 |
-| DELETE | `/admin/users/{userId}`          | ユーザー論理削除（セッション・トークン即時失効）                             |
-| POST   | `/admin/users/{userId}/restore`  | ユーザー復元                                                                 |
-| POST   | `/admin/users/{userId}/purge`    | ユーザー完全削除                                                             |
+| Method | Path                                | 説明                                                                                                                                                       |
+| ------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/search/stats`               | 検索インデックス統計（件数・サイズ・DB カウント）                                                                                                          |
+| GET    | `/admin/search/doc/{index}/{id}`    | インデックスドキュメント取得（index: `packages` / `resources` / `contents`）                                                                               |
+| GET    | `/admin/search/browse/{index}`      | インデックスドキュメント一覧（ページング・検索対応）                                                                                                       |
+| GET    | `/admin/search/chunks/{resourceId}` | リソースの本文チャンク一覧                                                                                                                                 |
+| POST   | `/admin/reindex-metadata`           | メタデータの検索インデックス再構築（`{ includeContent: true }` で本文索引も保存済みファイルから作り直す。ジョブキュー経由、非同期）                        |
+| POST   | `/admin/reindex-embeddings`         | 全リソースの埋め込みベクトルを作り直す（本文とモデルが変わっていないものは再計算しない。ジョブキュー経由、非同期）                                         |
+| GET    | `/admin/embedding-status`           | 意味検索から届かないリソース数（埋め込みベクトル未作成・モデル不一致、`{ missing }`）                                                                      |
+| GET    | `/admin/search/analysis-status`     | 日本語解析の設定が更新され再解析が要るか（`{ stale }`）                                                                                                    |
+| POST   | `/admin/search/reanalyse`           | 新しい解析設定でインデックスを作り直す（ジョブキュー経由、非同期）                                                                                         |
+| GET    | `/admin/summary-estimate`           | AI による説明の一括生成の対象件数・推定トークン・推定費用                                                                                                  |
+| POST   | `/admin/generate-summaries`         | AI による説明の一括生成（`{ refresh }` で書き直しも含む。ジョブキュー経由、非同期）                                                                        |
+| GET    | `/admin/version-backfill-status`    | 移行作業の残件数（層1: 版なし / 層2: 差分未取り込み / 旧方式の巻き戻しの未変換）                                                                           |
+| POST   | `/admin/backfill-versions`          | 一度きりの移行（版の補完・旧方式の巻き戻しの変換）を予約（ジョブキュー経由、非同期）                                                                       |
+| GET    | `/admin/row-group-status`           | 行グループ未記録のプレビュー数                                                                                                                             |
+| POST   | `/admin/record-row-groups`          | プレビューの行グループ記録を予約（ジョブキュー経由、非同期）                                                                                               |
+| POST   | `/admin/jobs/enqueue-all`           | 全リソースのパイプライン一括予約                                                                                                                           |
+| GET    | `/admin/jobs/stats`                 | リソースの処理状況の集計                                                                                                                                   |
+| GET    | `/admin/jobs`                       | リソースの処理状況一覧（`status` はカンマ区切り）                                                                                                          |
+| GET    | `/admin/queue/counts`               | 種類と状態ごとのジョブの件数（予約・待機・処理中・打ち切り）                                                                                               |
+| GET    | `/admin/queue/jobs`                 | ジョブ一覧（`status` と `type` で絞り込み、`offset` / `limit`）                                                                                            |
+| POST   | `/admin/queue/jobs/:id/retry`       | 打ち切りのジョブを試行回数を戻して再投入                                                                                                                   |
+| DELETE | `/admin/queue/jobs/:id`             | 打ち切りのジョブを削除                                                                                                                                     |
+| GET    | `/admin/settings`                   | ランタイム設定の一覧                                                                                                                                       |
+| PUT    | `/admin/settings/{key}`             | ランタイム設定を 1 件更新（`{ value }`）                                                                                                                   |
+| GET    | `/admin/settings/vector-search`     | ベクトル検索の状態（モデル・しきい値）                                                                                                                     |
+| GET    | `/admin/settings/ai-suggest`        | AI 提案の状態（プロバイダー・モデル）                                                                                                                      |
+| POST   | `/admin/settings/ai-suggest/test`   | AI 提案モデルの接続テスト                                                                                                                                  |
+| DELETE | `/admin/data`                       | 全データ削除（ユーザー除く）                                                                                                                               |
+| GET    | `/admin/health/stats`               | ヘルスチェック統計                                                                                                                                         |
+| GET    | `/admin/health`                     | ヘルスチェック結果一覧                                                                                                                                     |
+| GET    | `/admin/users/stats`                | ユーザー統計                                                                                                                                               |
+| GET    | `/admin/users`                      | ユーザー一覧                                                                                                                                               |
+| POST   | `/admin/users`                      | ユーザー作成                                                                                                                                               |
+| PATCH  | `/admin/users/{userId}`             | ユーザー更新                                                                                                                                               |
+| DELETE | `/admin/users/{userId}`             | ユーザー論理削除（セッション・トークン即時失効）                                                                                                           |
+| POST   | `/admin/users/{userId}/restore`     | ユーザー復元                                                                                                                                               |
+| POST   | `/admin/users/{userId}/purge`       | ユーザー完全削除                                                                                                                                           |
+| GET    | `/admin/analytics/{report}`         | アクセス統計（GA4。`report` は `dataset-views` / `resource-views` / `downloads` / `search-terms`、`startDate` / `endDate` で期間指定、GA4 未設定なら 404） |
 
 ## その他
 

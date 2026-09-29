@@ -190,7 +190,7 @@ bucket is needed.
 Counting clients and cache results during a burst:
 
 ```sql
--- Times are UTC
+-- Times are UTC: JST 10:20–10:25 is 01:20–01:25
 SELECT c_ip, url_decode(cs_user_agent) AS ua, x_edge_result_type, count(*) AS n
 FROM kukan_prd_logs.cloudfront
 WHERE "date" = DATE '2026-01-15' AND time BETWEEN '01:20:00' AND '01:25:00'
@@ -272,12 +272,12 @@ the CLI.
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
 ```
 
-| Option       | Description                                                      | Required |
-| ------------ | ---------------------------------------------------------------- | -------- |
-| `--email`    | Email address                                                    | Yes      |
-| `--name`     | Username (lowercase alphanumeric, hyphens, underscores, periods) | Yes      |
-| `--password` | Password (8+ characters)                                         | Yes      |
-| `--role`     | `user` or `sysadmin` (default: `user`)                           | No       |
+| Option       | Description                                                                                                   | Required |
+| ------------ | ------------------------------------------------------------------------------------------------------------- | -------- |
+| `--email`    | Email address                                                                                                 | Yes      |
+| `--name`     | Username (lowercase alphanumeric, hyphens, underscores, periods)                                              | Yes      |
+| `--password` | Password (15+ characters and hard to guess — see [Password strength policy](#password-strength-policy) below) | Yes      |
+| `--role`     | `user` or `sysadmin` (default: `user`)                                                                        | No       |
 
 ## User management
 
@@ -293,6 +293,7 @@ System administrators (sysadmin) can manage users from the admin dashboard.
 - Soft-delete (sets state to deleted)
 - All sessions and API tokens are immediately revoked
 - Audit logs and activity history are preserved
+- A deleted user can be **Restored**. **Purge** is also offered, and cannot be undone (related activity and audit logs are anonymized)
 
 ### Self-registration control
 
@@ -304,15 +305,20 @@ instance can be bootstrapped.
 
 ## Site settings (runtime)
 
-Some settings can be **changed from the admin dashboard without redeploying** (Site Management → `/dashboard/admin/site`, system administrators only). Changes are stored in the database, recorded in the audit log, and take up to about 30 seconds to take effect.
+Some settings can be **changed from the admin dashboard without redeploying** (Site Management → `/dashboard/admin/site`, system administrators only). Changes are stored in the database, recorded in the audit log, and take 30 seconds to a minute to take effect.
 
-| Setting                                | Description                                                                                                                                                                                                                                 |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Search example chips                   | Example queries shown under the search box                                                                                                                                                                                                  |
-| Semantic search & similarity threshold | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available) |
-| AI metadata suggestions                | Feature toggle (kill switch), generation model ID (blank = provider default), and a connection test                                                                                                                                         |
-| Language of AI-written descriptions    | The language abstracts are written in (Japanese / English). Default Japanese. Changing it does not rewrite existing descriptions — that needs the bulk generation under "[AI-written descriptions](#ai-written-descriptions)" below         |
-| User self-registration                 | See "[Self-registration control](#self-registration-control)" above                                                                                                                                                                         |
+| Setting                                     | Description                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Example search queries                      | Example queries shown under the search box                                                                                                                                                                                                  |
+| Semantic search settings                    | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available) |
+| Generative AI models → Metadata suggestions | AI metadata suggestions: feature toggle (kill switch), generation model ID (blank = provider default), and a connection test                                                                                                                |
+| User self-registration                      | See "[Self-registration control](#self-registration-control)" above                                                                                                                                                                         |
+
+**Data Reset** on the same page permanently deletes every dataset, resource, organization, group, tag, pipeline job, and associated file (user accounts are kept). It asks you to type `RESET` to confirm. It cannot be undone, so do not use it in production.
+
+### Announcements
+
+**Announcements** (`/dashboard/admin/announcements`) is where you create, edit, and delete the announcements shown on the top page (the newest five). Each takes a category: Info, Maintenance, Release, or Important. Leave the publish date empty to save a draft; set a future date to schedule it.
 
 ### AI and embedding model selection
 
@@ -322,7 +328,7 @@ Semantic search (embeddings) and AI metadata suggestions use the provider chosen
 - **On-premises / development**: Ollama (`AI_TYPE=ollama`) or OpenAI-compatible (`AI_TYPE=openai`)
 - **Disabled**: `AI_TYPE=none` (NoOp) — semantic search falls back to keyword search, and AI suggestions are unavailable
 
-The generation/embedding model can be switched from the admin dashboard above without redeploying. Candidate models are set via the `AI_COMPLETION_MODELS` environment variable (comma-separated). This is **the list of models approved for the deployment**: across all providers it becomes the admin picker options, with the first entry as the default (the dashboard's "provider default"). A model being available on the server does not put it in the picker — only listed models appear. On **Bedrock**, CDK injects this variable from `bedrock.completionModels` in `environments.ts` (the models granted `InvokeModel` in IAM), so add candidates there and redeploy. On **Ollama**, Docker Compose's `ollama-init` pulls every listed model at startup, so listed models become available automatically. When unset, only the built-in default model is offered (Ollama: gemma4:e4b / OpenAI-compatible: gpt-4o-mini). To run Ollama on a GPU, see the [Getting Started guide](/en/getting-started/).
+The AI metadata suggestion model can be switched from the admin dashboard (Site Management → Generative AI models) without redeploying. The embedding model cannot be changed from the dashboard: it is set by `AI_EMBEDDING_MODEL` (on AWS, `bedrock.embeddingModel` in `environments.ts`), and changing it needs a redeploy and regenerated embeddings. Candidate generation models are set via the `AI_COMPLETION_MODELS` environment variable (comma-separated). This is **the list of models approved for the deployment**: across all providers it becomes the admin picker options, with the first entry as the default (the dashboard's "provider default"). A model being available on the server does not put it in the picker — only listed models appear. On **Bedrock**, CDK injects this variable from `bedrock.completionModels` in `environments.ts` (the models granted `InvokeModel` in IAM), so add candidates there and redeploy. On **Ollama**, Docker Compose's `ollama-init` pulls every listed model at startup, so listed models become available automatically. When unset, only the built-in default model is offered (Ollama: gemma4:e4b / OpenAI-compatible: gpt-4o-mini). To run Ollama on a GPU, see the [Getting Started guide](/en/getting-started/).
 
 :::caution[Suggestion quality of small local models]
 Small local models aimed at on-premises / CPU-only deployments (effective 4–8B class, such as Gemma 4 E4B) are **underpowered at metadata suggestion quality**. Even when they return valid JSON, the content tends to degrade — descriptions miss the point, tags are off-target, and Japanese output is unstable. Treat AI suggestions strictly as a **draft starting point** and keep a human in the loop to review and correct before adopting (every field is OFF by default; only the fields you accept are written to the metadata). Where generation quality matters, choose Bedrock (Amazon Nova Lite and up, or Claude Haiku class if needed) or a larger Ollama model given sufficient VRAM (larger Gemma 4 sizes, Qwen3-class). The generation model can be switched from the admin dashboard without redeploying.
@@ -440,27 +446,39 @@ covers and what it is estimated to cost**. Read that before pressing the button.
 :::
 
 The abstract model must be one from the completion allow-list. The
-**language** is a runtime setting instead (Site settings) — language is free,
-the model is money.
+**language** is the runtime setting `ai-summary-locale` instead (`ja` / `en`,
+default `ja`) — language is free, the model is money. There is no control for it
+on the dashboard yet; change it through the API with a system administrator's
+[API token](/en/api/authentication/). The bulk-generation card on AI Management
+shows the current language.
 
-#### Bulk generation (AI Management → Generate AI descriptions)
+```bash
+curl -X PUT https://<site>/api/v1/admin/settings/ai-summary-locale \
+  -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' -d '{"value":"en"}'
+```
+
+Changing it does not rewrite existing descriptions — that takes "Rewrite all"
+in the bulk generation below.
+
+#### Bulk generation (AI Management → Generate AI descriptions in bulk)
 
 Ordinarily nothing is needed here: descriptions are written as resources are
 registered. This card exists for **resources that predate the setting** and for
 **those needing a rewrite because the model, prompt version, or language
 changed**. It never re-fetches an external URL.
 
-| Action           | Covers                                                                         |
-| ---------------- | ------------------------------------------------------------------------------ |
-| Generate missing | Only resources with no description yet                                         |
-| Regenerate all   | Those, plus descriptions written by another model, prompt version, or language |
+| Action                 | Covers                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| Write the missing ones | Only resources with no description yet                                         |
+| Rewrite all            | Those, plus descriptions written by another model, prompt version, or language |
 
 Either button states "N resources · estimated X–Y input / Z output tokens
 (about $low–$high)" before you press it. The input range has a span because a
 PDF's token count follows its page count, which cannot be seen from here (the
 bounds are one page and the page limit).
 
-Embeddings are rebuilt package by package as generation completes. Running it
+Each resource's embedding is rebuilt as its description is written. Running it
 twice over the same content costs nothing the second time, because it compares
 rather than regenerates.
 
@@ -474,14 +492,15 @@ proceeds in the background once queued.
 
 | Action                        | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                                                                                                              |
 | ----------------------------- | ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rebuild metadata search index | The metadata index (not file content)                      | No                      | Search results look inconsistent. **After an upgrade that changed a mapping or schema** (`POST /api/v1/admin/reindex-metadata`)                                                                                                          |
+| Rebuild metadata search index | The metadata index (not file content)                      | No                      | Search results look inconsistent. **After an upgrade that changed the fields of search documents** (analysis changes need the re-analysis below) (`POST /api/v1/admin/reindex-metadata`)                                                 |
 | Reprocess all resources       | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                                                                                                        |
 | Regenerate embeddings         | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped. **The dashboard also prompts while any resource is outside semantic search** (below) |
 | Re-analyse search index       | The index itself, under a new analysis                     | No                      | The search analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                            |
 
 None of this is ordinarily needed: the metadata index updates as datasets are
 created, updated, and deleted, and text and previews are built when the pipeline
-processes a file.
+processes a file. A sync that was missed is picked up by the hourly re-enqueue
+(and once after the worker starts).
 
 ### Re-analysing the search index
 
@@ -496,6 +515,22 @@ It only re-reads text already stored — **no external URL is fetched and no fil
 is reprocessed**. It is a one-time action per upgrade, and the notice disappears
 once it completes (`POST /api/v1/admin/search/reanalyse`).
 
+## Background Job Status
+
+**Background Job Status** (`/dashboard/admin/queue`) lists the jobs in the job queue. Everything that runs in the background — data ingestion, metadata search index sync, embeddings and AI descriptions, purges and more — goes through the job queue.
+
+The table at the top counts jobs by type and status.
+
+- The columns follow a job's course: Scheduled → Waiting → Running → Dead. Scheduled is a job whose time has not come yet, including one that failed and is waiting to retry
+- The rows are grouped by what sets each job off: Routine, Admin actions and recovery, and Migrations after an upgrade (plus Other for any type outside them). Each type reads as "work (target)", such as "Pipeline run (resources)" or "Version deletion (resources)"
+- Clicking a count lists those jobs below (Scheduled when the page opens)
+
+The page refreshes every 5 seconds while the tab is visible, and the refresh button reloads it at once.
+
+**A job that fails three times is Dead, and is kept for 30 days** (the hourly pass removes it after that). A dead job can be **Retried** (its attempts reset to zero) or **Deleted** from the list. Deleting it means its work is not done, except that a version deletion or organization purge already under way is queued again within the hour.
+
+Without `WORKER_WAKE_URL`, a job the web queues waits for the worker's next start or the hourly pass (see "[Environment variables](#environment-variables)" below).
+
 ## One-time migrations
 
 Unlike reprocessing, these run **once, at migration time**. The dashboard shows
@@ -509,9 +544,9 @@ against, a search does not fail — it quietly falls back to keywords alone.
 
 Two things raise it. **Upgrading to the release that moved the unit of
 embedding to the resource**, which leaves every existing vector needing to be
-rebuilt, and **changing the embedding model**. The ordinary half-minute between
-an edit and its generated vector does not: a package with generation still
-pending is not counted.
+rebuilt, and **changing the embedding model**. An ordinary edit does not: a
+resource whose embedding mark has stood for less than 15 minutes is not
+counted.
 
 The prompt runs the same work as "Regenerate embeddings" in the table above.
 
@@ -556,9 +591,11 @@ it has to.
 
 KUKAN automatically monitors the health of external URL resources.
 
-- Periodic automated checks via scheduler
-- View health check results from the admin dashboard
+- Periodic automated checks via scheduler (by default every 5 minutes, a HEAD request to each external URL not checked in the last 24 hours; changed ones are fetched again, and ones whose changes cannot be told are fetched again every 168 hours)
+- View health check results from the admin dashboard (Health Check)
 - Identify and address failing resources
+
+The intervals are set by `HEALTH_CHECK_CRON` / `HEALTH_CHECK_STALENESS_HOURS` / `HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS` (see "Environment variables" below).
 
 ## Reclaiming storage
 
@@ -603,27 +640,36 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 
 Key environment variables are listed below. See `.env.example` for the full list.
 
-| Variable               | Description                                                                                        | Default                 |
-| ---------------------- | -------------------------------------------------------------------------------------------------- | ----------------------- |
-| `POSTGRES_HOST`        | PostgreSQL host                                                                                    | `localhost`             |
-| `POSTGRES_PORT`        | PostgreSQL port                                                                                    | `5432`                  |
-| `POSTGRES_DB`          | Database name                                                                                      | `kukan`                 |
-| `POSTGRES_USER`        | Database user                                                                                      | `kukan`                 |
-| `POSTGRES_PASSWORD`    | Database password                                                                                  | `kukan`                 |
-| `S3_BUCKET`            | S3 bucket name                                                                                     | `kukan-dev`             |
-| `S3_ENDPOINT`          | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)                                            | -                       |
-| `SEARCH_TYPE`          | Search engine (`opensearch` / `postgres`)                                                          | `opensearch`            |
-| `OPENSEARCH_URL`       | OpenSearch endpoint                                                                                | `http://localhost:9200` |
-| `WORKER_WAKE_URL`      | Where the web tells the worker a job is waiting (the worker's `/wake`)                             | -                       |
-| `BETTER_AUTH_SECRET`   | Auth session secret (32+ characters)                                                               | -                       |
-| `BETTER_AUTH_URL`      | Public URL                                                                                         | `http://localhost:3000` |
-| `PASSWORD_MIN_SCORE`   | Password strength floor (zxcvbn score 0–4) — see below                                             | `3`                     |
-| `AI_TYPE`              | AI provider (`none` / `bedrock` / `openai` / `ollama`)                                             | `none`                  |
-| `AI_COMPLETION_MODELS` | Allow-list of generation models (comma-separated); the picker's options, first is the default      | -                       |
-| `AI_SUMMARY_MODEL`     | Model that writes AI descriptions. **Unset turns the feature off** (and costs nothing) — see above | -                       |
-| `LOG_LEVEL`            | Log level (`trace`–`fatal`)                                                                        | `info`                  |
-| `TIME_ZONE`            | IANA zone times are prerendered in; the browser then shows the viewer's                            | `Asia/Tokyo`            |
-| `USER_AGENT_URL`       | Contact the worker names to servers; public sites only (AWS: site's `nameSiteInUserAgent`)         | -                       |
+| Variable                                 | Description                                                                                                                               | Default                                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `POSTGRES_HOST`                          | PostgreSQL host                                                                                                                           | `localhost`                                                                                                     |
+| `POSTGRES_PORT`                          | PostgreSQL port                                                                                                                           | `5432`                                                                                                          |
+| `POSTGRES_DB`                            | Database name                                                                                                                             | `kukan`                                                                                                         |
+| `POSTGRES_USER`                          | Database user                                                                                                                             | `kukan`                                                                                                         |
+| `POSTGRES_PASSWORD`                      | Database password                                                                                                                         | `kukan`                                                                                                         |
+| `S3_BUCKET`                              | S3 bucket name                                                                                                                            | `kukan-dev`                                                                                                     |
+| `S3_ENDPOINT`                            | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)                                                                                   | -                                                                                                               |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY`        | MinIO credentials (omit on AWS, which uses the IAM role)                                                                                  | -                                                                                                               |
+| `SEARCH_TYPE`                            | Search engine (`opensearch` / `postgres`)                                                                                                 | `opensearch`                                                                                                    |
+| `OPENSEARCH_URL`                         | OpenSearch endpoint                                                                                                                       | `http://localhost:9200`                                                                                         |
+| `WORKER_WAKE_URL`                        | Where the web tells the worker a job is waiting (the worker's `/wake`). Unset, a job waits for the worker's next start or the hourly pass | `http://localhost:8080/wake` in development, none otherwise                                                     |
+| `BETTER_AUTH_SECRET`                     | Auth session secret (32+ characters)                                                                                                      | -                                                                                                               |
+| `BETTER_AUTH_URL`                        | Public URL                                                                                                                                | `http://localhost:3000`                                                                                         |
+| `PASSWORD_MIN_SCORE`                     | Password strength floor (zxcvbn score 0–4) — see below                                                                                    | `3`                                                                                                             |
+| `AI_TYPE`                                | AI provider (`none` / `bedrock` / `openai` / `ollama`)                                                                                    | `none`                                                                                                          |
+| `AI_EMBEDDING_MODEL`                     | Embedding model; changing it needs the embeddings regenerated                                                                             | the provider's (Bedrock: Titan Text Embeddings v2 / Ollama: bge-m3 / OpenAI-compatible: text-embedding-3-small) |
+| `AI_EMBEDDING_DIMENSIONS`                | Embedding dimensions                                                                                                                      | the provider's                                                                                                  |
+| `OPENAI_BASE_URL`                        | URL of the OpenAI-compatible endpoint (`AI_TYPE=openai`)                                                                                  | -                                                                                                               |
+| `OLLAMA_URL`                             | URL of Ollama (`AI_TYPE=ollama`)                                                                                                          | `http://localhost:11435`                                                                                        |
+| `AI_COMPLETION_MODELS`                   | Allow-list of generation models (comma-separated); the picker's options, first is the default                                             | -                                                                                                               |
+| `AI_SUMMARY_MODEL`                       | Model that writes AI descriptions. **Unset turns the feature off** (and costs nothing) — see above                                        | -                                                                                                               |
+| `HEALTH_CHECK_ENABLED`                   | Whether external URLs are health-checked                                                                                                  | `true`                                                                                                          |
+| `HEALTH_CHECK_CRON`                      | How often health checks run (cron expression)                                                                                             | `*/5 * * * *`                                                                                                   |
+| `HEALTH_CHECK_STALENESS_HOURS`           | An external URL is checked again once this long has passed since its last check                                                           | `24`                                                                                                            |
+| `HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS` | Hours between re-fetches of an external URL whose changes cannot be told                                                                  | `168`                                                                                                           |
+| `LOG_LEVEL`                              | Log level (`trace`–`fatal`)                                                                                                               | `info`                                                                                                          |
+| `TIME_ZONE`                              | IANA zone times are prerendered in; the browser then shows the viewer's                                                                   | `Asia/Tokyo`                                                                                                    |
+| `USER_AGENT_URL`                         | Contact the worker names to servers; public sites only (AWS: site's `nameSiteInUserAgent`)                                                | -                                                                                                               |
 
 ### Password strength policy
 

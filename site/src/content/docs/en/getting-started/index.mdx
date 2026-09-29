@@ -7,7 +7,7 @@ sidebar:
 
 ## Prerequisites
 
-- Node.js 24+
+- Node.js 24 LTS
 - pnpm 10+
 - Docker / Docker Compose
 
@@ -31,7 +31,7 @@ pnpm install
 
 ### 3. Start infrastructure
 
-Start PostgreSQL, MinIO, OpenSearch, and Ollama with Docker Compose.
+Start PostgreSQL, MinIO, OpenSearch, OpenSearch Dashboards, and Ollama with Docker Compose.
 
 ```bash
 docker compose up -d
@@ -85,3 +85,5 @@ omitted).
 ```bash
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
 ```
+
+Passwords need at least 15 characters and must be hard to guess (e.g. `'harbor-lantern-quiet-42'`).

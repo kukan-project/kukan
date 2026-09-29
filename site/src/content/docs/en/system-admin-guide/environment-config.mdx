@@ -71,7 +71,7 @@ CI/CD.
 | `scale`               | `small` \| `medium` \| `large` | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                                |
 | `dbEngine`            | `rds` \| `aurora`              | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                       |
 | `enableOpenSearch`    | boolean                        | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                        |
-| `bedrock`             | object \| `false`              | enabled (Titan v2)                               | Semantic search and AI metadata suggestions. `false` disables (`AI_TYPE=none`)                                                                                        |
+| `bedrock`             | object \| `false`              | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                       |
 | `githubRepo`          | string                         | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                     |
 | `deployBranch`        | string                         | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                         |
 | `deployNotification`  | boolean                        | none                                             | Post deploy outcomes to Slack (pipeline mode only). The webhook URL goes into a secret the stack creates                                                              |
@@ -80,6 +80,17 @@ CI/CD.
 | `deployConcurrency`   | number                         | `2`                                              | Sites deployed at once after the canary. Their simultaneous rolling updates count against the database connection budget; synth fails when it does not fit            |
 | `ecrImageRetention`   | number                         | `100`                                            | Images kept (newest first) in the CDK bootstrap ECR repository. Environments in one account share the repository, so give them the same value (synth fails otherwise) |
 | `cdnLogRetentionDays` | number                         | `90`                                             | Days CloudFront access logs are kept (applies to every site in the environment)                                                                                       |
+
+### `bedrock` fields
+
+| Field                 | Type     | Default                             | Description                                                                                                                                                   |
+| --------------------- | -------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `region`              | string   | the deployment region               | Bedrock API region                                                                                                                                            |
+| `embeddingModel`      | string   | `amazon.titan-embed-text-v2:0`      | Embedding model ID. Changing it needs a redeploy and regenerated embeddings                                                                                   |
+| `embeddingDimensions` | number   | adapter default (1024)              | Embedding dimensions                                                                                                                                          |
+| `vectorMinSimilarity` | number   | the model's measured recommendation | Override of the similarity floor for semantic search                                                                                                          |
+| `completionModels`    | string[] | `['jp.amazon.nova-2-lite-v1:0']`    | Generation models the task role may `InvokeModel`. Also the dashboard's model options; the first is the default for AI metadata suggestions. Needs a redeploy |
+| `summaryModel`        | string   | none (no AI-written descriptions)   | Model that writes AI descriptions (abstracts). Synth fails unless it is in `completionModels`                                                                 |
 
 ## Site entry fields (`sites[]`)
 
@@ -103,6 +114,7 @@ fails).
 | `enableGa4DataApi`    | boolean                  | `false`                                           | GA4 access analytics dashboard                                                                                                                                                                                                                                    |
 | `nameSiteInUserAgent` | boolean                  | `false`                                           | Name the site's URL in the worker's User-Agent (`USER_AGENT_URL`), so operators of the servers it fetches from can reach you. Set `true` only on a site anyone may visit and search engines may index; synth rejects it alongside `allowedIpRanges` / `basicAuth` |
 | `timeZone`            | string                   | `Asia/Tokyo`                                      | IANA zone times are prerendered in; the browser then shows the viewer's                                                                                                                                                                                           |
+| `bedrock`             | object \| `false`        | the environment's                                 | Override of the environment's `bedrock` (deep-merged; arrays replace). `false` turns AI off for this site alone. Synth fails when the environment has `bedrock: false`                                                                                            |
 | `overrides`           | partial                  | none                                              | Site-owned sections only (see "overrides" below)                                                                                                                                                                                                                  |
 
 If you later switch `certificateArn` / `webAclArn` to external ARNs, the
@@ -144,7 +156,7 @@ per level:
 - **Environment entry**: every section (`web` / `worker` / `db` / `opensearch` /
   `dbPool` / `backup`). Shared-resource sizing, DB retention, and the AWS
   Backup schedule are environment-level only
-- **Site entry**: site-owned sections only (`web` / `worker` / `dbPool`, plus
+- **Site entry**: site-owned sections only (`web` / `worker` (except `healthPort`) / `dbPool`, plus
   the S3 versioning settings of `backup`). Overriding `db` / `opensearch` /
   `backup.awsBackup` / `backup.dbBackupRetentionDays` is rejected at synth
 
@@ -153,7 +165,7 @@ For the per-scale default values, see "Scale defaults" in
 
 ## Backward compatibility: the single-site shape
 
-Every site entry field except `name` / `brand` may also be written directly on
+Every site entry field except `name` / `brand` / `albPriority` may also be written directly on
 the environment entry — **but only in an environment that does not declare
 `sites`**. This is **backward compatibility** with the earlier single-site
 shape (the all-in-one stack) and exists for already-deployed environments.

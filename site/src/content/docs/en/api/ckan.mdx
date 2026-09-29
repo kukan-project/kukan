@@ -18,7 +18,7 @@ All CKAN-compatible endpoints return responses in the following format.
 
 ```json
 {
-  "help": "https://docs.ckan.org/...",
+  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
   "success": true,
   "result": { ... }
 }
@@ -28,18 +28,21 @@ All CKAN-compatible endpoints return responses in the following format.
 
 ```json
 {
-  "help": "https://docs.ckan.org/...",
+  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
   "success": false,
   "error": {
-    "__type": "Not Found Error",
-    "message": "Not found"
+    "__type": "Validation Error",
+    "message": "..."
   }
 }
 ```
 
+`help` carries the URL that was requested. `__type` is always `Validation Error`, so tell a missing
+record (404) from a missing parameter (400) by the HTTP status.
+
 ## Endpoints
 
-All are public (no authentication) and use the GET method.
+All use the GET method and work without authentication. With a session or an API token ([Authentication](/en/api/authentication/)), `package_show`, `package_search` and `resource_show` also return private datasets of your organizations (`package_list` lists public datasets only, except for system administrators).
 
 | Path                                            | Description                         |
 | ----------------------------------------------- | ----------------------------------- |
@@ -80,7 +83,15 @@ KUKAN uses camelCase fields internally, but the CKAN-compatible API converts the
 
 Fields that are not renamed come back under their own name. `section` — a display grouping
 on the dataset page, see the [REST API](./rest) — is one of them, and survives harvesting
-into CKAN as a resource extra.
+into CKAN as a resource extra. The AI-written description (`summary`) is not included in the
+CKAN-compatible API.
+
+### package_search results
+
+`package_search` accepts `rows` (default 20, max 1000) and `start`. It is keyword-only, with no
+semantic results. Each entry in `results` is a search-index summary, shaped differently from a
+`package_show` result: it has no `resources`, and `tags`, `groups` and `organization` are plain
+name strings. Call `package_show` for resources and formats.
 
 ## Usage examples
 

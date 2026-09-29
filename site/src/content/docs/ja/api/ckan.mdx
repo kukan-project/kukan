@@ -18,7 +18,7 @@ KUKAN は [CKAN Action API v3](https://docs.ckan.org/en/latest/api/) と互換�
 
 ```json
 {
-  "help": "https://docs.ckan.org/...",
+  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
   "success": true,
   "result": { ... }
 }
@@ -28,18 +28,21 @@ KUKAN は [CKAN Action API v3](https://docs.ckan.org/en/latest/api/) と互換�
 
 ```json
 {
-  "help": "https://docs.ckan.org/...",
+  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
   "success": false,
   "error": {
-    "__type": "Not Found Error",
-    "message": "Not found"
+    "__type": "Validation Error",
+    "message": "..."
   }
 }
 ```
 
+`help` にはリクエストした URL が入ります。`__type` は常に `Validation Error` のため、見つからない（404）のか
+パラメータ不足（400）なのかは HTTP ステータスで区別してください。
+
 ## エンドポイント一覧
 
-すべて公開（認証不要）、GET メソッドです。
+すべて GET メソッドで、認証なしで利用できます。セッションまたは API トークン（[認証](/ja/api/authentication/)）を付けると、`package_show`・`package_search`・`resource_show` は所属組織の非公開データセットも返します（`package_list` はシステム管理者以外には公開データセットのみ）。
 
 | Path                                            | 説明                                  |
 | ----------------------------------------------- | ------------------------------------- |
@@ -80,7 +83,14 @@ KUKAN は内部で camelCase のフィールドを使用しますが、CKAN 互�
 
 改名しないフィールドはそのままの名前で返ります。`section`（データセットページでの表示上の
 区切り。[REST API](./rest) を参照）もその一つで、ハーベスト先の CKAN では resource extras として
-残ります。
+残ります。AI による説明（`summary`）は CKAN 互換 API には含まれません。
+
+### package_search の結果
+
+`package_search` は `rows`（既定 20、最大 1000）と `start` を受け付けます。キーワード一致のみで、
+意味検索は行いません。`results` の各要素は検索インデックスの要約で、`package_show` の結果とは
+形が異なります。`resources` は含まず、`tags`・`groups`・`organization` は名前の文字列です。
+リソースやフォーマットが必要な場合は `package_show` を呼んでください。
 
 ## 使用例
 

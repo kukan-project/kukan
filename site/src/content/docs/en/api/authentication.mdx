@@ -23,7 +23,7 @@ Use API tokens for programmatic access.
 
 ### Creating a token
 
-Create tokens from the dashboard API tokens page, or via the API:
+Create tokens from the API Tokens page (user menu → API Tokens), or via the API:
 
 ```bash
 curl -X POST https://your-kukan-site/api/v1/api-tokens \
@@ -36,12 +36,15 @@ Response:
 
 ```json
 {
-  "id": "tok_...",
-  "token": "kukan_xxxxxxxx...",
+  "id": "3f2c9a1e-...",
   "name": "my-script",
-  "expiresAt": "2026-07-13T00:00:00.000Z"
+  "token": "kukan_xxxxxxxx...",
+  "expiresAt": "2026-07-13T00:00:00.000Z",
+  "created": "2026-04-14T00:00:00.000Z"
 }
 ```
+
+The status is 201 and `id` is a UUID. `expiresInDays` takes 1–365; leave it out for a token that never expires.
 
 :::caution
 The `token` value is shown only at creation time. Store it securely.
@@ -64,7 +67,7 @@ curl https://your-kukan-site/api/v1/api-tokens \
   -H "Authorization: Bearer <token>"
 
 # Revoke
-curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
+curl -X DELETE https://your-kukan-site/api/v1/api-tokens/<id> \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -80,10 +83,12 @@ curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
 
 ## Error codes
 
-| HTTP | Meaning                                     |
-| ---- | ------------------------------------------- |
-| 401  | Not authenticated (login or token required) |
-| 403  | Insufficient permissions                    |
-| 404  | Resource not found                          |
-| 409  | Conflict (e.g., duplicate resource)         |
-| 422  | Validation error                            |
+| HTTP | Meaning                                           |
+| ---- | ------------------------------------------------- |
+| 400  | Validation error                                  |
+| 401  | Not authenticated (login or token required)       |
+| 403  | Insufficient permissions                          |
+| 404  | Resource not found                                |
+| 409  | Conflict (e.g., duplicate resource)               |
+| 429  | Too many requests (e.g., the AI suggestion limit) |
+| 503  | Temporarily unavailable                           |

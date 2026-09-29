@@ -165,7 +165,7 @@ export const environments = {
         // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...', // sharable across sites
 
         // --- Misc ---
-        // brand: 'my-brand', // web image brand; unset → default brand src/brand (needs apps/web/brands/my-brand/, ADR-042)
+        // brand: 'my-brand', // web image brand; unset → apps/web/brands/default (a named brand needs apps/web/brands/my-brand/, ADR-042)
         // albPriority: 10, // shared-ALB rule priority (1–999); omit → derived from the site name, set only on a reported collision (ADR-049)
         // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
         // enableGa4DataApi: false,

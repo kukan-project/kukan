@@ -23,7 +23,7 @@ const res = await fetch('/api/v1/users/me', {
 
 ### トークンの発行
 
-ダッシュボード → API トークン画面、または API から発行できます。
+ユーザーメニュー → APIトークン画面、または API から発行できます。
 
 ```bash
 curl -X POST https://your-kukan-site/api/v1/api-tokens \
@@ -36,12 +36,15 @@ curl -X POST https://your-kukan-site/api/v1/api-tokens \
 
 ```json
 {
-  "id": "tok_...",
-  "token": "kukan_xxxxxxxx...",
+  "id": "3f2c9a1e-...",
   "name": "my-script",
-  "expiresAt": "2026-07-13T00:00:00.000Z"
+  "token": "kukan_xxxxxxxx...",
+  "expiresAt": "2026-07-13T00:00:00.000Z",
+  "created": "2026-04-14T00:00:00.000Z"
 }
 ```
+
+ステータスは 201 です。`id` は UUID です。`expiresInDays` は 1〜365 で、省略すると有効期限なしになります。
 
 :::caution
 `token` フィールドの値は発行時のみ表示されます。安全な場所に保管してください。
@@ -64,7 +67,7 @@ curl https://your-kukan-site/api/v1/api-tokens \
   -H "Authorization: Bearer <token>"
 
 # 失効
-curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
+curl -X DELETE https://your-kukan-site/api/v1/api-tokens/<id> \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -80,10 +83,12 @@ curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
 
 ## エラーコード
 
-| HTTP | 意味                                   |
-| ---- | -------------------------------------- |
-| 401  | 未認証（ログインまたはトークンが必要） |
-| 403  | 権限不足                               |
-| 404  | リソースが存在しない                   |
-| 409  | 競合（例: 同名リソースの重複）         |
-| 422  | バリデーションエラー                   |
+| HTTP | 意味                                    |
+| ---- | --------------------------------------- |
+| 400  | バリデーションエラー                    |
+| 401  | 未認証（ログインまたはトークンが必要）  |
+| 403  | 権限不足                                |
+| 404  | リソースが存在しない                    |
+| 409  | 競合（例: 同名リソースの重複）          |
+| 429  | リクエスト過多（例: AI 提案の回数上限） |
+| 503  | 一時的に利用不可                        |

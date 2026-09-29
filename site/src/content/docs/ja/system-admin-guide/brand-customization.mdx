@@ -50,7 +50,7 @@ dev サーバーの再起動）が必要**です（[静的ファイルの配置]
 
 ## Tier 1: 色・サイズの変更
 
-`brand/theme.css` に CSS 変数を記述するだけで、サイト全体の配色やサイズを変更できます。
+`brands/default/theme.css` に CSS 変数を記述するだけで、サイト全体の配色やサイズを変更できます。
 
 ```css
 /* apps/web/brands/default/theme.css */
@@ -88,6 +88,7 @@ shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィッ
 | `--destructive` / `--destructive-foreground`              | 非推奨 | エラー・削除の意味色（destructive ボタン、フォームエラー、削除メニュー項目）。ベタ塗り背景と、その上のテキスト                           |
 | `--success` / `--warning`                                 | 非推奨 | 成功・警告の意味色（アラート、パイプラインステータス、フォーム警告）。ボーダー・淡色背景・アイコンに使用                                 |
 | `--success-tint-foreground` / `--warning-tint-foreground` | 非推奨 | 成功・警告の**淡色（/10〜/15）背景上**のテキスト色。ベタ塗り用ではありません                                                             |
+| `--ai` / `--ai-tint-foreground`                           | 非推奨 | AI が生成したもの（抄録バッジ・検索カード等）を示す意味色。`-tint-foreground` は淡色背景上のテキスト                                     |
 
 ### 上書き時のルール
 
@@ -102,7 +103,7 @@ shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィッ
 
 ### 独自トークンの追加（`--brand-*`）
 
-デザイナー指定の配色に、公式トークンの役割（主要色・強調色など）に当てはまらない独自色が含まれる場合は、`--brand-` プレフィックスの独自トークンを `brand/theme.css` に追加できます。
+デザイナー指定の配色に、公式トークンの役割（主要色・強調色など）に当てはまらない独自色が含まれる場合は、`--brand-` プレフィックスの独自トークンを `brands/default/theme.css` に追加できます。
 
 ```css
 /* apps/web/brands/default/theme.css */
@@ -114,7 +115,7 @@ shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィッ
 
 - **`--brand-*` はフォーク専用の名前空間です** — 本体は `--brand-*` を定義も参照もしないため、本体更新と衝突しません。逆に `--kukan-*` は本体専用のため、独自トークンには使わないでください
 - **形式は公式トークンと同じ HSL 裸トリプレット**を推奨します（使用側で `/10` 等の透過を掛けられます）
-- **使用できるのはフォーク所有のコンポーネント内のみ**です（`brand/overrides/` / `brand/pages/`）。本体のコンポーネントが独自トークンを参照することはありません
+- **使用できるのはフォーク所有のコンポーネント内のみ**です（`brands/default/overrides/` / `brands/default/pages/`）。本体のコンポーネントが独自トークンを参照することはありません
 - **Tailwind のユーティリティクラスは生成されません** — `theme.css` は `globals.css` と別の CSS ユニットのため `@theme` によるクラス生成が効きません。arbitrary value 記法で参照してください:
 
 ```tsx
@@ -127,7 +128,7 @@ shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィッ
 
 ## Tier 2: テキスト・メタデータの変更
 
-`brand/brand-config.ts` を編集して、サイト名・著作権表示・メタデータを変更します。
+`brands/default/brand-config.ts` を編集して、サイト名・著作権表示・メタデータを変更します。
 
 ```typescript
 // apps/web/brands/default/brand-config.ts
@@ -156,18 +157,19 @@ export const brandConfig: BrandConfig = {
 
 ### 各フィールドの説明
 
-| フィールド        | 説明                                                                              |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                        |
-| `siteDescription` | meta description（検索エンジン向け）                                              |
-| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                               |
-| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                  |
-| `logo`            | ヘッダーロゴの設定（後述）                                                        |
-| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                  |
-| `footerLinks`     | フッターのリンク一覧                                                              |
-| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                            |
-| `faviconPath`     | ファビコンのパス                                                                  |
-| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし） |
+| フィールド        | 説明                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                   |
+| `siteDescription` | meta description（検索エンジン向け）                                                                         |
+| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                          |
+| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                                             |
+| `logo`            | ヘッダーロゴの設定（後述）                                                                                   |
+| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                                             |
+| `footerLinks`     | フッターのリンク一覧                                                                                         |
+| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                                                       |
+| `faviconPath`     | ファビコンのパス                                                                                             |
+| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                            |
+| `gaMeasurementId` | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)） |
 
 テキスト系フィールド（`siteName`・`siteDescription`・`copyright`・`logo.alt`・`headerNavExtra[].label`・`footerLinks[].label`）は、文字列のほかにロケールマップ（例: `{ ja: '利用規約', en: 'Terms of Use' }`）を指定できます。文字列は全ロケール共通、マップは言語切替に追従します。指定のないロケールは英語（デフォルトロケール）→定義済みの値の順で補われます。
 
@@ -189,7 +191,7 @@ logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: '○
 
 ## i18n メッセージの上書き
 
-UI に表示される翻訳テキストを組織ごとに変更できます。`brand/messages/{locale}.json` に上書きしたいキーだけを記述してください。
+UI に表示される翻訳テキストを組織ごとに変更できます。`brands/default/messages/{locale}.json` に上書きしたいキーだけを記述してください。
 
 ```json
 // apps/web/brands/default/messages/ja.json
@@ -220,7 +222,7 @@ UI に表示される翻訳テキストを組織ごとに変更できます。`b
 | 用途                                                 | 設定場所                                          |
 | ---------------------------------------------------- | ------------------------------------------------- |
 | ブランド固有の値（サイト名・ナビ項目・著作権表示等） | `brand-config.ts`（ロケールマップで多言語化可能） |
-| 本体 UI の翻訳テキストの上書き                       | `brand/messages/{locale}.json`                    |
+| 本体 UI の翻訳テキストの上書き                       | `brands/default/messages/{locale}.json`           |
 
 ## Tier 3: コンポーネント差し替え
 
@@ -327,7 +329,7 @@ export function SiteName() {
 override が増えた場合、ディレクトリで整理できます。
 
 ```
-brand/overrides/
+brands/default/overrides/
 ├── index.ts
 ├── layout/
 │   ├── header.tsx
@@ -345,7 +347,7 @@ brand/overrides/
 
 ### 手順
 
-**1. `brand/pages/` にページコンポーネントを作成**
+**1. `brands/default/pages/` にページコンポーネントを作成**
 
 ```tsx
 // apps/web/brands/default/pages/privacy.tsx
@@ -365,7 +367,7 @@ export default function PrivacyPage() {
 }
 ```
 
-**2. `brand/pages/index.ts` に登録**
+**2. `brands/default/pages/index.ts` に登録**
 
 ```typescript
 export const pages: Record<string, () => Promise<BrandPage>> = {
@@ -390,7 +392,7 @@ footerLinks: [
 
 ### ページの削除
 
-不要なページは `brand/pages/index.ts` のマップから削除し、対応する `.tsx` ファイルを削除してください。
+不要なページは `brands/default/pages/index.ts` のマップから削除し、対応する `.tsx` ファイルを削除してください。
 
 ## 静的ファイルの配置
 
@@ -426,6 +428,9 @@ dev サーバーを再起動（コピーを再実行）してください。
   パイプラインがサイトごとに `KUKAN_BRAND` を変えて web イメージをビルドします
   （[環境設定リファレンス](/ja/system-admin-guide/environment-config/)）。存在しない
   ブランドを指定するとイメージビルドが失敗します
+- Docker Compose では web イメージのビルド時に `--build-arg KUKAN_BRAND=<name>` を
+  渡します（マルチサイトでは `docker/multi-site/compose.site.yml` の
+  `KUKAN_BRAND` のコメントを外します）
 - `BrandConfig` / `BrandOverrides` の契約と CSS 変数のルールは全ブランド共通です。
   各ブランドは値と差し替え部品だけを持ちます
 
@@ -468,13 +473,13 @@ describe('Custom Header', () => {
 
 ## まとめ: カスタマイズの段階
 
-| やりたいこと                       | 方法                                              | 所要時間の目安 |
-| ---------------------------------- | ------------------------------------------------- | -------------- |
-| 配色を変えたい                     | `brand/theme.css` に CSS 変数を記述               | 5 分           |
-| 公式トークンにない独自色を使いたい | `brand/theme.css` に `--brand-*` トークンを定義   | 5 分           |
-| サイト名・テキストを変えたい       | `brand/brand-config.ts` を編集                    | 30 分          |
-| UI の翻訳テキストを変えたい        | `brand/messages/{locale}.json` に上書きキーを記述 | 10 分          |
-| ロゴを差し替えたい                 | `brands/default/public/` に配置 + config 編集     | 10 分          |
-| ヘッダー/フッターの構造を変えたい  | `brand/overrides/` にコンポーネント作成           | 数時間         |
-| トップページを差し替えたい         | `brand/overrides/` にコンポーネント作成           | 数時間         |
-| 静的ページを追加したい             | `brand/pages/` にコンポーネント作成 + 登録        | 30 分          |
+| やりたいこと                       | 方法                                                       | 所要時間の目安 |
+| ---------------------------------- | ---------------------------------------------------------- | -------------- |
+| 配色を変えたい                     | `brands/default/theme.css` に CSS 変数を記述               | 5 分           |
+| 公式トークンにない独自色を使いたい | `brands/default/theme.css` に `--brand-*` トークンを定義   | 5 分           |
+| サイト名・テキストを変えたい       | `brands/default/brand-config.ts` を編集                    | 30 分          |
+| UI の翻訳テキストを変えたい        | `brands/default/messages/{locale}.json` に上書きキーを記述 | 10 分          |
+| ロゴを差し替えたい                 | `brands/default/public/` に配置 + config 編集              | 10 分          |
+| ヘッダー/フッターの構造を変えたい  | `brands/default/overrides/` にコンポーネント作成           | 数時間         |
+| トップページを差し替えたい         | `brands/default/overrides/` にコンポーネント作成           | 数時間         |
+| 静的ページを追加したい             | `brands/default/pages/` にコンポーネント作成 + 登録        | 30 分          |

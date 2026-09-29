@@ -11,12 +11,15 @@ grow linearly with the site count. The multi-site layout shares the
 hourly-billed "boxes" (database cluster, OpenSearch, VPC, ECS cluster, load
 balancer) while
 keeping every logical resource that holds data or a namespace per site
-(database, search index, storage bucket, queue, web/worker services).
+(database — including the job queue — search index, storage bucket, web/worker
+services).
 
 - Site isolation: a dedicated DB role per site (no access to other sites'
-  databases), per-site search index prefixes, buckets, and queues
-- Each site can have its own domain, brand (once multi-brand builds land), and
-  sizing overrides
+  databases), per-site search index prefixes and buckets (the job queue lives in
+  the site database, so it is isolated with it)
+- Each site can have its own domain, brand (`brand`, see
+  [Appearance Customization](/en/system-admin-guide/brand-customization/#multiple-brands-multiple-sites-in-one-fork)),
+  and sizing overrides
 - The layout **assumes all sites belong to the same operator** (see the
   security boundary below)
 
@@ -55,6 +58,13 @@ prd: {
   and so on) go on each site entry. Putting them on the environment entry of an
   environment that declares `sites` fails at synth — the single-site and
   multi-site shapes cannot be mixed
+- One ALB per environment is shared by every site. Each site adds a target
+  group and a listener rule to it, and requests are routed by the
+  `X-Kukan-Site` header the site's CloudFront adds. Rule priorities are derived
+  from the site name, so normally nothing needs to be written; set
+  `albPriority` (1–999) on the site being added only when synth reports a
+  collision. An environment holds at most 50 sites (CloudFront's limit on
+  distributions per VPC origin; beyond that, split into another environment)
 - Site certificates and WAF follow the single-site rule: standalone deploys
   auto-create the missing pieces in us-east-1 (a site domain then needs
   `hostedZoneId` / `hostedZoneName`); pipeline mode requires pre-created ARNs
@@ -66,14 +76,8 @@ prd: {
 - AWS Backup works as-is in multi-site environments (the database is backed up
   once in the shared stack, buckets per site)
 - Per-site sizing uses `overrides` (only `web` / `worker` / `dbPool` /
-  `backup`)
-- One ALB per environment is shared by every site. Each site adds a target
-  group and a listener rule to it, and requests are routed by the
-  `X-Kukan-Site` header the site's CloudFront adds. Rule priorities are derived
-  from the site name, so normally nothing needs to be written; set
-  `albPriority` (1–999) on the site being added only when synth reports a
-  collision. An environment holds at most 50 sites (CloudFront's limit on
-  distributions per VPC origin; beyond that, split into another environment)
+  `backup`; `backup` takes S3 settings only, and `worker.healthPort` cannot be
+  overridden)
 
 Configuration is validated at `cdk synth` (site names, certificate ARNs, the
 shared database connection budget, and more). See the
@@ -152,7 +156,9 @@ and switch over:
 2. Migrate the database (`pg_dump` from the old environment → restore into the
    new site database)
 3. Copy the stored files into the new site bucket (`aws s3 sync`)
-4. Rebuild the search index in the new environment
+4. Rebuild the search index, content included, with **Reprocess all resources** on the
+   new environment's admin **Resource Processing** page (while the index is empty, the
+   worker also enqueues the same work on its own)
 5. Verify, then move the custom domain over: remove the domain settings from
    the old environment entry and deploy, add them to the new environment's site
    entry and deploy, then switch DNS (this order matters — the same domain
@@ -254,8 +260,10 @@ Regular single-site operation keeps using the root `compose.yml`.
 
 The multi-site layout is not a hard multi-tenant boundary between sites.
 
-- Only the database is isolated at the credential level. Search index, bucket,
-  and queue separation relies on naming conventions plus (on AWS) IAM and
+- Only the database (including the job queue inside it) is isolated at the
+  credential level; the worker wake call (`/wake`) is authenticated with a token
+  derived from a per-site secret. Search index and bucket separation relies on
+  naming conventions plus (on AWS) IAM and
   security groups; the on-premises shared services have no authentication
 - Do not use it to host sites for untrusted third parties — choose full
   per-site isolation (duplicated environments) instead

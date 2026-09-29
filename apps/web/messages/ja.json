@@ -445,7 +445,7 @@
       "backendSetupStep1": "GCP プロジェクト（新規または既存）にサービスアカウントを作成",
       "backendSetupStep2": "GCP プロジェクトで Google Analytics Data API を有効化",
       "backendSetupStep3": "GA4 のプロパティのアクセス管理でサービスアカウントに「閲覧者」権限を付与",
-      "backendSetupStep4": "環境変数を設定: GA4_PROPERTY_ID、GA4_CLIENT_EMAIL、GA4_PRIVATE_KEY（AWS の場合は CDK コンテキストに enableGa4DataApi=true を追加し、Secrets Manager に登録）",
+      "backendSetupStep4": "環境変数を設定: GA4_PROPERTY_ID、GA4_CLIENT_EMAIL、GA4_PRIVATE_KEY（AWS の場合は environments.ts の環境またはサイトに enableGa4DataApi: true を設定してデプロイし、作成された Secrets Manager のシークレットに登録）",
       "tabDatasetViews": "データセット閲覧数",
       "tabResourceViews": "リソース閲覧数",
       "tabDownloads": "ダウンロード数",
