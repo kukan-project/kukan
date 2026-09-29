@@ -290,7 +290,7 @@ embed-resources ──→ 8 バッチで打ち切ったとき、残りの embed-
 purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の版を消したとき）
 
 [全件ジョブ: 管理画面から]
-  reindex-metadata{includeContent:false}   「検索インデックスの再構築」（何も積まない）
+  reindex-metadata{includeContent:false}   「メタデータの検索インデックス再構築」（何も積まない）
   reindex-metadata{includeContent:true}    「全リソースの再処理」
       ├ 本文を全件削除し、contentIndexed を全件 false に
       └──→ resource-pipeline(rebuildOnly) × 全リソース

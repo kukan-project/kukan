@@ -109,7 +109,7 @@ describe('AdminSearchPage', () => {
   it('rebuilds the index first, and points to where the other reprocessing moved', () => {
     render(<AdminSearchPage />)
 
-    expect(screen.getByText('Rebuild search index')).toBeInTheDocument()
+    expect(screen.getByText('Rebuild metadata search index')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled()
     expect(screen.queryByText('Regenerate embeddings')).not.toBeInTheDocument()
     expect(
@@ -124,7 +124,7 @@ describe('AdminSearchPage', () => {
     render(<AdminSearchPage />)
     await waitFor(() => expect(screen.getByText('resources')).toBeInTheDocument())
 
-    const rebuild = screen.getByText('Rebuild search index')
+    const rebuild = screen.getByText('Rebuild metadata search index')
     const indexCard = screen.getByText('resources')
     expect(
       rebuild.compareDocumentPosition(indexCard) & Node.DOCUMENT_POSITION_FOLLOWING

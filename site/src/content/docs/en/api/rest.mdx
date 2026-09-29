@@ -624,7 +624,7 @@ All sysadmin only.
 | GET    | `/admin/search/stats`            | Search index statistics (doc count, size, DB counts)                     |
 | GET    | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`)        |
 | GET    | `/admin/search/browse/{index}`   | Browse index documents (pagination, search)                              |
-| POST   | `/admin/reindex-metadata`        | Rebuild search index (async via SQS)                                     |
+| POST   | `/admin/reindex-metadata`        | Rebuild the metadata search index (async, through the job queue)         |
 | POST   | `/admin/reindex-embeddings`      | Regenerate every resource's embedding (async via SQS)                    |
 | GET    | `/admin/search/analysis-status`  | Whether the analysis has moved on and a re-analysis is due (`{ stale }`) |
 | POST   | `/admin/search/reanalyse`        | Rebuild the index under the current analysis (async via SQS)             |

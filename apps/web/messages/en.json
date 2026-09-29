@@ -345,7 +345,7 @@
       "full": "Full",
       "truncated": "Truncated",
       "noDocuments": "No documents",
-      "indexTitle": "Rebuild search index",
+      "indexTitle": "Rebuild metadata search index",
       "indexDescription": "Rebuilds the metadata index of datasets and resources. The index of file content is not rebuilt; use Reprocess all resources for that. Fetches no external URLs. It is normally kept up to date automatically; run it when search results are inconsistent.",
       "indexButton": "Rebuild",
       "indexQueued": "Rebuild job queued. It runs in the background; check the index stats with the refresh button.",
@@ -362,7 +362,7 @@
       "unavailable": "Embedding is not configured, so this cannot run.",
       "settingsUnavailable": "Could not load the embedding settings.",
       "summaryTitle": "Generate AI descriptions in bulk",
-      "summaryDescription": "A resource is described automatically as it is registered. This is for the ones that predate the setting, and for rewriting what another model, prompt version or language produced. External URLs are not fetched. It spends on inference in proportion to the number of resources. Embeddings are rebuilt per package as each finishes.",
+      "summaryDescription": "A resource is described automatically as it is registered. This is for the ones that predate the setting, and for rewriting what another model, prompt version or language produced. External URLs are not fetched. It spends on inference in proportion to the number of resources. Each resource's embedding is rebuilt as its description is written.",
       "summaryModel": "Model",
       "summaryLocale": "Language",
       "summaryLocaleName": {
@@ -489,7 +489,7 @@
     },
     "adminQueue": {
       "title": "Background Job Status",
-      "description": "What runs in the background: data ingestion, search document sync, embeddings and abstracts, purges and more. A job that fails three times is dead and stays here for 30 days; it can be retried from here.",
+      "description": "What runs in the background: data ingestion, metadata search index sync, embeddings and AI descriptions, purges and more. A job that fails three times is dead and stays here for 30 days; it can be retried from here.",
       "colStatus": "Status",
       "colType": "Type",
       "colTarget": "Target",
@@ -508,19 +508,25 @@
       "colJobType": "Job",
       "total": "Total",
       "types": {
-        "resource-pipeline": "Resource pipeline",
-        "sync-search-docs": "Search document sync",
-        "lake-ingest-version": "Version lake ingest",
-        "embed-resources": "Resource embeddings",
-        "summarize-package": "Dataset abstracts",
-        "summarize-all": "All abstracts",
-        "reindex-metadata": "Search index rebuild",
-        "reanalyse-search-index": "Search index re-analysis",
-        "purge-resource-version": "Version deletion",
-        "purge-organization": "Organization purge",
-        "backfill-resource-versions": "Version backfill (one-time)",
-        "convert-set-aside-versions": "Set-aside version conversion (one-time)",
-        "record-preview-row-groups": "Preview row-group recording (one-time)"
+        "resource-pipeline": "Pipeline run (resources)",
+        "sync-search-docs": "Metadata search index sync (datasets, resources)",
+        "lake-ingest-version": "Version lake ingest (resources)",
+        "embed-resources": "Embeddings (resources)",
+        "summarize-package": "AI descriptions (resources)",
+        "summarize-all": "AI descriptions in bulk (all resources)",
+        "reindex-metadata": "Search index rebuild (metadata; content when asked)",
+        "reanalyse-search-index": "Search index re-analysis (whole index)",
+        "purge-resource-version": "Version deletion (resources)",
+        "purge-organization": "Purge (organizations)",
+        "backfill-resource-versions": "Version backfill (resources)",
+        "convert-set-aside-versions": "Set-aside version conversion (resources)",
+        "record-preview-row-groups": "Preview row-group recording (resources)"
+      },
+      "sections": {
+        "routine": "Routine",
+        "admin": "Admin actions and recovery",
+        "migration": "Migrations after an upgrade",
+        "other": "Other"
       }
     },
     "adminUsers": {
@@ -612,7 +618,7 @@
       "description": "The search analysis settings have changed (such as the Japanese analysis, or how formats are matched regardless of case). Analysis is fixed when an index is created, so the change reaches this deployment only by rebuilding it. The stored text is re-read in place — nothing is fetched and no file is processed again. This is a one-time step after an upgrade, and it disappears once it is done.",
       "reanalyse": "Re-analyse",
       "reanalysing": "Running…",
-      "queued": "Re-analysis queued. This notice goes away once it finishes. Anything saved while it runs can be restored with \"Rebuild search index\" under Index Management."
+      "queued": "Re-analysis queued. This notice goes away once it finishes. Anything saved while it runs is brought in again when it finishes."
     },
     "embeddingBackfill": {
       "title": "Regenerate embeddings",

@@ -3,6 +3,9 @@ import { act, render, screen, waitFor, fireEvent, within } from '@testing-librar
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
+import * as shared from '@kukan/shared'
+import enMessages from '../../../../../../messages/en.json'
+import jaMessages from '../../../../../../messages/ja.json'
 import AdminQueuePage from '../page'
 
 vi.mock('@/lib/client-api', () => ({
@@ -81,21 +84,77 @@ describe('AdminQueuePage', () => {
   it('counts jobs by type and status, with a total row', async () => {
     render(<AdminQueuePage />)
 
-    const pipeline = (await screen.findByText('Resource pipeline')).closest('tr')!
+    const pipeline = (await screen.findByText('Pipeline run (resources)')).closest('tr')!
     expect(within(pipeline).getByRole('button', { name: '392' })).toBeInTheDocument()
-    const sync = screen.getByText('Search document sync').closest('tr')!
+    const sync = screen.getByText('Metadata search index sync (datasets, resources)').closest('tr')!
     expect(within(sync).getByRole('button', { name: '113' })).toBeInTheDocument()
     const total = screen.getByText('Total').closest('tr')!
     expect(within(total).getByRole('button', { name: '505' })).toBeInTheDocument()
     // Every type has a row, with no jobs as much as with some
-    const purge = screen.getByText('Organization purge').closest('tr')!
+    const purge = screen.getByText('Purge (organizations)').closest('tr')!
     expect(within(purge).getAllByRole('button', { name: '0' })).toHaveLength(4)
+  })
+
+  it('places every job type in a section of its own, under its own name', async () => {
+    // A job type added to the shared package but not here would drop into
+    // "Other", and only while it had jobs, under its raw id
+    const jobTypes = Object.entries(shared)
+      .filter(([name]) => name.endsWith('_JOB_TYPE'))
+      .map(([, type]) => type as string)
+    mockClientFetch.mockResolvedValueOnce(ok({ items: [] }))
+    render(<AdminQueuePage />)
+    await screen.findByText('Total')
+
+    expect(jobTypes.length).toBeGreaterThan(10)
+    for (const type of jobTypes) {
+      const ja = (jaMessages.dashboard.adminQueue.types as Record<string, string>)[type]
+      const label = (enMessages.dashboard.adminQueue.types as Record<string, string>)[type]
+      expect({ type, ja: !!ja, en: !!label }).toEqual({ type, ja: true, en: true })
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    expect(screen.queryByText('Other')).not.toBeInTheDocument()
+  })
+
+  it('groups the types by what sets them off, with anything unknown last', async () => {
+    mockClientFetch.mockResolvedValueOnce(
+      ok({ items: [{ type: 'something-new', status: 'waiting', count: 2 }] })
+    )
+    render(<AdminQueuePage />)
+    await screen.findByText('something-new')
+
+    const rows = screen.getAllByRole('row').map((r) => r.textContent ?? '')
+    const at = (text: string) => rows.findIndex((r) => r.startsWith(text))
+    const order = [
+      'Routine',
+      'Pipeline run (resources)',
+      'Version lake ingest',
+      'Metadata search index sync',
+      'Embeddings',
+      'Admin actions and recovery',
+      'Search index rebuild',
+      'AI descriptions in bulk',
+      'AI descriptions (resources)',
+      'Version deletion',
+      'Purge (organizations)',
+      'Migrations after an upgrade',
+      'Version backfill',
+      'Set-aside version conversion',
+      'Preview row-group recording',
+      'Search index re-analysis',
+      'Other',
+      'something-new',
+      'Total',
+    ].map(at)
+    expect(order.every((i) => i >= 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
   })
 
   it('lists one type of one status from its cell', async () => {
     render(<AdminQueuePage />)
 
-    const sync = (await screen.findByText('Search document sync')).closest('tr')!
+    const sync = (
+      await screen.findByText('Metadata search index sync (datasets, resources)')
+    ).closest('tr')!
     fireEvent.click(within(sync).getByRole('button', { name: '113' }))
     expect(mockUsePaginatedFetch).toHaveBeenLastCalledWith(
       '/api/v1/admin/queue/jobs?status=waiting&type=sync-search-docs'
@@ -107,7 +166,7 @@ describe('AdminQueuePage', () => {
     mockPaginatedFetch.total = 1
     render(<AdminQueuePage />)
 
-    expect(screen.getAllByText('Dataset abstracts').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('AI descriptions (resources)').length).toBeGreaterThan(0)
     expect(screen.getByText('summarize-package')).toBeInTheDocument()
     expect(screen.getByText('packageId=p1')).toBeInTheDocument()
     expect(screen.getByText('completion timed out')).toBeInTheDocument()

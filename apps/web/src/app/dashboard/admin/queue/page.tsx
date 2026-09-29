@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { ArrowRight, RotateCcw, Trash2 } from 'lucide-react'
 import {
@@ -46,22 +46,41 @@ interface JobCount {
   count: number
 }
 
-/** Every job type, in the order they matter day to day; one not listed goes last. */
-const TYPE_ORDER: string[] = [
-  PIPELINE_JOB_TYPE,
-  SYNC_SEARCH_DOCS_JOB_TYPE,
-  LAKE_INGEST_JOB_TYPE,
-  EMBED_JOB_TYPE,
-  SUMMARIZE_PACKAGE_JOB_TYPE,
-  SUMMARIZE_ALL_JOB_TYPE,
-  REINDEX_JOB_TYPE,
-  REANALYSE_INDEX_JOB_TYPE,
-  PURGE_VERSION_JOB_TYPE,
-  PURGE_ORG_JOB_TYPE,
-  BACKFILL_VERSIONS_JOB_TYPE,
-  CONVERT_SET_ASIDE_JOB_TYPE,
-  RECORD_ROW_GROUPS_JOB_TYPE,
+/**
+ * Every job type, by what sets it off: the writes of every day, an
+ * administrator's button (or the worker finding the index lost), and the
+ * one-off steps an upgrade asks for. Within a section, in the order they
+ * matter; a type not listed goes in a last one.
+ */
+const JOB_SECTIONS: { key: string; types: string[] }[] = [
+  {
+    // In the order the data moves after a write: each feeds the next
+    key: 'routine',
+    types: [PIPELINE_JOB_TYPE, LAKE_INGEST_JOB_TYPE, SYNC_SEARCH_DOCS_JOB_TYPE, EMBED_JOB_TYPE],
+  },
+  {
+    // Rebuilding first, removing last; the bulk descriptions fan out one job per dataset
+    key: 'admin',
+    types: [
+      REINDEX_JOB_TYPE,
+      SUMMARIZE_ALL_JOB_TYPE,
+      SUMMARIZE_PACKAGE_JOB_TYPE,
+      PURGE_VERSION_JOB_TYPE,
+      PURGE_ORG_JOB_TYPE,
+    ],
+  },
+  {
+    // In the order an upgrade runs them; the re-analysis stands apart from the rest
+    key: 'migration',
+    types: [
+      BACKFILL_VERSIONS_JOB_TYPE,
+      CONVERT_SET_ASIDE_JOB_TYPE,
+      RECORD_ROW_GROUPS_JOB_TYPE,
+      REANALYSE_INDEX_JOB_TYPE,
+    ],
+  },
 ]
+const KNOWN_TYPES = new Set(JOB_SECTIONS.flatMap((s) => s.types))
 
 /** The statuses a job reaches from the one before it; dead is where it ends up, not a next step. */
 const FLOW_STEPS: JobStatus[] = ['waiting', 'running']
@@ -70,11 +89,6 @@ const FLOW_STEPS: JobStatus[] = ['waiting', 'running']
 function cellTone(status: JobStatus, value: number): string {
   if (value === 0) return 'text-muted-foreground'
   return status === 'dead' ? 'font-semibold text-destructive' : 'font-semibold text-primary'
-}
-
-function typeRank(type: string): number {
-  const i = TYPE_ORDER.indexOf(type)
-  return i === -1 ? TYPE_ORDER.length : i
 }
 
 interface JobItem {
@@ -196,10 +210,38 @@ export default function AdminQueuePage() {
     (counts ?? [])
       .filter((c) => c.status === status && (type === undefined || c.type === type))
       .reduce((sum, c) => sum + c.count, 0)
-  const types = [...new Set([...TYPE_ORDER, ...(counts ?? []).map((c) => c.type)])].sort(
-    (a, b) => typeRank(a) - typeRank(b) || a.localeCompare(b)
-  )
+  const unknownTypes = [
+    ...new Set((counts ?? []).map((c) => c.type).filter((type) => !KNOWN_TYPES.has(type))),
+  ].sort()
+  const sections = [
+    ...JOB_SECTIONS,
+    ...(unknownTypes.length > 0 ? [{ key: 'other', types: unknownTypes }] : []),
+  ]
   const typeLabel = (type: string) => (t.has(`types.${type}`) ? t(`types.${type}`) : type)
+  // A type's row of counts, or the total's when `type` is undefined
+  const countRow = (type: string | undefined, label: string) => (
+    <TableRow key={type ?? 'total'} className={type ? undefined : 'font-semibold'}>
+      <TableCell>{label}</TableCell>
+      {JOB_STATUSES.map((status) => {
+        const value = countOf(type, status)
+        const active = filter.status === status && filter.type === type
+        return (
+          <TableCell key={status} className="p-1 text-right">
+            <button
+              type="button"
+              onClick={() => setFilter({ status, type })}
+              aria-pressed={active}
+              className={`w-full rounded px-2 py-1 text-right tabular-nums hover:bg-accent ${
+                active ? 'bg-accent ring-1 ring-primary' : ''
+              } ${cellTone(status, value)}`}
+            >
+              {counts ? value : '–'}
+            </button>
+          </TableCell>
+        )
+      })}
+    </TableRow>
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -209,7 +251,8 @@ export default function AdminQueuePage() {
       <p className="-mt-3 text-sm text-muted-foreground">{t('description')}</p>
 
       <Table>
-        <TableHeader>
+        {/* No rule under the column names: the first section heading draws it */}
+        <TableHeader className="[&_tr]:border-b-0">
           <TableRow>
             <TableHead>{t('colJobType')}</TableHead>
             {JOB_STATUSES.map((status) => (
@@ -226,32 +269,24 @@ export default function AdminQueuePage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {[
-            ...types.map((type) => ({ type, label: typeLabel(type) })),
-            { type: undefined, label: t('total') },
-          ].map((row) => (
-            <TableRow key={row.type ?? 'total'} className={row.type ? undefined : 'font-semibold'}>
-              <TableCell>{row.label}</TableCell>
-              {JOB_STATUSES.map((status) => {
-                const value = countOf(row.type, status)
-                const active = filter.status === status && filter.type === row.type
-                return (
-                  <TableCell key={status} className="p-1 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setFilter({ status, type: row.type })}
-                      aria-pressed={active}
-                      className={`w-full rounded px-2 py-1 text-right tabular-nums hover:bg-accent ${
-                        active ? 'bg-accent ring-1 ring-primary' : ''
-                      } ${cellTone(status, value)}`}
-                    >
-                      {counts ? value : '–'}
-                    </button>
-                  </TableCell>
-                )
-              })}
-            </TableRow>
+          {sections.map((section, i) => (
+            <Fragment key={section.key}>
+              {/* The heading belongs to the rows below it: space above it, none
+                  between, so the sections read apart without a band of their own */}
+              <TableRow className="hover:bg-transparent">
+                <TableCell
+                  colSpan={1 + JOB_STATUSES.length}
+                  className={`pb-1.5 text-xs font-semibold text-muted-foreground ${
+                    i > 0 ? 'pt-7' : 'pt-3'
+                  }`}
+                >
+                  {t(`sections.${section.key}`)}
+                </TableCell>
+              </TableRow>
+              {section.types.map((type) => countRow(type, typeLabel(type)))}
+            </Fragment>
           ))}
+          {countRow(undefined, t('total'))}
         </TableBody>
       </Table>
 
