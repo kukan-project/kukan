@@ -10,10 +10,21 @@ const db = getTestDb()
 const logger = createLogger({ name: 'test', level: 'silent' })
 const adapters: PostgresQueueAdapter[] = []
 
-function adapter(notify?: () => Promise<void>, onWaiting?: (count: number) => void) {
-  const queue = new PostgresQueueAdapter({ db, logger, notify, onWaiting })
+function adapter(
+  notify?: () => Promise<void>,
+  onWaiting?: (count: number) => void,
+  concurrency?: number
+) {
+  const queue = new PostgresQueueAdapter({ db, logger, notify, onWaiting, concurrency })
   adapters.push(queue)
   return queue
+}
+
+/** A promise and the function that settles it, for a handler to wait on. */
+function gate() {
+  let open!: () => void
+  const opened = new Promise<void>((resolve) => (open = resolve))
+  return { opened, open }
 }
 
 /** Jobs per status, summed over types. */
@@ -527,6 +538,121 @@ describe('PostgresQueueAdapter', () => {
     expect(await queue.listJobs({ status: 'dead', limit: 10, offset: 0 })).toMatchObject({
       total: 1,
       items: [{ id: dead }],
+    })
+  })
+
+  describe('with a concurrency above one', () => {
+    it('runs that many jobs at once, and no more', async () => {
+      const writer = adapter()
+      await writer.enqueueMany('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+      const held = gate()
+      let now = 0
+      let most = 0
+      const started: unknown[] = []
+
+      await adapter(undefined, undefined, 2).process({
+        t: async (j) => {
+          started.push(j.data)
+          most = Math.max(most, ++now)
+          await held.opened
+          now--
+        },
+      })
+
+      await vi.waitFor(() => expect(started).toHaveLength(2))
+      // The third waits for a loop to come free, however long that takes
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect(started).toHaveLength(2)
+      held.open()
+      await vi.waitFor(async () => expect(await rows()).toHaveLength(0))
+      expect(most).toBe(2)
+    })
+
+    it('starts a job written while one runs, beside it rather than after it', async () => {
+      const queue = adapter(undefined, undefined, 2)
+      const held = gate()
+      const started: string[] = []
+      await queue.process({
+        long: async () => {
+          started.push('long')
+          await held.opened
+        },
+        short: async () => void started.push('short'),
+      })
+
+      await queue.enqueue('long', {})
+      await vi.waitFor(() => expect(started).toEqual(['long']))
+      await queue.enqueue('short', {})
+
+      await vi.waitFor(() => expect(started).toEqual(['long', 'short']))
+      held.open()
+    })
+
+    it('starts a delayed job when it comes due, while another loop is still busy', async () => {
+      const queue = adapter(undefined, undefined, 2)
+      const held = gate()
+      const started: string[] = []
+      await queue.process({
+        long: async () => {
+          started.push('long')
+          await held.opened
+        },
+        later: async () => void started.push('later'),
+      })
+
+      await queue.enqueue('long', {})
+      await vi.waitFor(() => expect(started).toEqual(['long']))
+      await queue.enqueue('later', {}, { delaySeconds: 1 })
+
+      await vi.waitFor(() => expect(started).toEqual(['long', 'later']), { timeout: 5000 })
+      held.open()
+    })
+
+    it('keeps the sooner timer when a later time is asked for after it', async () => {
+      // Loops ask when the next job is due at once; the answer that lands last
+      // may be the oldest, and must not put back a later time
+      const queue = adapter(undefined, undefined, 2)
+      const started: string[] = []
+      await queue.process({ soon: async () => void started.push('soon') })
+      await queue.enqueue('soon', {}, { delaySeconds: 1 })
+      await vi.waitFor(async () => expect((await byStatus(queue)).scheduled).toBe(1))
+      // The loops the enqueue woke have armed for it and stopped
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      ;(queue as unknown as { arm(ms: number): void }).arm(3_600_000)
+
+      await vi.waitFor(() => expect(started).toEqual(['soon']), { timeout: 5000 })
+    })
+
+    it('waits for every running job when stopped', async () => {
+      const writer = adapter()
+      await writer.enqueueMany('t', [{}, {}])
+      const held = gate()
+      let finished = 0
+      const queue = adapter(undefined, undefined, 2)
+      await queue.process({
+        t: async () => {
+          await held.opened
+          finished++
+        },
+      })
+      await vi.waitFor(async () => expect((await byStatus(queue)).running).toBe(2))
+
+      const stopping = queue.stop()
+      held.open()
+      await stopping
+      expect(finished).toBe(2)
+    })
+
+    it('reports the waiting jobs as the first is taken and when every loop is idle', async () => {
+      const writer = adapter()
+      await writer.enqueueMany('t', [{}, {}, {}])
+      const reports: number[] = []
+
+      await adapter(undefined, (count) => reports.push(count), 2).process({ t: async () => {} })
+
+      // Not once per loop, nor once per loop going idle
+      await vi.waitFor(() => expect(reports).toEqual([3, 0]))
     })
   })
 

@@ -614,10 +614,10 @@ describe('validateSites', () => {
   })
 
   it('counts at most sites.length - 1 rolling sites (the canary deploys alone)', () => {
-    // small: 16 per site + 8 per rolling site on db.t4g.micro (112). 5 sites with
-    // K=8: only 4 can roll after the canary → 80 + 32 = 112, at the limit, not over
-    const wide = messages({ ...base, deployConcurrency: 8, sites: sitesOf(5) })
-    expect(wide).toMatch(/112 — steady 80 \+ 4 sites' rolling update 32/)
+    // small: 20 per site + 10 per rolling site on db.t4g.micro (112). 4 sites with
+    // K=8: only 3 can roll after the canary → 80 + 30 = 110, under the limit
+    const wide = messages({ ...base, deployConcurrency: 8, sites: sitesOf(4) })
+    expect(wide).toMatch(/110 — steady 80 \+ 3 sites' rolling update 30/)
     // 2 sites: the canary, then one — never two at once, whatever K says
     expect(() =>
       validateSites({
@@ -626,12 +626,12 @@ describe('validateSites', () => {
         overrides: { dbPool: { webMax: 40 } },
         sites: sitesOf(2),
       })
-    ).toThrow(/1 site's rolling update 43/)
+    ).toThrow(/1 site's rolling update 45/)
   })
 
   it('estimates RDS max_connections from the instance class memory', () => {
-    // small preset: 16 per site + 8 for the rolling one; 7 sites need 120 — over
-    // db.t4g.micro's 112, comfortably under db.t4g.small's 225
+    // small preset: 20 per site + 10 for the rolling one; 7 sites need 150 — over
+    // db.t4g.micro's 112, under db.t4g.small's 225 without a warning (70% is 157)
     expect(() => validateSites({ ...base, sites: sitesOf(7) })).toThrow(
       /exceed the estimated max_connections \(112\).*db\.t4g\.micro allows only ~112/
     )

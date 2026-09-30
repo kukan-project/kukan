@@ -82,19 +82,19 @@ synth 時の接続数チェック（警告なし = 推定 max_connections の 70
 ACU の変更は「先に DB だけ変えて再起動 → in-sync 確認 → サイト追加」の二段階
 （max_connections は静的パラメータ）。
 
-**small（RDS、1 サイト最大 16 接続 + 更新中 8）** — `overrides: { db: { instanceClass } }`
+**small（RDS、1 サイト最大 20 接続 + 更新中 10）** — `overrides: { db: { instanceClass } }`
 
 | サイト数 | K=1           | K=2           | K=4           | K=8           |
 | -------- | ------------- | ------------- | ------------- | ------------- |
 | 1        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
 | 2        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
-| 3        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
-| 4        | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 3        | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 4        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
 | 5        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 6        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 8        | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 6        | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 8        | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
 | 10       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
-| 15       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 15       | db.t4g.medium | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 | 20       | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 
 **medium（Aurora、1 サイト最大 60 接続 + 更新中 15）** — `overrides: { db: { minAcu, maxAcu } }`

@@ -65,6 +65,7 @@ import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter, PostgresSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
+import { jobConcurrency } from './concurrency'
 import { retryLakeIngest } from './pipeline/retry-lake-ingest'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
@@ -98,7 +99,7 @@ const env = loadEnv()
 const log = createLogger({ name: 'worker', level: env.LOG_LEVEL })
 setUserAgent(buildUserAgent(env))
 
-// Initialize database (worker processes jobs sequentially, so fewer connections needed)
+// Sized with the jobs it runs at once in mind (see ./concurrency)
 const db = createDb(env.DATABASE_URL, {
   max: env.WORKER_DB_POOL_MAX,
   idleTimeoutMillis: env.WORKER_DB_POOL_IDLE_TIMEOUT_MS,
@@ -122,8 +123,14 @@ const storage = new S3StorageAdapter({
 const metricSite = env.WORKER_METRIC_SITE
 // Unknown until the first count: a fresh task must not report 0 over a backlog
 let waitingJobs: number | undefined
+const { concurrency, warning: concurrencyWarning } = jobConcurrency(
+  env.WORKER_DB_POOL_MAX,
+  env.WORKER_CONCURRENCY
+)
+if (concurrencyWarning) log.warn(concurrencyWarning)
 const queue = new PostgresQueueAdapter({
   db,
+  concurrency,
   logger: log.child({ component: 'job-queue' }),
   // The other tasks, told when a job this one runs writes another
   ...(env.WORKER_WAKE_URL && {
@@ -636,7 +643,7 @@ if (search) {
   }, INDEX_CHECK_INTERVAL_MS)
 }
 
-log.info({ healthPort: HEALTH_PORT }, 'Worker started')
+log.info({ healthPort: HEALTH_PORT, concurrency }, 'Worker started')
 
 // Graceful shutdown
 const shutdown = async () => {

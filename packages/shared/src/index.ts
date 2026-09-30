@@ -18,6 +18,7 @@ export * from './types'
 
 // Utilities
 export * from './utils'
+export * from './in-turn'
 
 // Format normalization
 export * from './formats'

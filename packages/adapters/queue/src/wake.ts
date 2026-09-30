@@ -28,10 +28,10 @@ export function isWakeAuthorized(header: string | undefined, authSecret: string)
 /**
  * A `notify` for `PostgresQueueAdapter` that POSTs to every worker task.
  *
- * Every address the name resolves to, not the first: a worker takes one job
- * at a time, so a signal that lands on a task busy with a long one waits for
- * that job to end while another task sits idle (ADR-058 §3). The idle ones
- * take the job; the busy ones note a pass to make once they are free, and
+ * Every address the name resolves to, not the first: a signal that lands on
+ * a task whose loops are all busy waits for one of them to finish while
+ * another task sits idle (ADR-058 §3). The idle ones take the job; the busy
+ * ones note a pass to make once a loop is free, and
  * SKIP LOCKED keeps two from taking the same row. Fails only when no task
  * answered.
  */

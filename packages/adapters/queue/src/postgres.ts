@@ -11,7 +11,7 @@
 
 import { AsyncLocalStorage } from 'async_hooks'
 import { randomUUID } from 'crypto'
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm'
 import { job as jobTable, type Database, type Transaction } from '@kukan/db'
 import { createLogger, type JobPriority, type JobStatus, type Logger } from '@kukan/shared'
 import type { EnqueueOptions, Job, JobRecord, QueueAdapter } from './adapter'
@@ -61,6 +61,11 @@ export interface PostgresQueueConfig {
    * minute through it. An idle worker reports 0 and asks nothing.
    */
   onWaiting?: (count: number) => void
+  /**
+   * How many jobs this process runs at once (ADR-058 §7). Each takes the next
+   * job, in priority order, as it finishes the last. Default 1.
+   */
+  concurrency?: number
   logger?: Logger
 }
 
@@ -147,7 +152,6 @@ function coalesced(fn: () => Promise<void>) {
       }
       running = loop()
     },
-    settled: (): Promise<void> => running ?? Promise.resolve(),
   }
 }
 
@@ -156,19 +160,42 @@ export class PostgresQueueAdapter implements QueueAdapter {
   private log: Logger
   private onWaiting?: (count: number) => void
   private waitingCountedAt = 0
-  /** Between taking a job and the end of its pass: a count may speak for it. */
-  private busy = false
+  /** Jobs taken and not yet finished: while any are, a count may speak for them. */
+  private running = 0
+  /** A job was taken since every loop last stopped. */
+  private tookSinceIdle = false
   /** Who holds a lease, so a worker that lost one cannot extend or delete it. */
   private readonly owner = randomUUID()
   /** Transactions a job was written in, to be woken for once they commit. */
   private readonly written = new WeakSet<Transaction>()
   /** The priority of the job whose handler is running, for what it writes. */
-  private readonly running = new AsyncLocalStorage<JobPriority>()
+  private readonly runningPriority = new AsyncLocalStorage<JobPriority>()
 
   private handlers?: Handlers
   private stopped = false
   private timer?: ReturnType<typeof setTimeout>
-  private readonly pass = coalesced(() => this.drain())
+  /** When `timer` fires. */
+  private timerAt = Infinity
+  private readonly concurrency: number
+  /**
+   * Loops taking jobs, at most `concurrency`. Counted down in the same step as
+   * a loop's last look, so a request for a pass that comes after it starts a
+   * new loop rather than finding the old one still counted.
+   */
+  private active = 0
+  /** Loops and their closing work, for `stop` to wait out. */
+  private readonly pending = new Set<Promise<void>>()
+  /** No pass before this after one failed: armed sooner, it would fail again at once. */
+  private backoffUntil = 0
+  /** The minutely count while any job runs, one for all the loops. */
+  private counting?: ReturnType<typeof setInterval>
+  /**
+   * Bumped by every request for a pass. A loop that found nothing takes
+   * another look if it moved since that look began: the job it was asked
+   * about may have been written after the look, and with every loop busy no
+   * new one starts for it.
+   */
+  private wakes = 0
   /**
    * Sent one at a time: a burst of writes (a catalog-wide re-enqueue) would
    * otherwise be as many requests, and the worker needs only one after the
@@ -179,6 +206,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   constructor(config: PostgresQueueConfig) {
     this.db = config.db
     this.onWaiting = config.onWaiting
+    this.concurrency = Math.max(1, Math.floor(config.concurrency ?? 1))
     this.log = config.logger ?? createLogger({ name: 'job-queue' })
     const notify = config.notify
     if (notify) {
@@ -258,7 +286,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
     if (options?.priority) return options.priority
     // A job that works through everything outstanding is nobody's in particular
     if (options?.unlessWaiting) return 'normal'
-    return this.running.getStore() ?? 'normal'
+    return this.runningPriority.getStore() ?? 'normal'
   }
 
   async transaction<T>(db: Database, fn: (tx: Transaction) => Promise<T>): Promise<T> {
@@ -386,40 +414,85 @@ export class PostgresQueueAdapter implements QueueAdapter {
 
   async stop(): Promise<void> {
     this.stopped = true
-    if (this.timer) clearTimeout(this.timer)
-    await this.pass.settled()
+    this.disarm()
+    while (this.pending.size > 0) await Promise.all(this.pending)
   }
 
+  /** Start loops until `concurrency` are taking jobs. */
   private requestPass(): void {
-    if (!this.stopped) this.pass.request()
+    if (this.stopped) return
+    this.wakes++
+    // Once per waking from idle, not per loop: every loop would find the same rows
+    let bury = this.active === 0
+    while (this.active < this.concurrency) {
+      this.active++
+      const lane: Promise<void> = this.lane(bury).finally(() => this.pending.delete(lane))
+      this.pending.add(lane)
+      bury = false
+    }
   }
 
-  /** Take and run jobs until none is ready, then wait for the earliest delayed one. */
-  private async drain(): Promise<void> {
-    if (this.stopped) return
+  /** Take and run jobs until none is ready, then close as a loop that stopped. */
+  private async lane(bury: boolean): Promise<void> {
+    let failed = false
     try {
-      await this.buryExhausted()
-      let first = true
+      if (bury) await this.buryExhausted()
       while (!this.stopped) {
+        const looked = this.wakes
         const next = await this.claim()
-        if (!next) break
-        this.busy = true
-        // The first job of a pass lifts the figure at once, whatever the last
-        // count said: read as idle, the policy would scale in under the work
-        await this.countWaiting(first)
-        first = false
-        await this.run(next)
-      }
-      this.busy = false
-      if (!this.stopped) {
-        await this.countIdle()
-        await this.armForNextDue()
+        if (!next) {
+          if (this.wakes !== looked) continue
+          break
+        }
+        // The first job since the loops were idle lifts the figure at once, whatever
+        // the last count said: read as idle, the policy would scale in under the work
+        const first = !this.tookSinceIdle
+        this.tookSinceIdle = true
+        this.jobStarted()
+        try {
+          await this.countWaiting(first)
+          await this.run(next)
+        } finally {
+          this.jobEnded()
+        }
       }
     } catch (err) {
-      this.busy = false
-      this.log.error({ err }, 'Job queue pass failed')
-      this.arm(DRAIN_RETRY_MS)
+      failed = true
+      this.passFailed(err)
     }
+    const last = --this.active === 0
+    if (last) this.tookSinceIdle = false
+    if (this.stopped || failed) return
+    // The last loop reports the idle figure; any other only makes sure a delayed
+    // job wakes a loop when it comes due, not when the busy ones finish
+    try {
+      if (last) await this.countIdle()
+      await this.armForNextDue()
+    } catch (err) {
+      this.passFailed(err)
+    }
+  }
+
+  /** Try again in a while, and not sooner: armed at once, it would fail again at once. */
+  private passFailed(err: unknown): void {
+    this.log.error({ err }, 'Job queue pass failed')
+    this.backoffUntil = Date.now() + DRAIN_RETRY_MS
+    // In place of any sooner timer, which would only fail again
+    this.disarm()
+    this.arm(DRAIN_RETRY_MS)
+  }
+
+  private jobStarted(): void {
+    // Counted on through the run: a long job would otherwise leave the figure
+    // at what it was when the job was taken, hiding a backlog that built since
+    if (this.running++ === 0 && this.onWaiting) {
+      this.counting = setInterval(() => void this.countWaiting(true), WAITING_COUNT_MS)
+      this.counting.unref?.()
+    }
+  }
+
+  private jobEnded(): void {
+    if (--this.running === 0) clearInterval(this.counting)
   }
 
   /**
@@ -429,7 +502,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
    */
   private async countIdle(): Promise<void> {
     if (!this.onWaiting) return
-    await this.report(and(ready(), gt(jobTable.attempts, 0), unleased()), () => !this.busy)
+    await this.report(and(ready(), gt(jobTable.attempts, 0), unleased()), () => this.running === 0)
   }
 
   /**
@@ -439,11 +512,14 @@ export class PostgresQueueAdapter implements QueueAdapter {
   private async countWaiting(force = false): Promise<void> {
     if (!this.onWaiting) return
     if (!force && Date.now() - this.waitingCountedAt < WAITING_COUNT_MS) return
+    // Stamped as it starts: two loops taking jobs together would otherwise both
+    // find the last stamp old and count twice
+    this.waitingCountedAt = Date.now()
     await this.report(
       and(ready(), or(due(), gt(jobTable.attempts, 0))),
-      // A count still in flight when the pass ended describes a job that is
+      // A count still in flight when the last job ended describes one that is
       // gone; applied, it would replace the idle figure for an hour
-      () => this.busy
+      () => this.running > 0
     )
   }
 
@@ -455,9 +531,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   private async report(where: SQL | undefined, stillTrue: () => boolean): Promise<void> {
     try {
       const count = await this.db.$count(jobTable, where)
-      if (!stillTrue()) return
-      this.waitingCountedAt = Date.now()
-      this.onWaiting!(count)
+      if (stillTrue()) this.onWaiting!(count)
     } catch (err) {
       this.log.warn({ err }, 'Could not count the waiting jobs')
     }
@@ -519,14 +593,8 @@ export class PostgresQueueAdapter implements QueueAdapter {
       return
     }
     const holding = this.hold(job.id)
-    // Counted on through the run: a long job would otherwise leave the figure
-    // at what it was when the job was taken, hiding a backlog that built since
-    const counting = this.onWaiting
-      ? setInterval(() => void this.countWaiting(true), WAITING_COUNT_MS)
-      : undefined
-    counting?.unref?.()
     try {
-      await this.running.run(job.priority, () => handler(job))
+      await this.runningPriority.run(job.priority, () => handler(job))
       await this.complete(job.id)
     } catch (err) {
       // Payload included: some handlers log nothing of their own before
@@ -535,7 +603,6 @@ export class PostgresQueueAdapter implements QueueAdapter {
       await this.fail(job.id, err)
     } finally {
       holding.release()
-      clearInterval(counting)
     }
   }
 
@@ -598,17 +665,36 @@ export class PostgresQueueAdapter implements QueueAdapter {
     const [row] = await this.db
       .select({ inSeconds: sql<string | null>`extract(epoch from min(${readyAt}) - now())` })
       .from(jobTable)
-      .where(ready())
+      // Not this process's own jobs: it extends their leases while they run, and
+      // takes the next job when each ends
+      .where(and(ready(), or(isNull(jobTable.lockedBy), ne(jobTable.lockedBy, this.owner))))
     if (row?.inSeconds != null) this.arm(Math.max(Number(row.inSeconds), 0) * 1000)
   }
 
+  /**
+   * Make a pass in `delayMs`, unless one is already due sooner. Several loops
+   * ask when the next job is due at once, and the answer that arrives last may
+   * be the oldest: taken as it came, it would put back a later time over a job
+   * that came due since.
+   */
   private arm(delayMs: number): void {
     if (this.stopped) return
-    if (this.timer) clearTimeout(this.timer)
+    delayMs = Math.max(delayMs, this.backoffUntil - Date.now())
+    const at = Date.now() + delayMs
+    if (this.timer && this.timerAt <= at) return
+    this.disarm()
+    this.timerAt = at
     this.timer = setTimeout(() => {
       this.timer = undefined
+      this.timerAt = Infinity
       this.requestPass()
     }, delayMs)
     this.timer.unref?.()
+  }
+
+  private disarm(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+    this.timerAt = Infinity
   }
 }

@@ -7,6 +7,7 @@
  */
 import { sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
+import { inTurn } from '@kukan/shared'
 
 /** Serialize per-package resource position writes (max+1 vs. renumbering). */
 export const RESOURCE_POSITION_LOCK = 'resource_position'
@@ -46,6 +47,11 @@ export const RESOURCE_EMBED_LOCK = 'resource_embed'
  *
  * Every query inside must run on `tx`: the lock *is* a pooled connection, and
  * reaching back to the pool while holding several of them deadlocks.
+ *
+ * Callers in one process take turns before they take a connection (ADR-058
+ * §7). Waiting in the database, each would hold one: several jobs reaching the
+ * same lock at once would fill the pool with waiters and time out whatever
+ * else needed a connection meanwhile.
  */
 export async function withAdvisoryLock<T>(
   db: Database,
@@ -53,10 +59,12 @@ export async function withAdvisoryLock<T>(
   id: string,
   fn: (tx: Transaction) => Promise<T>
 ): Promise<T> {
-  return db.transaction(async (tx) => {
-    await lockInTransaction(tx, namespace, id)
-    return fn(tx)
-  })
+  return inTurn(`${namespace}:${id}`, () =>
+    db.transaction(async (tx) => {
+      await lockInTransaction(tx, namespace, id)
+      return fn(tx)
+    })
+  )
 }
 
 /**

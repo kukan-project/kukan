@@ -1025,7 +1025,8 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
       multiAz: false,
       indexReplicas: 0,
     },
-    dbPool: { webMax: 5, workerMax: 3 },
+    // The worker's 5: the least one task needs (apps/worker/src/concurrency.ts)
+    dbPool: { webMax: 5, workerMax: 5 },
     backup: {
       s3Versioning: false,
       s3NoncurrentVersionExpirationDays: 30,

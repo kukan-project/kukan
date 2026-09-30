@@ -2912,7 +2912,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "WORKER_DB_POOL_MAX",
-                "Value": "3",
+                "Value": "5",
               },
               {
                 "Name": "HEALTH_PORT",
@@ -9685,7 +9685,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "WORKER_DB_POOL_MAX",
-                "Value": "3",
+                "Value": "5",
               },
               {
                 "Name": "HEALTH_PORT",
@@ -13368,7 +13368,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "WORKER_DB_POOL_MAX",
-                "Value": "3",
+                "Value": "5",
               },
               {
                 "Name": "HEALTH_PORT",

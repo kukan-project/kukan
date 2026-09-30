@@ -473,7 +473,7 @@ queue retry the same package for ever.
 ### 7.2 What must hold (ADR-053 decision 4.2)
 
 - **No DB transaction stays open across the LLM call.** Take the claim → commit → call the LLM →
-  write the result. The worker's pool is `WORKER_DB_POOL_MAX` = 3
+  write the result. The worker's pool is only a few connections (`WORKER_DB_POOL_MAX`, 5 by default)
 - **The visibility timeout must exceed the worst-case latency plus backoff.** Too short and the
   message is redelivered, **billing the same generation twice**. The current value is checked
   during implementation and raised if needed

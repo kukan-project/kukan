@@ -485,7 +485,7 @@ And it **avoids adding an SQS queue per site** (which would touch both CDK and c
 #### 4.2 What still has to hold
 
 - **Never hold a DB transaction across the LLM call.** Take the claim, commit, call the LLM,
-  then write. The worker's pool is `WORKER_DB_POOL_MAX` = 3, so holding a connection for the
+  then write. The worker's pool is a few connections (`WORKER_DB_POOL_MAX`, 5 by default), so holding a connection for the
   wait stalls the whole worker
 - **A visibility timeout longer than the worst-case LLM latency.** Measured calls run 3–11
   seconds (Appendix 14), but size it for the worst case including retries after throttling. Too

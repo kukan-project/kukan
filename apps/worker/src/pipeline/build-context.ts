@@ -22,6 +22,7 @@ import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/servic
 import type { PackageDbState } from '@kukan/shared'
 import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
+import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import type { SummaryDeps } from './steps/summarize'
 import {
@@ -362,10 +363,14 @@ export function buildPipelineContext(
       // the lock is catalog-wide. Bounded like the API's sessions — DuckDB
       // otherwise claims most of the container's memory and a thread per core,
       // which several concurrent ingests on a small task cannot survive.
-      return withLakeSession(
-        lake,
-        (session) => withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row)),
-        { limits: { memoryLimitMb: LAKE_INGEST_MEMORY_LIMIT_MB, threads: LAKE_INGEST_THREADS } }
+      // Heavy like the interpretation that precedes it: the two side by side
+      // would hold both DuckDB caps at once
+      return heavySection(() =>
+        withLakeSession(
+          lake,
+          (session) => withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row)),
+          { limits: { memoryLimitMb: LAKE_INGEST_MEMORY_LIMIT_MB, threads: LAKE_INGEST_THREADS } }
+        )
       )
     },
   }

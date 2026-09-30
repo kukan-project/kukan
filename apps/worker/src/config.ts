@@ -199,9 +199,9 @@ export const EMBED_BATCH_SIZE = 32
 
 /**
  * Batches one embed job builds before handing the rest to a job of its own.
- * The worker takes one job at a time, and a catalog-wide mark — a model
- * change, a regenerate — is thousands of resources: in one job, every
- * pipeline run queued behind it would wait for all of them.
+ * A catalog-wide mark — a model change, a regenerate — is thousands of
+ * resources: in one job, it would hold one of the worker's loops for all of
+ * them, and the runs queued behind it would wait.
  */
 export const EMBED_JOB_MAX_BATCHES = 8
 

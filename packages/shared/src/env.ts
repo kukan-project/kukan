@@ -14,6 +14,10 @@ const booleanString = z.preprocess(
 /** Optional value where '' means unset — compose `${VAR:-}` injects empty strings */
 const emptyAsUndefined = (v: unknown) => (v === '' ? undefined : v)
 
+/** A number with a default, where '' (compose `${VAR:-}`) means unset rather than 0 */
+const numberOr = (fallback: number) =>
+  z.preprocess(emptyAsUndefined, z.coerce.number().default(fallback))
+
 /** Where Postgres is. Its own schema so that {@link databaseUrl} can answer
  *  without the rest of the environment having to be present. */
 const postgresSchema = z.object({
@@ -56,13 +60,15 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   ...postgresSchema.shape,
   // DB Connection Pool — Web
-  WEB_DB_POOL_MAX: z.coerce.number().default(5),
-  WEB_DB_POOL_IDLE_TIMEOUT_MS: z.coerce.number().default(30_000),
-  WEB_DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().default(3_000),
+  WEB_DB_POOL_MAX: numberOr(5),
+  WEB_DB_POOL_IDLE_TIMEOUT_MS: numberOr(30_000),
+  WEB_DB_POOL_CONNECTION_TIMEOUT_MS: numberOr(3_000),
   // DB Connection Pool — Worker
-  WORKER_DB_POOL_MAX: z.coerce.number().default(3),
-  WORKER_DB_POOL_IDLE_TIMEOUT_MS: z.coerce.number().default(10_000),
-  WORKER_DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().default(30_000),
+  WORKER_DB_POOL_MAX: numberOr(5),
+  WORKER_DB_POOL_IDLE_TIMEOUT_MS: numberOr(10_000),
+  WORKER_DB_POOL_CONNECTION_TIMEOUT_MS: numberOr(30_000),
+  // Jobs one worker runs at once; unset, derived from WORKER_DB_POOL_MAX (ADR-058 §7)
+  WORKER_CONCURRENCY: z.preprocess(emptyAsUndefined, z.coerce.number().int().min(1).optional()),
   PORT: z.coerce.number().default(3000),
 
   // Storage (S3-compatible: AWS S3 or MinIO, determined by S3_ENDPOINT)

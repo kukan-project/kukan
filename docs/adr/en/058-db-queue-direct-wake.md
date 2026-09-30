@@ -168,8 +168,8 @@ after 10 seconds by default (`WORKER_DB_POOL_IDLE_TIMEOUT_MS`).
   nothing more to distribute or rotate. If `/wake` were hit from outside, all it would do is "go
   and look at the table", so the damage is limited to waking the DB — but it is still not exposed.
 - With several workers the signal goes to all of them: the web resolves every address behind the
-  name and POSTs to each. A worker takes one job at a time, so a signal that reaches a busy task
-  only notes a pass to make once it is free. Sent to one task alone, a new job waits for that task's
+  name and POSTs to each. A signal that reaches a task whose loops are all busy (one job at a time
+  before §7) only notes a pass to make once one is free. Sent to one task alone, a new job waits for that task's
   long job to end while another sits idle. The idle ones take it, and `SKIP LOCKED` keeps two from
   taking the same row. A task started by scale-out joins through its start-up drain.
 
@@ -210,8 +210,8 @@ caught.
   one, next time round) can take it
 
 What this cannot catch is an async wait that never returns (waiting on an external service that
-does not answer). The worker takes one job at a time, so on a single-worker site the whole queue
-waits meanwhile. The SQS receive loop was a single loop with the same property; the cause is
+does not answer). On a single-worker site running one job at a time (§7), the whole queue waits
+meanwhile; with more, the other loops carry on. The SQS receive loop was a single loop with the same property; the cause is
 closed instead: waits on anything external are bounded (fetching external URLs, OpenSearch, AI
 abstracts and embeddings, S3 connection and idle time).
 
@@ -275,9 +275,58 @@ Deciding by type would raise the jobs a bulk action fans out too, and achieve no
 - The column is a PostgreSQL enum (`job_priority`), whose declared order is the order jobs are
   taken in. A tier added with `ADD VALUE ... BEFORE` does not change what existing rows mean.
 
-Priority decides only the order jobs are taken in. A worker still runs one job at a time, so even
-a high job waits behind a long one in progress. Running several jobs at once in one worker is a
-separate matter (open issue 8).
+Priority decides only the order jobs are taken in. With every loop busy with a long job, even a high
+job waits. Running several jobs at once in one worker is §7.
+
+### 7. Several jobs at once in one worker (addendum, 2026-09-30)
+
+Up to §6 a worker ran one job at a time. The only way to add concurrency was to add tasks: a task
+idling on an external service, with CPU and memory to spare, still got a whole task added beside it
+(memory, start-up, a share of the DB connections). Small and medium top out at two tasks, so even
+hundreds of catalog-wide jobs ran two at a time.
+
+A worker now runs several loops taking jobs (its concurrency), each taking the next job in priority order as it finishes the
+last. Jobs are not split into lanes by type: how heavy a run is depends on its content, not its type
+(the same `resource-pipeline` takes seconds on a small CSV and tens of seconds on a large JSON), and
+most of a long run is spent waiting on something external, which concurrency helps.
+
+- **Correctness rests on the same grounds as a multi-task deployment.** `SKIP LOCKED`, the resource
+  claim (ADR-044) and the batch jobs' advisory locks were built for separate tasks working at once.
+  Several loops in one task are the same. Only the waiting-jobs count assumed one job per process
+- **The concurrency is derived from the connection pool.** `min(WORKER_DB_POOL_MAX − 2, 4)`, overridable with
+  `WORKER_CONCURRENCY`; a value the pool cannot fit is warned about at start-up. The two held back
+  are the embed job's second connection (it holds one for its lock and writes on another — the only
+  place that holds a connection while waiting for another) and the queue's timers (lease extension,
+  waiting count) with the crons. The cap of 4 is for the AI provider's rate limits, not connections.
+  Per-site tuning is the existing `sites[].overrides.dbPool.workerMax`, and the connection budget
+  (ADR-041) checks it as before
+- **The worker's pool default goes from 3 to 5** (the small preset and `WORKER_DB_POOL_MAX`'s
+  default). The 3 rested only on "one job at a time needs few connections", from before the locks
+  that hold a connection for long (lake ingest, search document sync, embedding). Those three, the
+  embed job's second and one for short queries make 5. The default concurrency is then 3
+- **Blocking advisory locks take their turn within the process before taking a connection**
+  (`withAdvisoryLock`). Lake ingest and the search document sync wait for one catalog-wide lock on a
+  connection. With several jobs reaching that stage together, the waiters would line up holding
+  connections and short queries could time out getting one. Waiting in the process, at most one
+  connection per lock waits. Locks taken without waiting (embedding) and inside a caller's
+  transaction (the edit's five-second wait) are not affected
+- **The DuckDB sections (CSV interpretation and lake ingest) run one at a time per process,
+  together.** Each holds an instance capped at 512 MB, so two at once fill a small worker
+  (1,024 MB). Before concurrency they never overlapped: interpretation closes its instance before
+  the ingest starts. Fetching, index writes, AI calls and everything else run side by side. This
+  section (`heavySection`) is the boundary for moving heavy work to a child process or weighing it
+  against a memory budget
+- **The waiting-jobs count** is reported when the first job is taken after idling and when every
+  loop has stopped (a busy task goes on reporting once a minute), not per loop
+
+**What concurrency adds.** A task that goes down takes as many jobs with it as it runs at once: unrelated jobs on
+it stall until their leases run out, and their attempts go up by one.
+
+**What remains apart from concurrency.** Text extraction from PDFs and Office documents (officeparser)
+builds the whole document's structure first, using 25–35 times the heap of the text it returns. In
+measurements, a text-heavy 25 MB PDF and a 21 MB XLSX each took down a small worker on their own (a
+1 GB container, where Node's heap limit is 560 MB). That happens one job at a time too, so it is fixed in how
+text is extracted, not in concurrency control.
 
 ## Consequences
 
@@ -338,10 +387,7 @@ SQS and ElasticMQ are removed in one release. Messages left in the queue are not
 7. Measure that Aurora's auto-pause actually drops to 0 ACU once the pool has closed its idle
    connections (the worker health-check cron's default 5-minute interval may already be
    preventing pause)
-8. Whether one worker should run K jobs at once. Correctness already rests on the same grounds as
-   a multi-task deployment (`SKIP LOCKED`, the resource claim, the batch jobs' advisory locks).
-   Only the memory-hungry DuckDB sections (Interpret, lake ingest) would be held to one at a time
-   within a process. Running K at once means K times as many jobs are caught when a task goes down
+8. ~~Whether one worker should run several jobs at once~~ → §7
 
 ## Related ADRs
 

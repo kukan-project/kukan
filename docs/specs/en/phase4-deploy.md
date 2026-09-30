@@ -383,19 +383,19 @@ deployed at once after the canary, default 2). A deploy resets the desired count
 connections of `minSize` new tasks — raising K is cheap. Change ACUs in two steps
 ("DB first, then reboot → in-sync → add sites"; max_connections is a static parameter).
 
-**small (RDS, up to 16 connections per site + 8 while updating)** — `overrides: { db: { instanceClass } }`
+**small (RDS, up to 20 connections per site + 10 while updating)** — `overrides: { db: { instanceClass } }`
 
 | Sites | K=1           | K=2           | K=4           | K=8           |
 | ----- | ------------- | ------------- | ------------- | ------------- |
 | 1     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
 | 2     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
-| 3     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
-| 4     | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 3     | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 4     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
 | 5     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 6     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 8     | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 6     | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 8     | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
 | 10    | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
-| 15    | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 15    | db.t4g.medium | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 | 20    | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 
 **medium (Aurora, up to 60 connections per site + 15 while updating)** — `overrides: { db: { minAcu, maxAcu } }`

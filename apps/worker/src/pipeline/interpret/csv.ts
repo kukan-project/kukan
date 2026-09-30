@@ -30,6 +30,7 @@ import {
   INTERPRET_THREADS,
   STATS_COLUMNS_PER_QUERY,
 } from '@/config'
+import { heavySection } from '@/heavy-section'
 import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
 
 /** A DuckDB type name, folded to the semantic type persisted on the schema. */
@@ -142,7 +143,17 @@ export interface InterpretedCsv {
  *   title-row scan. DuckDB finds the header but has no notion of the title
  *   lines Japanese spreadsheets put above it.
  */
-export async function interpretCsv(
+export function interpretCsv(
+  csvPath: string,
+  parquetPath: string,
+  skipRows: number
+): Promise<InterpretedCsv> {
+  // An instance per call, capped at INTERPRET_MEMORY_LIMIT_MB: two side by side
+  // would fill a small task
+  return heavySection(() => interpretCsvNow(csvPath, parquetPath, skipRows))
+}
+
+async function interpretCsvNow(
   csvPath: string,
   parquetPath: string,
   skipRows: number

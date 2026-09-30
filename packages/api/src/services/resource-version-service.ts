@@ -340,8 +340,8 @@ interface PurgeDeps {
  * Bounded concurrency for the one-time migration's units of work.
  *
  * A migration is background work: it shares the worker's connection pool
- * (`WORKER_DB_POOL_MAX`, default 3) and its object store with the pipeline, the
- * crons and the health check, and none of them should wait on it. No longer a
+ * (`WORKER_DB_POOL_MAX`) and its object store with the jobs running beside it,
+ * the crons and the health check, and none of them should wait on it. No longer a
  * pool reservation — since the version lock went (ADR-044 §5) a unit holds a
  * connection only for each statement, not across the object it measures.
  */
