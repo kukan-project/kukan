@@ -24,6 +24,7 @@ WORKDIR /app
 FROM base AS deps
 RUN corepack enable && corepack prepare pnpm@10 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY patches/ patches/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/api/package.json packages/api/

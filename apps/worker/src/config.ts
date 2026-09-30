@@ -183,6 +183,35 @@ export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
  */
 export const TEXT_HEAD_ARTIFACT_SIZE = 64 * 1024
 
+/**
+ * How much of a PDF officeparser reads at once, as the file's bytes over its
+ * pages. Read whole, a document's pages leave their fonts and images in the
+ * parser's caches: a 52 MB PDF of scans took 1.4 GB of heap for 0.5 MB of
+ * text. A range at a time starts afresh each time, and returns the same text.
+ *
+ * Measured on that PDF and a 25 MB one of 8,000 text pages: pages heavy with
+ * images want a few at a time (3 held 120 MB over the start, 21 held 250 MB),
+ * pages of plain text many, since every range reads the document again (50 at
+ * a time took 1.4 times as long as 200, for no less memory). Around 120 MB is
+ * the floor either way — pdf.js reading the file itself.
+ */
+export const PDF_RANGE_BYTES = 1024 * 1024
+export const PDF_RANGE_MIN_PAGES = 3
+export const PDF_RANGE_MAX_PAGES = 200
+
+/**
+ * The largest part of an XLSX read for its text, uncompressed: the shared
+ * strings are held whole, and a bomb's sheet would stream for as long as it
+ * claimed. The limit officeparser applied.
+ */
+export const XLSX_MAX_PART_BYTES = 512 * 1024 * 1024
+
+/**
+ * Entries an XLSX may have to be read: a crafted archive of millions would
+ * hold that many in memory before a sheet was. officeparser's limit.
+ */
+export const XLSX_MAX_ENTRIES = 10_000
+
 // ── Semantic Search Embedding (ADR-034) ──
 
 /** Maximum characters of the embedding source text — conservative bound for the

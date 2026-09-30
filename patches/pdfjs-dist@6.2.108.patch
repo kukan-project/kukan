@@ -1,0 +1,14 @@
+diff --git a/legacy/build/pdf.worker.mjs b/legacy/build/pdf.worker.mjs
+index ff381bb9b154685f8ed641b6c1adabb4c732e1f3..32160e9cd1a6387807ffdcf784d45f3bfa4bf089 100644
+--- a/legacy/build/pdf.worker.mjs
++++ b/legacy/build/pdf.worker.mjs
+@@ -43239,6 +43239,9 @@ class PartialEvaluator {
+     return font;
+   }
+   static buildFontPaths(font, glyphs, handler, evaluatorOptions) {
++    // KUKAN: text extraction only, nothing is drawn. Compiling every glyph of each
++    // font load to a path held gigabytes for PDFs that reload a CJK font per chart.
++    return;
+     function buildPath(fontChar) {
+       const glyphName = `${font.loadedName}_path_${fontChar}`;
+       try {

@@ -4,8 +4,9 @@
  *
  * With several jobs running at once, a CSV interpretation and a lake ingest
  * would each hold a DuckDB instance capped at 512 MB, and together fill a small
- * task. Everything else a job does — fetching, indexing, asking the AI — goes
- * on beside it.
+ * task; two documents' text extractions would each take a share of one heap,
+ * which a 1 GB task caps at 560 MB. Everything else a job does — fetching,
+ * writing to the index, asking the AI — goes on beside it.
  *
  * The one boundary for such work: where it would move to a child process, or
  * be weighed against a memory budget rather than counted.

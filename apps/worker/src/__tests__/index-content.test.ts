@@ -1,12 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'node:stream'
-import { executeIndexContent, splitIntoChunks } from '../pipeline/steps/index-content'
+import { executeIndexContent } from '../pipeline/steps/index-content'
 import type { InterpretResult } from '../pipeline/steps/interpret'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
 } from './test-helpers/pipeline-context'
 import type { ContentDoc } from '@kukan/search-adapter'
+import { xlsxBuffer } from './test-helpers/xlsx'
+import { OfficeParser } from 'officeparser'
 
 const mockToText = vi.fn().mockReturnValue('Extracted document text\nPage 2 content')
 const mockTo = vi.fn().mockImplementation(async () => ({ value: mockToText() }))
@@ -100,7 +102,9 @@ describe('executeIndexContent', () => {
 
     it('should classify XLSX as document', async () => {
       const ctx = createMockCtx()
-      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-xlsx')))
+      vi.mocked(ctx.storage.download).mockResolvedValue(
+        bufferToStream(await xlsxBuffer({ sheets: { 1: [[1, 2]] } }))
+      )
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'XLSX', null, ctx)
       expect(result?.contentType).toBe('document')
@@ -331,28 +335,102 @@ describe('executeIndexContent', () => {
 
       // Temp file cleanup is in the finally block — no leaked files
     })
+
+    it('extracts one document at a time, however many runs index at once', async () => {
+      let now = 0
+      let most = 0
+      vi.mocked(OfficeParser.parseOffice).mockImplementation(async () => {
+        most = Math.max(most, ++now)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        now--
+        return { to: mockTo } as never
+      })
+      const runs = Array.from({ length: 3 }, () => {
+        const ctx = createMockCtx()
+        vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake')))
+        return executeIndexContent('res-1', 'pkg-1', 'key', 'DOCX', null, ctx)
+      })
+
+      await Promise.all(runs)
+      expect(most).toBe(1)
+      vi.mocked(OfficeParser.parseOffice).mockImplementation(() =>
+        Promise.resolve({ to: mockTo } as never)
+      )
+    })
+
+    it('keeps what was indexed before when a later page range fails', async () => {
+      // The first range reads and reports ten pages; the next throws
+      vi.mocked(OfficeParser.parseOffice)
+        .mockResolvedValueOnce({
+          metadata: { pages: 10 },
+          to: async () => ({ value: 'first pages' }),
+        } as never)
+        .mockRejectedValueOnce(new Error('broken page'))
+
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      await expect(executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)).rejects.toThrow(
+        'broken page'
+      )
+      expect(ctx.deleteContent).not.toHaveBeenCalled()
+      expect(ctx.indexContent).not.toHaveBeenCalled()
+    })
   })
 
   describe('Office extraction', () => {
-    it.each(['DOCX', 'XLSX', 'PPTX'])(
-      'should extract text from %s and index it',
-      async (format) => {
-        const ctx = createMockCtx()
-        vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake')))
+    it.each(['DOCX', 'PPTX'])('should extract text from %s and index it', async (format) => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake')))
 
-        const result = await executeIndexContent('res-1', 'pkg-1', 'key', format, null, ctx)
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', format, null, ctx)
 
-        expect(result).not.toBeNull()
-        expect(result!.contentIndexed).toBe(true)
-        expect(result!.contentType).toBe('document')
-        expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+      expect(result).not.toBeNull()
+      expect(result!.contentIndexed).toBe(true)
+      expect(result!.contentType).toBe('document')
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
 
-        const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
-        expect(indexedDoc.extractedText).toContain('Extracted document text')
-        expect(indexedDoc.resourceId).toBe('res-1')
-        expect(indexedDoc.packageId).toBe('pkg-1')
-      }
-    )
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toContain('Extracted document text')
+      expect(indexedDoc.resourceId).toBe('res-1')
+      expect(indexedDoc.packageId).toBe('pkg-1')
+    })
+
+    it('should read an XLSX sheet by sheet, a row per line', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(
+        bufferToStream(
+          await xlsxBuffer({
+            shared: ['<si><t>地域</t></si>', '<si><t>人口</t></si>'],
+            sheets: {
+              1: [
+                [{ s: 0 }, { s: 1 }],
+                [{ inline: '東京' }, 14000000],
+              ],
+            },
+          })
+        )
+      )
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'XLSX', null, ctx)
+
+      expect(result!.contentIndexed).toBe(true)
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toBe('地域\t人口\n東京\t14000000')
+    })
+
+    it('reads with officeparser an XLSX whose XML the stream reader refuses', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(
+        bufferToStream(await xlsxBuffer({ sheets: {}, raw: { 1: '<worksheet><sheetData><row>' } }))
+      )
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'XLSX', null, ctx)
+
+      expect(result!.contentIndexed).toBe(true)
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toContain('Extracted document text')
+    })
 
     it.each(['DOC', 'XLS', 'PPT'])('should return null for legacy format %s', async (format) => {
       const ctx = createMockCtx()
@@ -585,41 +663,5 @@ describe('executeIndexContent', () => {
       expect(indexedDoc.packageId).toBe('pkg-1')
       expect(indexedDoc.contentType).toBe('tabular')
     })
-  })
-})
-
-describe('splitIntoChunks', () => {
-  it('should return single chunk for small text', () => {
-    const chunks = splitIntoChunks('hello world', 1024, 10)
-    expect(chunks).toEqual(['hello world'])
-  })
-
-  it('should split at line boundaries', () => {
-    const text = 'line1\nline2\nline3'
-    // maxChunkBytes small enough to force split
-    const chunks = splitIntoChunks(text, 10, 10)
-    expect(chunks.length).toBeGreaterThan(1)
-    // No chunk should contain a partial line
-    for (const chunk of chunks) {
-      expect(chunk).not.toMatch(/\n$/) // trailing newline stripped by join
-    }
-  })
-
-  it('should respect maxChunks limit', () => {
-    const text = Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n')
-    const chunks = splitIntoChunks(text, 20, 3)
-    expect(chunks.length).toBeLessThanOrEqual(3)
-  })
-
-  it('should handle single line exceeding chunk size', () => {
-    const longLine = 'A'.repeat(200)
-    const chunks = splitIntoChunks(longLine, 50, 10)
-    expect(chunks.length).toBe(1)
-    expect(Buffer.byteLength(chunks[0], 'utf-8')).toBeLessThanOrEqual(50)
-  })
-
-  it('should handle empty text', () => {
-    const chunks = splitIntoChunks('', 1024, 10)
-    expect(chunks).toEqual([''])
   })
 })

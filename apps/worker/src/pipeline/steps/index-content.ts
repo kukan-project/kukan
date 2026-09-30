@@ -15,6 +15,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { once } from 'node:events'
+import { finished } from 'node:stream/promises'
 import {
   isTextFormat,
   isCsvFormat,
@@ -23,11 +26,19 @@ import {
   getPreviewKey,
   type ContentType,
 } from '@kukan/shared'
-import { OfficeParser } from 'officeparser'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { InterpretResult } from './interpret'
-import { streamToBuffer, streamUtf8Lines, streamToTempFile, cleanupTempFile } from '../node-utils'
+import { documentLines, fallbackLines } from './document-text'
+import { heavySection } from '@/heavy-section'
+import {
+  streamToBuffer,
+  streamUtf8Lines,
+  streamToTempFile,
+  cleanupTempFile,
+  readHead,
+  siblingTempPath,
+} from '../node-utils'
 import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
 import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
 
@@ -147,6 +158,11 @@ async function indexManifest(
  * Extract text from a binary document (PDF, etc.), persist the text head as
  * AI-suggest material (ADR-040), then chunk and index. When `indexToSearch`
  * is false (draft package) only the artifact is produced.
+ *
+ * The text streams a line at a time (`documentLines`) into a file beside the
+ * document, never held whole. Only once it has all been read are the old
+ * chunks deleted and the new ones written: a document that fails partway, at a
+ * later page range or sheet, leaves what was indexed before as it was.
  */
 async function indexDocument(
   resourceId: string,
@@ -159,10 +175,23 @@ async function indexDocument(
 ): Promise<IndexContentResult> {
   const stream = await ctx.storage.download(storageKey)
   const tempPath = await streamToTempFile(stream, format)
+  const textPath = siblingTempPath(tempPath, 'text.txt')
 
   try {
-    const text = await extractDocumentText(tempPath)
-    if (!text) {
+    // Heavy: parsing is where a document's memory goes, and it shares one heap
+    // with every job this worker runs. Writing the chunks after goes on beside
+    // the rest
+    const extracted = await heavySection(async () => {
+      try {
+        return await extractText(documentLines(tempPath, format), textPath)
+      } catch (err) {
+        const fallback = fallbackLines(format)
+        if (!fallback) throw err
+        return extractText(fallback(tempPath), textPath)
+      }
+    })
+    // A document with no text leaves what was indexed before as it was
+    if (!extracted.hasText) {
       return {
         contentIndexed: false,
         contentType,
@@ -172,16 +201,13 @@ async function indexDocument(
         contentChunks: 0,
       }
     }
-    const contentOriginalSize = Buffer.byteLength(text, 'utf-8')
 
-    // officeparser output is already a JS string, so the artifact is plain
-    // UTF-8 — the suggest side reads it without encoding detection. Pre-slice
-    // by char count before the byte-limit cut: every UTF-16 code unit encodes
-    // to ≥1 UTF-8 byte, so this avoids buffering the full text to keep 64 KB
-    // (a char broken by the slice can only be the last one — the byte cut and
-    // trailing-U+FFFD strip clean it up).
+    // Plain UTF-8, so the suggest side reads it without encoding detection;
+    // a character the cut splits is dropped
     const textHead = Buffer.from(
-      truncateToByteLimit(text.slice(0, TEXT_HEAD_ARTIFACT_SIZE), TEXT_HEAD_ARTIFACT_SIZE),
+      stripTrailingReplacementChar(
+        (await readHead(textPath, TEXT_HEAD_ARTIFACT_SIZE)).toString('utf-8')
+      ),
       'utf-8'
     )
     const textHeadKey = getPreviewKey(packageId, resourceId, 'txt', randomUUID())
@@ -189,37 +215,25 @@ async function indexDocument(
       contentType: 'text/plain; charset=utf-8',
     })
 
-    let chunks: string[] = []
-    let totalIndexedBytes = 0
-
+    let written: WrittenChunks = { chunks: 0, indexedBytes: 0, originalBytes: 0 }
     if (indexToSearch) {
       await ctx.deleteContent(resourceId)
-
-      chunks = splitIntoChunks(text, MAX_CONTENT_CHUNK_SIZE, Infinity)
-      const writer = chunkWriter(ctx)
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkSize = Buffer.byteLength(chunks[i], 'utf-8')
-        const doc: ContentDoc = {
-          resourceId,
-          packageId,
-          extractedText: chunks[i],
-          contentType,
-          chunkIndex: i,
-          chunkSize,
-        }
-        await writer.write(doc)
-        totalIndexedBytes += chunkSize
-      }
-      await writer.close()
+      written = await writeChunks(
+        resourceId,
+        packageId,
+        contentType,
+        streamUtf8Lines(createReadStream(textPath)),
+        ctx
+      )
     }
 
     return {
-      contentIndexed: chunks.length > 0,
+      contentIndexed: written.chunks > 0,
       contentType,
-      contentOriginalSize,
-      contentIndexedSize: totalIndexedBytes,
+      contentOriginalSize: extracted.bytes,
+      contentIndexedSize: written.indexedBytes,
       contentTruncated: false,
-      contentChunks: chunks.length,
+      contentChunks: written.chunks,
       textHeadKey,
       textHeadBytes: textHead.length,
     }
@@ -228,16 +242,28 @@ async function indexDocument(
   }
 }
 
-/**
- * Extract text from a document file (PDF, DOCX, XLSX, PPTX) using officeparser.
- *
- * `preserveLayout: false` keeps the flowing text v7 produced. At the v8 default a
- * PDF page is rendered as a space-padded monospace grid, which only inflates what
- * we index and hand to the suggest side — no reader ever sees this text.
- */
-async function extractDocumentText(filePath: string): Promise<string> {
-  const ast = await OfficeParser.parseOffice(filePath)
-  return (await ast.to('text', { textConfig: { preserveLayout: false } })).value
+interface ExtractedText {
+  /** Whether any line had more than white space on it */
+  hasText: boolean
+  /** UTF-8 bytes of the text, the newlines between its lines included */
+  bytes: number
+}
+
+/** Write `lines` to `path`, newline-separated. */
+async function extractText(lines: AsyncIterable<string>, path: string): Promise<ExtractedText> {
+  const out = createWriteStream(path)
+  let hasText = false
+  let count = 0
+  try {
+    for await (const line of lines) {
+      if (!hasText && line.trim()) hasText = true
+      if (!out.write(count++ > 0 ? '\n' + line : line)) await once(out, 'drain')
+    }
+  } finally {
+    out.end()
+    await finished(out)
+  }
+  return { hasText, bytes: out.bytesWritten }
 }
 
 /**
@@ -287,7 +313,51 @@ async function indexTextStream(
   }
 
   await ctx.deleteContent(resourceId)
+  const written = await writeChunks(
+    resourceId,
+    packageId,
+    contentType,
+    isHtml ? withoutTags(lines) : lines,
+    ctx
+  )
+  return {
+    contentIndexed: written.chunks > 0,
+    contentType,
+    contentOriginalSize: written.originalBytes,
+    contentIndexedSize: written.indexedBytes,
+    contentTruncated: false,
+    contentChunks: written.chunks,
+  }
+}
 
+/** HTML lines as their text, the lines left with none dropped */
+async function* withoutTags(lines: AsyncIterable<string> | Iterable<string>) {
+  for await (const line of lines) {
+    const text = line
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (text) yield text
+  }
+}
+
+interface WrittenChunks {
+  chunks: number
+  indexedBytes: number
+  originalBytes: number
+}
+
+/**
+ * Index `lines` in chunks of up to MAX_CONTENT_CHUNK_SIZE, split at line
+ * boundaries; a longer line is cut to a chunk of its own.
+ */
+async function writeChunks(
+  resourceId: string,
+  packageId: string,
+  contentType: ContentType,
+  lines: AsyncIterable<string> | Iterable<string>,
+  ctx: PipelineContext
+): Promise<WrittenChunks> {
   let chunkLines: string[] = []
   let chunkBytes = 0
   let chunkIndex = 0
@@ -316,16 +386,7 @@ async function indexTextStream(
   }
 
   let lineCount = 0
-  for await (const rawLine of lines) {
-    let line = rawLine
-    if (isHtml) {
-      line = line
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-      if (!line) continue
-    }
-
+  for await (const line of lines) {
     const lineBytes = Buffer.byteLength(line, 'utf-8')
     totalOriginalBytes += lineBytes + (lineCount > 0 ? 1 : 0) // +1 for newline separator
     lineCount++
@@ -355,14 +416,7 @@ async function indexTextStream(
   }
   await writer.close()
 
-  return {
-    contentIndexed: chunkIndex > 0,
-    contentType,
-    contentOriginalSize: totalOriginalBytes,
-    contentIndexedSize: totalIndexedBytes,
-    contentTruncated: false,
-    contentChunks: chunkIndex,
-  }
+  return { chunks: chunkIndex, indexedBytes: totalIndexedBytes, originalBytes: totalOriginalBytes }
 }
 
 /** Determine content type for indexing, or null if not indexable */
@@ -372,56 +426,6 @@ function getContentType(format: string | null): ContentType | null {
   if (isTextFormat(format)) return 'text'
   if (isDocumentFormat(format)) return 'document'
   return null
-}
-
-/**
- * Split text into chunks at line boundaries.
- * Each chunk is at most `maxChunkBytes` UTF-8 bytes.
- * Returns at most `maxChunks` chunks.
- */
-export function splitIntoChunks(text: string, maxChunkBytes: number, maxChunks: number): string[] {
-  const totalBytes = Buffer.byteLength(text, 'utf-8')
-
-  if (totalBytes <= maxChunkBytes) {
-    return [text]
-  }
-
-  const lines = text.split('\n')
-  const chunks: string[] = []
-  let currentLines: string[] = []
-  let currentBytes = 0
-
-  for (const line of lines) {
-    const lineBytes = Buffer.byteLength(line, 'utf-8') + 1
-
-    if (currentBytes + lineBytes > maxChunkBytes && currentLines.length > 0) {
-      chunks.push(currentLines.join('\n'))
-      if (chunks.length >= maxChunks) return chunks
-      currentLines = []
-      currentBytes = 0
-    }
-
-    if (lineBytes > maxChunkBytes) {
-      if (currentLines.length > 0) {
-        chunks.push(currentLines.join('\n'))
-        if (chunks.length >= maxChunks) return chunks
-        currentLines = []
-        currentBytes = 0
-      }
-      chunks.push(truncateToByteLimit(line, maxChunkBytes))
-      if (chunks.length >= maxChunks) return chunks
-      continue
-    }
-
-    currentLines.push(line)
-    currentBytes += lineBytes
-  }
-
-  if (currentLines.length > 0 && chunks.length < maxChunks) {
-    chunks.push(currentLines.join('\n'))
-  }
-
-  return chunks
 }
 
 /** Truncate a UTF-8 string to fit within a byte limit without splitting multi-byte characters */

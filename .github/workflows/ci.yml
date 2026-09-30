@@ -555,7 +555,7 @@ jobs:
         with:
           # The job's own definition is in the list: a change to how the images
           # are built or checked runs the check.
-          only: '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|(.*/)?package\.json|apps/worker/tsup\.config\.ts|\.github/(workflows/ci\.yml|actions/detect-changes/action\.yml))$'
+          only: '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|patches/.*|(.*/)?package\.json|apps/worker/tsup\.config\.ts|\.github/(workflows/ci\.yml|actions/detect-changes/action\.yml))$'
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: steps.changes.outputs.code == 'true'

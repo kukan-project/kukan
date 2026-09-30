@@ -310,10 +310,14 @@ most of a long run is spent waiting on something external, which concurrency hel
   connections and short queries could time out getting one. Waiting in the process, at most one
   connection per lock waits. Locks taken without waiting (embedding) and inside a caller's
   transaction (the edit's five-second wait) are not affected
-- **The DuckDB sections (CSV interpretation and lake ingest) run one at a time per process,
-  together.** Each holds an instance capped at 512 MB, so two at once fill a small worker
-  (1,024 MB). Before concurrency they never overlapped: interpretation closes its instance before
-  the ingest starts. Fetching, index writes, AI calls and everything else run side by side. This
+- **The memory-heavy sections (CSV interpretation, lake ingest, and document text extraction)
+  run one at a time per process, together.** Interpretation and ingest each hold a DuckDB
+  instance capped at 512 MB, so two at once fill a small worker (1,024 MB); before concurrency
+  they never overlapped, as interpretation closes its instance before the ingest starts. Text
+  extraction (parsing a PDF or Office document) takes 100–200 MB of heap net, and Node's heap
+  limit (560 MB in a 1 GB container) is one per process, shared by the jobs running at once.
+  Extraction is CPU work, which a small task's vCPU would not speed up side by side. Fetching,
+  index writes, AI calls and everything else run side by side. This
   section (`heavySection`) is the boundary for moving heavy work to a child process or weighing it
   against a memory budget
 - **The waiting-jobs count** is reported when the first job is taken after idling and when every

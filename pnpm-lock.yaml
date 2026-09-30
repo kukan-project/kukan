@@ -25,6 +25,11 @@ overrides:
   svgo@>=4.0.0 <4.0.2: '>=4.0.2 <5'
   undici@>=7.0.0 <7.29.0: '>=7.29.0 <8'
 
+patchedDependencies:
+  pdfjs-dist@6.2.108:
+    hash: 6eab6b778b4ddc2fe22015a9d093d6bc829a92ea581b725aacda6872456dc0e5
+    path: patches/pdfjs-dist@6.2.108.patch
+
 importers:
 
   .:
@@ -267,6 +272,9 @@ importers:
       pino:
         specifier: ^10.3.1
         version: 10.3.1
+      saxes:
+        specifier: ^6.0.0
+        version: 6.0.0
       sharp:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@24.12.2)
@@ -11138,7 +11146,7 @@ snapshots:
       '@xmldom/xmldom': 0.9.12
       fflate: 0.8.3
       file-type: 22.1.1
-      pdfjs-dist: 6.2.108
+      pdfjs-dist: 6.2.108(patch_hash=6eab6b778b4ddc2fe22015a9d093d6bc829a92ea581b725aacda6872456dc0e5)
       tesseract.js: 7.0.0
     optionalDependencies:
       pdf-lib: 1.17.1
@@ -11250,7 +11258,7 @@ snapshots:
       pako: 1.0.11
       tslib: 1.14.1
 
-  pdfjs-dist@6.2.108:
+  pdfjs-dist@6.2.108(patch_hash=6eab6b778b4ddc2fe22015a9d093d6bc829a92ea581b725aacda6872456dc0e5):
     optionalDependencies:
       '@napi-rs/canvas': 1.0.9
 

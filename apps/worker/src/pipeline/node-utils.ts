@@ -170,6 +170,11 @@ export async function readHead(filePath: string, maxBytes: number): Promise<Buff
   }
 }
 
+/** A file beside `filePath` from `streamToTempFile`, gone with it at `cleanupTempFile` */
+export function siblingTempPath(filePath: string, name: string): string {
+  return join(dirname(filePath), name)
+}
+
 /** Remove the temp file and its parent directory */
 export async function cleanupTempFile(filePath: string): Promise<void> {
   await rm(dirname(filePath), { recursive: true, force: true })
