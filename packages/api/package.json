@@ -18,6 +18,7 @@
     "./services/pipeline-service": "./dist/services/pipeline-service.js",
     "./services/odata/row-group-backfill": "./dist/services/odata/row-group-backfill.js",
     "./services/lake-ingest": "./dist/services/lake-ingest.js",
+    "./services/lake-reclaim": "./dist/services/lake-reclaim.js",
     "./services/pipeline-claim": "./dist/services/pipeline-claim.js",
     "./services/advisory-lock": "./dist/services/advisory-lock.js",
     "./services/storage-pointer": "./dist/services/storage-pointer.js",

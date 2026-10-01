@@ -114,6 +114,7 @@ export const unreachableLake: LakeConfig = {
   bucket: 'nope',
   region: 'us-east-1',
   s3UseSsl: false,
+  limits: { memoryLimitMb: 64, threads: 1, catalogConnections: 1 },
 }
 
 /**

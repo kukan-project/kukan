@@ -12,6 +12,20 @@ export const LAKE_METADATA_SCHEMA = 'ducklake'
 /** Storage key prefix for DuckLake data files (Parquet). */
 export const LAKE_DATA_PREFIX = 'lake/'
 
+/**
+ * What a process's DuckLake instance may use. On the config rather than on
+ * each call: the services that open a session run in the web and the worker
+ * alike and cannot tell which, and DuckDB holds these per instance — a caller
+ * asking for none got an instance of its own on DuckDB's defaults (most of
+ * the container's memory, a thread per core).
+ */
+export interface LakeLimits {
+  memoryLimitMb: number
+  threads: number
+  /** The catalog connections the instance may hold (see `@kukan/shared/lake-limits`) */
+  catalogConnections: number
+}
+
 export interface LakeConfig {
   /** libpq keyword connection string for the DuckLake catalog. */
   pgConnString: string
@@ -22,6 +36,7 @@ export interface LakeConfig {
   s3UseSsl: boolean
   s3AccessKey?: string
   s3SecretKey?: string
+  limits: LakeLimits
 }
 
 /**
@@ -45,31 +60,13 @@ export function lakeStorageUrl(config: LakeConfig, key: string): string {
  */
 const LAKE_PG_CONNECT_TIMEOUT_S = 10
 
-export function lakeConfigFromEnv(env: Env): LakeConfig {
+export function lakeConfigFromEnv(env: Env, limits: LakeLimits): LakeConfig {
   // DuckLake's ATTACH takes a libpq keyword string, not a URL.
   const pgConnString =
     `host=${env.POSTGRES_HOST} port=${env.POSTGRES_PORT} dbname=${env.POSTGRES_DB} ` +
     `user=${env.POSTGRES_USER} password=${env.POSTGRES_PASSWORD} ` +
     `sslmode=${env.POSTGRES_SSLMODE} connect_timeout=${LAKE_PG_CONNECT_TIMEOUT_S}`
-
-  // MinIO endpoints are given as a URL (http://host:9000); DuckDB wants host:port + a ssl flag.
-  let s3Endpoint: string | undefined
-  let s3UseSsl = true
-  if (env.S3_ENDPOINT) {
-    const url = new URL(env.S3_ENDPOINT)
-    s3Endpoint = url.host
-    s3UseSsl = url.protocol === 'https:'
-  }
-
-  return {
-    pgConnString,
-    bucket: env.S3_BUCKET,
-    region: env.S3_REGION,
-    s3Endpoint,
-    s3UseSsl,
-    s3AccessKey: env.S3_ACCESS_KEY,
-    s3SecretKey: env.S3_SECRET_KEY,
-  }
+  return { pgConnString, ...s3SettingsFromEnv(env), limits }
 }
 
 /**
@@ -98,8 +95,22 @@ export type S3Settings = Pick<
 
 /** The S3 half of the environment, without the catalog's. */
 export function s3SettingsFromEnv(env: Env): S3Settings {
-  const { bucket, region, s3Endpoint, s3UseSsl, s3AccessKey, s3SecretKey } = lakeConfigFromEnv(env)
-  return { bucket, region, s3Endpoint, s3UseSsl, s3AccessKey, s3SecretKey }
+  // MinIO endpoints are given as a URL (http://host:9000); DuckDB wants host:port + a ssl flag.
+  let s3Endpoint: string | undefined
+  let s3UseSsl = true
+  if (env.S3_ENDPOINT) {
+    const url = new URL(env.S3_ENDPOINT)
+    s3Endpoint = url.host
+    s3UseSsl = url.protocol === 'https:'
+  }
+  return {
+    bucket: env.S3_BUCKET,
+    region: env.S3_REGION,
+    s3Endpoint,
+    s3UseSsl,
+    s3AccessKey: env.S3_ACCESS_KEY,
+    s3SecretKey: env.S3_SECRET_KEY,
+  }
 }
 
 /**

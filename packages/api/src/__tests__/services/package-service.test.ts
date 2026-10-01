@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import type { QueueAdapter } from '@kukan/queue-adapter'
 import { DRAFT_NAME_PLACEHOLDER_RE } from '@kukan/shared'
 import { PackageService, generateDraftPackageName } from '../../services/package-service'
 import { createMockDb } from '../test-helpers/mock-db'
@@ -322,7 +323,9 @@ describe('PackageService', () => {
       expect(claimed.state).toBe('purging')
 
       mock.addResult([claimed]) // delete returning
-      const purged = await service.finalizeDraftPurge(claimed.id as string)
+      // No tables to drop, so the queue only lends its transaction
+      const queue = { transaction: (db, fn) => db.transaction(fn) } as QueueAdapter
+      const purged = await service.finalizeDraftPurge(claimed.id as string, queue, [])
       expect(purged.id).toBe(draft.id)
     })
 

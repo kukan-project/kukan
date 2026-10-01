@@ -213,6 +213,19 @@ advisory lock は文書の書き手どうしの排他で、未反映フラグを
 6. 抄録を書いたときだけ `sync-search-docs` を積み、埋め込みの未反映フラグが立っていれば `embed-resources` も積む。
 7. 次のリソースの `summarize-package` を積む。
 
+**`drop-lake-tables`** `{ resourceIds }` — 完全削除したデータセット（下書きを含む）の層 2 のテーブルを消す。
+
+データセットの完全削除は API の中で行うが、層 2 だけはこのジョブに任せる。web で DuckDB を開かないためである。
+API は、層 2 に入ったリソースがあるときだけ、行を消すのと同じトランザクションで積む。行の削除が確定したときだけ
+ジョブが残り、ジョブが走るのは必ず行が消えた後になる。
+
+1. 層 2 のテーブルをまとめて消す（`dropResourceTables`）。
+2. 層 2 のストレージを回収する。
+
+どちらも冪等なので、再試行はやり直すだけで済む。行はもう無いので、`purging` のような状態は残らない。
+代わりに毎時の回収が、リソースの行が無く、このジョブも立っていない層 2 のテーブルを探して積み直す
+（dead のジョブを管理画面で削除したとき、保持期間を過ぎて消えたとき）。
+
 **`purge-organization`** `{ organizationId }` — 削除済みの組織を完全に消す（ADR-028）。
 
 1. 組織を `deleted` / `purging` から `purging` にする（durable claim）。できなければ何もしない。
@@ -290,6 +303,8 @@ advisory lock は文書の書き手どうしの排他で、未反映フラグを
   抄録の非表示 ─────────────────────────────────→ embed-resources（＋ 文書はロックの下で書く）
   データセットの削除 ───────────────────────────→ （配下の文書をロックの下で消す）
   版の削除 / 組織の完全削除 ─────────────────────→ purge-resource-version / purge-organization
+  データセット・下書きの完全削除 ─────────────────→ drop-lake-tables（層 2 に入ったリソースがあるときだけ、
+                                                   行の削除と同じトランザクション）
 
 resource-pipeline
   ├ claim が取れない / 取得がレート制限 ──→ resource-pipeline（遅延つきで積み直す）
@@ -351,14 +366,14 @@ purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の�
 
 **条件で絞る全件** — 述語が「まだ残っている仕事」をそのまま表すので、何度押しても対象外には何もしない。
 
-| 全件                                 | 条件                                                    | 個別の側              |
-| ------------------------------------ | ------------------------------------------------------- | --------------------- |
-| 毎時の層 2 取込                      | 層 2 に入っていない版                                   | `lake-ingest-version` |
-| 毎時の purge 回収                    | ジョブを失った `purging`                                | `purge-*`             |
-| 毎時の検索文書                       | `docSyncDueAt` の未反映フラグ（リソース・データセット） | `sync-search-docs`    |
-| 毎時の埋め込み                       | `embeddingDueAt` の未反映フラグ                         | `embed-resources`     |
-| `reanalyse-search-index`             | 解析設定が古い索引（`analysisStale`）                   | —                     |
-| 移行系（版の付与・行グループの記録） | 未移行の行                                              | —                     |
+| 全件                                 | 条件                                                        | 個別の側                      |
+| ------------------------------------ | ----------------------------------------------------------- | ----------------------------- |
+| 毎時の層 2 取込                      | 層 2 に入っていない版                                       | `lake-ingest-version`         |
+| 毎時の purge 回収                    | ジョブを失った `purging`、行の無いリソースの層 2 のテーブル | `purge-*`、`drop-lake-tables` |
+| 毎時の検索文書                       | `docSyncDueAt` の未反映フラグ（リソース・データセット）     | `sync-search-docs`            |
+| 毎時の埋め込み                       | `embeddingDueAt` の未反映フラグ                             | `embed-resources`             |
+| `reanalyse-search-index`             | 解析設定が古い索引（`analysisStale`）                       | —                             |
+| 移行系（版の付与・行グループの記録） | 未移行の行                                                  | —                             |
 
 **無条件の全件** — 対象を絞らずに全データセット・全リソースへ展開する。
 
@@ -380,19 +395,20 @@ purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の�
 2. **リソースの実行 claim**（`resource_pipeline.claim_owner`、`docs/pipeline.md` §2）— 一部のジョブ。
 3. **ジョブごとの仕組み** — 状態遷移、行のリース、CAS の未反映フラグ。
 
-| ジョブ                                                      | リソースの claim                         | 代わりに / 加えて                                                           |
-| ----------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
-| `resource-pipeline`                                         | 取る（`run`）                            | 取れなければ遅延つきで積み直す                                              |
-| `summarize-package`                                         | 取る（1 リソースずつ）                   | 取れなければ同じ位置で積み直す                                              |
-| `lake-ingest-version`                                       | 取る（`job`）                            | 版の `lake_ingest_queued_at` のリース                                       |
-| `backfill-resource-versions` / `convert-set-aside-versions` | 取る（取れなければそのリソースを飛ばす） | 冪等。再実行で拾う                                                          |
-| `purge-resource-version`                                    | 取る（取れなければ Conflict）            | 版の状態 `purging`                                                          |
-| `purge-organization`                                        | 取る（配下の全リソース）                 | 組織の状態 `purging`（ADR-028）                                             |
-| `sync-search-docs`                                          | 取らない                                 | 文書の書き手どうしは advisory lock で 1 つずつ。未反映フラグは CAS で下ろす |
-| `embed-resources`                                           | 取らない                                 | ジョブを advisory lock で 1 本に。未反映フラグは CAS で下ろす               |
-| `reindex-metadata` / `reanalyse-search-index`               | 取らない                                 | reanalyse はコピー中に書かれたものを後から直す                              |
-| `record-preview-row-groups`                                 | 取らない                                 | フッターを読むだけ。再解釈は run に任せる                                   |
-| `summarize-all`                                             | 取らない                                 | 積むだけ                                                                    |
+| ジョブ                                                      | リソースの claim                         | 代わりに / 加えて                                                                                            |
+| ----------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `resource-pipeline`                                         | 取る（`run`）                            | 取れなければ遅延つきで積み直す                                                                               |
+| `summarize-package`                                         | 取る（1 リソースずつ）                   | 取れなければ同じ位置で積み直す                                                                               |
+| `lake-ingest-version`                                       | 取る（`job`）                            | 版の `lake_ingest_queued_at` のリース                                                                        |
+| `backfill-resource-versions` / `convert-set-aside-versions` | 取る（取れなければそのリソースを飛ばす） | 冪等。再実行で拾う                                                                                           |
+| `purge-resource-version`                                    | 取る（取れなければ Conflict）            | 版の状態 `purging`                                                                                           |
+| `purge-organization`                                        | 取る（配下の全リソース）                 | 組織の状態 `purging`（ADR-028）                                                                              |
+| `drop-lake-tables`                                          | 取らない                                 | リソースの行はもう無い。層 2 の書き手は claim の下で行を読んでから書くので、テーブルを作り直す書き手がいない |
+| `sync-search-docs`                                          | 取らない                                 | 文書の書き手どうしは advisory lock で 1 つずつ。未反映フラグは CAS で下ろす                                  |
+| `embed-resources`                                           | 取らない                                 | ジョブを advisory lock で 1 本に。未反映フラグは CAS で下ろす                                                |
+| `reindex-metadata` / `reanalyse-search-index`               | 取らない                                 | reanalyse はコピー中に書かれたものを後から直す                                                               |
+| `record-preview-row-groups`                                 | 取らない                                 | フッターを読むだけ。再解釈は run に任せる                                                                    |
+| `summarize-all`                                             | 取らない                                 | 積むだけ                                                                                                     |
 
 基準は一貫している。**リソースの派生物（ストレージのオブジェクト、版、Parquet、層 2）に書くジョブは
 claim を取る。** 行や索引を「行の今の状態」に合わせ直すだけのジョブは取らない。

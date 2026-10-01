@@ -382,48 +382,55 @@ deployed at once after the canary, default 2). A deploy resets the desired count
 `minSize` (the template pins it), so each simultaneously updating site adds only the
 connections of `minSize` new tasks — raising K is cheap. Change ACUs in two steps
 ("DB first, then reboot → in-sync → add sites"; max_connections is a static parameter).
+Connections are bounded by each pool's maximum and the DuckLake catalog cap (1 for the web, 2 for
+the worker), not by the worker's job concurrency (`WORKER_CONCURRENCY`): raising it makes the extra
+jobs wait for a connection rather than open more.
+The most K can be is (estimated max_connections × 0.7 − the steady-state maximum) ÷ what one
+updating site adds; past it, the synth warning or error names the largest K that fits. How far to
+go within that is a trade against how many sites one wave can take down together (the canary is
+always one site on its own).
 
-**small (RDS, up to 20 connections per site + 10 while updating)** — `overrides: { db: { instanceClass } }`
+**small (RDS, up to 26 connections per site + 13 while updating)** — `overrides: { db: { instanceClass } }`
 
 | Sites | K=1           | K=2           | K=4           | K=8           |
 | ----- | ------------- | ------------- | ------------- | ------------- |
 | 1     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
 | 2     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
-| 3     | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 3     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
 | 4     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 5     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 6     | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 5     | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 6     | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
 | 8     | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
-| 10    | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
-| 15    | db.t4g.medium | db.t4g.large  | db.t4g.large  | db.t4g.large  |
+| 10    | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.large  |
+| 15    | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 | 20    | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 
-**medium (Aurora, up to 60 connections per site + 15 while updating)** — `overrides: { db: { minAcu, maxAcu } }`
+**medium (Aurora, up to 69 connections per site + 18 while updating)** — `overrides: { db: { minAcu, maxAcu } }`
 
-| Sites | K=1        | K=2        | K=4        | K=8        |
-| ----- | ---------- | ---------- | ---------- | ---------- |
-| 1     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
-| 2     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
-| 3     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
-| 4     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 5     | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 6     | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 8     | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–8 ACU  |
-| 10    | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
-| 15    | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
-| 20    | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU |
+| Sites | K=1        | K=2       | K=4       | K=8        |
+| ----- | ---------- | --------- | --------- | ---------- |
+| 1     | 0.5–2 ACU  | 0.5–2 ACU | 0.5–2 ACU | 0.5–2 ACU  |
+| 2     | 0.5–2 ACU  | 0.5–2 ACU | 0.5–2 ACU | 0.5–2 ACU  |
+| 3     | 0.5–2 ACU  | 0.5–2 ACU | 0.5–2 ACU | 0.5–2 ACU  |
+| 4     | 0.5–4 ACU  | 0.5–4 ACU | 0.5–4 ACU | 0.5–4 ACU  |
+| 5     | 0.5–4 ACU  | 0.5–4 ACU | 0.5–4 ACU | 0.5–4 ACU  |
+| 6     | 0.5–4 ACU  | 0.5–4 ACU | 0.5–4 ACU | 0.5–4 ACU  |
+| 8     | 0.5–4 ACU  | 0.5–8 ACU | 0.5–8 ACU | 0.5–8 ACU  |
+| 10    | 0.5–8 ACU  | 0.5–8 ACU | 0.5–8 ACU | 0.5–8 ACU  |
+| 15    | 0.5–8 ACU  | 0.5–8 ACU | 0.5–8 ACU | 0.5–16 ACU |
+| 20    | 0.5–16 ACU | 1–16 ACU  | 1–16 ACU  | 1–16 ACU   |
 
-**large (Aurora, up to 250 connections per site + 60 while updating)**
+**large (Aurora, up to 270 connections per site + 66 while updating)**
 
 | Sites | K=1                | K=2                | K=4                | K=8                |
 | ----- | ------------------ | ------------------ | ------------------ | ------------------ |
 | 1     | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          |
-| 2     | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          |
+| 2     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          |
 | 3     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          |
-| 4     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–16 ACU         | 0.5–16 ACU         |
-| 5     | 0.5–16 ACU         | 0.5–16 ACU         | 1–16 ACU           | 1–16 ACU           |
+| 4     | 0.5–8 ACU          | 0.5–16 ACU         | 0.5–16 ACU         | 0.5–16 ACU         |
+| 5     | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           |
 | 6     | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           |
-| 8     | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           | 1–32 ACU           |
+| 8     | 1–16 ACU           | 1–16 ACU           | 1–32 ACU           | 1–32 ACU           |
 | 10    | 1–32 ACU           | 1–32 ACU           | 1–32 ACU           | 1–32 ACU           |
 | 15    | split environments | split environments | split environments | split environments |
 | 20    | split environments | split environments | split environments | split environments |
@@ -469,8 +476,11 @@ pg_dump / restore → S3 sync → reindex → DNS switch → destroy the old env
 
 ### Operational notes
 
-- DB connections are (number of sites) × (`WEB_DB_POOL_MAX` × the **maximum** task count + the
-  worker pool)
+- DB connections are (number of sites) × ((`WEB_DB_POOL_MAX` + 1) × the web's **maximum** task
+  count + (`WORKER_DB_POOL_MAX` + 2) × the worker's maximum task count)
+  - The +1 / +2 are DuckLake catalog connections. The postgres extension opens one per concurrent
+    transaction, so they are capped at 1 for the web and 2 for the worker (one holder of the
+    catalog-wide lock, and the hourly sweeps)
   - Estimate it against **one site mid-rolling-update** (old and new tasks running together).
     Aurora Serverless v2 fixes max_connections at maxACU (it does not shrink when you scale down).
     At synth time validateSites compares this worst case against an approximate max_connections

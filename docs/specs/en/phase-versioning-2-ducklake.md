@@ -1861,7 +1861,7 @@ the meaning of the threshold with it.
 
 **All table scans are measured with `threads` at its default = the core count** (24 for the MinIO
 rows, 16 and 2 for the S3 rows). **Production does not use that default** — `QUERY_THREADS` /
-`LAKE_INGEST_THREADS` pin it to 2, so the MinIO rows sit on the more parallel side than production.
+`LAKE_THREADS` pin it to 2, so the MinIO rows sit on the more parallel side than production.
 The only rows whose conditions match are the S3 · 2 vCPU ones.
 
 **cold and warm are measured separately.** DuckDB's file cache is per instance, so a scan differs by
@@ -1949,7 +1949,7 @@ difference.
 
 **So "T is decided by the reader's vCPU allocation" is not accurate.** What decides it is the thread
 count, and a 2 vCPU reader can recover most of that 3.11 ms/file with `SET threads`. **Today
-`QUERY_THREADS` and `LAKE_INGEST_THREADS` are both 2, the worst point in everything measured**
+`QUERY_THREADS` and `LAKE_THREADS` are both 2, the worst point in everything measured**
 (§14.1-2).
 
 **T and `threads` cannot be decided independently.** The lower the parallelism, the more the
@@ -2786,11 +2786,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
    separately — a merge happens once per publication while a scan happens on every read, so only with
    that ratio can the upper side of T be decided (§11-2.1).
 
-   **Revisit `QUERY_THREADS` / `LAKE_INGEST_THREADS` (both 2) before T.** Scanning is latency-bound,
+   **Revisit `QUERY_THREADS` / `LAKE_THREADS` (both 2) before T.** Scanning is latency-bound,
    so it is worth raising threads beyond the core count — on 2 vCPU, 2 → 8 threads is 2.45×, and the
    plateau was at 8 regardless of core count (§11-2.1). **2 is the worst point in everything
    measured, and it does more than T at no cost** (48.1 → 32.9 ms at the same T=25, with no change in
-   merge count). The two have different purposes, though: `LAKE_INGEST_THREADS` is the worker's own
+   merge count). The two have different purposes, though: `LAKE_THREADS` is the worker's own
    work so it can simply be raised, while `QUERY_THREADS` is a resource ceiling on user SQL
    (ADR-032), where raising it multiplies concurrency by thread count.
    **If it is raised, "only when the data path is remote" is the right rule** — it does nothing on a

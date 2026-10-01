@@ -364,51 +364,57 @@ prd: {
 1 サイトあたりの追加は新タスク `minSize` 台分の接続だけで、K を上げるコストは小さい。
 ACU の変更は「先に DB だけ変えて再起動 → in-sync 確認 → サイト追加」の二段階
 （max_connections は静的パラメータ）。
+接続数は各プールの上限と DuckLake のカタログ接続の上限（web 1・worker 2）で決まり、worker のジョブの
+並行数（`WORKER_CONCURRENCY`）には依存しない。並行数を上げても、足りない分のジョブは接続を待つだけで
+接続は増えない。
+K の上限は「(推定 max_connections × 0.7 − 平常時の最大) ÷ 同時更新 1 サイトあたりの追加」で、
+超えると synth の警告・エラーが収まる最大の K を示す。その範囲でどこまで上げるかは、1 つの波で
+同時に止まりうるサイト数との兼ね合いになる（カナリアは常に 1 サイトだけ）。
 
-**small（RDS、1 サイト最大 20 接続 + 更新中 10）** — `overrides: { db: { instanceClass } }`
+**small（RDS、1 サイト最大 26 接続 + 更新中 13）** — `overrides: { db: { instanceClass } }`
 
 | サイト数 | K=1           | K=2           | K=4           | K=8           |
 | -------- | ------------- | ------------- | ------------- | ------------- |
 | 1        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
 | 2        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
-| 3        | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 3        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
 | 4        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 5        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
-| 6        | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 5        | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 6        | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
 | 8        | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
-| 10       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
-| 15       | db.t4g.medium | db.t4g.large  | db.t4g.large  | db.t4g.large  |
+| 10       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.large  |
+| 15       | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 | 20       | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
 
-**medium（Aurora、1 サイト最大 60 接続 + 更新中 15）** — `overrides: { db: { minAcu, maxAcu } }`
+**medium（Aurora、1 サイト最大 69 接続 + 更新中 18）** — `overrides: { db: { minAcu, maxAcu } }`
 
-| サイト数 | K=1        | K=2        | K=4        | K=8        |
-| -------- | ---------- | ---------- | ---------- | ---------- |
-| 1        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
-| 2        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
-| 3        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
-| 4        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 5        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 6        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 8        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–8 ACU  |
-| 10       | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
-| 15       | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
-| 20       | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU |
+| サイト数 | K=1        | K=2       | K=4       | K=8        |
+| -------- | ---------- | --------- | --------- | ---------- |
+| 1        | 0.5–2 ACU  | 0.5–2 ACU | 0.5–2 ACU | 0.5–2 ACU  |
+| 2        | 0.5–2 ACU  | 0.5–2 ACU | 0.5–2 ACU | 0.5–2 ACU  |
+| 3        | 0.5–2 ACU  | 0.5–2 ACU | 0.5–2 ACU | 0.5–2 ACU  |
+| 4        | 0.5–4 ACU  | 0.5–4 ACU | 0.5–4 ACU | 0.5–4 ACU  |
+| 5        | 0.5–4 ACU  | 0.5–4 ACU | 0.5–4 ACU | 0.5–4 ACU  |
+| 6        | 0.5–4 ACU  | 0.5–4 ACU | 0.5–4 ACU | 0.5–4 ACU  |
+| 8        | 0.5–4 ACU  | 0.5–8 ACU | 0.5–8 ACU | 0.5–8 ACU  |
+| 10       | 0.5–8 ACU  | 0.5–8 ACU | 0.5–8 ACU | 0.5–8 ACU  |
+| 15       | 0.5–8 ACU  | 0.5–8 ACU | 0.5–8 ACU | 0.5–16 ACU |
+| 20       | 0.5–16 ACU | 1–16 ACU  | 1–16 ACU  | 1–16 ACU   |
 
-**large（Aurora、1 サイト最大 250 接続 + 更新中 60）**
+**large（Aurora、1 サイト最大 270 接続 + 更新中 66）**
 
-| サイト数 | K=1        | K=2        | K=4        | K=8        |
-| -------- | ---------- | ---------- | ---------- | ---------- |
-| 1        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 2        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
-| 3        | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
-| 4        | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–16 ACU | 0.5–16 ACU |
-| 5        | 0.5–16 ACU | 0.5–16 ACU | 1–16 ACU   | 1–16 ACU   |
-| 6        | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   |
-| 8        | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   | 1–32 ACU   |
-| 10       | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   |
-| 15       | 環境分割   | 環境分割   | 環境分割   | 環境分割   |
-| 20       | 環境分割   | 環境分割   | 環境分割   | 環境分割   |
+| サイト数 | K=1       | K=2        | K=4        | K=8        |
+| -------- | --------- | ---------- | ---------- | ---------- |
+| 1        | 0.5–4 ACU | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 2        | 0.5–8 ACU | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 3        | 0.5–8 ACU | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 4        | 0.5–8 ACU | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU |
+| 5        | 1–16 ACU  | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   |
+| 6        | 1–16 ACU  | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   |
+| 8        | 1–16 ACU  | 1–16 ACU   | 1–32 ACU   | 1–32 ACU   |
+| 10       | 1–32 ACU  | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   |
+| 15       | 環境分割  | 環境分割   | 環境分割   | 環境分割   |
+| 20       | 環境分割  | 環境分割   | 環境分割   | 環境分割   |
 
 `minAcu 1` は、minACU 0/0.5 では max_connections が 2,000 に固定される制約による
 （maxAcu を上げても効かない）。「環境分割」は Aurora の上限 5,000 に対して 70% を
@@ -451,7 +457,10 @@ pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧�
 
 ### 運用ノート
 
-- DB 接続数はサイト数 ×（`WEB_DB_POOL_MAX` × **最大**タスク数 + worker プール）
+- DB 接続数はサイト数 ×（(`WEB_DB_POOL_MAX` + 1) × web の**最大**タスク数 +
+  (`WORKER_DB_POOL_MAX` + 2) × worker の最大タスク数）
+  - +1 / +2 は DuckLake のカタログ接続。postgres 拡張は同時に走るトランザクションごとに 1 本張るので、
+    web は 1 本、worker は 2 本（カタログ全体のロックを持つ 1 本と、毎時の掃除）に抑えている
   - **ローリング更新中の 1 サイト分**（新旧タスク併走）で見積もる。
     Aurora Serverless v2 の max_connections は maxACU で固定（縮退しても減らない）。
     synth 時に validateSites がこの worst case を AWS 公式表ベースの概算

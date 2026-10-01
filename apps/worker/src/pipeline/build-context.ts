@@ -25,11 +25,7 @@ import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import type { SummaryDeps } from './steps/summarize'
-import {
-  FETCH_RATE_LIMIT_INTERVAL_S,
-  LAKE_INGEST_MEMORY_LIMIT_MB,
-  LAKE_INGEST_THREADS,
-} from '@/config'
+import { FETCH_RATE_LIMIT_INTERVAL_S } from '@/config'
 
 /** Displaced mid-create: the claim went, or the pointer did. */
 class LostTheClaim extends Error {}
@@ -360,16 +356,11 @@ export function buildPipelineContext(
     async ingestLakeVersion(row): Promise<IngestResult | null> {
       if (!lake) return null
       // Opened outside the lock: session setup costs several round trips, and
-      // the lock is catalog-wide. Bounded like the API's sessions — DuckDB
-      // otherwise claims most of the container's memory and a thread per core,
-      // which several concurrent ingests on a small task cannot survive.
-      // Heavy like the interpretation that precedes it: the two side by side
-      // would hold both DuckDB caps at once
+      // the lock is catalog-wide. Heavy like the interpretation that precedes
+      // it: the two side by side would hold both DuckDB caps at once
       return heavySection(() =>
-        withLakeSession(
-          lake,
-          (session) => withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row)),
-          { limits: { memoryLimitMb: LAKE_INGEST_MEMORY_LIMIT_MB, threads: LAKE_INGEST_THREADS } }
+        withLakeSession(lake, (session) =>
+          withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row))
         )
       )
     },

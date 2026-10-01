@@ -595,16 +595,28 @@ describe('validateSites', () => {
   })
 
   it('counts deployConcurrency sites of rolling-update doubling in the budget', () => {
-    // medium: 60 per site at max scale, 15 new-task connections per rolling site
-    // (minSize 1 × webMax 10 + minTasks 1 × workerMax 5), maxAcu 2 → 400.
-    // 6 sites steady 360: serial (+15) warns, four at a time (+60) exceeds the
-    // limit — and says how to serialize
-    expect(messages({ ...base, scale: 'medium', sites: sitesOf(6) })).toMatch(
-      /375 — steady 360 \+ 1 site's rolling update 15/
+    // medium: 69 per site at max scale, 18 new-task connections per rolling site
+    // (minSize 1 × (webMax 10 + 1 lake) + minTasks 1 × (workerMax 5 + 2 lake)),
+    // maxAcu 2 → 400. 5 sites steady 345: serial (+18) warns, four at a time
+    // (+72) exceeds the limit — and names the most that fit: three (345 + 54)
+    expect(messages({ ...base, scale: 'medium', sites: sitesOf(5) })).toMatch(
+      /363 — steady 345 \+ 1 site's rolling update 18/
     )
     expect(() =>
-      validateSites({ ...base, deployConcurrency: 4, scale: 'medium', sites: sitesOf(6) })
-    ).toThrow(/420 — steady 360 \+ 4 sites' rolling update 60.*set deployConcurrency: 1/)
+      validateSites({ ...base, deployConcurrency: 4, scale: 'medium', sites: sitesOf(5) })
+    ).toThrow(
+      /417 — steady 345 \+ 4 sites' rolling update 72.*set deployConcurrency: 3 \(4 sites roll/
+    )
+    // Past the 70% line with one site rolling (276 + 18 > 280): no deployConcurrency
+    // clears that warning, so none is offered
+    const pastWithOne = messages({
+      ...base,
+      deployConcurrency: 4,
+      scale: 'medium',
+      sites: sitesOf(4),
+    })
+    expect(pastWithOne).toMatch(/330 — steady 276 \+ 3 sites' rolling update 54\) exceed 70%/)
+    expect(pastWithOne).not.toContain('deployConcurrency')
     expect(() =>
       validateSites({ account: TEST_ACCOUNT, deployConcurrency: 0, sites: sitesOf(1) })
     ).toThrow(/deployConcurrency must be an integer of 1 or more/)
@@ -614,10 +626,10 @@ describe('validateSites', () => {
   })
 
   it('counts at most sites.length - 1 rolling sites (the canary deploys alone)', () => {
-    // small: 20 per site + 10 per rolling site on db.t4g.micro (112). 4 sites with
-    // K=8: only 3 can roll after the canary → 80 + 30 = 110, under the limit
-    const wide = messages({ ...base, deployConcurrency: 8, sites: sitesOf(4) })
-    expect(wide).toMatch(/110 — steady 80 \+ 3 sites' rolling update 30/)
+    // small: 26 per site + 13 per rolling site on db.t4g.micro (112). 3 sites with
+    // K=8: only 2 can roll after the canary → 78 + 26 = 104, under the limit
+    const wide = messages({ ...base, deployConcurrency: 8, sites: sitesOf(3) })
+    expect(wide).toMatch(/104 — steady 78 \+ 2 sites' rolling update 26/)
     // 2 sites: the canary, then one — never two at once, whatever K says
     expect(() =>
       validateSites({
@@ -626,20 +638,20 @@ describe('validateSites', () => {
         overrides: { dbPool: { webMax: 40 } },
         sites: sitesOf(2),
       })
-    ).toThrow(/1 site's rolling update 45/)
+    ).toThrow(/1 site's rolling update 48/)
   })
 
   it('estimates RDS max_connections from the instance class memory', () => {
-    // small preset: 20 per site + 10 for the rolling one; 7 sites need 150 — over
+    // small preset: 26 per site + 13 for the rolling one; 5 sites need 143 — over
     // db.t4g.micro's 112, under db.t4g.small's 225 without a warning (70% is 157)
-    expect(() => validateSites({ ...base, sites: sitesOf(7) })).toThrow(
+    expect(() => validateSites({ ...base, sites: sitesOf(5) })).toThrow(
       /exceed the estimated max_connections \(112\).*db\.t4g\.micro allows only ~112/
     )
     expect(
       messages({
         ...base,
         overrides: { db: { instanceClass: 'db.t4g.small' } },
-        sites: sitesOf(7),
+        sites: sitesOf(5),
       })
     ).not.toContain('max_connections')
   })
@@ -706,22 +718,22 @@ describe('validateSites', () => {
   })
 
   it('enforces the shared-database connection budget', () => {
-    // medium preset: 60 worst-case connections per site (10×5 web + 5×2 worker),
-    // plus one site's rolling-update doubling (+60); maxACU 2 → 400 estimated
-    // max_connections (documented-anchor interpolation), 70% = 280
+    // medium preset: 69 worst-case connections per site ((10 + 1 lake)×5 web +
+    // (5 + 2 lake)×2 worker), plus one site's rolling update (+18); maxACU 2 →
+    // 400 estimated max_connections (documented-anchor interpolation), 70% = 280
     expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(8) })).toThrow(
-      /480.*exceed the estimated max_connections \(400\)/
+      /570.*exceed the estimated max_connections \(400\)/
     )
 
-    // large preset (250 worst-case/site): the raw memory formula said ~1802 and
-    // let 7 sites (1750) pass with a warning — the AWS-documented 8-ACU value
+    // large preset (270 worst-case/site): the raw memory formula said ~1802 and
+    // let 6 sites (1686) pass with a warning — the AWS-documented 8-ACU value
     // is 1669, so this must fail
-    expect(() => validateSites({ ...base, scale: 'large', sites: sitesOf(7) })).toThrow(
-      /1750.*exceed the estimated max_connections \(1669\)/
+    expect(() => validateSites({ ...base, scale: 'large', sites: sitesOf(6) })).toThrow(
+      /1686.*exceed the estimated max_connections \(1669\)/
     )
 
     // PostgreSQL caps max_connections at 2,000 when minACU is 0 or 0.5.
-    // 34 sites (2,100 required) fit the uncapped 16-ACU estimate (3,360) —
+    // 34 sites (2,364 required) fit the uncapped 16-ACU estimate (3,360) —
     // only minAcu needs to change
     expect(() =>
       validateSites({
@@ -730,9 +742,9 @@ describe('validateSites', () => {
         overrides: { db: { maxAcu: 16 } },
         sites: sitesOf(34),
       })
-    ).toThrow(/2040.*\(2000\).*raise db\.minAcu to 1 or higher(?!.*AND db\.maxAcu)/)
+    ).toThrow(/2364.*\(2000\).*raise db\.minAcu to 1 or higher(?!.*AND db\.maxAcu)/)
 
-    // Boundary: 34 sites on maxAcu 8 need 2,055 — above the uncapped 8-ACU
+    // Boundary: 34 sites on maxAcu 8 need 2,364 — above the uncapped 8-ACU
     // estimate (1,669) AND above the 2,000 minACU cap, so raising maxAcu
     // alone would just hit the cap: both knobs must move
     expect(() =>
@@ -746,10 +758,10 @@ describe('validateSites', () => {
 
     // The higher bands need more than 50 sites' worth of connections at the
     // preset pools, and 50 is the per-environment site cap (VPC origin quota) —
-    // so widen the web pool to 20 (110 worst-case per site) instead
+    // so widen the web pool to 20 (119 worst-case per site) instead
     const wide = { dbPool: { webMax: 20 } }
 
-    // Boundary: 33 wide sites on maxAcu 16 need 3,740 — uncapping via minAcu is
+    // Boundary: 33 wide sites on maxAcu 16 need 3,955 — uncapping via minAcu is
     // not enough (16 ACU tops out at 3,360), so both knobs must move
     expect(() =>
       validateSites({
@@ -761,7 +773,7 @@ describe('validateSites', () => {
     ).toThrow(/AND db\.maxAcu \(the current maxAcu tops out at 3360 connections\)/)
 
     // Beyond the Aurora PostgreSQL absolute ceiling (5,000) no ACU setting
-    // helps — the remedy must not suggest one (46 wide sites need 5,170)
+    // helps — the remedy must not suggest one (46 wide sites need 5,502)
     const overCeiling = () =>
       validateSites({
         ...base,
@@ -778,26 +790,26 @@ describe('validateSites', () => {
       expect((error as Error).message).not.toMatch(/raise db\.(min|max)Acu/)
     }
 
-    // 7 sites: steady 420 + rolling 15 = 435 > 400
-    expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(7) })).toThrow(
-      /435 — steady 420 \+ 1 site's rolling update 15/
+    // 6 sites: steady 414 + rolling 18 = 432 > 400
+    expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(6) })).toThrow(
+      /432 — steady 414 \+ 1 site's rolling update 18/
     )
 
     expect(messages({ ...base, scale: 'medium', sites: sitesOf(5) })).toContain('exceed 70%')
 
     // Warning advice targets ceil(worstCase / 0.7), not the hard limit:
-    // 29 sites need 1,800/2,000 (capped) — clearing 70% needs 2,572, which the
+    // 26 sites need 1,812/2,000 (capped) — clearing 70% needs 2,589, which the
     // 0.5-minACU cap blocks regardless of maxAcu → advise minAcu, not maxAcu
     const cappedWarning = messages({
       ...base,
       scale: 'medium',
       overrides: { db: { maxAcu: 16 } },
-      sites: sitesOf(29),
+      sites: sitesOf(26),
     })
     expect(cappedWarning).toContain('raise db.minAcu to 1 or higher')
     expect(cappedWarning).not.toMatch(/AND db\.maxAcu/)
 
-    // 40 wide sites need 4,510/5,000 — clearing 70% needs 6,443, beyond the
+    // 40 wide sites need 4,788/5,000 — clearing 70% needs 6,840, beyond the
     // Aurora absolute ceiling → no ACU advice at all
     const ceilingWarning = messages({
       ...base,
@@ -1027,9 +1039,9 @@ describe('RDS instance class', () => {
   })
 
   it('sizes memory per family generation (x2g.large is 32 GiB, not 64)', () => {
-    // large preset, 250 per site + 60 rolling: 14 sites need 3,560 of the 3,604
+    // large preset, 270 per site + 66 rolling: 13 sites need 3,576 of the 3,604
     // connections 32 GiB allows — a warning, and the estimate must say 3604
-    const sites = Array.from({ length: 14 }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
+    const sites = Array.from({ length: 13 }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
     const warning = validateSites({
       account: TEST_ACCOUNT,
       scale: 'large',
@@ -1041,7 +1053,7 @@ describe('RDS instance class', () => {
     })
       .map((w) => w.message)
       .join('\n')
-    expect(warning).toMatch(/3560 — steady 3500 .* max_connections \(3604\)/)
+    expect(warning).toMatch(/3576 — steady 3510 .* max_connections \(3604\)/)
     // r doubles the t/m sizes: r6g.large is 16 GiB → 1,802 connections
     expect(() =>
       validateSites({

@@ -13,7 +13,8 @@
  * DuckLake tables are *not* dropped here: they are keyed by resource, not by
  * package, and the org purge drops the whole organization's tables in one
  * session rather than one per package. Callers pair this with
- * `dropResourceTables` (ADR-043 layer 2).
+ * `dropResourceTables`, or queue it with the rows' deletion
+ * (`queueLakeTablesDrop`) where they run in the web (ADR-043 layer 2).
  */
 
 import { and, eq, exists, inArray, isNotNull } from 'drizzle-orm'

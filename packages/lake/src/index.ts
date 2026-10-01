@@ -19,7 +19,7 @@ export {
   usesCredentialChain,
   s3SettingsFromEnv,
 } from './config'
-export type { LakeConfig, S3Settings } from './config'
+export type { LakeConfig, LakeLimits, S3Settings } from './config'
 export { openDuckdb, sealDuckdb } from './duckdb'
 export type { DuckdbHandle } from './duckdb'
 export {
@@ -27,6 +27,8 @@ export {
   lakeTableExists,
   dropLakeTable,
   dropResourceTables,
+  dropResourceTablesIn,
+  lakeTableResourceIds,
   currentSnapshotId,
   snapshotIds,
   resolvableSnapshots,

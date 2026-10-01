@@ -17,6 +17,7 @@ import {
   RECORD_ROW_GROUPS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
+  DROP_LAKE_TABLES_JOB_TYPE,
   EMBED_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
   SUMMARIZE_PACKAGE_JOB_TYPE,
@@ -29,12 +30,14 @@ import {
   recordRowGroupsJobSchema,
   convertSetAsideJobSchema,
   lakeIngestJobSchema,
+  dropLakeTablesJobSchema,
   embedJobSchema,
   summarizeAllJobSchema,
   summarizePackageJobSchema,
   syncSearchDocsJobSchema,
   REANALYSE_INDEX_JOB_TYPE,
   reanalyseIndexJobSchema,
+  WORKER_LAKE_CATALOG_CONNECTIONS,
 } from '@kukan/shared'
 import { eq } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
@@ -52,6 +55,7 @@ import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
+import { dropPurgedLakeTables, queueStrandedLakeTables } from '@kukan/api/services/lake-reclaim'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createAIAdapter } from '@kukan/api/adapters'
 import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
@@ -78,6 +82,8 @@ import {
 import {
   DEAD_JOB_RETENTION_MS,
   LAKE_INGEST_SWEEP_CRON,
+  LAKE_MEMORY_LIMIT_MB,
+  LAKE_THREADS,
   ORPHAN_CLEANUP_CRON,
   PENDING_UPLOAD_TTL_MS,
   RESOURCE_DOC_SWEEP_CRON,
@@ -198,7 +204,11 @@ if (env.HEALTH_CHECK_ENABLED) {
 }
 
 // --- DuckLake (ADR-043 layer 2): catalog + bucket derived from the same env ---
-const lake = lakeConfigFromEnv(env)
+const lake = lakeConfigFromEnv(env, {
+  memoryLimitMb: LAKE_MEMORY_LIMIT_MB,
+  threads: LAKE_THREADS,
+  catalogConnections: WORKER_LAKE_CATALOG_CONNECTIONS,
+})
 
 // --- Orphaned object sweeper (ADR-043) ---
 const orphanSweepLog = log.child({ component: 'orphan-cleanup' })
@@ -234,6 +244,11 @@ const orphanCleanupJob = startCronJob({
     // Layer 2's orphans are the ones no writer could park: a Parquet written
     // but never committed to the catalog (ADR-043).
     await sweepLakeOrphans(lake, orphanSweepLog)
+    // Last: it needs the lake, so a lake out of reach stops only this
+    const lakeTables = await queueStrandedLakeTables(db, queue, lake)
+    if (lakeTables.queued > 0) {
+      orphanSweepLog.info(lakeTables, 'Queued the drop of lake tables left with no job')
+    }
   },
 })
 
@@ -573,6 +588,19 @@ await queue.process({
       queue,
       log: log.child({ jobId: job.id, type: job.type }),
     })
+  },
+  // The lake half of a dataset's purge, queued with the rows' deletion: the
+  // purge runs in the web, which does not open DuckDB for it.
+  [DROP_LAKE_TABLES_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, dropLakeTablesJobSchema)
+    if (!data) return
+    const start = performance.now()
+    const reclaimed = await dropPurgedLakeTables(db, lake, data.resourceIds)
+    const elapsed = Math.round(performance.now() - start)
+    log.info(
+      { jobId: job.id, type: job.type, tables: data.resourceIds.length, ...reclaimed, elapsed },
+      'Drop lake tables job completed'
+    )
   },
   // One-time migration: name every unversioned resource's live file as v1
   // (ADR-043). Nothing is fetched, re-indexed or copied — the object is

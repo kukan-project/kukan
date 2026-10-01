@@ -14,10 +14,27 @@
  * exist yet, and the close has to wait for the interrupted scan to unwind.
  */
 import type { LakeConfig, LakeSession } from '@kukan/lake'
-import { openLakeSession } from '@kukan/lake'
-import { RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
+import { lakeConfigFromEnv, openLakeSession } from '@kukan/lake'
+import type { Env } from '@kukan/shared'
+import {
+  RequestAbandonedError,
+  RequestTimeoutError,
+  WEB_LAKE_CATALOG_CONNECTIONS,
+} from '@kukan/shared'
 import { withDuckdbSlot } from './semaphore'
 import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../../config'
+
+/**
+ * The web's lake, bounded like the scans below — the only reason it opens
+ * one. A dataset's purge queues its tables' drop for the worker instead.
+ */
+export function webLakeConfig(env: Env): LakeConfig {
+  return lakeConfigFromEnv(env, {
+    memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
+    threads: QUERY_THREADS,
+    catalogConnections: WEB_LAKE_CATALOG_CONNECTIONS,
+  })
+}
 
 /**
  * Run `scan` against a lake session, holding one shared DuckDB slot, capped in
@@ -71,10 +88,7 @@ export async function scanLake<T>(
 
     // Held separately from `session` so a setup that lands after the deadline is
     // still closed rather than leaked.
-    const opening = openLakeSession(lake, {
-      memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
-      threads: QUERY_THREADS,
-    }).then((s) => (session = s))
+    const opening = openLakeSession(lake).then((s) => (session = s))
 
     try {
       await Promise.race([opening, stopped])

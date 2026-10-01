@@ -9,6 +9,10 @@ import type { Construct } from 'constructs'
 // synth works on a clean checkout (the pipeline runs no workspace build)
 import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
 import { isTimeZone } from '@kukan/shared/env'
+import {
+  WEB_LAKE_CATALOG_CONNECTIONS,
+  WORKER_LAKE_CATALOG_CONNECTIONS,
+} from '@kukan/shared/lake-limits'
 
 export type Scale = 'small' | 'medium' | 'large'
 export type DbEngine = 'rds' | 'aurora'
@@ -729,18 +733,29 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     envComputed.db
   )
   const siteComputed = sites.map((site) => deepMerge(envComputed, site.overrides ?? {}))
+  const perWeb = (c: ScaleComputed) => c.dbPool.webMax + WEB_LAKE_CATALOG_CONNECTIONS
+  const perWorker = (c: ScaleComputed) => c.dbPool.workerMax + WORKER_LAKE_CATALOG_CONNECTIONS
   const steady = siteComputed.reduce(
-    (sum, c) => sum + c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks,
+    (sum, c) => sum + perWeb(c) * c.web.maxSize + perWorker(c) * c.worker.maxTasks,
     0
   )
   // As many sites as the largest wave can roll at once (the canary is a wave of one)
   const rollingSites = Math.max(...deployWaves(sites, concurrency).map((wave) => wave.length))
-  const rolling = siteComputed
-    .map((c) => c.dbPool.webMax * c.web.minSize + c.dbPool.workerMax * c.worker.minTasks)
+  const rollingCosts = siteComputed
+    .map((c) => perWeb(c) * c.web.minSize + perWorker(c) * c.worker.minTasks)
     .sort((a, b) => b - a)
-    .slice(0, rollingSites)
-    .reduce((sum, value) => sum + value, 0)
+  const rollingFor = (count: number) =>
+    rollingCosts.slice(0, count).reduce((sum, value) => sum + value, 0)
+  const rolling = rollingFor(rollingSites)
   const worstCase = steady + rolling
+  // The most sites that can roll at once and stay within `limit`, which is
+  // what deployConcurrency costs: minSize new tasks per site, whatever maxSize.
+  // 0 when even one at a time does not fit — no deployConcurrency helps then
+  const fittingConcurrency = (limit: number) => {
+    let count = 0
+    while (count < rollingSites && steady + rollingFor(count + 1) <= limit) count++
+    return count
+  }
   const breakdown =
     `${worstCase} — steady ${steady} + ${rollingSites} ` +
     `site${rollingSites === 1 ? "'s" : "s'"} rolling update ${rolling}`
@@ -751,19 +766,25 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
   // the REQUIRED connections: worstCase > 2,000 with a 0/0.5 minACU needs
   // minAcu (the cap ignores maxAcu), worstCase above the uncapped estimate
   // needs maxAcu, and both can be true at once.
-  const lowerPools =
-    (concurrency > 1 ? `set deployConcurrency: 1 (${concurrency} sites roll at once now), ` : '') +
-    'lower sites[].overrides.dbPool / web.maxSize'
+  const lowerPools = (limit: number) => {
+    const fitting = fittingConcurrency(limit)
+    return (
+      (fitting > 0 && fitting < rollingSites
+        ? `set deployConcurrency: ${fitting} (${rollingSites} sites roll at once now), `
+        : '') + 'lower sites[].overrides.dbPool / web.maxSize'
+    )
+  }
   const separateDeploy =
     'in a SEPARATE deploy first (then reboot the DB instances — max_connections ' +
     'is static and keeps the old value until reboot) before adding sites'
   // `required` is what the limit must reach for the advice to actually work:
   // worstCase for the hard error, ceil(worstCase / 0.7) to clear the warning —
-  // an ACU knob that cannot reach it must not be suggested.
-  const buildRemedy = (required: number): string => {
+  // an ACU knob that cannot reach it must not be suggested. `limit` is the line
+  // the current database draws, which deployConcurrency is lowered to fit.
+  const buildRemedy = (required: number, limit: number): string => {
     if (envComputed.db.engine !== 'aurora') {
       return (
-        `${lowerPools}, or migrate to aurora blue/green with pg_dump/restore — ` +
+        `${lowerPools(limit)}, or migrate to aurora blue/green with pg_dump/restore — ` +
         'switching dbEngine in place would create an EMPTY Aurora cluster and ' +
         `point the app at it (${rdsInstanceClass(envComputed.db)} allows ` +
         `only ~${maxConnections} connections; a larger instance class raises it) — ` +
@@ -773,7 +794,7 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     const absoluteMax = AURORA_MAX_CONNECTIONS[AURORA_MAX_CONNECTIONS.length - 1][1]
     if (required > absoluteMax) {
       return (
-        `${lowerPools}, split the sites across more than one shared cluster/` +
+        `${lowerPools(limit)}, split the sites across more than one shared cluster/` +
         `environment, or consider RDS Proxy — no ACU setting reaches the required ` +
         `${required} connections, Aurora PostgreSQL tops out at ${absoluteMax} (ADR-041)`
       )
@@ -790,12 +811,13 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
         : needMinAcu
           ? `raise ${minAcuNote}`
           : 'raise db.maxAcu'
-    return `${lowerPools}, or ${acuAdvice} ${separateDeploy}, or consider RDS Proxy (ADR-041)`
+    return `${lowerPools(limit)}, or ${acuAdvice} ${separateDeploy}, or consider RDS Proxy (ADR-041)`
   }
   if (worstCase > maxConnections) {
     throw new Error(
       `Worst-case DB connections across sites (${breakdown}) exceed the estimated ` +
-        `max_connections (${maxConnections}) of the shared database — ${buildRemedy(worstCase)}`
+        `max_connections (${maxConnections}) of the shared database — ` +
+        buildRemedy(worstCase, maxConnections)
     )
   }
   if (worstCase > maxConnections * 0.7) {
@@ -804,7 +826,7 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       message:
         `Worst-case DB connections across sites (${breakdown}) exceed 70% of the ` +
         `estimated max_connections (${maxConnections}) of the shared database — ` +
-        buildRemedy(Math.ceil(worstCase / 0.7)),
+        buildRemedy(Math.ceil(worstCase / 0.7), maxConnections * 0.7),
     })
   }
   return warnings

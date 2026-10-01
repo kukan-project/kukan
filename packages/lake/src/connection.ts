@@ -40,14 +40,7 @@ export interface LakeSession {
   close(): Promise<void>
 }
 
-/** Resource bounds for a session. Omit on trusted background work (ingest). */
-export interface LakeSessionLimits {
-  memoryLimitMb: number
-  threads: number
-}
-
 export interface LakeSessionOptions {
-  limits?: LakeSessionLimits
   /**
    * Run the work once more, on a rebuilt instance, when the session failed
    * because its instance was lost ({@link isInstanceLost}). The work then has
@@ -67,13 +60,21 @@ type DuckDBInstance = Awaited<
 type DuckDBConnection = Awaited<ReturnType<DuckDBInstance['connect']>>
 
 /**
+ * How long a session waits for a catalog connection before failing: as long as
+ * another can hold one. An ingest holds its own through the statement that
+ * writes the Parquet — minutes for a large file — and the default 30 s would
+ * fail the sweep waiting beside it.
+ */
+const LAKE_CATALOG_WAIT_TIMEOUT_MS = 10 * 60_000
+
+/**
  * Prepared instances, keyed by what makes them differ.
  *
  * Everything setup does is instance-scoped — loaded extensions, the S3 secret,
  * the attached catalog, and `memory_limit`/`threads`, which DuckDB treats as
  * globals. So it is paid once and every later session is an `instance.connect()`
- * on top of it. A process using two distinct limit sets (the diff bounds itself
- * more tightly than ingest) keeps one instance for each.
+ * on top of it. A process builds one config, bounds and all
+ * ({@link LakeConfig.limits}), so it keeps one instance.
  *
  * The promise is cached, not the instance, so concurrent first callers wait on
  * one setup rather than racing to build several.
@@ -123,6 +124,9 @@ const wasLost = (err: unknown) => typeof err === 'object' && err !== null && los
  */
 function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
+  // Waited out the catalog pool: the instance is busy, not gone, and closing
+  // it would take the sessions holding the pool down with it
+  if (/connection pool timeout/i.test(message)) return false
   return /connection|server closed|terminating|SSL|socket|ExpiredToken|token has expired|instance closed/i.test(
     message
   )
@@ -156,18 +160,15 @@ async function disableDataInlining(conn: DuckDBConnection): Promise<void> {
   await conn.run(`CALL lake.set_option('data_inlining_row_limit', 0)`)
 }
 
-async function prepareInstance(
-  config: LakeConfig,
-  limits: LakeSessionLimits | undefined
-): Promise<DuckDBInstance> {
+async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
   // Its own place to spill, before the ATTACH that can start writing there
   // (see `useOwnTempDirectory`): a worker holds this instance alongside the
   // CSV interpretation's, and that one is documented to go out of core.
   // Removed when the last session on it closes rather than when it does
   // (see `createSpillRegistry`).
   const { instance, conn, dropTempDir } = await openDuckdb({
-    memoryLimitBytes: limits && limits.memoryLimitMb * 1_000_000,
-    threads: limits?.threads,
+    memoryLimitBytes: config.limits.memoryLimitMb * 1_000_000,
+    threads: config.limits.threads,
     spill: 'lake',
   })
   spills.track(instance, dropTempDir)
@@ -188,6 +189,13 @@ async function prepareInstance(
     // S3 credentials, in the one shape both this and the OData feed use
     // (`s3SecretBody` — where the REFRESH story is written down).
     await conn.run(`CREATE OR REPLACE SECRET lake_s3 (${s3SecretBody(config)})`)
+
+    // Read by the ATTACH below, so set before it. Past the cap a transaction
+    // waits for a connection rather than opening one more, as it would by
+    // default (see LakeLimits.catalogConnections)
+    await conn.run(`SET pg_pool_max_connections = ${Math.trunc(config.limits.catalogConnections)}`)
+    await conn.run(`SET pg_pool_acquire_mode = 'wait'`)
+    await conn.run(`SET pg_pool_wait_timeout_millis = ${LAKE_CATALOG_WAIT_TIMEOUT_MS}`)
 
     await conn.run(
       `ATTACH ${sqlLiteral(`ducklake:postgres:${config.pgConnString}`)} AS lake ` +
@@ -212,17 +220,13 @@ async function prepareInstance(
  * Open a DuckLake session — a connection on the process's prepared instance.
  *
  * The caller owns it and must `close()` when done; that disconnects, and leaves
- * the instance for the next operation. `limits` applies to the instance and is
- * therefore only honoured the first time a given set is asked for.
+ * the instance for the next operation.
  */
-export async function openLakeSession(
-  config: LakeConfig,
-  limits?: LakeSessionLimits
-): Promise<LakeSession> {
-  const key = JSON.stringify({ config, limits })
+export async function openLakeSession(config: LakeConfig): Promise<LakeSession> {
+  const key = JSON.stringify(config)
   let pending = instances.get(key)
   if (!pending) {
-    pending = prepareInstance(config, limits)
+    pending = prepareInstance(config)
     instances.set(key, pending)
     // A failed setup must not be cached, or the process never recovers.
     pending.catch(() => instances.delete(key))
@@ -305,21 +309,20 @@ export async function withLakeSession<T>(
   fn: (session: LakeSession, attempt: 1 | 2) => Promise<T>,
   options: LakeSessionOptions = {}
 ): Promise<T> {
-  const { limits, rerunIfLost = false } = options
+  const { rerunIfLost = false } = options
   try {
-    return await inSession(config, (session) => fn(session, 1), limits)
+    return await inSession(config, (session) => fn(session, 1))
   } catch (err) {
     if (!rerunIfLost || !wasLost(err)) throw err
-    return inSession(config, (session) => fn(session, 2), limits)
+    return inSession(config, (session) => fn(session, 2))
   }
 }
 
 async function inSession<T>(
   config: LakeConfig,
-  fn: (session: LakeSession) => Promise<T>,
-  limits?: LakeSessionLimits
+  fn: (session: LakeSession) => Promise<T>
 ): Promise<T> {
-  const session = await openLakeSession(config, limits)
+  const session = await openLakeSession(config)
   try {
     return await fn(session)
   } finally {

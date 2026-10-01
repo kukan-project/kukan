@@ -411,13 +411,14 @@ export const LAKE_ORPHAN_RETENTION_MS = 24 * 60 * 60 * 1000
 export const ORPHAN_CLEANUP_BATCH_SIZE = 5000
 
 /**
- * Resource bounds for the worker's DuckLake sessions (ADR-043 layer 2).
- * Unset, DuckDB takes ~80% of container memory and one thread per core, so a
- * few concurrent ingests on a small task would be an OOM kill rather than a
- * slow ingest.
+ * Resource bounds for the worker's DuckLake instance (ADR-043 layer 2), which
+ * every session in the process shares — ingest, the heaviest, and the purges,
+ * reclaims and sweeps beside it. Unset, DuckDB takes ~80% of container memory
+ * and one thread per core, so a few concurrent ingests on a small task would
+ * be an OOM kill rather than a slow ingest.
  */
-export const LAKE_INGEST_MEMORY_LIMIT_MB = 512
-export const LAKE_INGEST_THREADS = 2
+export const LAKE_MEMORY_LIMIT_MB = 512
+export const LAKE_THREADS = 2
 
 // ── Resource abstracts (ADR-053) ──
 

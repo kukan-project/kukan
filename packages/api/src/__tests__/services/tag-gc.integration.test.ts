@@ -10,7 +10,7 @@ import { sql } from 'drizzle-orm'
 import { PackageService } from '../../services/package-service'
 import { OrganizationService } from '../../services/organization-service'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
-import { mockStorage } from '../test-helpers/test-app'
+import { mockQueue, mockStorage } from '../test-helpers/test-app'
 
 const db = getTestDb()
 
@@ -102,7 +102,7 @@ describe('orphan free-tag GC', () => {
       const pkg = await service.create(createInput('pkg-b', ['shared', 'solo']))
 
       await service.delete(pkg.id)
-      await service.purge(pkg.id, { storage: mockStorage })
+      await service.purge(pkg.id, { storage: mockStorage, queue: mockQueue })
 
       expect(await tagNames()).toEqual(['shared'])
     })

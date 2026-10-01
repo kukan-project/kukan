@@ -43,6 +43,13 @@ export const SEARCH_DOC_SYNC_LOCK = 'resource_doc_sync'
 export const RESOURCE_EMBED_LOCK = 'resource_embed'
 
 /**
+ * One pass at a time over the lake tables left without a drop job. Every
+ * worker task runs the hourly sweep in the same minute; without it each would
+ * find the same tables and queue its own drop for them.
+ */
+export const STRANDED_LAKE_TABLES_LOCK = 'stranded_lake_tables'
+
+/**
  * Hold `<namespace>:<id>` for the rest of the transaction.
  *
  * Every query inside must run on `tx`: the lock *is* a pooled connection, and

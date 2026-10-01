@@ -426,6 +426,14 @@ export const CONVERT_SET_ASIDE_JOB_TYPE = 'convert-set-aside-versions' as const
 export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
 
 /**
+ * Drop a purged dataset's DuckLake tables and reclaim what they held (ADR-043
+ * §5). Queued in the transaction that deletes the rows, so the tables go only
+ * once the rows have, and the web, where a dataset is purged, never opens
+ * DuckDB for it.
+ */
+export const DROP_LAKE_TABLES_JOB_TYPE = 'drop-lake-tables' as const
+
+/**
  * Maintenance: write the abstracts a catalog is missing (ADR-053 §11).
  *
  * Its own job rather than the pipeline's `rebuildOnly`, which bypasses the
@@ -507,6 +515,7 @@ export const lakeIngestJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),
 })
+export const dropLakeTablesJobSchema = z.object({ resourceIds: z.array(z.uuid()).min(1) })
 /** `refresh` also rewrites abstracts another model, prompt or language wrote */
 export const summarizeAllJobSchema = z.object({ refresh: z.boolean().optional() })
 export const summarizePackageJobSchema = z.object({

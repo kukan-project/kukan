@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
-import { job, organization, resource, resourcePipeline } from '@kukan/db'
+import { job, organization, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { PostgresQueueAdapter } from '@kukan/queue-adapter'
 import { PURGE_ORG_JOB_TYPE } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -25,8 +25,10 @@ import {
   ensureTestUser,
   TEST_USER_ID,
 } from '../test-helpers/test-db'
+import { queuedLakeDrops } from '../test-helpers/lake-drops'
 
 const db = getTestDb()
+const queue = new PostgresQueueAdapter({ db })
 
 let orgId: string
 
@@ -57,6 +59,19 @@ async function addResource(packageId: string): Promise<string> {
     .returning()
   await db.insert(resourcePipeline).values({ resourceId: res.id })
   return res.id
+}
+
+/** A version of the resource that reached DuckLake, which names its table. */
+async function ingest(resourceId: string) {
+  await db.insert(resourceVersion).values({
+    resourceId,
+    version: 1,
+    storageKey: `resources/${resourceId}/v1`,
+    size: 1,
+    hash: 'sha256:v1',
+    origin: 'upload',
+    ducklakeSnapshotId: 1,
+  })
 }
 
 /** Take the resource, as a run in flight holds it. */
@@ -99,7 +114,7 @@ describe('PackageService.purge', () => {
     await service.delete(pkg.id)
     const { storage } = watchingStorage()
 
-    await expect(service.purge(pkg.id, { storage })).rejects.toThrow(/being processed/)
+    await expect(service.purge(pkg.id, { storage, queue })).rejects.toThrow(/being processed/)
     expect(storage.deleteByPrefix).not.toHaveBeenCalled()
 
     // Still there for the retry — a half-done purge is the failure mode.
@@ -116,11 +131,43 @@ describe('PackageService.purge', () => {
     await service.delete(pkg.id)
     const { storage, duringSweep } = watchingStorage()
 
-    const purged = await service.purge(pkg.id, { storage })
+    const purged = await service.purge(pkg.id, { storage, queue })
 
     expect(purged.id).toBe(pkg.id)
     expect(duringSweep).not.toHaveLength(0)
     expect(duringSweep.every((s) => s.pipelineRows === 0)).toBe(true)
+  })
+
+  it('leaves the DuckLake tables to the worker, queued with the rows', async () => {
+    const service = new PackageService(db)
+    const pkg = await service.create(createInput('pkg-lake'))
+    const inLake = await addResource(pkg.id)
+    await ingest(inLake)
+    await addResource(pkg.id)
+    await service.delete(pkg.id)
+
+    await service.purge(pkg.id, { storage: watchingStorage().storage, queue })
+
+    expect(await queuedLakeDrops()).toEqual([{ resourceIds: [inLake] }])
+  })
+
+  it('queues nothing when the purge is refused, or has no tables', async () => {
+    const service = new PackageService(db)
+    const held = await service.create(createInput('pkg-lake-held'))
+    const resourceId = await addResource(held.id)
+    await ingest(resourceId)
+    await hold(resourceId)
+    await service.delete(held.id)
+    const plain = await service.create(createInput('pkg-plain'))
+    await addResource(plain.id)
+    await service.delete(plain.id)
+
+    await expect(
+      service.purge(held.id, { storage: watchingStorage().storage, queue })
+    ).rejects.toThrow(/being processed/)
+    await service.purge(plain.id, { storage: watchingStorage().storage, queue })
+
+    expect(await queuedLakeDrops()).toEqual([])
   })
 })
 
@@ -131,7 +178,9 @@ describe('PackageService.purgeDraft', () => {
     await hold(await addResource(draft.id))
     const { storage } = watchingStorage()
 
-    await expect(service.purgeDraft(draft.id, { storage })).rejects.toThrow(/being processed/)
+    await expect(service.purgeDraft(draft.id, { storage, queue })).rejects.toThrow(
+      /being processed/
+    )
 
     expect(storage.deleteByPrefix).not.toHaveBeenCalled()
     // Left claimed for purge, which is how a re-run finishes it (ADR-039).
@@ -146,10 +195,21 @@ describe('PackageService.purgeDraft', () => {
     await addResource(draft.id)
     const { storage, duringSweep } = watchingStorage()
 
-    await service.purgeDraft(draft.id, { storage })
+    await service.purgeDraft(draft.id, { storage, queue })
 
     expect(duringSweep).not.toHaveLength(0)
     expect(duringSweep.every((s) => s.claimed)).toBe(true)
+  })
+
+  it('leaves the DuckLake tables to the worker, queued with the rows', async () => {
+    const service = new PackageService(db)
+    const draft = await service.createDraft({ ownerOrg: orgId }, TEST_USER_ID)
+    const resourceId = await addResource(draft.id)
+    await ingest(resourceId)
+
+    await service.purgeDraft(draft.id, { storage: watchingStorage().storage, queue })
+
+    expect(await queuedLakeDrops()).toEqual([{ resourceIds: [resourceId] }])
   })
 })
 
@@ -220,7 +280,7 @@ describe('a resource with no pipeline row', () => {
     await service.delete(pkg.id)
 
     await expect(
-      service.purge(pkg.id, { storage: watchingStorage().storage })
+      service.purge(pkg.id, { storage: watchingStorage().storage, queue })
     ).resolves.toBeTruthy()
   })
 })

@@ -25,6 +25,7 @@ import { formatDateTimeCompact } from '@/components/date-time'
 import {
   BACKFILL_VERSIONS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
+  DROP_LAKE_TABLES_JOB_TYPE,
   EMBED_JOB_TYPE,
   JOB_STATUSES,
   LAKE_INGEST_JOB_TYPE,
@@ -67,6 +68,7 @@ const JOB_SECTIONS: { key: string; types: string[] }[] = [
       SUMMARIZE_ALL_JOB_TYPE,
       SUMMARIZE_PACKAGE_JOB_TYPE,
       PURGE_VERSION_JOB_TYPE,
+      DROP_LAKE_TABLES_JOB_TYPE,
       PURGE_ORG_JOB_TYPE,
     ],
   },

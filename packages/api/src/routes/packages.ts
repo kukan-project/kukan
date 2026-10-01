@@ -41,7 +41,6 @@ import {
 import { markContentUnindexed } from '../services/content-index-record'
 import { hybridSearch } from '../services/hybrid-search'
 import { enqueueResourceEmbedsIfDue } from '../services/resource-embedding'
-import { lakeConfigFromEnv } from '@kukan/lake'
 import { MetadataSuggestService } from '../services/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
 import { getSuggestAvailability } from '../services/suggest/availability'
@@ -410,7 +409,7 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   if (existing.state === 'draft' || existing.state === 'purging') {
     const purged = await service.purgeDraft(
       existing.id,
-      { search: c.get('search'), storage: c.get('storage'), lake: lakeConfigFromEnv(c.get('env')) },
+      { search: c.get('search'), storage: c.get('storage'), queue: c.get('queue') },
       makePackageAuthorize(db, user, 'editor')
     )
     return c.json(purged)
@@ -496,10 +495,11 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   const service = new PackageService(db)
 
   // Rows, search docs and every external trace — raw files, previews, retained
-  // versions, DuckLake tables — all under the resources' claim (ADR-044).
+  // versions — all under the resources' claim (ADR-044). The DuckLake tables
+  // go in the worker, queued with the rows' deletion.
   const pkg = await service.purge(
     nameOrId,
-    { search: c.get('search'), storage: c.get('storage'), lake: lakeConfigFromEnv(c.get('env')) },
+    { search: c.get('search'), storage: c.get('storage'), queue: c.get('queue') },
     makePackageAuthorize(db, user, 'admin')
   )
   return c.json(pkg)

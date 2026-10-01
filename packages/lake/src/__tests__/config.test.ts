@@ -3,7 +3,8 @@ import { stat } from 'node:fs/promises'
 import type { Env } from '@kukan/shared'
 import { lakeConfigFromEnv } from '../config'
 import { useOwnTempDirectory } from '../spill'
-import { lakeTableName } from '../table'
+import { lakeTableName, lakeTableResourceIds } from '../table'
+import type { LakeSession } from '../connection'
 
 function envWith(overrides: Partial<Env>): Env {
   return {
@@ -25,11 +26,20 @@ describe('lakeTableName', () => {
       'res_429ff69d7b244a8fa0ec671bcceee31e'
     )
   })
+
+  it('is read back into the resource id, and nothing else is', async () => {
+    const id = '429ff69d-7b24-4a8f-a0ec-671bcceee31e'
+    const tables = [lakeTableName(id), 'res_short', 'orders']
+    const session = { rows: async () => tables.map((table_name) => ({ table_name })) }
+    expect(await lakeTableResourceIds(session as unknown as LakeSession)).toEqual([id])
+  })
 })
+
+const limits = { memoryLimitMb: 256, threads: 1, catalogConnections: 1 }
 
 describe('lakeConfigFromEnv', () => {
   it('builds a libpq keyword connection string for the catalog', () => {
-    const c = lakeConfigFromEnv(envWith({}))
+    const c = lakeConfigFromEnv(envWith({}), limits)
     // connect_timeout bounds ATTACH, which cannot be interrupted from Node.
     expect(c.pgConnString).toBe(
       'host=localhost port=5432 dbname=kukan user=kukan password=pw sslmode=disable connect_timeout=10'
@@ -38,7 +48,8 @@ describe('lakeConfigFromEnv', () => {
 
   it('splits a MinIO endpoint URL into host and ssl flag (path-style)', () => {
     const c = lakeConfigFromEnv(
-      envWith({ S3_ENDPOINT: 'http://localhost:9000', S3_ACCESS_KEY: 'k', S3_SECRET_KEY: 's' })
+      envWith({ S3_ENDPOINT: 'http://localhost:9000', S3_ACCESS_KEY: 'k', S3_SECRET_KEY: 's' }),
+      limits
     )
     expect(c.s3Endpoint).toBe('localhost:9000')
     expect(c.s3UseSsl).toBe(false)
@@ -46,13 +57,13 @@ describe('lakeConfigFromEnv', () => {
   })
 
   it('leaves the endpoint undefined for AWS S3 (no S3_ENDPOINT)', () => {
-    const c = lakeConfigFromEnv(envWith({}))
+    const c = lakeConfigFromEnv(envWith({}), limits)
     expect(c.s3Endpoint).toBeUndefined()
     expect(c.s3UseSsl).toBe(true)
   })
 
   it('reads https endpoints as ssl (default port omitted by URL.host)', () => {
-    const c = lakeConfigFromEnv(envWith({ S3_ENDPOINT: 'https://minio.example:443' }))
+    const c = lakeConfigFromEnv(envWith({ S3_ENDPOINT: 'https://minio.example:443' }), limits)
     expect(c.s3Endpoint).toBe('minio.example')
     expect(c.s3UseSsl).toBe(true)
   })

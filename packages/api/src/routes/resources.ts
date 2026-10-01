@@ -7,7 +7,7 @@ import { Hono } from 'hono'
 import { receiveMultipartFile } from '../streams/multipart-file'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
-import { lakeConfigFromEnv } from '@kukan/lake'
+import { webLakeConfig } from '../services/query/lake-scan'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
@@ -640,7 +640,7 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
   await checkResourcePermission(db, user, new ResourceService(db), id)
-  const service = new VersionDiffService(db, lakeConfigFromEnv(c.get('env')))
+  const service = new VersionDiffService(db, webLakeConfig(c.get('env')))
   // The request's own signal: a browser that hangs up (a page left, or dev's
   // double-fired fetch discarding its first attempt) must not keep scanning
   // both snapshots and holding the one DuckDB slot the live request needs.
@@ -970,7 +970,7 @@ resourcesRouter.post(
       // The caller's own abort, like a query and a diff: a picker that changes
       // re-fires this, and the abandoned scan must not hold the one slot the
       // live request needs.
-      { lake: lakeConfigFromEnv(c.get('env')), signal: c.req.raw.signal }
+      { lake: webLakeConfig(c.get('env')), signal: c.req.raw.signal }
     )
     return c.json({ id, ...result })
   }

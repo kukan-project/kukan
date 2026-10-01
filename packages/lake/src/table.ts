@@ -14,6 +14,24 @@ export function lakeTableName(resourceId: string): string {
   return `res_${resourceId.replace(/-/g, '')}`
 }
 
+const RESOURCE_TABLE = /^res_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/
+
+/** Every table the catalog holds. */
+async function lakeTableNames(session: LakeSession): Promise<string[]> {
+  const rows = await session.rows(
+    `SELECT table_name FROM duckdb_tables() WHERE database_name = 'lake'`
+  )
+  return rows.map((r) => String(r.table_name))
+}
+
+/** The resources whose tables the catalog holds, by the id each name encodes. */
+export async function lakeTableResourceIds(session: LakeSession): Promise<string[]> {
+  return (await lakeTableNames(session)).flatMap((table) => {
+    const parts = RESOURCE_TABLE.exec(table)
+    return parts ? [parts.slice(1).join('-')] : []
+  })
+}
+
 /** Catalog-qualified reference, with the identifier guard applied. */
 export function lakeTableRef(table: string): string {
   return `lake.${assertSafeIdentifier(table)}`
@@ -90,14 +108,17 @@ export async function resolvableSnapshots(
  */
 export async function dropResourceTables(config: LakeConfig, resourceIds: string[]): Promise<void> {
   if (resourceIds.length === 0) return
-  await withLakeSession(config, async (session) => {
-    const rows = await session.rows(
-      `SELECT table_name FROM duckdb_tables() WHERE database_name = 'lake'`
-    )
-    const present = new Set(rows.map((r) => String(r.table_name)))
-    for (const resourceId of resourceIds) {
-      const table = lakeTableName(resourceId)
-      if (present.has(table)) await dropLakeTable(session, table)
-    }
-  })
+  await withLakeSession(config, (session) => dropResourceTablesIn(session, resourceIds))
+}
+
+/** The same drops on a session the caller already has, to reclaim on it after. */
+export async function dropResourceTablesIn(
+  session: LakeSession,
+  resourceIds: string[]
+): Promise<void> {
+  const present = new Set(await lakeTableNames(session))
+  for (const resourceId of resourceIds) {
+    const table = lakeTableName(resourceId)
+    if (present.has(table)) await dropLakeTable(session, table)
+  }
 }
