@@ -7,8 +7,7 @@
  * have something to kill that is not the web server.
  */
 
-import { writeFileSync } from 'node:fs'
-import { setPriority } from 'node:os'
+import { becomeExpendable } from '../child/serve'
 import { runSandboxedQuery } from './duckdb-sandbox'
 import {
   FAILURE_CLASSES,
@@ -42,20 +41,8 @@ function reply(message: QueryReply): void {
   process.send!(message, () => process.exit(0))
 }
 
-// **The first thing, before DuckDB is loaded.** The container's OOM killer
-// picks the process with the highest score, and without this the web server,
-// being the larger, would be it. Raising one's own score needs no privilege;
-// lowering it would.
-try {
-  writeFileSync('/proc/self/oom_score_adj', '1000')
-} catch {
-  // Not Linux: a development machine, where there is no container to protect
-}
-try {
-  setPriority(NICENESS)
-} catch {
-  // Refused only where priorities are not ours to set; the query runs as it is
-}
+// The first thing, before DuckDB is loaded
+becomeExpendable(NICENESS)
 
 process.once('message', (request: QueryRequest) => {
   runSandboxedQuery(request.location, request.sql, request.limits).then(

@@ -4,7 +4,6 @@ import { readFile, stat, unlink } from 'node:fs/promises'
 import { RequestAbandonedError, RequestTimeoutError, ValidationError } from '@kukan/shared'
 import { writeParquet } from '../../test-helpers/parquet'
 import type { SandboxLimits } from '../../../services/query/duckdb-sandbox'
-import { QUERY_WEB_HEADROOM_MB } from '../../../config'
 
 // The processes the module under test starts, so a test can reach one the way
 // the kernel would
@@ -21,8 +20,8 @@ vi.mock('node:child_process', async (importOriginal) => {
   }
 })
 
-const { runQueryInProcess, childEnvironment, overBudget } =
-  await import('../../../services/query/query-process')
+const { runQueryInProcess, QUERY_CHILD_ENV } = await import('../../../services/query/query-process')
+const { childEnvironment } = await import('../../../services/child/host')
 
 const LIMITS: SandboxLimits = {
   maxRows: 10,
@@ -173,7 +172,8 @@ describe('childEnvironment', () => {
         BETTER_AUTH_SECRET: 'auth',
         HTTP_PROXY: 'http://user:pass@proxy:8080',
       },
-      '/tmp/kukan-query-proc-x'
+      '/tmp/kukan-query-proc-x',
+      QUERY_CHILD_ENV
     )
     expect(env).toEqual({
       PATH: '/usr/bin',
@@ -181,18 +181,5 @@ describe('childEnvironment', () => {
       DUCKDB_EXTENSION_DIRECTORY: '/app/duckdb-extensions',
       TMPDIR: '/tmp/kukan-query-proc-x',
     })
-  })
-})
-
-describe('overBudget', () => {
-  it('stops a query past its own budget, wherever it runs', () => {
-    expect(overBudget(600, null, 588, 16_384)).toBe(true)
-    expect(overBudget(500, null, 588, 16_384)).toBe(false)
-  })
-
-  it('stops a query once the container nears its limit, whatever the query holds', () => {
-    // A 512 MB task: the web server and the query together, as the OOM killer counts them
-    expect(overBudget(250, 512 - QUERY_WEB_HEADROOM_MB + 1, 588, 512)).toBe(true)
-    expect(overBudget(250, 512 - QUERY_WEB_HEADROOM_MB - 1, 588, 512)).toBe(false)
   })
 })

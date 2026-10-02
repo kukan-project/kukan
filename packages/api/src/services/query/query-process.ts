@@ -1,21 +1,15 @@
 /**
  * Run a resource query in a process of its own (ADR-032 remaining issue 2).
  *
- * **What this buys is the unit of failure, not memory.** DuckDB is a native
- * addon: run in the web server's process, a query that reaches the container's
- * limit has the OOM killer take the web server with it, and every page and API
- * route goes down until the task is replaced. Here the query's process is the
- * one that goes — killed by the parent once its RSS passes a budget, or picked
- * first by the kernel (`query-child.ts` raises its own OOM score) — and the
+ * DuckDB is a native addon: run in the web server's process, a query that
+ * reaches the container's limit has the OOM killer take the web server with
+ * it, and every page and API route goes down until the task is replaced. Here
+ * the query's process is the one that goes (`../child/host.ts`), and the
  * caller gets a refusal instead.
- *
- * The budget is an approximation: RSS is read at an interval, and nothing short
- * of a cgroup (a sidecar container) enforces a limit exactly. The kernel's
- * choice is what covers the interval.
  */
 
 import { fork, type ChildProcess } from 'node:child_process'
-import { readFile, mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +19,7 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from '@kukan/shared'
-import { containerAnonMb, processMemory } from '../../process-memory'
+import { childEnvironment, watchMemory, type ChildCommand } from '../child/host'
 import {
   QUERY_KILL_GRACE_MS,
   QUERY_PROCESS_RSS_MB,
@@ -40,12 +34,6 @@ import {
   type QueryReply,
   type QueryRequest,
 } from './query-protocol'
-
-interface ChildCommand {
-  entry: string
-  execArgv: string[]
-  cwd?: string
-}
 
 let childCommand: ChildCommand | undefined
 
@@ -80,20 +68,12 @@ function resolveChild(): ChildCommand {
 }
 
 /**
- * The environment a query's process gets: what loading DuckDB needs, and no
- * more.
- *
- * **An allowlist, because the web server's environment is full of secrets** —
- * the database password, the auth secret, and on ECS the path that hands out
- * the task role's credentials. The query reads its preview through a signed
- * URL, which carries its own authorization, so none of them has a use here.
+ * What a query's process gets of the web server's environment: what loading
+ * DuckDB needs, and no more. The query reads its preview through a signed URL,
+ * which carries its own authorization. Exported for the test that pins what
+ * crosses.
  */
-const INHERITED_ENV = [
-  'PATH',
-  'HOME',
-  'LANG',
-  'TZ',
-  'NODE_ENV',
+export const QUERY_CHILD_ENV = [
   // Where the image puts libduckdb.so and the extensions fetched at build time
   'LD_LIBRARY_PATH',
   'DUCKDB_EXTENSION_DIRECTORY',
@@ -101,54 +81,6 @@ const INHERITED_ENV = [
   'SSL_CERT_FILE',
   'SSL_CERT_DIR',
 ] as const
-
-/** Exported for the test that pins what crosses. */
-export function childEnvironment(env: NodeJS.ProcessEnv, tmp: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const key of INHERITED_ENV) {
-    const value = env[key]
-    if (value !== undefined) out[key] = value
-  }
-  // The spill directory is made under this, and the parent removes it: a
-  // process killed mid-spill cannot clean up after itself.
-  out.TMPDIR = tmp
-  return out
-}
-
-/** Read once: the limit does not change under a running process. */
-const container = processMemory()
-
-/**
- * Whether the query's process has to go. Exported for its test.
- *
- * **Two bounds, and on a small task it is the container's that applies.** The
- * query's own budget is what one query may cost where there is room for it.
- * The container's is what keeps the web server alive: its anonymous memory,
- * the web server's included, is what the OOM killer counts, so the query goes
- * while there is still headroom. Measured against the query's RSS instead,
- * the shared library's pages counted twice and a 512 MB task refused sorts it
- * had run in process without trouble.
- */
-export function overBudget(
-  childMb: number | null,
-  containerAnonMb: number | null,
-  budgetMb: number,
-  containerLimitMb: number
-): boolean {
-  if (childMb !== null && childMb > budgetMb) return true
-  return containerAnonMb !== null && containerAnonMb > containerLimitMb - QUERY_WEB_HEADROOM_MB
-}
-
-async function residentMb(pid: number): Promise<number | null> {
-  try {
-    const status = await readFile(`/proc/${pid}/status`, 'utf8')
-    const kb = /^VmRSS:\s+(\d+) kB$/m.exec(status)
-    return kb ? Number(kb[1]) / 1024 : null
-  } catch {
-    // Gone already, or not Linux — the kernel's choice is all there is then
-    return null
-  }
-}
 
 function rebuild(kind: QueryFailureKind, message: string): Error {
   return kind === 'internal' ? new Error(message) : new FAILURE_CLASSES[kind](message)
@@ -179,7 +111,7 @@ export async function runQueryInProcess(
   let closed: Promise<NodeJS.Signals | number | null> | undefined
   // Why the parent killed it, if it did; a SIGKILL without one is the kernel's
   let killedFor: Error | undefined
-  let poll: NodeJS.Timeout | undefined
+  let stopWatch: (() => void) | undefined
   let deadline: NodeJS.Timeout | undefined
   let onAbort: (() => void) | undefined
   let answered = false
@@ -193,7 +125,7 @@ export async function runQueryInProcess(
     // cannot resolve it; the child is never part of the bundle
     child = fork(/* turbopackIgnore: true */ childCommand.entry, [], {
       // Next declares NODE_ENV required on ProcessEnv; nothing in the child reads it
-      env: childEnvironment(process.env, tmp) as NodeJS.ProcessEnv,
+      env: childEnvironment(process.env, tmp, QUERY_CHILD_ENV) as NodeJS.ProcessEnv,
       execArgv: childCommand.execArgv,
       cwd: childCommand.cwd,
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -213,18 +145,12 @@ export async function runQueryInProcess(
       () => kill(new RequestTimeoutError(timeoutMessage(limits.timeoutMs))),
       limits.timeoutMs + QUERY_KILL_GRACE_MS
     )
-    let reading = false
-    poll = setInterval(() => {
-      // One read at a time: a busy threadpool would otherwise queue them up
-      if (reading || proc.pid === undefined) return
-      reading = true
-      void Promise.all([residentMb(proc.pid), containerAnonMb(container.source)]).then(
-        ([childMb, anonMb]) => {
-          reading = false
-          if (overBudget(childMb, anonMb, rssBudgetMb, container.memoryMb)) kill(tooLarge())
-        }
-      )
-    }, QUERY_RSS_POLL_MS)
+    stopWatch = watchMemory(proc, {
+      budgetMb: rssBudgetMb,
+      headroomMb: QUERY_WEB_HEADROOM_MB,
+      pollMs: QUERY_RSS_POLL_MS,
+      onOver: () => kill(tooLarge()),
+    })
 
     const outcome = await new Promise<QueryReply | { exit: NodeJS.Signals | number | null }>(
       (resolve, reject) => {
@@ -253,7 +179,7 @@ export async function runQueryInProcess(
     if (!outcome.ok) throw rebuild(outcome.kind, outcome.message)
     return outcome.result
   } finally {
-    clearInterval(poll)
+    stopWatch?.()
     clearTimeout(deadline)
     if (onAbort) signal?.removeEventListener('abort', onAbort)
     // One that answered exits by itself; one that never started has no close to wait for
