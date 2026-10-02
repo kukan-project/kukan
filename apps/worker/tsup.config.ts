@@ -5,7 +5,10 @@ export default defineConfig({
   // image carries `dist` and production dependencies only, so a script there
   // would have neither a copy in the container nor a `tsx` to run it (ADR-045
   // open issue 1). It is the container that can reach the real bucket.
-  entry: ['src/index.ts', 'src/reconcile-orphans.ts'],
+  //
+  // The heavy process is a third (ADR-059), at `dist/heavy/child.js` where the
+  // worker looks for it.
+  entry: ['src/index.ts', 'src/reconcile-orphans.ts', 'src/heavy/child.ts'],
   format: ['esm'],
   target: 'node24',
   platform: 'node',

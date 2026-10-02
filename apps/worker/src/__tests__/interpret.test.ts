@@ -11,6 +11,13 @@ import {
   createPipelineContextMock,
   type UploadCapture,
 } from './test-helpers/pipeline-context'
+import { HeavyTooLargeError, runHeavy } from '@/heavy'
+
+// The real heavy process, unless a test says how the request ends
+vi.mock('@/heavy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/heavy')>()
+  return { ...actual, runHeavy: vi.fn(actual.runHeavy) }
+})
 
 /**
  * Preview keys carry a per-run UUID (ADR-043 layer 2: the object a reader
@@ -462,6 +469,28 @@ describe('executeInterpret', () => {
       previewKey: null,
       schema: { rowCount: 0, columns: [] },
       reason: 'too-many-columns',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('records a CSV whose interpretation ran out of memory without leaving it outstanding', async () => {
+    // The heavy process went with it (ADR-059): left with no schema, the hourly
+    // sweep would hand it to the process every hour to go the same way
+    vi.mocked(runHeavy).mockRejectedValueOnce(new HeavyTooLargeError())
+    mockStorageDownload('a,b\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-oom',
+      'pkg-1',
+      version('resources/pkg-1/res-oom'),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toMatchObject({
+      previewKey: null,
+      schema: { rowCount: 0, columns: [] },
+      reason: 'out-of-memory',
     })
     expect(ctx.putObject).not.toHaveBeenCalled()
   })

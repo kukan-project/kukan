@@ -192,4 +192,10 @@ export interface PipelineContext {
    * without a DuckLake config.
    */
   ingestLakeVersion(opts: LakeIngestRow): Promise<IngestResult | null>
+  /**
+   * Throw `RunCancelledError` if the run no longer holds its resource. Set by
+   * `heldContext`; what work too long to check only at its writes polls
+   * (the heavy process, ADR-059).
+   */
+  assertHeld?(): Promise<void>
 }

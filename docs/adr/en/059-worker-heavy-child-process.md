@@ -2,11 +2,11 @@
 
 ## Status
 
-**Proposed** — 2026-10-01
+**Accepted** — 2026-10-01, implemented 2026-10-02
 
 This extends the child process that ADR-032 remaining issue 2 adopted for the web's resource queries
-(option C) to the worker's heavy processing. The heavy section of ADR-058 §7 (`heavySection`)
-becomes a request to this child.
+(option C) to the worker's heavy processing. What runs in the heavy section of ADR-058 §7
+(`heavySection`) becomes a request to this child, and the layer 2 ingest that stays in process.
 
 ## Context
 
@@ -107,20 +107,45 @@ The worker keeps one child process for heavy processing and reuses it while it r
 
 ### 2. A child that goes down fails that one item
 
-The child handles one item at a time, so when it goes down, that item is the cause. The step is
-recorded as "too large to interpret" and the run ends (the task stays up and the retry does not
-repeat it). The next request starts the child again.
+The child handles one item at a time, so when it goes down, that item is the cause. The item is
+recorded as "too large to process", and the run carries on as it does after any other failure (the
+task stays up and the retry does not repeat it). The next request starts the child again.
+
+- The child's memory is measured as anonymous memory (`RssAnon`). RSS also counts the pages of
+  mapped files — Node itself and the DuckDB library, about 90 MB — which the container is charged
+  for once, and would come out of the child's budget
+- A reused child that passes its budget or is killed by the kernel is replaced and the request run
+  once more in a fresh one: what it kept from earlier requests counts against the budget too, and
+  only a fresh child's going can be put on the request
+- "Too large" is limited to the child passing its own budget, being killed by the kernel
+  (SIGKILL), or running out of heap (SIGABRT). A stop because the container as a whole neared its
+  limit is a transient failure and is not recorded on the version, since the parent's other jobs can
+  be the cause. The child's budget fits inside the container's limit less the parent's share, so a
+  file too large meets the child's own budget first
+- Interpretation: the version records `out-of-memory` as why it has no table. Unrecorded, the hourly
+  sweep would hand out the same version and take the child down every time. It is kept apart from the
+  size cap's `too-large` (never stored, derived from the cap each time): this one is a fact about the
+  size of the task it ran on, so a site that moves to larger tasks can find the versions to read again
+- Text extraction: recorded as the Index step failing. What was indexed before stays as it was
 
 ### 3. When the child is stopped or restarted
 
-| When                                                                 | What                                                                 |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Mid-request, the child's RSS or the container's memory passes budget | Stop the child and fail that item (the ADR-032 watch)                |
-| After an item, the child's RSS is past a set value                   | Stop the child; the next request starts it (so its heap cannot grow) |
-| No request for a while after the last (about a minute)               | Stop the child and give back what it loaded (~70–100 MB)             |
-| Mid-request, the run loses its claim                                 | Stop the child (the parent checks the claim with the RSS meanwhile)  |
-| The parent receives SIGTERM                                          | Stop the child too                                                   |
-| The parent dies outright                                             | The child sees the IPC channel close and exits on its own            |
+| When                                                            | What                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mid-request, the child's anonymous memory passes its budget     | Stop the child. A reused one is replaced and the request run once more; a fresh one over it means "too large"                                                                                                                                                      |
+| Mid-request, the container's memory nears its limit             | Stop the child, have the parent close the layer 2 instances no session is using, and run the request once more in a fresh child. Still short, it is a transient failure: not recorded on the version, and the job fails for the queue to run again after its delay |
+| After an item, the child's anonymous memory is past a set value | Stop the child; the next request starts it (so what it kept is not carried on)                                                                                                                                                                                     |
+| No request for a while after the last (about a minute)          | Stop the child and give back what it loaded (~70–100 MB)                                                                                                                                                                                                           |
+| Mid-request, the run loses its claim                            | Stop the child (the parent checks the claim with the memory meanwhile)                                                                                                                                                                                             |
+| A waiting child has gone (the kernel's OOM kill, say)           | The next request starts a fresh one (not a failure of that request)                                                                                                                                                                                                |
+| The parent receives SIGTERM                                     | Stop the child as soon as the queue takes no more jobs, and refuse later requests. The item under way records nothing; the queue hands its job back uncounted for another task                                                                                     |
+| The parent dies outright                                        | The child sees the IPC channel close and exits on its own                                                                                                                                                                                                          |
+
+The child runs at the parent's priority (not lowered as the web's queries are): requests go one at
+a time, so one slowed is every job behind it slowed.
+
+Each start, stop, rerun and release of layer 2 instances is logged with why
+(`component: heavy-process` in the worker's log). That log is what the values are tuned by.
 
 ### 4. The child's environment
 
@@ -146,16 +171,63 @@ factored out so the web's queries (a child per query) and the worker (a reused c
   added is the JSON exchange)
 - Extraction and interpretation results do not change (the same code runs in the child)
 
+## Measured (2026-10-02)
+
+In a container with small's 1 GB and 0.25 vCPU, the development environment's 509 resources (303
+CSV, 75 XLSX, 61 PDF and others) were reprocessed from their stored content. Anonymous memory is the
+cgroup's (`anon` in `memory.stat`), read every 2 seconds.
+
+**Without layer 2 ingest**
+
+|                                 | Before (in process)  | After                |
+| ------------------------------- | -------------------- | -------------------- |
+| All resources                   | 872 s                | 1,116 s              |
+| Anonymous memory (median / max) | 896 (mean) / 992 MiB | 375 (mean) / 749 MiB |
+| Time above 900 MiB              | 61%                  | 0%                   |
+| Results                         | —                    | Same as before       |
+
+**With layer 2 ingest (each resource's latest version, 273, loaded again)**
+
+|                                      | Before (in process)                                | After                    |
+| ------------------------------------ | -------------------------------------------------- | ------------------------ |
+| Worker                               | OOM-killed at 1,126 s; 231 resources never reached | Ran to the end (2,250 s) |
+| Layer 2 loads                        | 146 / 273                                          | 273 / 273                |
+| Anonymous memory (median / max)      | 978 / 1,006 MiB                                    | 642 / 959 MiB            |
+| Time above 900 MiB                   | 70%                                                | 1%                       |
+| Transient failures (container short) | —                                                  | 1 (text extraction)      |
+
+The log of the run after, with layer 2: 35 child starts (27 of them restarts after an item, with 402–
+449 MB kept in 24 and 539–625 MB in 3), 7 stops for the container being short, 6 of them rerun
+successfully after closing a layer 2 instance, 0 "too large", 0 kernel OOM kills.
+
+- Before, even without layer 2 the worker spent 60% of the time just under the limit, and with it
+  the full reprocess went down partway
+- After, it takes longer (+28% without layer 2). At 0.25 vCPU the CPU is used up (`throttled_usec` in
+  `cpu.stat` is about 8 times the usage), so child starts (1.2–1.8 s each) and rebuilt layer 2
+  instances show in the time as they are. The rest of the increase has not been broken down
+- A child keeps what its largest request took and does not grow on smaller ones (377 MB after a
+  50 MB CSV, unchanged by 1–5 MB CSVs after it)
+- With a layer 2 instance kept open, the parent's RSS goes from a mean of 268 MiB without layer 2 to
+  558–635 MiB. The instance keeps memory even with `enable_external_file_cache = false`
+
 ## Remaining issues
 
-1. **Budget values**: the child's RSS budget, the RSS past which it restarts after an item, and how
-   long it stays idle before stopping. Set by measuring the parent's (~250 MB) and the child's share
-   of small's 1 GB
-2. **How PDFs are read**: when moving to the child, decide between pdf.js in the child and calling
+1. **Budget values**: the implementation went in with these (`apps/worker/src/config.ts`). The
+   child's budget is the smaller of 946 MB, from the interpretation's DuckDB cap by the same rule as
+   the web's queries, and the container's limit less 300 MB for the parent (724 MB on a 1 GB task,
+   in anonymous memory). 64 MB kept free in the container, a restart past 400 MB (anonymous), and a
+   stop after 60 seconds idle. Most restarts come at 402–449 MB, so about 450 MB would cut them to a
+   tenth (about 1.5 s each) at the cost of what a waiting child holds against the layer 2 ingest. To
+   be decided from the production log
+2. **What a layer 2 instance keeps**: a way to have it give memory back without closing would lower
+   the parent's share without the rebuild (extension loads and the ATTACH)
+3. **What the rest of the time goes to**: what child starts and instance rebuilds do not account
+   for (fresh children's cold JIT, the memory reads during a request, and so on)
+4. **How PDFs are read**: when moving to the child, decide between pdf.js in the child and calling
    Poppler's `pdftotext`, by measuring memory, time and extraction quality on the same PDFs
    (`pdftotext` changes how line breaks and spaces come out, so existing indexes would be
    reprocessed to match)
-3. **ZIP manifests**: pure computation that could move to the child, but its weight has not been a
+5. **ZIP manifests**: pure computation that could move to the child, but its weight has not been a
    problem
 
 ## Related ADRs

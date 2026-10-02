@@ -19,6 +19,7 @@ import {
   ResourceVersionService,
 } from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
+import { interruptsRun } from '../heavy/process'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
@@ -73,6 +74,10 @@ export async function retryLakeIngest(
     }
     return result
   }).catch(async (err: unknown) => {
+    // Not a failure of this version: the job fails, and the queue runs it again
+    // — at once elsewhere for a stop, after its delay for a container that was
+    // short
+    if (interruptsRun(err)) throw err
     // Counted on the version and let go, not rethrown: thrown, the job waits
     // out its retry delay and fails the same way, and the sweep reissues it
     // next hour regardless. The count is what gives up

@@ -82,6 +82,20 @@ describe('createSpillRegistry', () => {
     expect(release).toHaveBeenCalledOnce()
   })
 
+  it('counts the sessions open on an instance, which is what says it is idle', () => {
+    const k = key()
+    const spills = createSpillRegistry<object>()
+    spills.track(k, async () => {})
+    expect(spills.sessions(k)).toBe(0)
+    spills.open(k)
+    spills.open(k)
+    expect(spills.sessions(k)).toBe(2)
+    void spills.close(k)
+    expect(spills.sessions(k)).toBe(1)
+    // Unknown, or released and gone: nothing holds it
+    expect(spills.sessions(key())).toBe(0)
+  })
+
   it('removes it at once when nothing ever held it', () => {
     // Setup that failed partway: no session was opened on the instance.
     const release = vi.fn(async () => {})

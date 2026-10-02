@@ -6,6 +6,19 @@
 import type { Database, Transaction } from '@kukan/db'
 import type { JobPriority, JobStatus } from '@kukan/shared'
 
+/**
+ * Thrown by a handler whose work the worker's stop cut short. The job is
+ * handed back uncounted for another worker to run now: nothing is wrong with
+ * it, and counted, a stop on its last attempt would leave it dead. Any other
+ * failure, at a stop or not, is counted and waits out the retry delay.
+ */
+export class JobInterruptedError extends Error {
+  constructor(message = 'The job was cut short by the worker stopping') {
+    super(message)
+    this.name = 'JobInterruptedError'
+  }
+}
+
 export interface Job<T = unknown> {
   id: string
   type: string

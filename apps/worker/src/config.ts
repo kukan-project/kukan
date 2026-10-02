@@ -2,6 +2,8 @@
  * KUKAN Worker — Configuration constants
  */
 
+import { QUERY_PROCESS_BASE_MB, duckdbSlotRssMb } from '@kukan/api/config'
+
 /** Maximum file size for external URL fetches (100 MB) */
 export const MAX_FETCH_SIZE = 100 * 1024 * 1024
 
@@ -95,6 +97,59 @@ export const CSV_FOOTER_SCAN_ROWS = 100
  */
 export const INTERPRET_MEMORY_LIMIT_MB = 512
 export const INTERPRET_THREADS = 2
+
+/**
+ * The anonymous memory at which the parent kills the heavy process mid-request
+ * (ADR-059) where the container has room for it: an interpretation's DuckDB at
+ * its cap, by the rule the web's resource queries measured in RSS, on top of
+ * their process's base — an upper bound, since RSS also counts the mapped
+ * files. Borrowed: the heavy process also loads the document parsers, and its
+ * own base is not measured yet (ADR-059 remaining issue 1).
+ */
+export const HEAVY_PROCESS_MB = duckdbSlotRssMb(INTERPRET_MEMORY_LIMIT_MB) + QUERY_PROCESS_BASE_MB
+
+/**
+ * What the heavy process leaves the worker of the container: the worker
+ * measured at about 250 MB (ADR-059), and room for its other jobs. The process's
+ * budget is the smaller of {@link HEAVY_PROCESS_MB} and the rest, so on a
+ * small task its own bound, which holds the request to blame, is the one it
+ * meets — not the container's, which the worker's jobs share in.
+ */
+export const HEAVY_PARENT_RESERVE_MB = 300
+
+/**
+ * How close to its limit, in anonymous memory, the container may get while the
+ * heavy process works before it is killed. Twice the web's: the worker goes on
+ * fetching and indexing for its other jobs between two reads.
+ */
+export const HEAVY_HEADROOM_MB = 64
+
+/** How often the parent reads the heavy process's memory during a request (ms). */
+export const HEAVY_POLL_MS = 100
+
+/**
+ * The anonymous memory past which the heavy process is stopped once a request
+ * is done, and started afresh for the next. A process keeps what its largest
+ * request took — measured, 377 MB after a 50 MB CSV, unchanged by the smaller
+ * ones after it — and reuses it rather than adding to it, so this bounds what
+ * an idle process holds, not what the next request costs. A restart costs 1.2–
+ * 1.8 s on 0.25 vCPU, loading included, which is what makes this not lower.
+ */
+export const HEAVY_RESTART_MB = 400
+
+/**
+ * How long the heavy process waits for a request before it is stopped, giving
+ * back what loading it took (ADR-059 §3). Long enough that a run of resources
+ * shares one process.
+ */
+export const HEAVY_IDLE_MS = 60_000
+
+/**
+ * How often the parent checks, while the heavy process works, that the run it
+ * works for still holds its resource (ADR-044): a run that has lost it has no
+ * use for the answer.
+ */
+export const HEAVY_CLAIM_POLL_MS = 5_000
 
 /**
  * How many columns one per-column statistics query covers (ADR-046).

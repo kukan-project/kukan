@@ -373,7 +373,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 | `purgeFallsBackTo` | この版をパージしたとき配信が戻る版。`isLive` の版だけに入ります（他の版のパージでは配信が動かないため）                           |
 | `format`           | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません                                                        |
 | `schema`           | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                                                                            |
-| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large` / `ragged-rows`）                                           |
+| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large` / `out-of-memory` / `ragged-rows`）                         |
 | `keyColumns`       | その版の行を同定した主キー列。主キーなしで読まれた版は `null`。リソースの現在の設定は「**次の**版が何で読まれるか」なので別物です |
 
 完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` / `keyColumns` は

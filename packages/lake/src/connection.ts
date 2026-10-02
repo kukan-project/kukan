@@ -293,6 +293,31 @@ export async function closeLakeInstances(): Promise<void> {
 }
 
 /**
+ * Close the prepared instances no session is using, and say how many, for a
+ * process that needs the memory for something else (the worker's heavy
+ * process, ADR-059). The cache the external file cache setting turns off is
+ * not all an instance keeps: measured in a worker loading layer 2, the process
+ * stayed some 370 MB above where it sat without it between loads. The next
+ * session prepares an instance afresh — the extension loads and the ATTACH, a
+ * second or so.
+ *
+ * A session that takes the instance in the same turn as this closes it finds it
+ * closed, which reads as a lost instance (`isInstanceLost`): its caller reruns
+ * it, as after any other loss.
+ */
+export async function releaseIdleLakeInstances(): Promise<number> {
+  let released = 0
+  for (const [key, pending] of [...instances]) {
+    const instance = await pending.catch(() => undefined)
+    if (!instance || instances.get(key) !== pending || spills.sessions(instance) > 0) continue
+    instances.delete(key)
+    await retire(instance)
+    released++
+  }
+  return released
+}
+
+/**
  * Open a session, run `fn`, and close it whatever happens. A leaked session
  * holds a connection on the shared instance, so every caller needs this — use
  * it unless you need the session object itself (the diff races setup against a

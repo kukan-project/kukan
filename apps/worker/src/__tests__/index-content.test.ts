@@ -9,6 +9,7 @@ import {
 import type { ContentDoc } from '@kukan/search-adapter'
 import { xlsxBuffer } from './test-helpers/xlsx'
 import { OfficeParser } from 'officeparser'
+import type { HeavyRequest } from '../heavy/protocol'
 
 const mockToText = vi.fn().mockReturnValue('Extracted document text\nPage 2 content')
 const mockTo = vi.fn().mockImplementation(async () => ({ value: mockToText() }))
@@ -18,6 +19,16 @@ vi.mock('officeparser', () => ({
     parseOffice: vi.fn().mockImplementation(() => Promise.resolve({ to: mockTo })),
   },
 }))
+
+// Answered in this process, where the mock above reaches the parser; the heavy
+// process itself is tested on its own
+vi.mock('@/heavy', async () => {
+  const { heavySection } = await import('@/heavy-section')
+  const { answer } = await import('../heavy/answer')
+  return {
+    runHeavy: (request: HeavyRequest) => heavySection(() => answer(request)),
+  }
+})
 
 function bufferToStream(buf: Buffer): Readable {
   return Readable.from(buf)

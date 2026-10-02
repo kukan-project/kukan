@@ -390,7 +390,7 @@ is added while the content stays the same.
 | `purgeFallsBackTo` | Where serving would land if this version were purged. Set only when `isLive` — purging any other version does not move serving                                                                           |
 | `format`           | The format this version settled as. Relabeling the resource does not change it                                                                                                                           |
 | `schema`           | The version's column schema (tabular only), frozen per version                                                                                                                                           |
-| `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large` / `ragged-rows`)                                                                                                              |
+| `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large` / `out-of-memory` / `ragged-rows`)                                                                                            |
 | `keyColumns`       | The primary key this version's rows were identified by, `null` for a version read without one. The resource's current setting is a different question — it is what the _next_ version will be read under |
 
 A purged version stays in the list as a record, but `size` / `hash` / `schema` / `keyColumns`

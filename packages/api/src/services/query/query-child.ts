@@ -7,11 +7,10 @@
  * have something to kill that is not the web server.
  */
 
-import { becomeExpendable } from '../child/serve'
+import { becomeExpendable, serve } from '../child/serve'
 import { runSandboxedQuery } from './duckdb-sandbox'
 import {
   FAILURE_CLASSES,
-  type ChildMessage,
   type QueryFailureKind,
   type QueryReply,
   type QueryRequest,
@@ -36,25 +35,20 @@ function kindOf(err: unknown): QueryFailureKind {
   return 'internal'
 }
 
-function reply(message: QueryReply): void {
-  // Exit only once the reply is on its way: exiting first can drop it.
-  process.send!(message, () => process.exit(0))
-}
-
 // The first thing, before DuckDB is loaded
 becomeExpendable(NICENESS)
 
-process.once('message', (request: QueryRequest) => {
-  runSandboxedQuery(request.location, request.sql, request.limits).then(
-    (result) => reply({ ok: true, result }),
-    (err: unknown) =>
-      reply({
+serve<QueryRequest>(
+  (request) =>
+    runSandboxedQuery(request.location, request.sql, request.limits).then(
+      (result): QueryReply => ({ ok: true, result }),
+      (err: unknown): QueryReply => ({
         ok: false,
         kind: kindOf(err),
         // An internal error's message is what the in-process sandbox would have
         // thrown; the preview URL is already out of it (`materialize`).
         message: err instanceof Error ? err.message : String(err),
       })
-  )
-})
-process.send!({ ready: true } satisfies ChildMessage)
+    ),
+  { once: true }
+)

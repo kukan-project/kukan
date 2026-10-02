@@ -234,8 +234,14 @@ export interface OdataKey {
  * `refusedMoreThanNotes` is where that is argued and tuned; here it is enough
  * that {@link droppedRows} and {@link droppedLines} are how the guess reaches a
  * reader rather than being kept.
+ *
+ * `out-of-memory` is the interpretation having been tried and having outgrown
+ * the memory the worker's heavy process had (ADR-059) — a fact about the task
+ * it ran on, where `too-large` is one about the size cap. Kept apart so that a
+ * site that moves to larger tasks can find the versions worth reading again.
  */
-export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large' | 'ragged-rows'
+export type NoTableReason =
+  'no-columns' | 'too-many-columns' | 'too-large' | 'out-of-memory' | 'ragged-rows'
 
 /**
  * Why a version was not loaded into layer 2, when the key is what stopped it

@@ -43,6 +43,7 @@ export function heldContext(
 
   return {
     ...ctx,
+    assertHeld,
     async publishContent(id, content) {
       // The claim travels with the content rather than being asked about
       // first: this one write can carry the condition into its own statement,

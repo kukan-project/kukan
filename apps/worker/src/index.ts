@@ -95,6 +95,7 @@ import { embedDueResources } from './embed/embed-resources'
 import { setUserAgent } from './safe-fetch'
 import { buildUserAgent } from './user-agent'
 import { WAITING_METRIC_INTERVAL_MS, waitingMetricLine } from './queue/waiting-metric'
+import { stopHeavyProcess } from './heavy'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -684,7 +685,11 @@ const shutdown = async () => {
   clearTimeout(startSweep)
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   if (waitingMetricTimer) clearInterval(waitingMetricTimer)
-  await queue.stop()
+  // Before waiting for the jobs: one in the heavy process would otherwise hold
+  // the stop past the task's grace period. Its job fails and runs elsewhere
+  const draining = queue.stop()
+  await stopHeavyProcess()
+  await draining
   // Before the pool: each holds a libpq connection of its own, opened by the
   // catalog ATTACH and invisible to Drizzle's accounting (ADR-043).
   await closeLakeInstances()

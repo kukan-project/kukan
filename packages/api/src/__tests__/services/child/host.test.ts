@@ -6,14 +6,14 @@ import { overBudget } from '../../../services/child/host'
 
 describe('overBudget', () => {
   it('stops a child past its own budget, wherever it runs', () => {
-    expect(overBudget(600, null, 588, 16_384, 32)).toBe(true)
-    expect(overBudget(500, null, 588, 16_384, 32)).toBe(false)
+    expect(overBudget(600, null, 588, 16_384, 32)).toBe('child')
+    expect(overBudget(500, null, 588, 16_384, 32)).toBeNull()
   })
 
   it('stops a child once the container nears its limit, whatever the child holds', () => {
     // A 512 MB task: the parent and the child together, as the OOM killer counts them
-    expect(overBudget(250, 512 - 32 + 1, 588, 512, 32)).toBe(true)
-    expect(overBudget(250, 512 - 32 - 1, 588, 512, 32)).toBe(false)
+    expect(overBudget(250, 512 - 32 + 1, 588, 512, 32)).toBe('container')
+    expect(overBudget(250, 512 - 32 - 1, 588, 512, 32)).toBeNull()
   })
 })
 

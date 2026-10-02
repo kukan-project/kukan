@@ -8,8 +8,10 @@
  * which a 1 GB task caps at 560 MB. Everything else a job does — fetching,
  * writing to the index, asking the AI — goes on beside it.
  *
- * The one boundary for such work: where it would move to a child process, or
- * be weighed against a memory budget rather than counted.
+ * What runs in it now is the heavy process's requests (`heavy/`), and the lake
+ * ingest, which stays in this process because it needs the catalog's
+ * credentials (ADR-059): one at a time between them, so the ingest's DuckDB and
+ * the process's are never both at their caps.
  */
 import { inTurn } from '@kukan/shared'
 

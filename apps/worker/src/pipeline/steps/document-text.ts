@@ -5,7 +5,10 @@
  * a time; XLSX sheets are read as a stream of XML; other formats whole.
  */
 
+import { createWriteStream } from 'node:fs'
+import { once } from 'node:events'
 import { stat } from 'node:fs/promises'
+import { finished } from 'node:stream/promises'
 import { posix } from 'node:path'
 import yauzl from 'yauzl'
 import { SaxesParser, type SaxesTagPlain } from 'saxes'
@@ -30,6 +33,48 @@ const PDF_TEXT_ONLY: OfficeParserConfig = {
   pdfParserConfig: { extractTextColor: false },
 }
 
+export interface ExtractedText {
+  /** Whether any line had more than white space on it */
+  hasText: boolean
+  /** UTF-8 bytes of the text, the newlines between its lines included */
+  bytes: number
+}
+
+/**
+ * Write the text of the document at `filePath` to `textPath`, a line at a
+ * time, reading it another way where the first fails (`fallbackLines`).
+ */
+export async function extractDocumentText(
+  filePath: string,
+  format: string,
+  textPath: string
+): Promise<ExtractedText> {
+  try {
+    return await writeLines(documentLines(filePath, format), textPath)
+  } catch (err) {
+    const fallback = fallbackLines(format)
+    if (!fallback) throw err
+    return writeLines(fallback(filePath), textPath)
+  }
+}
+
+/** Write `lines` to `path`, newline-separated. */
+async function writeLines(lines: AsyncIterable<string>, path: string): Promise<ExtractedText> {
+  const out = createWriteStream(path)
+  let hasText = false
+  let count = 0
+  try {
+    for await (const line of lines) {
+      if (!hasText && line.trim()) hasText = true
+      if (!out.write(count++ > 0 ? '\n' + line : line)) await once(out, 'drain')
+    }
+  } finally {
+    out.end()
+    await finished(out)
+  }
+  return { hasText, bytes: out.bytesWritten }
+}
+
 export async function* documentLines(filePath: string, format: string): AsyncGenerator<string> {
   if (format === 'pdf') yield* pdfLines(filePath)
   else if (format === 'xlsx') yield* xlsxLines(filePath)
@@ -45,9 +90,7 @@ async function* wholeDocumentLines(filePath: string): AsyncGenerator<string> {
  * An XLSX the strict XML reader refuses may be one officeparser reads, at its
  * cost in memory; it cannot take back what it yielded, so the caller restarts.
  */
-export function fallbackLines(
-  format: string
-): ((filePath: string) => AsyncGenerator<string>) | undefined {
+function fallbackLines(format: string): ((filePath: string) => AsyncGenerator<string>) | undefined {
   return format === 'xlsx' ? wholeDocumentLines : undefined
 }
 

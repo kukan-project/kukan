@@ -8,9 +8,6 @@
  * caller gets a refusal instead.
  */
 
-import { fork, type ChildProcess } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -19,7 +16,13 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from '@kukan/shared'
-import { childEnvironment, watchMemory, type ChildCommand } from '../child/host'
+import {
+  ChildExitedError,
+  startChild,
+  watchMemory,
+  type ChildCommand,
+  type ChildHandle,
+} from '../child/host'
 import {
   QUERY_KILL_GRACE_MS,
   QUERY_PROCESS_RSS_MB,
@@ -29,7 +32,6 @@ import {
 import { timeoutMessage, type SandboxLimits, type SandboxResult } from './duckdb-sandbox'
 import {
   FAILURE_CLASSES,
-  type ChildMessage,
   type QueryFailureKind,
   type QueryReply,
   type QueryRequest,
@@ -106,87 +108,46 @@ export async function runQueryInProcess(
   limits: SandboxLimits,
   { signal, rssBudgetMb = QUERY_PROCESS_RSS_MB }: QueryProcessOptions = {}
 ): Promise<SandboxResult> {
-  let tmp: string | undefined
-  let child: ChildProcess | undefined
-  let closed: Promise<NodeJS.Signals | number | null> | undefined
-  // Why the parent killed it, if it did; a SIGKILL without one is the kernel's
-  let killedFor: Error | undefined
-  let stopWatch: (() => void) | undefined
-  let deadline: NodeJS.Timeout | undefined
-  let onAbort: (() => void) | undefined
+  // An aborted signal never fires the listener added below
+  if (signal?.aborted) throw new RequestAbandonedError()
+  childCommand ??= resolveChild()
+  const child: ChildHandle = await startChild(childCommand, QUERY_CHILD_ENV, 'kukan-query-proc-')
+  const onAbort = () => child.kill(new RequestAbandonedError())
+  signal?.addEventListener('abort', onAbort, { once: true })
+  // Gone while the process was being started, which the listener never hears
+  if (signal?.aborted) onAbort()
+  const deadline = setTimeout(
+    () => child.kill(new RequestTimeoutError(timeoutMessage(limits.timeoutMs))),
+    limits.timeoutMs + QUERY_KILL_GRACE_MS
+  )
+  const stopWatch = watchMemory(child.proc, {
+    budgetMb: rssBudgetMb,
+    headroomMb: QUERY_WEB_HEADROOM_MB,
+    pollMs: QUERY_RSS_POLL_MS,
+    onOver: () => child.kill(tooLarge()),
+  })
   let answered = false
 
   try {
-    tmp = await mkdtemp(join(tmpdir(), 'kukan-query-proc-'))
-    // An aborted signal never fires the listener added below
-    if (signal?.aborted) throw new RequestAbandonedError()
-    childCommand ??= resolveChild()
-    // Turbopack follows a `fork` path it can partly evaluate and warns that it
-    // cannot resolve it; the child is never part of the bundle
-    child = fork(/* turbopackIgnore: true */ childCommand.entry, [], {
-      // Next declares NODE_ENV required on ProcessEnv; nothing in the child reads it
-      env: childEnvironment(process.env, tmp, QUERY_CHILD_ENV) as NodeJS.ProcessEnv,
-      execArgv: childCommand.execArgv,
-      cwd: childCommand.cwd,
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    })
-    const proc = child
-    // 'close', not 'exit': it comes once the IPC channel is drained, so a reply
-    // sent just before exiting is read before the child is taken to have none
-    closed = new Promise((resolve) => proc.once('close', (code, sig) => resolve(sig ?? code)))
-    const kill = (error: Error) => {
-      killedFor ??= error
-      proc.kill('SIGKILL')
-    }
-
-    onAbort = () => kill(new RequestAbandonedError())
-    signal?.addEventListener('abort', onAbort, { once: true })
-    deadline = setTimeout(
-      () => kill(new RequestTimeoutError(timeoutMessage(limits.timeoutMs))),
-      limits.timeoutMs + QUERY_KILL_GRACE_MS
-    )
-    stopWatch = watchMemory(proc, {
-      budgetMb: rssBudgetMb,
-      headroomMb: QUERY_WEB_HEADROOM_MB,
-      pollMs: QUERY_RSS_POLL_MS,
-      onOver: () => kill(tooLarge()),
-    })
-
-    const outcome = await new Promise<QueryReply | { exit: NodeJS.Signals | number | null }>(
-      (resolve, reject) => {
-        // `on`, not `once`, for the child's whole life: a second 'error' (a
-        // failed spawn, then a send on its dead channel) with no listener would
-        // be thrown in the web server
-        proc.on('error', reject)
-        proc.on('message', (m: ChildMessage) => {
-          // The child loads asynchronously; a request sent before it listens is lost
-          if ('ready' in m) {
-            const request: QueryRequest = { location, sql, limits }
-            proc.send(request, (err) => err && reject(err))
-          } else resolve(m)
-        })
-        void closed!.then((exit) => resolve({ exit }))
-      }
-    )
-    // Whatever it answered (the reply may have won the race against the kill)
-    if (killedFor) throw killedFor
-    if ('exit' in outcome) {
-      // Not the parent, so the kernel: a query is the process it picks first
-      if (outcome.exit === 'SIGKILL') throw tooLarge()
-      throw new Error(`The query process exited without answering (${String(outcome.exit)})`)
+    const reply = await child
+      .ask<QueryReply>({ location, sql, limits } satisfies QueryRequest)
+      .catch((err: unknown) => {
+        if (err instanceof ChildExitedError) return err
+        throw err
+      })
+    if (reply instanceof ChildExitedError) {
+      if (reply.outOfMemory) throw tooLarge()
+      throw new Error(`The query process exited without answering (${String(reply.exit)})`)
     }
     answered = true
-    if (!outcome.ok) throw rebuild(outcome.kind, outcome.message)
-    return outcome.result
+    if (!reply.ok) throw rebuild(reply.kind, reply.message)
+    return reply.result
   } finally {
-    stopWatch?.()
+    stopWatch()
     clearTimeout(deadline)
-    if (onAbort) signal?.removeEventListener('abort', onAbort)
-    // One that answered exits by itself; one that never started has no close to wait for
-    if (child?.pid !== undefined) {
-      if (!answered) child.kill('SIGKILL')
-      await closed
-    }
-    if (tmp) await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    signal?.removeEventListener('abort', onAbort)
+    // One that answered exits by itself
+    if (!answered) child.kill()
+    await child.stop()
   }
 }

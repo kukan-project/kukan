@@ -14,7 +14,13 @@ import { randomUUID } from 'crypto'
 import { and, asc, desc, eq, gt, gte, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm'
 import { job as jobTable, type Database, type Transaction } from '@kukan/db'
 import { createLogger, type JobPriority, type JobStatus, type Logger } from '@kukan/shared'
-import type { EnqueueOptions, Job, JobRecord, QueueAdapter } from './adapter'
+import {
+  JobInterruptedError,
+  type EnqueueOptions,
+  type Job,
+  type JobRecord,
+  type QueueAdapter,
+} from './adapter'
 
 /**
  * How long a lease lasts, and how it is held while a handler runs.
@@ -202,13 +208,14 @@ export class PostgresQueueAdapter implements QueueAdapter {
    * last write it has not seen, which the trailing send is.
    */
   private readonly signal?: ReturnType<typeof coalesced>
+  private readonly notify?: () => Promise<void>
 
   constructor(config: PostgresQueueConfig) {
     this.db = config.db
     this.onWaiting = config.onWaiting
     this.concurrency = Math.max(1, Math.floor(config.concurrency ?? 1))
     this.log = config.logger ?? createLogger({ name: 'job-queue' })
-    const notify = config.notify
+    const notify = (this.notify = config.notify)
     if (notify) {
       this.signal = coalesced(async () => {
         try {
@@ -597,10 +604,17 @@ export class PostgresQueueAdapter implements QueueAdapter {
       await this.runningPriority.run(job.priority, () => handler(job))
       await this.complete(job.id)
     } catch (err) {
-      // Payload included: some handlers log nothing of their own before
-      // throwing, leaving this as the only record of which job it was.
-      this.log.error({ err, jobId: job.id, type: job.type, data: job.data }, 'Handler error')
-      await this.fail(job.id, err)
+      // Only while stopping: thrown at any other time, an uncounted rerun at once
+      // would run it again for ever
+      if (err instanceof JobInterruptedError && this.stopped) {
+        this.log.info({ jobId: job.id, type: job.type }, 'Job cut short by the stop, handed back')
+        await this.release(job.id)
+      } else {
+        // Payload included: some handlers log nothing of their own before
+        // throwing, leaving this as the only record of which job it was.
+        this.log.error({ err, jobId: job.id, type: job.type, data: job.data }, 'Handler error')
+        await this.fail(job.id, err)
+      }
     } finally {
       holding.release()
     }
@@ -622,6 +636,27 @@ export class PostgresQueueAdapter implements QueueAdapter {
         updated: sql`now()`,
       })
       .where(this.mine(id))
+  }
+
+  /**
+   * Hand the job back as it was taken, for another worker to run now — told
+   * so, or it waits for a pass that may be the lease's end. Told here rather
+   * than through `signal`, which this process may exit before it sends.
+   */
+  private async release(id: string): Promise<void> {
+    await this.db
+      .update(jobTable)
+      .set({
+        attempts: sql`${jobTable.attempts} - 1`,
+        runAt: sql`now()`,
+        lockedUntil: null,
+        lockedBy: null,
+        updated: sql`now()`,
+      })
+      .where(this.mine(id))
+    await this.notify?.().catch((err: unknown) =>
+      this.log.warn({ err }, 'Could not wake the workers for a job handed back')
+    )
   }
 
   private mine(id: string) {

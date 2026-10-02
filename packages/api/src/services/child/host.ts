@@ -13,8 +13,10 @@
  * choice is what covers the interval.
  */
 
-import type { ChildProcess } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { fork, type ChildProcess } from 'node:child_process'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { containerAnonMb, processMemory } from '../../process-memory'
 
 /** How to start a child: its entry, and the Node options it needs to load. */
@@ -55,8 +57,11 @@ export function childEnvironment(
   return out
 }
 
+/** Which bound a child passed: its own, or the container's. */
+export type MemoryBound = 'child' | 'container'
+
 /**
- * Whether the child has to go.
+ * Whether the child has to go, and over which bound.
  *
  * **Two bounds, and on a small task it is the container's that applies.** The
  * child's own budget is what its work may cost where there is room for it. The
@@ -65,23 +70,46 @@ export function childEnvironment(
  * `headroomMb` is still free. Measured against the child's RSS instead, the
  * shared library's pages counted twice and a 512 MB task refused DuckDB queries
  * it had run in process without trouble.
+ *
+ * Which one matters to a caller that records why: the child's own is about its
+ * work, the container's may be the parent's doing.
  */
 export function overBudget(
   childMb: number | null,
   containerAnonMb: number | null,
   budgetMb: number,
-  containerLimitMb: number,
+  limitMb: number,
   headroomMb: number
-): boolean {
-  if (childMb !== null && childMb > budgetMb) return true
-  return containerAnonMb !== null && containerAnonMb > containerLimitMb - headroomMb
+): MemoryBound | null {
+  if (childMb !== null && childMb > budgetMb) return 'child'
+  if (containerAnonMb !== null && containerAnonMb > limitMb - headroomMb) return 'container'
+  return null
 }
 
 /** A process's resident memory (MiB), or null once it is gone or off Linux. */
-async function residentMb(pid: number): Promise<number | null> {
+function residentMb(pid: number): Promise<number | null> {
+  return statusMb(pid, 'VmRSS')
+}
+
+/**
+ * A process's anonymous resident memory (MiB): what the container is charged
+ * for it alone. Resident memory also counts the pages of the files it maps —
+ * Node itself and its native libraries, some 90 MB that the container holds
+ * once however many processes map them.
+ */
+export function anonymousMb(pid: number): Promise<number | null> {
+  return statusMb(pid, 'RssAnon')
+}
+
+const STATUS_FIELDS = {
+  VmRSS: /^VmRSS:\s+(\d+) kB$/m,
+  RssAnon: /^RssAnon:\s+(\d+) kB$/m,
+}
+
+async function statusMb(pid: number, field: keyof typeof STATUS_FIELDS): Promise<number | null> {
   try {
     const status = await readFile(`/proc/${pid}/status`, 'utf8')
-    const kb = /^VmRSS:\s+(\d+) kB$/m.exec(status)
+    const kb = STATUS_FIELDS[field].exec(status)
     return kb ? Number(kb[1]) / 1024 : null
   } catch {
     // Gone already, or not Linux — the kernel's choice is all there is then
@@ -92,31 +120,213 @@ async function residentMb(pid: number): Promise<number | null> {
 /** Read once: the limit does not change under a running process. */
 const container = processMemory()
 
+/** The memory this container may use (MiB): its cgroup limit, or the host's. */
+export function containerLimitMb(): number {
+  return container.memoryMb
+}
+
 interface MemoryWatch {
-  /** The child's RSS past which it has to go. */
+  /** The child's memory past which it has to go, as `read` measures it. */
   budgetMb: number
+  /** How the child's memory is read; its resident memory unless given. */
+  read?: (pid: number) => Promise<number | null>
   /** What the parent keeps free in the container meanwhile. */
   headroomMb: number
   pollMs: number
   /** Called once a read finds it over; the watch goes on until stopped. */
-  onOver: () => void
+  onOver: (bound: MemoryBound) => void
+}
+
+/**
+ * Call `fn` every `ms`, one call at a time, until the returned stop is called.
+ * `fn` is told whether that has happened since it began: what a call under way
+ * then finds is about work that is over, and a reused child has moved on.
+ */
+export function every(ms: number, fn: (stopped: () => boolean) => Promise<void>): () => void {
+  let running = false
+  let stopped = false
+  const isStopped = () => stopped
+  const timer = setInterval(() => {
+    // One call at a time: a busy threadpool would otherwise queue them up
+    if (running) return
+    running = true
+    void fn(isStopped).finally(() => (running = false))
+  }, ms)
+  return () => {
+    stopped = true
+    clearInterval(timer)
+  }
 }
 
 /** Watch `child`'s memory and the container's until the returned stop is called. */
 export function watchMemory(child: ChildProcess, watch: MemoryWatch): () => void {
-  let reading = false
-  const poll = setInterval(() => {
-    // One read at a time: a busy threadpool would otherwise queue them up
-    if (reading || child.pid === undefined) return
-    reading = true
-    void Promise.all([residentMb(child.pid), containerAnonMb(container.source)]).then(
-      ([childMb, anonMb]) => {
-        reading = false
-        if (overBudget(childMb, anonMb, watch.budgetMb, container.memoryMb, watch.headroomMb)) {
-          watch.onOver()
-        }
-      }
-    )
-  }, watch.pollMs)
-  return () => clearInterval(poll)
+  return every(watch.pollMs, async (stopped) => {
+    if (child.pid === undefined) return
+    const [childMb, anonMb] = await Promise.all([
+      (watch.read ?? residentMb)(child.pid),
+      containerAnonMb(container.source),
+    ])
+    if (stopped()) return
+    const bound = overBudget(childMb, anonMb, watch.budgetMb, container.memoryMb, watch.headroomMb)
+    if (bound) watch.onOver(bound)
+  })
+}
+
+/** What a child sends once it listens (`serve.ts`), before any reply. */
+export interface ReadyMessage {
+  ready: true
+}
+
+/** How a child went without answering: its signal, or its exit code. */
+export type ChildExit = NodeJS.Signals | number | null
+
+/**
+ * The child went without answering, and the parent had not killed it.
+ */
+export class ChildExitedError extends Error {
+  constructor(readonly exit: ChildExit) {
+    super(`The child process exited without answering (${String(exit)})`)
+    this.name = 'ChildExitedError'
+  }
+
+  /**
+   * Whether it went for want of memory: the kernel's OOM kill, the process
+   * being its first pick (`serve.ts`), or V8 out of heap, which aborts.
+   */
+  get outOfMemory(): boolean {
+    return this.exit === 'SIGKILL' || this.exit === 'SIGABRT'
+  }
+}
+
+interface Pending {
+  request: unknown
+  resolve: (reply: unknown) => void
+  reject: (err: unknown) => void
+}
+
+/** A child started by {@link startChild}. */
+export class ChildHandle {
+  /** Why the parent killed it, if it did. */
+  private killedFor: Error | undefined
+  /** Why it can answer nothing more: it errored, or it is gone. */
+  private ended: Error | undefined
+  /** Whether it has said it listens: a request sent before is lost. */
+  private listening = false
+  /** The one request in flight; a reused child is still asked one at a time. */
+  private pending: Pending | undefined
+  /**
+   * Once the process has exited. What {@link stop} waits for: a channel the
+   * parent closed itself never brings `'close'`.
+   */
+  private readonly exited: Promise<void>
+
+  constructor(
+    readonly proc: ChildProcess,
+    private readonly tmp: string
+  ) {
+    this.exited = new Promise((resolve) => proc.once('exit', () => resolve()))
+    // `on`, not `once`, for the child's whole life: a second 'error' (a failed
+    // spawn, then a send on its dead channel) with no listener would be thrown
+    // in the parent
+    proc.on('error', (err) => this.end(err))
+    // 'close', not 'exit': it comes once the IPC channel is drained, so a reply
+    // sent just before exiting is read before the child is taken to have none
+    proc.once('close', (code, sig) => this.end(new ChildExitedError(sig ?? code)))
+    proc.on('message', (message: unknown) => {
+      if (typeof message === 'object' && message !== null && 'ready' in message) {
+        this.listening = true
+        this.send()
+      } else this.pending?.resolve(message)
+    })
+  }
+
+  /**
+   * Send `request` and wait for the reply.
+   *
+   * Throws why the parent killed it where it did — whatever it answered, since
+   * the reply may have won the race against the kill — and otherwise
+   * {@link ChildExitedError} for a child that went without answering.
+   */
+  async ask<R>(request: unknown): Promise<R> {
+    if (this.pending) throw new Error('The child process is already answering a request')
+    try {
+      const reply = await new Promise<R>((resolve, reject) => {
+        if (this.ended) return reject(this.ended)
+        this.pending = { request, resolve: resolve as (reply: unknown) => void, reject }
+        this.send()
+      })
+      if (this.killedFor) throw this.killedFor
+      return reply
+    } catch (err) {
+      throw this.killedFor ?? err
+    } finally {
+      this.pending = undefined
+    }
+  }
+
+  /** SIGKILL it, remembering why; the first reason given stands. */
+  kill(reason?: Error): void {
+    if (reason) this.killedFor ??= reason
+    this.proc.kill('SIGKILL')
+  }
+
+  /**
+   * Have it go and clean up after it: closing the channel ends a child that
+   * waits for more (`serve.ts`), and one already gone has nothing to close. Its
+   * temporary directory is removed here — a process killed mid-spill cannot
+   * remove it itself.
+   */
+  async stop(): Promise<void> {
+    // Closing the channel under a request would leave it unanswered for good:
+    // a channel the parent closed never brings the 'close' that settles it
+    if (this.pending) this.kill()
+    else if (this.proc.connected && !this.proc.killed) this.proc.disconnect()
+    // One that never started has no exit to wait for
+    if (
+      this.proc.pid !== undefined &&
+      this.proc.exitCode === null &&
+      this.proc.signalCode === null
+    ) {
+      await this.exited
+    }
+    await rm(this.tmp, { recursive: true, force: true }).catch(() => {})
+  }
+
+  private send(): void {
+    const pending = this.pending
+    if (!pending || !this.listening) return
+    this.proc.send(pending.request as object, (err) => err && pending.reject(err))
+  }
+
+  private end(err: Error): void {
+    this.ended ??= err
+    this.pending?.reject(this.ended)
+  }
+}
+
+/**
+ * Start a child running `command`, with the environment of
+ * {@link childEnvironment} and a temporary directory of its own.
+ */
+export async function startChild(
+  command: ChildCommand,
+  envKeys: readonly string[],
+  tmpPrefix: string
+): Promise<ChildHandle> {
+  const tmp = await mkdtemp(join(tmpdir(), tmpPrefix))
+  try {
+    // Turbopack follows a `fork` path it can partly evaluate and warns that it
+    // cannot resolve it; the child is never part of the bundle
+    const proc = fork(/* turbopackIgnore: true */ command.entry, [], {
+      // Next declares NODE_ENV required on ProcessEnv; a child reads only what it is given
+      env: childEnvironment(process.env, tmp, envKeys) as NodeJS.ProcessEnv,
+      execArgv: command.execArgv,
+      cwd: command.cwd,
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    })
+    return new ChildHandle(proc, tmp)
+  } catch (err) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    throw err
+  }
 }

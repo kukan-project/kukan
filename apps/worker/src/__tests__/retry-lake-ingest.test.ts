@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Database } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import { JobInterruptedError, type QueueAdapter } from '@kukan/queue-adapter'
 import type { Logger } from '@kukan/shared'
 import { retryLakeIngest } from '../pipeline/retry-lake-ingest'
+import { HeavyShortOfMemoryError, WorkerStoppingError } from '../heavy/process'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
@@ -202,5 +203,22 @@ describe('retryLakeIngest', () => {
     vi.mocked(recordLakeIngestFailure).mockRejectedValueOnce(new Error('connection lost'))
 
     await expect(retryLakeIngest(job, deps)).rejects.toThrow('connection lost')
+  })
+
+  it('fails the message without counting it when the container was short', async () => {
+    // The moment's, not the version's: the queue runs it again after its delay
+    deps.ctx.ingestLakeVersion.mockRejectedValue(new HeavyShortOfMemoryError())
+
+    await expect(retryLakeIngest(job, deps)).rejects.toThrow(HeavyShortOfMemoryError)
+    expect(recordLakeIngestFailure).not.toHaveBeenCalled()
+  })
+
+  it('fails the message without counting it when the worker stops under it', async () => {
+    // Not this version failing: another task loads it, with every try it had
+    deps.ctx.ingestLakeVersion.mockRejectedValue(new WorkerStoppingError())
+
+    // As one the stop cut short, which the queue hands back uncounted
+    await expect(retryLakeIngest(job, deps)).rejects.toThrow(JobInterruptedError)
+    expect(recordLakeIngestFailure).not.toHaveBeenCalled()
   })
 })

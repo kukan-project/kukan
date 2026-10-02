@@ -63,6 +63,7 @@ import { executeFetch } from '../pipeline/steps/fetch'
 import { executeInterpret } from '../pipeline/steps/interpret'
 import { executeLake } from '../pipeline/steps/lake'
 import { executeIndexContent } from '../pipeline/steps/index-content'
+import { HeavyShortOfMemoryError, WorkerStoppingError } from '../heavy/process'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
@@ -444,6 +445,43 @@ describe('processResource', () => {
 
     expect(mockTracker.failStep).toHaveBeenCalled()
     expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
+  })
+
+  it('records nothing and fails the job when the worker stops under the run', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    vi.mocked(executeInterpret).mockRejectedValue(new WorkerStoppingError())
+
+    // Failed, so the queue hands it to another task; nothing says the content
+    // could not be read
+    await expect(processResource('res-1', ctx, db, queue)).rejects.toThrow(WorkerStoppingError)
+    expect(mockTracker.failStep).not.toHaveBeenCalled()
+    expect(mockTracker.updateStatus).not.toHaveBeenCalledWith('error', expect.anything())
+    expect(executeIndexContent).not.toHaveBeenCalled()
+  })
+
+  it('records the run and fails the job when the container was short', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    vi.mocked(executeInterpret).mockRejectedValue(new HeavyShortOfMemoryError())
+
+    // Recorded, since the run is over; failed, so the queue runs it again later
+    await expect(processResource('res-1', ctx, db, queue)).rejects.toThrow(HeavyShortOfMemoryError)
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', expect.any(String))
+    expect(mockTracker.failOpenStep).toHaveBeenCalled()
+    expect(executeIndexContent).not.toHaveBeenCalled()
   })
 
   it('should complete even if the interpretation fails', async () => {

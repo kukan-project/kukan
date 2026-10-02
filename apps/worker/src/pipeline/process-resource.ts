@@ -15,6 +15,7 @@ import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
+import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../heavy/process'
 import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
@@ -73,6 +74,16 @@ export async function processResource(
       { delaySeconds: CLAIM_RETRY_DELAY_S }
     )
   }
+}
+
+/**
+ * Whether `err` ends the run rather than the step it came out of, so the step
+ * rethrows it unrecorded. A kill is not the step failing: the record belongs to
+ * whoever holds the claim now. Nor is a stop or a short container
+ * (`interruptsRun`): the run's outer catch decides what of those is recorded.
+ */
+function abandonsRun(err: unknown): boolean {
+  return err instanceof RunCancelledError || interruptsRun(err)
 }
 
 /** The run itself, with the resource already claimed for its duration. */
@@ -140,9 +151,7 @@ async function runPipeline(
         await tracker.skipStep(versionStepId)
       }
     } catch (err) {
-      // A kill is not this step failing: the orchestrator leaves without
-      // recording, because the record belongs to whoever holds the claim now.
-      if (err instanceof RunCancelledError) throw err
+      if (abandonsRun(err)) throw err
       await tracker.failStep(versionStepId, (err as Error).message)
     }
 
@@ -253,9 +262,7 @@ async function runPipeline(
         }
       }
     } catch (err) {
-      // A kill is not this step failing: the orchestrator leaves without
-      // recording, because the record belongs to whoever holds the claim now.
-      if (err instanceof RunCancelledError) throw err
+      if (abandonsRun(err)) throw err
       await tracker.failStep(interpretStepId, (err as Error).message)
     }
 
@@ -306,6 +313,9 @@ async function runPipeline(
     // A killed run records nothing: the resource was taken from it, and
     // `cancelled` is already on the row (ADR-044 §4).
     if (err instanceof RunCancelledError) return
+    // A stop is not this content failing: nothing is recorded, and the job
+    // fails so that another task runs it again
+    if (err instanceof WorkerStoppingError) throw err
     // Whatever was thrown has to say something: this is the row the resource
     // page reads, and the alternative is a step recorded as failed with no
     // reason. Editors see it in full; everyone else gets a generic message.
@@ -314,11 +324,14 @@ async function runPipeline(
     // half-done catch can leave, `error` over a step still reading `running` is
     // the one that at least says the run is over.
     await tracker.updateStatus('error', message)
-    // Whichever steps were in flight are the ones that failed. Only Fetch can
-    // reach here today — every later step catches its own and carries on — but
-    // recording from what is open, rather than by naming Fetch, is what makes
-    // the next step to be given the same treatment record itself for free.
+    // Whichever steps were in flight are the ones that failed: Fetch, or a later
+    // step the container's shortage cut short — the rest catch their own and
+    // carry on. Recording from what is open, rather than by naming a step, is
+    // what lets each of them record itself.
     await tracker.failOpenStep(message)
+    // The container was short, which is the moment's and not the content's:
+    // recorded, and the job failed so the queue runs it again after its delay
+    if (err instanceof HeavyShortOfMemoryError) throw err
   }
 }
 
@@ -354,9 +367,7 @@ async function runIndexStep(
     }
     await tracker.skipStep(stepId)
   } catch (err) {
-    // A kill is not this step failing: the orchestrator leaves without
-    // recording, because the record belongs to whoever holds the claim now.
-    if (err instanceof RunCancelledError) throw err
+    if (abandonsRun(err)) throw err
     await tracker.failStep(stepId, (err as Error).message)
   }
   await tracker.mergeMetadata({ contentIndexed: false })
@@ -397,9 +408,7 @@ async function runLakeStep(
       })
     }
   } catch (err) {
-    // A kill is not this step failing: the orchestrator leaves without
-    // recording, because the record belongs to whoever holds the claim now.
-    if (err instanceof RunCancelledError) throw err
+    if (abandonsRun(err)) throw err
     await tracker.failStep(lakeStepId, (err as Error).message)
   }
 }
@@ -441,9 +450,7 @@ async function runSummarizeStep(
     }
     await tracker.skipStep(stepId)
   } catch (err) {
-    // A kill is not this step failing: the orchestrator leaves without
-    // recording, because the record belongs to whoever holds the claim now.
-    if (err instanceof RunCancelledError) throw err
+    if (abandonsRun(err)) throw err
     await tracker.failStep(stepId, (err as Error).message)
   }
 }

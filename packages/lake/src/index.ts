@@ -35,7 +35,12 @@ export {
 } from './table'
 export { sqlLiteral, sqlIdentifier } from './sql'
 export { readRowGroupRows } from './parquet'
-export { openLakeSession, withLakeSession, closeLakeInstances } from './connection'
+export {
+  openLakeSession,
+  withLakeSession,
+  closeLakeInstances,
+  releaseIdleLakeInstances,
+} from './connection'
 export type { LakeSession, LakeSessionOptions, LakeRow } from './connection'
 export { ingestParquetVersion, keyFault, restandLakeTable } from './ingest'
 export type { IngestResult } from './ingest'

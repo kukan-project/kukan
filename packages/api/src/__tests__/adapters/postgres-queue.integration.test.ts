@@ -3,7 +3,12 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vites
 import { eq, sql } from 'drizzle-orm'
 import { job } from '@kukan/db'
 import { createLogger } from '@kukan/shared'
-import { MAX_ATTEMPTS, PostgresQueueAdapter, type Job } from '@kukan/queue-adapter'
+import {
+  JobInterruptedError,
+  MAX_ATTEMPTS,
+  PostgresQueueAdapter,
+  type Job,
+} from '@kukan/queue-adapter'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -147,6 +152,69 @@ describe('PostgresQueueAdapter', () => {
       expect(await rows()).toEqual([expect.objectContaining({ state: 'dead', attempts: 3 })])
     )
     expect((await byStatus(queue)).dead).toBe(1)
+  })
+
+  it('hands back uncounted a job the stop cut short, even on its last attempt', async () => {
+    const writer = adapter()
+    await writer.enqueue('t', {})
+    await db.update(job).set({ attempts: MAX_ATTEMPTS - 1 })
+    const held = gate()
+    const notify = vi.fn(async () => {})
+    const queue = adapter(notify)
+    await queue.process({
+      t: async () => {
+        // What a stop does to the work under way: cuts it short
+        await held.opened
+        throw new JobInterruptedError()
+      },
+    })
+    await vi.waitFor(async () => expect((await byStatus(queue)).running).toBe(1))
+
+    const stopping = queue.stop()
+    held.open()
+    await stopping
+    const [back] = await rows()
+    expect(back).toMatchObject({ state: 'ready', attempts: MAX_ATTEMPTS - 1, lockedBy: null })
+    expect(back.runAt.getTime()).toBeLessThanOrEqual(Date.now())
+    // And the others told, before the stop returns and the process exits
+    expect(notify).toHaveBeenCalled()
+  })
+
+  it('counts a job that says it was cut short when the worker is not stopping', async () => {
+    // Uncounted and at once, it would run again for ever
+    const queue = adapter()
+    await queue.enqueue('t', {})
+    await queue.process({
+      t: async () => {
+        throw new JobInterruptedError()
+      },
+    })
+    await vi.waitFor(async () =>
+      expect(await rows()).toEqual([expect.objectContaining({ state: 'ready', attempts: 1 })])
+    )
+    const [failed] = await rows()
+    expect(failed.runAt.getTime()).toBeGreaterThan(Date.now())
+  })
+
+  it('counts a job that fails for any other reason while the worker stops', async () => {
+    const writer = adapter()
+    await writer.enqueue('t', {})
+    const held = gate()
+    const queue = adapter()
+    await queue.process({
+      t: async () => {
+        await held.opened
+        throw new Error('boom')
+      },
+    })
+    await vi.waitFor(async () => expect((await byStatus(queue)).running).toBe(1))
+
+    const stopping = queue.stop()
+    held.open()
+    await stopping
+    const [failed] = await rows()
+    expect(failed).toMatchObject({ state: 'ready', attempts: 1, lastError: 'boom' })
+    expect(failed.runAt.getTime()).toBeGreaterThan(Date.now())
   })
 
   it('marks dead a job whose worker stopped answering on its last attempt', async () => {

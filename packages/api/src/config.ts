@@ -61,7 +61,16 @@ export const QUERY_MEMORY_LIMIT_MB = 256
  *
  * A version diff at 256 measured up to 486 MB, under the same line.
  */
-export const QUERY_SLOT_RSS_MB = Math.ceil(1.3 * QUERY_MEMORY_LIMIT_MB + 165)
+export const QUERY_SLOT_RSS_MB = duckdbSlotRssMb(QUERY_MEMORY_LIMIT_MB)
+
+/**
+ * The line above for any `memory_limit`: what a DuckDB instance at that limit
+ * costs a process at its worst. Also what the worker's heavy process is held
+ * to (ADR-059).
+ */
+export function duckdbSlotRssMb(memoryLimitMb: number): number {
+  return Math.ceil(1.3 * memoryLimitMb + 165)
+}
 
 /**
  * What a resource query's own process holds before it reads anything: Node, the

@@ -86,6 +86,8 @@ export interface SpillRegistry<T> {
   close(key: T): Promise<void>
   /** `key` is out of service; settles when its last session has let it go. */
   retire(key: T): Promise<void>
+  /** The sessions open on `key` now. */
+  sessions(key: T): number
 }
 
 export function createSpillRegistry<T extends object>(): SpillRegistry<T> {
@@ -126,5 +128,6 @@ export function createSpillRegistry<T extends object>(): SpillRegistry<T> {
       void releaseIfDone(key)
       return entry.released
     },
+    sessions: (key) => held.get(key)?.sessions ?? 0,
   }
 }

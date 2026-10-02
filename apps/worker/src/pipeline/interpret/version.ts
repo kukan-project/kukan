@@ -22,7 +22,7 @@ import {
   streamToTempFile,
   transcodeToUtf8,
 } from '../node-utils'
-import { interpretCsv } from './csv'
+import { HeavyTooLargeError, runHeavy } from '@/heavy'
 import { countTitleRows } from './csv-title-rows'
 import type { PipelineContext } from '../types'
 import { MAX_CSV_COLUMNS } from '@/config'
@@ -136,7 +136,21 @@ export async function withInterpretedVersion<T>(
     }
 
     const parquetPath = `${csvPath}.parquet`
-    const { schema, reason, rowGroupRows } = await interpretCsv(csvPath, parquetPath, titleRows)
+    // In the heavy process, where a file that outgrows the memory takes that
+    // process and not the worker (ADR-059). Recorded like the bounds above:
+    // interpreting it again on the same task would end the same way, and the
+    // hourly sweep would hand it out every hour to find that out.
+    let interpreted
+    try {
+      interpreted = await runHeavy(
+        { kind: 'interpret-csv', csvPath, parquetPath, skipRows: titleRows },
+        ctx.assertHeld
+      )
+    } catch (err) {
+      if (!(err instanceof HeavyTooLargeError)) throw err
+      return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
+    }
+    const { schema, reason, rowGroupRows } = interpreted
     // And the source is dead once it has been interpreted. What the callback
     // does next — an upload, a wait on the catalog-wide lock — would hold it
     // for nothing.

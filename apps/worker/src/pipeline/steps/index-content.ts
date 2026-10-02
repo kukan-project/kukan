@@ -15,9 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { once } from 'node:events'
-import { finished } from 'node:stream/promises'
+import { createReadStream } from 'node:fs'
 import {
   isTextFormat,
   isCsvFormat,
@@ -29,8 +27,7 @@ import {
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { InterpretResult } from './interpret'
-import { documentLines, fallbackLines } from './document-text'
-import { heavySection } from '@/heavy-section'
+import { runHeavy } from '@/heavy'
 import {
   streamToBuffer,
   streamUtf8Lines,
@@ -178,18 +175,12 @@ async function indexDocument(
   const textPath = siblingTempPath(tempPath, 'text.txt')
 
   try {
-    // Heavy: parsing is where a document's memory goes, and it shares one heap
-    // with every job this worker runs. Writing the chunks after goes on beside
-    // the rest
-    const extracted = await heavySection(async () => {
-      try {
-        return await extractText(documentLines(tempPath, format), textPath)
-      } catch (err) {
-        const fallback = fallbackLines(format)
-        if (!fallback) throw err
-        return extractText(fallback(tempPath), textPath)
-      }
-    })
+    // In the heavy process: parsing is where a document's memory goes.
+    // Writing the chunks after goes on here, beside the rest
+    const extracted = await runHeavy(
+      { kind: 'extract-text', documentPath: tempPath, format, textPath },
+      ctx.assertHeld
+    )
     // A document with no text leaves what was indexed before as it was
     if (!extracted.hasText) {
       return {
@@ -240,30 +231,6 @@ async function indexDocument(
   } finally {
     await cleanupTempFile(tempPath)
   }
-}
-
-interface ExtractedText {
-  /** Whether any line had more than white space on it */
-  hasText: boolean
-  /** UTF-8 bytes of the text, the newlines between its lines included */
-  bytes: number
-}
-
-/** Write `lines` to `path`, newline-separated. */
-async function extractText(lines: AsyncIterable<string>, path: string): Promise<ExtractedText> {
-  const out = createWriteStream(path)
-  let hasText = false
-  let count = 0
-  try {
-    for await (const line of lines) {
-      if (!hasText && line.trim()) hasText = true
-      if (!out.write(count++ > 0 ? '\n' + line : line)) await once(out, 'drain')
-    }
-  } finally {
-    out.end()
-    await finished(out)
-  }
-  return { hasText, bytes: out.bytesWritten }
 }
 
 /**

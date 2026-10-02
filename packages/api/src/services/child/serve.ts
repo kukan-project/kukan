@@ -4,6 +4,7 @@
 
 import { writeFileSync } from 'node:fs'
 import { setPriority } from 'node:os'
+import type { ReadyMessage } from './host'
 
 /**
  * Make this process the one to lose: call it first, before loading what the
@@ -31,4 +32,27 @@ export function becomeExpendable(niceness?: number): void {
     }
   }
   process.once('disconnect', () => process.exit(0))
+}
+
+/**
+ * Answer each request with `answer`, then say this process listens: a request
+ * the parent sent while it was still loading would be lost.
+ *
+ * `answer` builds the reply for a failure as well — it never rejects. With
+ * `once`, the process answers one request and exits, once the reply is on its
+ * way: exiting first can drop it.
+ */
+export function serve<Request>(
+  answer: (request: Request) => Promise<object>,
+  { once = false }: { once?: boolean } = {}
+): void {
+  const onRequest = (request: Request) => {
+    void answer(request).then((reply) => {
+      if (once) process.send!(reply, () => process.exit(0))
+      else process.send!(reply)
+    })
+  }
+  if (once) process.once('message', onRequest)
+  else process.on('message', onRequest)
+  process.send!({ ready: true } satisfies ReadyMessage)
 }

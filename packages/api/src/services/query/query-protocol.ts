@@ -24,6 +24,3 @@ export type QueryFailureKind = keyof typeof FAILURE_CLASSES | 'internal'
 
 export type QueryReply =
   { ok: true; result: SandboxResult } | { ok: false; kind: QueryFailureKind; message: string }
-
-/** Sent once the child listens, so the request is not sent into a process still loading. */
-export type ChildMessage = { ready: true } | QueryReply

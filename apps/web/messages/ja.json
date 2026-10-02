@@ -925,6 +925,7 @@
         "no-columns": "列がありません",
         "too-many-columns": "列が多すぎます（プレビュー対象外）",
         "too-large": "サイズが大きすぎます（プレビュー対象外）",
+        "out-of-memory": "メモリが足りず解釈できません（プレビュー対象外）",
         "ragged-rows": "行ごとに列数が揃っていません"
       },
       "keyColumnsHeader": "主キー"
