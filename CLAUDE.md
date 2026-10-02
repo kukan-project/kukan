@@ -268,6 +268,7 @@ pnpm format        # Prettier フォーマット
 - BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、Step 1 実装済み） → `docs/adr/jp/055-bi-table-access-odata.md`
 - 素直な表の XLSX をテーブルとして解釈（判定は規則、AI は範囲の提案に限り人が確定、提案） → `docs/adr/jp/057-xlsx-table-interpretation.md`
 - ジョブキューの PostgreSQL 化（worker へは直接通知、SQS 廃止、ADR-002 を置換） → `docs/adr/jp/058-db-queue-direct-wake.md`
+- worker の重い処理を使い回す 1 つの子プロセスで行う（テキスト抽出・CSV の解釈、ADR-032 の子プロセスを worker へ、提案） → `docs/adr/jp/059-worker-heavy-child-process.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
