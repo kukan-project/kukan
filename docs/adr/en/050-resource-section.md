@@ -222,6 +222,9 @@ dataset (the same reason option D was rejected).
 - CKAN-compatible: place `section` on each resource as an additional field, verbatim.
   The array's shape and order are unchanged. Unknown fields are ignored client-side, or
   kept as resource extras when harvested into CKAN
+  - Addendum 2026-10-03 (ADR-060): the CKAN-compatible output is now written field by
+    field. `section` appears only when set, and is a reserved key in a resource's
+    `extras`
 - Neither the meaning nor the writers of `position` change
 
 ### Dashboard

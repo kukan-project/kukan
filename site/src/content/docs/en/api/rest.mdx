@@ -142,7 +142,7 @@ the listing.
 | POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                                         | Org editor |
 | PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                                            | Org editor |
 | PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                                          | Org editor |
-| PUT    | `/resources/{id}`                       | Update resource (full replacement; extras is system-managed)                                      | Org editor |
+| PUT    | `/resources/{id}`                       | Update resource (full replacement; only `section` is kept when omitted)                           | Org editor |
 | DELETE | `/resources/{id}`                       | Delete resource                                                                                   | Org editor |
 
 ### Sections (section)
@@ -176,6 +176,32 @@ opens again. Ordering is `position` alone — `section` plays no part in it.
     { "resourceId": "<id-1>", "section": "Supporting documents" },
     { "resourceId": "<id-2>", "section": null }
   ]
+}
+```
+
+### Custom fields (extras)
+
+A resource carries free-form key-value metadata (`extras`, an object). As with a dataset's `extras`,
+values may be any JSON.
+
+- Set it with `POST /packages/{id}/resources` and `PUT /resources/{id}`. `PUT` **replaces it whole**;
+  leaving it out empties it (`{}`), as a dataset's `PUT` and CKAN's `resource_update` do
+- These keys are reserved and answer `400` (`details.issues[].path` is `["extras", "<key>"]`):
+  - The field names CKAN defines for a resource (`id`, `package_id`, `url`, `url_type`, `name`,
+    `description`, `format`, `mimetype`, `size`, `hash`, `created`, `last_modified`,
+    `metadata_modified`, `position`, `state`, `resource_type` and so on). The
+    [CKAN-compatible API](./ckan) spreads `extras` onto the resource's top level, where a key of the
+    same name could not be told from the standard field
+  - `section`, which the CKAN-compatible API puts on the same top level for the resource's
+    [section](#sections-section)
+  - The keys the health check once used (`healthEtag`, `healthLastModified`, `healthError`,
+    `healthHttpStatus`, `healthLastFullFetchAt`)
+
+```json
+{
+  "name": "Population",
+  "url": "https://example.com/population.csv",
+  "extras": { "unit": "persons" }
 }
 ```
 

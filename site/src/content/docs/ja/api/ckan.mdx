@@ -1,24 +1,44 @@
 ---
 title: CKAN 互換 API
-description: CKAN Action API v3 との互換エンドポイント
+description: CKAN Action API との互換エンドポイント
 sidebar:
   order: 3
 ---
 
-KUKAN は [CKAN Action API v3](https://docs.ckan.org/en/latest/api/) と互換性のあるエンドポイントを提供します。
-既存の CKAN クライアントツール（`ckanapi` 等）や CKAN を想定した Web スクレイピングコードから KUKAN にアクセスできます。
+KUKAN は [CKAN Action API](https://docs.ckan.org/en/latest/api/) と互換性のある読み取り用の
+エンドポイントを提供します。応答の形は CKAN 2.12 に合わせており、既存の CKAN クライアント
+（`ckanapi` 等）、CKAN のハーベスター、CKAN を想定したスクリプトから、そのまま KUKAN を読めます。
 
-ベースパス: `/api/3/action`
+ベースパス: `/api/3/action`（版番号なしの `/api/action` でも同じものを返します。`ckanapi` の既定はこちらです）
+
+## 呼び出し方
+
+各アクションは GET と POST の両方を受け付けます。
+
+- **GET**: パラメータをクエリ文字列で渡します（`?id=...`）。リストは、同じキーの繰り返しか JSON の配列の
+  文字列（`fq_list=["tags:a","tags:b"]`）で渡します。`organization_list` / `group_list` の
+  `organizations` / `groups` は、CKAN と同じくカンマ区切りの文字列でも渡せます
+- **POST**: パラメータを JSON の本文（`Content-Type: application/json`）か、フォーム
+  （`application/x-www-form-urlencoded`）で渡します。`ckanapi` は既定で POST を使います。本文は 1 MiB まで
+  （超えると `413`）で、multipart は受け付けません（`400`）
+
+### 認証
+
+認証なしで利用できます。API トークン（[認証](/ja/api/authentication/)）を付けると、所属組織の
+非公開データセットも読めます（`package_search` は `include_private=true` のときだけ）。トークンは
+次のどの形でも渡せます。
+
+- `Authorization: Bearer <token>`
+- `Authorization: <token>`（`ckanapi` の形）
+- `X-CKAN-API-Key: <token>`
 
 ## レスポンス形式
-
-すべての CKAN 互換エンドポイントは以下の形式を返します。
 
 ### 成功時
 
 ```json
 {
-  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
+  "help": "https://your-kukan-site/api/3/action/help_show?name=package_show",
   "success": true,
   "result": { ... }
 }
@@ -26,74 +46,131 @@ KUKAN は [CKAN Action API v3](https://docs.ckan.org/en/latest/api/) と互換�
 
 ### 失敗時
 
+CKAN と同じく、`error.__type` で種類を、HTTP ステータスで区別します。
+
+| 状況                            | ステータス | `error`                                                         |
+| ------------------------------- | ---------- | --------------------------------------------------------------- |
+| 見つからない                    | 404        | `{"__type": "Not Found Error", "message": "Not found: ..."}`    |
+| パラメータの誤り・未対応の指定  | 409        | `{"__type": "Validation Error", "<パラメータ名>": ["<理由>"]}`  |
+| 権限がない                      | 403        | `{"__type": "Authorization Error", "message": "Access denied"}` |
+| 知らないアクション・壊れた JSON | 400        | エンベロープなし。本文は文字列 `"Bad request: ..."`             |
+
 ```json
 {
-  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
+  "help": "https://your-kukan-site/api/3/action/help_show?name=package_show",
   "success": false,
-  "error": {
-    "__type": "Validation Error",
-    "message": "..."
-  }
+  "error": { "id": ["Missing value"], "__type": "Validation Error" }
 }
 ```
 
-`help` にはリクエストした URL が入ります。`__type` は常に `Validation Error` のため、見つからない（404）のか
-パラメータ不足（400）なのかは HTTP ステータスで区別してください。
-
 ## エンドポイント一覧
 
-すべて GET メソッドで、認証なしで利用できます。セッションまたは API トークン（[認証](/ja/api/authentication/)）を付けると、`package_show`・`package_search`・`resource_show` は所属組織の非公開データセットも返します（`package_list` はシステム管理者以外には公開データセットのみ）。
+| アクション          | 説明                              | 主なパラメータ                                                                                                                                       |
+| ------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `package_list`      | 公開データセット名の一覧          | `limit`, `offset`                                                                                                                                    |
+| `package_show`      | データセット詳細                  | `id`（名前または ID）                                                                                                                                |
+| `package_search`    | データセット検索                  | `q`, `fq`, `fq_list`, `sort`, `rows`, `start`, `facet`, `facet.field`, `facet.limit`, `facet.mincount`, `include_private`（[後述](#package_search)） |
+| `resource_show`     | リソース詳細                      | `id`                                                                                                                                                 |
+| `organization_list` | 組織の一覧                        | `all_fields`, `sort`, `limit`, `offset`, `q`, `organizations`, `include_extras`                                                                      |
+| `organization_show` | 組織詳細                          | `id`, `include_datasets`                                                                                                                             |
+| `group_list`        | カテゴリーの一覧                  | `all_fields`, `sort`, `limit`, `offset`, `q`, `groups`, `include_extras`                                                                             |
+| `group_show`        | カテゴリー詳細                    | `id`, `include_datasets`                                                                                                                             |
+| `tag_list`          | タグ名の一覧                      | `query`（`q`）, `all_fields`                                                                                                                         |
+| `tag_show`          | タグ詳細                          | `id`（名前または ID）, `include_datasets`                                                                                                            |
+| `license_list`      | ライセンス一覧                    | —                                                                                                                                                    |
+| `help_show`         | アクションの説明（`help` の URL） | `name`                                                                                                                                               |
 
-| Path                                            | 説明                                  |
-| ----------------------------------------------- | ------------------------------------- |
-| `/api/3/action/package_list`                    | データセット名の一覧                  |
-| `/api/3/action/package_show?id={nameOrId}`      | データセット詳細（CKAN フィールド名） |
-| `/api/3/action/package_search?q={query}`        | データセット検索                      |
-| `/api/3/action/resource_show?id={id}`           | リソース詳細（CKAN フィールド名）     |
-| `/api/3/action/organization_list`               | 組織名の一覧                          |
-| `/api/3/action/organization_show?id={nameOrId}` | 組織詳細                              |
-| `/api/3/action/group_list`                      | カテゴリー名の一覧                    |
-| `/api/3/action/group_show?id={nameOrId}`        | カテゴリー詳細                        |
-| `/api/3/action/tag_list`                        | タグ名の一覧                          |
-| `/api/3/action/tag_show?id={id}`                | タグ詳細                              |
-| `/api/3/action/license_list`                    | ライセンス一覧                        |
+`organization_show` / `group_show` の `package_count` と、`include_datasets` で返すデータセットは、
+呼び出し元が閲覧できるもの（所属組織の非公開データセットを含む）です。`include_datasets` で返す数は
+CKAN と同じく、組織が最大 10 件、カテゴリーが最大 1000 件です。`tag_show` の `include_datasets` も
+同じく、呼び出し元が閲覧できるデータセットを返します。
 
-## フィールド名のマッピング
+既定値は CKAN と同じです（`package_search` の `rows` は 10・上限 1000、`organization_list` の並びは
+`title asc`、`all_fields` 時の `limit` 上限は 25 など）。
 
-KUKAN は内部で camelCase のフィールドを使用しますが、CKAN 互換 API では CKAN の snake_case 名に変換して返します。
+## 応答の形
 
-### データセット (package)
+項目名・値の形は CKAN 2.12 の `package_show` / `resource_show` などと同じです（`author_email`、
+`url_type`、`num_resources`、`isopen`、`license_url` など）。日時はタイムゾーンなしの UTC
+（`2024-01-02T03:04:05.678000`）です。
 
-| KUKAN (REST)    | CKAN                |
-| --------------- | ------------------- |
-| `created`       | `metadata_created`  |
-| `updated`       | `metadata_modified` |
-| `creatorUserId` | `creator_user_id`   |
-| `ownerOrg`      | `owner_org`         |
-| `licenseId`     | `license_id`        |
+### カスタムフィールド（extras）
 
-### リソース (resource)
+- **データセット・組織・カテゴリー**: `[{"key": "...", "value": "..."}]` の配列です。値は文字列で、
+  文字列以外の値は JSON の文字列にして返します
+- **リソース**: CKAN と同じく、`extras` の各キーを**リソースのトップレベルに展開**します。
+  入れ子の `extras` は返しません
 
-| KUKAN (REST)   | CKAN                |
-| -------------- | ------------------- |
-| `updated`      | `metadata_modified` |
-| `lastModified` | `last_modified`     |
-| `packageId`    | `package_id`        |
-| `resourceType` | `resource_type`     |
+### リソース
 
-改名しないフィールドはそのままの名前で返ります。`section`（データセットページでの表示上の
-区切り。[REST API](./rest) を参照）もその一つで、ハーベスト先の CKAN では resource extras として
-残ります。AI による説明（`summary`）は CKAN 互換 API には含まれません。
+- アップロードしたファイルの `url` は、ダウンロード用の URL（`/api/v1/resources/{id}/download`）です
+- `section`（データセットページでの見出し。[REST API](./rest#セクション-section) を参照）は、
+  設定されている場合にトップレベルの項目として載ります。CKAN にハーベストすると resource extras
+  として残ります。`section` は `extras` の予約キーです
+- 処理の状態など KUKAN の内部の値（パイプラインの状態、版番号、ヘルスチェックの結果など）は
+  載りません。CKAN では、リソースのトップレベルの知らない項目は extras として扱われるためです
 
-### package_search の結果
+### CKAN と違うところ
 
-`package_search` は `rows`（既定 20、最大 1000）と `start` を受け付けます。キーワード一致のみで、
-意味検索は行いません。`results` の各要素は `package_show` の結果と同じ形で、`resources`・`tags`・
-`groups`・`organization` を含みます。検索で決まった順に並び、内容は検索時点のデータベースから読みます。
-`count` とページの区切り（`start`・`rows`）は検索インデックスのものです。データセットを非公開にする・
-削除する変更は、通常は応答の前にインデックスへ反映します。反映が遅れた場合（インデックスの同期が混んで
-いるときや障害時）は、その間そのデータセットを結果から外すため、ページが短くなり `count` が多めになる
-ことがあります。`count` までページを送れば、重複や取りこぼしはありません。
+- **組織・カテゴリーのメンバー（`users`）は返しません。** KUKAN は所属するユーザーを公開しません。
+  同じ理由で `member_count` もありません
+- AI による説明（`summary`）、データセットの AI 生成項目、品質スコアは含みません
+- CKAN の `relationships_as_subject` / `relationships_as_object` は常に空です。`organization_show` /
+  `group_show` の `groups`・`tags` も常に空、`num_followers` は 0 です
+- 下書き（draft）のデータセットは現れません（`package_show` も 404）。公開後に取得できます
+
+## package_search
+
+検索はキーワード一致のみで、意味検索は行いません。`q` はキーワードとして扱います（`*:*` は
+全件）。Solr のフィールド指定の構文は解釈しません。
+
+`include_private` は既定で `false` です。CKAN と同じく、トークンを付けていても、指定しない限り
+非公開データセットは含まれません。
+
+### fq
+
+`fq`（文字列）と `fq_list`（文字列のリスト）は、空白で区切った条件を AND で結んだものとして
+解釈します。先頭の `+` と値の `"..."` は使えます。
+
+| 条件                                   | 意味                                            |
+| -------------------------------------- | ----------------------------------------------- |
+| `organization:<名前>`                  | 組織（名前）                                    |
+| `owner_org:<ID>`                       | 組織（ID）                                      |
+| `groups:<名前>`                        | カテゴリー                                      |
+| `tags:<名前>`                          | タグ                                            |
+| `res_format:<形式>`                    | リソースの形式（大文字小文字を区別しない）      |
+| `license_id:<ID>`                      | ライセンス                                      |
+| `metadata_modified:[<開始> TO <終了>]` | 更新日時の範囲。端は末尾 `Z` の UTC、`*`、`NOW` |
+| `capacity:public` / `capacity:private` | 公開 / 非公開                                   |
+| `dataset_type:dataset`, `state:active` | 常に満たす（ほかの値は 0 件）                   |
+
+**解釈できない指定は無視せず `409` を返します**（`OR`、`-` や `NOT` による否定、括弧、
+上の表にない項目、日付の演算など）。日時はミリ秒まで扱い、それより細かい端は取りこぼさない側に丸めます（開始は切り捨て、終了は切り上げ）。`site_id` も、KUKAN には比べるサイトの識別子がないため `409` です。無視すると頼んだより広い結果が返り、呼び出し側が
+気づけないためです。
+
+### sort
+
+`score desc`（検索の順位）と、次のうち 1 つまでを指定できます: `metadata_modified`、
+`metadata_created`、`name`、`id`（それぞれ `asc` / `desc`）。既定は
+`score desc, metadata_modified desc` です。`title_string` など、ほかの項目は `409` になります。
+
+`score` を先頭に置くと、`q` があるときは検索の順位で並び、同じ順位は更新日時の新しい順になります。
+そのため、`q` があるときに `score` に続けられるのは `metadata_modified desc` だけです。`q` がないときは
+順位がすべて同じなので、`score` に続く項目で並びます。`score` は先頭にだけ置けます。
+
+### ファセット
+
+`facet.field`（JSON のリスト）に `organization`、`groups`、`tags`、`res_format`、`license_id` を
+指定できます。結果の `facets` と `search_facets` は CKAN と同じ形です。1 項目あたりの値の数は
+最大 200 です。`facet.mincount=0` のときは、結果に含まれない値も、呼び出し元が閲覧できるものは件数 0 で
+返します。
+
+### 件数とページ
+
+`count` とページの区切り（`start`・`rows`）は検索インデックスのものです。データセットを非公開に
+する・削除する変更は、通常は応答の前にインデックスへ反映します。反映が遅れた場合は、その間その
+データセットを結果から外すため、ページが短くなり `count` が多めになることがあります。`count` まで
+ページを送れば、重複や取りこぼしはありません。
 
 ## 使用例
 
@@ -112,8 +189,11 @@ for pkg in packages['results']:
 ### curl
 
 ```bash
-# データセット検索
-curl "https://your-kukan-site/api/3/action/package_search?q=人口&rows=10"
+# データセット検索（2024 年以降に更新されたもの、更新日時の新しい順）
+curl -G "https://your-kukan-site/api/3/action/package_search" \
+  --data-urlencode "q=人口" \
+  --data-urlencode "fq=metadata_modified:[2024-01-01T00:00:00Z TO *]" \
+  --data-urlencode "sort=metadata_modified desc"
 
 # データセット詳細
 curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024"
@@ -121,7 +201,8 @@ curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024
 
 ## 制限事項
 
-- 読み取り専用（GET のみ）。書き込み系の CKAN エンドポイントは提供しません
-- データセットの作成・編集は REST API (`/api/v1/*`) を利用してください
-- 下書き（draft）状態のデータセットは CKAN 互換 API には現れません（`package_show` も 404）。公開後に取得できます
-- CKAN の全フィールドを再現しているわけではありません。詳細は実際のレスポンスをご確認ください
+- 読み取り専用です。書き込み系のアクション（`package_create` など）は提供しません。
+  データセットの作成・編集は [REST API](./rest)（`/api/v1/*`）を利用してください
+- `status_show` など、上の一覧にないアクションは `400` を返します
+- タグの語彙（vocabulary）は扱いません。`tag_list` の `vocabulary_id` と、語彙タグへの
+  `tag_show` の `include_datasets` は `409` になります

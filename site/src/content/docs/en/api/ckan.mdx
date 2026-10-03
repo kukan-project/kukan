@@ -1,104 +1,180 @@
 ---
 title: CKAN-Compatible API
-description: Compatible endpoints for CKAN Action API v3
+description: Compatible endpoints for the CKAN Action API
 sidebar:
   order: 3
 ---
 
-KUKAN provides endpoints compatible with the [CKAN Action API v3](https://docs.ckan.org/en/latest/api/).
-Existing CKAN client tools (such as `ckanapi`) and code written for CKAN can access KUKAN directly.
+KUKAN provides read-only endpoints compatible with the [CKAN Action API](https://docs.ckan.org/en/latest/api/).
+Responses take the shapes CKAN 2.12 returns, so existing CKAN clients (such as `ckanapi`), CKAN
+harvesters and scripts written for CKAN can read KUKAN as they are.
 
-Base path: `/api/3/action`
+Base path: `/api/3/action` (the unversioned `/api/action` serves the same; it is what `ckanapi` calls by default)
+
+## Calling
+
+Every action answers both GET and POST.
+
+- **GET**: parameters in the query string (`?id=...`). A list is a key given more than once, or a
+  JSON array as a string (`fq_list=["tags:a","tags:b"]`). As in CKAN, `organizations` / `groups` on
+  `organization_list` / `group_list` may also be a comma-separated string
+- **POST**: parameters in a JSON body (`Content-Type: application/json`) or a form
+  (`application/x-www-form-urlencoded`). `ckanapi` uses POST by default. The body may be up to 1 MiB
+  (`413` beyond it); multipart is not accepted (`400`)
+
+### Authentication
+
+No authentication is needed. With an API token ([Authentication](/en/api/authentication/)), the
+private datasets of your organizations can be read too (in `package_search`, only with
+`include_private=true`). The token may be sent in any of these forms:
+
+- `Authorization: Bearer <token>`
+- `Authorization: <token>` (as `ckanapi` sends it)
+- `X-CKAN-API-Key: <token>`
 
 ## Response format
-
-All CKAN-compatible endpoints return responses in the following format.
 
 ### Success
 
 ```json
 {
-  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
+  "help": "https://your-kukan-site/api/3/action/help_show?name=package_show",
   "success": true,
   "result": { ... }
 }
 ```
 
-### Error
+### Failure
+
+As in CKAN, `error.__type` names the kind of failure and the HTTP status tells them apart.
+
+| Case                             | Status | `error`                                                         |
+| -------------------------------- | ------ | --------------------------------------------------------------- |
+| Not found                        | 404    | `{"__type": "Not Found Error", "message": "Not found: ..."}`    |
+| Invalid or unsupported parameter | 409    | `{"__type": "Validation Error", "<parameter>": ["<reason>"]}`   |
+| Not permitted                    | 403    | `{"__type": "Authorization Error", "message": "Access denied"}` |
+| Unknown action, malformed JSON   | 400    | No envelope; the body is the string `"Bad request: ..."`        |
 
 ```json
 {
-  "help": "https://your-kukan-site/api/3/action/package_show?id=...",
+  "help": "https://your-kukan-site/api/3/action/help_show?name=package_show",
   "success": false,
-  "error": {
-    "__type": "Validation Error",
-    "message": "..."
-  }
+  "error": { "id": ["Missing value"], "__type": "Validation Error" }
 }
 ```
 
-`help` carries the URL that was requested. `__type` is always `Validation Error`, so tell a missing
-record (404) from a missing parameter (400) by the HTTP status.
-
 ## Endpoints
 
-All use the GET method and work without authentication. With a session or an API token ([Authentication](/en/api/authentication/)), `package_show`, `package_search` and `resource_show` also return private datasets of your organizations (`package_list` lists public datasets only, except for system administrators).
+| Action              | Description                               | Main parameters                                                                                                                                      |
+| ------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `package_list`      | Names of the public datasets              | `limit`, `offset`                                                                                                                                    |
+| `package_show`      | Dataset detail                            | `id` (name or ID)                                                                                                                                    |
+| `package_search`    | Dataset search                            | `q`, `fq`, `fq_list`, `sort`, `rows`, `start`, `facet`, `facet.field`, `facet.limit`, `facet.mincount`, `include_private` ([below](#package_search)) |
+| `resource_show`     | Resource detail                           | `id`                                                                                                                                                 |
+| `organization_list` | Organizations                             | `all_fields`, `sort`, `limit`, `offset`, `q`, `organizations`, `include_extras`                                                                      |
+| `organization_show` | Organization detail                       | `id`, `include_datasets`                                                                                                                             |
+| `group_list`        | Categories                                | `all_fields`, `sort`, `limit`, `offset`, `q`, `groups`, `include_extras`                                                                             |
+| `group_show`        | Category detail                           | `id`, `include_datasets`                                                                                                                             |
+| `tag_list`          | Tag names                                 | `query` (`q`), `all_fields`                                                                                                                          |
+| `tag_show`          | Tag detail                                | `id` (name or ID), `include_datasets`                                                                                                                |
+| `license_list`      | Licenses                                  | —                                                                                                                                                    |
+| `help_show`         | Description of an action (the `help` URL) | `name`                                                                                                                                               |
 
-| Path                                            | Description                         |
-| ----------------------------------------------- | ----------------------------------- |
-| `/api/3/action/package_list`                    | List of dataset names               |
-| `/api/3/action/package_show?id={nameOrId}`      | Dataset details (CKAN field names)  |
-| `/api/3/action/package_search?q={query}`        | Dataset search                      |
-| `/api/3/action/resource_show?id={id}`           | Resource details (CKAN field names) |
-| `/api/3/action/organization_list`               | List of organization names          |
-| `/api/3/action/organization_show?id={nameOrId}` | Organization details                |
-| `/api/3/action/group_list`                      | List of category names              |
-| `/api/3/action/group_show?id={nameOrId}`        | Category details                    |
-| `/api/3/action/tag_list`                        | List of tag names                   |
-| `/api/3/action/tag_show?id={id}`                | Tag details                         |
-| `/api/3/action/license_list`                    | List of available licenses          |
+`package_count` and the datasets `include_datasets` returns in `organization_show` / `group_show` are
+the ones the caller can read, private datasets of their organizations included. As in CKAN,
+`include_datasets` returns up to 10 datasets for an organization and up to 1000 for a category.
+`tag_show`'s `include_datasets` likewise returns the datasets the caller can read.
 
-## Field name mapping
+Defaults follow CKAN's (`package_search` returns 10 rows by default, at most 1000;
+`organization_list` sorts by `title asc`; `limit` is at most 25 with `all_fields`; and so on).
 
-KUKAN uses camelCase fields internally, but the CKAN-compatible API converts them to CKAN's snake_case conventions.
+## Response shapes
 
-### Dataset (package)
+Field names and value shapes are those of CKAN 2.12's `package_show`, `resource_show` and so on
+(`author_email`, `url_type`, `num_resources`, `isopen`, `license_url`, …). Timestamps are UTC without
+an offset (`2024-01-02T03:04:05.678000`).
 
-| KUKAN (REST)    | CKAN                |
-| --------------- | ------------------- |
-| `created`       | `metadata_created`  |
-| `updated`       | `metadata_modified` |
-| `creatorUserId` | `creator_user_id`   |
-| `ownerOrg`      | `owner_org`         |
-| `licenseId`     | `license_id`        |
+### Custom fields (extras)
 
-### Resource
+- **Datasets, organizations and categories**: a list of `[{"key": "...", "value": "..."}]`. Values
+  are strings; a value that is not a string is given as its JSON text
+- **Resources**: as in CKAN, each key of `extras` is **spread onto the resource's top level**. There
+  is no nested `extras`
 
-| KUKAN (REST)   | CKAN                |
-| -------------- | ------------------- |
-| `updated`      | `metadata_modified` |
-| `lastModified` | `last_modified`     |
-| `packageId`    | `package_id`        |
-| `resourceType` | `resource_type`     |
+### Resources
 
-Fields that are not renamed come back under their own name. `section` — a display grouping
-on the dataset page, see the [REST API](./rest) — is one of them, and survives harvesting
-into CKAN as a resource extra. The AI-written description (`summary`) is not included in the
-CKAN-compatible API.
+- The `url` of an uploaded file is its download URL (`/api/v1/resources/{id}/download`)
+- `section` (a heading on the dataset page; see the [REST API](./rest#sections-section)) appears as a
+  top-level field when set. Harvested into CKAN, it is kept as a resource extra. `section` is a
+  reserved `extras` key
+- KUKAN's internal values (pipeline state, version numbers, health check results, …) are left out:
+  CKAN treats unknown top-level fields on a resource as extras
 
-### package_search results
+### Where it differs from CKAN
 
-`package_search` accepts `rows` (default 20, max 1000) and `start`. It is keyword-only, with no
-semantic results. Each entry in `results` has the same shape as a `package_show` result, with
-`resources`, `tags`, `groups` and `organization`. Entries come in the order the search ranked them,
-read from the database at the time of the search.
-`count` and the pages (`start`, `rows`) are the search index's. A change that makes a dataset
-private, or deletes it, usually reaches the index before the change is answered. Where it lags —
-while the index sync is busy or unavailable — that dataset is left out of the results meanwhile, so
-a page can come back short and `count` can run high. Paging on to `count` neither repeats nor skips
-a dataset.
+- **Organization and category members (`users`) are not returned.** KUKAN does not publish who
+  belongs to them; for the same reason there is no `member_count`
+- AI-written descriptions (`summary`), a dataset's AI-generated fields and the quality score are not
+  included
+- CKAN's `relationships_as_subject` / `relationships_as_object` are always empty, as are `groups` and
+  `tags` in `organization_show` / `group_show`; `num_followers` is 0
+- Draft datasets do not appear (`package_show` answers 404) until they are published
 
-## Usage examples
+## package_search
+
+Search is keyword matching only, with no semantic search. `q` is read as keywords (`*:*` matches
+everything); Solr's field syntax is not interpreted.
+
+`include_private` defaults to `false`: as in CKAN, private datasets are left out unless it is set,
+even with a token.
+
+### fq
+
+`fq` (a string) and `fq_list` (a list of strings) are read as whitespace-separated terms joined by
+AND. A leading `+` and quoted values (`"..."`) are accepted.
+
+| Term                                   | Meaning                                                    |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `organization:<name>`                  | Organization (by name)                                     |
+| `owner_org:<ID>`                       | Organization (by ID)                                       |
+| `groups:<name>`                        | Category                                                   |
+| `tags:<name>`                          | Tag                                                        |
+| `res_format:<format>`                  | Resource format (case-insensitive)                         |
+| `license_id:<ID>`                      | License                                                    |
+| `metadata_modified:[<from> TO <to>]`   | Modified within the range: UTC ending in `Z`, `*` or `NOW` |
+| `capacity:public` / `capacity:private` | Public / private                                           |
+| `dataset_type:dataset`, `state:active` | Always true (any other value matches nothing)              |
+
+**What cannot be read is refused with `409` rather than ignored** (`OR`, negation with `-` or `NOT`,
+parentheses, fields not in the table, date math). Times are kept to the millisecond; a finer end is rounded outward (down for the start, up for the end), so nothing in the range is lost. So is `site_id`: KUKAN has no site identifier to
+compare it with. Ignoring it would return more than was asked for,
+with no way for the caller to notice.
+
+### sort
+
+`score desc` (the search's ranking) plus at most one of `metadata_modified`, `metadata_created`,
+`name` and `id` (each `asc` or `desc`). The default is `score desc, metadata_modified desc`. Other
+fields, such as `title_string`, answer `409`.
+
+With `score` first and a `q`, results are in ranking order, ties newest first; so with a `q`, only
+`metadata_modified desc` may follow `score`. Without a `q` every score is equal, and the field after
+`score` decides. `score` may only come first.
+
+### Facets
+
+`facet.field` (a JSON list) accepts `organization`, `groups`, `tags`, `res_format` and `license_id`.
+`facets` and `search_facets` in the result take CKAN's shapes. At most 200 values are counted per
+field. With `facet.mincount=0`, values no result carries are given at 0 too, as far as the caller
+can see them.
+
+### Counts and paging
+
+`count` and the page boundaries (`start`, `rows`) are the search index's. Making a dataset private or
+deleting it normally reaches the index before the response. When that lags, the dataset is left out
+of results meanwhile, so a page may be short and `count` a little high. Paging up to `count` misses
+nothing and repeats nothing.
+
+## Examples
 
 ### ckanapi (Python)
 
@@ -115,16 +191,20 @@ for pkg in packages['results']:
 ### curl
 
 ```bash
-# Search datasets
-curl "https://your-kukan-site/api/3/action/package_search?q=population&rows=10"
+# Dataset search (modified since 2024, newest first)
+curl -G "https://your-kukan-site/api/3/action/package_search" \
+  --data-urlencode "q=population" \
+  --data-urlencode "fq=metadata_modified:[2024-01-01T00:00:00Z TO *]" \
+  --data-urlencode "sort=metadata_modified desc"
 
-# Get dataset details
+# Dataset detail
 curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024"
 ```
 
 ## Limitations
 
-- Read-only (GET only). CKAN write endpoints are not provided
-- Use the REST API (`/api/v1/*`) to create or edit datasets
-- Datasets in draft state do not appear in the CKAN-compatible API (`package_show` returns 404); they become available once published
-- Not all CKAN fields are reproduced. Check the actual responses for specifics
+- Read-only. Write actions (`package_create` and so on) are not provided; create and edit datasets
+  through the [REST API](./rest) (`/api/v1/*`)
+- Actions not listed above, such as `status_show`, answer `400`
+- Tag vocabularies are not supported: `vocabulary_id` on `tag_list`, and `include_datasets` on
+  `tag_show` for a vocabulary tag, answer `409`

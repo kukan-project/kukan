@@ -134,6 +134,9 @@ export interface SearchFilters {
   formats?: string[]
   licenses?: string[]
   groups?: string[]
+  /** `updated` within this range, either end open — CKAN's `metadata_modified:[a TO b]` */
+  updatedFrom?: Date
+  updatedTo?: Date
   // Visibility + access filters
   excludePrivate?: boolean
   allowPrivateOrgIds?: string[]
@@ -154,7 +157,7 @@ export interface SearchQuery {
   /** Sort field. When omitted, adapters use their default
    *  (OpenSearch: _score+updated for queries, updated for browse;
    *   PostgreSQL: updated DESC). */
-  sortBy?: 'updated' | 'created' | 'name'
+  sortBy?: 'updated' | 'created' | 'name' | 'id'
   /** Sort direction (default: desc) */
   sortOrder?: 'asc' | 'desc'
 }

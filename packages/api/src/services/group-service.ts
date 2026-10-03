@@ -3,7 +3,7 @@
  * Business logic for group management
  */
 
-import { eq, ilike, and, or, sql, asc, desc, count, getTableColumns, inArray } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, count, getTableColumns, inArray } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { group, userGroupMembership, user, packageTable, packageGroup } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
@@ -14,6 +14,7 @@ import type {
   UpdateGroupInput,
 } from '@kukan/shared'
 import { markPackageDocs } from './doc-marks'
+import { orderTerms } from './list-order'
 import { groupMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
 
 /** Mark a group's datasets for the sync: their search documents carry its name */
@@ -34,12 +35,20 @@ export class GroupService {
   constructor(private db: Database) {}
 
   async list(
-    params: PaginationParams & { q?: string; orderBy?: 'name' | 'datasetCount' },
+    params: PaginationParams & {
+      q?: string
+      /** `datasetCount` defaults to descending, the rest to ascending */
+      orderBy?: 'name' | 'title' | 'datasetCount'
+      sortOrder?: 'asc' | 'desc'
+      /** Only these, by name */
+      names?: string[]
+    },
     viewer?: AuthUser
   ) {
-    const { offset = 0, limit = 20, q, orderBy } = params
+    const { offset = 0, limit = 20, q, orderBy, sortOrder, names } = params
 
     const conditions = [eq(group.state, 'active')]
+    if (names?.length) conditions.push(inArray(group.name, names))
 
     if (q) {
       conditions.push(
@@ -83,7 +92,13 @@ export class GroupService {
       })
       .from(group)
       .where(where)
-      .orderBy(...(orderBy === 'datasetCount' ? [desc(datasetCount)] : []), asc(group.name))
+      .orderBy(
+        ...orderTerms(orderBy, sortOrder, {
+          name: group.name,
+          title: group.title,
+          datasetCount,
+        })
+      )
       .limit(limit)
       .offset(offset)
 

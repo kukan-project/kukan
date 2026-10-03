@@ -9,6 +9,16 @@ export interface License {
   domain_content?: boolean
   domain_data?: boolean
   domain_software?: boolean
+  maintainer?: string
+  family?: string
+  is_generic?: boolean
+  od_conformance?: string
+  osd_conformance?: string
+}
+
+/** Open as CKAN judges it: approved by the Open Definition or the Open Source Definition. */
+export function isOpenLicense(license: License): boolean {
+  return license.od_conformance === 'approved' || license.osd_conformance === 'approved'
 }
 
 /** Custom licenses (e.g., Government of Japan Standard Terms of Use) */

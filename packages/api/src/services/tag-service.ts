@@ -6,7 +6,7 @@
 import { and, eq, ilike, isNull, notExists, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { tag, packageTag, packageTable } from '@kukan/db'
-import { escapeLike } from '@kukan/shared'
+import { escapeLike, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 import { packageVisibilitySql, type AuthUser } from '../auth/permissions'
 
@@ -47,12 +47,22 @@ export class TagService {
   constructor(private db: Database) {}
 
   async list(
-    params: PaginationParams & { q?: string; orderBy?: 'packageCount' },
+    params: Omit<PaginationParams, 'limit'> & {
+      /** `null` reads them all, as CKAN's tag_list does */
+      limit?: number | null
+      q?: string
+      orderBy?: 'packageCount' | 'name'
+      /** Leave out controlled-vocabulary tags, as CKAN's `tag_list` does by default */
+      freeOnly?: boolean
+    },
     viewer?: AuthUser
   ) {
-    const { offset = 0, limit = 100, q, orderBy } = params
+    const { offset = 0, limit = 100, q, orderBy, freeOnly } = params
 
-    const where = q ? ilike(tag.name, `%${escapeLike(q)}%`) : undefined
+    const where = and(
+      q ? ilike(tag.name, `%${escapeLike(q)}%`) : undefined,
+      freeOnly ? isNull(tag.vocabularyId) : undefined
+    )
     const visibility = await packageVisibilitySql(this.db, viewer)
 
     let query = this.db
@@ -81,9 +91,11 @@ export class TagService {
     // Most-used first — tag candidates for AI suggestions (ADR-040)
     if (orderBy === 'packageCount') {
       query = query.orderBy(sql`package_count desc`, tag.name)
+    } else if (orderBy === 'name') {
+      query = query.orderBy(tag.name, tag.id)
     }
 
-    const rows = await query.limit(limit).offset(offset)
+    const rows = await (limit === null ? query : query.limit(limit)).offset(offset)
 
     const total = rows[0]?.total ?? 0
     const items = rows.map(({ total: _, ...rest }) => rest)
@@ -91,7 +103,21 @@ export class TagService {
     return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
+  /**
+   * A tag by id, or by name among the free tags — CKAN's `tag_show`, which
+   * reads a name as a free tag's unless told the vocabulary.
+   */
+  async getByNameOrId(nameOrId: string, viewer?: AuthUser) {
+    const byName = and(eq(tag.name, nameOrId), isNull(tag.vocabularyId))!
+    if (!isUuid(nameOrId)) return this.getOne(byName, viewer)
+    return (await this.getOne(eq(tag.id, nameOrId), viewer)) ?? this.getOne(byName, viewer)
+  }
+
   async getById(id: string, viewer?: AuthUser) {
+    return this.getOne(eq(tag.id, id), viewer)
+  }
+
+  private async getOne(where: SQL, viewer?: AuthUser) {
     const visibility = await packageVisibilitySql(this.db, viewer)
     const [result] = await this.db
       .select({
@@ -105,7 +131,7 @@ export class TagService {
       // controlled-vocabulary tags (same HAVING contract as list())
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
       .leftJoin(packageTable, visibleUsageJoin(visibility))
-      .where(eq(tag.id, id))
+      .where(where)
       .groupBy(tag.id, tag.name, tag.vocabularyId)
       .having(sql`${tag.vocabularyId} IS NOT NULL OR COUNT(DISTINCT ${packageTable.id}) > 0`)
       .limit(1)

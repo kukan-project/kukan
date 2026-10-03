@@ -319,7 +319,7 @@ describe('checkBatch', () => {
 
   it('takes the keys it used to write off extras as it writes', async () => {
     // What an overlapping old worker puts back, and why every check is a chance
-    // to clear it: `LEGACY_HEALTH_EXTRAS_KEYS` in @kukan/db.
+    // to clear it: `LEGACY_HEALTH_EXTRAS_KEYS` in @kukan/shared.
     const rows = [
       {
         id: 'res-1',

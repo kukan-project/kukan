@@ -43,6 +43,7 @@ import {
 } from './metadata-suggest-dialog'
 import { useZodResolver } from '@/hooks/use-zod-resolver'
 import { useProblemMessage } from '@/hooks/use-problem-message'
+import { ExtrasFields, snapshotExtras, useExtrasRows } from '../extras-fields'
 
 /** Form-level schema: licenseId is required in the UI */
 const datasetFormSchema = createPackageSchema.extend({
@@ -58,13 +59,10 @@ const draftFormSchema = datasetFormSchema.extend({
 type DatasetFormInput = z.infer<typeof draftFormSchema>
 
 /**
- * Normalized snapshots of the fields managed outside React Hook Form, used to
- * detect changes the same way the submit payload is built (empty extras keys
- * are ignored, group order is irrelevant).
+ * Normalized snapshot of the groups, managed outside React Hook Form, used to
+ * detect changes the way the submit payload is built (order is irrelevant).
  */
 const snapshotGroups = (names: string[]) => [...names].sort().join('\n')
-const snapshotExtras = (rows: { key: string; value: string }[]) =>
-  JSON.stringify(rows.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value]))
 
 interface Organization {
   id: string
@@ -132,7 +130,6 @@ export function DatasetForm({
   const tc = useTranslations('common')
   const describeProblem = useProblemMessage()
   const [error, setError] = useState<string | null>(null)
-  const [extrasError, setExtrasError] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
   // Which footer button is in flight, for the loading labels
   const [publishIntent, setPublishIntent] = useState(false)
@@ -162,27 +159,8 @@ export function DatasetForm({
       names.includes(name) ? names.filter((n) => n !== name) : [...names, name]
     )
   }, [])
-  const nextExtrasId = useRef(0)
-  const [extrasRows, setExtrasRows] = useState<{ id: number; key: string; value: string }[]>(() => {
-    const extras = (defaultValues?.extras ?? {}) as Record<string, unknown>
-    return Object.entries(extras).map(([key, value]) => {
-      const strValue = typeof value === 'string' ? value : JSON.stringify(value ?? '')
-      return { id: nextExtrasId.current++, key, value: strValue }
-    })
-  })
-
-  const addExtrasRow = useCallback(() => {
-    setExtrasRows((rows) => [...rows, { id: nextExtrasId.current++, key: '', value: '' }])
-  }, [])
-
-  const removeExtrasRow = useCallback((id: number) => {
-    setExtrasRows((rows) => rows.filter((r) => r.id !== id))
-    setExtrasError(null)
-  }, [])
-
-  const updateExtrasRow = useCallback((id: number, field: 'key' | 'value', val: string) => {
-    setExtrasRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: val } : r)))
-  }, [])
+  const extrasEditor = useExtrasRows(defaultValues?.extras as Record<string, unknown> | undefined)
+  const extrasRows = extrasEditor.rows
 
   const {
     register,
@@ -387,20 +365,8 @@ export function DatasetForm({
     // Parse comma-separated tags
     const tags = parseTags(effectiveTagsInput).map((name) => ({ name }))
 
-    // Build extras from key-value rows (skip empty keys)
-    const filledRows = extrasRows.filter((r) => r.key.trim())
-    const keyCount = new Map<string, number>()
-    for (const r of filledRows) {
-      const k = r.key.trim()
-      keyCount.set(k, (keyCount.get(k) ?? 0) + 1)
-    }
-    const duplicateKeys = [...keyCount.entries()].filter(([, c]) => c > 1).map(([k]) => k)
-    if (duplicateKeys.length > 0) {
-      setExtrasError(t('extrasDuplicateKey', { keys: duplicateKeys.join(', ') }))
-      return
-    }
-    setExtrasError(null)
-    const extras = Object.fromEntries(filledRows.map((r) => [r.key.trim(), r.value]))
+    const extras = extrasEditor.build()
+    if (!extras) return
 
     const groups = effectiveGroups.map((name) => ({ name }))
 
@@ -732,35 +698,7 @@ export function DatasetForm({
         </Field>
       </div>
 
-      <Field title={t('extras')} description={t('extrasHelp')} error={extrasError}>
-        {extrasRows.map((row) => (
-          <div key={row.id} className="flex gap-2">
-            <Input
-              placeholder={t('extrasKeyPlaceholder')}
-              value={row.key}
-              onChange={(e) => updateExtrasRow(row.id, 'key', e.target.value)}
-              className="flex-1"
-            />
-            <Input
-              placeholder={t('extrasValuePlaceholder')}
-              value={row.value}
-              onChange={(e) => updateExtrasRow(row.id, 'value', e.target.value)}
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => removeExtrasRow(row.id)}
-            >
-              ×
-            </Button>
-          </div>
-        ))}
-        <Button type="button" variant="outline" size="sm" className="w-fit" onClick={addExtrasRow}>
-          {t('extrasAdd')}
-        </Button>
-      </Field>
+      <ExtrasFields editor={extrasEditor} />
 
       {isDraftEdit ? (
         <div className="flex flex-col gap-3">

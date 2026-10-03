@@ -68,13 +68,29 @@ describe('createResourceSchema', () => {
     expect(result.data).not.toHaveProperty('hash')
   })
 
-  it('should not include extras (system-managed)', () => {
-    const result = createResourceSchema.safeParse({ packageId: validUuid })
-    expect(result.success).toBe(true)
-    if (result.success) {
-      expect('extras' in result.data).toBe(false)
-    }
+  it('accepts extras as a dataset does, and leaves them absent when not sent', () => {
+    const sent = createResourceSchema.safeParse({
+      packageId: validUuid,
+      extras: { unit: 'persons', year: 2024 },
+    })
+    expect(sent.success && sent.data.extras).toEqual({ unit: 'persons', year: 2024 })
+
+    const absent = createResourceSchema.safeParse({ packageId: validUuid })
+    expect(absent.success && 'extras' in absent.data).toBe(false)
   })
+
+  // The health checker's old keys are scrubbed from every read, and CKAN's own
+  // field names would shadow or be shadowed by the field on the CKAN-compatible API
+  it.each(['healthEtag', 'url', 'format', 'package_id', 'last_modified', 'section'])(
+    'refuses the reserved extras key %s, on the key',
+    (key) => {
+      const result = updateResourceSchema.safeParse({ extras: { [key]: 'x', fine: 'y' } })
+      expect(result.success).toBe(false)
+      expect(result.error!.issues).toEqual([
+        expect.objectContaining({ path: ['extras', key], message: 'This key is reserved' }),
+      ])
+    }
+  )
 
   // The address table lives in `__tests__/url.test.ts`, beside the predicate.
   // What is left here is only what `refineUrl` adds on top of it: which path the

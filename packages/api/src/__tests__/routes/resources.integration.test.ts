@@ -217,9 +217,14 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/resources/${resource.id}`)
       expect((await res.json()).extras).toEqual({ theirs: 'keep me' })
 
-      // Same, by way of the CKAN action the reviewer of #358 named.
-      const ckan = await app.request(`/api/3/action/resource_show?id=${resource.id}`)
-      expect((await ckan.json()).result.extras).toEqual({ theirs: 'keep me' })
+      // Same, by way of the CKAN action the reviewer of #358 named, where
+      // extras stand at the top level
+      const ckan = (
+        await (await app.request(`/api/3/action/resource_show?id=${resource.id}`)).json()
+      ).result
+      expect(ckan.theirs).toBe('keep me')
+      expect(ckan).not.toHaveProperty('healthEtag')
+      expect(ckan).not.toHaveProperty('healthError')
 
       // And the projected read, which scrubs in SQL.
       const listed = await app.request(`/api/v1/packages/${pkg.id}`)
@@ -670,7 +675,7 @@ describe('Resources API Routes', () => {
     })
 
     it('leaves the pipeline-owned columns untouched', async () => {
-      // size/hash/extras are measured or produced by the worker. An edit must
+      // size/hash are measured by the worker. An edit must
       // not carry them at all — writing back what the request read would revert
       // whatever the pipeline recorded in between, and an upload is not
       // reprocessed on edit, so a stale hash would stick (ADR-043).
@@ -678,7 +683,7 @@ describe('Resources API Routes', () => {
       const resource = await createResource(pkg.id)
       await db
         .update(resourceTable)
-        .set({ size: 1234, hash: 'sha256:worker-measured', extras: { pipeline: 'state' } })
+        .set({ size: 1234, hash: 'sha256:worker-measured' })
         .where(eq(resourceTable.id, resource.id))
 
       const res = await app.request(`/api/v1/resources/${resource.id}`, {
@@ -689,18 +694,10 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
 
       const [row] = await db
-        .select({
-          size: resourceTable.size,
-          hash: resourceTable.hash,
-          extras: resourceTable.extras,
-        })
+        .select({ size: resourceTable.size, hash: resourceTable.hash })
         .from(resourceTable)
         .where(eq(resourceTable.id, resource.id))
-      expect(row).toEqual({
-        size: 1234,
-        hash: 'sha256:worker-measured',
-        extras: { pipeline: 'state' },
-      })
+      expect(row).toEqual({ size: 1234, hash: 'sha256:worker-measured' })
     })
 
     it('drops the health verdict when the URL changes', async () => {
@@ -785,27 +782,51 @@ describe('Resources API Routes', () => {
       expect(body.format).toBeNull()
     })
 
-    it('should preserve system-managed extras on PUT', async () => {
-      const pkg = await createPackage('extras-preserve-pkg')
-      const resource = await createResource(pkg.id, { name: 'with-extras' })
+    // Replaced whole, as CKAN's resource_update and a dataset's PUT replace theirs
+    it('replaces extras on PUT, and clears them when they are left out', async () => {
+      const pkg = await createPackage('extras-put-pkg')
+      const resource = await createResource(pkg.id, {
+        name: 'with-extras',
+        extras: { unit: 'persons', year: '2024' },
+      })
+      expect(resource.extras).toEqual({ unit: 'persons', year: '2024' })
 
-      // Set extras directly via DB (simulating pipeline metadata)
-      await db
-        .update(resourceTable)
-        .set({ extras: { pipeline_version: '2', content_hash: 'abc123' } })
-        .where(eq(resourceTable.id, resource.id))
+      const put = (body: Record<string, unknown>) =>
+        app.request(`/api/v1/resources/${resource.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
 
-      // PUT update — should NOT clear extras
+      const replaced = await put({ name: 'with-extras', extras: { unit: 'households' } })
+      expect(replaced.status).toBe(200)
+      expect((await replaced.json()).extras).toEqual({ unit: 'households' })
+
+      const omitted = await put({ name: 'renamed' })
+      expect((await omitted.json()).extras).toEqual({})
+    })
+
+    it('refuses a reserved extras key, naming it', async () => {
+      const pkg = await createPackage('extras-reserved-pkg')
+      const resource = await createResource(pkg.id, { extras: { unit: 'persons' } })
+
       const res = await app.request(`/api/v1/resources/${resource.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'renamed' }),
+        body: JSON.stringify({ extras: { format: 'CSV', healthEtag: 'x' } }),
       })
-      expect(res.status).toBe(200)
-
+      expect(res.status).toBe(400)
       const body = await res.json()
-      expect(body.name).toBe('renamed')
-      expect(body.extras).toEqual({ pipeline_version: '2', content_hash: 'abc123' })
+      expect(body.details.issues.map((i: { path: string[] }) => i.path.join('.')).sort()).toEqual([
+        'extras.format',
+        'extras.healthEtag',
+      ])
+
+      const [row] = await db
+        .select({ extras: resourceTable.extras })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row.extras).toEqual({ unit: 'persons' })
     })
 
     it('should enqueue pipeline when resource has an external URL', async () => {

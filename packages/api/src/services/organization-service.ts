@@ -9,8 +9,6 @@ import {
   and,
   or,
   sql,
-  asc,
-  desc,
   count,
   inArray,
   notExists,
@@ -19,6 +17,7 @@ import {
 } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
+import { orderTerms } from './list-order'
 import {
   NotFoundError,
   ValidationError,
@@ -76,13 +75,18 @@ export class OrganizationService {
     params: PaginationParams & {
       q?: string
       state?: 'active' | 'deleted'
-      orderBy?: 'name' | 'datasetCount'
+      /** `datasetCount` defaults to descending, the rest to ascending */
+      orderBy?: 'name' | 'title' | 'datasetCount'
+      sortOrder?: 'asc' | 'desc'
+      /** Only these, by name */
+      names?: string[]
     },
     viewer?: AuthUser
   ) {
-    const { offset = 0, limit = 20, q, state = 'active', orderBy } = params
+    const { offset = 0, limit = 20, q, state = 'active', orderBy, sortOrder, names } = params
 
     const conditions = [eq(organization.state, state)]
+    if (names?.length) conditions.push(inArray(organization.name, names))
 
     if (q) {
       conditions.push(
@@ -111,7 +115,13 @@ export class OrganizationService {
       })
       .from(organization)
       .where(where)
-      .orderBy(...(orderBy === 'datasetCount' ? [desc(datasetCount)] : []), asc(organization.name))
+      .orderBy(
+        ...orderTerms(orderBy, sortOrder, {
+          name: organization.name,
+          title: organization.title,
+          datasetCount,
+        })
+      )
       .limit(limit)
       .offset(offset)
 

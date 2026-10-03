@@ -151,12 +151,6 @@
     "categories": "Categories",
     "categoriesHelp": "Click to select or deselect",
     "noCategoriesAvailable": "No categories available",
-    "extras": "Custom Fields",
-    "extrasHelp": "Add custom key-value metadata pairs",
-    "extrasKeyPlaceholder": "Key",
-    "extrasValuePlaceholder": "Value",
-    "extrasAdd": "+ Add field",
-    "extrasDuplicateKey": "Duplicate custom field keys: {keys}",
     "authorEmail": "Author Email",
     "maintainerLabel": "Maintainer",
     "maintainerEmail": "Maintainer Email",
@@ -227,6 +221,15 @@
     "aiSuggestApply": "Adopt selected fields",
     "resourcesSavedImmediately": "Adding, editing, replacing or deleting a resource is saved right away. Only a new order needs \"Save order\".",
     "resourcesPreviewLimits": "Previews on the public page have limits: Office files over {officeMb} MB and JSON or GeoJSON over {jsonMb} MB are not previewed, and text shows only its first {textMb} MB."
+  },
+  "extras": {
+    "label": "Custom Fields",
+    "help": "Add custom key-value metadata pairs",
+    "keyPlaceholder": "Key",
+    "valuePlaceholder": "Value",
+    "add": "+ Add field",
+    "remove": "Remove this field",
+    "duplicateKey": "Duplicate custom field keys: {keys}"
   },
   "organization": {
     "title": "Organizations",
@@ -1078,7 +1081,8 @@
     "httpOnly": "Use a URL that starts with http or https",
     "privateAddress": "URLs pointing to a private or reserved address are not allowed",
     "keyColumnEmpty": "A primary key column name cannot be empty",
-    "keyColumnRepeated": "The same column cannot appear twice in the primary key"
+    "keyColumnRepeated": "The same column cannot appear twice in the primary key",
+    "reservedKey": "This key is reserved"
   },
   "problem": {
     "packageNameTaken": "This URL identifier is already in use",

@@ -334,6 +334,36 @@ export class PackageService {
   }
 
   /**
+   * The titles of the organizations and groups a search counted, by name — what
+   * CKAN's facets show as `display_name`. Only the named ones: the counts came
+   * from the search under the caller's visibility, so nothing else is read.
+   */
+  async facetTitles(facets: Pick<SearchFacets, 'organizations' | 'groups'>) {
+    const titles = async (table: typeof organization | typeof group, names: string[]) =>
+      new Map(
+        names.length === 0
+          ? []
+          : (
+              await this.db
+                .select({ name: table.name, title: table.title })
+                .from(table)
+                .where(and(inArray(table.name, names), eq(table.state, 'active')))
+            ).map((r) => [r.name, r.title] as const)
+      )
+    const [organizations, groups] = await Promise.all([
+      titles(
+        organization,
+        facets.organizations.map((b) => b.name)
+      ),
+      titles(
+        group,
+        facets.groups.map((b) => b.name)
+      ),
+    ])
+    return { organizations, groups }
+  }
+
+  /**
    * Enrich SearchAdapter facets with all possible values from DB.
    * SearchAdapter only returns non-zero buckets; this supplements with
    * all active orgs/groups/tags/formats/licenses (count=0 for missing).
@@ -498,6 +528,19 @@ export class PackageService {
     return pkg
   }
 
+  /** Names of the active public datasets, by name — CKAN's `package_list` */
+  async listPublicNames(limit?: number, offset = 0): Promise<string[]> {
+    const query = this.db
+      .select({ name: packageTable.name })
+      .from(packageTable)
+      .where(and(eq(packageTable.state, 'active'), eq(packageTable.private, false)))
+      .orderBy(packageTable.name)
+      .offset(offset)
+      .$dynamic()
+    const rows = await (limit === undefined ? query : query.limit(limit))
+    return rows.map((r) => r.name)
+  }
+
   async getDetailByNameOrId(
     nameOrId: string,
     viewer?: AuthUser,
@@ -556,6 +599,9 @@ export class PackageService {
           id: group.id,
           name: group.name,
           title: group.title,
+          description: group.description,
+          imageUrl: group.imageUrl,
+          created: group.created,
         })
         .from(packageGroup)
         .innerJoin(group, eq(packageGroup.groupId, group.id))
@@ -568,6 +614,7 @@ export class PackageService {
               title: organization.title,
               description: organization.description,
               imageUrl: organization.imageUrl,
+              created: organization.created,
             })
             .from(organization)
             .where(and(inArray(organization.id, orgIds), eq(organization.state, 'active')))

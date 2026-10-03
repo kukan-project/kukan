@@ -399,6 +399,29 @@ describe('DatasetForm (draft flows)', () => {
       expect(saveButton).toBeEnabled()
     })
 
+    it('should count a value retyped as text as a change from the number it was', () => {
+      setupMocks(jsonResponse({}))
+      render(
+        <DatasetForm
+          mode="edit"
+          isDraft
+          nameOrId="draft-1"
+          defaultValues={{ name: '', title: 'WIP', extras: { year: 2024 } }}
+          organizations={organizations}
+          onSaved={vi.fn()}
+        />
+      )
+      const saveButton = screen.getByRole('button', { name: 'Save Draft' })
+      expect(saveButton).toBeDisabled()
+
+      // Same key, same text — but the row saves the string now, not the number
+      fireEvent.click(screen.getByRole('button', { name: 'Remove this field' }))
+      fireEvent.click(screen.getByRole('button', { name: '+ Add field' }))
+      fireEvent.change(screen.getByPlaceholderText('Key'), { target: { value: 'year' } })
+      fireEvent.change(screen.getByPlaceholderText('Value'), { target: { value: '2024' } })
+      expect(saveButton).toBeEnabled()
+    })
+
     it('should disable Save Draft again after a successful save', async () => {
       setupMocks(jsonResponse({ id: 'draft-1', name: 'untitled-abcd1234', ownerOrg: null }))
       const onSaved = renderDraftEdit()

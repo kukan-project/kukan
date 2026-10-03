@@ -111,6 +111,11 @@ export async function markPackageResourceDocs(
     )
 }
 
+/** Where a resource's stored content is served (ADR-017) */
+export function resourceDownloadPath(id: string): string {
+  return `/api/v1/resources/${id}/download`
+}
+
 /** What a resource's search document is built from (see search-index.ts) — one
  *  list, so a field added to the index reaches every select that feeds it. */
 export const resourceDocColumns = {
@@ -472,6 +477,7 @@ export class ResourceService {
       position,
       resourceType: item.resourceType,
       section: item.section,
+      extras: item.extras ?? {},
       state: 'active',
       // Its document is written after the commit, under the sync's lock like
       // every other (see `update`)
@@ -514,9 +520,10 @@ export class ResourceService {
           format: input.format ? normalizeFormat(input.format) : null,
           mimetype: input.mimetype ?? null,
           resourceType: input.resourceType ?? null,
+          extras: input.extras ?? {},
           // Absent keeps the label: it is arranged from the reorder side (ADR-050)
           ...(input.section !== undefined && { section: input.section }),
-          // size/hash/extras are absent on purpose: they are system-managed
+          // size/hash are absent on purpose: they are system-managed
           // (measured or produced by the pipeline) and left untouched. Writing
           // back the values read above would be a read-modify-write that reverts
           // whatever the worker or the health check recorded in between — and an

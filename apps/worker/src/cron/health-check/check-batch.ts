@@ -456,8 +456,7 @@ export async function checkBatch(
  * new one, and the checker would not revisit it for a day.
  *
  * Writing {@link scrubbedExtras} back is how a row an overlapping old worker
- * wrote this checker's old keys onto gets cleaned — see {@link
- * LEGACY_HEALTH_EXTRAS_KEYS}.
+ * wrote this checker's old keys onto gets cleaned — see its declaration.
  */
 async function updateHealthStatus(
   db: Database,

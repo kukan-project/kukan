@@ -151,12 +151,6 @@
     "categories": "カテゴリー",
     "categoriesHelp": "クリックして選択・解除",
     "noCategoriesAvailable": "選択できるカテゴリーがありません",
-    "extras": "カスタムフィールド",
-    "extrasHelp": "任意のキー・値ペアを追加できます",
-    "extrasKeyPlaceholder": "キー",
-    "extrasValuePlaceholder": "値",
-    "extrasAdd": "＋ フィールドを追加",
-    "extrasDuplicateKey": "カスタムフィールドのキーが重複しています: {keys}",
     "authorEmail": "作成者メール",
     "maintainerLabel": "管理者",
     "maintainerEmail": "管理者メール",
@@ -227,6 +221,15 @@
     "aiSuggestApply": "選択したフィールドを採用",
     "resourcesSavedImmediately": "リソースの追加・編集・削除・差し替えは、その場で保存されます。並び順の変更だけは「並び順を保存」で確定します。",
     "resourcesPreviewLimits": "公開ページのプレビューには上限があります。Office ファイルは {officeMb} MB、JSON・GeoJSON は {jsonMb} MB を超えるとプレビューされません。テキストは先頭 {textMb} MB まで表示されます。"
+  },
+  "extras": {
+    "label": "カスタムフィールド",
+    "help": "任意のキー・値ペアを追加できます",
+    "keyPlaceholder": "キー",
+    "valuePlaceholder": "値",
+    "add": "＋ フィールドを追加",
+    "remove": "このフィールドを削除",
+    "duplicateKey": "カスタムフィールドのキーが重複しています: {keys}"
   },
   "organization": {
     "title": "組織",
@@ -1093,7 +1096,8 @@
     "httpOnly": "http または https の URL のみ使用できます",
     "privateAddress": "プライベートアドレスや予約済みアドレスを指す URL は使用できません",
     "keyColumnEmpty": "主キーの列名を空にすることはできません",
-    "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません"
+    "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません",
+    "reservedKey": "このキーは予約されているため使えません"
   },
   "problem": {
     "packageNameTaken": "この URL 識別子はすでに使われています",

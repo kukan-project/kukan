@@ -76,6 +76,7 @@ import { PipelineStatusBadge } from './pipeline-status-badge'
 import { DropFilesZone, dropZoneClass } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
 import { ResourceFormFields } from './resource-form-fields'
+import { ExtrasFields, useExtrasRows } from '../extras-fields'
 import { PrimaryKeyPicker } from './primary-key-picker'
 import { ResourceVersionHistory } from './resource-version-history'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
@@ -90,6 +91,7 @@ interface Resource {
   pipelineStatus?: PipelineStatus | null
   latestVersion?: number | null
   section?: string | null
+  extras?: Record<string, unknown> | null
 }
 
 interface FormState {
@@ -407,6 +409,7 @@ export function ResourceList({
   const [formState, setFormState] = useState<FormState>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const extrasEditor = useExtrasRows()
   const [replacing, setReplacing] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [uploadingResourceId, setUploadingResourceId] = useState<string | null>(null)
@@ -709,6 +712,7 @@ export function ResourceList({
     setEditId(null)
     setCreating(false)
     setFormState(emptyForm)
+    extrasEditor.reset()
     clearUploadState()
   }
 
@@ -722,6 +726,7 @@ export function ResourceList({
       format: r.format ?? '',
       description: r.description ?? '',
     })
+    extrasEditor.reset(r.extras)
     clearUploadState()
   }
 
@@ -739,6 +744,7 @@ export function ResourceList({
     setEditId(null)
     setCreating(true)
     setFormState(emptyForm)
+    extrasEditor.reset()
     clearUploadState()
   }
 
@@ -868,6 +874,8 @@ export function ResourceList({
 
   async function handleSave() {
     if (!editId) return
+    const extras = extrasEditor.build()
+    if (!extras) return
     setSaving(true)
     setFormError(null)
     // Saving a url resource re-enqueues its pipeline server-side, and a
@@ -884,6 +892,8 @@ export function ResourceList({
         urlType: formState.urlType ?? undefined,
         format: formState.format || undefined,
         description: formState.description || undefined,
+        // Always sent: the PUT replaces extras whole, and the form holds all of them
+        extras,
       }
       if (formState.urlType !== 'upload') patch.url = formState.url || undefined
       const updated = await updateResource(editId, patch)
@@ -912,7 +922,7 @@ export function ResourceList({
   // --- Create ---
 
   /** POST a new resource; throws with the server's problem detail on failure */
-  async function createResource(body: Record<string, string>): Promise<Resource> {
+  async function createResource(body: Record<string, unknown>): Promise<Resource> {
     let res: Response
     try {
       res = await clientFetch(`/api/v1/packages/${packageId}/resources`, {
@@ -931,7 +941,7 @@ export function ResourceList({
   // don't interleave and dropped files keep their drop order as positions.
   // Cross-client position races are handled server-side (advisory lock in
   // ResourceService.create()). Uploads themselves stay parallel.
-  function enqueueCreate(body: Record<string, string>): Promise<Resource> {
+  function enqueueCreate(body: Record<string, unknown>): Promise<Resource> {
     // A new resource goes to the end, so it takes the level the end is on
     // (ADR-050) — spelled here rather than at each caller, because creating from
     // the form and dropping a file end up in the same place. The last row is
@@ -945,6 +955,8 @@ export function ResourceList({
   }
 
   async function handleCreate() {
+    const extras = extrasEditor.build()
+    if (!extras) return
     setSaving(true)
     setFormError(null)
     // Creating a resource with a url enqueues its pipeline server-side, and
@@ -967,7 +979,7 @@ export function ResourceList({
       }
       if (!body.format) delete body.format
 
-      const resource = await enqueueCreate(body)
+      const resource = await enqueueCreate({ ...body, extras })
       if (formState.urlType === 'upload') {
         setUploadingResourceId(resource.id)
       } else {
@@ -1185,6 +1197,7 @@ export function ResourceList({
               </TabsContent>
             </Tabs>
           </ResourceFormFields>
+          <ExtrasFields editor={extrasEditor} />
           <div className="flex gap-2">
             {isEditing ? (
               <Button onClick={handleSave} disabled={saving} variant="outline">

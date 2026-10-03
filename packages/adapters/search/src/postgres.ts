@@ -31,7 +31,7 @@ import {
   packageGroup,
   publicSummary,
 } from '@kukan/db'
-import { ilike, eq, and, or, sql, inArray, asc, desc } from 'drizzle-orm'
+import { ilike, eq, and, or, sql, inArray, asc, desc, gte, lte } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 
 /** The columns a query term is matched against, by the field the adapters report. */
@@ -126,7 +126,8 @@ export class PostgresSearchAdapter implements SearchAdapter {
 
     // Formats filter (AND — each selected format must be present)
     if (query.filters?.formats?.length) {
-      const fmts = query.filters.formats.map((f) => f.toUpperCase())
+      // Deduplicated once cased: CSV and csv are one format, and the count below must agree
+      const fmts = [...new Set(query.filters.formats.map((f) => f.toUpperCase()))]
       const count = fmts.length
       conditions.push(
         sql`EXISTS (
@@ -157,6 +158,13 @@ export class PostgresSearchAdapter implements SearchAdapter {
           HAVING COUNT(DISTINCT ${group.name}) = ${count}
         )`
       )
+    }
+
+    if (query.filters?.updatedFrom) {
+      conditions.push(gte(packageTable.updated, query.filters.updatedFrom))
+    }
+    if (query.filters?.updatedTo) {
+      conditions.push(lte(packageTable.updated, query.filters.updatedTo))
     }
 
     // Visibility: exclude private unless in allowed orgs
@@ -194,12 +202,12 @@ export class PostgresSearchAdapter implements SearchAdapter {
   /** Build ORDER BY clause from query sort params */
   private buildOrderBy(query: SearchQuery) {
     if (!query.sortBy) return desc(packageTable.updated)
-    const col =
-      query.sortBy === 'name'
-        ? packageTable.name
-        : query.sortBy === 'created'
-          ? packageTable.created
-          : packageTable.updated
+    const col = {
+      name: packageTable.name,
+      created: packageTable.created,
+      updated: packageTable.updated,
+      id: packageTable.id,
+    }[query.sortBy]
     return query.sortOrder === 'asc' ? asc(col) : desc(col)
   }
 

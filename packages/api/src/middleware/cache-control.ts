@@ -50,6 +50,8 @@ export function publicCache(maxAge = 60, swr = 300): MiddlewareHandler {
   const value = publicCacheValue(maxAge, swr)
   return async (c, next) => {
     await next()
+    // A read sent as POST (the CKAN-compatible API takes both) is not a cacheable request
+    if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return
     // Skip authenticated requests: a signed-in user (e.g. the dashboard) must see
     // their own mutations immediately, so let them fall through to the default
     // `private, no-cache` instead of a cacheable shared response.

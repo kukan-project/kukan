@@ -172,9 +172,10 @@ export async function createApp() {
   const { mcpRouter } = await import('./routes/mcp')
   app.route('/api/mcp', mcpRouter)
 
-  // CKAN-compatible API v3 routes
+  // CKAN-compatible API routes — unversioned too, where ckanapi calls by default
   const { ckanCompatRouter } = await import('./routes/ckan-compat')
   app.route('/api/3/action', ckanCompatRouter)
+  app.route('/api/action', ckanCompatRouter)
 
   // 404 handler
   app.notFound((c) => {

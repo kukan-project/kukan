@@ -8,9 +8,27 @@ import { UnauthorizedError, SESSION_COOKIE_NAME, SysadminRequiredError } from '@
 import type { Auth } from '../auth/auth'
 import { ApiTokenService } from '../services/api-token-service'
 
+/** Sign the request in as the user `rawToken` belongs to, when it is a live token. */
+async function authenticateToken(c: Context, rawToken: string): Promise<void> {
+  try {
+    const tokenUser = await new ApiTokenService(c.get('db')).validate(rawToken)
+    if (tokenUser) {
+      c.set('user', {
+        id: tokenUser.id,
+        email: tokenUser.email,
+        name: tokenUser.name,
+        displayName: tokenUser.displayName,
+        sysadmin: tokenUser.sysadmin,
+      })
+    }
+  } catch (err) {
+    c.get('logger').warn({ err }, 'API token validation error')
+  }
+}
+
 /**
  * Optional authentication - adds user to context if authenticated.
- * Checks session cookie first, then Bearer API token.
+ * Checks session cookie first, then the API token.
  */
 export function optionalAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
@@ -49,27 +67,28 @@ export function optionalAuth(auth: Auth) {
 
     // 2. Check for API token in Authorization header
     const authHeader = c.req.header('Authorization')
-    if (authHeader?.startsWith('Bearer ')) {
-      const rawToken = authHeader.slice(7)
-      try {
-        const db = c.get('db')
-        const tokenService = new ApiTokenService(db)
-        const tokenUser = await tokenService.validate(rawToken)
+    if (authHeader?.startsWith('Bearer ')) await authenticateToken(c, authHeader.slice(7))
 
-        if (tokenUser) {
-          c.set('user', {
-            id: tokenUser.id,
-            email: tokenUser.email,
-            name: tokenUser.name,
-            displayName: tokenUser.displayName,
-            sysadmin: tokenUser.sysadmin,
-          })
-        }
-      } catch (err) {
-        c.get('logger').warn({ err }, 'API token validation error')
-      }
+    await next()
+  }
+}
+
+/**
+ * The token forms CKAN clients send, for the CKAN-compatible API: the bare
+ * token in `Authorization` (ckanapi) or `X-CKAN-API-Key`. Runs after
+ * {@link optionalAuth}, so only a request it left signed out is read again.
+ *
+ * Bare means no scheme: a site behind basic auth has `Authorization: Basic …`
+ * on every request, and its CKAN clients send the token in `X-CKAN-API-Key`.
+ */
+export function ckanTokenAuth() {
+  return async (c: Context, next: Next) => {
+    if (!c.get('user')) {
+      const header = c.req.header('Authorization')?.trim()
+      const rawToken =
+        header && !/\s/.test(header) ? header : c.req.header('X-CKAN-API-Key') || undefined
+      if (rawToken) await authenticateToken(c, rawToken)
     }
-
     await next()
   }
 }

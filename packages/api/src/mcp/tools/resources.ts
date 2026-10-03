@@ -8,7 +8,7 @@ import { primaryKeyOf, feedServiceRoot, ODATA_ENTITY_SET } from '@kukan/shared'
 import type { Env, OdataKeyFallback, OdataRefusal } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { ResourceService } from '../../services/resource-service'
+import { ResourceService, resourceDownloadPath } from '../../services/resource-service'
 import { PipelineService, isQueryable } from '../../services/pipeline-service'
 import {
   describeFeed,
@@ -103,7 +103,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
       const service = new ResourceService(db)
       const res = await service.getByIdWithAccessCheck(id, user)
 
-      const url = res.urlType === 'upload' ? `/api/v1/resources/${res.id}/download` : res.url
+      const url = res.urlType === 'upload' ? resourceDownloadPath(res.id) : res.url
 
       const text = [
         `Name: ${res.name || '(untitled)'}`,

@@ -562,6 +562,22 @@ describe('OpenSearchAdapter', () => {
       )
     })
 
+    it('filters on an updated range with either end open', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.search({
+        q: '',
+        filters: { updatedFrom: new Date('2026-01-02T03:04:05.000Z') },
+      })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.query.bool.filter).toEqual(
+        expect.arrayContaining([{ range: { updated: { gte: '2026-01-02T03:04:05.000Z' } } }])
+      )
+    })
+
     it('filters formats through the resources, case-insensitively', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
@@ -666,6 +682,18 @@ describe('OpenSearchAdapter', () => {
         await adapter.search({ q: '', sortBy: 'created', sortOrder: 'asc' })
         const callArgs = mockClient.search.mock.calls[0][0]
         expect(callArgs.body.sort).toEqual([{ created: { order: 'asc' } }])
+      })
+
+      it('sorts by name on its keyword field', async () => {
+        await adapter.search({ q: '', sortBy: 'name', sortOrder: 'asc' })
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ 'name.keyword': { order: 'asc' } }])
+      })
+
+      it('sorts by id', async () => {
+        await adapter.search({ q: '', sortBy: 'id', sortOrder: 'asc' })
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ id: { order: 'asc' } }])
       })
     })
   })

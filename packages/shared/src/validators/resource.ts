@@ -61,6 +61,70 @@ export function splitSection(labels: readonly (string | null | undefined)[]): st
   return null
 }
 
+/**
+ * What the health checker called its state before it had a column of its own
+ * (migration 0035). A deploy runs the new worker beside the old one, which
+ * writes them back, so the checker's write and the public projection both take
+ * them off (`scrubbedExtras` in `@kukan/db`). Refused as caller keys, so that
+ * scrub never eats something a person chose.
+ */
+export const LEGACY_HEALTH_EXTRAS_KEYS = [
+  'healthEtag',
+  'healthLastModified',
+  'healthError',
+  'healthHttpStatus',
+  'healthLastFullFetchAt',
+] as const
+
+/**
+ * The resource fields CKAN itself defines. The CKAN-compatible API spreads
+ * `extras` onto the resource's top level, as CKAN does, so a key spelled like
+ * one of these would either shadow the real field or vanish behind it.
+ */
+const CKAN_RESOURCE_FIELDS = [
+  'id',
+  'package_id',
+  'url',
+  'url_type',
+  'description',
+  'format',
+  'hash',
+  'name',
+  'resource_type',
+  'mimetype',
+  'mimetype_inner',
+  'cache_url',
+  'cache_last_updated',
+  'size',
+  'created',
+  'last_modified',
+  'metadata_modified',
+  'position',
+  'state',
+  'upload',
+  'datastore_active',
+  'tracking_summary',
+] as const
+
+/**
+ * Keys a resource's `extras` may not take: the above, and `section`, which the
+ * CKAN-compatible API puts on the same top level (ADR-050).
+ */
+export const RESERVED_RESOURCE_EXTRAS_KEYS: ReadonlySet<string> = new Set([
+  ...LEGACY_HEALTH_EXTRAS_KEYS,
+  ...CKAN_RESOURCE_FIELDS,
+  'section',
+])
+
+/** As a dataset's `extras`, less the reserved keys — refused rather than dropped, so a caller hears of it. */
+const resourceExtrasSchema = z.record(z.string(), z.unknown()).superRefine((extras, ctx) => {
+  for (const key of Object.keys(extras)) {
+    if (RESERVED_RESOURCE_EXTRAS_KEYS.has(key)) {
+      ctx.addIssue({ code: 'custom', message: VALIDATION_MESSAGES.reservedKey, path: [key] })
+    }
+  }
+})
+
 const resourceFieldsSchema = z.object({
   packageId: z.uuid(),
   url: z.string().nullish(),
@@ -72,6 +136,8 @@ const resourceFieldsSchema = z.object({
   resourceType: z.string().max(50).nullish(),
   // Absent leaves the stored label alone; null clears it (ADR-050)
   section: z.string().nullable().transform(normalizeSection).optional(),
+  // Replaced whole on update, absent clearing it, as CKAN's resource_update and a dataset's PUT do
+  extras: resourceExtrasSchema.optional(),
 })
 
 // `size` and `hash` are deliberately absent: the pipeline measures the stored
@@ -86,7 +152,7 @@ export const createResourceBodySchema = resourceFieldsSchema
   .omit({ packageId: true })
   .superRefine(refineUrl)
 
-/** PUT update: same as createResourceBodySchema (extras is system-managed, not user-editable) */
+/** PUT update: same as createResourceBodySchema */
 export const updateResourceSchema = createResourceBodySchema
 
 export type CreateResourceInput = z.infer<typeof createResourceSchema>

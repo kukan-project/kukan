@@ -12,6 +12,7 @@ export const VALIDATION_MESSAGES = {
   privateAddress: 'URL points to a private or reserved address',
   keyColumnEmpty: 'A key column name cannot be empty',
   keyColumnRepeated: 'Key columns must not repeat',
+  reservedKey: 'This key is reserved',
 } as const
 
 const KEY_BY_MESSAGE = new Map(

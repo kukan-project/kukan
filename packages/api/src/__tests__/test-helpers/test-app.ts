@@ -263,6 +263,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
 
   // CKAN compat
   app.route('/api/3/action', ckanCompatRouter)
+  app.route('/api/action', ckanCompatRouter)
 
   // OData feed (ADR-055)
   app.route(ODATA_BASE_PATH, odataRouter)

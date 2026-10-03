@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { createLogger, SESSION_COOKIE_NAME } from '@kukan/shared'
 import type { Database } from '@kukan/db'
-import { optionalAuth, requireAuth, requireSysadmin } from '../../middleware/auth'
+import { ckanTokenAuth, optionalAuth, requireAuth, requireSysadmin } from '../../middleware/auth'
 import { errorHandler } from '../../middleware/error-handler'
 
 // Mock ApiTokenService
@@ -31,10 +31,10 @@ function createTestApp(middleware: ReturnType<typeof optionalAuth>) {
   })
   app.onError(errorHandler)
   app.use('/test', middleware)
-  app.get('/test', (c) => {
-    const user = c.get('user')
-    return c.json({ user: user ?? null })
-  })
+  app.use('/api/3/*', middleware, ckanTokenAuth())
+  const whoami = (c: Context) => c.json({ user: c.get('user') ?? null })
+  app.get('/test', whoami)
+  app.get('/api/3/action/whoami', whoami)
   return app
 }
 
@@ -129,6 +129,33 @@ describe('optionalAuth', () => {
       displayName: null,
       sysadmin: false,
     })
+  })
+
+  // ckanapi sends the token bare, older CKAN clients in X-CKAN-API-Key. Read by
+  // the CKAN-compatible router's own step, so the rest of the API stays Bearer-only
+  it.each<Record<string, string>>([
+    { Authorization: 'kukan_abc123' },
+    { 'X-CKAN-API-Key': 'kukan_abc123' },
+    // Behind basic auth the Authorization header is the site's, not the token
+    { Authorization: 'Basic dXNlcjpwYXNz', 'X-CKAN-API-Key': 'kukan_abc123' },
+  ])('reads the token as CKAN clients send it on the CKAN-compatible API (%o)', async (headers) => {
+    mockValidate.mockResolvedValue({
+      id: 'u2',
+      email: 'api@test.com',
+      name: 'apiuser',
+      displayName: null,
+      sysadmin: false,
+    })
+    const app = createTestApp(optionalAuth(createMockAuth(null)))
+
+    const ckan = await app.request('/api/3/action/whoami', { headers })
+    expect((await ckan.json()).user).toMatchObject({ id: 'u2' })
+    expect(mockValidate).toHaveBeenCalledWith('kukan_abc123')
+
+    mockValidate.mockClear()
+    const rest = await app.request('/test', { headers })
+    expect((await rest.json()).user).toBeNull()
+    expect(mockValidate).not.toHaveBeenCalled()
   })
 
   it('should not set user when no credentials provided', async () => {

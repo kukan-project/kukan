@@ -16,6 +16,7 @@ import {
   customType,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { LEGACY_HEALTH_EXTRAS_KEYS } from '@kukan/shared'
 import type { ColumnSettings, ResourceSummaryMeta } from '@kukan/shared'
 import { packageTable } from './package'
 
@@ -66,29 +67,6 @@ export interface HealthCheckState {
   lastFullFetchAt?: number
 }
 
-/**
- * What the health checker called these before it had a column of its own.
- *
- * Migration 0035 took them off `extras`, but a deploy runs the new worker beside
- * the old one, and the old one writes them back — onto a column CKAN defines as
- * caller-supplied metadata, which every public read returns. Worse, it stamps
- * `healthCheckedAt` doing so, which puts the row outside the staleness window
- * the new worker selects on: the row would carry them, publicly, until it comes
- * round again a day later. So the checker's write takes them off, and so does
- * the public projection.
- *
- * Named rather than matched on `health%` so neither eats a key someone else
- * chose. Both go once nothing writes them: the old worker, or an `extras` opened
- * to callers, whichever comes first.
- */
-export const LEGACY_HEALTH_EXTRAS_KEYS = [
-  'healthEtag',
-  'healthLastModified',
-  'healthError',
-  'healthHttpStatus',
-  'healthLastFullFetchAt',
-] as const
-
 export const resource = pgTable(
   'resource',
   {
@@ -132,7 +110,7 @@ export const resource = pgTable(
     state: varchar('state', { length: 20 }).default('active'),
     resourceType: varchar('resource_type', { length: 50 }),
     // Caller-supplied metadata, as CKAN defines it, and rendered whole on the
-    // public dataset page. Nothing internal goes here: the health checker did,
+    // public dataset page. Writable through the API, less the reserved keys. Nothing internal goes here: the health checker did,
     // and every reader had to be taught to look away — see {@link
     // HealthCheckState}, which is what a column for internal state looks like.
     extras: jsonb('extras').$type<Record<string, unknown>>().default({}),
@@ -227,6 +205,14 @@ export const resource = pgTable(
  * `extras` with {@link LEGACY_HEALTH_EXTRAS_KEYS} taken off — the scrub, spelled
  * once. Both the public projection and the checker's own write apply it, and
  * both go together, so neither owns it.
+ *
+ * Migration 0035 took those keys off `extras`, but a deploy runs the new worker
+ * beside the old one, and the old one writes them back — onto a column CKAN
+ * defines as caller-supplied metadata, which every public read returns. Worse,
+ * it stamps `healthCheckedAt` doing so, which puts the row outside the
+ * staleness window the new worker selects on: the row would carry them,
+ * publicly, until it comes round again a day later. Callers cannot write them
+ * (the resource schema refuses them), so the scrub never eats a key someone chose.
  */
 export const scrubbedExtras = sql<
   Record<string, unknown>

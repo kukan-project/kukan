@@ -1038,7 +1038,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   // Search
   // ------------------------------------------------------------------
 
-  private static readonly VALID_SORT_FIELDS = new Set(['updated', 'created', 'name'])
+  private static readonly VALID_SORT_FIELDS = new Set(['updated', 'created', 'name', 'id'])
 
   private static readonly JOIN_TYPE: Record<'packages' | 'resources' | 'contents', string> = {
     packages: 'package',
@@ -1050,7 +1050,9 @@ export class OpenSearchAdapter implements SearchAdapter {
   private buildSort(query: SearchQuery): (string | Record<string, unknown>)[] {
     if (query.sortBy && OpenSearchAdapter.VALID_SORT_FIELDS.has(query.sortBy)) {
       const order = query.sortOrder ?? 'desc'
-      return [{ [query.sortBy]: { order } }]
+      // `name` is analyzed text, which OpenSearch refuses to sort on
+      const field = query.sortBy === 'name' ? 'name.keyword' : query.sortBy
+      return [{ [field]: { order } }]
     }
     return query.q?.trim()
       ? ['_score', { updated: { order: 'desc' as const } }]
@@ -1092,6 +1094,16 @@ export class OpenSearchAdapter implements SearchAdapter {
       for (const g of filters.groups) {
         clauses.push({ term: { groups: g } })
       }
+    }
+    if (filters?.updatedFrom || filters?.updatedTo) {
+      clauses.push({
+        range: {
+          updated: {
+            ...(filters.updatedFrom && { gte: filters.updatedFrom.toISOString() }),
+            ...(filters.updatedTo && { lte: filters.updatedTo.toISOString() }),
+          },
+        },
+      })
     }
     if (filters?.excludePrivate) {
       if (filters.allowPrivateOrgIds?.length) {

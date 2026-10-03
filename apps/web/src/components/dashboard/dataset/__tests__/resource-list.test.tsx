@@ -923,3 +923,91 @@ describe('ResourceList deep link', () => {
     expect(screen.queryByText('Save')).not.toBeInTheDocument()
   })
 })
+
+describe('ResourceList custom fields', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset()
+  })
+
+  const resources = [
+    {
+      id: 'r1',
+      name: 'data.csv',
+      url: 'https://example.com/a.csv',
+      urlType: null,
+      extras: { unit: 'persons', year: 2024 },
+    },
+  ]
+  const baseProps = { packageId: 'pkg1', resources, onUpdated: () => {} }
+
+  /** The body of the request made with `method`, parsed */
+  function sentBody(method: string) {
+    const call = mockClientFetch.mock.calls.find(([, init]) => init?.method === method)
+    return call && JSON.parse(String(call[1]!.body))
+  }
+
+  it('shows a resource extras in its editor and saves them whole', async () => {
+    mockClientFetch.mockImplementation(async (_url, init) =>
+      jsonResponse(init?.method === 'PUT' ? {} : resources[0])
+    )
+    render(<ResourceList {...baseProps} />)
+
+    fireEvent.click(screen.getByText('data.csv'))
+    expect(screen.getByDisplayValue('persons')).toBeInTheDocument()
+    // Not a string: shown, and saved back, as its JSON text
+    expect(screen.getByDisplayValue('2024')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByDisplayValue('persons'), { target: { value: 'households' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove this field' })[1])
+    fireEvent.click(screen.getByText('+ Add field'))
+    const [, newKey] = screen.getAllByPlaceholderText('Key')
+    const [, newValue] = screen.getAllByPlaceholderText('Value')
+    fireEvent.change(newKey, { target: { value: ' source ' } })
+    fireEvent.change(newValue, { target: { value: 'census' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(sentBody('PUT')).toBeDefined())
+    expect(sentBody('PUT').extras).toEqual({ unit: 'households', source: 'census' })
+  })
+
+  it('saves a value it was not asked to change as it was, not as its text', async () => {
+    mockClientFetch.mockImplementation(async (_url, init) =>
+      jsonResponse(init?.method === 'PUT' ? {} : resources[0])
+    )
+    render(<ResourceList {...baseProps} />)
+
+    fireEvent.click(screen.getByText('data.csv'))
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(sentBody('PUT')).toBeDefined())
+    expect(sentBody('PUT').extras).toEqual({ unit: 'persons', year: 2024 })
+  })
+
+  it('refuses a key typed twice before sending anything', () => {
+    render(<ResourceList {...baseProps} />)
+
+    fireEvent.click(screen.getByText('data.csv'))
+    fireEvent.change(screen.getAllByPlaceholderText('Key')[1], { target: { value: 'unit' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    expect(screen.getByText('Duplicate custom field keys: unit')).toBeInTheDocument()
+    expect(mockClientFetch).not.toHaveBeenCalled()
+  })
+
+  it('sends the extras a new resource is created with', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'new' }))
+    render(<ResourceList {...baseProps} resources={[]} />)
+
+    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.click(screen.getByText('+ Add field'))
+    fireEvent.change(screen.getByPlaceholderText('Key'), { target: { value: 'unit' } })
+    fireEvent.change(screen.getByPlaceholderText('Value'), { target: { value: 'persons' } })
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/data.csv'), {
+      target: { value: 'https://example.com/b.csv' },
+    })
+    fireEvent.click(screen.getAllByText('Add Resource').at(-1)!)
+
+    await waitFor(() => expect(sentBody('POST')).toBeDefined())
+    expect(sentBody('POST').extras).toEqual({ unit: 'persons' })
+  })
+})

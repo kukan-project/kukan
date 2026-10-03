@@ -139,7 +139,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | POST   | `/resources/{id}/column-settings/check` | この主キーで行を同定できるか                                                 | 組織 editor |
 | PUT    | `/resources/{id}/column-settings`       | 主キーを確定する                                                             | 組織 editor |
 | PUT    | `/resources/{id}/summary`               | AI による説明を非表示にする / 戻す（`{ hidden }`）                           | 組織 editor |
-| PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換、extras はシステム管理）                      | 組織 editor |
+| PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換。`section` だけは省略で保持）                 | 組織 editor |
 | DELETE | `/resources/{id}`                       | リソース削除                                                                 | 組織 editor |
 
 ### セクション (section)
@@ -171,6 +171,26 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
     { "resourceId": "<id-2>", "section": null }
   ]
 }
+```
+
+### カスタムフィールド (extras)
+
+リソースは、利用者が自由に付けられるキーと値（`extras`、オブジェクト）を持ちます。データセットの
+`extras` と同じく、値には任意の JSON を置けます。
+
+- `POST /packages/{id}/resources` と `PUT /resources/{id}` で指定できます。`PUT` では**丸ごと置き換わり**、
+  省略すると空（`{}`）になります。データセットの `PUT` や CKAN の `resource_update` と同じ扱いです
+- 次のキーは予約されていて、使うと `400` になります（`details.issues[].path` が `["extras", "<キー>"]`）
+  - CKAN がリソースに定める項目名（`id`、`package_id`、`url`、`url_type`、`name`、`description`、
+    `format`、`mimetype`、`size`、`hash`、`created`、`last_modified`、`metadata_modified`、`position`、
+    `state`、`resource_type` など）。[CKAN 互換 API](./ckan) は `extras` をリソースのトップレベルに
+    展開するため、同じ名前だと標準の項目と区別できません
+  - `section`。CKAN 互換 API では、リソースの[セクション](#セクション-section)を同じトップレベルに載せるため
+  - 以前のヘルスチェックが使っていたキー（`healthEtag`、`healthLastModified`、`healthError`、
+    `healthHttpStatus`、`healthLastFullFetchAt`）
+
+```json
+{ "name": "人口統計", "url": "https://example.com/population.csv", "extras": { "単位": "人" } }
 ```
 
 ### バージョン (versions)
