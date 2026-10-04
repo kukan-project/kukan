@@ -54,11 +54,18 @@ permissions:
 # it, with nothing to say why — so a repository without the runner is left to
 # name nothing and get the standard one.
 #
-# `lint-typecheck` and `web-build` stay on the standard runner. Neither is on the
-# critical path (80s and 99s against the others' 218s), so paying twice the rate
-# to finish them earlier buys nothing. Larger runners bill outside the included
-# minutes at about twice the standard rate, so the arithmetic is that halving a
-# job's wall clock leaves its cost roughly where it was.
+# `lint-typecheck` and `web-build` stay on the standard runner. They were off the
+# critical path when that was decided (80s and 99s against the others' 218s).
+# They no longer always are: a change to a package at the root of the graph,
+# such as @kukan/shared, misses every turbo entry, and then each takes 150–300s
+# against `unit`'s ~150s. Larger runners bill outside the included minutes at
+# about twice the standard rate, so the arithmetic is that halving a job's wall
+# clock leaves its cost roughly where it was.
+
+# Every turbo invocation writes a run summary to `.turbo/runs`, which the
+# `prune-turbo-cache` action reads to decide what a develop push saves.
+env:
+  TURBO_RUN_SUMMARY: true
 
 jobs:
   # The name the branch ruleset requires, and nothing else: the two jobs below
@@ -119,21 +126,31 @@ jobs:
       # nearest store by prefix and downloads just the difference. This is the
       # only job that writes it — every job installs from the same lockfile, so
       # the store each would save is the same one.
+      #
+      # develop alone starts from an empty store when the lockfile moved,
+      # rather than from the nearest one by prefix. An install adds to a store
+      # and never takes away, so a store carried from lockfile to lockfile
+      # keeps every version it ever held: the saved entry had reached 1.1 GB
+      # against ~440 MB for the lockfile alone. `pnpm store prune` was the
+      # other way to bound it, and it removed a package the lockfile still
+      # needed. A fresh store costs develop one full download per dependency
+      # change.
       - name: Locate pnpm store
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore pnpm store
+        id: pnpm-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-${{ runner.os }}-
+          restore-keys: ${{ github.ref != 'refs/heads/develop' && format('pnpm-store-{0}-', runner.os) || '' }}
 
       - run: pnpm install --frozen-lockfile
 
       - name: Save pnpm store
-        if: github.ref == 'refs/heads/develop'
+        if: github.ref == 'refs/heads/develop' && steps.pnpm-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -155,9 +172,9 @@ jobs:
       # others' contents are dropped. Their contents are not interchangeable —
       # this job never builds @kukan/web, because the `^build` behind lint and
       # typecheck builds web's dependencies rather than web itself, which is why
-      # its cache stays in single-digit MBs while `web-build`'s carries the
-      # `.next` output (~130 MB per entry with `.next/cache` excluded — that
-      # exclusion is load-bearing: with it in, an entry was 722 MB of mostly
+      # its cache stays around 10 MB while `web-build`'s carries the `.next`
+      # output (~60 MB compressed per build with `.next/cache` excluded — that
+      # exclusion is load-bearing: with it in, one build was 722 MB of mostly
       # turbopack incremental state that a fresh runner never reads).
       - name: Restore turbo cache
         if: steps.changes.outputs.code == 'true'
@@ -179,14 +196,11 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
 
-      # A restore hands back every entry it held and the save writes them out
-      # again alongside the new ones, so without a bound the entry grows by
-      # every merge forever. Turbo does not touch an entry's mtime when it hits,
-      # so what survives this is an entry nothing has *written* in a week:
-      # dropping it costs one rebuild, after which it is saved fresh.
+      # Without a bound the saved cache grows by every merge; the action says
+      # what it keeps.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
-        run: find .turbo/cache -type f -mtime +7 -delete
+        uses: ./.github/actions/prune-turbo-cache
 
       - name: Save turbo cache
         if: github.ref == 'refs/heads/develop'
@@ -288,7 +302,7 @@ jobs:
       # entry is pruned before it is written.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
-        run: find .turbo/cache -type f -mtime +7 -delete
+        uses: ./.github/actions/prune-turbo-cache
 
       - name: Save turbo cache
         if: github.ref == 'refs/heads/develop'
@@ -318,7 +332,7 @@ jobs:
         ports:
           - 5432:5432
         # PGDATA on tmpfs. What costs time is the fsync behind every COMMIT,
-        # and 1034 tests against a real server commit constantly. On develop
+        # and ~1300 tests against a real server commit constantly. On develop
         # that took the `tests` figure vitest reports from ~98s to 48s and the
         # job from 240s to 169s; the `setup` figure did not move, so neither
         # the template copy nor the per-file truncate was the thing to point
@@ -400,7 +414,7 @@ jobs:
       # See `lint-typecheck` for why saving is limited to develop.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
-        run: find .turbo/cache -type f -mtime +7 -delete
+        uses: ./.github/actions/prune-turbo-cache
 
       - name: Save turbo cache
         if: github.ref == 'refs/heads/develop'
@@ -496,7 +510,7 @@ jobs:
       # See `lint-typecheck` for why saving is limited to develop.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
-        run: find .turbo/cache -type f -mtime +7 -delete
+        uses: ./.github/actions/prune-turbo-cache
 
       - name: Save turbo cache
         if: github.ref == 'refs/heads/develop'

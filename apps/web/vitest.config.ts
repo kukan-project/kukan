@@ -5,7 +5,8 @@ import { resolve } from 'path'
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: 'jsdom',
+    // The root config's web project uses happy-dom too; see there for why
+    environment: 'happy-dom',
     globals: true,
     setupFiles: ['./src/__tests__/setup.ts'],
     // A brand's own tests sit beside it (brands/<name>/__tests__), as the

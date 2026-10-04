@@ -1,0 +1,37 @@
+name: Prune turbo cache
+description: Drop every turbo cache entry the job's own runs did not use, before the cache is saved.
+
+# A restore hands back every entry it held and the save writes them out again
+# alongside the new ones, so without a bound the saved cache grows by every
+# merge. An age bound does not hold it: tar keeps the mtime an entry was
+# written with, so `-mtime +7` kept every build develop made that week — 33
+# pushes of a ~60 MB web build put `turbo-web` at 1.6 GB.
+#
+# What a later run can use is the entries this run hit or wrote: a pull
+# request restores the newest develop entry, and what it can hit there is the
+# packages it did not change. Turbo names each of those in a run summary
+# (`TURBO_RUN_SUMMARY`, set for the whole workflow), and an entry's files are
+# named by the same task hash.
+#
+# A job that ran no turbo task has no summary and is left alone — on a
+# docs-only push nothing was restored either.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        shopt -s nullglob
+        summaries=(.turbo/runs/*.json)
+        if [ ${#summaries[@]} -eq 0 ] || [ ! -d .turbo/cache ]; then
+          echo 'no run summary; nothing pruned'
+          exit 0
+        fi
+        keep=$(jq -r '.tasks[].hash' "${summaries[@]}" | sort -u)
+        before=$(du -sm .turbo/cache | cut -f1)
+        for f in .turbo/cache/*; do
+          name=$(basename "$f")
+          # <hash>.tar.zst, <hash>-manifest.json, <hash>-meta.json
+          grep -qxF "${name%%[.-]*}" <<<"$keep" || rm -f -- "$f"
+        done
+        echo "kept $(wc -l <<<"$keep") task(s): ${before} MB -> $(du -sm .turbo/cache | cut -f1) MB"
