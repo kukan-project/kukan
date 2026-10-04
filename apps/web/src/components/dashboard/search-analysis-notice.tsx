@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
-import { useFetch } from '@/hooks/use-fetch'
+import { useLatestJson } from '@/hooks/use-latest-json'
 import { useUser } from '@/components/dashboard/user-provider'
 import { MaintenanceNotice } from '@/components/dashboard/maintenance-notice'
 
@@ -16,7 +16,7 @@ import { MaintenanceNotice } from '@/components/dashboard/maintenance-notice'
 export function SearchAnalysisNotice() {
   const { sysadmin } = useUser()
   const t = useTranslations('dashboard.searchAnalysis')
-  const { data } = useFetch<{ stale: boolean }>(
+  const { data, fetch: reload } = useLatestJson<{ stale: boolean }>(
     sysadmin ? '/api/v1/admin/search/analysis-status' : null
   )
 
@@ -29,6 +29,7 @@ export function SearchAnalysisNotice() {
       action={t('reanalyse')}
       running={t('reanalysing')}
       queued={t('queued')}
+      reload={reload}
       onRun={async () =>
         (await clientFetch('/api/v1/admin/search/reanalyse', { method: 'POST' })).ok
       }

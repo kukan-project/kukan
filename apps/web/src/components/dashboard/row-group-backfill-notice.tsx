@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
-import { useFetch } from '@/hooks/use-fetch'
+import { useLatestJson } from '@/hooks/use-latest-json'
 import { useUser } from '@/components/dashboard/user-provider'
 import { MaintenanceNotice } from '@/components/dashboard/maintenance-notice'
 
@@ -25,7 +25,7 @@ interface RowGroupStatus {
 export function RowGroupBackfillNotice() {
   const { sysadmin } = useUser()
   const t = useTranslations('dashboard.rowGroupBackfill')
-  const { data: status } = useFetch<RowGroupStatus>(
+  const { data: status, fetch: reload } = useLatestJson<RowGroupStatus>(
     sysadmin ? '/api/v1/admin/row-group-status' : null
   )
 
@@ -46,6 +46,7 @@ export function RowGroupBackfillNotice() {
       action={t('record')}
       running={t('recording')}
       queued={t('queued')}
+      reload={reload}
       onRun={async () =>
         (await clientFetch('/api/v1/admin/record-row-groups', { method: 'POST' })).ok
       }

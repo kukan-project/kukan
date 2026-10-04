@@ -76,10 +76,10 @@ describe('AdminQueuePage', () => {
     )
   })
 
-  it('opens on the scheduled jobs of every type', () => {
+  it('opens on the running jobs of every type', () => {
     render(<AdminQueuePage />)
 
-    expect(mockUsePaginatedFetch).toHaveBeenCalledWith('/api/v1/admin/queue/jobs?status=scheduled')
+    expect(mockUsePaginatedFetch).toHaveBeenCalledWith('/api/v1/admin/queue/jobs?status=running')
   })
 
   it('counts jobs by type and status, with a total row', async () => {

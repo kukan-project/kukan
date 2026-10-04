@@ -203,7 +203,7 @@ describe('Admin API Routes', () => {
       const res = await app.request('/api/v1/admin/embedding-status')
 
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
     it('counts a resource that has never been embedded', async () => {
@@ -212,7 +212,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 1 })
+      expect(await res.json()).toEqual({ missing: 1, outstanding: 1 })
     })
 
     it('counts a resource embedded under a different model', async () => {
@@ -228,7 +228,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 1 })
+      expect(await res.json()).toEqual({ missing: 1, outstanding: 1 })
     })
 
     it('does not count a resource already embedded under the current model', async () => {
@@ -244,13 +244,14 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
-    it('does not count a resource marked moments ago', async () => {
-      // The ordinary gap between an edit and its delayed job. Reporting it
-      // would put a prompt in front of an administrator for work already on
-      // its way.
+    it('leaves a resource marked moments ago out of what is missing, not out of what is outstanding', async () => {
+      // The ordinary gap between an edit and its delayed job. Reporting it as
+      // missing would put a prompt in front of an administrator for work
+      // already on its way; once regeneration is asked for, every resource it
+      // queues is marked so, and outstanding is what follows them.
       const packageId = await seedPackage('embed-status-pending')
       await db.insert(resource).values({
         packageId,
@@ -262,7 +263,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 1 })
     })
 
     it('counts a resource whose mark went quiet without producing a vector', async () => {
@@ -277,7 +278,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 1 })
+      expect(await res.json()).toEqual({ missing: 1, outstanding: 1 })
     })
 
     it('ignores deleted resources and non-active packages', async () => {
@@ -291,7 +292,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
     it('does not count a resource there is nothing to embed for', async () => {
@@ -304,7 +305,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
     it("counts an untitled package's resource once it has words of its own", async () => {
@@ -315,7 +316,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 1 })
+      expect(await res.json()).toEqual({ missing: 1, outstanding: 1 })
     })
 
     it('does not count a resource whose package carries only an empty tag', async () => {
@@ -329,7 +330,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
     it("counts an untitled package's resource once the package has a tag", async () => {
@@ -343,7 +344,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 1 })
+      expect(await res.json()).toEqual({ missing: 1, outstanding: 1 })
     })
 
     it('does not count a resource whose only words are a hidden abstract', async () => {
@@ -360,7 +361,7 @@ describe('Admin API Routes', () => {
 
       const res = await statusApp.request('/api/v1/admin/embedding-status')
 
-      expect(await res.json()).toEqual({ missing: 0 })
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
     it('rejects non-sysadmin requests', async () => {

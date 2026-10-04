@@ -76,4 +76,12 @@ describe('useLatestJson', () => {
 
     expect(result.current.data).toEqual({ n: 1 })
   })
+
+  it('fetches nothing for a null url, on mount or when asked', async () => {
+    const { result } = renderHook(() => useLatestJson<{ n: number }>(null))
+    await act(() => result.current.fetch())
+
+    expect(clientFetch).not.toHaveBeenCalled()
+    expect(result.current.data).toBeNull()
+  })
 })

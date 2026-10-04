@@ -123,10 +123,7 @@ describe('DashboardPage', () => {
       renderPage(sysadmin)
 
       await waitFor(() => {
-        expect(clientFetch).toHaveBeenCalledWith(
-          '/api/v1/admin/search/analysis-status',
-          expect.anything()
-        )
+        expect(clientFetch).toHaveBeenCalledWith('/api/v1/admin/search/analysis-status')
       })
       expect(screen.queryByText('Re-analyse the search index')).not.toBeInTheDocument()
     })
@@ -197,10 +194,7 @@ describe('DashboardPage', () => {
       await waitFor(() => {
         expect(clientFetch).toHaveBeenCalled()
       })
-      expect(clientFetch).not.toHaveBeenCalledWith(
-        '/api/v1/admin/search/analysis-status',
-        expect.anything()
-      )
+      expect(clientFetch).not.toHaveBeenCalledWith('/api/v1/admin/search/analysis-status')
     })
   })
 

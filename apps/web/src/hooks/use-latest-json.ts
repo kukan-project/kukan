@@ -10,13 +10,15 @@ import { keepIfEqual } from '@/lib/keep-if-equal'
  * cannot land after the action's reload with what came before it, and the
  * same answer keeps the same value, so nothing re-renders. Never throws: a
  * failed fetch keeps what is shown, and must not cut short whatever asked for
- * it — a dialog closing, say.
+ * it — a dialog closing, say. A `null` url fetches nothing — for data only some
+ * callers need.
  */
-export function useLatestJson<T>(url: string) {
+export function useLatestJson<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null)
   const request = useRef(0)
 
   const fetch = useCallback(async () => {
+    if (url === null) return
     const id = ++request.current
     try {
       const res = await clientFetch(url)

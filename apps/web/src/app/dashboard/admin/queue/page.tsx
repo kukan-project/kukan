@@ -142,9 +142,9 @@ export default function AdminQueuePage() {
   )
   const counts = countsData?.items ?? null
 
-  // What is coming next, of every type; dead jobs show as red counts
+  // What is running now, of every type; dead jobs show as red counts
   const [filter, setFilter] = useState<{ status: JobStatus; type?: string }>({
-    status: 'scheduled',
+    status: 'running',
   })
   const jobsUrl = useMemo(() => {
     const params = new URLSearchParams({ status: filter.status })

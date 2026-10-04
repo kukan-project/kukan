@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
-import { useFetch } from '@/hooks/use-fetch'
+import { useLatestJson } from '@/hooks/use-latest-json'
 import { useUser } from '@/components/dashboard/user-provider'
 import { MaintenanceNotice } from '@/components/dashboard/maintenance-notice'
 
@@ -24,7 +24,7 @@ interface BackfillStatus {
 export function VersionBackfillNotice() {
   const { sysadmin } = useUser()
   const t = useTranslations('dashboard.versionBackfill')
-  const { data: status } = useFetch<BackfillStatus>(
+  const { data: status, fetch: reload } = useLatestJson<BackfillStatus>(
     sysadmin ? '/api/v1/admin/version-backfill-status' : null
   )
 
@@ -48,6 +48,7 @@ export function VersionBackfillNotice() {
       action={t('backfill')}
       running={t('backfilling')}
       queued={t('backfillQueued')}
+      reload={reload}
       onRun={async () =>
         (await clientFetch('/api/v1/admin/backfill-versions', { method: 'POST' })).ok
       }
