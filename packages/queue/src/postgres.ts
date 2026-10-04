@@ -1,5 +1,5 @@
 /**
- * KUKAN PostgreSQL Queue Adapter (ADR-058)
+ * KUKAN PostgreSQL Job Queue (ADR-058)
  *
  * The jobs are rows of `job`, taken with `FOR UPDATE SKIP LOCKED` and held by a
  * lease. Nothing polls: a writer wakes the consumer after its commit, and the
@@ -19,8 +19,8 @@ import {
   type EnqueueOptions,
   type Job,
   type JobRecord,
-  type QueueAdapter,
-} from './adapter'
+  type JobQueue,
+} from './job-queue'
 
 /**
  * How long a lease lasts, and how it is held while a handler runs.
@@ -53,7 +53,7 @@ const WAITING_COUNT_MS = 60_000
 /** How long after a pass that could not reach the database to try again. */
 const DRAIN_RETRY_MS = 30_000
 
-export interface PostgresQueueConfig {
+export interface PostgresJobQueueConfig {
   db: Database
   /**
    * How to reach the consumer from a process that is not it — the web's POST
@@ -161,7 +161,7 @@ function coalesced(fn: () => Promise<void>) {
   }
 }
 
-export class PostgresQueueAdapter implements QueueAdapter {
+export class PostgresJobQueue implements JobQueue {
   private db: Database
   private log: Logger
   private onWaiting?: (count: number) => void
@@ -210,7 +210,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   private readonly signal?: ReturnType<typeof coalesced>
   private readonly notify?: () => Promise<void>
 
-  constructor(config: PostgresQueueConfig) {
+  constructor(config: PostgresJobQueueConfig) {
     this.db = config.db
     this.onWaiting = config.onWaiting
     this.concurrency = Math.max(1, Math.floor(config.concurrency ?? 1))
@@ -413,7 +413,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   }
 
   async process(handlers: Handlers): Promise<void> {
-    if (this.handlers) throw new Error('PostgresQueueAdapter.process() already running')
+    if (this.handlers) throw new Error('PostgresJobQueue.process() already running')
     this.handlers = handlers
     // What was written while no worker was up — its signals went nowhere
     this.requestPass()

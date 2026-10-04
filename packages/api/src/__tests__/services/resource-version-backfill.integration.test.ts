@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { VersionState } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
@@ -43,11 +43,11 @@ function mockQueue() {
     pruneDead: vi.fn(),
     process: vi.fn(),
     stop: vi.fn(),
-  } as QueueAdapter
+  } as JobQueue
 }
 
 /** Every version the sweep handed out, across its calls. */
-function handedOut(queue: QueueAdapter) {
+function handedOut(queue: JobQueue) {
   return vi
     .mocked(queue.enqueueMany)
     .mock.calls.flatMap(([, data]) => data as { resourceId: string; version: number }[])

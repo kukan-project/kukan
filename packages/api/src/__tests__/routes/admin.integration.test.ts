@@ -15,7 +15,7 @@ import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-h
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { generationKey } from '@kukan/shared'
-import { PostgresQueueAdapter, type QueueAdapter } from '@kukan/queue-adapter'
+import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import { randomUUID } from 'node:crypto'
 
 const db = getTestDb()
@@ -138,7 +138,7 @@ describe('Admin API Routes', () => {
         .values({ packageId: pkg.id, name: 'r', state: 'active' })
         .returning({ id: resource.id })
       const pgSearch: SearchAdapter = { ...mockSearch, getIndexStats: async () => null }
-      const queue = { enqueue: vi.fn().mockResolvedValue('job') } as unknown as QueueAdapter
+      const queue = { enqueue: vi.fn().mockResolvedValue('job') } as unknown as JobQueue
       const embedApp = createTestApp(db, { search: pgSearch, ai: embeddingAi, queue })
 
       const res = await embedApp.request('/api/v1/admin/reindex-embeddings', { method: 'POST' })
@@ -1407,7 +1407,7 @@ describe('Admin API Routes', () => {
   })
 
   describe('/api/v1/admin/queue (ADR-058)', () => {
-    const queue = new PostgresQueueAdapter({ db })
+    const queue = new PostgresJobQueue({ db })
     const queueApp = createTestApp(db, { search: mockSearch, queue })
 
     async function deadJob(type = 'summarize-package') {

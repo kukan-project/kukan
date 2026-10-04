@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { job, resourcePipeline } from '@kukan/db'
 import { PipelineService } from '../../services/pipeline-service'
-import { PostgresQueueAdapter, type QueueAdapter } from '@kukan/queue-adapter'
+import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { mockTransaction } from '../test-helpers/test-app'
 
-function createMockQueue(): QueueAdapter {
+function createMockQueue(): JobQueue {
   return {
     enqueue: vi.fn().mockResolvedValue('mock-job-id'),
     enqueueMany: vi.fn().mockResolvedValue([]),
@@ -99,11 +99,11 @@ describe('PipelineService', () => {
     it('should throw when queue is not provided', async () => {
       const service = new PipelineService(db)
 
-      await expect(service.enqueue(testResId)).rejects.toThrow('Queue adapter is required')
+      await expect(service.enqueue(testResId)).rejects.toThrow('Job queue is required')
     })
 
     it('writes the job in the same transaction as the row, and wakes the worker after', async () => {
-      const queue = new PostgresQueueAdapter({ db })
+      const queue = new PostgresJobQueue({ db })
       const wake = vi.spyOn(queue, 'wake').mockImplementation(() => {})
       const service = new PipelineService(db, queue)
 
@@ -118,7 +118,7 @@ describe('PipelineService', () => {
     })
 
     it('refuses a resource that does not exist', async () => {
-      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
 
       await expect(service.enqueue(randomUUID())).rejects.toThrow('not found')
       expect(await db.$count(job)).toBe(0)
@@ -160,7 +160,7 @@ describe('PipelineService', () => {
 
   describe('enqueueAll', () => {
     it('should enqueue all active resources', async () => {
-      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
 
       const result = await service.enqueueAll()
 
@@ -185,7 +185,7 @@ describe('PipelineService', () => {
         VALUES (${draftPkgId}, 'draft-resource', 'CSV', 'active')
       `)
 
-      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
 
       const result = await service.enqueueAll()
       expect(result).toEqual({ enqueued: 2, failed: 0 })
@@ -195,7 +195,7 @@ describe('PipelineService', () => {
     it('should return 0 when no active resources exist', async () => {
       await db.execute(sql`UPDATE resource SET state = 'deleted'`)
 
-      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
 
       const result = await service.enqueueAll()
       expect(result).toEqual({ enqueued: 0, failed: 0 })
@@ -205,7 +205,7 @@ describe('PipelineService', () => {
     it('skips a resource deleted since it was listed, and queues the rest', async () => {
       // Listed, then gone before its batch is written: its foreign key must not
       // refuse the whole batch.
-      const service = new PipelineService(db, new PostgresQueueAdapter({ db }))
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
 
       const result = await service.enqueueMany([{ id: randomUUID() }, { id: testResId }])
 

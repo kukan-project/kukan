@@ -198,7 +198,7 @@ datastore_info
 | DB                     | PostgreSQL 18               | メタデータ専用（スキーマ簡素化）                     |
 | ORM                    | Drizzle ORM 0.45 / 1.0-beta | 型安全・軽量・SQL近接・Aurora Data API公式対応       |
 | 検索エンジン           | OpenSearch 3.x (OSS)        | 統合検索インデックス（Lucene 10、9.5x性能向上）      |
-| キュー                 | SQS (AWS / ElasticMQ)       | イベント駆動パイプライン。Redis不要                  |
+| キュー                 | PostgreSQL `job` 表         | 全環境で1実装。Worker へ直接通知（ADR-058）          |
 | キャッシュ             | lru-cache (インメモリ)      | 全環境共通。Redis不要                                |
 | オブジェクトストレージ | S3互換 (AWS S3 / MinIO)     | 原本保管 + プレビューキャッシュ                      |
 | フロントエンド         | React 19 + Next.js 16       | SSR/SSG・モダンUI                                    |
@@ -228,6 +228,7 @@ datastore_info
 > TypeScript 7.0（Go native）リリース後はビルド速度が劇的に改善される見込み。
 > OpenSearch 3.xはAWS Managed OpenSearchでもサポート開始済み。
 > v3で使用していたRedis/BullMQはv4でSQS（開発環境はElasticMQ）に移行し、Redis依存を完全に排除。
+> その後 SQS / ElasticMQ も廃止し、キューは PostgreSQL の `job` 表に移した（ADR-058）。
 
 ### 3.2 全体構成
 
@@ -252,8 +253,8 @@ datastore_info
 └──┬──────────────┬──────────────┬──────────────┬────────────┘
    │              │              │              │
 ┌──▼──────┐  ┌───▼──────┐  ┌───▼──────┐  ┌───▼──────────────┐
-│PostgreSQL│  │OpenSearch │  │ SQS /    │  │ S3互換ストレージ   │
-│          │  │ (OSS)    │  │ElasticMQ │  │                  │
+│PostgreSQL│  │OpenSearch │  │PostgreSQL│  │ S3互換ストレージ   │
+│          │  │ (OSS)    │  │ job 表   │  │                  │
 │メタデータ │  │統合検索   │  │キュー    │  │原本ファイル       │
 │専用      │  │インデックス│  │(Pipeline)│  │プレビューJSON    │
 │          │  │全リソース │  │          │  │ページ画像        │
@@ -304,7 +305,7 @@ Turborepo（Vercel開発、Rustコア）は2026年現在のJavaScript/TypeScript
 ```
 ckan-modern/
 ├── apps/
-│   ├── worker/       # Pipeline Worker (SQS consumer, ECS Fargate)
+│   ├── worker/       # Pipeline Worker (ジョブキュー consumer, ECS Fargate)
 │   ├── web/          # Next.js フロントエンド + Hono API（単一オリジン）
 │   └── editor/       # Data Editor UI（Next.js、独立デプロイ可能）※アドオン
 ├── packages/
@@ -314,7 +315,7 @@ ckan-modern/
 │   ├── editor-core/  # Data Editor ビジネスロジック（スキーマ定義、正規化、参照、バージョン管理）
 │   ├── search/       # SearchAdapter (OpenSearch / PostgreSQL)
 │   ├── storage/      # StorageAdapter (S3 / MinIO)
-│   ├── queue/        # QueueAdapter (SQS / ElasticMQ)
+│   ├── queue/        # JobQueue (PostgreSQL job 表、アダプターではない。ADR-058)
 │   ├── ai/           # AIAdapter (Bedrock / OpenAI / Ollama / NoOp)
 │   ├── quality/      # Quality Monitor（リンク切れ検出、CSV検証、メタデータ監査、PII）
 │   ├── pipeline/     # パイプライン（ステップ + processResource）
@@ -326,7 +327,7 @@ ckan-modern/
 └── CLAUDE.md         # 開発エージェント設定
 ```
 
-インフラ抽象化レイヤー（StorageAdapter、SearchAdapter、QueueAdapter、AIAdapter）が
+インフラ抽象化レイヤー（StorageAdapter、SearchAdapter、AIAdapter）とジョブキュー（`@kukan/queue`）が
 `packages/` 配下の独立パッケージとなり、Turborepoとの相性が非常に良い。
 各パッケージが独立してテスト・ビルド可能。
 
@@ -426,7 +427,6 @@ export const profiles = {
     database: 'postgres', // Docker Compose
     search: 'postgres', // OpenSearch 不要で開発可
     storage: 'minio', // ローカル MinIO
-    queue: 'sqs', // SQS互換（ローカルは ElasticMQ via Docker Compose）
     ai: 'none',
     auth: 'better-auth', // メール/パスワード（外部IdP不要）
     scheduler: 'node-cron', // 品質チェック定期実行（プロセス内）
@@ -438,7 +438,6 @@ export const profiles = {
     database: 'rds', // RDS db.t4g.micro (Single-AZ)
     search: 'postgres', // OpenSearch オプション（t3.small.search）
     storage: 's3',
-    queue: 'sqs', // SQS → Worker（小規模でもイベント駆動）
     ai: 'none', // or bedrock
     auth: 'better-auth', // + OIDC プラグイン（外部IdP連携時）
     scheduler: 'node-cron', // 品質チェック定期実行（プロセス内）
@@ -450,10 +449,9 @@ export const profiles = {
     database: 'aurora-serverless', // Aurora Serverless v2 (0.5–2 ACU)
     search: 'opensearch', // OpenSearch Managed (m6g.large.search)
     storage: 's3',
-    queue: 'sqs', // API → SQS → Worker（イベント駆動分離）
     ai: 'bedrock',
     auth: 'better-auth', // + OIDC（Cognito or 外部IdP連携）
-    scheduler: 'eventbridge', // EventBridge Scheduler → SQS → Worker
+    scheduler: 'node-cron', // 品質チェック定期実行（Worker プロセス内）
   },
 
   // large — 大規模（CDK scale=large、EKS はさらに上のスケール）
@@ -462,10 +460,9 @@ export const profiles = {
     database: 'aurora-serverless', // Aurora Serverless v2 (2–8 ACU, Multi-AZ)
     search: 'opensearch', // OpenSearch Managed (m6g.xlarge.search × 2, Multi-AZ)
     storage: 's3',
-    queue: 'sqs', // SQS + 複数Worker
     ai: 'bedrock',
     auth: 'better-auth', // + OIDC
-    scheduler: 'eventbridge', // EventBridge Scheduler → SQS → Worker
+    scheduler: 'node-cron', // 品質チェック定期実行（Worker プロセス内）
   },
 
   // オンプレ閉域網
@@ -474,7 +471,6 @@ export const profiles = {
     database: 'postgres',
     search: 'opensearch', // OpenSearch OSS (Docker) or 'postgres'
     storage: 'minio',
-    queue: 'sqs', // SQS互換（オンプレは ElasticMQ via Docker Compose）
     ai: 'ollama', // or 'none'
     auth: 'better-auth', // + OIDC（Keycloak IdP連携）
     scheduler: 'node-cron', // 品質チェック定期実行（プロセス内）
@@ -484,6 +480,8 @@ export const profiles = {
 
 **キャッシュ戦略**: 全環境共通で `lru-cache`（Node.jsインメモリLRUキャッシュ）を使用。
 Redis不要。将来Redisが必要になった時点でCacheAdapter抽象化に昇格。
+
+**キュー**: 全環境共通で PostgreSQL の `job` 表（ADR-058）。環境差が無いのでプロファイルには持たない。
 
 ### 4.2 AWS 構成（標準推奨）
 
@@ -511,21 +509,15 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 │  │  │ Auto Scaling          │                          │    │
 │  │  └────┬─────────────────┘                          │    │
 │  │       │                                            │    │
-│  │       │ SQS.sendMessage({ resourceId })            │    │
-│  │       ▼                                            │    │
-│  │  ┌─────────────────┐                               │    │
-│  │  │ SQS キュー       │  ← メッセージ保持最大14日       │    │
-│  │  │ + DLQ (Dead      │  ← 失敗時自動リトライ          │    │
-│  │  │   Letter Queue)  │  ← 月100万リクエスト無料       │    │
-│  │  └────┬────────────┘                               │    │
-│  │       │ ロングポーリング                              │    │
+│  │       │ job 表へ INSERT → コミット後に POST /wake  │    │
+│  │       │ （通知は内容なし、正本は DB。ADR-058）     │    │
 │  │       ▼                                            │    │
 │  │  ┌──────────────────┐  ┌────────────────────────┐ │    │
 │  │  │ ECS Fargate      │  │ Aurora Serverless v2   │ │    │
 │  │  │ "worker"         │  │ (PostgreSQL)           │ │    │
-│  │  │                  │  │                        │ │    │
+│  │  │                  │  │ job 表 = キュー        │ │    │
 │  │  │ Pipeline Worker  │  │ 0.5〜N ACU             │ │    │
-│  │  │ (SQSポーリング)   │  └────────────────────────┘ │    │
+│  │  │ (/wake で起床)   │  └────────────────────────┘ │    │
 │  │  │                  │                              │    │
 │  │  │ 1vCPU / 2GB      │                              │    │
 │  │  │ desiredCount: 1  │                              │    │
@@ -554,9 +546,9 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 
 **Worker に ECS Fargate を選定した理由**
 
-- Worker は純粋な SQS コンシューマー（HTTP エンドポイント不要）
-- ECS Fargate はコマンドベースのヘルスチェックが可能（ポート公開不要）
-- SQS メッセージ数に応じた ECS Service Auto Scaling が自然にフィット
+- Worker はジョブキュー（PostgreSQL の `job` 表）のコンシューマー。HTTP はヘルスチェックと `/wake`（ジョブ投入の通知）だけ（ADR-058）
+- Web からは Cloud Map のプライベート DNS 名で `/wake` に届く。ALB は不要
+- 待ちジョブ数を Worker が CloudWatch メトリクス（`JobsWaiting`）として出し、ECS Service Auto Scaling がそれに従う
 
 **APIとWorkerを分離する理由**
 
@@ -570,8 +562,8 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 | CPU特性        | 軽い（DB/検索プロキシ）         | 重い（CSV解析、AI呼び出し）    |
 | スペック       | 0.25vCPU/0.5GBで十分            | 1vCPU/2GB欲しい                |
 
-SQSによるイベント駆動分離で、重いCSV処理がAPI側レスポンスに影響しない。
-Workerが落ちていてもメッセージはキューに残り、復帰後に自動処理再開。
+ジョブキューによる分離で、重いCSV処理がAPI側レスポンスに影響しない。
+Workerが落ちていてもジョブは `job` 表に残り、起動時に表を空になるまで処理して再開する（ADR-058）。
 
 ### 4.3 オンプレ / 閉域網構成
 
@@ -586,22 +578,23 @@ Workerが落ちていてもメッセージはキューに残り、復帰後に�
 │        │ reverse_proxy web:3000                       │
 │  ┌─────▼──────┐  ┌────────────┐                      │
 │  │ Web        │  │ Worker     │                      │
-│  │ (Hono +    │  │ (SQS       │                      │
+│  │ (Hono +    │  │ (job 表    │                      │
 │  │  Next.js)  │  │  consumer) │                      │
 │  └─────┬──────┘  └─────┬──────┘                      │
 │        │               │                              │
 │  ┌─────▼───────────────▼─────────────────────────────┐│
 │  │  内部ネットワーク                                    ││
-│  └──┬──────────┬──────────┬──────────┬───────────────┘│
-│     │          │          │          │                 │
-│  ┌──▼───┐  ┌──▼──────┐ ┌▼────────┐ ┌▼────────────┐  │
-│  │Postgre│  │OpenSearch│ │MinIO   │ │ElasticMQ    │  │
-│  │SQL    │  │ OSS     │ │(S3互換) │ │(SQS互換)    │  │
-│  └───────┘  └─────────┘ └────────┘ └─────────────┘  │
+│  └──┬──────────┬──────────┬──────────────────────────┘│
+│     │          │          │                            │
+│  ┌──▼───┐  ┌──▼──────┐ ┌▼────────┐                  │
+│  │Postgre│  │OpenSearch│ │MinIO   │                  │
+│  │SQL    │  │ OSS     │ │(S3互換) │                  │
+│  │+job表 │  │         │ │        │                   │
+│  └───────┘  └─────────┘ └────────┘                  │
 └──────────────────────────────────────────────────────┘
 
 特徴:
-  - Redis不要 → ElasticMQ（SQS互換キュー、Docker Compose）
+  - Redis不要、キュー用コンテナも不要 → PostgreSQL の job 表（ADR-058）
   - コンテナレジストリ: 内部 Harbor 等
   - 外部アクセスなし: 事前ビルド済みイメージ使用
   - TLS証明書: 自己署名 or 内部CA
@@ -628,7 +621,7 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 | RDS db.t4g.micro + 20 GB                | ~$22         |
 | CloudFront (VPC origin + 転送)          | ~$2          |
 | パブリック IPv4 (ECS タスク × 2)        | ~$8          |
-| S3 + SQS + Secrets + ECR + CW 等        | ~$7          |
+| S3 + Secrets + ECR + CW 等              | ~$7          |
 | **合計（OpenSearch なし、税別）**       | **~$77/月**  |
 | + OpenSearch t3.small.search × 1 (10GB) | + ~$43       |
 | **合計（OpenSearch あり、税別）**       | **~$120/月** |
@@ -644,7 +637,7 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 | OpenSearch m6g.large.search × 1 (50GB)      | ~$127        |
 | CloudFront (VPC origin + 転送)              | ~$3          |
 | パブリック IPv4 (ECS タスク × 2)            | ~$8          |
-| S3 + SQS + Secrets + ECR + CW 等            | ~$7          |
+| S3 + Secrets + ECR + CW 等                  | ~$7          |
 | **合計（税別）**                            | **~$266/月** |
 
 **large — 大規模**
@@ -659,7 +652,7 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 | CloudFront (VPC origin + 転送)               | ~$5            |
 | パブリック IPv4 (ECS タスク × 4)             | ~$15           |
 | WAF (optional)                               | ~$9            |
-| S3 + SQS + Secrets + ECR + CW 等             | ~$10           |
+| S3 + Secrets + ECR + CW 等                   | ~$10           |
 | **合計（税別）**                             | **~$1,191/月** |
 
 ※ Fargate 料金: 東京リージョン vCPU $0.05056/h, メモリ $0.00553/h
@@ -680,7 +673,9 @@ Redis不要のため、Docker Composeのコンテナ数が減り運用がさら�
 
 ### 5.1 アダプターインターフェース
 
-環境によって実装が変わるものだけを抽象化する。全4アダプター:
+環境によって実装が変わるものだけを抽象化する。アダプターは Storage / Search / AI の3つ。
+キューは当初4つ目のアダプター（SQS / ElasticMQ）だったが、PostgreSQL の `job` 表に移して環境差がなくなったため、
+アダプターから外した（ADR-058、ADR-005 補足）。
 
 ```typescript
 // ============================================================
@@ -731,53 +726,11 @@ interface AIAdapter {
   inferSchema(headers: string[], sampleRows: any[][]): Promise<SchemaInference>
   summarize(text: string): Promise<string>
 }
-
-// ============================================================
-// キュー（パイプラインジョブのイベント駆動）
-// ============================================================
-interface QueueAdapter {
-  send(job: { type: string; payload: unknown }): Promise<void>
-  consume(handler: (job: { type: string; payload: unknown }) => Promise<void>): void
-  close(): Promise<void>
-}
 ```
 
-**キュー実装一覧**
-
-| 環境         | QueueAdapter    | Worker分離                   |
-| ------------ | --------------- | ---------------------------- |
-| development  | SqsQueueAdapter | Worker プロセス（ElasticMQ） |
-| small        | SqsQueueAdapter | Worker プロセス（SQS）       |
-| aws-standard | SqsQueueAdapter | **ECS Fargate Worker**       |
-| aws-large    | SqsQueueAdapter | **ECS/EKS Worker**           |
-| on-premise   | SqsQueueAdapter | Worker プロセス（ElasticMQ） |
-
-```typescript
-// --- SQS実装 (AWS) ---
-class SqsQueueAdapter implements QueueAdapter {
-  async send(job) {
-    await this.sqs.send(
-      new SendMessageCommand({
-        QueueUrl: this.queueUrl,
-        MessageBody: JSON.stringify(job),
-      })
-    )
-  }
-  consume(handler) {
-    // SQSロングポーリングループ（Worker側で呼び出し）
-    this.poll(handler)
-  }
-}
-
-// 開発・オンプレ環境では ElasticMQ (SQS互換) を使用。
-// SqsQueueAdapter がそのまま動作するため、環境変数 SQS_QUEUE_URL のみ変更。
-// 例: SQS_QUEUE_URL=http://localhost:9324/queue/kukan-pipeline
-
-// --- BullMQ実装 (大規模オンプレ・将来) ---
-class BullMQQueueAdapter implements QueueAdapter {
-  /* Redis + BullMQ */
-}
-```
+**ジョブキュー（`@kukan/queue`）**: アダプターではない。全環境で PostgreSQL の `job` 表を使う
+1 つの実装（`PostgresJobQueue`）で、Worker へは `POST /wake` で知らせる（AWS は Cloud Map の DNS 名、
+Compose はサービス名）。仕組みは ADR-058、ジョブの依存関係は `docs/jobs.md` を参照。
 
 **キャッシュ**: 抽象化不要（全環境共通で `lru-cache` を使用）
 
@@ -1213,7 +1166,7 @@ CREATE TABLE quality_score_history (
 
 パイプライン処理は**ステップ分割**で設計する。
 各ステップは独立したビジネスロジック（全環境共通）で、
-キューイング（QueueAdapter）だけが環境によって異なる。
+キューイングも全環境で PostgreSQL の `job` 表を使う（ADR-058）。
 
 ```
 pipeline/
@@ -1265,7 +1218,7 @@ async function processResource(resourceId: string, ctx: ServiceContext) {
       .update(schema.resources)
       .set({ status: 'error', error: String(err) })
       .where(eq(schema.resources.id, resourceId))
-    throw err // QueueAdapter側でリトライ判断
+    throw err // ジョブキュー側でリトライ判断（上限に達したら dead）
   }
 }
 ```
@@ -1285,12 +1238,13 @@ async function processResource(resourceId: string, ctx: ServiceContext) {
   アップロード完了通知
        │
        ▼
-  QueueAdapter.send({ type: 'resource-pipeline', payload: { resourceId } })
+  queue.enqueue('resource-pipeline', { resourceId })
+  （job 表に INSERT → コミット後に Worker へ POST /wake、ADR-058）
        │
-       ├─ [AWS] SQS キュー → ECS Fargate "worker" がロングポーリングで受信
+       ├─ [AWS] ECS Fargate "worker" が通知を受け、job 表から取得
        │                     → processResource(resourceId) 実行
        │
-       └─ [開発/オンプレ] ElasticMQ → Worker プロセスがロングポーリングで受信
+       └─ [開発/オンプレ] Worker プロセスが通知を受け、job 表から取得
        │
        ├── Step 1: Analyze（軽量）
        │   ファイル種別判定、サイズ確認、処理プラン決定
@@ -1332,65 +1286,16 @@ app.post('/datasets/:id/resources', async (c) => {
     })
     .returning()
 
-  // QueueAdapter経由でイベントキック
-  await queue.send({
-    type: 'resource-pipeline',
-    payload: { resourceId: resource.id },
-  })
+  // job 表に INSERT し、Worker に通知（ADR-058）
+  await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: resource.id })
 
   return c.json(resource, 202) // Accepted
 })
 ```
 
-**Worker側（SQS版 — AWS環境）:**
-
-```typescript
-// apps/worker/main.ts
-import { Hono } from 'hono'
-import { serve } from '@hono/node-server'
-import { SqsQueueAdapter } from '@ckan-modern/queue'
-import { processResource } from '@ckan-modern/pipeline'
-
-// Honoサーバー（ECS Fargateヘルスチェック用）
-const app = new Hono()
-app.get('/health', (c) => c.json({ status: 'ok' }))
-serve(app, { port: 8080 })
-
-// SQSコンシューマー起動
-const queue = new SqsQueueAdapter({
-  queueUrl: process.env.PIPELINE_QUEUE_URL!,
-})
-
-queue.consume(async (job) => {
-  if (job.type === 'resource-pipeline') {
-    const { resourceId } = job.payload as { resourceId: string }
-    await processResource(resourceId, serviceContext)
-  }
-})
-```
-
-**SQSが「ちょうどいい」理由:**
-
-- Workerが落ちていてもメッセージはキューに残る（最大14日保持）
-- 処理失敗時、可視性タイムアウト後に自動再配信（リトライ）
-- 何度も失敗したらDLQ（Dead Letter Queue）に退避
-- **コスト: 月100万リクエストまで無料** → 自治体ポータル規模なら永久に$0
-- Redis/ElastiCache不要 → インフラ大幅簡素化
-
-**開発・オンプレ環境:**
-
-開発環境では Docker Compose で ElasticMQ（SQS互換）を起動。
-`SqsQueueAdapter` がそのまま動作し、Worker プロセスが独立してロングポーリングする。
-
-```yaml
-# compose.yml
-elasticmq:
-  image: softwaremill/elasticmq-native
-  ports:
-    - '9324:9324'
-```
-
-Redis不要、Worker分離不要。APIプロセス内で直接処理。
+**Worker側:** ヘルスチェックと同じ HTTP サーバーの `/wake` で通知を受け、`queue.process()` に
+登録したジョブ型ごとのハンドラーで、取得できるジョブがなくなるまで処理する（`apps/worker/src/index.ts`）。
+キュー用のコンテナは全環境で要らない。job 表にした理由と仕組みは ADR-058 を参照。
 
 ### 7.5 ファイル種別ごとの処理
 
@@ -1771,46 +1676,27 @@ interface PiiFinding {
 
 ### 10.3 スケジューリング
 
-品質チェックは環境に応じた方式で定期実行する。
+定期処理は全環境で Worker プロセス内の cron（croner）で実行する。
+当初案の EventBridge Scheduler → SQS の経路は採らない（SQS は ADR-058 で廃止）。
 
-| 環境         | スケジューリング方式                     | 実行先               |
-| ------------ | ---------------------------------------- | -------------------- |
-| aws-standard | **EventBridge Scheduler** → SQS → Worker | ECS Fargate "worker" |
-| development  | **node-cron**（プロセス内）              | APIプロセス          |
-| on-premise   | **node-cron**（プロセス内）              | Docker Compose app   |
+実装済みの品質チェックはリンク確認（ヘルスチェック）だけで、既定では 5 分ごと（`HEALTH_CHECK_CRON='*/5 * * * *'`）に
+前回確認から `HEALTH_CHECK_STALENESS_HOURS`（既定 24 時間）たったリソースを HEAD で確かめる。
+次のリソースをパイプラインのジョブとして `job` 表に積む。追加インフラ不要。
 
-```typescript
-// packages/quality/scheduler.ts
-interface QualityScheduler {
-  schedule(check: QualityCheckType, cron: string): void
-  runNow(check: QualityCheckType, scope?: { orgId?: string }): Promise<void>
-}
-
-// デフォルトスケジュール
-const DEFAULT_SCHEDULE = {
-  'health-check': '0 3 * * *', // 毎日 AM 3:00
-  'csv-validation': '0 4 * * 0', // 毎週日曜 AM 4:00
-  'metadata-audit': '0 5 * * 1', // 毎週月曜 AM 5:00
-  'pii-scan': '0 2 * * 0', // 毎週日曜 AM 2:00（AI使用、コスト考慮）
-}
-```
-
-AWS環境では EventBridge Scheduler がcron式で SQS にメッセージを送り、
-既存の Worker が処理する。追加インフラ不要。
+- 変更を検知したもの（ETag / Last-Modified が変わった）
+- 変更判定用のヘッダーが無く、前回の全取得から `HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS`（既定 168 時間）たったもの（全取得してハッシュで比べる）
 
 ```
-EventBridge Scheduler (cron: 0 3 * * *)
+Worker プロセス内の cron（HEALTH_CHECK_CRON）
     │
     ▼
-SQS キュー
-    │ { type: 'quality-check', payload: { check: 'health-check', scope: 'all' } }
-    │
+check-batch.ts → リソースURL確認（HEAD）→ DB更新
+    │ 変更検知・定期全取得の対象だけ queue.enqueue('resource-pipeline', ...)
     ▼
-ECS Fargate "worker" → QueueAdapter.consume() で受信
-    │
-    ▼
-health-check.ts → 全リソースURL巡回 → DB更新 → レポート生成
+Worker が job 表から取得 → 再取得・再処理
 ```
+
+CSV 検証・メタデータ監査・PII 検出の定期実行は当初案のまま未実装（スケジュールも未定）。
 
 ### 10.4 品質ダッシュボード
 
@@ -2134,7 +2020,7 @@ Data Editor上のテーブル（承認済み）
   ① CSV/JSON生成 → S3保存（StorageAdapter）
   ② package/resource レコード作成 or 更新（Drizzle ORM）
   ③ メタデータ自動付与（テーブル名→タイトル、カラム説明→スキーマ情報）
-  ④ QueueAdapter.send({ type: 'resource-pipeline' })
+  ④ queue.enqueue('resource-pipeline', { resourceId })（job 表、ADR-058）
   ⑤ パイプライン実行（ただし既にバリデーション済みなので高速）
   ⑥ OpenSearchインデックス更新
     │
@@ -2459,14 +2345,14 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 | ------------------------- | ---------------------------------------------- |
 | DataStore (RDBテーブル化) | OpenSearch + プレビューJSON                    |
 | DataStore API             | リソース検索/行取得API                         |
-| XLoader / DataPusher+     | Pipeline Worker（QueueAdapter + ステップ分割） |
+| XLoader / DataPusher+     | Pipeline Worker（ジョブキュー + ステップ分割） |
 | \*\_revision テーブル群   | audit_log                                      |
 | Solr                      | OpenSearch (OSS)                               |
 | package_extra (EAV)       | JSONB extras                                   |
 | member (多態テーブル)     | 用途別テーブル                                 |
 | Pythonプラグイン          | TypeScriptプラグイン                           |
 | Jinja2テンプレート        | React + Next.js                                |
-| Redis / BullMQ（v3）      | SQS / ElasticMQ + lru-cache                    |
+| Redis / BullMQ（v3）      | PostgreSQL `job` 表（ADR-058）+ lru-cache      |
 | Auth.js（v3）             | Better Auth + OIDC                             |
 
 ---
@@ -2478,6 +2364,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 - プロジェクトセットアップ（Turborepoモノレポ + pnpm workspaces）
 - DBスキーマ設計・マイグレーション（Drizzle ORM — `packages/db`）
 - インフラ抽象化レイヤー（StorageAdapter, SearchAdapter, AIAdapter, QueueAdapter）
+  ※ QueueAdapter は後にアダプターから外し `@kukan/queue` に（ADR-058）
 - コアCRUD API（package, resource, organization, group, tag, user）
 - CKAN互換APIレイヤー（P1エンドポイント10個）
 - 認証基盤（Better Auth — メール/パスワード + API Key + sysadminロール）
@@ -2498,6 +2385,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 ### Phase 3: Pipeline & ファイルストレージ
 
 - Pipeline Worker（QueueAdapter — SQS/ElasticMQ + ステップ分割パイプライン）
+  ※ キューは後に PostgreSQL の `job` 表へ移行（ADR-058）
 - スマートパーサー（日本語CSV対応）
 - プレビューJSON生成・S3保存
 - ファイルアップロードUI + Presigned URL対応
@@ -2511,7 +2399,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
   - リンク切れ検出（HTTP HEAD巡回）
   - CSV形式エラーチェック（スマートパーサー再利用）
   - メタデータ完全性チェック
-  - スケジューラー（node-cron / EventBridge）
+  - スケジューラー（Worker プロセス内の cron）
   - quality_check / quality_score_history テーブル
 - **品質ダッシュボード**（品質スコア推移、問題一覧、組織別レポート）
 
@@ -2528,7 +2416,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 
 ### Phase 6: デプロイ & エコシステム
 
-- AWS ECS Fargate + ALB デプロイ（CDK — Web + Worker + SQS）
+- AWS ECS Fargate + ALB デプロイ（CDK — Web + Worker）
 - オンプレ Docker Compose 本番構成（Redis不要）
 - プラグインシステム
 - MCPサーバー
@@ -2575,7 +2463,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 ---
 
 _v4 — Turborepoモノレポ構成、Better Auth認証基盤、Redis排除（SQS/ElasticMQ + lru-cache）、
-QueueAdapter抽象化、API/Worker SQSイベント駆動分離、
+QueueAdapter抽象化、API/Worker SQSイベント駆動分離（SQS は後に PostgreSQL の `job` 表へ置換、ADR-058）、
 Quality Monitor（Datashelf機能のコア統合: リンク切れ・CSV検証・メタデータ監査・PII検出）、
 Data Editor（佐賀市DMS機能のアドオン統合: スキーマ定義・表記揺れ正規化・参照関係・承認フロー・カタログ連携）、
 コスト最適化（~$144〜170/月、ECS Fargate + ALB 構成）を反映_

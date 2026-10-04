@@ -9,7 +9,7 @@
 | ---------------- | -------------------------------------------------------------- |
 | ジョブ種別の定義 | `packages/shared/src/pipeline-types.ts`                        |
 | ハンドラ         | `apps/worker/src/index.ts`                                     |
-| キュー本体       | `packages/adapters/queue/src/postgres.ts`                      |
+| キュー本体       | `packages/queue/src/postgres.ts`                               |
 | 管理画面の起点   | `packages/api/src/routes/admin.ts`                             |
 | 設計判断         | `docs/adr/jp/058`（キュー）/ `044`（claim）/ `054`（埋め込み） |
 

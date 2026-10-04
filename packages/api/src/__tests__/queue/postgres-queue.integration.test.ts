@@ -3,25 +3,20 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vites
 import { eq, sql } from 'drizzle-orm'
 import { job } from '@kukan/db'
 import { createLogger } from '@kukan/shared'
-import {
-  JobInterruptedError,
-  MAX_ATTEMPTS,
-  PostgresQueueAdapter,
-  type Job,
-} from '@kukan/queue-adapter'
+import { JobInterruptedError, MAX_ATTEMPTS, PostgresJobQueue, type Job } from '@kukan/queue'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const logger = createLogger({ name: 'test', level: 'silent' })
-const adapters: PostgresQueueAdapter[] = []
+const queues: PostgresJobQueue[] = []
 
-function adapter(
+function newQueue(
   notify?: () => Promise<void>,
   onWaiting?: (count: number) => void,
   concurrency?: number
 ) {
-  const queue = new PostgresQueueAdapter({ db, logger, notify, onWaiting, concurrency })
-  adapters.push(queue)
+  const queue = new PostgresJobQueue({ db, logger, notify, onWaiting, concurrency })
+  queues.push(queue)
   return queue
 }
 
@@ -33,7 +28,7 @@ function gate() {
 }
 
 /** Jobs per status, summed over types. */
-async function byStatus(queue: PostgresQueueAdapter) {
+async function byStatus(queue: PostgresJobQueue) {
   const counts = { waiting: 0, running: 0, scheduled: 0, dead: 0 }
   for (const c of await queue.countJobs()) counts[c.status] += c.count
   return counts
@@ -48,27 +43,27 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await Promise.all(adapters.splice(0).map((q) => q.stop()))
+  await Promise.all(queues.splice(0).map((q) => q.stop()))
 })
 
 afterAll(async () => {
   await closeTestDb()
 })
 
-describe('PostgresQueueAdapter', () => {
+describe('PostgresJobQueue', () => {
   it('hands a job to its handler and deletes it once the handler returns', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     await writer.enqueue('t', { n: 1 })
 
     const seen: Job[] = []
-    await adapter().process({ t: async (j) => void seen.push(j) })
+    await newQueue().process({ t: async (j) => void seen.push(j) })
 
     await vi.waitFor(async () => expect(await rows()).toHaveLength(0))
     expect(seen).toEqual([expect.objectContaining({ type: 't', data: { n: 1 } })])
   })
 
   it('takes what is enqueued after it started, from its own wake', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const seen: unknown[] = []
     await queue.process({ t: async (j) => void seen.push(j.data) })
 
@@ -79,7 +74,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('writes nothing when the transaction it was given rolls back', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const wake = vi.spyOn(queue, 'wake')
 
     await expect(
@@ -94,7 +89,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('wakes after a transaction commits a job, and not for one that wrote none or rolled back', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const wake = vi.spyOn(queue, 'wake').mockImplementation(() => {})
 
     await queue.transaction(db, async () => {})
@@ -117,7 +112,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('holds a delayed job back until it is due', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const handler = vi.fn(async () => {})
     await queue.enqueue('t', {}, { delaySeconds: 3600 })
     await queue.process({ t: handler })
@@ -131,7 +126,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('puts a failed job back to wait, and gives up on it after the last attempt', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const handler = vi.fn(async () => {
       throw new Error('boom')
     })
@@ -155,12 +150,12 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('hands back uncounted a job the stop cut short, even on its last attempt', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     await writer.enqueue('t', {})
     await db.update(job).set({ attempts: MAX_ATTEMPTS - 1 })
     const held = gate()
     const notify = vi.fn(async () => {})
-    const queue = adapter(notify)
+    const queue = newQueue(notify)
     await queue.process({
       t: async () => {
         // What a stop does to the work under way: cuts it short
@@ -182,7 +177,7 @@ describe('PostgresQueueAdapter', () => {
 
   it('counts a job that says it was cut short when the worker is not stopping', async () => {
     // Uncounted and at once, it would run again for ever
-    const queue = adapter()
+    const queue = newQueue()
     await queue.enqueue('t', {})
     await queue.process({
       t: async () => {
@@ -197,10 +192,10 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('counts a job that fails for any other reason while the worker stops', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     await writer.enqueue('t', {})
     const held = gate()
-    const queue = adapter()
+    const queue = newQueue()
     await queue.process({
       t: async () => {
         await held.opened
@@ -218,7 +213,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('marks dead a job whose worker stopped answering on its last attempt', async () => {
-    await adapter().enqueue('t', {})
+    await newQueue().enqueue('t', {})
     await db.update(job).set({
       attempts: MAX_ATTEMPTS,
       lockedUntil: sql`now() - interval '1 minute'`,
@@ -226,7 +221,7 @@ describe('PostgresQueueAdapter', () => {
     })
 
     const handler = vi.fn(async () => {})
-    await adapter().process({ t: handler })
+    await newQueue().process({ t: handler })
 
     await vi.waitFor(async () =>
       expect(await rows()).toEqual([
@@ -237,7 +232,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('takes over a job whose lease has run out', async () => {
-    await adapter().enqueue('t', {})
+    await newQueue().enqueue('t', {})
     await db.update(job).set({
       attempts: 1,
       lockedUntil: sql`now() - interval '1 minute'`,
@@ -245,7 +240,7 @@ describe('PostgresQueueAdapter', () => {
     })
 
     const handler = vi.fn(async () => {})
-    await adapter().process({ t: handler })
+    await newQueue().process({ t: handler })
 
     await vi.waitFor(() => expect(handler).toHaveBeenCalledOnce())
   })
@@ -253,7 +248,7 @@ describe('PostgresQueueAdapter', () => {
   it("takes back a crashed worker's job when its lease runs out, with no signal", async () => {
     // The process that held it is gone and nothing will wake anyone for it;
     // the pass that found it leased comes back at the lease's end.
-    await adapter().enqueue('t', {})
+    await newQueue().enqueue('t', {})
     await db.update(job).set({
       attempts: 1,
       lockedUntil: sql`now() + interval '1 second'`,
@@ -261,17 +256,17 @@ describe('PostgresQueueAdapter', () => {
     })
 
     const handler = vi.fn(async () => {})
-    await adapter().process({ t: handler })
+    await newQueue().process({ t: handler })
 
     await vi.waitFor(() => expect(handler).toHaveBeenCalledOnce(), { timeout: 5000 })
   })
 
   it('leaves a job another worker holds alone', async () => {
-    await adapter().enqueue('t', {})
+    await newQueue().enqueue('t', {})
     await db.update(job).set({ lockedUntil: sql`now() + interval '5 minutes'`, lockedBy: 'other' })
 
     const handler = vi.fn(async () => {})
-    const queue = adapter()
+    const queue = newQueue()
     await queue.process({ t: handler })
 
     await vi.waitFor(async () => expect((await byStatus(queue)).running).toBe(1))
@@ -279,7 +274,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('gives each job to one worker when two take at once', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     for (let n = 0; n < 20; n++) await writer.enqueue('t', { n })
 
     const seen: number[] = []
@@ -287,15 +282,15 @@ describe('PostgresQueueAdapter', () => {
       seen.push((j.data as { n: number }).n)
       await new Promise((r) => setTimeout(r, 5))
     }
-    await Promise.all([adapter().process({ t: handle }), adapter().process({ t: handle })])
+    await Promise.all([newQueue().process({ t: handle }), newQueue().process({ t: handle })])
 
     await vi.waitFor(async () => expect(await rows()).toHaveLength(0))
     expect(seen.sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, n) => n))
   })
 
   it('deletes a job of a type it has no handler for', async () => {
-    await adapter().enqueue('unknown', {})
-    await adapter().process({})
+    await newQueue().enqueue('unknown', {})
+    await newQueue().process({})
 
     await vi.waitFor(async () => expect(await rows()).toHaveLength(0))
   })
@@ -308,7 +303,7 @@ describe('PostgresQueueAdapter', () => {
           release = r
         })
     )
-    const writer = adapter(notify)
+    const writer = newQueue(notify)
 
     await Promise.all(Array.from({ length: 5 }, (_, n) => writer.enqueue('t', { n })))
     expect(notify).toHaveBeenCalledOnce()
@@ -321,7 +316,7 @@ describe('PostgresQueueAdapter', () => {
 
   it('writes a list of jobs in one call, and wakes once', async () => {
     const notify = vi.fn(async () => {})
-    const ids = await adapter(notify).enqueueMany('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+    const ids = await newQueue(notify).enqueueMany('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
 
     expect(ids).toHaveLength(3)
     expect((await rows()).map((r) => r.payload)).toEqual(
@@ -331,7 +326,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('writes no second job unless-waiting while one waits, and does once a worker holds it', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const first = await queue.enqueue('t', {}, { unlessWaiting: true })
     expect(await queue.enqueue('t', {}, { unlessWaiting: true })).toBe(first)
     expect(await rows()).toHaveLength(1)
@@ -347,7 +342,7 @@ describe('PostgresQueueAdapter', () => {
   it('writes a job unless-waiting past one delayed beyond it, and none past one due sooner', async () => {
     // Wanted now, it cannot wait out another's delay; wanted later, one due
     // sooner sees what the caller wrote
-    const queue = adapter()
+    const queue = newQueue()
     const delayed = await queue.enqueue('t', {}, { delaySeconds: 60 })
 
     const now = await queue.enqueue('t', {}, { unlessWaiting: true })
@@ -360,7 +355,7 @@ describe('PostgresQueueAdapter', () => {
 
   it('writes a job unless-waiting past one that failed and waits to be retried', async () => {
     // Its retry may be minutes away, or it may never run again
-    const queue = adapter()
+    const queue = newQueue()
     const failed = await queue.enqueue('t', {})
     await db
       .update(job)
@@ -374,7 +369,7 @@ describe('PostgresQueueAdapter', () => {
   it('raises a job waiting unless-waiting at a lower priority rather than writing a second', async () => {
     // Left behind the bulk runs it would hold the caller back; passed over,
     // the same work would run twice
-    const queue = adapter()
+    const queue = newQueue()
     const waiting = await queue.enqueue('t', {}, { priority: 'low' })
 
     expect(await queue.enqueue('t', {}, { unlessWaiting: true, priority: 'normal' })).toBe(waiting)
@@ -384,7 +379,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('writes a job unless-waiting past one waiting with other work in its payload', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const metadataOnly = await queue.enqueue('t', { includeContent: false })
 
     const withContent = await queue.enqueue('t', { includeContent: true }, { unlessWaiting: true })
@@ -396,7 +391,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('takes the higher priority first, and the earlier within one', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     await writer.enqueue('t', { n: 'low' }, { priority: 'low' })
     await writer.enqueue('t', { n: 'normal, earlier' })
     await writer.enqueue('t', { n: 'high' }, { priority: 'high' })
@@ -407,7 +402,7 @@ describe('PostgresQueueAdapter', () => {
       .where(sql`${job.payload} ->> 'n' = 'normal, earlier'`)
 
     const seen: unknown[] = []
-    await adapter().process({ t: async (j) => void seen.push((j.data as { n: string }).n) })
+    await newQueue().process({ t: async (j) => void seen.push((j.data as { n: string }).n) })
 
     await vi.waitFor(() =>
       expect(seen).toEqual(['high', 'normal, earlier', 'normal, later', 'low'])
@@ -415,7 +410,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('takes a batch written in one statement in the order the admin screen lists it', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     await writer.enqueueMany(
       't',
       Array.from({ length: 8 }, (_, n) => ({ n }))
@@ -423,14 +418,14 @@ describe('PostgresQueueAdapter', () => {
     const { items } = await writer.listJobs({ status: 'waiting', limit: 10, offset: 0 })
 
     const seen: unknown[] = []
-    await adapter().process({ t: async (j) => void seen.push(j.data) })
+    await newQueue().process({ t: async (j) => void seen.push(j.data) })
 
     await vi.waitFor(() => expect(seen).toHaveLength(8))
     expect(seen).toEqual(items.map((j) => j.payload))
   })
 
   it("writes what a handler queues at that job's priority unless asked otherwise, and the rest at normal", async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const later = { delaySeconds: 3600 }
     await queue.enqueue('parent', {}, { priority: 'high' })
     await queue.enqueue('outside', {}, later)
@@ -455,7 +450,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('keeps its priority through a failed attempt', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     await queue.enqueue('t', {}, { priority: 'low' })
     await queue.process({
       t: async () => {
@@ -471,7 +466,7 @@ describe('PostgresQueueAdapter', () => {
     // Busy with one job, it would otherwise hold what it queued while another sat idle
     const notify = vi.fn(async () => {})
     const handled: unknown[] = []
-    const queue = adapter(notify)
+    const queue = newQueue(notify)
     await queue.process({ t: async (j) => void handled.push(j.data) })
 
     await queue.enqueue('t', { n: 1 })
@@ -483,7 +478,7 @@ describe('PostgresQueueAdapter', () => {
   it('never forwards a signal it received, so tasks cannot signal each other for ever', async () => {
     const notify = vi.fn(async () => {})
     const handled: unknown[] = []
-    const queue = adapter(notify)
+    const queue = newQueue(notify)
     await queue.process({ t: async (j) => void handled.push(j.data) })
     await db.insert(job).values({ type: 't', payload: { n: 1 } })
 
@@ -496,11 +491,11 @@ describe('PostgresQueueAdapter', () => {
   it('settles after one signal between two tasks that tell each other', async () => {
     // Each task's signal reaches every task, itself included, as the HTTP one
     // does; a forwarded signal would keep the count climbing
-    const tasks: PostgresQueueAdapter[] = []
+    const tasks: PostgresJobQueue[] = []
     const notify = vi.fn(async () => tasks.forEach((t) => t.wakeHere()))
     const handled: unknown[] = []
     for (let i = 0; i < 2; i++) {
-      const task = adapter(notify)
+      const task = newQueue(notify)
       await task.process({ t: async (j) => void handled.push(j.data) })
       tasks.push(task)
     }
@@ -514,7 +509,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('does not fail the enqueue when the signal cannot be sent', async () => {
-    const writer = adapter(async () => {
+    const writer = newQueue(async () => {
       throw new Error('unreachable')
     })
 
@@ -522,13 +517,13 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('reports the jobs waiting, held ones included, at most once a minute and when the pass ends', async () => {
-    const writer = adapter()
+    const writer = newQueue()
     await writer.enqueue('t', {})
     await writer.enqueue('t', {})
     await writer.enqueue('t', {}, { delaySeconds: 3600 })
 
     const reports: number[] = []
-    await adapter(undefined, (count) => reports.push(count)).process({ t: async () => {} })
+    await newQueue(undefined, (count) => reports.push(count)).process({ t: async () => {} })
 
     // The first take: both due, the one just leased included; the delayed one
     // is not waiting. The second is within the minute and skipped. Last: what
@@ -538,11 +533,11 @@ describe('PostgresQueueAdapter', () => {
 
   it('reports 0 when idle, leaving a job another worker holds to that worker', async () => {
     // Counted by the idle one, it would outlast the holder finishing the job
-    await adapter().enqueue('t', {})
+    await newQueue().enqueue('t', {})
     await db.update(job).set({ lockedUntil: sql`now() + interval '5 minutes'`, lockedBy: 'other' })
 
     const reports: number[] = []
-    await adapter(undefined, (count) => reports.push(count)).process({ t: async () => {} })
+    await newQueue(undefined, (count) => reports.push(count)).process({ t: async () => {} })
 
     await vi.waitFor(() => expect(reports).toEqual([0]))
   })
@@ -551,7 +546,7 @@ describe('PostgresQueueAdapter', () => {
     // Read as nothing to do, a wave of failures would scale the service in
     // under the work it still has
     const reports: number[] = []
-    const queue = adapter(undefined, (count) => reports.push(count))
+    const queue = newQueue(undefined, (count) => reports.push(count))
     await queue.enqueue('t', {})
     await queue.process({
       t: async () => {
@@ -566,7 +561,7 @@ describe('PostgresQueueAdapter', () => {
   it('counts a job taken right after a pass ended at 0, within the minute', async () => {
     // Left at 0 while the job ran, the policy would scale in under it
     const reports: number[] = []
-    const queue = adapter(undefined, (count) => reports.push(count))
+    const queue = newQueue(undefined, (count) => reports.push(count))
     let release = () => {}
     await queue.process({ t: () => new Promise<void>((r) => (release = r)) })
     try {
@@ -582,7 +577,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('lists jobs by where they stand', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const [waiting, running, scheduled, dead] = await Promise.all([
       queue.enqueue('t', {}),
       queue.enqueue('t', {}),
@@ -611,14 +606,14 @@ describe('PostgresQueueAdapter', () => {
 
   describe('with a concurrency above one', () => {
     it('runs that many jobs at once, and no more', async () => {
-      const writer = adapter()
+      const writer = newQueue()
       await writer.enqueueMany('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
       const held = gate()
       let now = 0
       let most = 0
       const started: unknown[] = []
 
-      await adapter(undefined, undefined, 2).process({
+      await newQueue(undefined, undefined, 2).process({
         t: async (j) => {
           started.push(j.data)
           most = Math.max(most, ++now)
@@ -637,7 +632,7 @@ describe('PostgresQueueAdapter', () => {
     })
 
     it('starts a job written while one runs, beside it rather than after it', async () => {
-      const queue = adapter(undefined, undefined, 2)
+      const queue = newQueue(undefined, undefined, 2)
       const held = gate()
       const started: string[] = []
       await queue.process({
@@ -657,7 +652,7 @@ describe('PostgresQueueAdapter', () => {
     })
 
     it('starts a delayed job when it comes due, while another loop is still busy', async () => {
-      const queue = adapter(undefined, undefined, 2)
+      const queue = newQueue(undefined, undefined, 2)
       const held = gate()
       const started: string[] = []
       await queue.process({
@@ -679,7 +674,7 @@ describe('PostgresQueueAdapter', () => {
     it('keeps the sooner timer when a later time is asked for after it', async () => {
       // Loops ask when the next job is due at once; the answer that lands last
       // may be the oldest, and must not put back a later time
-      const queue = adapter(undefined, undefined, 2)
+      const queue = newQueue(undefined, undefined, 2)
       const started: string[] = []
       await queue.process({ soon: async () => void started.push('soon') })
       await queue.enqueue('soon', {}, { delaySeconds: 1 })
@@ -693,11 +688,11 @@ describe('PostgresQueueAdapter', () => {
     })
 
     it('waits for every running job when stopped', async () => {
-      const writer = adapter()
+      const writer = newQueue()
       await writer.enqueueMany('t', [{}, {}])
       const held = gate()
       let finished = 0
-      const queue = adapter(undefined, undefined, 2)
+      const queue = newQueue(undefined, undefined, 2)
       await queue.process({
         t: async () => {
           await held.opened
@@ -713,11 +708,11 @@ describe('PostgresQueueAdapter', () => {
     })
 
     it('reports the waiting jobs as the first is taken and when every loop is idle', async () => {
-      const writer = adapter()
+      const writer = newQueue()
       await writer.enqueueMany('t', [{}, {}, {}])
       const reports: number[] = []
 
-      await adapter(undefined, (count) => reports.push(count), 2).process({ t: async () => {} })
+      await newQueue(undefined, (count) => reports.push(count), 2).process({ t: async () => {} })
 
       // Not once per loop, nor once per loop going idle
       await vi.waitFor(() => expect(reports).toEqual([3, 0]))
@@ -725,7 +720,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('lists waiting jobs in the order they will be taken, with their priority', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const low = await queue.enqueue('t', {}, { priority: 'low' })
     const normal = await queue.enqueue('t', {})
     const high = await queue.enqueue('t', {}, { priority: 'high' })
@@ -741,7 +736,7 @@ describe('PostgresQueueAdapter', () => {
   it('reports the whole total on a page past the end', async () => {
     // The last row of the last page retried or deleted: the page is empty,
     // and the total must still say where the list now ends
-    const queue = adapter()
+    const queue = newQueue()
     await queue.enqueue('t', {})
     await queue.enqueue('t', {})
     await db.update(job).set({ state: 'dead' })
@@ -753,7 +748,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('prunes dead jobs past their retention, and nothing else', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const [old, recent, waiting] = await Promise.all([
       queue.enqueue('t', {}),
       queue.enqueue('t', {}),
@@ -774,7 +769,7 @@ describe('PostgresQueueAdapter', () => {
   })
 
   it('counts jobs by where they are', async () => {
-    const queue = adapter()
+    const queue = newQueue()
     const [, held, , dead] = await Promise.all([
       queue.enqueue('t', {}),
       queue.enqueue('t', {}),

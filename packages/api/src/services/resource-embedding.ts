@@ -11,7 +11,7 @@
 
 import { and, eq, exists, inArray, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { type Database, packageTable, resource } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
 
@@ -79,7 +79,7 @@ export async function markAllResourceEmbeddings(db: Database): Promise<void> {
  * builds from.
  */
 export async function requestResourceEmbeds(
-  queue: QueueAdapter,
+  queue: JobQueue,
   ai: AIAdapter,
   { delaySeconds = EMBED_DELAY_S }: { delaySeconds?: number } = {}
 ): Promise<void> {
@@ -96,7 +96,7 @@ export async function requestResourceEmbeds(
  */
 export async function enqueueResourceEmbedsIfDue(
   db: Database,
-  deps: { queue: QueueAdapter; ai: AIAdapter; logger: Logger },
+  deps: { queue: JobQueue; ai: AIAdapter; logger: Logger },
   scope: { resourceIds: string[] } | { packageId: string }
 ): Promise<void> {
   if (!deps.ai.getEmbeddingInfo()) return

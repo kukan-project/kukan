@@ -12,7 +12,7 @@ import type { Readable } from 'node:stream'
 import type { Database } from '@kukan/db'
 import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { AnalyticsService } from '../../services/analytics-service'
 import { SystemSettingService } from '../../services/system-setting'
@@ -111,16 +111,16 @@ export const mockStorage: StorageAdapter = {
 
 /**
  * A queue mock's `transaction`: the real transaction on the handle given,
- * without the wake — the adapter's own suite covers that.
+ * without the wake — the queue's own suite covers that.
  */
 export function mockTransaction() {
   // Cast: a mock does not keep the method's type parameter
-  return vi.fn<QueueAdapter['transaction']>((db, fn) =>
+  return vi.fn<JobQueue['transaction']>((db, fn) =>
     db.transaction(fn)
-  ) as unknown as QueueAdapter['transaction']
+  ) as unknown as JobQueue['transaction']
 }
 
-export const mockQueue: QueueAdapter = {
+export const mockQueue: JobQueue = {
   enqueue: vi.fn().mockResolvedValue('mock-job-id'),
   enqueueMany: vi.fn().mockResolvedValue([]),
   transaction: mockTransaction(),
@@ -204,7 +204,7 @@ interface TestAppOverrides {
   /** Environment overrides, for the flags routes gate on (e.g. AI_SUMMARY_MODEL) */
   env?: Partial<Env>
   /** Override the queue (e.g. a real one, where the job table has to answer). */
-  queue?: QueueAdapter
+  queue?: JobQueue
 }
 
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {

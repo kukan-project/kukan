@@ -47,10 +47,10 @@ KUKAN/
 │   ├── api/                # Hono API サーバー + Better Auth（ライブラリ）
 │   ├── db/                 # Drizzle スキーマ + マイグレーション + Better Auth テーブル
 │   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
-│   ├── adapters/           # 環境差吸収アダプター（4つ）
+│   ├── queue/              # @kukan/queue（PostgreSQL の job 表、ADR-058。環境差なし）
+│   ├── adapters/           # 環境差吸収アダプター（3つ）
 │   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
 │   │   ├── storage/        # @kukan/storage-adapter (S3互換: AWS S3 / MinIO)     ※ Phase 3+
-│   │   ├── queue/          # @kukan/queue-adapter (PostgreSQL job 表、ADR-058)     ※ Phase 3+
 │   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 5+
 │   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
 │   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
@@ -196,16 +196,16 @@ pnpm format        # Prettier フォーマット
 
 ## インフラ抽象化の原則
 
-環境差がある4つだけアダプターを作る。それ以外は抽象化しない:
+環境差があるものだけアダプターを作る。それ以外は抽象化しない:
 
-| アダプター     | AWS        | 開発/オンプレ                     |
-| -------------- | ---------- | --------------------------------- |
-| StorageAdapter | S3         | MinIO (S3互換)                    |
-| SearchAdapter  | OpenSearch | PostgreSQL全文検索                |
-| AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp            |
-| QueueAdapter   | PostgreSQL | PostgreSQL（環境差なし、ADR-058） |
+| アダプター     | AWS        | 開発/オンプレ          |
+| -------------- | ---------- | ---------------------- |
+| StorageAdapter | S3         | MinIO (S3互換)         |
+| SearchAdapter  | OpenSearch | PostgreSQL全文検索     |
+| AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp |
 
 キャッシュは lru-cache ユーティリティ（全環境共通、アダプター不要）。
+ジョブキューも環境差が無くなったのでアダプターではない — `@kukan/queue`（ADR-058、ADR-005 補足）。
 
 ## 設計判断
 

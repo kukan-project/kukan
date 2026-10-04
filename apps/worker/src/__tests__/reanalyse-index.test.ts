@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createLogger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { reanalyseSearchIndex } from '../search/reanalyse-index'
 
@@ -23,7 +23,7 @@ vi.mock('@kukan/api/services/pipeline-service', () => ({
 }))
 
 const log = createLogger({ name: 'test', level: 'silent' })
-const queue = { enqueue: vi.fn() } as unknown as QueueAdapter
+const queue = { enqueue: vi.fn() } as unknown as JobQueue
 
 /**
  * `select` answers the content diff (resources the database still has) and

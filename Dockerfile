@@ -30,9 +30,9 @@ COPY packages/db/package.json packages/db/
 COPY packages/api/package.json packages/api/
 COPY packages/lake/package.json packages/lake/
 COPY packages/ui/package.json packages/ui/
+COPY packages/queue/package.json packages/queue/
 COPY packages/adapters/search/package.json packages/adapters/search/
 COPY packages/adapters/storage/package.json packages/adapters/storage/
-COPY packages/adapters/queue/package.json packages/adapters/queue/
 COPY packages/adapters/ai/package.json packages/adapters/ai/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/

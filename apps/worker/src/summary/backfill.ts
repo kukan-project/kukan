@@ -22,7 +22,7 @@
 import { and, asc, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourceVersion } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { enqueueSearchDocSync } from '@kukan/api/services/search-index'
 import { enqueueResourceEmbedsIfDue } from '@kukan/api/services/resource-embedding'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
@@ -38,7 +38,7 @@ import {
 /** Enqueue one walk per active package. */
 export async function enqueueSummarizePackages(
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   log: Logger,
   refresh = false
 ): Promise<{ enqueued: number; failed: number }> {
@@ -75,7 +75,7 @@ export async function summarizeNextInPackage(
   packageId: string,
   after: string | undefined,
   deps: SummaryDeps,
-  queue: QueueAdapter,
+  queue: JobQueue,
   refresh = false
 ): Promise<{ done: boolean; resourceId?: string; held?: boolean }> {
   const [next] = await deps.db
@@ -144,7 +144,7 @@ async function summarizeOne(
     size: number | null
   },
   deps: SummaryDeps,
-  queue: QueueAdapter,
+  queue: JobQueue,
   refresh: boolean
 ): Promise<boolean> {
   const outcome = await withResourceClaim(deps.db, next.id, async (claim) => {

@@ -21,7 +21,7 @@ import {
   reclaimUnreferencedSnapshots,
   withLakeSession,
 } from '@kukan/lake'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { DROP_LAKE_TABLES_JOB_TYPE } from '@kukan/shared'
 import { STRANDED_LAKE_TABLES_LOCK, tryLockInTransaction } from './advisory-lock'
 import { withLakeIngestLock } from './lake-ingest'
@@ -51,7 +51,7 @@ export async function reclaimLakeStorage(
  * after it, which the reclaim needs (see {@link reclaimLakeStorage}).
  */
 export async function queueLakeTablesDrop(
-  queue: QueueAdapter,
+  queue: JobQueue,
   tx: Transaction,
   resourceIds: string[]
 ): Promise<void> {
@@ -89,7 +89,7 @@ export async function dropPurgedLakeTables(
  */
 export async function queueStrandedLakeTables(
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   lake: LakeConfig | undefined
 ): Promise<{ queued: number }> {
   if (!lake) return { queued: 0 }

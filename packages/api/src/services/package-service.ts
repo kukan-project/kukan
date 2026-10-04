@@ -60,7 +60,7 @@ import {
   ResourceService,
 } from './resource-service'
 import { markPackageDocs } from './doc-marks'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { queueLakeTablesDrop } from './lake-reclaim'
 import { markPackageResourceEmbeddings } from './resource-embedding'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
@@ -879,7 +879,7 @@ export class PackageService {
    */
   async purge(
     nameOrId: string,
-    deps: { search?: SearchAdapter; storage: StorageAdapter; queue: QueueAdapter },
+    deps: { search?: SearchAdapter; storage: StorageAdapter; queue: JobQueue },
     authorize?: PackageAuthorize
   ) {
     const target = await this.getByNameOrId(nameOrId, 'deleted')
@@ -1121,7 +1121,7 @@ export class PackageService {
    * Delete the DB rows of a claimed draft, queueing the drop of the DuckLake
    * tables named by `lakeResourceIds` with them.
    */
-  async finalizeDraftPurge(id: string, queue: QueueAdapter, lakeResourceIds: string[]) {
+  async finalizeDraftPurge(id: string, queue: JobQueue, lakeResourceIds: string[]) {
     return await queue.transaction(this.db, async (tx) => {
       const [purged] = await tx
         .delete(packageTable)
@@ -1144,7 +1144,7 @@ export class PackageService {
    */
   async purgeDraft(
     nameOrId: string,
-    deps: { search?: SearchAdapter; storage: StorageAdapter; queue: QueueAdapter },
+    deps: { search?: SearchAdapter; storage: StorageAdapter; queue: JobQueue },
     authorize?: PackageAuthorize
   ) {
     const claimed = await this.claimDraftForPurge(nameOrId, authorize)

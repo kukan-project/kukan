@@ -41,7 +41,7 @@ import {
 } from '@kukan/shared'
 import { eq } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
-import type { Job } from '@kukan/queue-adapter'
+import type { Job } from '@kukan/queue'
 import {
   enqueueResourceDocSyncIfDue,
   rebuildMetadataIndex,
@@ -64,7 +64,7 @@ import type { SummaryDeps } from './pipeline/steps/summarize'
 import { enqueueSummarizePackages, summarizeNextInPackage } from './summary/backfill'
 import { createDb, runMigrations } from '@kukan/db'
 import { closeLakeInstances, lakeConfigFromEnv } from '@kukan/lake'
-import { PostgresQueueAdapter, httpWake, isWakeAuthorized } from '@kukan/queue-adapter'
+import { PostgresJobQueue, httpWake, isWakeAuthorized } from '@kukan/queue'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter, PostgresSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
@@ -135,7 +135,7 @@ const { concurrency, warning: concurrencyWarning } = jobConcurrency(
   env.WORKER_CONCURRENCY
 )
 if (concurrencyWarning) log.warn(concurrencyWarning)
-const queue = new PostgresQueueAdapter({
+const queue = new PostgresJobQueue({
   db,
   concurrency,
   logger: log.child({ component: 'job-queue' }),

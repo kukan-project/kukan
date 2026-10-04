@@ -11,7 +11,7 @@ import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/sha
 import type { ResourceSchema, VersionState } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import { PostgresQueueAdapter, type QueueAdapter } from '@kukan/queue-adapter'
+import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import {
   ResourceVersionService,
   insertVersionIfHeld,
@@ -36,7 +36,7 @@ import { mockTransaction } from '../test-helpers/test-app'
 const purgeQueue = {
   enqueue: vi.fn(),
   transaction: mockTransaction(),
-} as unknown as QueueAdapter
+} as unknown as JobQueue
 
 const db = getTestDb()
 const silentLogger = createLogger({ name: 'test', level: 'silent' })
@@ -61,7 +61,7 @@ function mockDeps() {
     queue: {
       enqueue: vi.fn().mockResolvedValue('job-1'),
       transaction: mockTransaction(),
-    } as unknown as QueueAdapter,
+    } as unknown as JobQueue,
   }
 }
 
@@ -196,7 +196,7 @@ describe('claimPurge', () => {
     // finds it claimed and queues nothing (ADR-058).
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
-    const queue = new PostgresQueueAdapter({ db })
+    const queue = new PostgresJobQueue({ db })
 
     await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
     expect(await db.select({ payload: job.payload }).from(job)).toEqual([
@@ -206,7 +206,7 @@ describe('claimPurge', () => {
     const down = {
       enqueue: vi.fn().mockRejectedValue(new Error('connection lost')),
       transaction: mockTransaction(),
-    } as unknown as QueueAdapter
+    } as unknown as JobQueue
     await expect(service.claimPurge(resourceId, 2, userId, 'again', down)).rejects.toThrow()
     const [v2] = await db
       .select({ state: resourceVersion.state })
@@ -257,7 +257,7 @@ describe('queueStrandedPurges', () => {
   it('queues the purge again once its job is gone, and not while one stands behind it', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
-    const queue = new PostgresQueueAdapter({ db })
+    const queue = new PostgresJobQueue({ db })
     await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
 
     expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })

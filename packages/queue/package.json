@@ -1,9 +1,9 @@
 {
-  "name": "@kukan/queue-adapter",
+  "name": "@kukan/queue",
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "KUKAN queue adapter (PostgreSQL job table, ADR-058)",
+  "description": "KUKAN job queue (PostgreSQL job table, ADR-058)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

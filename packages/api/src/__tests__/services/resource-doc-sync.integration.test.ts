@@ -19,7 +19,7 @@ import {
   type ResourceDoc,
   type SearchAdapter,
 } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { createLogger } from '@kukan/shared'
 import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from '../../services/advisory-lock'
@@ -99,7 +99,7 @@ function deps(search: SearchAdapter, ai: AIAdapter = {} as AIAdapter) {
   return {
     deps: {
       search,
-      queue: { enqueue } as unknown as QueueAdapter,
+      queue: { enqueue } as unknown as JobQueue,
       ai,
       logger: createLogger({ name: 'test', level: 'silent' }),
     },
@@ -425,7 +425,7 @@ describe('enqueueResourceDocSyncIfDue', () => {
     const marked = await seed()
     const clean = await seed({ due: false })
     const enqueue = vi.fn().mockResolvedValue('job')
-    const queue = { enqueue } as unknown as QueueAdapter
+    const queue = { enqueue } as unknown as JobQueue
     const log = createLogger({ name: 'test', level: 'silent' })
 
     await enqueueResourceDocSyncIfDue(db, queue, clean, log)

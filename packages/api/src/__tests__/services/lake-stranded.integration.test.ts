@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 import { job, packageTable, resource } from '@kukan/db'
 import { lakeTableName, withLakeSession } from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
-import { PostgresQueueAdapter } from '@kukan/queue-adapter'
+import { PostgresJobQueue } from '@kukan/queue'
 import { DROP_LAKE_TABLES_JOB_TYPE } from '@kukan/shared'
 import { queueStrandedLakeTables } from '../../services/lake-reclaim'
 import { unreachableLake } from '../test-helpers/fixtures'
@@ -21,7 +21,7 @@ vi.mock('@kukan/lake', async (importOriginal) => {
 })
 
 const db = getTestDb()
-const queue = new PostgresQueueAdapter({ db })
+const queue = new PostgresJobQueue({ db })
 
 /** The catalog holds a table for each of these resources, and one of its own. */
 function catalogHolds(resourceIds: string[]) {

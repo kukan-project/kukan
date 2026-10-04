@@ -6,7 +6,7 @@
 import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Env, Logger } from '@kukan/shared'
 import type { Auth } from './auth/auth'
@@ -19,7 +19,7 @@ export interface AppContext {
   search: SearchAdapter
   /** PostgreSQL-based search adapter for dashboard (always consistent with DB) */
   dbSearch: SearchAdapter
-  queue: QueueAdapter
+  queue: JobQueue
   ai: AIAdapter
   auth: Auth
   env: Env
@@ -46,7 +46,7 @@ declare module 'hono' {
     search: SearchAdapter
     /** PostgreSQL-based search adapter for dashboard (always consistent with DB) */
     dbSearch: SearchAdapter
-    queue: QueueAdapter
+    queue: JobQueue
     ai: AIAdapter
     auth: Auth
     env: Env

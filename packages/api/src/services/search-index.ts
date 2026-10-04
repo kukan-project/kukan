@@ -25,7 +25,7 @@ import {
   type DatasetDoc,
   type ResourceDoc,
 } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { SYNC_SEARCH_DOCS_JOB_TYPE, isUuid, type JobPriority, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
@@ -42,7 +42,7 @@ import {
  *  route context vars, so routes can pass `c.var` directly. */
 export interface PackageSyncDeps {
   search: SearchAdapter
-  queue: QueueAdapter
+  queue: JobQueue
   ai: AIAdapter
   logger: Logger
 }
@@ -135,7 +135,7 @@ export async function rebuildPackageSearch(
  * runs, so none is written while one is waiting. The enqueue is best-effort — a
  * queue that never heard leaves the row due, and the sweep comes back for it.
  */
-export async function enqueueSearchDocSync(queue: QueueAdapter, log: Logger): Promise<void> {
+export async function enqueueSearchDocSync(queue: JobQueue, log: Logger): Promise<void> {
   try {
     await requestSearchDocSync(queue)
   } catch (err) {
@@ -144,7 +144,7 @@ export async function enqueueSearchDocSync(queue: QueueAdapter, log: Logger): Pr
 }
 
 /** The enqueue itself, for a caller that wants the failure (the sweep) */
-export async function requestSearchDocSync(queue: QueueAdapter): Promise<void> {
+export async function requestSearchDocSync(queue: JobQueue): Promise<void> {
   await queue.enqueue(SYNC_SEARCH_DOCS_JOB_TYPE, {}, { unlessWaiting: true })
 }
 
@@ -155,7 +155,7 @@ export async function requestSearchDocSync(queue: QueueAdapter): Promise<void> {
  */
 export async function enqueueResourceDocSyncIfDue(
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   resourceId: string,
   log: Logger
 ): Promise<void> {

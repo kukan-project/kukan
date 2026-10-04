@@ -85,3 +85,15 @@ MinIO は S3 互換プロトコルのため、`S3_ENDPOINT` の有無で自動�
 - `S3_ENDPOINT` なし → AWS S3 モード（IAM ロール認証）
 
 `STORAGE_TYPE` は不要（S3 互換のみ）。`S3_ENDPOINT` の有無で MinIO / AWS S3 を自動判別する。
+
+## 補足: キューはアダプターから外れた（2026-10-04）
+
+ADR-058 でジョブキューの正本を PostgreSQL の `job` 表に移し、SQS / ElasticMQ を撤去した。
+AWS でもオンプレでも実装は 1 つになり、上の分析表の「環境差あり？」は キューについて No に変わった。
+この ADR の原則（環境差があるものだけ抽象化する）に従い、キューはアダプターから外した:
+
+- パッケージ: `packages/adapters/queue`（`@kukan/queue-adapter`）→ `packages/queue`（`@kukan/queue`）
+- 型: `QueueAdapter` → `JobQueue`、`PostgresQueueAdapter` → `PostgresJobQueue`
+- インターフェース `JobQueue` はテストで差し替える継ぎ目として残す（実装の切り替え先ではない）
+
+アダプターは Storage / Search / AI の 3 つになった。ファイル名と表題の「4つ」は当時の決定の記録として残す。

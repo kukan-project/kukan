@@ -8,6 +8,7 @@ import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 import { createLogger, loadEnv, ODATA_BASE_PATH } from '@kukan/shared'
 import { createDb } from '@kukan/db'
+import { PostgresJobQueue, httpWake } from '@kukan/queue'
 import { createAdapters } from './adapters'
 import { AnalyticsService } from './services/analytics-service'
 import { createAuth } from './auth/auth'
@@ -42,6 +43,13 @@ export async function createApp() {
   const baseLogger = createLogger({ name: 'api', level: env.LOG_LEVEL })
   const adapters = await createAdapters(env, db, baseLogger)
 
+  // Job queue (ADR-058): jobs are rows, and the worker is told to look
+  const queue = new PostgresJobQueue({
+    db,
+    notify: env.WORKER_WAKE_URL ? httpWake(env.WORKER_WAKE_URL, env.BETTER_AUTH_SECRET) : undefined,
+    logger: baseLogger.child({ component: 'job-queue' }),
+  })
+
   // GA4 Analytics (optional — null when env vars not set)
   const analytics =
     env.GA4_PROPERTY_ID && env.GA4_CLIENT_EMAIL && env.GA4_PRIVATE_KEY
@@ -72,7 +80,7 @@ export async function createApp() {
     c.set('storage', adapters.storage)
     c.set('search', adapters.search)
     c.set('dbSearch', adapters.dbSearch)
-    c.set('queue', adapters.queue)
+    c.set('queue', queue)
     c.set('ai', adapters.ai)
     c.set('auth', auth)
     c.set('env', env)

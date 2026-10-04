@@ -11,7 +11,7 @@ import { ODATA_MAX_PAGE_BYTES, ODATA_MAX_PAGE_ROWS, ODATA_QUEUE_MAX } from '../.
 import { PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { capacity } from '../../services/odata/capacity'
 import { recordMissingRowGroups } from '../../services/odata/row-group-backfill'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { maxRowBytes, rowsWithinByteBudget } from '../../services/odata/page-budget'
 
 const db = getTestDb()
@@ -520,7 +520,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
       enqueue: async () => {
         throw new Error('queue is down')
       },
-    } as unknown as QueueAdapter
+    } as unknown as JobQueue
 
     const result = await recordMissingRowGroups(db, {
       storage: fixtureStorage,
@@ -549,7 +549,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
     const result = await recordMissingRowGroups(db, {
       storage: fixtureStorage,
       env: testEnv,
-      queue: { enqueue } as unknown as QueueAdapter,
+      queue: { enqueue } as unknown as JobQueue,
     })
     expect(enqueue).not.toHaveBeenCalled()
     expect(result.reinterpreting).toBe(0)

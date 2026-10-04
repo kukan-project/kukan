@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { job, organization, resource, resourcePipeline, resourceVersion } from '@kukan/db'
-import { PostgresQueueAdapter } from '@kukan/queue-adapter'
+import { PostgresJobQueue } from '@kukan/queue'
 import { PURGE_ORG_JOB_TYPE } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { PackageService } from '../../services/package-service'
@@ -28,7 +28,7 @@ import {
 import { queuedLakeDrops } from '../test-helpers/lake-drops'
 
 const db = getTestDb()
-const queue = new PostgresQueueAdapter({ db })
+const queue = new PostgresJobQueue({ db })
 
 let orgId: string
 
@@ -256,7 +256,7 @@ describe('OrganizationService.queueStrandedPurges', () => {
     // 'deleted' organization) cannot ask again
     await db.update(organization).set({ state: 'purging' })
     const service = new OrganizationService(db)
-    const queue = new PostgresQueueAdapter({ db })
+    const queue = new PostgresJobQueue({ db })
     await queue.enqueue(PURGE_ORG_JOB_TYPE, { organizationId: orgId })
 
     expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })

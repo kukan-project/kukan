@@ -1,5 +1,5 @@
 /**
- * KUKAN Queue Adapter Interface
+ * KUKAN Job Queue Interface
  * Job queue backend (PostgreSQL, ADR-058)
  */
 
@@ -70,7 +70,7 @@ export interface EnqueueOptions {
   unlessWaiting?: boolean
 }
 
-export interface QueueAdapter {
+export interface JobQueue {
   /**
    * Enqueue a new job, and wake the worker unless a transaction was given
    */

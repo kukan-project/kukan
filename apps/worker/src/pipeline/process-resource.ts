@@ -12,7 +12,7 @@
  */
 
 import type { Database } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../heavy/process'
@@ -37,13 +37,13 @@ import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
  * Interpret/Index failures are caught so the pipeline can still complete.
  *
  * @param db - Database instance for pipeline state management (resource_pipeline tables)
- * @param queue - Queue adapter for requeueing rate-limited fetches
+ * @param queue - Job queue for requeueing rate-limited fetches
  */
 export async function processResource(
   resourceId: string,
   ctx: PipelineContext,
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   opts: { rebuildOnly?: boolean } = {}
 ): Promise<void> {
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
@@ -91,7 +91,7 @@ async function runPipeline(
   resourceId: string,
   tracker: StepTracker,
   ctx: PipelineContext,
-  queue: QueueAdapter,
+  queue: JobQueue,
   rebuildOnly: boolean
 ): Promise<void> {
   await tracker.beginRun()
@@ -383,7 +383,7 @@ async function runIndexStep(
  */
 async function runLakeStep(
   tracker: StepTracker,
-  queue: QueueAdapter,
+  queue: JobQueue,
   ctx: PipelineContext,
   opts: LakeStepOptions
 ): Promise<void> {

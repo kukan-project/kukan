@@ -87,3 +87,15 @@ Since MinIO uses the S3-compatible protocol, the presence of `S3_ENDPOINT` deter
 - `S3_ENDPOINT` absent → AWS S3 mode (IAM role authentication)
 
 `STORAGE_TYPE` is unnecessary (S3-compatible only). The presence of `S3_ENDPOINT` automatically determines MinIO vs. AWS S3.
+
+## Addendum: The Queue Is No Longer an Adapter (2026-10-04)
+
+ADR-058 moved the job queue's source of truth into PostgreSQL's `job` table and removed SQS / ElasticMQ.
+AWS and on-premises now share one implementation, so in the analysis table above the queue's "environment difference?" became No.
+Following this ADR's principle (abstract only what differs between environments), the queue was taken out of the adapters:
+
+- Package: `packages/adapters/queue` (`@kukan/queue-adapter`) → `packages/queue` (`@kukan/queue`)
+- Types: `QueueAdapter` → `JobQueue`, `PostgresQueueAdapter` → `PostgresJobQueue`
+- The `JobQueue` interface stays as a seam for tests to substitute (not as a point to switch implementations)
+
+The adapters are now three: Storage / Search / AI. The "four" in the file name and title is kept as the record of the original decision.

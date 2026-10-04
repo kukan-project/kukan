@@ -19,7 +19,7 @@ import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-cl
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 import { mapStorage } from '../test-helpers/fixtures'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { mockTransaction } from '../test-helpers/test-app'
 
 const db = getTestDb()
@@ -44,11 +44,11 @@ function mockQueue() {
     pruneDead: vi.fn(),
     process: vi.fn(),
     stop: vi.fn(),
-  } as QueueAdapter
+  } as JobQueue
 }
 
 /** Every version the sweep handed out, across its calls. */
-function handedOut(queue: QueueAdapter) {
+function handedOut(queue: JobQueue) {
   return vi
     .mocked(queue.enqueueMany)
     .mock.calls.flatMap(([, data]) => data as { resourceId: string; version: number }[])

@@ -10,7 +10,7 @@ import { WAITING_METRIC_NAME, WAITING_METRIC_NAMESPACE } from '@kukan/shared'
 
 /**
  * How often the last known figure is written, whether or not it changed. The
- * queue adapter recounts on the same minute (`WAITING_COUNT_MS`).
+ * queue recounts on the same minute (`WAITING_COUNT_MS`).
  */
 export const WAITING_METRIC_INTERVAL_MS = 60_000
 

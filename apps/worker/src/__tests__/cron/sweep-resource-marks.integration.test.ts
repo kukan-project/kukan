@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { packageTable, resource } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { createLogger, SYNC_SEARCH_DOCS_JOB_TYPE } from '@kukan/shared'
 import { sweepSearchDocs } from '../../cron/sweep-resource-marks'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
@@ -14,7 +14,7 @@ const log = createLogger({ name: 'test', level: 'silent' })
 
 function fakeQueue() {
   const enqueue = vi.fn().mockResolvedValue('job')
-  return { queue: { enqueue } as unknown as QueueAdapter, enqueue }
+  return { queue: { enqueue } as unknown as JobQueue, enqueue }
 }
 
 /** A published resource, marked due and old enough to be swept */

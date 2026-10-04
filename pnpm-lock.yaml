@@ -227,9 +227,9 @@ importers:
       '@kukan/lake':
         specifier: workspace:*
         version: link:../../packages/lake
-      '@kukan/queue-adapter':
+      '@kukan/queue':
         specifier: workspace:*
-        version: link:../../packages/adapters/queue
+        version: link:../../packages/queue
       '@kukan/search-adapter':
         specifier: workspace:*
         version: link:../../packages/adapters/search
@@ -369,22 +369,6 @@ importers:
         specifier: ^24.12.2
         version: 24.12.2
 
-  packages/adapters/queue:
-    dependencies:
-      '@kukan/db':
-        specifier: workspace:*
-        version: link:../../db
-      '@kukan/shared':
-        specifier: workspace:*
-        version: link:../../shared
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(kysely@0.29.6)(pg@8.23.0)
-    devDependencies:
-      '@types/node':
-        specifier: ^24.12.2
-        version: 24.12.2
-
   packages/adapters/search:
     dependencies:
       '@kukan/db':
@@ -446,9 +430,9 @@ importers:
       '@kukan/lake':
         specifier: workspace:*
         version: link:../lake
-      '@kukan/queue-adapter':
+      '@kukan/queue':
         specifier: workspace:*
-        version: link:../adapters/queue
+        version: link:../queue
       '@kukan/search-adapter':
         specifier: workspace:*
         version: link:../adapters/search
@@ -582,6 +566,22 @@ importers:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
+
+  packages/queue:
+    dependencies:
+      '@kukan/db':
+        specifier: workspace:*
+        version: link:../db
+      '@kukan/shared':
+        specifier: workspace:*
+        version: link:../shared
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(kysely@0.29.6)(pg@8.23.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.13.6
 
   packages/shared:
     dependencies:

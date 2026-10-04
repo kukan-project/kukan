@@ -32,7 +32,7 @@ import type {
   CreateOrganizationInput,
   UpdateOrganizationInput,
 } from '@kukan/shared'
-import { jobsFor, type QueueAdapter } from '@kukan/queue-adapter'
+import { jobsFor, type JobQueue } from '@kukan/queue'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
@@ -290,7 +290,7 @@ export class OrganizationService {
    * Nothing is deleted here, so a failed enqueue leaves the org intact for retry —
    * unlike a delete-then-enqueue, which could orphan externals behind a deleted org.
    */
-  async requestPurge(id: string, deps: { queue: QueueAdapter }): Promise<void> {
+  async requestPurge(id: string, deps: { queue: JobQueue }): Promise<void> {
     await this.assertNoLinkedPackages(this.db, id, {
       activeOnly: true,
       message: 'Organization has active packages. Delete or reassign them first.',
@@ -304,7 +304,7 @@ export class OrganizationService {
    * it: the purge route accepts only a `deleted` organization. A dead job still
    * there is left alone for the admin screen.
    */
-  async queueStrandedPurges(queue: QueueAdapter): Promise<{ queued: number }> {
+  async queueStrandedPurges(queue: JobQueue): Promise<{ queued: number }> {
     const rows = await queue.transaction(this.db, async (tx) => {
       const stranded = await tx
         .select({ organizationId: organization.id })

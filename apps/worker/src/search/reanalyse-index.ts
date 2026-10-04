@@ -4,7 +4,7 @@ import { dropIndexedWithoutRow, rebuildMetadataIndex } from '@kukan/api/services
 import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import type { Logger } from '@kukan/shared'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { SearchAdapter } from '@kukan/search-adapter'
 
 /**
@@ -31,7 +31,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 export async function reanalyseSearchIndex(
   db: Database,
   search: SearchAdapter | undefined,
-  queue: QueueAdapter,
+  queue: JobQueue,
   log: Logger
 ): Promise<{ from: string; to: string; documents: number } | null> {
   if (!search) {
@@ -101,7 +101,7 @@ function dropContentWithoutResource(
 async function rewriteContentWrittenDuringTheCopy(
   db: Database,
   search: SearchAdapter,
-  queue: QueueAdapter,
+  queue: JobQueue,
   startedAt: Date,
   log: Logger
 ): Promise<number> {

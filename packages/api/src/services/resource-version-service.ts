@@ -64,7 +64,7 @@ import type { Logger, ResourceColumn, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import { jobsFor, readyJobsFor, type QueueAdapter } from '@kukan/queue-adapter'
+import { jobsFor, readyJobsFor, type JobQueue } from '@kukan/queue'
 import { lakeStandDown, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
@@ -332,7 +332,7 @@ export interface RevertOutcome extends LadderOutcome {
 interface PurgeDeps {
   storage: StorageAdapter
   search?: SearchAdapter
-  queue: QueueAdapter
+  queue: JobQueue
   lake?: LakeConfig
 }
 
@@ -775,7 +775,7 @@ export class ResourceVersionService {
    * and ingest (ADR-046), which is the same path a pipeline run takes — so the
    * lake never receives anything this process derived on the side.
    */
-  async createFirstVersions(deps: { storage: StorageAdapter; queue: QueueAdapter }): Promise<{
+  async createFirstVersions(deps: { storage: StorageAdapter; queue: JobQueue }): Promise<{
     created: number
     /** Created or replaced by something else since the scan — retry-safe. */
     skipped: number
@@ -939,7 +939,7 @@ export class ResourceVersionService {
    * a converted resource asks for nothing and an interrupted pass resumes by
    * looking again.
    */
-  async convertSetAsideVersions(deps: { storage: StorageAdapter; queue: QueueAdapter }): Promise<{
+  async convertSetAsideVersions(deps: { storage: StorageAdapter; queue: JobQueue }): Promise<{
     /** Reached the new shape, whether or not that took issuing a version. */
     converted: number
     /** Held by a run, or overtaken mid-way — the next pass finds it again. */
@@ -1263,7 +1263,7 @@ export class ResourceVersionService {
    * (`pendingLakeVersionSource`), for the copies the pipeline's own retry
    * still produces.
    */
-  async queuePendingLakeIngests(queue: QueueAdapter): Promise<{ queued: number }> {
+  async queuePendingLakeIngests(queue: JobQueue): Promise<{ queued: number }> {
     // **One version per resource, the oldest.** A resource can have several
     // outstanding at once — the conversion flips rows into the eligible set and
     // issues a version above them in the same pass (ADR-044 §4) — and the queue
@@ -1329,7 +1329,7 @@ export class ResourceVersionService {
    * @returns whether anything was queued.
    */
   async queueNextPendingLakeIngest(
-    queue: QueueAdapter,
+    queue: JobQueue,
     resourceId: string,
     handled: number
   ): Promise<boolean> {
@@ -1551,7 +1551,7 @@ export class ResourceVersionService {
     version: number,
     userId: string,
     reason: string,
-    queue: QueueAdapter
+    queue: JobQueue
   ): Promise<{ claimed: boolean; view: VersionView }> {
     // Two steps on purpose. The claim is a write and takes only the row it
     // changes, so reading the rest of the resource inside it reads whatever
@@ -1629,7 +1629,7 @@ export class ResourceVersionService {
    * A dead job still there is left alone; it is on the admin screen to retry.
    * Rows another pass has locked are skipped, so two workers queue one job.
    */
-  async queueStrandedPurges(queue: QueueAdapter): Promise<{ queued: number }> {
+  async queueStrandedPurges(queue: JobQueue): Promise<{ queued: number }> {
     const rows = await queue.transaction(this.db, async (tx) => {
       const stranded = await tx
         .select({ resourceId: resourceVersion.resourceId, version: resourceVersion.version })
@@ -1892,7 +1892,7 @@ export class ResourceVersionService {
     deps: {
       storage: StorageAdapter
       search?: SearchAdapter
-      queue: QueueAdapter
+      queue: JobQueue
       logger?: Logger
     }
   ): Promise<RevertOutcome> {
@@ -2089,7 +2089,7 @@ export class ResourceVersionService {
     deps: {
       storage: StorageAdapter
       search?: SearchAdapter
-      queue: QueueAdapter
+      queue: JobQueue
     },
     log: Logger
   ): Promise<RevertOutcome | null> {
@@ -2246,7 +2246,7 @@ export class ResourceVersionService {
   async setColumnSettings(
     resourceId: string,
     settings: ColumnSettings,
-    deps: { queue: QueueAdapter; logger?: Logger }
+    deps: { queue: JobQueue; logger?: Logger }
   ): Promise<{ primaryKey: string[] | null; queued: boolean | null }> {
     const log = deps.logger ?? createLogger({ name: 'api' })
     // "No key" has one spelling from here on (spec §6.2).
@@ -2542,7 +2542,7 @@ export class ResourceVersionService {
    */
   private async queueRebuild(
     resourceId: string,
-    deps: { queue: QueueAdapter },
+    deps: { queue: JobQueue },
     log: Logger
   ): Promise<boolean> {
     try {
@@ -2624,7 +2624,7 @@ export class ResourceVersionService {
     deps: {
       storage: StorageAdapter
       search?: SearchAdapter
-      queue: QueueAdapter
+      queue: JobQueue
       logger?: Logger
     }
   ): Promise<LadderOutcome> {

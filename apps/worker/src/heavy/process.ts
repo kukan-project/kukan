@@ -14,7 +14,7 @@ import {
   type ChildHandle,
 } from '@kukan/api/services/child/host'
 import type { Logger } from '@kukan/shared'
-import { JobInterruptedError } from '@kukan/queue-adapter'
+import { JobInterruptedError } from '@kukan/queue'
 import type { HeavyReply, HeavyRequest, HeavyResult } from './protocol'
 
 /**

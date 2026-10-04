@@ -9,7 +9,7 @@
  */
 
 import type { Database } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
@@ -25,7 +25,7 @@ import { CLAIM_RETRY_DELAY_S } from '@/config'
 
 export async function retryLakeIngest(
   job: { resourceId: string; version: number },
-  deps: { ctx: PipelineContext; db: Database; queue: QueueAdapter; log: Logger }
+  deps: { ctx: PipelineContext; db: Database; queue: JobQueue; log: Logger }
 ): Promise<void> {
   const { resourceId, version } = job
   const { ctx, log } = deps
@@ -123,7 +123,7 @@ export async function retryLakeIngest(
  * good; chained, a resource drains in seconds.
  */
 async function chainToNext(
-  deps: { db: Database; queue: QueueAdapter },
+  deps: { db: Database; queue: JobQueue },
   resourceId: string,
   handled: number,
   log: Logger

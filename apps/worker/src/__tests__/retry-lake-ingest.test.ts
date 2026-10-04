@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Database } from '@kukan/db'
-import { JobInterruptedError, type QueueAdapter } from '@kukan/queue-adapter'
+import { JobInterruptedError, type JobQueue } from '@kukan/queue'
 import type { Logger } from '@kukan/shared'
 import { retryLakeIngest } from '../pipeline/retry-lake-ingest'
 import { HeavyShortOfMemoryError, WorkerStoppingError } from '../heavy/process'
@@ -70,7 +70,7 @@ import { recordLakeIngestFailure } from '@kukan/api/services/resource-version-se
 const VERSION_KEY = 'resources/pkg-1/res-1.v2'
 const job = { resourceId: 'res-1', version: 2 }
 
-let deps: { ctx: PipelineContextMock; db: Database; queue: QueueAdapter; log: Logger }
+let deps: { ctx: PipelineContextMock; db: Database; queue: JobQueue; log: Logger }
 
 beforeEach(() => {
   vi.clearAllMocks()

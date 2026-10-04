@@ -37,7 +37,7 @@ claim を返す
 | `pipeline/interpret/` | 版ファイル 1 つの解釈。2 つの入口が共有する                                          |
 
 **入口は 2 つある。** `process-resource.ts`（全ステップ）と `retry-lake-ingest.ts`（層 2 の
-再取り込み。Fetch と Version を飛ばして解釈だけをやり直す、§5）。どちらも `index.ts` の SQS
+再取り込み。Fetch と Version を飛ばして解釈だけをやり直す、§5）。どちらも `index.ts` のジョブ
 ハンドラから呼ばれる。解釈が `steps/` の下ではなく独立しているのはこの 2 つが共有するからで、
 ZIP マニフェストの生成も解釈の一部としてここにある。
 

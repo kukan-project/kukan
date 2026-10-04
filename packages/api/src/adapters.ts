@@ -8,7 +8,6 @@ import { parseCompletionModels } from '@kukan/shared/ai'
 import type { Database } from '@kukan/db'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
-import { PostgresQueueAdapter, httpWake } from '@kukan/queue-adapter'
 import {
   type AIAdapter,
   NoOpAIAdapter,
@@ -65,13 +64,6 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
     secretAccessKey: env.S3_SECRET_KEY,
   })
 
-  // Queue adapter (ADR-058): jobs are rows, and the worker is told to look
-  const queue = new PostgresQueueAdapter({
-    db,
-    notify: env.WORKER_WAKE_URL ? httpWake(env.WORKER_WAKE_URL, env.BETTER_AUTH_SECRET) : undefined,
-    logger: logger.child({ component: 'job-queue' }),
-  })
-
   // AI adapter (created before search — its model knows the similarity floor)
   const ai = createAIAdapter(env)
 
@@ -107,5 +99,5 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
     throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)
   }
 
-  return { storage, search, dbSearch, queue, ai }
+  return { storage, search, dbSearch, ai }
 }

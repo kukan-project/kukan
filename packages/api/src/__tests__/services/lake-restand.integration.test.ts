@@ -19,7 +19,7 @@ import { resource, resourceVersion } from '@kukan/db'
 import { createLogger, getStorageKey } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import {
   withLakeSession,
   lakeTableExists,
@@ -45,7 +45,7 @@ import { mockTransaction } from '../test-helpers/test-app'
 const purgeQueue = {
   enqueue: vi.fn(),
   transaction: mockTransaction(),
-} as unknown as QueueAdapter
+} as unknown as JobQueue
 
 vi.mock('@kukan/lake', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kukan/lake')>()
@@ -78,7 +78,7 @@ function mockDeps() {
     queue: {
       enqueue: vi.fn().mockResolvedValue('job-1'),
       transaction: mockTransaction(),
-    } as unknown as QueueAdapter,
+    } as unknown as JobQueue,
     lake: unreachableLake,
     logger: silentLogger,
   }

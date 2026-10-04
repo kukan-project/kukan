@@ -12,7 +12,7 @@ import pLimit, { type LimitFunction } from 'p-limit'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import type { Database, HealthCheckState } from '@kukan/db'
 import { resource, scrubbedExtras } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { Logger } from '@kukan/shared'
 import { PIPELINE_JOB_TYPE, checkUrlSafety, normalizeHostname } from '@kukan/shared'
 import {
@@ -250,7 +250,7 @@ class HostLease {
  */
 export async function checkBatch(
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   stalenessHours: number,
   fullFetchIntervalHours: number,
   log: Logger

@@ -1,8 +1,8 @@
 /**
  * KUKAN Queue Package
- * Job queue adapter (PostgreSQL, ADR-058)
+ * Job queue on PostgreSQL (ADR-058)
  */
 
-export * from './adapter'
+export * from './job-queue'
 export * from './postgres'
 export * from './wake'

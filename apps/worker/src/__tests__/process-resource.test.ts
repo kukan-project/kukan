@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { processResource } from '../pipeline/process-resource'
 import type { Database } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import { getStorageKey } from '@kukan/shared'
 
 // Mock all step modules
@@ -106,11 +106,11 @@ const STEP = {
   index: 'step-4',
 }
 
-function createMockQueue(): QueueAdapter {
+function createMockQueue(): JobQueue {
   return {
     enqueue: vi.fn().mockResolvedValue('job-requeue'),
     enqueueMany: vi.fn().mockResolvedValue([]),
-    transaction: vi.fn() as unknown as QueueAdapter['transaction'],
+    transaction: vi.fn() as unknown as JobQueue['transaction'],
     countJobs: vi.fn(),
     listJobs: vi.fn(),
     retryDead: vi.fn(),
@@ -124,7 +124,7 @@ function createMockQueue(): QueueAdapter {
 describe('processResource', () => {
   let ctx: PipelineContextMock
   let db: Database
-  let queue: QueueAdapter
+  let queue: JobQueue
   let stepCounter: number
 
   beforeEach(() => {

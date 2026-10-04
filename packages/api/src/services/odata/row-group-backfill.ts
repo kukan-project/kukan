@@ -9,7 +9,7 @@ import type { Database } from '@kukan/db'
 import { packageTable, resource, resourcePipeline } from '@kukan/db'
 import { PARQUET_PREVIEW_ROW_GROUP_ROWS, createCache } from '@kukan/shared'
 import type { Env, Logger } from '@kukan/shared'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { readRowGroupRows } from '@kukan/lake'
 import { PipelineService, parseResourceSchema, parseSourceEncoding } from '../pipeline-service'
@@ -163,7 +163,7 @@ export async function recordMissingRowGroups(
     storage: StorageAdapter
     env: Env
     /** Given, the few tables a smaller group would let through are re-interpreted. */
-    queue?: QueueAdapter
+    queue?: JobQueue
     log?: Logger
   }
 ): Promise<{ recorded: number; unmeasured: number; reinterpreting: number; failed: number }> {

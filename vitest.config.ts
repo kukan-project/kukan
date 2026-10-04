@@ -68,8 +68,8 @@ export default defineConfig({
       },
       {
         test: {
-          name: 'adapter-queue',
-          root: './packages/adapters/queue',
+          name: 'queue',
+          root: './packages/queue',
           include: ['src/__tests__/**/*.test.ts'],
           environment: 'node',
         },

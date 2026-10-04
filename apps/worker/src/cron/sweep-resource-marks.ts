@@ -16,7 +16,7 @@ import { and, isNotNull, lt, sql } from 'drizzle-orm'
 import type { PgColumn } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
 import { packageTable, resource } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import { requestSearchDocSync } from '@kukan/api/services/search-index'
@@ -49,7 +49,7 @@ async function staleMark(
 /** Whether a sync was asked for */
 export async function sweepSearchDocs(
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   log: Logger,
   minAgeMs = MIN_AGE_MS
 ): Promise<boolean> {
@@ -69,7 +69,7 @@ export async function sweepSearchDocs(
 /** Whether an embed was asked for. Never where embedding is unavailable. */
 export async function sweepResourceEmbeds(
   db: Database,
-  queue: QueueAdapter,
+  queue: JobQueue,
   ai: AIAdapter,
   log: Logger,
   minAgeMs = MIN_AGE_MS

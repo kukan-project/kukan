@@ -14,7 +14,7 @@ import {
   resourceSchemaSchema,
 } from '@kukan/shared'
 import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
-import type { EnqueueOptions, QueueAdapter } from '@kukan/queue-adapter'
+import type { EnqueueOptions, JobQueue } from '@kukan/queue'
 
 /**
  * Validate `resource_pipeline.metadata.schema` (persisted by the Interpret step,
@@ -64,12 +64,12 @@ const ENQUEUE_BATCH_SIZE = 500
 export class PipelineService {
   constructor(
     private db: Database,
-    private queue?: QueueAdapter
+    private queue?: JobQueue
   ) {}
 
-  private requireQueue(): QueueAdapter {
+  private requireQueue(): JobQueue {
     if (!this.queue) {
-      throw new ValidationError('Queue adapter is required to enqueue pipelines')
+      throw new ValidationError('Job queue is required to enqueue pipelines')
     }
     return this.queue
   }

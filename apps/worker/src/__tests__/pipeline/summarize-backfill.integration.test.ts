@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm'
 import { packageTable, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import {
   createLogger,
   EMBED_JOB_TYPE,
@@ -61,9 +61,9 @@ function fakeQueue() {
   const enqueueMany = vi.fn((type: string, data: unknown[], options?: unknown) =>
     Promise.all(data.map((d) => enqueue(type, d, options)))
   )
-  const transaction: QueueAdapter['transaction'] = (db, fn) => db.transaction(fn)
+  const transaction: JobQueue['transaction'] = (db, fn) => db.transaction(fn)
   return {
-    queue: { enqueue, enqueueMany, transaction } as unknown as QueueAdapter,
+    queue: { enqueue, enqueueMany, transaction } as unknown as JobQueue,
     enqueue,
   }
 }

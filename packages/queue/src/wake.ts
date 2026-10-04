@@ -26,7 +26,7 @@ export function isWakeAuthorized(header: string | undefined, authSecret: string)
 }
 
 /**
- * A `notify` for `PostgresQueueAdapter` that POSTs to every worker task.
+ * A `notify` for `PostgresJobQueue` that POSTs to every worker task.
  *
  * Every address the name resolves to, not the first: a signal that lands on
  * a task whose loops are all busy waits for one of them to finish while

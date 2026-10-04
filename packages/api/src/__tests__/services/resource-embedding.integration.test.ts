@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { organization, packageTable, resource } from '@kukan/db'
-import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { EMBED_JOB_TYPE, createLogger } from '@kukan/shared'
 import { PackageService } from '../../services/package-service'
@@ -183,7 +183,7 @@ describe('dataset writes', () => {
 
 describe('enqueueResourceEmbedsIfDue', () => {
   function fakeQueue(enqueue = vi.fn().mockResolvedValue('job')) {
-    return { queue: { enqueue } as unknown as QueueAdapter, enqueue }
+    return { queue: { enqueue } as unknown as JobQueue, enqueue }
   }
 
   it('asks for one delayed job when anything in its scope is marked', async () => {

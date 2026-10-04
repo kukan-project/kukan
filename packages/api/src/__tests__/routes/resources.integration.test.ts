@@ -11,7 +11,7 @@ import {
 } from '@kukan/db'
 import { getStorageKey, MAX_UPLOAD_SIZE, JSON_PREVIEW_LIMIT } from '@kukan/shared'
 import type { ResourceColumnType } from '@kukan/shared'
-import { PostgresQueueAdapter } from '@kukan/queue-adapter'
+import { PostgresJobQueue } from '@kukan/queue'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
 import {
@@ -2255,7 +2255,7 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
   }
 
   /** A real queue, for the cases only the job table can answer (ADR-058). */
-  const appWithJobs = createTestApp(db, { queue: new PostgresQueueAdapter({ db }) })
+  const appWithJobs = createTestApp(db, { queue: new PostgresJobQueue({ db }) })
   const pipelineJobs = () => db.$count(job, eq(job.state, 'ready'))
 
   const setKey = (id: string, primaryKey: string[] | null, via = app) =>
