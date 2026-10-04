@@ -712,7 +712,11 @@ describe('PostgresJobQueue', () => {
       await writer.enqueueMany('t', [{}, {}, {}])
       const reports: number[] = []
 
-      await newQueue(undefined, (count) => reports.push(count), 2).process({ t: async () => {} })
+      // Each job waits for the first count: the other loop would otherwise finish
+      // jobs while it is still being taken, and it would see fewer than were due
+      await newQueue(undefined, (count) => reports.push(count), 2).process({
+        t: () => vi.waitFor(() => expect(reports.length).toBeGreaterThan(0)),
+      })
 
       // Not once per loop, nor once per loop going idle
       await vi.waitFor(() => expect(reports).toEqual([3, 0]))
