@@ -15,6 +15,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # 3.9.0's generated types drop `field` and `script` from a terms
+      # aggregation, so the search adapter no longer compiles. Lift this once a
+      # release restores them.
+      - dependency-name: '@opensearch-project/opensearch'
+        versions: ['3.9.x']
     groups:
       # One PR per week for the low-risk bumps; majors stay separate for review.
       minor-and-patch:

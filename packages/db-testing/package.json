@@ -17,12 +17,12 @@
   "dependencies": {
     "@kukan/db": "workspace:*",
     "@kukan/shared": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "pg": "^8.23.0"
+    "drizzle-orm": "^0.45.3",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
     "@types/pg": "^8.23.1",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.15"
   }
 }

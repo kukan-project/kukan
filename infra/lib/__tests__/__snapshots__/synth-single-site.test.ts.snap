@@ -2066,6 +2066,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -2733,6 +2739,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -5691,6 +5703,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -6393,6 +6411,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -8960,6 +8984,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -9506,6 +9536,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -12535,6 +12571,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -13189,6 +13231,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -15979,6 +16027,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },
@@ -16646,6 +16700,12 @@ function expandV6(addr) {
         },
         "ScalableDimension": "ecs:service:DesiredCount",
         "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
     },

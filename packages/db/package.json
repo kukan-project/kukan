@@ -24,16 +24,16 @@
   },
   "dependencies": {
     "@kukan/shared": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "pg": "^8.23.0"
+    "drizzle-orm": "^0.45.3",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
     "@types/pg": "^8.23.1",
-    "better-auth": "1.7.5",
-    "dotenv": "^18.0.1",
-    "drizzle-kit": "^0.31.10",
-    "tsx": "^4.23.13"
+    "better-auth": "1.7.7",
+    "dotenv": "^18.0.5",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15"
   },
   "files": [
     "dist",
