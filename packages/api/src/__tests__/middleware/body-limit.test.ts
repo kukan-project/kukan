@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Hono } from 'hono'
+import { Request as UndiciRequest, type RequestInit as UndiciRequestInit } from 'undici'
 import { MAX_BODY_BYTES, limitBody } from '../../middleware/body-limit'
 import { errorHandler } from '../../middleware/error-handler'
 
@@ -84,6 +85,24 @@ describe('limitBody', () => {
     const put = await app.request(path, declared(MAX_BODY_BYTES + 1, MULTIPART_TYPE, 'PUT'))
     expect(put.status).toBe(413)
     expect(handler).not.toHaveBeenCalled()
+  })
+
+  // Next.js hands the route a Request of another class than this runtime's
+  // global one, npm's undici standing in for it here. A DELETE with nothing to
+  // send comes as Next.js gives it: an empty stream with no length.
+  it.each([
+    ['an empty DELETE', { ...chunked(0), method: 'DELETE' }],
+    ['a chunked body', chunked(1024)],
+  ])('reads %s on a Request of another class', async (_, init) => {
+    const app = new Hono()
+    app.use('/api/*', limitBody)
+    app.onError(errorHandler)
+    const handler = vi.fn(async (c) => c.json({ bytes: (await c.req.arrayBuffer()).byteLength }))
+    app.on(['POST', 'DELETE'], '/api/v1/packages', handler)
+    const req = new UndiciRequest('http://localhost/api/v1/packages', init as UndiciRequestInit)
+    const res = await app.fetch(req as unknown as Request)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ bytes: init.method === 'DELETE' ? 0 : 1024 })
   })
 
   it('bounds what only looks like the upload route', async () => {

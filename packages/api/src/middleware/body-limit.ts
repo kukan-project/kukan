@@ -3,7 +3,6 @@
  */
 
 import type { Context, Next } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
 import { PayloadTooLargeError } from '@kukan/shared'
 
 /** Far above any body the API takes in JSON; a file goes through the upload route */
@@ -24,14 +23,11 @@ function isUpload(c: Context): boolean {
   )
 }
 
-const limit = bodyLimit({
-  maxSize: MAX_BODY_BYTES,
-  onError: (c) => {
-    // The rest of the body is never read: see retireConnection
-    c.header('Connection', 'close')
-    throw new PayloadTooLargeError(`Request body exceeds ${MAX_BODY_BYTES} bytes`)
-  },
-})
+function tooLarge(c: Context): never {
+  // The rest of the body is never read: see retireConnection
+  c.header('Connection', 'close')
+  throw new PayloadTooLargeError(`Request body exceeds ${MAX_BODY_BYTES} bytes`)
+}
 
 /**
  * Refuse a request body over MAX_BODY_BYTES with 413 — apply to `/api/*` ahead
@@ -44,6 +40,30 @@ const limit = bodyLimit({
  * chunked body is counted as it arrives and refused once it passes the cap.
  */
 export async function limitBody(c: Context, next: Next) {
-  if (isUpload(c)) return next()
-  return limit(c, next)
+  const raw = c.req.raw
+  if (isUpload(c) || !raw.body) return next()
+
+  const length = c.req.header('content-length')
+  if (length !== undefined && !c.req.header('transfer-encoding')) {
+    if (Number(length) > MAX_BODY_BYTES) tooLarge(c)
+    return next()
+  }
+
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for await (const chunk of raw.body) {
+    size += chunk.byteLength
+    if (size > MAX_BODY_BYTES) tooLarge(c)
+    chunks.push(chunk)
+  }
+  // Built from its parts, not as `new Request(raw, init)` (what hono/body-limit
+  // does): Next.js passes a Request of another class than the global one, and
+  // the constructor cannot read that one's internals
+  c.req.raw = new Request(raw.url, {
+    method: raw.method,
+    headers: raw.headers,
+    body: size > 0 ? Buffer.concat(chunks) : undefined,
+    signal: raw.signal,
+  })
+  return next()
 }
