@@ -9,7 +9,6 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
 import { KukanError, LICENSES, publicOrigin } from '@kukan/shared'
 import type { SearchFacets, SearchFilters } from '@kukan/search-adapter'
 import { PackageService } from '../services/package-service'
@@ -55,18 +54,6 @@ const FACET_LIMIT_MAX = 200
 /** CKAN's `organization_show` / `group_show` return at most this many datasets */
 const ORGANIZATION_DATASETS = 10
 const GROUP_DATASETS = 1000
-/** Far above any parameters a read action takes */
-const MAX_BODY_BYTES = 1024 * 1024
-
-// Every action takes a few scalars, and a body is read whole before any of them
-// is looked at — bounded first, so an anonymous POST cannot be the size of memory
-ckanCompatRouter.use(
-  '*',
-  bodyLimit({
-    maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json('Bad request: Request body too large', 413),
-  })
-)
 
 class CkanNotFound extends Error {}
 

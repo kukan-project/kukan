@@ -14,6 +14,9 @@ Auth column legend:
 - **Org** — organization member / editor / admin
 - **sysadmin** — system administrator only
 
+A request body may be up to 1 MiB; a larger one is refused with `413` (`PAYLOAD_TOO_LARGE`) before it is parsed.
+The file upload (`POST /resources/{id}/upload`) is the exception: it is bounded by the file size limit instead.
+
 :::note[PUT Semantics]
 PUT endpoints perform full-resource replacement. Fields not included in the request body will be cleared to `null` (or their default value).
 To preserve existing values, GET the current data, apply your changes, and send the full object.

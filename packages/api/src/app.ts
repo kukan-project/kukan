@@ -15,6 +15,7 @@ import { isRegistrationAllowed } from './services/bootstrap'
 import { SystemSettingService } from './services/system-setting'
 import { optionalAuth } from './middleware/auth'
 import { authSurface } from './middleware/auth-surface'
+import { limitBody } from './middleware/body-limit'
 import { cacheControl, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
@@ -85,6 +86,7 @@ export async function createApp() {
   app.use('*', logger)
   app.use('*', cacheControl)
   app.use('*', retireConnection)
+  app.use('/api/*', limitBody)
   app.onError(errorHandler)
 
   // Health check

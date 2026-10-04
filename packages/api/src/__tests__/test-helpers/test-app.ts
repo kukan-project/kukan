@@ -18,6 +18,7 @@ import type { AnalyticsService } from '../../services/analytics-service'
 import { SystemSettingService } from '../../services/system-setting'
 import { errorHandler } from '../../middleware/error-handler'
 import { retireConnection } from '../../middleware/retire-connection'
+import { limitBody } from '../../middleware/body-limit'
 import { createLogger, type Env } from '@kukan/shared'
 import type { Auth } from '../../auth/auth'
 
@@ -235,9 +236,10 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   })
 
   app.onError(errorHandler)
-  // Global in the real app, and route behaviour depends on it: a refused
-  // upload has to say the connection is closing.
+  // Global in the real app, and route behaviour depends on them: a refused
+  // upload has to say the connection is closing, and no body is unbounded.
   app.use('*', retireConnection)
+  app.use('/api/*', limitBody)
 
   // Health check
   app.get('/api/health', (c) => {

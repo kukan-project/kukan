@@ -22,8 +22,9 @@ import type { Context, Next } from 'hono'
  *
  * Keyed on the request rather than the route, so an upload POST to a path that
  * matches nothing is covered too — a 404 is answered without a route, so
- * nothing route-scoped could speak for it. A large body that is not multipart
- * is not covered; nothing sends one today.
+ * nothing route-scoped could speak for it. A body of any other type that is
+ * refused for its size is retired by the body limit, the one place that knows
+ * it went unread.
  *
  * Every refusal, not only those raised with the body still arriving: a refusal
  * has no idea how much was read, and the ones that read none of it — no such
