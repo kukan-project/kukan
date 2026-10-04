@@ -8,6 +8,7 @@ import { inject } from 'vitest'
 import { testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
 import { vi } from 'vitest'
 import { Hono } from 'hono'
+import { Request as NextLikeRequest } from 'undici'
 import type { Readable } from 'node:stream'
 import type { Database } from '@kukan/db'
 import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
@@ -207,8 +208,28 @@ interface TestAppOverrides {
   queue?: JobQueue
 }
 
+/**
+ * A request as Next.js hands it to the API's route: a Request of another class
+ * than the global one (npm's undici standing in), with a body stream on every
+ * method but GET and HEAD, empty where nothing was sent.
+ */
+function asNextRequest(req: Request): Request {
+  const sendsBody = req.method !== 'GET' && req.method !== 'HEAD'
+  return new NextLikeRequest(req.url, {
+    method: req.method,
+    headers: [...req.headers],
+    body: sendsBody ? (req.body ?? new ReadableStream({ start: (c) => c.close() })) : undefined,
+    duplex: 'half',
+    signal: req.signal,
+  }) as unknown as Request
+}
+
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   const app = new Hono()
+  // app.request() goes through app.fetch, so every suite reaches the API the
+  // way the web app does rather than with a Request the runtime made itself
+  const fetch = app.fetch
+  app.fetch = (req, ...rest) => fetch(asNextRequest(req), ...rest)
 
   const testUser = overrides?.user === null ? undefined : (overrides?.user ?? defaultTestUser)
 
