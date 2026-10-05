@@ -407,10 +407,11 @@ await queue.process({
   [PIPELINE_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, pipelineJobSchema)
     if (!data) return
-    const { resourceId, rebuildOnly } = data
+    const { resourceId } = data
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
-    await processResource(resourceId, ctx, db, queue, { rebuildOnly })
+    // The payload whole: a retry has to carry all of it
+    await processResource(data, ctx, db, queue)
     // Once, whatever in the run marked the document or the vector: an abstract
     // written, a format the version settled, a replacement upload's name
     await Promise.all([

@@ -18,6 +18,7 @@ import {
   vocabulary,
   user,
   auditLog,
+  type Database,
 } from '@kukan/db'
 import { embeddingKey } from '@kukan/ai-adapter'
 import { leasePassed } from '../services/lease'
@@ -29,6 +30,7 @@ import {
 import { DEFAULT_VECTOR_MIN_SIMILARITY } from '@kukan/search-adapter'
 import {
   UnauthorizedError,
+  ConflictError,
   REINDEX_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
@@ -47,7 +49,7 @@ import {
   SysadminRequiredError,
   NotFoundError,
 } from '@kukan/shared'
-import { PipelineService } from '../services/pipeline-service'
+import { PipelineService, reprocessAllPending } from '../services/pipeline-service'
 import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
 import { summaryEstimate } from '../services/summary-estimate'
 import { getSummaryModel } from '../services/suggest/availability'
@@ -79,6 +81,13 @@ export const adminRouter = new Hono<{ Variables: AppContext }>()
 
 /** A catalog-wide button's job, and what it fans out: nobody waits for it (ADR-058 §6) */
 const BULK = { priority: 'low' } as const
+
+/** A second reprocess of every resource would empty the content index under the first */
+async function refuseWhileReprocessing(db: Database) {
+  if (await reprocessAllPending(db)) {
+    throw new ConflictError('A reprocess of every resource is already on its way')
+  }
+}
 
 // All admin endpoints require sysadmin role — enforced at the router level
 adminRouter.use('*', async (c, next) => {
@@ -469,6 +478,7 @@ adminRouter.post(
 
     const { includeContent } = c.req.valid('json')
     const queue = c.get('queue')
+    if (includeContent) await refuseWhileReprocessing(c.get('db'))
     await queue.enqueue(REINDEX_JOB_TYPE, { includeContent }, BULK)
     return c.json({ queued: true })
   }
@@ -672,6 +682,7 @@ adminRouter.post('/record-row-groups', async (c) => {
 // POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources
 adminRouter.post('/jobs/enqueue-all', async (c) => {
   const db = c.get('db')
+  await refuseWhileReprocessing(db)
   const search = c.get('search')
   const pipelineService = new PipelineService(db, c.get('queue'))
 
@@ -695,7 +706,7 @@ adminRouter.get('/jobs/stats', async (c) => {
 
   // The job queue's own counts are on its page (/queue/counts): they span every
   // job type, and set beside these per-resource ones they read as a mismatch
-  const [statusCounts, recentErrors] = await Promise.all([
+  const [statusCounts, recentErrors, reprocessPending] = await Promise.all([
     db
       .select({
         status: resourcePipeline.status,
@@ -715,6 +726,7 @@ adminRouter.get('/jobs/stats', async (c) => {
       .where(eq(resourcePipeline.status, 'error'))
       .orderBy(sql`${resourcePipeline.updated} desc`)
       .limit(RECENT_ERROR_LIMIT),
+    reprocessAllPending(db),
   ])
 
   const statusMap: Record<string, number> = {}
@@ -725,6 +737,8 @@ adminRouter.get('/jobs/stats', async (c) => {
   return c.json({
     jobs: statusMap,
     recentErrors,
+    // Whether "Reprocess all" would be refused: the button waits on it
+    reprocessPending,
   })
 })
 

@@ -500,7 +500,14 @@ export const pipelineJobSchema = z.object({
    * straight back — undoing the retraction it was queued to finish.
    */
   rebuildOnly: z.boolean().optional(),
+  /**
+   * One of the runs a reprocess of every resource fanned out. The run does
+   * nothing different; it marks the reprocess as still on its way, which
+   * another must wait for rather than empty the content index under it.
+   */
+  reprocessAll: z.boolean().optional(),
 })
+export type PipelineJobPayload = z.infer<typeof pipelineJobSchema>
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const reanalyseIndexJobSchema = z.object({})
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })

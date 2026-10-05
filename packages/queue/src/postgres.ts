@@ -130,6 +130,17 @@ export function jobsFor(db: Database | Transaction, type: string, match: SQL) {
 }
 
 /**
+ * The ready jobs of `type` — waiting, held, or due to run again — whose
+ * payload contains `match` (a jsonb), for an `exists()` or a `limit(1)`
+ */
+export function readyJobsMatching(db: Database | Transaction, type: string, match: SQL) {
+  return db
+    .select({})
+    .from(jobTable)
+    .where(and(eq(jobTable.type, type), ready(), sql`${jobTable.payload} @> ${match}`))
+}
+
+/**
  * Run `fn` one call at a time. A request that arrives while it runs becomes
  * one more run after it, not a second one beside it: what it asks about may
  * have been written after the running call looked.

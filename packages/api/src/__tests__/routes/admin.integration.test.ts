@@ -14,7 +14,7 @@ import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { generationKey } from '@kukan/shared'
+import { PIPELINE_JOB_TYPE, generationKey } from '@kukan/shared'
 import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import { randomUUID } from 'node:crypto'
 
@@ -102,6 +102,55 @@ describe('Admin API Routes', () => {
 
       const body = await res.json()
       expect(body.queued).toBe(true)
+    })
+
+    describe('while a reprocess of every resource is on its way', () => {
+      const queue = new PostgresJobQueue({ db })
+      const queueApp = createTestApp(db, { search: mockSearch, queue })
+      const press = (includeContent: boolean) =>
+        queueApp.request('/api/v1/admin/reindex-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ includeContent }),
+        })
+      const pending = async () =>
+        (await (await queueApp.request('/api/v1/admin/jobs/stats')).json()).reprocessPending
+
+      it('refuses another until its rebuild is done, and says so in the stats', async () => {
+        expect(await pending()).toBe(false)
+        expect((await press(true)).status).toBe(200)
+        expect(await pending()).toBe(true)
+
+        const second = await press(true)
+        expect(second.status).toBe(409)
+        expect(await second.json()).toMatchObject({ title: 'CONFLICT' })
+        expect(await db.$count(job)).toBe(1)
+
+        // Held by a worker
+        await db.update(job).set({ lockedUntil: sql`now() + interval '1 minute'` })
+        expect((await press(true)).status).toBe(409)
+
+        await db.update(job).set({ state: 'dead' })
+        expect((await press(true)).status).toBe(200)
+      })
+
+      it('lets a metadata rebuild through: it empties nothing', async () => {
+        expect((await press(true)).status).toBe(200)
+        expect((await press(false)).status).toBe(200)
+      })
+
+      it('refuses another while the runs it fanned out are waiting, not other runs', async () => {
+        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: randomUUID() })
+        expect((await press(true)).status).toBe(200)
+        await db.delete(job).where(eq(job.type, 'reindex-metadata'))
+
+        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: randomUUID(), reprocessAll: true })
+        expect((await press(true)).status).toBe(409)
+        const enqueueAll = await queueApp.request('/api/v1/admin/jobs/enqueue-all', {
+          method: 'POST',
+        })
+        expect(enqueueAll.status).toBe(409)
+      })
     })
 
     it('should return 400 when OpenSearch is not enabled', async () => {

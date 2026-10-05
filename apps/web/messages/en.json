@@ -493,7 +493,8 @@
       "contentTitle": "Reprocess all resources",
       "contentDescription": "Rebuilds text extraction and previews from stored files, and the index with them. Only resources with nothing stored are fetched. Takes time in proportion to the number of resources.",
       "contentButton": "Reprocess all",
-      "contentQueued": "Reprocessing of all resources queued. It runs in the background, and the counts on this page follow it."
+      "contentQueued": "Reprocessing of all resources queued. It runs in the background, and the counts on this page follow it.",
+      "contentRunning": "Reprocessing of all resources is in progress."
     },
     "adminQueue": {
       "title": "Background Job Status",

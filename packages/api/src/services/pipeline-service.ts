@@ -10,11 +10,12 @@ import {
   NotFoundError,
   ValidationError,
   PIPELINE_JOB_TYPE,
+  REINDEX_JOB_TYPE,
   primaryKeyOf,
   resourceSchemaSchema,
 } from '@kukan/shared'
 import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
-import type { EnqueueOptions, JobQueue } from '@kukan/queue'
+import { readyJobsMatching, type EnqueueOptions, type JobQueue } from '@kukan/queue'
 
 /**
  * Validate `resource_pipeline.metadata.schema` (persisted by the Interpret step,
@@ -145,7 +146,11 @@ export class PipelineService {
       .where(and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft'])))
 
     const { enqueued, failed } = await this.enqueueMany(
-      resources.map((r) => ({ id: r.id, rebuildOnly: opts.rebuildOnly && r.hasStoredContent })),
+      resources.map((r) => ({
+        id: r.id,
+        rebuildOnly: opts.rebuildOnly && r.hasStoredContent,
+        reprocessAll: true,
+      })),
       // The whole catalog, whoever asks: nobody waits for any one run (ADR-058 §6)
       { priority: 'low' }
     )
@@ -158,7 +163,7 @@ export class PipelineService {
    * resource deleted since it was listed is skipped, counted in neither.
    */
   async enqueueMany(
-    items: { id: string; rebuildOnly?: boolean }[],
+    items: { id: string; rebuildOnly?: boolean; reprocessAll?: boolean }[],
     opts: Pick<EnqueueOptions, 'priority'> = {}
   ): Promise<{ enqueued: number; failed: { id: string; reason: unknown }[] }> {
     const queue = this.requireQueue()
@@ -178,7 +183,11 @@ export class PipelineService {
           const runs = batch.filter((item) => marked.has(item.id))
           await queue.enqueueMany(
             PIPELINE_JOB_TYPE,
-            runs.map((item) => ({ resourceId: item.id, rebuildOnly: item.rebuildOnly })),
+            runs.map((item) => ({
+              resourceId: item.id,
+              rebuildOnly: item.rebuildOnly,
+              reprocessAll: item.reprocessAll,
+            })),
             { tx, priority: opts.priority }
           )
           return runs.length
@@ -310,4 +319,18 @@ export function isQueryable(
     target.schema.columns.length > 0 &&
     target.describesLiveContent
   )
+}
+
+/**
+ * Whether a reprocess of every resource is still on its way: the rebuild that
+ * starts it, or a run it fanned out. Another would empty the content index
+ * under them, so it waits until this one is done. Runs queued for any other
+ * reason — an upload, the health check's refetch — are not counted.
+ */
+export async function reprocessAllPending(db: Database): Promise<boolean> {
+  const found = await Promise.all([
+    readyJobsMatching(db, REINDEX_JOB_TYPE, sql`'{"includeContent": true}'::jsonb`).limit(1),
+    readyJobsMatching(db, PIPELINE_JOB_TYPE, sql`'{"reprocessAll": true}'::jsonb`).limit(1),
+  ])
+  return found.some((rows) => rows.length > 0)
 }

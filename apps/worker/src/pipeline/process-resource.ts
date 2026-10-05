@@ -13,7 +13,12 @@
 
 import type { Database } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
-import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
+import {
+  LAKE_INGEST_JOB_TYPE,
+  PIPELINE_JOB_TYPE,
+  rootCauseMessage,
+  type PipelineJobPayload,
+} from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../heavy/process'
 import { RunCancelledError, StepTracker } from './step-tracker'
@@ -36,26 +41,21 @@ import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
  * Each step is recorded in resource_pipeline_step.
  * Interpret/Index failures are caught so the pipeline can still complete.
  *
+ * @param job - The job's payload, whole: a retry is queued with it unchanged
  * @param db - Database instance for pipeline state management (resource_pipeline tables)
  * @param queue - Job queue for requeueing rate-limited fetches
  */
 export async function processResource(
-  resourceId: string,
+  job: PipelineJobPayload,
   ctx: PipelineContext,
   db: Database,
-  queue: JobQueue,
-  opts: { rebuildOnly?: boolean } = {}
+  queue: JobQueue
 ): Promise<void> {
+  const { resourceId } = job
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
     // The context the steps get is this run's: the writes that leave the
     // database carry the claim check the row-level ones get for free.
-    runPipeline(
-      resourceId,
-      new StepTracker(db, claim),
-      heldContext(ctx, claim, db),
-      queue,
-      opts.rebuildOnly ?? false
-    )
+    runPipeline(job, new StepTracker(db, claim), heldContext(ctx, claim, db), queue)
   )
 
   // Held by another run or a purge (ADR-044). This job has to come back: the
@@ -65,14 +65,11 @@ export async function processResource(
   // rather than retried, so a long run is not spun on. A resource with no
   // pipeline row is the other refusal, and there is nothing to come back for.
   if (outcome.status === 'held') {
-    // Carrying `rebuildOnly` back with it. Dropped, the retry becomes an
-    // ordinary run, and for a resource reverted because its URL served the
-    // wrong thing that run publishes it again (ADR-044 §4).
-    await queue.enqueue(
-      PIPELINE_JOB_TYPE,
-      { resourceId, ...opts },
-      { delaySeconds: CLAIM_RETRY_DELAY_S }
-    )
+    // The job as it came, whole. Dropped, `rebuildOnly` turns the retry into an
+    // ordinary run, which for a resource reverted because its URL served the
+    // wrong thing publishes it again (ADR-044 §4); dropped, `reprocessAll` lets
+    // another reprocess start under this one.
+    await queue.enqueue(PIPELINE_JOB_TYPE, job, { delaySeconds: CLAIM_RETRY_DELAY_S })
   }
 }
 
@@ -88,12 +85,12 @@ function abandonsRun(err: unknown): boolean {
 
 /** The run itself, with the resource already claimed for its duration. */
 async function runPipeline(
-  resourceId: string,
+  job: PipelineJobPayload,
   tracker: StepTracker,
   ctx: PipelineContext,
-  queue: JobQueue,
-  rebuildOnly: boolean
+  queue: JobQueue
 ): Promise<void> {
+  const { resourceId, rebuildOnly = false } = job
   await tracker.beginRun()
 
   try {
@@ -114,13 +111,9 @@ async function runPipeline(
       await Promise.all([
         tracker.skipStep(fetchStepId),
         tracker.updateStatus('queued'),
-        queue.enqueue(
-          PIPELINE_JOB_TYPE,
-          { resourceId },
-          {
-            delaySeconds: FETCH_RATE_LIMIT_REQUEUE_DELAY_S,
-          }
-        ),
+        queue.enqueue(PIPELINE_JOB_TYPE, job, {
+          delaySeconds: FETCH_RATE_LIMIT_REQUEUE_DELAY_S,
+        }),
       ])
       return
     }

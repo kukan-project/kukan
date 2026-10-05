@@ -8,6 +8,8 @@ exports[`emitted SQL shape > GET /api/v1/admin/health/stats > pins the sysadmin 
 
 exports[`emitted SQL shape > GET /api/v1/admin/jobs/stats > pins the sysadmin shape 1`] = `
 [
+  "select  from "job" where ("job"."type" = $1 and "job"."state" = $2 and "job"."payload" @> '{"includeContent": true}'::jsonb) limit $3",
+  "select  from "job" where ("job"."type" = $1 and "job"."state" = $2 and "job"."payload" @> '{"reprocessAll": true}'::jsonb) limit $3",
   "select "status", count(*) from "resource_pipeline" group by "resource_pipeline"."status"",
   "select "resource_pipeline"."resource_id", "resource"."name", "resource_pipeline"."error", "resource_pipeline"."updated" from "resource_pipeline" inner join "resource" on "resource_pipeline"."resource_id" = "resource"."id" where "resource_pipeline"."status" = $1 order by "resource_pipeline"."updated" desc limit $2",
 ]

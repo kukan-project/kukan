@@ -31,6 +31,8 @@ import { formatBytes } from '@/lib/format-utils'
 
 interface JobStatsResponse {
   jobs: Record<string, number>
+  /** Whether "Reprocess all" would be refused: one is still on its way */
+  reprocessPending: boolean
 }
 
 interface JobItem {
@@ -168,8 +170,9 @@ export default function AdminJobsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ includeContent: true }),
       })
-      setContentOutcome(res.ok)
-      if (res.ok) await reload()
+      // 409: one is already on its way, which the reload shows
+      setContentOutcome(res.status === 409 ? null : res.ok)
+      await reload()
     } catch {
       setContentOutcome(false)
     } finally {
@@ -190,10 +193,17 @@ export default function AdminJobsPage() {
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">{t('contentDescription')}</p>
           <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={reprocessContent} disabled={contentBusy}>
+            <Button
+              variant="outline"
+              onClick={reprocessContent}
+              disabled={contentBusy || stats?.reprocessPending}
+            >
               <RefreshCw className={`mr-2 h-4 w-4 ${contentBusy ? 'animate-spin' : ''}`} />
               {contentBusy ? tc('queueing') : t('contentButton')}
             </Button>
+            {stats?.reprocessPending && contentOutcome === null && (
+              <p className="text-sm text-muted-foreground">{t('contentRunning')}</p>
+            )}
             {contentOutcome === true && (
               <p role="status" className="text-sm text-muted-foreground">
                 {t('contentQueued')}

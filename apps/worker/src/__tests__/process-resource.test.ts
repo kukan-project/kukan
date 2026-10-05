@@ -171,7 +171,7 @@ describe('processResource', () => {
       contentChunks: 1,
     })
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     // The steps get this run's context, not the worker's: the writes that leave
     // the database are wrapped in a claim check (ADR-044 §4).
@@ -217,7 +217,7 @@ describe('processResource', () => {
     })
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(executeInterpret).toHaveBeenCalledWith(
       'res-1',
@@ -262,7 +262,7 @@ describe('processResource', () => {
     })
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
       encoding: 'UTF8',
@@ -296,7 +296,7 @@ describe('processResource', () => {
     ctx.versionForContent.mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(executeInterpret).not.toHaveBeenCalled()
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
@@ -325,7 +325,7 @@ describe('processResource', () => {
       contentAlreadyHere()
       ctx.derivativesDescribe.mockResolvedValue(true)
 
-      await processResource('res-1', ctx, db, queue)
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
       expect(executeInterpret).not.toHaveBeenCalled()
       expect(executeIndexContent).not.toHaveBeenCalled()
@@ -341,7 +341,7 @@ describe('processResource', () => {
       contentAlreadyHere()
       ctx.derivativesDescribe.mockResolvedValue(true)
 
-      await processResource('res-1', ctx, db, queue)
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
       // The version number, not the resource's latest: what is skipped is the
       // interpretation of these bytes (ADR-046)
@@ -352,7 +352,7 @@ describe('processResource', () => {
       contentAlreadyHere()
       ctx.derivativesDescribe.mockResolvedValue(false)
 
-      await processResource('res-1', ctx, db, queue)
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
       expect(executeInterpret).toHaveBeenCalled()
       expect(executeIndexContent).toHaveBeenCalled()
@@ -364,7 +364,7 @@ describe('processResource', () => {
       contentAlreadyHere()
       ctx.derivativesDescribe.mockResolvedValue(true)
 
-      await processResource('res-1', ctx, db, queue, { rebuildOnly: true })
+      await processResource({ resourceId: 'res-1', rebuildOnly: true }, ctx, db, queue)
 
       expect(ctx.derivativesDescribe).not.toHaveBeenCalled()
       expect(executeInterpret).toHaveBeenCalled()
@@ -376,7 +376,7 @@ describe('processResource', () => {
       ctx.createVersion.mockResolvedValue({ created: true, version: 2 })
       ctx.derivativesDescribe.mockResolvedValue(true)
 
-      await processResource('res-1', ctx, db, queue)
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
       expect(ctx.derivativesDescribe).not.toHaveBeenCalled()
       expect(executeInterpret).toHaveBeenCalled()
@@ -396,7 +396,7 @@ describe('processResource', () => {
     vi.mocked(executeInterpret).mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     // The version is settled from its bytes; nothing has read the content yet.
     expect(ctx.createVersion).toHaveBeenCalledWith(
@@ -419,7 +419,7 @@ describe('processResource', () => {
     vi.mocked(executeInterpret).mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.index)
@@ -441,7 +441,7 @@ describe('processResource', () => {
     vi.mocked(executeInterpret).mockRejectedValue(new Error('Parse error'))
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
     expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
@@ -460,7 +460,9 @@ describe('processResource', () => {
 
     // Failed, so the queue hands it to another task; nothing says the content
     // could not be read
-    await expect(processResource('res-1', ctx, db, queue)).rejects.toThrow(WorkerStoppingError)
+    await expect(processResource({ resourceId: 'res-1' }, ctx, db, queue)).rejects.toThrow(
+      WorkerStoppingError
+    )
     expect(mockTracker.failStep).not.toHaveBeenCalled()
     expect(mockTracker.updateStatus).not.toHaveBeenCalledWith('error', expect.anything())
     expect(executeIndexContent).not.toHaveBeenCalled()
@@ -478,7 +480,9 @@ describe('processResource', () => {
     vi.mocked(executeInterpret).mockRejectedValue(new HeavyShortOfMemoryError())
 
     // Recorded, since the run is over; failed, so the queue runs it again later
-    await expect(processResource('res-1', ctx, db, queue)).rejects.toThrow(HeavyShortOfMemoryError)
+    await expect(processResource({ resourceId: 'res-1' }, ctx, db, queue)).rejects.toThrow(
+      HeavyShortOfMemoryError
+    )
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', expect.any(String))
     expect(mockTracker.failOpenStep).toHaveBeenCalled()
     expect(executeIndexContent).not.toHaveBeenCalled()
@@ -496,7 +500,7 @@ describe('processResource', () => {
     vi.mocked(executeInterpret).mockRejectedValue(new Error('Parse error'))
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
@@ -506,7 +510,7 @@ describe('processResource', () => {
   it('should set error status if fetch fails', async () => {
     vi.mocked(executeFetch).mockRejectedValue(new Error('Download failed'))
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', 'Download failed')
   })
@@ -516,7 +520,7 @@ describe('processResource', () => {
     // UI — which shows the step — calls a failed resource in progress forever.
     vi.mocked(executeFetch).mockRejectedValue(new Error('Download failed'))
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.failOpenStep).toHaveBeenCalledWith('Download failed')
     // The run's record goes first: of the two states a half-done catch can
@@ -532,7 +536,7 @@ describe('processResource', () => {
     // failed step with no reason on the row the resource page reads.
     vi.mocked(executeFetch).mockRejectedValue('just a string')
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', 'just a string')
     expect(mockTracker.failOpenStep).toHaveBeenCalledWith('just a string')
@@ -541,7 +545,7 @@ describe('processResource', () => {
   it('should requeue and set queued status when fetch is deferred', async () => {
     vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred' })
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     // Fetch step should be skipped
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.fetch)
@@ -558,10 +562,24 @@ describe('processResource', () => {
     expect(mockTracker.startStep).toHaveBeenCalledTimes(1) // Only fetch step
   })
 
+  it('carries a reprocess-all run’s mark into the run it defers to', async () => {
+    // Dropped, the last marked run looks like no reprocess at all, and another
+    // could start and empty the content index under this one
+    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred' })
+
+    await processResource({ resourceId: 'res-1', reprocessAll: true }, ctx, db, queue)
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1', reprocessAll: true },
+      { delaySeconds: 6 }
+    )
+  })
+
   it('does nothing when the resource is gone', async () => {
     claim.answer = 'absent'
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(executeFetch).not.toHaveBeenCalled()
     expect(mockTracker.startStep).not.toHaveBeenCalled()
@@ -575,7 +593,7 @@ describe('processResource', () => {
     // content with no run of its own (ADR-044).
     claim.answer = 'held'
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(executeFetch).not.toHaveBeenCalled()
     expect(queue.enqueue).toHaveBeenCalledWith(
@@ -585,18 +603,24 @@ describe('processResource', () => {
     )
   })
 
-  it('carries the rebuild flag into the retry it comes back with', async () => {
-    // Dropped here, the retry becomes an ordinary run — and for a resource
-    // reverted because its URL served the wrong thing, that run publishes it
-    // again. The flag has to survive contention, not just one delivery
-    // (ADR-044 §4).
+  it('carries its options into the retry it comes back with', async () => {
+    // Dropped here, a rebuild's retry becomes an ordinary run — and for a
+    // resource reverted because its URL served the wrong thing, that run
+    // publishes it again (ADR-044 §4). A reprocess-all run's mark is what holds
+    // back another reprocess. Both have to survive contention, not just one
+    // delivery.
     claim.answer = 'held'
 
-    await processResource('res-1', ctx, db, queue, { rebuildOnly: true })
+    await processResource(
+      { resourceId: 'res-1', rebuildOnly: true, reprocessAll: true },
+      ctx,
+      db,
+      queue
+    )
 
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
-      { resourceId: 'res-1', rebuildOnly: true },
+      { resourceId: 'res-1', rebuildOnly: true, reprocessAll: true },
       expect.objectContaining({ delaySeconds: expect.any(Number) })
     )
   })
@@ -611,7 +635,7 @@ describe('processResource', () => {
       status: 'fetched',
     })
 
-    await processResource('res-1', ctx, db, queue, { rebuildOnly: true })
+    await processResource({ resourceId: 'res-1', rebuildOnly: true }, ctx, db, queue)
 
     expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true)
   })
@@ -633,7 +657,7 @@ describe('processResource', () => {
       .mockImplementationOnce(() => Promise.resolve('step-0'))
       .mockImplementationOnce(() => Promise.reject(new RunCancelledError('res-1')))
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.updateStatus).not.toHaveBeenCalled()
     // The step record too — a killed run records nothing at all, and asserting
@@ -647,7 +671,7 @@ describe('processResource', () => {
     // and the reset that opens the run is safe only under it.
     vi.mocked(executeFetch).mockResolvedValue({ status: 'superseded' })
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(mockTracker.beginRun).toHaveBeenCalled()
   })
@@ -667,7 +691,7 @@ describe('processResource', () => {
     vi.mocked(executeLake).mockResolvedValue({ status: 'ingested' })
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(executeLake).toHaveBeenCalledWith(
       {
@@ -694,7 +718,7 @@ describe('processResource', () => {
     vi.mocked(executeInterpret).mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     expect(executeLake).not.toHaveBeenCalled()
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.lake)
@@ -718,7 +742,7 @@ describe('processResource', () => {
       error: new Error('catalog unreachable'),
     })
 
-    await processResource('res-1', ctx, db, queue)
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
     // Ids only: the Lake step put the Parquet on the version row, and the
     // handler reads it from there, so the message cannot disagree with it.

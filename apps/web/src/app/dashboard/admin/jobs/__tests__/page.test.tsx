@@ -43,6 +43,11 @@ function mockFetchResponse(data: unknown) {
   return { ok: true, json: async () => data } as Response
 }
 
+/** Whether the stats say a reprocess of every resource is still on its way */
+let reprocessPending: boolean
+/** What pressing "Reprocess all" answers */
+let reprocessResponse: Response
+
 describe('AdminJobsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -51,10 +56,15 @@ describe('AdminJobsPage', () => {
     mockPaginatedFetch.error = null
     mockPaginatedFetch.total = 0
     mockPaginatedFetch.offset = 0
-    mockClientFetch.mockResolvedValue(
-      mockFetchResponse({
-        jobs: { queued: 3, processing: 1, complete: 10, error: 2 },
-      })
+    reprocessPending = false
+    reprocessResponse = mockFetchResponse({ queued: true })
+    mockClientFetch.mockImplementation(async (url) =>
+      String(url).endsWith('/reindex-metadata')
+        ? reprocessResponse
+        : mockFetchResponse({
+            jobs: { queued: 3, processing: 1, complete: 10, error: 2 },
+            reprocessPending,
+          })
     )
     mockUsePaginatedFetch.mockReturnValue(
       mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>
@@ -101,6 +111,32 @@ describe('AdminJobsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Reprocessing of all resources queued'
     )
+  })
+
+  it('holds back reprocessing all while one is on its way', async () => {
+    reprocessPending = true
+    render(<AdminJobsPage />)
+
+    expect(
+      await screen.findByText(/Reprocessing of all resources is in progress/)
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reprocess all' })).toBeDisabled()
+  })
+
+  it('shows one on its way, not a failure, when the press is refused', async () => {
+    render(<AdminJobsPage />)
+    const button = screen.getByRole('button', { name: 'Reprocess all' })
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    // Pressed from another tab meanwhile
+    reprocessResponse = { ok: false, status: 409 } as Response
+    reprocessPending = true
+
+    fireEvent.click(button)
+    expect(
+      await screen.findByText(/Reprocessing of all resources is in progress/)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(button).toBeDisabled()
   })
 
   it('says so, and releases the row, when a resource cannot be queued', async () => {

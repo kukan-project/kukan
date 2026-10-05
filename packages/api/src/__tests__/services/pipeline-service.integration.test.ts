@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { job, resourcePipeline } from '@kukan/db'
-import { PipelineService } from '../../services/pipeline-service'
+import { PipelineService, reprocessAllPending } from '../../services/pipeline-service'
 import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { mockTransaction } from '../test-helpers/test-app'
@@ -165,9 +165,11 @@ describe('PipelineService', () => {
       const result = await service.enqueueAll()
 
       expect(result).toEqual({ enqueued: 1, failed: 0 })
+      // Marked as the reprocess's own, which holds back another until it is done
       expect(await db.select({ payload: job.payload }).from(job)).toEqual([
-        { payload: { resourceId: testResId } },
+        { payload: { resourceId: testResId, reprocessAll: true } },
       ])
+      expect(await reprocessAllPending(db)).toBe(true)
       expect((await service.getStatus(testResId))!.status).toBe('queued')
     })
 
