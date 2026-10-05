@@ -112,7 +112,7 @@ pino の `child()` で付与されるスコープ付きフィールド:
 | API リクエスト | `requestId`                           | `hono/request-id` → `child({ requestId })` |
 | リクエスト完了 | `method`, `path`, `status`, `elapsed` | logger ミドルウェア                        |
 | Worker ジョブ  | `jobId`, `resourceId`                 | ジョブ処理時に付与                         |
-| SQS アダプター | `component: "sqs"`                    | `child({ component: 'sqs' })`              |
+| ジョブキュー   | `component: "job-queue"`              | `child({ component: 'job-queue' })`        |
 | エラー         | `err` (`type`, `message`, `stack`)    | pino が自動シリアライズ                    |
 
 ### 出力例

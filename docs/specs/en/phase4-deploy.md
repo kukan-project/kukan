@@ -27,7 +27,7 @@ Route53 ─→ CloudFront (WAF + Cache) ─→ [VPC Origin] ─→ ALB (HTTP) �
                               └────────────────────────┘
 
 S3 ← presigned URL (straight from the browser) / read and written by the Worker
-SQS ← enqueued by the API → consumed by the Worker (long polling)
+job table (site DB) ← enqueued by the API → Worker (woken at /wake, ADR-058)
 ```
 
 ### Components
@@ -35,11 +35,11 @@ SQS ← enqueued by the API → consumed by the Worker (long polling)
 | Component | Service                               | Rationale                                                              |
 | --------- | ------------------------------------- | ---------------------------------------------------------------------- |
 | Web       | ECS Fargate + ALB + CloudFront        | L2 constructs, IP restriction via a CF Function, custom domain support |
-| Worker    | ECS Fargate Service                   | SQS long polling, no timeout                                           |
+| Worker    | ECS Fargate Service                   | Works the job table, woken at `/wake`, no timeout                      |
 | DB        | RDS PostgreSQL / Aurora Serverless v2 | Switched by a CDK parameter                                            |
 | Search    | OpenSearch (VPC)                      | The kuromoji plugin; can fall back to PostgreSQL                       |
 | Storage   | S3                                    | Direct browser upload with presigned URLs                              |
-| Queue     | SQS + DLQ                             | Within the free tier, same API as ElasticMQ                            |
+| Queue     | PostgreSQL `job` table                | No extra service (ADR-058; originally SQS + DLQ)                       |
 | WAF       | CloudFront WAF (optional)             | Managed rules (ADR-027)                                                |
 
 ## VPC Design
@@ -59,14 +59,15 @@ VPC (10.0.0.0/16)
 
 ## Worker Health Check
 
-The health of the SQS polling loop is monitored via the ECS Fargate HTTP health check.
+The ECS Fargate HTTP health check asks whether the Worker's event loop can answer (ADR-058 §5).
 
 - **Endpoint**: `GET http://localhost:8080/health`
-- **Healthy when**: `lastPollAt` is within 60 seconds **OR** `processingJobSince` is set (a job is
-  being processed)
-- **Unhealthy when**: both are null, or `lastPollAt` is over 60 seconds old and nothing is being
-  processed → 503
-- **ECS behavior**: 503 × 3 → unhealthy → the task restarts automatically
+- **Healthy when**: it answers (`ok`). It does not query the database (each check would wake it), nor
+  look at how long the job in hand has run (that would stop a long job partway). A job that hangs lets
+  its lease go at the hold limit, and another Worker takes it
+- **ECS behavior**: no answer × 3 → unhealthy → the task restarts automatically
+- `POST /wake` on the same port is how the web and other Workers say a job is waiting (resolved
+  through Cloud Map, `WORKER_WAKE_URL`)
 
 ## Choosing the DB Engine
 
@@ -94,7 +95,7 @@ Switched with the CDK `dbEngine` parameter (`rds` | `aurora`).
 | OpenSearch            | t3.small.search × 1   | ~$43      |
 | CloudFront            | VPC origin + transfer | ~$2       |
 | Public IPv4           | 2 ECS tasks           | ~$8       |
-| S3 + SQS              | minimal               | ~$2       |
+| S3                    | minimal               | ~$2       |
 | Secrets Manager       | 1 secret              | ~$1       |
 | ECR + CloudWatch etc. | minimal               | ~$2       |
 
@@ -106,30 +107,30 @@ Consumption tax (10% in the Japan region) is added on top
 
 ### Medium (a single municipality): ~$266/month
 
-| Service                            | Spec                        | USD/month |
-| ---------------------------------- | --------------------------- | --------- |
-| ECS Fargate Web                    | 0.5 vCPU / 1 GB × 1         | ~$23      |
-| ECS Fargate Worker                 | 0.5 vCPU / 1 GB × 1         | ~$23      |
-| ALB                                | always on (internal)        | ~$18      |
-| Aurora Serverless v2               | 0.5–2 ACU, Single-AZ        | ~$57      |
-| OpenSearch                         | m6g.large.search × 1 (50GB) | ~$127     |
-| CloudFront                         | VPC origin + transfer       | ~$3       |
-| Public IPv4                        | 2 ECS tasks                 | ~$8       |
-| S3 + SQS + Secrets + ECR + CW etc. | —                           | ~$7       |
+| Service                      | Spec                        | USD/month |
+| ---------------------------- | --------------------------- | --------- |
+| ECS Fargate Web              | 0.5 vCPU / 1 GB × 1         | ~$23      |
+| ECS Fargate Worker           | 0.5 vCPU / 1 GB × 1         | ~$23      |
+| ALB                          | always on (internal)        | ~$18      |
+| Aurora Serverless v2         | 0.5–2 ACU, Single-AZ        | ~$57      |
+| OpenSearch                   | m6g.large.search × 1 (50GB) | ~$127     |
+| CloudFront                   | VPC origin + transfer       | ~$3       |
+| Public IPv4                  | 2 ECS tasks                 | ~$8       |
+| S3 + Secrets + ECR + CW etc. | —                           | ~$7       |
 
 ### Large (prefecture / national scale): ~$1,191/month
 
-| Service                            | Spec                              | USD/month |
-| ---------------------------------- | --------------------------------- | --------- |
-| ECS Fargate Web                    | 1 vCPU / 2 GB × 2                 | ~$90      |
-| ECS Fargate Worker                 | 1 vCPU / 2 GB × 2                 | ~$90      |
-| ALB                                | always on (internal)              | ~$18      |
-| Aurora Serverless v2               | 2–8 ACU, Multi-AZ (Writer+Reader) | ~$444     |
-| OpenSearch                         | m6g.xlarge.search × 2 (200GB)     | ~$510     |
-| CloudFront                         | VPC origin + transfer             | ~$5       |
-| Public IPv4                        | 4 ECS tasks                       | ~$15      |
-| WAF (optional)                     | managed rules                     | ~$9       |
-| S3 + SQS + Secrets + ECR + CW etc. | —                                 | ~$10      |
+| Service                      | Spec                              | USD/month |
+| ---------------------------- | --------------------------------- | --------- |
+| ECS Fargate Web              | 1 vCPU / 2 GB × 2                 | ~$90      |
+| ECS Fargate Worker           | 1 vCPU / 2 GB × 2                 | ~$90      |
+| ALB                          | always on (internal)              | ~$18      |
+| Aurora Serverless v2         | 2–8 ACU, Multi-AZ (Writer+Reader) | ~$444     |
+| OpenSearch                   | m6g.xlarge.search × 2 (200GB)     | ~$510     |
+| CloudFront                   | VPC origin + transfer             | ~$5       |
+| Public IPv4                  | 4 ECS tasks                       | ~$15      |
+| WAF (optional)               | managed rules                     | ~$9       |
+| S3 + Secrets + ECR + CW etc. | —                                 | ~$10      |
 
 ## CDK Stack Layout
 
@@ -159,7 +160,6 @@ infra/
 │       ├── network.ts                # VPC, SG, S3 Endpoint
 │       ├── database.ts               # RDS / Aurora + Secrets Manager
 │       ├── storage.ts                # S3 bucket (CORS, lifecycle)
-│       ├── queue.ts                  # SQS + DLQ
 │       ├── search.ts                 # OpenSearch (VPC)
 │       ├── web-service.ts            # ECS Fargate + ALB
 │       ├── worker-service.ts         # ECS Fargate + Auto Scaling
@@ -252,7 +252,7 @@ export const environments = {
 | Worker min / max tasks  | 1 / 2               | 1 / 2                                | 2 / 5                                                     |
 | DB                      | RDS db.t4g.micro    | Aurora 0.5-2 ACU                     | Aurora 2-8 ACU, multi-AZ                                  |
 | OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB                 | m6g.xlarge × 2, 100 GB, multi-AZ                          |
-| DB pool (web / worker)  | 5 / 3               | 10 / 5                               | 20 / 10                                                   |
+| DB pool (web / worker)  | 5 / 5               | 10 / 5                               | 20 / 10                                                   |
 | Backups (ADR-037)       | DB retained 7 days  | + S3 versioning, DB retained 14 days | DB retained 35 days + AWS Backup (daily 35d, monthly 12m) |
 
 #### overrides (adjusting individual preset values)
@@ -298,7 +298,7 @@ Dev (Stage)
 ├─ KukanSharedStack        VPC/SG, Aurora/RDS, OpenSearch, the ECS cluster,
 │                          the shared ALB + CloudFront VPC origin (ADR-049),
 │                          the Secrets Manager VPC endpoint, SSM parameters
-└─ KukanSiteStack<Site>×N  the site DB + role (custom resource), S3, SQS,
+└─ KukanSiteStack<Site>×N  the site DB + role (custom resource), S3,
                            the web/worker services, a target group + listener rule
                            on the shared ALB, CloudFront (+ domain), secrets
 ```
@@ -459,14 +459,14 @@ Aurora's 5,000 ceiling, so the sites need more than one shared cluster (environm
 
 When a SiteStack is deleted (`cdk destroy` / removed from sites):
 
-| Resource                                | Behavior                               | Manual purge                                                                                                                                                                                          |
-| --------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Site DB + role                          | **remains** (the CR does not delete)   | On master: `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                                                      |
-| S3 bucket                               | **remains** (RETAIN)                   | Empty it, then delete                                                                                                                                                                                 |
-| Access log bucket                       | **remains** (RETAIN)                   | Logs expire after `cdnLogRetentionDays`; delete it once empty                                                                                                                                         |
-| Backup vault (when awsBackup is on)     | **remains** (RETAIN)                   | Delete `kukan-<env>-<site>-backup` after the recovery points expire (or are deleted manually). **Delete it first if re-adding a site with the same name** (fixed names collide, same rule as ADR-037) |
-| OpenSearch index                        | **remains** (inside the shared domain) | `DELETE /kukan-<env>-<site>-search`                                                                                                                                                                   |
-| SQS queues / secrets / ECS / CloudFront | deleted                                | Check the DLQ contents before deletion                                                                                                                                                                |
+| Resource                            | Behavior                               | Manual purge                                                                                                                                                                                          |
+| ----------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site DB + role                      | **remains** (the CR does not delete)   | On master: `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                                                      |
+| S3 bucket                           | **remains** (RETAIN)                   | Empty it, then delete                                                                                                                                                                                 |
+| Access log bucket                   | **remains** (RETAIN)                   | Logs expire after `cdnLogRetentionDays`; delete it once empty                                                                                                                                         |
+| Backup vault (when awsBackup is on) | **remains** (RETAIN)                   | Delete `kukan-<env>-<site>-backup` after the recovery points expire (or are deleted manually). **Delete it first if re-adding a site with the same name** (fixed names collide, same rule as ADR-037) |
+| OpenSearch index                    | **remains** (inside the shared domain) | `DELETE /kukan-<env>-<site>-search`                                                                                                                                                                   |
+| Secrets / ECS / CloudFront          | deleted                                | —                                                                                                                                                                                                     |
 
 ### Migrating an existing single-site environment (blue-green)
 
@@ -592,7 +592,7 @@ docker build --target worker -t kukan-worker .
 
 Migrations run automatically when the Worker starts:
 
-1. The Worker process starts → calls `runMigrations()` (before SQS polling begins)
+1. The Worker process starts → calls `runMigrations()` (before it starts working jobs)
 2. An advisory lock taken by `runMigrations()` means only one task migrates when several start
    together; the rest wait holding no table locks at all
 3. The connections running the DDL carry a 5-second `lock_timeout`, so a migration cannot sit in the
@@ -605,7 +605,7 @@ Migrations run automatically when the Worker starts:
    spent the task exits, and that rollback is where it ends up
 4. The health check server is up before migrations start and answers `starting` (200) until they
    finish, so to ECS a task that is migrating or waiting for the lock is healthy. What waits for the
-   migrations is SQS polling and the scheduler
+   migrations is job processing and the scheduler
 
 ### A migration older images cannot run against (Better Auth contract)
 
@@ -980,7 +980,7 @@ so long site names and domains can overflow it; synth then stops and names the s
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker health check: `apps/worker/src/index.ts`
 - Web health check: `apps/web/src/app/api/health/route.ts`
-- SQS adapter: `packages/adapters/queue/src/sqs.ts`
+- Job queue: `packages/queue/src/postgres.ts` (ADR-058)
 - ADRs: `docs/adr/en/020-ecs-fargate-alb-migration.md`, `docs/adr/en/030-cdk-pipelines-deploy.md`,
   `docs/adr/en/031-multi-environment-deploy.md`
 

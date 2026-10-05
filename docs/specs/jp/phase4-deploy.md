@@ -25,7 +25,7 @@ Route53 ─→ CloudFront (WAF + Cache) ─→ [VPC Origin] ─→ ALB (HTTP) �
                               └────────────────────────┘
 
 S3 ← presigned URL (ブラウザ直接) / Worker 読み書き
-SQS ← API enqueue → Worker consume (ロングポーリング)
+job 表（サイト DB）← API enqueue → Worker（/wake で起床、ADR-058）
 ```
 
 ### コンポーネント
@@ -33,11 +33,11 @@ SQS ← API enqueue → Worker consume (ロングポーリング)
 | コンポーネント | サービス                              | 理由                                                            |
 | -------------- | ------------------------------------- | --------------------------------------------------------------- |
 | Web            | ECS Fargate + ALB + CloudFront        | L2 コンストラクト、CF Function で IP 制限、カスタムドメイン対応 |
-| Worker         | ECS Fargate Service                   | SQS ロングポーリング、タイムアウトなし                          |
+| Worker         | ECS Fargate Service                   | job 表を処理、`/wake` で起床、タイムアウトなし                  |
 | DB             | RDS PostgreSQL / Aurora Serverless v2 | CDK パラメータで切替                                            |
 | 検索           | OpenSearch (VPC)                      | kuromoji プラグイン、PostgreSQL フォールバック可                |
 | ストレージ     | S3                                    | presigned URL でブラウザ直接アップロード                        |
-| キュー         | SQS + DLQ                             | 無料枠内、ElasticMQ と同一 API                                  |
+| キュー         | PostgreSQL の `job` 表                | 追加のサービスなし（ADR-058。当初は SQS + DLQ）                 |
 | WAF            | CloudFront WAF (オプション)           | マネージドルール（ADR-027）                                     |
 
 ## VPC 設計
@@ -57,12 +57,15 @@ VPC (10.0.0.0/16)
 
 ## Worker ヘルスチェック
 
-ECS Fargate の HTTP ヘルスチェックで SQS ポーリングループの正常性を監視。
+ECS Fargate の HTTP ヘルスチェックで、Worker のイベントループが応答できるかを見る（ADR-058 §5）。
 
 - **エンドポイント**: `GET http://localhost:8080/health`
-- **正常判定**: `lastPollAt` が 60 秒以内 **OR** `processingJobSince` がセット（ジョブ処理中）
-- **異常判定**: 両方 null or `lastPollAt` が 60 秒超 & 非処理中 → 503
-- **ECS 動作**: 503 × 3 回 → unhealthy → タスク自動再起動
+- **正常判定**: 応答できれば正常（`ok`）。DB には問い合わせず（毎回 DB を起こさないため）、
+  処理中のジョブの長さも見ない（長いジョブを途中で止めないため）。止まったジョブはリースの
+  上限で手放され、別の Worker が引き取る
+- **ECS 動作**: 応答なし × 3 回 → unhealthy → タスク自動再起動
+- 同じポートに `POST /wake` があり、web と他の Worker がジョブを積んだことを知らせる
+  （Cloud Map の名前で引く。`WORKER_WAKE_URL`）
 
 ## DB エンジン選択
 
@@ -90,7 +93,7 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 | OpenSearch          | t3.small.search × 1  | ~$43     |
 | CloudFront          | VPC origin + 転送    | ~$2      |
 | パブリック IPv4     | ECS タスク × 2       | ~$8      |
-| S3 + SQS            | 最小                 | ~$2      |
+| S3                  | 最小                 | ~$2      |
 | Secrets Manager     | 1 secret             | ~$1      |
 | ECR + CloudWatch 等 | 最小                 | ~$2      |
 
@@ -102,30 +105,30 @@ CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万�
 
 ### Medium（単一自治体）: ~$266/月
 
-| サービス                         | スペック                    | 月額 USD |
-| -------------------------------- | --------------------------- | -------- |
-| ECS Fargate Web                  | 0.5 vCPU / 1 GB × 1         | ~$23     |
-| ECS Fargate Worker               | 0.5 vCPU / 1 GB × 1         | ~$23     |
-| ALB                              | 常時稼働（internal）        | ~$18     |
-| Aurora Serverless v2             | 0.5–2 ACU, Single-AZ        | ~$57     |
-| OpenSearch                       | m6g.large.search × 1 (50GB) | ~$127    |
-| CloudFront                       | VPC origin + 転送           | ~$3      |
-| パブリック IPv4                  | ECS タスク × 2              | ~$8      |
-| S3 + SQS + Secrets + ECR + CW 等 | —                           | ~$7      |
+| サービス                   | スペック                    | 月額 USD |
+| -------------------------- | --------------------------- | -------- |
+| ECS Fargate Web            | 0.5 vCPU / 1 GB × 1         | ~$23     |
+| ECS Fargate Worker         | 0.5 vCPU / 1 GB × 1         | ~$23     |
+| ALB                        | 常時稼働（internal）        | ~$18     |
+| Aurora Serverless v2       | 0.5–2 ACU, Single-AZ        | ~$57     |
+| OpenSearch                 | m6g.large.search × 1 (50GB) | ~$127    |
+| CloudFront                 | VPC origin + 転送           | ~$3      |
+| パブリック IPv4            | ECS タスク × 2              | ~$8      |
+| S3 + Secrets + ECR + CW 等 | —                           | ~$7      |
 
 ### Large（都道府県 / 国レベル）: ~$1,191/月
 
-| サービス                         | スペック                          | 月額 USD |
-| -------------------------------- | --------------------------------- | -------- |
-| ECS Fargate Web                  | 1 vCPU / 2 GB × 2                 | ~$90     |
-| ECS Fargate Worker               | 1 vCPU / 2 GB × 2                 | ~$90     |
-| ALB                              | 常時稼働（internal）              | ~$18     |
-| Aurora Serverless v2             | 2–8 ACU, Multi-AZ (Writer+Reader) | ~$444    |
-| OpenSearch                       | m6g.xlarge.search × 2 (200GB)     | ~$510    |
-| CloudFront                       | VPC origin + 転送                 | ~$5      |
-| パブリック IPv4                  | ECS タスク × 4                    | ~$15     |
-| WAF（オプション）                | マネージドルール                  | ~$9      |
-| S3 + SQS + Secrets + ECR + CW 等 | —                                 | ~$10     |
+| サービス                   | スペック                          | 月額 USD |
+| -------------------------- | --------------------------------- | -------- |
+| ECS Fargate Web            | 1 vCPU / 2 GB × 2                 | ~$90     |
+| ECS Fargate Worker         | 1 vCPU / 2 GB × 2                 | ~$90     |
+| ALB                        | 常時稼働（internal）              | ~$18     |
+| Aurora Serverless v2       | 2–8 ACU, Multi-AZ (Writer+Reader) | ~$444    |
+| OpenSearch                 | m6g.xlarge.search × 2 (200GB)     | ~$510    |
+| CloudFront                 | VPC origin + 転送                 | ~$5      |
+| パブリック IPv4            | ECS タスク × 4                    | ~$15     |
+| WAF（オプション）          | マネージドルール                  | ~$9      |
+| S3 + Secrets + ECR + CW 等 | —                                 | ~$10     |
 
 ## CDK スタック構成
 
@@ -154,7 +157,6 @@ infra/
 │       ├── network.ts                # VPC, SG, S3 Endpoint
 │       ├── database.ts               # RDS / Aurora + Secrets Manager
 │       ├── storage.ts                # S3 Bucket (CORS, lifecycle)
-│       ├── queue.ts                  # SQS + DLQ
 │       ├── search.ts                 # OpenSearch (VPC)
 │       ├── web-service.ts            # ECS Fargate + ALB
 │       ├── worker-service.ts         # ECS Fargate + Auto Scaling
@@ -237,7 +239,7 @@ export const environments = {
 | Worker min / max tasks  | 1 / 2               | 1 / 2                             | 2 / 5                                             |
 | DB                      | RDS db.t4g.micro    | Aurora 0.5-2 ACU                  | Aurora 2-8 ACU, multi-AZ                          |
 | OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB              | m6g.xlarge × 2, 100 GB, multi-AZ                  |
-| DB Pool (web / worker)  | 5 / 3               | 10 / 5                            | 20 / 10                                           |
+| DB Pool (web / worker)  | 5 / 5               | 10 / 5                            | 20 / 10                                           |
 | バックアップ（ADR-037） | DB 保持 7日         | + S3 バージョニング、DB 保持 14日 | DB 保持 35日 + AWS Backup（日次35日・月次12ヶ月） |
 
 #### overrides（preset の個別上書き）
@@ -281,7 +283,7 @@ Dev (Stage)
 ├─ KukanSharedStack        VPC/SG・Aurora/RDS・OpenSearch・ECS クラスタ・
 │                          共有 ALB + CloudFront VPC origin（ADR-049）・
 │                          Secrets Manager VPC endpoint・SSM パラメータ
-└─ KukanSiteStack<Site>×N  サイト DB+ロール（Custom Resource）・S3・SQS・
+└─ KukanSiteStack<Site>×N  サイト DB+ロール（Custom Resource）・S3・
                            web/worker サービス・共有 ALB 上のターゲットグループ +
                            リスナールール・CloudFront(+ドメイン)・Secrets
 ```
@@ -440,14 +442,14 @@ K の上限は「(推定 max_connections × 0.7 − 平常時の最大) ÷ 同�
 
 SiteStack を削除（`cdk destroy` / sites から除去）した場合:
 
-| リソース                                | 挙動                        | 手動パージ                                                                                                                                                        |
-| --------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| サイト DB + ロール                      | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                   |
-| S3 バケット                             | **残る**（RETAIN）          | 空にしてから削除                                                                                                                                                  |
-| アクセスログのバケット                  | **残る**（RETAIN）          | ログは `cdnLogRetentionDays` で消える。空になってから削除                                                                                                         |
-| Backup vault（awsBackup 有効時）        | **残る**（RETAIN）          | リカバリポイントの失効（または手動削除）後に `kukan-<env>-<site>-backup` を削除。**同名サイトを再追加する場合は先に削除**（固定名のため衝突、ADR-037 と同じ規則） |
-| OpenSearch インデックス                 | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                                                                                                                               |
-| SQS キュー / Secrets / ECS / CloudFront | 削除される                  | DLQ は削除前に内容確認                                                                                                                                            |
+| リソース                         | 挙動                        | 手動パージ                                                                                                                                                        |
+| -------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| サイト DB + ロール               | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                   |
+| S3 バケット                      | **残る**（RETAIN）          | 空にしてから削除                                                                                                                                                  |
+| アクセスログのバケット           | **残る**（RETAIN）          | ログは `cdnLogRetentionDays` で消える。空になってから削除                                                                                                         |
+| Backup vault（awsBackup 有効時） | **残る**（RETAIN）          | リカバリポイントの失効（または手動削除）後に `kukan-<env>-<site>-backup` を削除。**同名サイトを再追加する場合は先に削除**（固定名のため衝突、ADR-037 と同じ規則） |
+| OpenSearch インデックス          | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                                                                                                                               |
+| Secrets / ECS / CloudFront       | 削除される                  | —                                                                                                                                                                 |
 
 ### 既存シングルサイト環境の移行（ブルーグリーン）
 
@@ -566,7 +568,7 @@ docker build --target worker -t kukan-worker .
 
 Worker 起動時にマイグレーションを自動実行:
 
-1. Worker プロセス起動 → `runMigrations()` を呼び出し（SQS ポーリング開始前）
+1. Worker プロセス起動 → `runMigrations()` を呼び出し（ジョブの処理を始める前）
 2. `runMigrations()` が取る advisory lock により、複数タスクが同時に起動しても実際に流すのは 1 つ。
    残りはロック待ちの間、テーブルのロックは一切保持しない
 3. DDL 側の接続には `lock_timeout`（5 秒）が入っており、`ACCESS EXCLUSIVE` を待たされ続けて
@@ -578,7 +580,7 @@ Worker 起動時にマイグレーションを自動実行:
    はかせるため。全試行を使い切ったらタスクは落ち、上記のロールバックに至る
 4. ヘルスチェックサーバーはマイグレーション前から起動しており、完了までは `starting`（200）を
    返す。ECS から見るとマイグレーション中・ロック待ち中のタスクは健全。マイグレーション完了後に
-   始まるのは SQS ポーリングとスケジューラ
+   始まるのはジョブの処理とスケジューラ
 
 ### 旧バージョンへ戻せないマイグレーション（Better Auth contract）
 
@@ -918,7 +920,7 @@ aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker ヘルスチェック: `apps/worker/src/index.ts`
 - Web ヘルスチェック: `apps/web/src/app/api/health/route.ts`
-- SQS アダプター: `packages/adapters/queue/src/sqs.ts`
+- ジョブキュー: `packages/queue/src/postgres.ts`（ADR-058）
 - ADR: `docs/adr/jp/020-ecs-fargate-alb-migration.md`, `docs/adr/jp/030-cdk-pipelines-deploy.md`, `docs/adr/jp/031-multi-environment-deploy.md`
 
 ## オンプレミス Docker Compose デプロイ

@@ -34,6 +34,9 @@
   は静的パラメータで、maxACU 変更後も全 DB インスタンスを再起動するまで旧値の
   まま。「ACU 変更のみを先にデプロイ → 全インスタンス再起動 → in-sync 確認 →
   サイト追加」の二段階とする（synth エラーの対処文にも明記）
+- **ジョブキュー**（2026-09-27、ADR-058）: キューはサイトの DB の `job` 表に移り、SQS / ElasticMQ は
+  撤去した。本文の `SQS_QUEUE_URL`、「SQS キュー + DLQ」、`docker/elasticmq.conf` はそれ以前の
+  記述。サイトの worker は環境の Cloud Map 名前空間で引ける名前（`WORKER_WAKE_URL`）で起こす
 
 ## コンテキスト
 

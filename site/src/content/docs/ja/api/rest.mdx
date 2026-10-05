@@ -633,46 +633,46 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 
 すべて sysadmin 限定。
 
-| Method | Path                                | 説明                                                                                                                                                       |
-| ------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/admin/search/stats`               | 検索インデックス統計（件数・サイズ・DB カウント）                                                                                                          |
-| GET    | `/admin/search/doc/{index}/{id}`    | インデックスドキュメント取得（index: `packages` / `resources` / `contents`）                                                                               |
-| GET    | `/admin/search/browse/{index}`      | インデックスドキュメント一覧（ページング・検索対応）                                                                                                       |
-| GET    | `/admin/search/chunks/{resourceId}` | リソースの本文チャンク一覧                                                                                                                                 |
-| POST   | `/admin/reindex-metadata`           | メタデータの検索インデックス再構築（`{ includeContent: true }` で本文索引も保存済みファイルから作り直す。ジョブキュー経由、非同期）                        |
-| POST   | `/admin/reindex-embeddings`         | 全リソースの埋め込みベクトルを作り直す（本文とモデルが変わっていないものは再計算しない。ジョブキュー経由、非同期）                                         |
-| GET    | `/admin/embedding-status`           | 意味検索から届かないリソース数（埋め込みベクトル未作成・モデル不一致、`{ missing }`）                                                                      |
-| GET    | `/admin/search/analysis-status`     | 日本語解析の設定が更新され再解析が要るか（`{ stale }`）                                                                                                    |
-| POST   | `/admin/search/reanalyse`           | 新しい解析設定でインデックスを作り直す（ジョブキュー経由、非同期）                                                                                         |
-| GET    | `/admin/summary-estimate`           | AI による説明の一括生成の対象件数・推定トークン・推定費用                                                                                                  |
-| POST   | `/admin/generate-summaries`         | AI による説明の一括生成（`{ refresh }` で書き直しも含む。ジョブキュー経由、非同期）                                                                        |
-| GET    | `/admin/version-backfill-status`    | 移行作業の残件数（層1: 版なし / 層2: 差分未取り込み / 旧方式の巻き戻しの未変換）                                                                           |
-| POST   | `/admin/backfill-versions`          | 一度きりの移行（版の補完・旧方式の巻き戻しの変換）を予約（ジョブキュー経由、非同期）                                                                       |
-| GET    | `/admin/row-group-status`           | 行グループ未記録のプレビュー数                                                                                                                             |
-| POST   | `/admin/record-row-groups`          | プレビューの行グループ記録を予約（ジョブキュー経由、非同期）                                                                                               |
-| POST   | `/admin/jobs/enqueue-all`           | 全リソースのパイプライン一括予約                                                                                                                           |
-| GET    | `/admin/jobs/stats`                 | リソースの処理状況の集計                                                                                                                                   |
-| GET    | `/admin/jobs`                       | リソースの処理状況一覧（`status` はカンマ区切り）                                                                                                          |
-| GET    | `/admin/queue/counts`               | 種類と状態ごとのジョブの件数（予約・待機・処理中・打ち切り）                                                                                               |
-| GET    | `/admin/queue/jobs`                 | ジョブ一覧（`status` と `type` で絞り込み、`offset` / `limit`）                                                                                            |
-| POST   | `/admin/queue/jobs/:id/retry`       | 打ち切りのジョブを試行回数を戻して再投入                                                                                                                   |
-| DELETE | `/admin/queue/jobs/:id`             | 打ち切りのジョブを削除                                                                                                                                     |
-| GET    | `/admin/settings`                   | ランタイム設定の一覧                                                                                                                                       |
-| PUT    | `/admin/settings/{key}`             | ランタイム設定を 1 件更新（`{ value }`）                                                                                                                   |
-| GET    | `/admin/settings/vector-search`     | ベクトル検索の状態（モデル・しきい値）                                                                                                                     |
-| GET    | `/admin/settings/ai-suggest`        | AI 提案の状態（プロバイダー・モデル）                                                                                                                      |
-| POST   | `/admin/settings/ai-suggest/test`   | AI 提案モデルの接続テスト                                                                                                                                  |
-| DELETE | `/admin/data`                       | 全データ削除（ユーザー除く）                                                                                                                               |
-| GET    | `/admin/health/stats`               | ヘルスチェック統計                                                                                                                                         |
-| GET    | `/admin/health`                     | ヘルスチェック結果一覧                                                                                                                                     |
-| GET    | `/admin/users/stats`                | ユーザー統計                                                                                                                                               |
-| GET    | `/admin/users`                      | ユーザー一覧                                                                                                                                               |
-| POST   | `/admin/users`                      | ユーザー作成                                                                                                                                               |
-| PATCH  | `/admin/users/{userId}`             | ユーザー更新                                                                                                                                               |
-| DELETE | `/admin/users/{userId}`             | ユーザー論理削除（セッション・トークン即時失効）                                                                                                           |
-| POST   | `/admin/users/{userId}/restore`     | ユーザー復元                                                                                                                                               |
-| POST   | `/admin/users/{userId}/purge`       | ユーザー完全削除                                                                                                                                           |
-| GET    | `/admin/analytics/{report}`         | アクセス統計（GA4。`report` は `dataset-views` / `resource-views` / `downloads` / `search-terms`、`startDate` / `endDate` で期間指定、GA4 未設定なら 404） |
+| Method | Path                                | 説明                                                                                                                                                                      |
+| ------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/search/stats`               | 検索インデックス統計（件数・サイズ・DB カウント）                                                                                                                         |
+| GET    | `/admin/search/doc/{index}/{id}`    | インデックスドキュメント取得（index: `packages` / `resources` / `contents`）                                                                                              |
+| GET    | `/admin/search/browse/{index}`      | インデックスドキュメント一覧（ページング・検索対応）                                                                                                                      |
+| GET    | `/admin/search/chunks/{resourceId}` | リソースの本文チャンク一覧                                                                                                                                                |
+| POST   | `/admin/reindex-metadata`           | メタデータの検索インデックス再構築（`{ includeContent: true }` で本文索引も保存済みファイルから作り直す。ジョブキュー経由、非同期。本文も作り直す再処理が進行中なら 409） |
+| POST   | `/admin/reindex-embeddings`         | 全リソースの埋め込みベクトルを作り直す（本文とモデルが変わっていないものは再計算しない。ジョブキュー経由、非同期）                                                        |
+| GET    | `/admin/embedding-status`           | 意味検索から届かないリソース数（埋め込みベクトル未作成・モデル不一致、`{ missing }`）                                                                                     |
+| GET    | `/admin/search/analysis-status`     | 日本語解析の設定が更新され再解析が要るか（`{ stale }`）                                                                                                                   |
+| POST   | `/admin/search/reanalyse`           | 新しい解析設定でインデックスを作り直す（ジョブキュー経由、非同期）                                                                                                        |
+| GET    | `/admin/summary-estimate`           | AI による説明の一括生成の対象件数・推定トークン・推定費用                                                                                                                 |
+| POST   | `/admin/generate-summaries`         | AI による説明の一括生成（`{ refresh }` で書き直しも含む。ジョブキュー経由、非同期）                                                                                       |
+| GET    | `/admin/version-backfill-status`    | 移行作業の残件数（層1: 版なし / 層2: 差分未取り込み / 旧方式の巻き戻しの未変換）                                                                                          |
+| POST   | `/admin/backfill-versions`          | 一度きりの移行（版の補完・旧方式の巻き戻しの変換）を予約（ジョブキュー経由、非同期）                                                                                      |
+| GET    | `/admin/row-group-status`           | 行グループ未記録のプレビュー数                                                                                                                                            |
+| POST   | `/admin/record-row-groups`          | プレビューの行グループ記録を予約（ジョブキュー経由、非同期）                                                                                                              |
+| POST   | `/admin/jobs/enqueue-all`           | 全リソースのパイプライン一括予約（再処理が進行中なら 409）                                                                                                                |
+| GET    | `/admin/jobs/stats`                 | リソースの処理状況の集計（`reprocessPending`: 全リソースの再処理が進行中か）                                                                                              |
+| GET    | `/admin/jobs`                       | リソースの処理状況一覧（`status` はカンマ区切り）                                                                                                                         |
+| GET    | `/admin/queue/counts`               | 種類と状態ごとのジョブの件数（予約・待機・処理中・打ち切り）                                                                                                              |
+| GET    | `/admin/queue/jobs`                 | ジョブ一覧（`status` と `type` で絞り込み、`offset` / `limit`）                                                                                                           |
+| POST   | `/admin/queue/jobs/:id/retry`       | 打ち切りのジョブを試行回数を戻して再投入                                                                                                                                  |
+| DELETE | `/admin/queue/jobs/:id`             | 打ち切りのジョブを削除                                                                                                                                                    |
+| GET    | `/admin/settings`                   | ランタイム設定の一覧                                                                                                                                                      |
+| PUT    | `/admin/settings/{key}`             | ランタイム設定を 1 件更新（`{ value }`）                                                                                                                                  |
+| GET    | `/admin/settings/vector-search`     | ベクトル検索の状態（モデル・しきい値）                                                                                                                                    |
+| GET    | `/admin/settings/ai-suggest`        | AI 提案の状態（プロバイダー・モデル）                                                                                                                                     |
+| POST   | `/admin/settings/ai-suggest/test`   | AI 提案モデルの接続テスト                                                                                                                                                 |
+| DELETE | `/admin/data`                       | 全データ削除（ユーザー除く）                                                                                                                                              |
+| GET    | `/admin/health/stats`               | ヘルスチェック統計                                                                                                                                                        |
+| GET    | `/admin/health`                     | ヘルスチェック結果一覧                                                                                                                                                    |
+| GET    | `/admin/users/stats`                | ユーザー統計                                                                                                                                                              |
+| GET    | `/admin/users`                      | ユーザー一覧                                                                                                                                                              |
+| POST   | `/admin/users`                      | ユーザー作成                                                                                                                                                              |
+| PATCH  | `/admin/users/{userId}`             | ユーザー更新                                                                                                                                                              |
+| DELETE | `/admin/users/{userId}`             | ユーザー論理削除（セッション・トークン即時失効）                                                                                                                          |
+| POST   | `/admin/users/{userId}/restore`     | ユーザー復元                                                                                                                                                              |
+| POST   | `/admin/users/{userId}/purge`       | ユーザー完全削除                                                                                                                                                          |
+| GET    | `/admin/analytics/{report}`         | アクセス統計（GA4。`report` は `dataset-views` / `resource-views` / `downloads` / `search-terms`、`startDate` / `endDate` で期間指定、GA4 未設定なら 404）                |
 
 ## その他
 

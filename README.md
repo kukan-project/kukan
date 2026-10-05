@@ -123,7 +123,8 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 | `AI_COMPLETION_MODELS`            | _(provider default)_    | Allow-list of generation models (comma-separated); first is default  |
 | `AI_SUMMARY_MODEL`                | _(off)_                 | Model writing AI resource descriptions; unset = off, and not billed  |
 | `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                        |
-| `WORKER_DB_POOL_MAX`              | `3`                     | DB connection pool size (worker)                                     |
+| `WORKER_DB_POOL_MAX`              | `5`                     | DB connection pool size (worker)                                     |
+| `WORKER_CONCURRENCY`              | _(pool − 2, at most 4)_ | Jobs one worker runs at once                                         |
 | `LOG_LEVEL`                       | `info`                  | Pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`)       |
 | `TIME_ZONE`                       | `Asia/Tokyo`            | IANA zone times are prerendered in (browser then shows the viewer's) |
 
@@ -193,7 +194,7 @@ example の `dev` は `small` 規模:
 | Component | Service                                |
 | --------- | -------------------------------------- |
 | Web       | ECS Fargate + ALB (0.25 vCPU / 512 MB) |
-| Worker    | ECS Fargate (0.25 vCPU / 512 MB)       |
+| Worker    | ECS Fargate (0.25 vCPU / 1 GB)         |
 | DB        | RDS PostgreSQL db.t4g.micro            |
 | Search    | OpenSearch t3.small.search             |
 | WAF       | 3 managed rule groups (optional)       |

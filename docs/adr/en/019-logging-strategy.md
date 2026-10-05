@@ -114,7 +114,7 @@ Scoped fields added via pino's `child()`:
 | API request        | `requestId`                           | `hono/request-id` → `child({ requestId })` |
 | Request completion | `method`, `path`, `status`, `elapsed` | Logger middleware                          |
 | Worker job         | `jobId`, `resourceId`                 | Added during job processing                |
-| SQS adapter        | `component: "sqs"`                    | `child({ component: 'sqs' })`              |
+| Job queue          | `component: "job-queue"`              | `child({ component: 'job-queue' })`        |
 | Error              | `err` (`type`, `message`, `stack`)    | Auto-serialized by pino                    |
 
 ### Output Examples
