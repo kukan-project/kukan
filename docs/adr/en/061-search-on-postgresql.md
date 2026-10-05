@@ -80,6 +80,34 @@ answer, with citations. What it needs is easier to build outside OpenSearch:
 - `ts_rank` / `ts_rank_cd` have no IDF. A word found in every document weighs the same as a rare one
 - `ts_headline` re-segments the text with its own parser, so its boundaries do not match words segmented
   in the application
+- **There is no efficient way to take the BM25 top k.** Lucene uses block-max WAND to take only the top
+  results even when hundreds of thousands match. A GIN index only answers whether a row contains the
+  words, so ranking by BM25 means rescoring every candidate
+
+### 5. Expected scale
+
+Sites with hundreds of thousands of resources are expected. Under the following assumptions, passages
+run to millions of rows:
+
+- half of 300,000 resources are documents with text
+- 30 passages per document
+- 1,500 characters per passage
+
+Rough figures under these assumptions:
+
+| What                                              | Rows                  | Size           |
+| ------------------------------------------------- | --------------------- | -------------- |
+| Metadata (datasets and resources)                 | hundreds of thousands | hundreds of MB |
+| Passage text (compressed)                         | about 4.5 million     | about 10GB     |
+| `tsvector` and GIN index                          | about 4.5 million     | 10–15GB        |
+| Vectors (halfvec, 1024 dimensions) and HNSW index | about 4.5 million     | around 25GB    |
+
+Metadata search is small for PostgreSQL even at this scale. Passages are the heavy part, with two problems:
+
+- **Searches with only common words ("計画", "令和6年度", …).** Candidates run to hundreds of thousands
+  of rows, and the rescoring in §4 can take seconds
+- **Vector memory.** An HNSW index is slow unless it fits in memory. But vectors go in pgvector per
+  ADR-034, so this cost is the same if OpenSearch stays
 
 ## Options considered
 
@@ -131,6 +159,12 @@ be built by us, and their quality and speed decide whether this works. That is w
 - Per-word document frequency (df), document length and average length are kept in tables
 - The GIN index narrows the candidates, and only the candidates are rescored with BM25
 - Field weights (today's `title^3 name^2` and so on) are expressed with a `tsvector` per field or with `setweight`
+- The top-k problem in Context §4 is handled in this order:
+  - take candidates through GIN for the rarest query word only (the one with the smallest df), and check
+    the other words within them
+  - apply filters such as organisation, kind and period first, to reduce the candidates
+  - if there are still too many, cap the candidates and make up with the vector results through RRF.
+    How far quality drops is measured by evaluation
 - df may be updated in periodic batches. A few new documents barely move IDF
 
 ### 3. Text is held in passages
@@ -146,6 +180,13 @@ looked up with an HNSW index rather than a full scan.
 
 Whether filtered searches lose results is checked. Whether pgvector's iterative scan is available on the
 RDS and Aurora versions in use is confirmed in stage 1.
+
+At the scale in Context §5, this as is needs a database in the 32GB class. The following are combined to
+reduce memory, and which to use is decided from stage 1's measurements:
+
+- fewer dimensions (a model that can output 512 or 256)
+- binary quantisation (the `bit` type with Hamming distance) to take candidates, re-ranked at full precision
+- passages for documents only. Tables such as CSV are left to `query_resource` (ADR-032)
 
 ### 5. Search columns are written in the same transaction as their source
 
@@ -178,6 +219,13 @@ The pass criteria are:
   Compare the no-AI result with passages put into OpenSearch (kuromoji + BM25)
 - Measure p95 search latency in an environment with thick document text
 - Measure how database size, memory and the time of a full reprocess grow
+- **Scale measurement.** Real data is in the tens of thousands, so passages are grown to 5 million rows with
+  synthetic data:
+  - p95 search latency, separately for searches with only common words and searches with a rare word
+  - memory and recall for each combination of vector dimensions and quantisation
+  - the time of a full rebuild (morphological analysis, GIN index, HNSW index)
+- The scale criterion (p95 within how many seconds at hundreds of thousands of resources) is decided
+  before stage 1 starts
 
 ### Stage 2: move dataset and resource search
 
@@ -197,8 +245,14 @@ With no environment difference left, the search adapter boundary is also removed
 
 ### If it fails
 
-The expected main cause of failure is keyword search quality without AI. In that case OpenSearch stays for
-keyword search only, and passages are also put into OpenSearch.
+The expected main causes of failure are two:
+
+- keyword search quality without AI
+- the speed of searches with only common words at hundreds of thousands of resources (Context §5)
+
+Both are PostgreSQL's weakest points, and failure is treated as a quite possible outcome. In that case
+OpenSearch stays for keyword search only, and passages are also put into OpenSearch. If an extension that
+takes the BM25 top k efficiently becomes available on RDS and Aurora, this is evaluated again.
 
 The passage table and vectors built in stage 1 are used as they are.
 
@@ -207,7 +261,8 @@ The passage table and vectors built in stage 1 are used as they are.
 - **Cost.** The OpenSearch domain's fixed cost goes away. The database has to grow instead. The net per
   scale is worked out from stage 1's measurements
 - **Multi-site.** Sites sharing a database affect each other through the passage index and search load. This
-  is the same as today's shared OpenSearch domain
+  is the same as today's shared OpenSearch domain. Whether a site with hundreds of thousands of resources
+  can have its own database is left open
 - **Migrating existing environments.** Passages and search columns can be rebuilt from the database and the
   originals (a full reprocess). Removing the domain is announced in release notes and done in the
   retirement release
@@ -221,6 +276,9 @@ The passage table and vectors built in stage 1 are used as they are.
 - When to update df, and the unit that keeps it from being aggregated across sites
 - The CKAN-compatible API's `q` (still treated as keywords; unchanged)
 - Cost estimates per scale
+- Facet counting when tens of thousands of datasets match: switching to array columns on the dataset row
+  (formats and so on) to count
+- Whether large sites get their own database (ADR-041)
 
 ## Related ADRs
 
