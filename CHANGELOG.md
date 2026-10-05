@@ -6,6 +6,126 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.33.0] - 2026-10-05
+
+**Breaking Changes**
+
+- The job queue moves from SQS (ElasticMQ on Docker Compose) into a `job` table in each site's PostgreSQL database (#736, #737). Jobs left in the old queue are **not** carried over. Before upgrading, open **Job Management** on the old version and check that nothing is queued or processing; apply the upgrade at a quiet time, because for a few minutes while the services are replaced the old web tasks cannot enqueue, and completing an upload can fail. Afterwards, reprocess any resource left queued from **Resource Processing**. A version deletion requested during the switch stays "deleting" for up to an hour, until the worker queues it again. On Docker Compose the `elasticmq` service is gone and the `SQS_*` variables in `.env` are ignored; on AWS each site's SQS queue and DLQ are deleted.
+- The CKAN-compatible API now answers as CKAN 2.12 does for reads (#794, ADR-060): `POST` and the `/api/action` path are accepted, ckanapi's token forms work, `fq`, `sort` and facets are interpreted, and a parameter that cannot be honoured answers 409 rather than being ignored (a missing argument also answers 409 instead of 400). The shape of results changes: dataset and organization `extras` are `[{key, value}]` and a resource's extras are spread onto the resource; `author_email`, `url_type` and similar fields follow CKAN; internal and AI fields are removed; an uploaded resource's `url` is its download URL; `package_search` defaults to `rows` 10 and `include_private` false; organization members are not exposed. `package_search` results are now whole datasets in the shape of `package_show`, with `resources`, and with `tags`, `groups` and `organization` as objects rather than names (#760); `formats` is no longer returned (#749). Clients that read names out of these fields need updating.
+- Request bodies to `/api/*` are limited to 1 MiB, uploads excepted (#796, #804). A larger body is refused with an RFC 7807 413 before it is parsed, and the connection is closed.
+
+**Upgrade Notes**
+
+- The migrations drop `package.embedding_queued_at` (#747), so an image older than this release cannot run against the upgraded database. If the upgrade goes wrong, move forward rather than back.
+- AWS: each environment gains a Cloud Map private namespace (`<env>.internal`), and each site's worker registers in it so the web can wake it (`WORKER_WAKE_URL`). The worker scales on the number of waiting jobs (`KUKAN/Worker` `JobsWaiting`) instead of SQS queue depth. On a multi-site environment the shared stack deploys first, as the pipeline already orders it.
+- The worker's default connection pool rises from 3 to 5, and it now runs several jobs at once (`WORKER_CONCURRENCY`, by default the pool minus 2, at most 4) (#768). DuckLake catalog connections are now counted in the multi-site connection budget (#774): a small site budgets 26 connections instead of 20, and some rows of the sizing table move up one database size, so an existing multi-site environment may see a new synth warning.
+- Search: a `format_upper` normalizer is added to the index (#749), so the dashboard asks to re-analyse the index once. It rebuilds the index in place, without fetching or reprocessing anything. Dataset search documents are now written through the sync job (#750); renaming an organization or group now reaches its datasets' documents, and an existing mismatch is fixed by the rebuild on Index Management.
+- Docker Compose: the pool settings and `WORKER_CONCURRENCY` now reach the containers, on the single-site compose (#768) and the multi-site one (#811). OpenSearch is 3.9.0 (#801); on AWS the managed domain stays on 3.5.
+
+**Highlights**
+
+- feat(queue): move the job queue into PostgreSQL and wake the worker directly (#737) — jobs are rows in the site's own database, written in the same transaction as the change that needs them, so a job can no longer be lost between a commit and a send, or point at a row that was rolled back. The worker does not poll: whoever enqueues tells it at `/wake`, and it works the table until it is empty, then lets its database connection go. A job is leased for 10 minutes and extended while it runs, retried after 5 minutes when it fails, and given up after three failures.
+- feat(admin): show background jobs, and let dead jobs be retried or deleted (#738, #748, #751) — the new **Background Job Status** page lists jobs in the order they move (scheduled → waiting → running → dead), grouped by what sets them off: everyday processing, administrator actions and recovery, and migrations after an upgrade. A dead job is kept for 30 days and can be retried or deleted; a version deletion, an organization purge or a purged dataset's change-tracking cleanup that was deleted is queued again within the hour. The page opens on the running total and refreshes every 5 seconds.
+- feat(queue): take the jobs a person waits for first, and run several at once (#766, #768) — an upload or an edit is taken ahead of catalog-wide work such as reprocessing every resource, and each worker runs as many jobs at once as its connection pool allows, with the memory-heavy steps still one at a time.
+- feat(worker): run CSV interpretation and document text extraction in one reused child process (#791, ADR-059) — a file that runs out of memory now ends that file's step, not the whole worker and every job it held. The child is reused between files and stops after 60 seconds idle. A CSV that did not fit is recorded with `noTableReason` `out-of-memory` and can be read again after moving to a larger task. Text extraction also reads a PDF a page range at a time and an XLSX a row at a time (#769): a 52 MB PDF that peaked at 1.4 GB of heap now takes about 260 MB, and a 21 MB XLSX went from 1.4 GB to 27 MB.
+
+**Features**
+
+- feat: let a resource's extras be set, and serve the CKAN-compatible API as CKAN 2.12 does (#794) — resource `extras` can be set from the REST API and the dataset edit screen. `PUT /resources/{id}` replaces them whole (omitted means empty); CKAN's standard field names and the old health-check keys are reserved and answer 400. For the CKAN changes, see Breaking Changes.
+- feat(admin): gather the AI settings on AI Management, and choose the description language there (#759) — semantic search and AI metadata suggestions move from Site Management to AI Management, which now has one card per use of AI, and the language AI resource descriptions are written in can be chosen on screen. The estimate is reread on save, so the cost of rewriting in the new language shows at once.
+
+**Bug Fixes**
+
+- fix(api): check dataset visibility where the database is read, not only in the search index (#762) — for the seconds between making a dataset private and the index hearing of it, an anonymous visitor could still get its title and description from the dataset list, its name from CKAN `package_list`, its document from MCP `search_datasets`, and fragments of its file text from highlights. Facets also showed tag names, formats and licenses used only by private datasets, with a count of 0. Each of these now checks visibility in the database; making a dataset private or deleting it waits up to 5 seconds to update the index before answering.
+- fix(search): write dataset search documents through the sync, so none lands out of order (#750) — a rebuild racing an edit could leave a stale title or tags, and a delete racing a write could bring a deleted dataset back into search results.
+- fix(search): derive dataset formats from resource documents, so they cannot go stale (#749) — the format filter and facet now read the resources themselves, so a resource whose format changed is found under its new one.
+- fix(worker): bound every DuckLake instance and its catalog connections (#774) — version deletion, organization purge, the orphan sweep and dataset purge opened DuckDB without limits, using up to 80% of memory and every core. All now share the worker's 512 MB / 2-thread instance, and catalog connections are pooled. Removing a purged dataset's change-tracking tables moved to a worker job (`drop-lake-tables`), which is retried rather than leaving tables behind.
+- fix(admin): refuse a second reprocess of every resource while one is on its way (#808) — pressing **Reprocess all** again emptied the content index under the runs still in progress. The button is disabled while a reprocess is running, and the API answers 409 (`/admin/reindex-metadata` with `includeContent`, and `/admin/jobs/enqueue-all`); `/admin/jobs/stats` reports `reprocessPending`. A run deferred by a fetch rate limit also kept its `rebuildOnly` flag, which it used to drop.
+- fix(web): follow a dashboard maintenance notice's work until it is done (#799) — after pressing a one-time action such as Backfill versions, the notice now checks progress every 15 seconds instead of staying until the page was reloaded.
+- fix(worker): record a preview whose row groups give no single size (#809) — a preview the parallel writer left with uneven row groups was counted as never checked, so the dashboard showed **Prepare tables for BI tools** for a table just written. An existing notice clears with **Check**.
+- fix(web): run the brand tests the customization guide says `pnpm test` picks up (#758) — tests under `brands/<name>/__tests__` were not run.
+
+**Performance**
+
+- perf(search): sync resource search documents only when marked, in batches under one lock (#746) — reprocessing every resource locally went from 1,767 to 561 seconds, and generating missing descriptions from 538 to 70 seconds, with no idle sync jobs.
+- refactor(embed): mark stale resource embeddings and embed them in batches (#747) — an embedding is regenerated only when the text it is made from actually changed, 32 resources to a request, instead of re-reading every resource of the dataset on any edit. **Regenerate embeddings** now marks every resource rather than queueing per dataset.
+- perf(worker): extract document text a page range or a row at a time (#769) — see Highlights.
+
+**Dependencies**
+
+- build(deps): Next.js 16.3.8, Better Auth 1.7.7, Vitest 5.0.3, Turborepo 2.11.7 and 34 other minor and patch updates (#797). The OpenSearch JavaScript client stays on 3.6.0.
+- build(deps): OpenSearch 3.9.0 for Docker Compose (#801).
+
+**Documentation**
+
+- docs(adr): ADR-058 moves the job queue into PostgreSQL and supersedes ADR-002 (#736); ADR-059 runs the worker's heavy processing in one reused child process (#775).
+- docs: a reference for how jobs enqueue each other and what they lock, `docs/jobs.md` (#744).
+- docs(site): MCP client setup is shown per client, with the transport Claude Code accepts (#757); the site documentation is brought in line with the code (#756, #810), including the upgrade steps for this release in the System Admin Guide.
+
+**For Developers**
+
+- refactor(queue): the job queue is the `@kukan/queue` package rather than an adapter, since it no longer differs between environments; there are three adapters (#798).
+
+---
+
+**破壊的変更**
+
+- ジョブキューを SQS（Docker Compose では ElasticMQ）から、各サイトの PostgreSQL データベースの `job` 表に移しました（#736、#737）。旧キューに残っていたジョブは**引き継がれません**。上げる前に、旧版の「ジョブ管理」でキュー済みと処理中が 0 になっていることを確かめてください。適用は利用の少ない時間に行ってください。サービスの入れ替わりの数分間は、古い web タスクがジョブを積めず、アップロードの完了などが失敗することがあります。適用後、キュー済みのまま残ったリソースがあれば「リソースの処理状況」から再処理してください。切り替えの最中に要求された版の削除は、worker が積み直すまで最大 1 時間「削除中」のまま残ります。Docker Compose では `elasticmq` サービスがなくなり、`.env` の `SQS_*` は読まれません。AWS では各サイトの SQS キューと DLQ が削除されます。
+- CKAN 互換 API を、CKAN 2.12 の読み取りに合わせました（#794、ADR-060）。`POST` と `/api/action` のパスを受け付け、ckanapi のトークンの形でも認証でき、`fq`・`sort`・ファセットを解釈します。従えない指定は無視せず 409 を返します（引数の不足も 400 から 409 になります）。結果の形も変わります。データセットと組織の `extras` は `[{key, value}]` に、リソースの extras はリソースの項目として展開します。`author_email`・`url_type` などは CKAN に合わせ、内部の項目と AI の項目は出しません。アップロードしたリソースの `url` はダウンロード URL です。`package_search` の既定は `rows` 10、`include_private` false で、組織のメンバーは出しません。`package_search` の結果は、`package_show` と同じ形のデータセット全体になり、`resources` を含み、`tags`・`groups`・`organization` は名前ではなくオブジェクトになります（#760）。`formats` は返しません（#749）。これらの項目から名前を読んでいるクライアントは、修正が必要です。
+- `/api/*` へのリクエストの本文は、アップロードを除き 1 MiB までになりました（#796、#804）。それを超える本文は、読み込む前に RFC 7807 の 413 で断り、接続を閉じます。
+
+**アップグレード時の注意**
+
+- マイグレーションで `package.embedding_queued_at` を削除します（#747）。そのため、適用後のデータベースでは、この版より古いイメージは動きません。問題があったときは、戻さずに新しい版へ進めてください。
+- AWS: 環境ごとに Cloud Map のプライベート名前空間（`<env>.internal`）ができ、各サイトの worker がそこに登録されます。web は、その名前（`WORKER_WAKE_URL`）で worker を起こします。worker のスケーリングの指標は、SQS キューの深さから、待っているジョブの数（`KUKAN/Worker` の `JobsWaiting`）に替わります。マルチサイト環境では、パイプラインの順どおり、共有スタックが先にデプロイされます。
+- worker の DB 接続プールの既定値が 3 から 5 になり、複数のジョブを同時に処理するようになりました（`WORKER_CONCURRENCY`、既定はプール − 2、最大 4）（#768）。マルチサイトの接続数の予算に、DuckLake のカタログ接続を数えるようになりました（#774）。small のサイトは 20 本ではなく 26 本で見積もり、早見表の一部の行では DB のサイズが 1 段上がります。既存のマルチサイト環境で、synth の警告が新たに出ることがあります。
+- 検索: 索引に normalizer `format_upper` を足したため（#749）、ダッシュボードに再解析の案内が一度出ます。再解析は索引をその場で作り直すだけで、外部 URL の取得もファイルの再処理もしません。データセットの検索文書は、同期ジョブを通して書くようになりました（#750）。組織やグループの名前の変更が、配下のデータセットの文書に反映されるようになります。すでにあるずれは、「インデックス管理」の再構築で直ります。
+- Docker Compose: DB 接続プールの設定と `WORKER_CONCURRENCY` が、コンテナに届くようになりました。シングルサイト（#768）とマルチサイト（#811）の両方です。OpenSearch は 3.9.0 になりました（#801）。AWS のマネージドドメインは 3.5 のままです。
+
+**ハイライト**
+
+- feat(queue): ジョブキューを PostgreSQL に移し、worker を直接起こす（#737）— ジョブは、サイト自身のデータベースの行になりました。そのジョブを必要とする変更と同じトランザクションで書くので、コミットと送信の間でジョブが失われることも、ロールバックされた行を指すジョブが残ることもなくなりました。worker はポーリングしません。ジョブを積んだ側が `/wake` で知らせ、worker は表が空になるまで処理してから、DB 接続を手放します。ジョブは 10 分のリースで取り、処理中は延長します。失敗すると 5 分後に再試行し、3 回失敗すると打ち切ります。
+- feat(admin): バックグラウンドのジョブを表示し、打ち切られたジョブを再投入・削除できるようにする（#738、#748、#751）— 新しい「バックグラウンド処理状況」の画面は、ジョブを進む順（予約 → 待機 → 処理中 → 打ち切り）に並べ、きっかけごとに「日常の処理」「管理者の操作・自動復旧」「システム更新時の移行」に分けて表示します。打ち切られたジョブは 30 日間残り、再投入か削除ができます。削除しても、版の削除、組織の完全削除、完全削除したデータセットの差分取り込みデータの削除は、1 時間以内に積み直されます。画面は処理中の合計を開いた状態で表示し、5 秒ごとに更新します。
+- feat(queue): 人が待つジョブを先に取り、複数のジョブを同時に処理する（#766、#768）— アップロードや編集のジョブを、全リソースの再処理のようなカタログ全体の処理より先に取ります。各 worker は、接続プールが許す数だけジョブを同時に処理します。メモリを多く使う段階は、引き続き 1 本ずつです。
+- feat(worker): CSV の解釈と文書のテキスト抽出を、使い回す 1 つの子プロセスで行う（#791、ADR-059）— メモリが足りなくなったファイルは、そのファイルの段階だけが終わり、worker ごと、抱えていたジョブごと落ちることはなくなりました。子プロセスはファイルの間で使い回し、60 秒何もしなければ止まります。収まらなかった CSV は `noTableReason` が `out-of-memory` と記録され、大きなタスクに移したあと読み直せます。テキスト抽出は、PDF をページの範囲ごとに、XLSX を行ごとに読むようにしました（#769）。ヒープのピークが 1.4 GB だった 52 MB の PDF は約 260 MB に、21 MB の XLSX は 1.4 GB から 27 MB になりました。
+
+**新機能**
+
+- feat: リソースの extras を設定できるようにし、CKAN 互換 API を CKAN 2.12 と同じ答え方にする（#794）— リソースの `extras` を、REST API とデータセットの編集画面から設定できます。`PUT /resources/{id}` は丸ごと置き換えます（省略すると空になります）。CKAN の標準の項目名と、旧ヘルスチェックのキーは予約済みで、400 を返します。CKAN 側の変更は、破壊的変更を参照してください。
+- feat(admin): AI の設定を生成AI管理にまとめ、説明の生成言語をそこで選べるようにする（#759）— 意味検索と AI メタデータ提案の設定を、サイト管理から生成AI管理に移しました。生成AI管理は、AI の用途ごとに 1 枚のカードになります。AI によるリソースの説明を書く言語を、画面で選べるようになりました。保存すると見積もりを読み直すので、新しい言語で書き直す費用がすぐに表示されます。
+
+**バグ修正**
+
+- fix(api): データセットの見える範囲を、検索の索引だけでなくデータベースでも確かめる（#762）— データセットを非公開にしてから索引に反映されるまでの数秒間、匿名の利用者でも、データセット一覧からタイトルと説明を、CKAN `package_list` から名前を、MCP `search_datasets` から文書を、ハイライトからファイル本文の断片を取得できました。ファセットも、非公開のデータセットにしか付いていないタグ名・フォーマット・ライセンスを件数 0 で表示していました。いずれもデータベースで見える範囲を確かめるようにしました。非公開にする操作と削除は、応答の前に最大 5 秒待って索引を更新します。
+- fix(search): データセットの検索文書を同期を通して書き、順序が入れ替わらないようにする（#750）— 再構築と編集が重なるとタイトルやタグが古いまま残り、削除と書き込みが重なると、削除したデータセットが検索結果に戻ることがありました。
+- fix(search): データセットのフォーマットをリソースの文書から求め、古くならないようにする（#749）— フォーマットの絞り込みとファセットは、リソース自体を読むようになりました。フォーマットを変えたリソースは、新しいフォーマットで見つかります。
+- fix(worker): DuckLake のすべてのインスタンスとカタログ接続に上限を設ける（#774）— 版の削除、組織の完全削除、孤立したオブジェクトの掃除、データセットの完全削除は、上限なしで DuckDB を開いており、メモリの 80% とすべてのコアまで使えました。今後はどれも worker の 512 MB・2 スレッドのインスタンスを共有し、カタログ接続はプールします。完全削除したデータセットの差分取り込みの表の削除は、worker のジョブ（`drop-lake-tables`）に移しました。失敗しても表が残らず、再試行されます。
+- fix(admin): 全リソースの再処理が進行中のあいだ、2 回目を受け付けない（#808）— 「すべて再処理」をもう一度押すと、まだ流れている処理の下で、本文の索引をもう一度空にしていました。再処理の実行中はボタンを無効にし、API は 409 を返します（`/admin/reindex-metadata` の `includeContent` と `/admin/jobs/enqueue-all`）。`/admin/jobs/stats` は `reprocessPending` を返します。また、取得のレート制限で延期した処理が `rebuildOnly` を落としていたのも直しました。
+- fix(web): ダッシュボードの一回きりの処理の通知が、処理が終わるまで進み具合を追う（#799）— 「バージョンの補完」などを押したあと、ページを読み直すまで通知がそのままでした。15 秒ごとに進み具合を確かめるようにしました。
+- fix(worker): 行グループの大きさが 1 つに決まらないプレビューも記録する（#809）— 並列の書き出しで行グループの大きさが揃わなかったプレビューが、まだ確かめていない表として数えられ、書いたばかりの表についてダッシュボードが「BI ツールへの配信を整える」と促していました。すでに出ている通知は「確認する」で消えます。
+- fix(web): カスタマイズのガイドどおり、ブランドのテストを `pnpm test` で走らせる（#758）— `brands/<name>/__tests__` のテストが実行されていませんでした。
+
+**パフォーマンス**
+
+- perf(search): リソースの検索文書は、印が立ったものだけを、1 つのロックの下でまとめて同期する（#746）— ローカルでの全リソースの再処理は 1,767 秒から 561 秒に、不足分の説明の生成は 538 秒から 70 秒になり、空振りの同期ジョブがなくなりました。
+- refactor(embed): 古くなったリソースの埋め込みに印を立て、まとめて生成する（#747）— 埋め込みは、元になるテキストが実際に変わったときだけ、32 件ずつ生成します。以前は、どんな編集でもデータセットの全リソースを読み直していました。「埋め込みの再生成」は、データセットごとにジョブを積むのではなく、全リソースに印を立てるようになりました。
+- perf(worker): 文書のテキストを、ページの範囲ごと・行ごとに取り出す（#769）— ハイライトを参照してください。
+
+**依存関係**
+
+- build(deps): Next.js 16.3.8、Better Auth 1.7.7、Vitest 5.0.3、Turborepo 2.11.7 ほか、34 件の minor・patch 更新（#797）。OpenSearch の JavaScript クライアントは 3.6.0 のままです。
+- build(deps): Docker Compose の OpenSearch を 3.9.0 に更新（#801）。
+
+**ドキュメント**
+
+- docs(adr): ADR-058 でジョブキューを PostgreSQL に移し、ADR-002 を置き換えました（#736）。ADR-059 で、worker の重い処理を使い回す 1 つの子プロセスで行うことにしました（#775）。
+- docs: ジョブどうしの積み合いと、それぞれが取るロックの参照資料 `docs/jobs.md` を追加（#744）。
+- docs(site): MCP クライアントの設定を、クライアントごとに、Claude Code が受け付ける接続方式で示すようにしました（#757）。サイトの文書をコードに合わせ（#756、#810）、システム管理者ガイドにこの版の上げ方を加えました。
+
+**開発者向け**
+
+- refactor(queue): ジョブキューは環境による違いがなくなったので、アダプターではなく `@kukan/queue` パッケージにしました。アダプターは 3 つになります（#798）。
+
 ## [0.32.1] - 2026-09-27
 
 **Upgrade Notes**
