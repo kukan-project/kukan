@@ -23,6 +23,7 @@ import type { NoTableReason, ResourceSchema } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
+import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline-service'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface InterpretResult {
@@ -30,7 +31,8 @@ export interface InterpretResult {
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
   schema?: ResourceSchema
-  /** Rows in a row group of the preview, as the written file reports them.
+  /** Rows in a row group of the preview, as the written file reports them —
+   *  `NO_ROW_GROUP_FIGURE` where it wrote one with no single size to give.
    *  @see InterpretedCsv.rowGroupRows */
   rowGroupRows?: number
   /** Why no table came out, when none did. Persisted for the operator. */
@@ -161,5 +163,15 @@ export async function executeInterpret(
   // a missing answer: it records that this version has been interpreted and
   // holds nothing to load, which is what stops the hourly sweep handing it out
   // again for good (ADR-046).
-  return { previewKey: null, encoding, schema: schema ?? undefined, reason, rowGroupRows, ...used }
+  return {
+    previewKey: null,
+    encoding,
+    schema: schema ?? undefined,
+    reason,
+    // A preview written says what it was asked, even with no single size to
+    // give: left unrecorded, it reads as never asked, and the dashboard asks
+    // an operator to confirm it
+    rowGroupRows: used ? (rowGroupRows ?? NO_ROW_GROUP_FIGURE) : rowGroupRows,
+    ...used,
+  }
 }

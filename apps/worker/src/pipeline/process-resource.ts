@@ -231,7 +231,9 @@ async function runPipeline(
             encoding: interpretResult.encoding,
             // The unit a feed page is read in (ADR-055); absent where the
             // interpretation wrote no Parquet.
-            ...(interpretResult.rowGroupRows ? { rowGroupRows: interpretResult.rowGroupRows } : {}),
+            ...(interpretResult.rowGroupRows !== undefined && {
+              rowGroupRows: interpretResult.rowGroupRows,
+            }),
             // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
             ...(interpretResult.schema ? { schema: interpretResult.schema } : {}),
             // Ties the preview to the bytes it was built from, so a later run or

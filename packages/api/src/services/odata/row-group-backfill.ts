@@ -12,7 +12,12 @@ import type { Env, Logger } from '@kukan/shared'
 import type { JobQueue } from '@kukan/queue'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { readRowGroupRows } from '@kukan/lake'
-import { PipelineService, parseResourceSchema, parseSourceEncoding } from '../pipeline-service'
+import {
+  NO_ROW_GROUP_FIGURE,
+  PipelineService,
+  parseResourceSchema,
+  parseSourceEncoding,
+} from '../pipeline-service'
 import { prepareFeedInstance } from './session'
 import { estimateRowBytes, rowsMayBeTooWide } from './page-budget'
 import {
@@ -20,9 +25,6 @@ import {
   ODATA_MEMORY_LIMIT_BYTES,
   ODATA_READ_TIMEOUT_MS,
 } from '../../config'
-
-/** Recorded where a preview was asked for its row group size and had none. */
-const NO_ROW_GROUP_FIGURE = 0
 
 /** How DuckDB says an object is not there — over S3, and on a local path. */
 const OBJECT_MISSING = /\b404\b|Not Found|NoSuchKey|No files found/i

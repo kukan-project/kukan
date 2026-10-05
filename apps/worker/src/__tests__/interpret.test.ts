@@ -12,6 +12,7 @@ import {
   type UploadCapture,
 } from './test-helpers/pipeline-context'
 import { HeavyTooLargeError, runHeavy } from '@/heavy'
+import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline-service'
 
 // The real heavy process, unless a test says how the request ends
 vi.mock('@/heavy', async (importOriginal) => {
@@ -120,6 +121,30 @@ describe('executeInterpret', () => {
     // written by DuckDB rather than assembled in process, so what leaves has to
     // be a Parquet file (ADR-046).
     expect(upload.body!.subarray(0, 4).toString('ascii')).toBe('PAR1')
+  })
+
+  it('records a preview whose row groups give no single size, so it is not taken for unasked', async () => {
+    // The parallel writer can leave groups of different sizes, which have no
+    // one figure to page by (`readRowGroupRows`)
+    const { runHeavy: actual } = await vi.importActual<typeof import('@/heavy')>('@/heavy')
+    vi.mocked(runHeavy).mockImplementationOnce(async (request, held) => ({
+      ...(await actual(request, held)),
+      rowGroupRows: undefined,
+    }))
+    mockStorageDownload('name,age\nAlice,30\nBob,25\n')
+
+    const result = await executeInterpret(
+      'res-uneven',
+      'pkg-1',
+      version('resources/pkg-1/res-uneven'),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toMatchObject({
+      previewKey: previewKeyMatching('pkg-1', 'res-uneven', 'parquet'),
+      rowGroupRows: NO_ROW_GROUP_FIGURE,
+    })
   })
 
   it('should handle title row skipping in Parquet output', async () => {

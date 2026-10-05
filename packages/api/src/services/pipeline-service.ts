@@ -50,14 +50,20 @@ export function parseSourceEncoding(metadata: unknown): string | null {
  * the feed then reads the footer, and failing that pages by bytes alone
  * (`pageRowsWithin`).
  *
- * `0` is recorded, and reads back as null, where the file was asked and had no
- * single figure to give: its groups disagree, or the object is gone. It takes
- * the preview out of the migration's candidates without claiming a size.
+ * {@link NO_ROW_GROUP_FIGURE} reads back as null.
  */
 function parseRowGroupRows(metadata: unknown): number | null {
   const rows = (metadata as { rowGroupRows?: unknown } | null | undefined)?.rowGroupRows
   return typeof rows === 'number' && Number.isInteger(rows) && rows > 0 ? rows : null
 }
+
+/**
+ * Recorded where a preview was asked for its row group size and had no single
+ * figure to give: its groups disagree, or the object is gone. It takes the
+ * preview out of the migration's candidates without claiming a size, and
+ * reads back as null.
+ */
+export const NO_ROW_GROUP_FIGURE = 0
 
 /** Runs per transaction in a bulk enqueue: few statements, row locks held briefly. */
 const ENQUEUE_BATCH_SIZE = 500
