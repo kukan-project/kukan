@@ -270,6 +270,7 @@ pnpm format        # Prettier フォーマット
 - ジョブキューの PostgreSQL 化（worker へは直接通知、SQS 廃止、ADR-002 を置換） → `docs/adr/jp/058-db-queue-direct-wake.md`
 - worker の重い処理を使い回す 1 つの子プロセスで行う（テキスト抽出・CSV の解釈、ADR-032 の子プロセスを worker へ） → `docs/adr/jp/059-worker-heavy-child-process.md`
 - CKAN 互換 API を CKAN 2.12 の読み取りに合わせる（POST・`/api/action`・`fq`/`sort`・extras の形、読めない指定は断る、書き込みは範囲外） → `docs/adr/jp/060-ckan-compat-read-parity.md`
+- 検索を PostgreSQL に寄せる（アプリ側の形態素解析 + 標準 tsvector + SQL の BM25、パッセージ索引から段階移行、合格したら OpenSearch 退役、提案） → `docs/adr/jp/061-search-on-postgresql.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
