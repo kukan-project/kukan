@@ -184,9 +184,33 @@ jobs:
           key: turbo-lint-typecheck-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-lint-typecheck-${{ runner.os }}-
 
+      # Turbo does not cover prettier, and checking every file took ~30s of a
+      # job that is on the critical path whenever a change misses every turbo
+      # entry. With `--cache`, prettier skips a file whose content and options
+      # match an earlier pass; a file that failed is never recorded as passing.
+      # `content` because a checkout resets every mtime. Prettier hashes its own
+      # version and options into the cache, but not a plugin's version, so the
+      # key carries the lockfile. Saved on develop only, as with the others.
+      - name: Restore prettier cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/prettier-cache
+          key: prettier-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: prettier-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - name: Format check
         # No `if:` guard — prettier covers Markdown, so this runs on docs-only PRs too.
-        run: pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,astro}"
+        run: >-
+          pnpm exec prettier --check --cache --cache-strategy content
+          --cache-location "$RUNNER_TEMP/prettier-cache/.prettier-cache"
+          "**/*.{ts,tsx,js,jsx,json,md,astro}"
+
+      - name: Save prettier cache
+        if: github.ref == 'refs/heads/develop'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/prettier-cache
+          key: prettier-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
       - name: Lint
         if: steps.changes.outputs.code == 'true'
