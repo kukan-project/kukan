@@ -11,6 +11,7 @@
 
 import { randomUUID } from 'crypto'
 import { createReadStream } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import {
   streamToBuffer,
   streamToTempFile,
@@ -19,7 +20,7 @@ import {
 } from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
-import type { NoTableReason, ResourceSchema } from '@kukan/shared'
+import type { NoTableReason, ResourceSchema, TableProfile } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
@@ -37,6 +38,8 @@ export interface InterpretResult {
   rowGroupRows?: number
   /** Why no table came out, when none did. Persisted for the operator. */
   reason?: NoTableReason
+  /** The table profile (ADR-063), with its artifact uploaded beside the preview. */
+  profile?: TableProfile
 }
 
 /** The created version this step interprets. */
@@ -147,16 +150,34 @@ export async function executeInterpret(
     ctx,
     async (table) => {
       const previewKey = getPreviewKey(packageId, resourceId, 'parquet', writeToken)
-      await ctx.putObject(previewKey, createReadStream(table.parquetPath), {
-        contentType: 'application/vnd.apache.parquet',
-      })
+      // Beside the preview and under the same token, so the two describe one
+      // interpretation and a package purge takes both by prefix.
+      const { path: profilePath, ...profile } = table.profile ?? { columns: [] }
+      const profileKey = profilePath
+        ? getPreviewKey(packageId, resourceId, 'profile.ndjson.zst', writeToken)
+        : undefined
+      await Promise.all([
+        ctx.putObject(previewKey, createReadStream(table.parquetPath), {
+          contentType: 'application/vnd.apache.parquet',
+        }),
+        profileKey &&
+          ctx.putObject(profileKey, createReadStream(profilePath!), {
+            contentType: 'application/zstd',
+          }),
+      ])
+      // Dead once uploaded, and the hook below can wait on a catalog-wide lock
+      if (profilePath) await rm(profilePath, { force: true })
 
       // Handed over after the upload, so the preview exists whatever the hook
       // does with it.
       await hooks.onTable?.(table.parquetPath)
-      return { previewKey }
+      return {
+        previewKey,
+        ...(table.profile && { profile: { ...profile, ...(profileKey && { key: profileKey }) } }),
+      }
     },
-    hooks.onEncoding
+    hooks.onEncoding,
+    { profile: true }
   )
 
   // The schema goes back whether or not there was a table. An empty one is not

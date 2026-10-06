@@ -87,7 +87,7 @@ describe('updateInterpretResult', () => {
     await withPreviousRun()
     await reserve(NEW_PREVIEW)
 
-    await new StepTracker(db, claim).updateInterpretResult(NEW_PREVIEW, { encoding: 'UTF-8' })
+    await new StepTracker(db, claim).updateInterpretResult(NEW_PREVIEW, { encoding: 'UTF-8' }, null)
 
     const row = await pipelineRow()
     expect(row.previewKey).toBe(NEW_PREVIEW)
@@ -97,13 +97,33 @@ describe('updateInterpretResult', () => {
     expect(await tracked()).toEqual([OLD_PREVIEW, OLD_TEXT_HEAD])
   })
 
+  it('parks the profile it replaced and stops tracking the one it now names (ADR-063)', async () => {
+    const OLD_PROFILE = 'previews/pkg/res.old.profile.ndjson.zst'
+    const NEW_PROFILE = 'previews/pkg/res.new.profile.ndjson.zst'
+    await db
+      .update(resourcePipeline)
+      .set({ previewKey: OLD_PREVIEW, profile: { columns: [], key: OLD_PROFILE } })
+      .where(eq(resourcePipeline.id, pipelineId))
+    await reserve(NEW_PREVIEW)
+    await reserve(NEW_PROFILE)
+
+    await new StepTracker(db, claim).updateInterpretResult(
+      NEW_PREVIEW,
+      {},
+      { columns: [], key: NEW_PROFILE }
+    )
+
+    expect((await pipelineRow()).profile).toEqual({ columns: [], key: NEW_PROFILE })
+    expect((await tracked()).sort()).toEqual([OLD_PROFILE, OLD_PREVIEW].sort())
+  })
+
   it('leaves the preview tracked when the run no longer holds the claim', async () => {
     await withPreviousRun()
     await reserve(NEW_PREVIEW)
     const tracker = new StepTracker(db, claim)
     await releaseResourceClaims(db, [claim.id], claim.owner)
 
-    await tracker.updateInterpretResult(NEW_PREVIEW, { encoding: 'UTF-8' })
+    await tracker.updateInterpretResult(NEW_PREVIEW, { encoding: 'UTF-8' }, null)
 
     // Nothing came to reference the preview, so dropping its write-ahead record
     // would strand the object for good (ADR-045).
@@ -115,7 +135,7 @@ describe('updateInterpretResult', () => {
   it('parks the previous preview when this run produced none', async () => {
     await withPreviousRun()
 
-    await new StepTracker(db, claim).updateInterpretResult(null, {})
+    await new StepTracker(db, claim).updateInterpretResult(null, {}, null)
 
     expect((await pipelineRow()).previewKey).toBeNull()
     expect(await tracked()).toEqual([OLD_PREVIEW, OLD_TEXT_HEAD])

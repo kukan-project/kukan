@@ -13,7 +13,7 @@
 
 import { sql, asc, inArray, lt } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { orphanedObject } from '@kukan/db'
+import { orphanedObject, pipelineObjectKeys } from '@kukan/db'
 import type { Logger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ORPHAN_CLEANUP_BATCH_SIZE } from '@/config'
@@ -39,7 +39,10 @@ export function referenced(keys: string[]) {
                   WHERE r.storage_key = o.key OR r.pending_storage_key = o.key)
        OR EXISTS (SELECT 1 FROM resource_version rv WHERE rv.storage_key = o.key)
        OR EXISTS (SELECT 1 FROM resource_pipeline rp
-                  WHERE rp.preview_key = o.key OR rp.metadata ->> 'textHeadKey' = o.key)
+                  WHERE ${sql.join(
+                    pipelineObjectKeys('rp').map((key) => sql`${key} = o.key`),
+                    sql` OR `
+                  )})
   `
 }
 

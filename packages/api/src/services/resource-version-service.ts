@@ -3094,6 +3094,11 @@ export class ResourceVersionService {
    *
    * A version with no interpretation (non-tabular, or never interpreted) leaves
    * the resource with none, which is what it has.
+   *
+   * The table profile (ADR-063) is not on the version, so it is not carried
+   * across. Every caller discards what was derived from the retracted content
+   * as well, the profile with it (`discardDerivedArtifacts`), and the rebuild it
+   * queues makes a new one.
    */
   private async adoptVersionInterpretation(
     db: Database | Transaction,
@@ -3120,11 +3125,11 @@ export class ResourceVersionService {
    * Destroy what was derived from the content being retracted, and the pointers
    * that name it.
    *
-   * Two artifacts, not one. The preview lives in a column; the text head
-   * (ADR-040) lives in `metadata`, and being referenced there the sweep would
-   * never take it either — so a purge that dropped only the preview left an
-   * extract of the purged content in the bucket, still readable through the
-   * suggestion path. A purge cannot end with the content still readable, which
+   * Three artifacts, not one. The preview lives in a column; the text head
+   * (ADR-040) lives in `metadata` and the table profile's artifact (ADR-063) in
+   * `profile`, and being referenced there the sweep would never take them
+   * either — so a purge that dropped only the preview left an extract of the
+   * purged content in the bucket, still readable through the suggestion path. A purge cannot end with the content still readable, which
    * is the whole of ADR-043 §5.
    *
    * Destroyed immediately for both callers: a purge because destroying it is
@@ -3151,12 +3156,15 @@ export class ResourceVersionService {
         id: resourcePipeline.id,
         previewKey: resourcePipeline.previewKey,
         textHeadKey: sql<string | null>`${resourcePipeline.metadata} ->> 'textHeadKey'`,
+        profileKey: sql<string | null>`${resourcePipeline.profile} ->> 'key'`,
       })
       .from(resourcePipeline)
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
 
-    const keys = [pipe?.previewKey, pipe?.textHeadKey].filter((k): k is string => !!k)
+    const keys = [pipe?.previewKey, pipe?.textHeadKey, pipe?.profileKey].filter(
+      (k): k is string => !!k
+    )
     if (keys.length === 0) return
 
     const detached = await this.db.execute(sql`
@@ -3169,6 +3177,9 @@ export class ResourceVersionService {
               WHEN metadata ->> 'textHeadKey' IS NOT DISTINCT FROM ${pipe!.textHeadKey}::text
               THEN metadata - 'textHeadKey'
               ELSE metadata END,
+            profile = CASE
+              WHEN profile ->> 'key' IS NOT DISTINCT FROM ${pipe!.profileKey}::text THEN NULL
+              ELSE profile END,
             updated = NOW()
         WHERE id = ${pipe!.id}::uuid AND ${onRevision(resourceId, ifRevision)}
         RETURNING id

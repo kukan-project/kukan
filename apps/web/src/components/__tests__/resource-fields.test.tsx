@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import type { ResourceSchema } from '@kukan/shared'
 import type { ParquetField } from '@/hooks/use-parquet-schema'
 import { ResourceFields } from '../resource-fields'
 
@@ -122,5 +123,67 @@ describe('ResourceFields', () => {
     render(<ResourceFields resourceId="r1" primaryKey={['city', 'pref']} />)
     expect(screen.getByText('Primary key 1')).toBeInTheDocument()
     expect(screen.getByText('Primary key 2')).toBeInTheDocument()
+  })
+
+  describe('column roles (ADR-063)', () => {
+    const field = (name: string) => ({
+      name,
+      type: 'string' as const,
+      physicalType: 'BYTE_ARRAY',
+      logicalType: null,
+      nullable: false,
+      compressedSize: 0,
+    })
+    const schemaOf = (...names: string[]): ResourceSchema => ({
+      rowCount: 1,
+      columns: names.map((name) => ({ name, type: 'string', nullable: false, nullCount: 0 })),
+    })
+
+    it('shows each role with the rule that decided it', () => {
+      setHook({ fields: [field('定員'), field('施設コード')] })
+      render(
+        <ResourceFields
+          resourceId="r1"
+          schema={schemaOf('定員', '施設コード')}
+          columnRoles={[
+            {
+              role: 'numeric-text',
+              roleBasis: { rule: 'number-shape', share: 0.92, examples: ['-', '1,000'] },
+            },
+            { role: 'identifier', roleBasis: { rule: 'name-hint', hint: 'コード' } },
+          ]}
+        />
+      )
+      expect(screen.getByText('Role')).toBeInTheDocument()
+      expect(screen.getByText('Number (written as text)')).toBeInTheDocument()
+      // What keeps it from being a number, for whoever publishes it
+      expect(
+        screen.getByText(
+          '92% of values are number-shaped (values that do not read as numbers: -, 1,000)'
+        )
+      ).toBeInTheDocument()
+      expect(screen.getByText('The field name contains “コード”')).toBeInTheDocument()
+    })
+
+    it('leaves the role out where the table has none', () => {
+      setHook({ fields: [field('a')] })
+      render(<ResourceFields resourceId="r1" schema={schemaOf('a')} columnRoles={null} />)
+      expect(screen.queryByText('Role')).not.toBeInTheDocument()
+    })
+
+    it('does not put a role on a field the schema does not describe', () => {
+      // The footer and the schema come from two requests; a reprocess between
+      // them must not label one table's columns with the other's roles
+      setHook({ fields: [field('new')] })
+      render(
+        <ResourceFields
+          resourceId="r1"
+          schema={schemaOf('old')}
+          columnRoles={[{ role: 'category', roleBasis: { rule: 'other' } }]}
+        />
+      )
+      expect(screen.getByText('Role')).toBeInTheDocument()
+      expect(screen.queryByText('Category')).not.toBeInTheDocument()
+    })
   })
 })

@@ -480,6 +480,49 @@ describe('MCP Server', () => {
       expect(keyed.result.content[0].text as string).toContain('Primary key: id')
     })
 
+    it('gives each column its role, and the values of names and categories (ADR-063)', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-roles', title: 'Roles' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'data.csv',
+        format: 'CSV',
+        url: 'http://example.com/data.csv',
+      })
+      await storeSchema(resource.id, {
+        rowCount: 40,
+        columns: [
+          { name: '市区町村名', type: 'string', nullable: false, nullCount: 0, distinctCount: 40 },
+          { name: '定員', type: 'string', nullable: false, nullCount: 0, distinctCount: 12 },
+        ],
+      })
+      const profile = {
+        columns: [
+          {
+            role: 'name',
+            roleBasis: { rule: 'distinct-values', share: 1 },
+            values: ['青森市', '弘前市'],
+          },
+          {
+            role: 'numeric-text',
+            roleBasis: { rule: 'number-shape', share: 1, examples: ['-', '1,000'] },
+          },
+        ],
+      }
+      await db.execute(sql`
+        UPDATE resource_pipeline SET profile = ${JSON.stringify(profile)}::jsonb
+        WHERE resource_id = ${resource.id}
+      `)
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('市区町村名: string — name')
+      // The values kept, and how many more the column has
+      expect(text).toContain('values: "青森市", "弘前市", … and 38 more')
+      expect(text).toContain('定員: string — numeric-text (not numbers: "-", "1,000")')
+      expect(text).toContain('TRY_CAST')
+    })
+
     it('hands over the feed URL and says what identifies its rows', async () => {
       const app = mcpApp()
       const pkg = await createPackage(app, { name: 'ds-odata', title: 'OData' })

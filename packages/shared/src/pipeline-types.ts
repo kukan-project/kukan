@@ -157,6 +157,134 @@ export const resourceSchemaSchema = z.object({
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 
+// ── Table profile (ADR-063) ──
+// What a column *is* for search and for a reader, decided by rules on top of
+// its type: a string column of `10,000` and `-` is a number in all but type,
+// and a column of 施設名 is searched for by its values where one of 備考 is
+// read as prose. Kept in `resource_pipeline.profile`, apart from the schema:
+// the schema is how the bytes were read and is frozen onto each version
+// (ADR-046); a profile is re-derived whenever the rules change, and is read
+// only by the pages and tools that show it.
+
+/**
+ * - `measure`: numbers, dates and booleans — typed so, or text that is a date
+ * - `numeric-text`: numbers written as text (`10,000`, `（8）`, `-`, `…`)
+ * - `identifier`: codes, URLs, phone numbers
+ * - `free-text`: prose — remarks, descriptions, free answers
+ * - `name`: many distinct names — facilities, projects, addresses
+ * - `category`: any other text
+ * - `empty`: no value at all
+ */
+export const COLUMN_ROLES = [
+  'measure',
+  'numeric-text',
+  'identifier',
+  'free-text',
+  'name',
+  'category',
+  'empty',
+] as const
+export type ColumnRole = (typeof COLUMN_ROLES)[number]
+
+/** Which rule decided a column's role — one per arm of the classifier. */
+export const COLUMN_ROLE_RULES = [
+  'typed',
+  'no-values',
+  'number-shape',
+  'date-shape',
+  'url-shape',
+  'phone-shape',
+  'long-prose',
+  'punctuation',
+  'prose',
+  'name-hint',
+  'mostly-digits',
+  'distinct-code',
+  'fixed-width-code',
+  'distinct-values',
+  'other',
+] as const
+export type ColumnRoleRule = (typeof COLUMN_ROLE_RULES)[number]
+
+/**
+ * Why a column has its role, in parts a page can phrase: "92% of values are
+ * number-shaped", "the heading contains コード".
+ */
+export const columnRoleBasisSchema = z.object({
+  rule: z.enum(COLUMN_ROLE_RULES),
+  /** The share of values the rule measured, 0–1, where it measured one. */
+  share: z.number().min(0).max(1).optional(),
+  /** The word in the heading that decided it (`name-hint`). */
+  hint: z.string().optional(),
+  /**
+   * Values that keep a `numeric-text` column from being a number, most
+   * frequent first — what a publisher has to change (ADR-063 §決定 5).
+   */
+  examples: z.array(z.string()).optional(),
+})
+export type ColumnRoleBasis = z.infer<typeof columnRoleBasisSchema>
+
+/** Values of a `name` or `category` column kept in the database, to show and for agents. */
+export const COLUMN_VALUES_KEPT = 30
+
+/** One column's profile, at the same position as the column in the schema. */
+export const columnProfileSchema = z.object({
+  role: z.enum(COLUMN_ROLES),
+  roleBasis: columnRoleBasisSchema,
+  /**
+   * The {@link COLUMN_VALUES_KEPT} most frequent values of a `name` or
+   * `category` column, trimmed, ties in the order they first appear. Every
+   * value is in the artifact, which is what the index is built from.
+   */
+  values: z.array(z.string()).optional(),
+})
+export type ColumnProfile = z.infer<typeof columnProfileSchema>
+
+/** `resource_pipeline.profile`: the live version's table profile. */
+export const tableProfileSchema = z.object({
+  /** Aligned with the schema's columns; empty where working them out failed. */
+  columns: z.array(columnProfileSchema),
+  /** The artifact (see {@link TableProfileLine}), where the table had anything to put in one. */
+  key: z.string().optional(),
+  /** Sentences the artifact left out at {@link TABLE_SENTENCES_MAX_BYTES}, where it left any. */
+  sentencesOmitted: z.number().int().positive().optional(),
+  /** Why there is no profile, where working it out failed. The preview stands without it. */
+  error: z.string().optional(),
+})
+export type TableProfile = z.infer<typeof tableProfileSchema>
+
+/**
+ * One line of a table's profile artifact (ADR-063 §決定 3・4): zstd NDJSON,
+ * values first in column order and most frequent first, then sentences in row
+ * order. What the index is built from.
+ *
+ * Rows are the table's data rows, 1-based, as the preview numbers them.
+ */
+export type TableProfileLine =
+  | {
+      kind: 'value'
+      /** The column's heading. */
+      column: string
+      text: string
+      /** Rows holding the value. */
+      count: number
+      /** The first row it appears on. */
+      row: number
+    }
+  | {
+      /** A row's free-text columns, with up to three category columns as context. */
+      kind: 'sentence'
+      column: null
+      text: string
+      /** How many rows read exactly this, which are kept once. */
+      count: number
+      /** The first row that reads it. */
+      row: number
+    }
+
+/** UTF-8 bytes of sentences kept per table (ADR-063 §決定 3). */
+export const TABLE_SENTENCES_MAX_BYTES = 500 * 1024
+
 /**
  * Why a resource is not served as an OData feed (ADR-055), or how it is not.
  *

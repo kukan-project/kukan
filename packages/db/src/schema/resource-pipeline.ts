@@ -13,7 +13,8 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
+import type { TableProfile } from '@kukan/shared'
 import { resource } from './resource'
 
 export const resourcePipeline = pgTable(
@@ -42,6 +43,11 @@ export const resourcePipeline = pgTable(
     error: text('error'),
     previewKey: text('preview_key'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    // The live version's table profile (ADR-063): column roles, the head of
+    // the value lists, and the artifact the index is built from. Apart from
+    // `metadata` because only the pages and tools that show it read it, and a
+    // profile's lists would otherwise ride along on every read of the row.
+    profile: jsonb('profile').$type<TableProfile>(),
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -49,13 +55,30 @@ export const resourcePipeline = pgTable(
     uniqueIndex('idx_resource_pipeline_resource_id').on(table.resourceId),
     index('idx_resource_pipeline_status').on(table.status),
     index('idx_resource_pipeline_preview_key').on(table.previewKey),
-    // The one storage pointer that lives inside JSON rather than in a column.
-    // The orphan sweep asks whether any pointer still references a key before
-    // deleting its object (ADR-045 §3), and this is the only one it could not
-    // answer on an index.
+    // The storage pointers that live inside JSON rather than in a column. The
+    // orphan sweep asks whether any pointer still references a key before
+    // deleting its object (ADR-045 §3), and these are the ones it could not
+    // answer on an index otherwise.
     index('idx_resource_pipeline_text_head').on(sql`(${table.metadata} ->> 'textHeadKey')`),
+    index('idx_resource_pipeline_profile_key').on(sql`(${table.profile} ->> 'key')`),
   ]
 )
+
+/**
+ * Every storage key a pipeline row names, as SQL over the row under `alias`.
+ *
+ * The one list of them: the orphan sweep asks it before deleting an object
+ * (ADR-045 §3), and a writer that replaces the row parks whatever it names. A
+ * pointer missing from here is an object the sweep deletes out from under its
+ * row, so a new one is added here and nowhere else.
+ */
+export function pipelineObjectKeys(alias: string): SQL[] {
+  return [
+    sql.raw(`${alias}.preview_key`),
+    sql.raw(`(${alias}.metadata ->> 'textHeadKey')`),
+    sql.raw(`(${alias}.profile ->> 'key')`),
+  ]
+}
 
 export const resourcePipelineStep = pgTable(
   'resource_pipeline_step',

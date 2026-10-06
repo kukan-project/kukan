@@ -5,7 +5,13 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { primaryKeyOf, feedServiceRoot, ODATA_ENTITY_SET } from '@kukan/shared'
-import type { Env, OdataKeyFallback, OdataRefusal } from '@kukan/shared'
+import type {
+  ColumnProfile,
+  Env,
+  OdataKeyFallback,
+  OdataRefusal,
+  ResourceColumn,
+} from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { ResourceService, resourceDownloadPath } from '../../services/resource-service'
@@ -84,6 +90,23 @@ function refusalSentence(refusal: OdataRefusal): string {
   return refusal.columns.length > 0 ? `${base}: ${refusal.columns.join(', ')}` : base
 }
 
+/** The column's role (ADR-063), and for numbers written as text what is mixed in. */
+function roleText(profile: ColumnProfile | undefined): string {
+  if (!profile) return ''
+  const examples = profile.roleBasis.examples
+  return examples?.length
+    ? ` — ${profile.role} (not numbers: ${examples.map((v) => JSON.stringify(v)).join(', ')})`
+    : ` — ${profile.role}`
+}
+
+/** The most frequent values of a name or category column, and how many it has in all. */
+function valuesLine(col: ResourceColumn, profile: ColumnProfile | undefined): string[] {
+  if (!profile?.values?.length) return []
+  const shown = profile.values.map((v) => JSON.stringify(v)).join(', ')
+  const rest = (col.distinctCount ?? 0) - profile.values.length
+  return [`      values: ${shown}${rest > 0 ? `, … and ${rest} more` : ''}`]
+}
+
 export function registerResourceTools(server: McpServer, ctx: ResourceToolsContext) {
   const { db, user, env, ai } = ctx
   // One question for the whole registration: the switch is deployment-wide
@@ -131,7 +154,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
     'get_resource_schema',
     {
       description:
-        'Get the column schema (field names and inferred types) of a tabular resource (CSV/TSV) so you can write a SQL query against its data. Returns whether the resource is queryable, and whether its rows are also readable over OData; only CSV/TSV resources within the size limit have a schema.',
+        'Get the column schema (field names, inferred types and roles) of a tabular resource (CSV/TSV) so you can write a SQL query against its data. Each column has a role — measure, numeric-text, identifier, free-text, name, category or empty — and name and category columns list their most frequent values, so you can match their spelling. Returns whether the resource is queryable, and whether its rows are also readable over OData; only CSV/TSV resources within the size limit have a schema.',
       inputSchema: {
         id: z.string().describe('Resource UUID'),
       },
@@ -143,7 +166,11 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
       // turns on it (ADR-055 §5) and the visibility check has read it already.
       const { resource: res, pkg } = await service.getByIdWithOwnership(id, user)
 
-      const target = await new PipelineService(db).getQueryTarget(id)
+      const pipeline = new PipelineService(db)
+      const [target, profile] = await Promise.all([
+        pipeline.getQueryTarget(id),
+        pipeline.getProfile(id),
+      ])
       if (!target?.schema || target.schema.columns.length === 0) {
         return {
           content: [
@@ -182,10 +209,20 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         ...(primaryKey ? [`Primary key: ${primaryKey.join(', ')}`] : []),
         ...odataLines(env, id, feed),
         `Columns (${schema.columns.length}):`,
-        ...schema.columns.map((col) => {
+        ...schema.columns.flatMap((col, i) => {
           const range = col.stats ? `, range ${col.stats.min}..${col.stats.max}` : ''
-          return `  - ${col.name}: ${col.type}${col.nullable ? ' (nullable)' : ''}${range}`
+          return [
+            `  - ${col.name}: ${col.type}${col.nullable ? ' (nullable)' : ''}${range}${roleText(profile?.columns[i])}`,
+            ...valuesLine(col, profile?.columns[i]),
+          ]
         }),
+        ...(profile?.columns.some((col) => col.role === 'numeric-text')
+          ? [
+              '',
+              'A numeric-text column holds numbers written as text, mixed with the values shown;',
+              'strip commas and brackets and TRY_CAST it before aggregating.',
+            ]
+          : []),
         ...(queryable
           ? [
               '',

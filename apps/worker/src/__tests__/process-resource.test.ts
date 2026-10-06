@@ -191,11 +191,15 @@ describe('processResource', () => {
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
     expect(mockTracker.completeStep).toHaveBeenCalledWith(STEP.fetch)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
-    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
-      encoding: 'UTF8',
-      // Ties the preview to the bytes Fetch measured (ADR-043 layer 2).
-      sourceHash: 'sha256:abc',
-    })
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(
+      'previews/pkg-1/res-1.parquet',
+      {
+        encoding: 'UTF8',
+        // Ties the preview to the bytes Fetch measured (ADR-043 layer 2).
+        sourceHash: 'sha256:abc',
+      },
+      null
+    )
   })
 
   it('interprets a version under the format it was created with, not the label now (ADR-046)', async () => {
@@ -264,11 +268,11 @@ describe('processResource', () => {
 
     await processResource({ resourceId: 'res-1' }, ctx, db, queue)
 
-    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
-      encoding: 'UTF8',
-      schema,
-      sourceHash: 'sha256:abc',
-    })
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(
+      'previews/pkg-1/res-1.parquet',
+      { encoding: 'UTF8', schema, sourceHash: 'sha256:abc' },
+      null
+    )
     // And onto the version it was read from, which is where the interpretation
     // belongs (ADR-046) — carrying the claim, since the row outlives the run.
     expect(ctx.recordVersionSchema).toHaveBeenCalledWith({
@@ -424,7 +428,7 @@ describe('processResource', () => {
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.index)
     // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
-    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(null, {})
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(null, {}, null)
   })
 
   it('does NOT clear preview/schema when the interpretation throws (transient failure)', async () => {

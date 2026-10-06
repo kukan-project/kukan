@@ -300,7 +300,7 @@ export function versionOrigin(urlType: string | null): VersionOrigin {
 export function getPreviewKey(
   packageId: string,
   resourceId: string,
-  ext: 'parquet' | 'json' | 'txt',
+  ext: 'parquet' | 'json' | 'txt' | 'profile.ndjson.zst',
   writeToken: string
 ): string {
   return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${writeToken}.${ext}`

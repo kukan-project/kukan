@@ -9,7 +9,13 @@ import type { ExtractedText } from '../pipeline/steps/document-text'
 
 /** Files in, files and JSON out: the process holds no connection of any kind. */
 export type HeavyRequest =
-  | { kind: 'interpret-csv'; csvPath: string; parquetPath: string; skipRows: number }
+  | {
+      kind: 'interpret-csv'
+      csvPath: string
+      parquetPath: string
+      skipRows: number
+      profilePath?: string
+    }
   | { kind: 'extract-text'; documentPath: string; format: string; textPath: string }
 
 interface HeavyResults {

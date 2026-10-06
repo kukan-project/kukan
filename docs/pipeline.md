@@ -185,14 +185,14 @@ live のプレビュー Parquet を読む — ただし `sourceHash` が live �
 
 `step-tracker.ts` の全文。条件が外れれば書き込みは 0 行に着地し、実行は静かに抜ける。
 
-| 書き込み                | 条件             | 副作用                                |
-| ----------------------- | ---------------- | ------------------------------------- |
-| `beginRun`              | `heldBy(claim)`  | 前回のステップ記録を削除              |
-| `startStep`             | `heldBy(claim)`  | 0 行なら `RunCancelledError`          |
-| `completeStep` 他       | step 経由で join | ステップ行と pipeline 行の両方を検査  |
-| `updateInterpretResult` | `heldBy(claim)`  | 旧プレビューと旧 text head を回収予約 |
-| `mergeMetadata`         | `heldBy(claim)`  | 旧 text head を回収予約               |
-| `updateStatus`          | `heldBy(claim)`  | —                                     |
+| 書き込み                | 条件             | 副作用                                               |
+| ----------------------- | ---------------- | ---------------------------------------------------- |
+| `beginRun`              | `heldBy(claim)`  | 前回のステップ記録を削除                             |
+| `startStep`             | `heldBy(claim)`  | 0 行なら `RunCancelledError`                         |
+| `completeStep` 他       | step 経由で join | ステップ行と pipeline 行の両方を検査                 |
+| `updateInterpretResult` | `heldBy(claim)`  | 旧プレビュー・旧 text head・旧プロファイルを回収予約 |
+| `mergeMetadata`         | `heldBy(claim)`  | 旧 text head を回収予約                              |
+| `updateStatus`          | `heldBy(claim)`  | —                                                    |
 
 ### (b) リソースに残る書き込み — claim を条件にする（外に出せない）
 
@@ -251,10 +251,19 @@ sweep（`sweep-orphans.ts`）は期限切れの鍵を最大 5000 件取り、**�
 いるか」を問う**。参照されていれば消すのは記録の方で、オブジェクトは残る。これが先行記録の
 唯一の危険（消し忘れが生きたデータの削除に化ける）を自己修復に変えている。
 
-参照元は 5 つ。**1 つでも漏らすとその列が指すオブジェクトを消す**:
+参照元は 6 つ。**1 つでも漏らすとその列が指すオブジェクトを消す**:
 
 `resource.storage_key` / `resource.pending_storage_key` / `resource_version.storage_key` /
-`resource_pipeline.preview_key` / `resource_pipeline.metadata->>'textHeadKey'`
+`resource_pipeline.preview_key` / `resource_pipeline.metadata->>'textHeadKey'` /
+`resource_pipeline.profile->>'key'`
+
+`resource_pipeline` の 3 つは `pipelineObjectKeys`（`packages/db/src/schema/resource-pipeline.ts`）が
+一覧として持ち、sweep の参照判定と、行を書き換えるときの回収予約（`StepTracker` の `movePointers`）は
+そこから組み立てる。ポインタを足すときはそこに足す。
+
+6 つ目は表のプロファイルの成果物（ADR-063）。Interpret がプレビューと同じトークンで
+`previews/{package}/{resource}.{token}.profile.ndjson.zst` に書き、プレビューと同じ文で参照する。
+版の取り消しとパージでは、プレビュー・text head と一緒に外して消す（`discardDerivedArtifacts`）。
 
 かつて 6 つ目だった `resource_version.lake_source_key` は撤去した（ADR-046 §4）。層 2 が読むのは
 版ファイルなので、実行より長生きするオブジェクトを名指しで守る必要が無くなった。

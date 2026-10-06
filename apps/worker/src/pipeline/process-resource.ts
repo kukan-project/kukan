@@ -224,24 +224,29 @@ async function runPipeline(
           // with a PDF must not keep reporting the old schema as queryable.
           // (A transient failure throws instead and is caught below, where
           // the previous preview is intentionally preserved.)
-          await tracker.updateInterpretResult(null, {})
+          await tracker.updateInterpretResult(null, {}, null)
         } else {
           await tracker.completeStep(interpretStepId)
-          await tracker.updateInterpretResult(interpretResult.previewKey, {
-            encoding: interpretResult.encoding,
-            // The unit a feed page is read in (ADR-055); absent where the
-            // interpretation wrote no Parquet.
-            ...(interpretResult.rowGroupRows !== undefined && {
-              rowGroupRows: interpretResult.rowGroupRows,
-            }),
-            // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
-            ...(interpretResult.schema ? { schema: interpretResult.schema } : {}),
-            // Ties the preview to the bytes it was built from, so a later run or
-            // the backfill can tell whether it describes a given version
-            // (ADR-043 layer 2). The version this read was found by that same
-            // measurement, so it is not a second pass over the file.
-            sourceHash: fetchResult.hash,
-          })
+          await tracker.updateInterpretResult(
+            interpretResult.previewKey,
+            {
+              encoding: interpretResult.encoding,
+              // The unit a feed page is read in (ADR-055); absent where the
+              // interpretation wrote no Parquet.
+              ...(interpretResult.rowGroupRows !== undefined && {
+                rowGroupRows: interpretResult.rowGroupRows,
+              }),
+              // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
+              ...(interpretResult.schema ? { schema: interpretResult.schema } : {}),
+              // Ties the preview to the bytes it was built from, so a later run or
+              // the backfill can tell whether it describes a given version
+              // (ADR-043 layer 2). The version this read was found by that same
+              // measurement, so it is not a second pass over the file.
+              sourceHash: fetchResult.hash,
+            },
+            // The table profile (ADR-063), which only the live version has
+            interpretResult.profile ?? null
+          )
           // And onto the version itself, which is where the interpretation
           // belongs (ADR-046). Still written to the pipeline row above: the
           // readers of ADR-032 go through it, and moving them to the version is

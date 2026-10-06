@@ -3,7 +3,7 @@
  * Handles enqueue and status queries — Worker-side execution is separate.
  */
 
-import { eq, and, exists, inArray, isNotNull, sql } from 'drizzle-orm'
+import { eq, and, exists, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import {
@@ -13,8 +13,9 @@ import {
   REINDEX_JOB_TYPE,
   primaryKeyOf,
   resourceSchemaSchema,
+  tableProfileSchema,
 } from '@kukan/shared'
-import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
+import type { PipelineStatus, ResourceSchema, TableProfile } from '@kukan/shared'
 import { readyJobsMatching, type EnqueueOptions, type JobQueue } from '@kukan/queue'
 
 /**
@@ -209,8 +210,10 @@ export class PipelineService {
    * Get pipeline status with steps for a resource.
    */
   async getStatus(resourceId: string) {
+    // Not the profile: the dashboard polls this, and nothing it shows is in it
+    const { profile: _profile, ...columns } = getTableColumns(resourcePipeline)
     const [pipeline] = await this.db
-      .select()
+      .select(columns)
       .from(resourcePipeline)
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
@@ -235,6 +238,16 @@ export class PipelineService {
    * the resource has no pipeline row; each field is null when absent. Whether
    * the whole is queryable is `isQueryable`'s call.
    */
+  /** The live version's table profile (ADR-063), where it has one. */
+  async getProfile(resourceId: string): Promise<TableProfile | null> {
+    const [row] = await this.db
+      .select({ profile: resourcePipeline.profile })
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+      .limit(1)
+    return parseTableProfile(row?.profile)
+  }
+
   async getQueryTarget(resourceId: string): Promise<QueryTarget | null> {
     const [row] = await this.db
       .select({
@@ -258,6 +271,17 @@ export class PipelineService {
       primaryKey: primaryKeyOf(row.columnSettings),
     }
   }
+}
+
+/**
+ * Validate `resource_pipeline.profile` (ADR-063), returning null when absent or
+ * malformed — including a role or rule this reader does not know, which a
+ * newer worker can write. The profile is for showing, so losing it costs a
+ * column of the field list and nothing else.
+ */
+export function parseTableProfile(profile: unknown): TableProfile | null {
+  const parsed = tableProfileSchema.safeParse(profile)
+  return parsed.success ? parsed.data : null
 }
 
 export interface QueryTarget {

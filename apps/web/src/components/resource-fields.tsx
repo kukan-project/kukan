@@ -2,13 +2,35 @@
 
 import { Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import type { ColumnProfile, ResourceSchema } from '@kukan/shared'
 import { useParquetSchema } from '@/hooks/use-parquet-schema'
 import { columnTypeKey, formatBytes } from '@/lib/format-utils'
+
+/** A column's role as `/schema` serves it (ADR-063): without the values. */
+export type ColumnRoleView = Pick<ColumnProfile, 'role' | 'roleBasis'>
 
 interface ResourceFieldsProps {
   resourceId: string
   /** The resource's settled primary key, marked on its columns */
   primaryKey?: string[] | null
+  /** The stored column schema, which says which column each role is for */
+  schema?: ResourceSchema | null
+  /** Each column's role, at its position in `schema` */
+  columnRoles?: ColumnRoleView[] | null
+}
+
+/**
+ * The role of a footer field. By position, since a table can have two columns
+ * of one name, and checked by name, since the footer and the schema are
+ * written by one interpretation but read by two requests.
+ */
+function roleOf(
+  schema: ResourceSchema | null | undefined,
+  columnRoles: ColumnRoleView[] | null | undefined,
+  index: number,
+  name: string
+): ColumnRoleView | undefined {
+  return schema?.columns[index]?.name === name ? columnRoles?.[index] : undefined
 }
 
 /**
@@ -16,9 +38,17 @@ interface ResourceFieldsProps {
  * Parquet schema. Renders nothing when no Parquet preview exists (e.g. oversize
  * CSV or a resource not yet processed), so it is safe to mount for any CSV/TSV.
  */
-export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) {
+export function ResourceFields({
+  resourceId,
+  primaryKey,
+  schema,
+  columnRoles,
+}: ResourceFieldsProps) {
   const t = useTranslations('resource')
   const { fields, loading, error } = useParquetSchema(resourceId)
+  // Absent on tables interpreted before roles; the column is left out rather
+  // than shown empty
+  const hasRoles = (columnRoles?.length ?? 0) > 0
 
   // No schema (not a Parquet resource), still loading, or read error: hide entirely.
   // The footer read is cheap, so we omit a skeleton to avoid a flash-then-disappear
@@ -42,6 +72,11 @@ export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) 
               <th className="px-4 py-2 text-left font-medium text-muted-foreground">
                 {t('fieldType')}
               </th>
+              {hasRoles && (
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">
+                  {t('fieldRole')}
+                </th>
+              )}
               <th className="px-4 py-2 text-left font-medium text-muted-foreground">
                 {t('fieldPhysicalType')}
               </th>
@@ -59,6 +94,7 @@ export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) 
           <tbody>
             {fields.map((field, i) => {
               const keyOrder = primaryKey?.indexOf(field.name) ?? -1
+              const role = roleOf(schema, columnRoles, i, field.name)
               return (
                 <tr key={i} className="border-b last:border-b-0">
                   <td className="px-4 py-2 font-medium">
@@ -74,6 +110,9 @@ export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) 
                   <td className="px-4 py-2">
                     <Badge variant="secondary">{t(columnTypeKey(field.type))}</Badge>
                   </td>
+                  {hasRoles && (
+                    <td className="px-4 py-2">{role && <ColumnRoleCell role={role} />}</td>
+                  )}
                   <td className="px-4 py-2 font-mono text-xs">{field.physicalType ?? '—'}</td>
                   <td className="px-4 py-2 font-mono text-xs">{field.logicalType ?? '—'}</td>
                   <td className="px-4 py-2">
@@ -91,5 +130,27 @@ export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) 
         </table>
       </div>
     </details>
+  )
+}
+
+/**
+ * A column's role, with the rule that decided it. A `numeric-text` column also
+ * shows the values that keep it from being a number — the thing to fix for
+ * whoever publishes it (ADR-063 §決定 5).
+ */
+function ColumnRoleCell({ role }: { role: ColumnRoleView }) {
+  const t = useTranslations('resource')
+  const basis = role.roleBasis
+  const percent = basis.share !== undefined ? Math.round(basis.share * 100) : 0
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Badge variant="outline">{t(`fieldRoles.${role.role}`)}</Badge>
+      <span className="text-xs text-muted-foreground">
+        {t(`fieldRoleBasis.${basis.rule}`, { percent, hint: basis.hint ?? '' })}
+        {basis.examples && basis.examples.length > 0 && (
+          <> {t('fieldRoleNotNumbers', { values: basis.examples.join(t('fieldRoleSeparator')) })}</>
+        )}
+      </span>
+    </div>
   )
 }

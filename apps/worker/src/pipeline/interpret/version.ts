@@ -25,6 +25,7 @@ import {
 import { HeavyTooLargeError, runHeavy } from '@/heavy'
 import { countTitleRows } from './csv-title-rows'
 import type { PipelineContext } from '../types'
+import type { InterpretedProfile } from './csv-profile'
 import { MAX_CSV_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
@@ -32,6 +33,9 @@ export interface InterpretedTable {
   /** The Parquet on local disk. Gone once the callback returns. */
   parquetPath: string
   schema: ResourceSchema
+  /** The table profile (ADR-063), where one was asked for; its artifact is on
+   *  local disk until the callback returns. */
+  profile?: InterpretedProfile
 }
 
 export interface InterpretOutcome<T> {
@@ -77,13 +81,16 @@ const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
  * @param fmt - lowercased format; the caller has already established that this
  *   is one of the tabular ones. Whether it is within the interpret cap is this
  *   function's to answer, so both callers give one answer.
+ * @param opts.profile - write the profile artifact too (ADR-063), for a caller
+ *   that publishes one.
  */
 export async function withInterpretedVersion<T>(
   source: { storageKey: string; size: number },
   fmt: string,
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
-  onEncoding?: (encoding: string) => Promise<void>
+  onEncoding?: (encoding: string) => Promise<void>,
+  opts: { profile?: boolean } = {}
 ): Promise<InterpretOutcome<T>> {
   // Too large to interpret. Answered here rather than by each caller, so the
   // pipeline and the lake retry give the same answer — and answered as an
@@ -136,6 +143,7 @@ export async function withInterpretedVersion<T>(
     }
 
     const parquetPath = `${csvPath}.parquet`
+    const profilePath = opts.profile ? `${csvPath}.profile.ndjson.zst` : undefined
     // In the heavy process, where a file that outgrows the memory takes that
     // process and not the worker (ADR-059). Recorded like the bounds above:
     // interpreting it again on the same task would end the same way, and the
@@ -143,14 +151,14 @@ export async function withInterpretedVersion<T>(
     let interpreted
     try {
       interpreted = await runHeavy(
-        { kind: 'interpret-csv', csvPath, parquetPath, skipRows: titleRows },
+        { kind: 'interpret-csv', csvPath, parquetPath, skipRows: titleRows, profilePath },
         ctx.assertHeld
       )
     } catch (err) {
       if (!(err instanceof HeavyTooLargeError)) throw err
       return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
     }
-    const { schema, reason, rowGroupRows } = interpreted
+    const { schema, reason, rowGroupRows, profile } = interpreted
     // And the source is dead once it has been interpreted. What the callback
     // does next — an upload, a wait on the catalog-wide lock — would hold it
     // for nothing.
@@ -160,7 +168,12 @@ export async function withInterpretedVersion<T>(
     // is what stops "no preview" reading as "not interpreted yet".
     if (reason) return { encoding, schema, reason }
 
-    return { encoding, schema, rowGroupRows, used: await use({ parquetPath, schema }) }
+    return {
+      encoding,
+      schema,
+      rowGroupRows,
+      used: await use({ parquetPath, schema, ...(profile && { profile }) }),
+    }
   } finally {
     // Every file this made lives in the directory this made, so one removal
     // covers whatever a given path left behind.

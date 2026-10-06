@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { resource as resourceTable, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { ResourceSchema } from '@kukan/shared'
 import { createTestApp, mockStorage, testEnv } from '../test-helpers/test-app'
@@ -836,5 +836,26 @@ describe('GET /api/v1/resources/:id/schema', () => {
     expect(
       (await (await app.request(`/api/v1/resources/${open}/schema`)).json()).odataRefusal
     ).toBe(null)
+  })
+
+  it("serves each column's role beside the schema, without the values (ADR-063)", async () => {
+    const id = await createResource()
+    const profile = {
+      columns: [{ role: 'category', roleBasis: { rule: 'other' }, values: ['a', 'b'] }],
+    }
+    await db.execute(sql`
+      UPDATE resource_pipeline SET profile = ${JSON.stringify(profile)}::jsonb
+      WHERE resource_id = ${id}::uuid
+    `)
+    const body = await (await app.request(`/api/v1/resources/${id}/schema`)).json()
+    expect(body.columnRoles).toEqual([{ role: 'category', roleBasis: { rule: 'other' } }])
+    // A profile this reader cannot read is no profile, not a broken schema
+    await db.execute(sql`
+      UPDATE resource_pipeline SET profile = '{"columns": [{"role": "future"}]}'::jsonb
+      WHERE resource_id = ${id}::uuid
+    `)
+    const unknown = await (await app.request(`/api/v1/resources/${id}/schema`)).json()
+    expect(unknown.columnRoles).toBeNull()
+    expect(unknown.queryable).toBe(true)
   })
 })

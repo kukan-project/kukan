@@ -66,6 +66,10 @@ describe('executeInterpret', () => {
     upload = captureUpload(ctx)
   })
 
+  /** The preview's uploads, apart from the profile uploaded beside it (ADR-063). */
+  const previewUploads = () =>
+    ctx.putObject.mock.calls.filter(([key]) => String(key).endsWith('.parquet'))
+
   function mockStorageDownload(content: string) {
     ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from(content)))
   }
@@ -88,6 +92,15 @@ describe('executeInterpret', () => {
       // Read back from the written file, so a fixture of two rows reports two
       // rather than the row group size asked for (ADR-055).
       rowGroupRows: 2,
+      // The roles beside the schema rather than on it (ADR-063), and the
+      // artifact uploaded beside the preview
+      profile: {
+        columns: [
+          { role: 'category', roleBasis: { rule: 'other' }, values: ['Alice', 'Bob'] },
+          { role: 'measure', roleBasis: { rule: 'typed' } },
+        ],
+        key: previewKeyMatching('pkg-1', 'res-1', 'profile\\.ndjson\\.zst'),
+      },
       schema: {
         rowCount: 2,
         columns: [
@@ -111,7 +124,7 @@ describe('executeInterpret', () => {
         ],
       },
     })
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(previewUploads()).toHaveLength(1)
 
     const [key, , meta] = ctx.putObject.mock.calls[0]
     // Unique per run so a later run cannot rewrite it (ADR-043 layer 2).
@@ -159,7 +172,7 @@ describe('executeInterpret', () => {
     )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-2', 'parquet'))
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(previewUploads()).toHaveLength(1)
     // The columns, not just "a Parquet came out": skipping one line too many
     // hands DuckDB the header as data and the first data row as the header,
     // which a preview-key assertion cannot see.
@@ -249,7 +262,7 @@ describe('executeInterpret', () => {
     )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-3', 'parquet'))
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(previewUploads()).toHaveLength(1)
   })
 
   it('should store all rows without truncation', async () => {
@@ -269,7 +282,7 @@ describe('executeInterpret', () => {
 
     // Parquet stores all rows (no 200-row limit)
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-4', 'parquet'))
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(previewUploads()).toHaveLength(1)
   })
 
   it('hands the interpreted table over while it is still on disk', async () => {
@@ -679,7 +692,8 @@ describe('executeInterpret', () => {
     )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-13', 'parquet'))
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    // The preview, and the profile listing the values of `name` (ADR-063)
+    expect(ctx.putObject).toHaveBeenCalledTimes(2)
   })
 
   it('should detect and convert Shift_JIS encoding', async () => {
@@ -709,7 +723,7 @@ describe('executeInterpret', () => {
     )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-16', 'parquet'))
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(previewUploads()).toHaveLength(1)
   })
 
   it('should handle multiple title rows before header', async () => {
@@ -726,7 +740,7 @@ describe('executeInterpret', () => {
     )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-15', 'parquet'))
-    expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(previewUploads()).toHaveLength(1)
     expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city', 'country'])
   })
 

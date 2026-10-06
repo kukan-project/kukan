@@ -16,7 +16,8 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
       return (await interpretCsv(
         request.csvPath,
         request.parquetPath,
-        request.skipRows
+        request.skipRows,
+        request.profilePath
       )) as HeavyResult<R>
     }
     case 'extract-text': {

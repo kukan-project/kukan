@@ -559,7 +559,11 @@ resourcesRouter.get('/:id/schema', async (c) => {
   const user = c.get('user')
   // Same visibility check as preview/download — the schema reveals the data's shape.
   const { resource: res, pkg } = await new ResourceService(db).getByIdWithOwnership(id, user)
-  const target = await new PipelineService(db).getQueryTarget(id)
+  const pipeline = new PipelineService(db)
+  const [target, profile] = await Promise.all([
+    pipeline.getQueryTarget(id),
+    pipeline.getProfile(id),
+  ])
   // Whether `/odata/v1/resources/:id` serves this table, why not when it does
   // not, what identifies its rows and whether a page of it may fail to read —
   // one answer, shared with the MCP tool that reports the same four things
@@ -579,6 +583,9 @@ resourcesRouter.get('/:id/schema', async (c) => {
     odataKey: feed.key,
     primaryKey: primaryKeyOf(res.columnSettings),
     schema: target?.schema ?? null,
+    // Each column's role (ADR-063), at its position in `schema`. Without the
+    // values: get_resource_schema is where an agent reads those.
+    columnRoles: profile?.columns.map(({ role, roleBasis }) => ({ role, roleBasis })) ?? null,
   })
 })
 

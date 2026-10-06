@@ -28,9 +28,10 @@ import {
   SIGN_OFF_MIN_MISSING,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
-  STATS_COLUMNS_PER_QUERY,
 } from '@/config'
 import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
+import { aggregateByColumn } from './column-batches'
+import { profileTable, type InterpretedProfile } from './csv-profile'
 
 /** A DuckDB type name, folded to the semantic type persisted on the schema. */
 function semanticType(duckType: string): ResourceColumnType {
@@ -133,6 +134,8 @@ export interface InterpretedCsv {
    * which lines were refused, because that is what there is to act on.
    */
   reason?: NoTableReason
+  /** The table profile (ADR-063), where one was asked for. */
+  profile?: InterpretedProfile
 }
 
 /**
@@ -141,11 +144,14 @@ export interface InterpretedCsv {
  * @param skipRows - leading rows to drop before the header, from the caller's
  *   title-row scan. DuckDB finds the header but has no notion of the title
  *   lines Japanese spreadsheets put above it.
+ * @param profilePath - where to write the profile artifact (ADR-063), when the
+ *   caller publishes one; a lake retry wants the table alone.
  */
 export async function interpretCsv(
   csvPath: string,
   parquetPath: string,
-  skipRows: number
+  skipRows: number,
+  profilePath?: string
 ): Promise<InterpretedCsv> {
   // Somewhere of its own to spill, because the load below is meant to: a
   // spill file shared with the lake instance this process also holds fails
@@ -221,10 +227,24 @@ export async function interpretCsv(
     // though — a row trimmed from the table cannot be traced back to a line of
     // the file, since blank lines and quoted newlines are gone by then.
     const droppedRows = dropped.count + trimmed
+    const described = await describeColumns(conn, columns, rowCount)
+    // The table profile (ADR-063), on the table the Parquet was written from:
+    // the same rows, and no second read of anything. Only for a caller that
+    // publishes it — a lake retry wants the table alone. Search material, so a
+    // failure here costs the profile and not the preview.
+    const profile = profilePath
+      ? await profileTable(conn, columns, described, rowCount, profilePath).catch(
+          (err: unknown): InterpretedProfile => ({
+            columns: [],
+            error: err instanceof Error ? err.message : String(err),
+          })
+        )
+      : undefined
     return {
       rowGroupRows: rowGroupRows ?? undefined,
+      ...(profile && { profile }),
       schema: {
-        columns: await describeColumns(conn, columns, rowCount),
+        columns: described,
         rowCount,
         ...(droppedRows > 0 && { droppedRows }),
         ...(dropped.lines.length > 0 && {
@@ -517,12 +537,11 @@ async function describeColumns(
   columns: Column[],
   rowCount: number
 ): Promise<ResourceColumn[]> {
-  const row: Record<string, unknown> = {}
-  for (let start = 0; start < columns.length; start += STATS_COLUMNS_PER_QUERY) {
-    // Aliased by the column's global position, so the batches merge into one
-    // row (batched at all: see STATS_COLUMNS_PER_QUERY).
-    const selects = columns.slice(start, start + STATS_COLUMNS_PER_QUERY).flatMap((c, j) => {
-      const i = start + j
+  const row = await aggregateByColumn(
+    conn,
+    columns.map((_, i) => i),
+    (i) => {
+      const c = columns[i]
       const col = sqlIdentifier(c.name)
       const numeric = ['integer', 'float'].includes(semanticType(c.duckType))
       return [
@@ -532,12 +551,8 @@ async function describeColumns(
           ? [`min(${col})::VARCHAR AS c${i}_min`, `max(${col})::VARCHAR AS c${i}_max`]
           : []),
       ]
-    })
-    const [batch] = (
-      await conn.runAndReadAll(`SELECT ${selects.join(', ')} FROM t`)
-    ).getRowObjectsJson() as Record<string, unknown>[]
-    Object.assign(row, batch)
-  }
+    }
+  )
 
   return columns.map((c, i) => {
     const type = semanticType(c.duckType)

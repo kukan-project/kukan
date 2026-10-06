@@ -10,10 +10,15 @@
  * the run's identity, and no call site should have to carry it.
  */
 
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resourcePipeline } from '@kukan/db'
-import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
+import { pipelineObjectKeys, resourcePipeline } from '@kukan/db'
+import type {
+  PipelineStatus,
+  PipelineStepStatus,
+  PipelineStepName,
+  TableProfile,
+} from '@kukan/shared'
 import { heldBy, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { PARKED_UNTIL } from '@kukan/api/services/storage-pointer'
 
@@ -93,73 +98,70 @@ export class StepTracker {
   }
 
   /**
-   * Move the preview pointer and replace the metadata describing it, parking
-   * the objects that leaves behind (ADR-043).
+   * Move the preview pointer and replace the metadata and the table profile
+   * describing it (ADR-063), parking the objects that leaves behind (ADR-043).
    *
-   * Two of them: the preview this run replaces, and the previous run's text
-   * head — the metadata is replaced wholesale rather than merged, so its
-   * pointer goes with it and nothing else would ever park that object.
-   *
-   * One statement, because the keys being parked are whatever the row holds
-   * *now*, not what this run read at startup. Deletion is the sweep's job.
+   * The previous run's text head goes too: the metadata is replaced wholesale
+   * rather than merged, so its pointer goes with it and nothing else would ever
+   * park that object.
    */
-  async updateInterpretResult(previewKey: string | null, metadata: Record<string, unknown>) {
-    await this.db.execute(sql`
-      WITH before AS (
-        SELECT id, preview_key, metadata ->> 'textHeadKey' AS text_head
-        FROM resource_pipeline WHERE ${this.held} FOR UPDATE
-      ),
-      moved AS (
-        UPDATE resource_pipeline p
-        SET preview_key = ${previewKey}::text,
-            metadata = ${JSON.stringify(metadata)}::jsonb,
-            updated = NOW()
-        FROM before b
-        WHERE p.id = b.id
-        RETURNING b.preview_key AS previous_preview, b.text_head AS previous_text_head
-      ),
-      parked AS (
-        INSERT INTO orphaned_object (key, expires_at)
-        SELECT key, ${PARKED_UNTIL}
-        FROM moved, LATERAL (VALUES (previous_preview), (previous_text_head)) v(key)
-        WHERE key IS NOT NULL
-        ON CONFLICT (key) DO NOTHING
-      )
-      -- The preview is referenced now, so its write-ahead record is done. Taken
-      -- from moved so a run that lost the claim does not drop the record of a
-      -- preview its own row never came to reference (ADR-045).
-      DELETE FROM orphaned_object o USING moved WHERE o.key = ${previewKey}::text
-    `)
+  async updateInterpretResult(
+    previewKey: string | null,
+    metadata: Record<string, unknown>,
+    profile: TableProfile | null
+  ) {
+    await this.movePointers(sql`
+      preview_key = ${previewKey}::text,
+      metadata = ${JSON.stringify(metadata)}::jsonb,
+      profile = ${profile ? JSON.stringify(profile) : null}::jsonb`)
   }
 
   /**
    * Merge into the pipeline's metadata, parking the text head the merge
-   * replaces — the one pointer that lives inside metadata rather than in a
-   * column of its own (ADR-043). Reached when the interpretation threw and so
-   * left the previous metadata in place; one that succeeded has already parked it.
+   * replaces. Reached when the interpretation threw and so left the previous
+   * metadata in place; one that succeeded has already parked it.
    */
   async mergeMetadata(metadata: Record<string, unknown>) {
+    await this.movePointers(
+      sql`metadata = COALESCE(p.metadata, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb`
+    )
+  }
+
+  /**
+   * Rewrite the row with `set`, parking every object it named before and does
+   * not name after, and settling the write-ahead record of every object it
+   * names now (ADR-045).
+   *
+   * One statement, because the keys being parked are whatever the row holds
+   * *now*, not what this run read at startup. Deletion is the sweep's job. The
+   * keys are the one list of them (`pipelineObjectKeys`), so a pointer added
+   * there is parked here without another word.
+   */
+  private async movePointers(set: SQL) {
     await this.db.execute(sql`
       WITH before AS (
-        SELECT id, metadata ->> 'textHeadKey' AS text_head
-        FROM resource_pipeline WHERE ${this.held} FOR UPDATE
+        SELECT id, ARRAY[${sql.join(pipelineObjectKeys('r'), sql`, `)}] AS keys
+        FROM resource_pipeline r WHERE ${this.held} FOR UPDATE
       ),
-      merged AS (
+      moved AS (
         UPDATE resource_pipeline p
-        SET metadata = COALESCE(p.metadata, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb,
-            updated = NOW()
+        SET ${set}, updated = NOW()
         FROM before b
         WHERE p.id = b.id
-        RETURNING b.text_head AS previous_key, p.metadata ->> 'textHeadKey' AS new_key
+        RETURNING b.keys AS previous,
+                  array_remove(ARRAY[${sql.join(pipelineObjectKeys('p'), sql`, `)}], NULL) AS current
       ),
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)
-        SELECT previous_key, ${PARKED_UNTIL} FROM merged
-        WHERE previous_key IS NOT NULL AND previous_key IS DISTINCT FROM new_key
+        SELECT key, ${PARKED_UNTIL}
+        FROM moved, unnest(moved.previous) AS key
+        WHERE key IS NOT NULL AND key <> ALL (moved.current)
         ON CONFLICT (key) DO NOTHING
       )
-      -- The text head this merge names is referenced now.
-      DELETE FROM orphaned_object o USING merged WHERE o.key = merged.new_key
+      -- Referenced now, so their write-ahead records are done. Taken from moved
+      -- so a run that lost the claim does not drop the record of an object its
+      -- own row never came to reference.
+      DELETE FROM orphaned_object o USING moved WHERE o.key = ANY (moved.current)
     `)
   }
 

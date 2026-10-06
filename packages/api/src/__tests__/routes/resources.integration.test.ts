@@ -1806,6 +1806,7 @@ describe('Resources API Routes', () => {
         odataWideRows: false,
         primaryKey: null,
         schema: null,
+        columnRoles: null,
       })
     })
 
@@ -1826,6 +1827,7 @@ describe('Resources API Routes', () => {
         odataWideRows: false,
         primaryKey: null,
         schema,
+        columnRoles: null,
       })
     })
 
@@ -1845,6 +1847,7 @@ describe('Resources API Routes', () => {
         odataWideRows: false,
         primaryKey: null,
         schema: empty,
+        columnRoles: null,
       })
     })
 
@@ -1865,6 +1868,7 @@ describe('Resources API Routes', () => {
         odataWideRows: false,
         primaryKey: null,
         schema,
+        columnRoles: null,
       })
     })
 
@@ -1884,6 +1888,7 @@ describe('Resources API Routes', () => {
         odataWideRows: false,
         primaryKey: null,
         schema,
+        columnRoles: null,
       })
     })
 
@@ -1908,6 +1913,7 @@ describe('Resources API Routes', () => {
         odataWideRows: false,
         primaryKey: ['id'],
         schema,
+        columnRoles: null,
       })
     })
 

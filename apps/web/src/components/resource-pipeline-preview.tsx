@@ -16,7 +16,7 @@ import { useTranslations } from 'next-intl'
 import { isCsvFormat, type OdataKey, type ResourceSchema } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
-import { ResourceFields } from './resource-fields'
+import { ResourceFields, type ColumnRoleView } from './resource-fields'
 import { DataApiDialog } from './data-api-dialog'
 import { OdataDialog, type ReportedRefusal } from './odata-dialog'
 import { useFormattedDateTime } from './date-time'
@@ -67,6 +67,7 @@ export function ResourcePipelinePreview({
     odataWideRows: boolean
     odataKey: OdataKey | null
     schema: ResourceSchema | null
+    columnRoles: ColumnRoleView[] | null
     primaryKey: string[] | null
   }>(
     isCsvFormat(format)
@@ -158,6 +159,8 @@ export function ResourcePipelinePreview({
             key={`fields-${resourceId}-${previewKey}`}
             resourceId={resourceId}
             primaryKey={schemaData?.primaryKey}
+            schema={schemaData?.schema}
+            columnRoles={schemaData?.columnRoles}
           />
         </div>
       )}
