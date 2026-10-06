@@ -11,6 +11,7 @@ import {
   packageGroup,
   packageTable,
   resource,
+  resourcePipeline,
   type Transaction,
 } from '@kukan/db'
 import {
@@ -147,6 +148,31 @@ describe('syncDueSearchDocs', () => {
     expect(bulkIndexResources.mock.calls[0][0].map((d) => d.id).sort()).toEqual([a, b].sort())
     expect(await dueAt(a)).toBeNull()
     expect(await dueAt(b)).toBeNull()
+  })
+
+  it("carries a table's column names onto its document (ADR-063)", async () => {
+    const table = await seed()
+    const file = await seed()
+    await db.insert(resourcePipeline).values({
+      resourceId: table,
+      metadata: {
+        schema: {
+          rowCount: 1,
+          columns: [
+            { name: '施設名', type: 'string', nullable: false, nullCount: 0 },
+            { name: '所在地', type: 'string', nullable: false, nullCount: 0 },
+          ],
+        },
+      },
+    })
+    const { search, bulkIndexResources } = fakeSearch()
+
+    await syncDueSearchDocs(db, search)
+
+    const docs = Object.fromEntries(bulkIndexResources.mock.calls[0][0].map((d) => [d.id, d]))
+    expect(docs[table].columns).toEqual(['施設名', '所在地'])
+    // A resource with no table has no such field, rather than an empty one
+    expect(docs[file]).not.toHaveProperty('columns')
   })
 
   it('writes nothing for a resource with no mark', async () => {

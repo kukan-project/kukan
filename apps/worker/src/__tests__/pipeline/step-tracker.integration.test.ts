@@ -117,6 +117,27 @@ describe('updateInterpretResult', () => {
     expect((await tracked()).sort()).toEqual([OLD_PROFILE, OLD_PREVIEW].sort())
   })
 
+  it('marks the search document when the table is read with other column names (ADR-063)', async () => {
+    const schemaOf = (...names: string[]) => ({
+      rowCount: 1,
+      columns: names.map((name) => ({ name, type: 'string', nullable: false, nullCount: 0 })),
+    })
+    const dueAt = async () =>
+      (await db.select().from(resource).where(eq(resource.id, resourceId)))[0].docSyncDueAt
+    const tracker = new StepTracker(db, claim)
+
+    await tracker.updateInterpretResult(NEW_PREVIEW, { schema: schemaOf('a') }, null)
+    expect(await dueAt()).not.toBeNull()
+
+    await db.update(resource).set({ docSyncDueAt: null }).where(eq(resource.id, resourceId))
+    await tracker.updateInterpretResult(NEW_PREVIEW, { schema: schemaOf('a') }, null)
+    // The same names: the document says what it said
+    expect(await dueAt()).toBeNull()
+
+    await tracker.updateInterpretResult(NEW_PREVIEW, { schema: schemaOf('a', 'b') }, null)
+    expect(await dueAt()).not.toBeNull()
+  })
+
   it('leaves the preview tracked when the run no longer holds the claim', async () => {
     await withPreviousRun()
     await reserve(NEW_PREVIEW)

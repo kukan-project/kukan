@@ -239,6 +239,13 @@ export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 export const TEXT_HEAD_ARTIFACT_SIZE = 64 * 1024
 
 /**
+ * Bytes of a table indexed by its contents, when the interpretation made no
+ * table of it to profile (ADR-063): its headings and first rows, not the codes
+ * and counts that fill the rest.
+ */
+export const UNPROFILED_TABLE_HEAD_SIZE = 64 * 1024
+
+/**
  * How much of a PDF officeparser reads at once, as the file's bytes over its
  * pages. Read whole, a document's pages leave their fonts and images in the
  * parser's caches: a 52 MB PDF of scans took 1.4 GB of heap for 0.5 MB of

@@ -6,6 +6,9 @@
 
 Stage 1 (build and store the profile; the index does not change) is implemented — 2026-10-06
 
+Stage 2 (put it into today's OpenSearch) is implemented. Overriding roles by hand and showing "matched a
+column name" come later — 2026-10-06
+
 The text index for CSV/TSV moves from chunks of the file's contents to a **table profile**. The profile
 consists of the column names, the values of name and categorical columns, the ranges of numeric and date
 columns, the row and column counts, and the text of free-text columns (with context from the same row).
@@ -241,6 +244,20 @@ The reason for a match is shown as "matched a column name" or "matched a value" 
    set first
    - Start by rebuilding the artifact into text for the chunks, without the row numbers and counts (Decision
      §7). If values turn out to weigh too little, try splitting them into fields by their share of rows
+   - Implemented: `columns` on resource documents (weight 2), chunks rebuilt from the artifact, and a
+     pending-sync flag that syncs the resource document again when its column names change. Value lines
+     break every 120 characters, repeating the heading
+   - What Interpret made no table of (too many columns, rows it would not read, not enough memory and so
+     on), and tables whose profile failed, are indexed by the first 64KB of their contents. The headings
+     and first rows help find the table; the rest is answer codes and numbers that search has no use for.
+     Locally, one survey table of 978 columns took 22MB (15% of the table content) indexed whole
+   - A content snippet keeps at most 60 characters before its first match (from the start of the match's
+     line when that is near). OpenSearch's highlighter starts a fragment some 300 characters before the
+     match, so on long lines of values joined by "、" the match fell outside the few lines a result card
+     shows. This applies to all content, not only tables
+   - Outcome: passed ("Stage 2 measurements" below). The golden set had no queries that find a table by a
+     value, so 13 values that appear nowhere in the metadata were added as type `value`
+   - Moved on: overriding a role by hand (Decision §5), showing "matched a column name" (Decision §9)
 3. **Hand it over to ADR-061's PostgreSQL path** (Decision §8)
 
 ## Trial
@@ -312,6 +329,33 @@ The stage 1 implementation was run again over the same 285 files. What changed:
   0.6s; the sizes were 60.1MB and 53.6MB. Memory while reading grew by 14–19MB either way (zstd's window is
   2MB). On the 285 real files the sizes differed by 3% (gzip 37.8MB)
 
+### Stage 2 measurements
+
+In the local development environment (168 datasets, 493 resources), the index up to stage 1 was compared
+with the stage 2 index after reprocessing every resource. Sizes were measured after a force merge to one
+segment.
+
+| Item                                 | Up to stage 1 | Stage 2        |
+| ------------------------------------ | ------------- | -------------- |
+| Whole index                          | 348.4MB       | 234.4MB (−33%) |
+| Content chunks                       | 1,197         | 841            |
+| Table content (chunks / text)        | 832 / 294.7MB | 476 / 115.5MB  |
+| Resource documents with column names | —             | 272            |
+| Golden set overall (nDCG@10)         | 51% → 88%     | 52% → 88%      |
+| 13 value queries (R@10 / nDCG@10)    | 100% / 85%    | 100% / 85%     |
+
+- The golden set is keyword → hybrid. Each type (synonym 95%, natural 89%, exact 100%, word 71%) is
+  unchanged, and no query dropped. The value queries, which the file-content index already answered,
+  rank the same on the profile
+- Table content fell below 40%
+- Comparing only how value lines break: 244.6MB at 4,096 bytes and 246.3MB at 120 characters, with
+  identical results on every query. 120 characters puts the column name at the head of a snippet more
+  often
+- Cutting CSV made into no table to its first 64KB took 246.3MB to 234.4MB. The only change in the
+  evaluation was one query's nDCG (39% → 43%)
+- The weight of `columns` stays at 2, untuned. No golden-set query is found by column names alone, so its
+  effect is not measured
+
 ## Consequences
 
 - **CSV size limits.** The profile does not grow with the file, so the index no longer decides the size
@@ -319,7 +363,8 @@ The stage 1 implementation was run again over the same 285 files. What changed:
   ingest path and by the time and memory of Interpret and row-level diffs (ADR-043 layer 2), not by this
   ADR
 
-- **Index size.** The tabular share (70% of the text locally) becomes one profile per table
+- **Index size.** The tabular share (70% of the text locally) becomes one profile per table. Locally the
+  whole index shrank by a third (Stage 2 measurements)
 - **Searches that stop matching.** Values beyond the list's cap, and numeric or identifier cells, no longer
   find the table
 - **Highlights.** Highlights in a table's text land on the profile sentences rather than the file's contents
@@ -329,14 +374,17 @@ The stage 1 implementation was run again over the same 285 files. What changed:
 ## Open issues
 
 - Thresholds for deciding roles
+- The weight of `columns`, tuned once the golden set has queries that find a table by its column names
+- In CSV made into no table, values past the first 64KB are not indexed. Fix the interpretation so the
+  profile picks them up (such as rows dropped over `- ` in numeric columns)
 - Free text in English. The local data has no column of English prose, so whether six or more words and
   the headings are enough is unchecked. Western punctuation needs a use that does not catch names. English
   addresses of six words or more (`JOHN F KENNEDY AIRPORT, QUEENS (JAMAICA), NY, 11430`) cannot be told
   from sentences and come out as free text
 - Finding a table by a code (postal codes, municipality codes and so on): index some identifier values, or
   make up with a column search in DuckDB
-- CSV without a Parquet (beyond the Parquet size limit): index the head of the contents as today, decide
-  roles from a sample of the first rows, or index column names only
+- CSV without a Parquet (beyond the Parquet size limit): whether to decide roles from a sample of the
+  first rows. For now the first 64KB of the contents is indexed
 - The ADR for personal-data detection (making ADR-006's `PiiScanner` concrete)
 - Whether column names join the material for resource embeddings (ADR-054)
 - Using numeric and date ranges as filters (together with extended-metadata filters)

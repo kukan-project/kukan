@@ -23,10 +23,11 @@ import { mean, pct, responseDetail } from './eval-utils.js'
 const K = 10
 // Default golden-set location, independent of the working directory
 const DEFAULT_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'golden-queries.yaml')
+const QUERY_TYPES = ['synonym', 'natural', 'exact', 'word', 'value'] as const
 
 interface GoldenQuery {
   query: string
-  type: 'synonym' | 'natural' | 'exact' | 'word'
+  type: (typeof QUERY_TYPES)[number]
   relevant: string[]
   /**
    * The resources inside those datasets that answer the query, by name.
@@ -210,7 +211,7 @@ async function main() {
   }
 
   console.log('\nmeans by type (keyword → hybrid):')
-  for (const type of ['synonym', 'natural', 'exact', 'word'] as const) {
+  for (const type of QUERY_TYPES) {
     const subset = rows.filter((row) => row.q.type === type)
     if (subset.length === 0) continue
     const kw = {
@@ -236,7 +237,7 @@ async function main() {
   const withResources = rows.filter((row) => row.hybridRes)
   if (withResources.length > 0) {
     console.log(`\nresources surfaced (keyword → hybrid), ${withResources.length} queries:`)
-    for (const type of ['synonym', 'natural', 'exact', 'word'] as const) {
+    for (const type of QUERY_TYPES) {
       const subset = withResources.filter((row) => row.q.type === type)
       if (subset.length === 0) continue
       const m = (pick: (row: Row) => ResourceMetrics | undefined, key: keyof ResourceMetrics) =>

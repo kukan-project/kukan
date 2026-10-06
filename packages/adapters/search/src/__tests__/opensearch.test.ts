@@ -1414,6 +1414,30 @@ describe('OpenSearchAdapter', () => {
       )
     })
 
+    it('starts a snippet near its first match, from the line when that is near', async () => {
+      const far = 'あ'.repeat(200)
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              { _id: 'chunk-1', highlight: { extractedText: [`${far}<mark>子育て</mark>支援`] } },
+              {
+                _id: 'chunk-2',
+                highlight: { extractedText: [`${far}\n名称: 東<mark>子育て</mark>広場`] },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.fetchContentHighlights(['chunk-1', 'chunk-2'], '子育て')
+
+      expect(result).toEqual({
+        'chunk-1': `…${'あ'.repeat(60)}<mark>子育て</mark>支援`,
+        'chunk-2': '…名称: 東<mark>子育て</mark>広場',
+      })
+    })
+
     it('should return empty object for empty input', async () => {
       const result = await adapter.fetchContentHighlights([], 'test')
       expect(result).toEqual({})

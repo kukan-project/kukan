@@ -12,7 +12,7 @@
 
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { pipelineObjectKeys, resourcePipeline } from '@kukan/db'
+import { pipelineObjectKeys, resourcePipeline, schemaColumnNames } from '@kukan/db'
 import type {
   PipelineStatus,
   PipelineStepStatus,
@@ -136,11 +136,16 @@ export class StepTracker {
    * *now*, not what this run read at startup. Deletion is the sweep's job. The
    * keys are the one list of them (`pipelineObjectKeys`), so a pointer added
    * there is parked here without another word.
+   *
+   * The table's column names are in the resource's search document (ADR-063
+   * §決定 7), so a rewrite that changes them marks it, in the same statement:
+   * a sync between a mark and the write would clear it over the old names.
    */
   private async movePointers(set: SQL) {
     await this.db.execute(sql`
       WITH before AS (
-        SELECT id, ARRAY[${sql.join(pipelineObjectKeys('r'), sql`, `)}] AS keys
+        SELECT id, resource_id, ARRAY[${sql.join(pipelineObjectKeys('r'), sql`, `)}] AS keys,
+               ${schemaColumnNames(sql`r.metadata`)} AS columns
         FROM resource_pipeline r WHERE ${this.held} FOR UPDATE
       ),
       moved AS (
@@ -149,7 +154,13 @@ export class StepTracker {
         FROM before b
         WHERE p.id = b.id
         RETURNING b.keys AS previous,
-                  array_remove(ARRAY[${sql.join(pipelineObjectKeys('p'), sql`, `)}], NULL) AS current
+                  array_remove(ARRAY[${sql.join(pipelineObjectKeys('p'), sql`, `)}], NULL) AS current,
+                  b.resource_id,
+                  b.columns IS DISTINCT FROM ${schemaColumnNames(sql`p.metadata`)} AS renamed
+      ),
+      marked AS (
+        UPDATE resource SET doc_sync_due_at = NOW()
+        FROM moved WHERE resource.id = moved.resource_id AND moved.renamed
       ),
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)

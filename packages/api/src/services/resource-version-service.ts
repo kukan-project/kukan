@@ -20,7 +20,7 @@ import {
   sql,
 } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
-import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
+import { resource, resourceVersion, resourcePipeline, auditLog, schemaColumnNames } from '@kukan/db'
 import {
   canIdentifyRows,
   ConflictError,
@@ -3099,6 +3099,10 @@ export class ResourceVersionService {
    * across. Every caller discards what was derived from the retracted content
    * as well, the profile with it (`discardDerivedArtifacts`), and the rebuild it
    * queues makes a new one.
+   *
+   * The column names are in the resource's search document, so an adoption
+   * that changes them marks it, in the same statement as the write. Clearing
+   * the content queues no rebuild to notice the names it took away.
    */
   private async adoptVersionInterpretation(
     db: Database | Transaction,
@@ -3107,17 +3111,27 @@ export class ResourceVersionService {
   ): Promise<void> {
     const schema = restored?.schema ?? null
     await db.execute(sql`
-      UPDATE resource_pipeline
-      SET metadata = ${
-        schema
-          ? sql`COALESCE(metadata, '{}'::jsonb) || ${JSON.stringify({
-              schema,
-              sourceHash: restored!.hash,
-            })}::jsonb`
-          : sql`COALESCE(metadata, '{}'::jsonb) - 'schema' - 'sourceHash'`
-      },
-          updated = NOW()
-      WHERE resource_id = ${resourceId}::uuid
+      WITH before AS (
+        SELECT id, ${schemaColumnNames(sql`metadata`)} AS columns
+        FROM resource_pipeline WHERE resource_id = ${resourceId}::uuid FOR UPDATE
+      ),
+      moved AS (
+        UPDATE resource_pipeline p
+        SET metadata = ${
+          schema
+            ? sql`COALESCE(metadata, '{}'::jsonb) || ${JSON.stringify({
+                schema,
+                sourceHash: restored!.hash,
+              })}::jsonb`
+            : sql`COALESCE(metadata, '{}'::jsonb) - 'schema' - 'sourceHash'`
+        },
+            updated = NOW()
+        FROM before b
+        WHERE p.id = b.id
+        RETURNING b.columns IS DISTINCT FROM ${schemaColumnNames(sql`p.metadata`)} AS renamed
+      )
+      UPDATE resource SET doc_sync_due_at = NOW()
+      FROM moved WHERE resource.id = ${resourceId}::uuid AND moved.renamed
     `)
   }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'node:stream'
+import { zstdCompressSync } from 'node:zlib'
 import { executeIndexContent } from '../pipeline/steps/index-content'
 import type { InterpretResult } from '../pipeline/steps/interpret'
 import {
@@ -10,6 +11,7 @@ import type { ContentDoc } from '@kukan/search-adapter'
 import { xlsxBuffer } from './test-helpers/xlsx'
 import { OfficeParser } from 'officeparser'
 import type { HeavyRequest } from '../heavy/protocol'
+import { UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
 
 const mockToText = vi.fn().mockReturnValue('Extracted document text\nPage 2 content')
 const mockTo = vi.fn().mockImplementation(async () => ({ value: mockToText() }))
@@ -245,6 +247,149 @@ describe('executeIndexContent', () => {
       const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).toBe('東京')
       expect(result!.contentIndexed).toBe(true)
+    })
+  })
+
+  describe('tables by their profile (ADR-063)', () => {
+    const artifact = (lines: object[]) =>
+      bufferToStream(zstdCompressSync(Buffer.from(lines.map((l) => JSON.stringify(l)).join('\n'))))
+    const profiled = (profile: InterpretResult['profile']): InterpretResult => ({
+      ...defaultInterpretResult,
+      profile,
+    })
+    const texts = (ctx: PipelineContextMock) =>
+      ctx.indexContent.mock.calls.map(([doc]) => (doc as ContentDoc).extractedText)
+
+    it('indexes the values and the sentences, not the file', async () => {
+      const ctx = createMockCtx()
+      ctx.storage.download.mockResolvedValue(
+        artifact([
+          { kind: 'value', column: '区分', text: '公園', count: 3, row: 1 },
+          { kind: 'value', column: '区分', text: '広場', count: 1, row: 2 },
+          { kind: 'value', column: '施設名', text: '東公園', count: 1, row: 1 },
+          { kind: 'sentence', column: null, text: '備考: 駐車場あり。', count: 1, row: 1 },
+        ])
+      )
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'CSV',
+        profiled({ columns: [], key: 'previews/pkg-1/res-1.t.profile.ndjson.zst' }),
+        ctx
+      )
+
+      expect(ctx.storage.download).toHaveBeenCalledWith('previews/pkg-1/res-1.t.profile.ndjson.zst')
+      expect(texts(ctx)).toEqual(['区分: 公園、広場\n施設名: 東公園\n備考: 駐車場あり。'])
+      expect(result).toMatchObject({
+        contentIndexed: true,
+        contentType: 'tabular',
+        contentChunks: 1,
+      })
+    })
+
+    it('fails the step when the artifact download breaks off', async () => {
+      const ctx = createMockCtx()
+      const compressed = zstdCompressSync(
+        Buffer.from('{"kind":"value","column":"区分","text":"公園"}\n')
+      )
+      const broken = new Readable({
+        read() {
+          this.push(compressed.subarray(0, 4))
+          this.destroy(new Error('connection reset'))
+        },
+      })
+      ctx.storage.download.mockResolvedValue(broken)
+
+      await expect(
+        executeIndexContent(
+          'res-1',
+          'pkg-1',
+          'resources/pkg-1/res-1',
+          'CSV',
+          profiled({ columns: [], key: 'k' }),
+          ctx
+        )
+      ).rejects.toThrow('connection reset')
+    })
+
+    it('puts the heading on every short line of a long list of values', async () => {
+      const ctx = createMockCtx()
+      const names = Array.from({ length: 60 }, (_, i) => `施設${String(i).padStart(4, '0')}`)
+      ctx.storage.download.mockResolvedValue(
+        artifact(
+          names.map((text, i) => ({ kind: 'value', column: '施設名', text, count: 1, row: i + 1 }))
+        )
+      )
+
+      await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'CSV',
+        profiled({ columns: [], key: 'k' }),
+        ctx
+      )
+
+      const lines = texts(ctx).join('\n').split('\n')
+      expect(lines.length).toBeGreaterThan(1)
+      expect(lines.every((l) => l.startsWith('施設名: '))).toBe(true)
+      expect(lines.every((l) => l.length <= '施設名: '.length + 120)).toBe(true)
+      expect(lines.flatMap((l) => l.slice('施設名: '.length).split('、'))).toEqual(names)
+    })
+
+    it('indexes a table with nothing to list as indexed, with no documents', async () => {
+      // Numbers and codes: indexed means the index holds what the content gives it
+      const ctx = createMockCtx()
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'CSV',
+        profiled({ columns: [] }),
+        ctx
+      )
+
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+      expect(ctx.indexContent).not.toHaveBeenCalled()
+      expect(ctx.storage.download).not.toHaveBeenCalled()
+      expect(result).toMatchObject({ contentIndexed: true, contentChunks: 0 })
+    })
+
+    it('falls back to the contents where the profile could not be made', async () => {
+      const ctx = createMockCtx()
+      ctx.storage.download.mockResolvedValue(bufferToStream(Buffer.from('a,b\n1,2\n')))
+
+      await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'CSV',
+        profiled({ columns: [], error: 'Out of Memory' }),
+        ctx
+      )
+
+      expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
+      expect(texts(ctx)).toEqual(['a,b\n1,2'])
+    })
+
+    it('indexes only the head of a table the interpretation made nothing of', async () => {
+      const ctx = createMockCtx()
+      const row = `${'1,'.repeat(499)}1`
+      const csv = `${'設問,'.repeat(499)}設問\n${`${row}\n`.repeat(200)}`
+      const size = Buffer.byteLength(csv)
+      ctx.getResource.mockResolvedValue({ ...(await ctx.getResource('res-1'))!, size })
+      ctx.storage.download.mockResolvedValue(bufferToStream(Buffer.from(csv)))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', null, ctx)
+
+      const text = texts(ctx).join('\n')
+      expect(text.startsWith('設問,')).toBe(true)
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(UNPROFILED_TABLE_HEAD_SIZE)
+      expect(Buffer.byteLength(text)).toBeGreaterThan(UNPROFILED_TABLE_HEAD_SIZE - 4)
+      expect(result).toMatchObject({ contentTruncated: true, contentOriginalSize: size })
     })
   })
 

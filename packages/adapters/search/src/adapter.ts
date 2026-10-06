@@ -65,6 +65,8 @@ export interface ResourceDoc {
   section?: string
   /** The AI-written abstract, absent when hidden or never written (ADR-053) */
   summary?: string
+  /** A table's column names, the most telling thing about it to search (ADR-063) */
+  columns?: string[]
 }
 
 /** Document stored in the kukan-contents index (extracted text for full-text search) */

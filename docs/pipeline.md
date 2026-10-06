@@ -194,6 +194,11 @@ live のプレビュー Parquet を読む — ただし `sourceHash` が live �
 | `mergeMetadata`         | `heldBy(claim)`  | 旧 text head を回収予約                              |
 | `updateStatus`          | `heldBy(claim)`  | —                                                    |
 
+回収予約をする 2 つ（`movePointers`）は、同じ文で、表の列名（`metadata.schema`）が変わったときに
+`resource.doc_sync_due_at` を立てる。列名はリソースの検索文書に載る（ADR-063）。立てる文と書き換える文が
+分かれていると、間に走った同期が古い列名で未反映フラグを下ろしてしまう。版の巻き戻しと削除で解釈を
+移す `adoptVersionInterpretation` も同じことをする。
+
 ### (b) リソースに残る書き込み — claim を条件にする（外に出せない）
 
 実行が消えても残るもの。**ここが過去に一番間違えた場所である。**

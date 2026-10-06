@@ -16,6 +16,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
+import { pipeline } from 'node:stream'
+import { createZstdDecompress } from 'node:zlib'
 import {
   isTextFormat,
   isCsvFormat,
@@ -23,6 +25,8 @@ import {
   isDocumentFormat,
   getPreviewKey,
   type ContentType,
+  type TableProfile,
+  type TableProfileLine,
 } from '@kukan/shared'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
@@ -37,7 +41,12 @@ import {
   siblingTempPath,
 } from '../node-utils'
 import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
-import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
+import {
+  MAX_CONTENT_CHUNK_SIZE,
+  MAX_FETCH_SIZE,
+  TEXT_HEAD_ARTIFACT_SIZE,
+  UNPROFILED_TABLE_HEAD_SIZE,
+} from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -101,6 +110,26 @@ export async function executeIndexContent(
     )
   }
 
+  // A table by its profile (ADR-063 §決定 7). One the interpretation made no
+  // table of — too wide, rows it would not read, too large — or whose profile
+  // failed, by the head of its contents: the rest of a table is codes and
+  // counts, which search has no use for.
+  if (contentType === 'tabular') {
+    const profile = interpretResult?.profile
+    if (profile && !profile.error) return indexTableProfile(resourceId, packageId, profile, ctx)
+    const head = await indexTextStream(
+      resourceId,
+      packageId,
+      storageKey,
+      normalizedFormat!,
+      contentType,
+      interpretResult,
+      ctx,
+      UNPROFILED_TABLE_HEAD_SIZE
+    )
+    return head.contentTruncated && res.size ? { ...head, contentOriginalSize: res.size } : head
+  }
+
   return indexTextStream(
     resourceId,
     packageId,
@@ -110,6 +139,83 @@ export async function executeIndexContent(
     interpretResult,
     ctx
   )
+}
+
+/**
+ * Index a table by its profile artifact: the values of each listed column as
+ * `列名: 値、値、…` lines, then a line per free-text sentence. Row numbers and
+ * counts stay in the artifact — the index has nowhere to use them (ADR-063
+ * §決定 7).
+ *
+ * A table with nothing to list — numbers and codes — has no artifact and no
+ * content documents, and is indexed all the same: the record says the index
+ * holds what this content gives it, which here is nothing.
+ */
+async function indexTableProfile(
+  resourceId: string,
+  packageId: string,
+  profile: TableProfile,
+  ctx: PipelineContext
+): Promise<IndexContentResult> {
+  await ctx.deleteContent(resourceId)
+  const written = profile.key
+    ? await writeChunks(
+        resourceId,
+        packageId,
+        'tabular',
+        profileLines(
+          streamUtf8Lines(
+            // pipeline, not pipe: a download that fails midway has to fail the read
+            pipeline(await ctx.storage.download(profile.key), createZstdDecompress(), () => {})
+          )
+        ),
+        ctx
+      )
+    : { chunks: 0, indexedBytes: 0, originalBytes: 0 }
+  return {
+    contentIndexed: true,
+    contentType: 'tabular',
+    contentOriginalSize: written.originalBytes,
+    contentIndexedSize: written.indexedBytes,
+    contentTruncated: false,
+    contentChunks: written.chunks,
+  }
+}
+
+/**
+ * Characters of values put on one line, its heading repeated on the next.
+ * Short, so a snippet started near its match often starts at the heading
+ * and says which column the value is in.
+ */
+const PROFILE_LINE_CHARS = 120
+
+/** The artifact's lines as text to index. */
+async function* profileLines(ndjson: AsyncIterable<string>): AsyncGenerator<string> {
+  let heading: string | null = null
+  let values: string[] = []
+  let chars = 0
+  const flush = () => {
+    const line = `${heading}: ${values.join('、')}`
+    values = []
+    chars = 0
+    return line
+  }
+  for await (const raw of ndjson) {
+    if (!raw.trim()) continue
+    const line = JSON.parse(raw) as TableProfileLine
+    if (line.kind === 'sentence') {
+      if (values.length > 0) yield flush()
+      yield line.text
+      continue
+    }
+    if (line.column !== heading || chars + line.text.length > PROFILE_LINE_CHARS) {
+      if (values.length > 0) yield flush()
+      heading = line.column
+    }
+    values.push(line.text)
+    chars += line.text.length + 1
+  }
+  if (values.length > 0) yield flush()
 }
 
 /** Index ZIP manifest (small JSON, loaded fully) */
@@ -259,7 +365,8 @@ async function indexTextStream(
   format: string,
   contentType: ContentType,
   interpretResult: InterpretResult | null,
-  ctx: PipelineContext
+  ctx: PipelineContext,
+  maxBytes?: number
 ): Promise<IndexContentResult> {
   const stream = await ctx.storage.download(storageKey)
   const encoding = interpretResult?.encoding ?? 'UTF8'
@@ -267,13 +374,24 @@ async function indexTextStream(
   const enc = encoding.toLowerCase()
   const isUtf8 = enc === 'utf8' || enc === 'utf-8' || enc === 'ascii' || enc === 'unknown'
 
-  // Non-UTF-8: buffer file and convert (stateful encodings need full context).
-  // Cap the buffer at the max legitimate file size so an oversize object can't
-  // OOM the worker; a truncated tail is acceptable degradation for indexing.
   let lines: AsyncIterable<string> | Iterable<string>
-  if (isUtf8) {
+  let truncated = false
+  if (maxBytes !== undefined) {
+    // A byte past the cap, so a file of exactly the cap is not called cut
+    const buf = await streamToBuffer(stream, maxBytes + 1)
+    truncated = buf.length > maxBytes
+    const head = buf.subarray(0, maxBytes)
+    lines = stripTrailingReplacementChar(
+      isUtf8 ? head.toString('utf-8') : bufferToUtf8(head, encoding)
+    )
+      .replace(/\n$/, '')
+      .split('\n')
+  } else if (isUtf8) {
     lines = streamUtf8Lines(stream)
   } else {
+    // Non-UTF-8: buffer file and convert (stateful encodings need full context).
+    // Cap the buffer at the max legitimate file size so an oversize object can't
+    // OOM the worker; a truncated tail is acceptable degradation for indexing.
     const buf = await streamToBuffer(stream, MAX_FETCH_SIZE)
     const text = bufferToUtf8(buf, encoding)
     lines = text.split('\n')
@@ -292,7 +410,7 @@ async function indexTextStream(
     contentType,
     contentOriginalSize: written.originalBytes,
     contentIndexedSize: written.indexedBytes,
-    contentTruncated: false,
+    contentTruncated: truncated,
     contentChunks: written.chunks,
   }
 }

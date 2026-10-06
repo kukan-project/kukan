@@ -98,6 +98,14 @@ const SEARCH_PROPERTIES: MappingProperties = {
     analyzer: 'kuromoji_analyzer',
     search_analyzer: 'kuromoji_query_analyzer',
   },
+  // A table's column names (ADR-063 §決定 7). On the resource rather than in its
+  // content: in the file they are one line among thousands of values, and the
+  // most telling thing about a table to someone looking for one.
+  columns: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+  },
   // --- Content fields ---
   resourceId: { type: 'keyword' },
   extractedText: {
@@ -139,6 +147,25 @@ const CONTENT_HIGHLIGHT = {
       post_tags: ['</mark>'],
     },
   },
+}
+
+/** Characters a content snippet keeps ahead of its first match. */
+const SNIPPET_LEAD = 60
+
+/**
+ * A content snippet started near its first match. A card shows a snippet's
+ * first few lines, and the highlighter's fragment can run on for a few hundred
+ * characters before the match. From the start of the match's line when that
+ * is near, so a table's heading stays in front of its value.
+ */
+function leadToMatch(fragment: string): string {
+  const at = fragment.indexOf('<mark>')
+  if (at <= SNIPPET_LEAD) return fragment
+  const lineStart = fragment.lastIndexOf('\n', at) + 1
+  let from = at - lineStart <= SNIPPET_LEAD ? lineStart : at - SNIPPET_LEAD
+  // Not between the halves of a character outside the BMP
+  if (/[\uDC00-\uDFFF]/.test(fragment[from] ?? '')) from++
+  return '…' + fragment.slice(from)
 }
 
 /** Check if an error is an OpenSearch 404 (not found) */
@@ -1186,7 +1213,9 @@ export class OpenSearchAdapter implements SearchAdapter {
                 query: {
                   multi_match: {
                     query: query.q!,
-                    fields: ['name^3', 'description^2', 'section', 'summary'],
+                    // Column names weighed as a description is, to start
+                    // with (ADR-063 §決定 7)
+                    fields: ['name^3', 'description^2', 'section', 'summary', 'columns^2'],
                     type: 'cross_fields',
                     operator: 'and',
                   },
@@ -1521,7 +1550,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       for (const hit of (response.body.hits.hits ?? []) as any[]) {
         const fragment = hit.highlight?.extractedText?.[0] as string | undefined
         if (fragment) {
-          result[hit._id as string] = sanitizeHighlight(fragment)
+          result[hit._id as string] = sanitizeHighlight(leadToMatch(fragment))
         }
       }
       return result

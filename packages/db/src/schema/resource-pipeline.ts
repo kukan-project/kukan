@@ -13,7 +13,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
-import { sql, type SQL } from 'drizzle-orm'
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm'
 import type { TableProfile } from '@kukan/shared'
 import { resource } from './resource'
 
@@ -78,6 +78,17 @@ export function pipelineObjectKeys(alias: string): SQL[] {
     sql.raw(`(${alias}.metadata ->> 'textHeadKey')`),
     sql.raw(`(${alias}.profile ->> 'key')`),
   ]
+}
+
+/**
+ * A pipeline row's table column names as a jsonb array, `[]` for a row with
+ * none: what the resource's search document carries (ADR-063), and so what a
+ * writer of the metadata compares to know whether that document is stale.
+ */
+export function schemaColumnNames(metadata: SQL | AnyColumn): SQL<string[]> {
+  return sql<
+    string[]
+  >`jsonb_path_query_array(COALESCE(${metadata}, '{}'::jsonb), '$.schema.columns[*].name')`
 }
 
 export const resourcePipelineStep = pgTable(

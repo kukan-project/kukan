@@ -1058,6 +1058,23 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(await cachedInterpretation()).toEqual({})
   })
 
+  it('marks the search document when emptying takes its column names away', async () => {
+    // The document carries them (ADR-063), and an emptied resource queues no
+    // rebuild that would notice they are gone.
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId, metadata: { schema: columns('a'), sourceHash: 'sha256:v2' } })
+    await db.update(resource).set({ docSyncDueAt: null }).where(eq(resource.id, resourceId))
+
+    await revertFromLive()
+
+    const [row] = await db
+      .select({ due: resource.docSyncDueAt })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+    expect(row!.due).not.toBeNull()
+  })
+
   it('parks the retracted object rather than deleting it', async () => {
     // Unwanted, not illegal — a reader that already resolved the key deserves
     // to finish. Destroying it is the rung above.
