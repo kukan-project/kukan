@@ -94,13 +94,15 @@ const REJECT_BATCH = 500
  * quoted-with-commas, leading-zero and mixed-type inputs, the columns, the types
  * and the row counts are identical and nothing is rejected.
  */
-function readOptions(path: string, skipRows: number, asText: string[], lenient: boolean): string {
-  const parts = [
-    sqlLiteral(path),
-    'sample_size = -1',
-    'ignore_errors = true',
-    'store_rejects = true',
-  ]
+function readOptions(
+  path: string,
+  skipRows: number,
+  asText: string[],
+  lenient: boolean,
+  storeRejects = true
+): string {
+  const parts = [sqlLiteral(path), 'sample_size = -1', 'ignore_errors = true']
+  if (storeRejects) parts.push('store_rejects = true')
   if (lenient) parts.push('strict_mode = false')
   if (skipRows > 0) parts.push(`skip = ${skipRows}`)
   if (asText.length > 0) {
@@ -173,9 +175,18 @@ export async function interpretCsv(
     const lenient = await load(conn, csvPath, skipRows)
     let columns = await describe(conn)
 
-    const oversize = await oversizeIntegerColumns(conn, columns)
-    if (oversize.length > 0) {
-      const opts = readOptions(csvPath, skipRows, oversize, lenient)
+    // Columns the sniffed type does not hold, read again as text
+    const asText = new Set([
+      ...(await oversizeIntegerColumns(conn, columns)),
+      ...(await castRefusedColumns(conn, columns)),
+      ...(await signOnlyColumns(conn, csvPath, skipRows, lenient, columns)),
+    ])
+    if (asText.size > 0) {
+      // The first read's refusals are what this read is for; what counts from
+      // here is what this one refuses.
+      await conn.run('DELETE FROM reject_errors')
+      await conn.run('DELETE FROM reject_scans')
+      const opts = readOptions(csvPath, skipRows, [...asText], lenient)
       await conn.run(`CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv(${opts})`)
       columns = await describe(conn)
     }
@@ -366,12 +377,103 @@ async function oversizeIntegerColumns(
 }
 
 /**
+ * Columns whose values the sniffed type refused, on lines refused for nothing
+ * else.
+ *
+ * The sniffer decides a type from values that the load then fails to cast:
+ * `- ` passes as an integer while it chooses, and a later `15.5` makes the
+ * column DOUBLE, which `- ` is not (duckdb/duckdb#26532). Every such line would
+ * be dropped and the table refused for rows it has. Read as text, they are rows.
+ *
+ * A line refused for its shape as well is not counted: a sign-off `出典: 港区`
+ * fails the cast of the first column *and* is short, and is judged as the note
+ * it is (`rejectedLines`) rather than turning that column into text.
+ */
+async function castRefusedColumns(conn: DuckDBConnection, columns: Column[]): Promise<string[]> {
+  const rows = (
+    await conn.runAndReadAll(`
+      SELECT DISTINCT column_name FROM reject_errors e
+      WHERE error_type = 'CAST' AND NOT EXISTS (
+        SELECT 1 FROM reject_errors o
+        WHERE o.scan_id = e.scan_id AND o.line = e.line AND o.error_type <> 'CAST'
+      )
+    `)
+  ).getRowObjectsJson() as { column_name: string }[]
+  // A name the binding decoded differently is not one `types` can take
+  const names = new Set(columns.map((c) => c.name))
+  return rows.map((r) => r.column_name).filter((name) => names.has(name))
+}
+
+/**
+ * Integer columns holding a cell DuckDB read as 0 from a sign alone.
+ *
+ * `- ` casts to 0 as an integer, where `-` fails (duckdb/duckdb#26532), so a
+ * count written `- ` for "none" is published as a zero, without a refusal to
+ * show for it. Only a column holding a 0 can have one, which answers most
+ * files without reading them again. The rest are read once more with those
+ * columns as text, by the same reader: a cell is what it parses, quotes and
+ * newlines inside them included.
+ */
+async function signOnlyColumns(
+  conn: DuckDBConnection,
+  csvPath: string,
+  skipRows: number,
+  lenient: boolean,
+  columns: Column[]
+): Promise<string[]> {
+  const integers = columns.filter((c) => semanticType(c.duckType) === 'integer')
+  if (integers.length === 0) return []
+  // The zeros are counted on the rows read so far, so where the first read
+  // refused some — rows a re-read may bring back — every integer column is
+  // looked at.
+  const [{ refused }] = (
+    await conn.runAndReadAll('SELECT count(*) > 0 AS refused FROM reject_errors')
+  ).getRowObjectsJson() as { refused: boolean }[]
+  const zeroCounts = refused ? null : await countEach(conn, 'FROM t', integers, (c) => `${c} = 0`)
+  const zeros = zeroCounts ? integers.filter((_, i) => zeroCounts[i] > 0) : integers
+  if (zeros.length === 0) return []
+
+  // Not stored as refusals: this read only looks, and what it refuses the
+  // first refused already
+  const opts = readOptions(
+    csvPath,
+    skipRows,
+    zeros.map((c) => c.name),
+    lenient,
+    false
+  )
+  const signCounts = await countEach(
+    conn,
+    `FROM read_csv(${opts})`,
+    zeros,
+    (c) => `regexp_full_match(${c}, '\\s*[-+]\\s+')`
+  )
+  return zeros.filter((_, i) => signCounts[i] > 0).map((c) => c.name)
+}
+
+/** How many rows of `from` meet `where` for each column, in one pass. */
+async function countEach(
+  conn: DuckDBConnection,
+  from: string,
+  columns: Column[],
+  where: (column: string) => string
+): Promise<number[]> {
+  const reader = await conn.runAndReadAll(
+    `SELECT ${columns
+      .map((c, i) => `count(*) FILTER (WHERE ${where(sqlIdentifier(c.name))}) AS c${i}`)
+      .join(', ')} ${from}`
+  )
+  const [row] = reader.getRowObjectsJson() as Record<string, unknown>[]
+  return columns.map((_, i) => Number(row[`c${i}`]))
+}
+
+/**
  * Rows `read_csv` refused, counted by line.
  *
  * One row that does not fit files an error per column it could not fill, so the
- * distinct lines are the rows. Read after the last load: both loads are of the
- * same file, so a re-read for {@link OVERSIZE_INTEGER} refuses the same lines
- * and the count does not double.
+ * distinct lines are the rows. Read after the last load, whose refusals are the
+ * only ones left: a re-read clears the first's, which the types it changed may
+ * have answered.
  *
  * Left unbounded on purpose, and it is not free: `reject_errors` takes a row per
  * column the line could not fill, so the cost is lines times width. 200,000

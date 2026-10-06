@@ -347,6 +347,67 @@ describe('executeInterpret — column typing', () => {
     expect(result?.schema?.droppedRows).toBeUndefined()
   })
 
+  it('keeps the rows of a column whose sniffed type a value refuses', async () => {
+    // Price indices write "none" as `- ` in the early years. The sniffer passes
+    // it as an integer, the later `15.5` makes the column DOUBLE, and every
+    // `- ` row then failed the cast and took the table down as ragged.
+    csv('年,総合,食料\n' + '昭和28年,- ,- \n' + '昭和29年,- ,16.4\n' + '昭和30年,15.5,17.0\n')
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.rowCount).toBe(3)
+    expect(result?.schema?.droppedRows).toBeUndefined()
+    expect(types).toMatchObject({ 総合: 'VARCHAR', 食料: 'VARCHAR' })
+    expect(rows.map((r) => r.総合)).toEqual(['- ', '- ', '15.5'])
+  })
+
+  it('does not read a count written as a sign alone as zero', async () => {
+    // `- ` casts to 0 as an integer (duckdb/duckdb#26532), with no refusal to
+    // show for it: "none" would be published as a zero.
+    csv('区分,人数\n' + '港,- \n' + '芝,5\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(types.人数).toBe('VARCHAR')
+    expect(rows.map((r) => r.人数)).toEqual(['- ', '5'])
+  })
+
+  it('finds a sign alone in a quoted cell that spans lines', async () => {
+    // A cell is what the reader parses, not a line of the file
+    csv('name,count\n' + 'a,"-\n "\n' + 'b,5\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(types.count).toBe('VARCHAR')
+    expect(rows.map((r) => r.count)).toEqual(['-\n ', '5'])
+  })
+
+  it('finds a sign alone on a row the first read refused', async () => {
+    // `amount` refuses row a, so the first read's `count` has no zero to give
+    // the sign away; the re-read brings the row back
+    csv('name,count,amount\n' + 'a,- ,- \n' + 'b,5,1.5\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(types.count).toBe('VARCHAR')
+    expect(rows.map((r) => r.count)).toEqual(['- ', '5'])
+  })
+
+  it('keeps the zeros of an integer column when the sign is in another', async () => {
+    csv('区分,人数,備考\n' + '港,0,- \n' + '芝,5,x\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(types.人数).toBe('BIGINT')
+    expect(rows.map((r) => r.人数)).toEqual(['0', '5'])
+  })
+
   it('says nothing about dropped rows where none were', async () => {
     csv('name,amount\n' + 'a,1\n' + 'b,2\n')
 
