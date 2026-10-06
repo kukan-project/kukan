@@ -1,6 +1,6 @@
 /**
  * KUKAN Authentication Middleware
- * Validates session cookies and API tokens (Bearer)
+ * Validates session cookies and API tokens (Bearer, or X-KUKAN-API-Key)
  */
 
 import type { Context, Next } from 'hono'
@@ -28,7 +28,8 @@ async function authenticateToken(c: Context, rawToken: string): Promise<void> {
 
 /**
  * Optional authentication - adds user to context if authenticated.
- * Checks session cookie first, then the API token.
+ * Checks session cookie first, then the API token: Bearer in `Authorization`,
+ * or `X-KUKAN-API-Key` where a site's basic auth holds `Authorization`.
  */
 export function optionalAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
@@ -65,9 +66,12 @@ export function optionalAuth(auth: Auth) {
       }
     }
 
-    // 2. Check for API token in Authorization header
+    // 2. Check for API token in Authorization header, then X-KUKAN-API-Key
     const authHeader = c.req.header('Authorization')
-    if (authHeader?.startsWith('Bearer ')) await authenticateToken(c, authHeader.slice(7))
+    const rawToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : c.req.header('X-KUKAN-API-Key')
+    if (rawToken) await authenticateToken(c, rawToken)
 
     await next()
   }

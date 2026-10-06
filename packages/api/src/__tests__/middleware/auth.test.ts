@@ -131,8 +131,42 @@ describe('optionalAuth', () => {
     })
   })
 
+  it.each<Record<string, string>>([
+    { 'X-KUKAN-API-Key': 'kukan_abc123' },
+    // Behind basic auth the Authorization header is the site's, not the token
+    { Authorization: 'Basic dXNlcjpwYXNz', 'X-KUKAN-API-Key': 'kukan_abc123' },
+  ])('reads the token from X-KUKAN-API-Key on every API (%o)', async (headers) => {
+    mockValidate.mockResolvedValue({
+      id: 'u2',
+      email: 'api@test.com',
+      name: 'apiuser',
+      displayName: null,
+      sysadmin: false,
+    })
+    const app = createTestApp(optionalAuth(createMockAuth(null)))
+
+    for (const path of ['/test', '/api/3/action/whoami']) {
+      const res = await app.request(path, { headers })
+      expect((await res.json()).user).toMatchObject({ id: 'u2' })
+    }
+    expect(mockValidate).toHaveBeenCalledTimes(2)
+    expect(mockValidate).toHaveBeenCalledWith('kukan_abc123')
+  })
+
+  it('prefers the Bearer token over X-KUKAN-API-Key', async () => {
+    mockValidate.mockResolvedValue(null)
+    const app = createTestApp(optionalAuth(createMockAuth(null)))
+
+    await app.request('/test', {
+      headers: { Authorization: 'Bearer kukan_bearer', 'X-KUKAN-API-Key': 'kukan_header' },
+    })
+
+    expect(mockValidate).toHaveBeenCalledTimes(1)
+    expect(mockValidate).toHaveBeenCalledWith('kukan_bearer')
+  })
+
   // ckanapi sends the token bare, older CKAN clients in X-CKAN-API-Key. Read by
-  // the CKAN-compatible router's own step, so the rest of the API stays Bearer-only
+  // the CKAN-compatible router's own step, so the rest of the API does not take them
   it.each<Record<string, string>>([
     { Authorization: 'kukan_abc123' },
     { 'X-CKAN-API-Key': 'kukan_abc123' },

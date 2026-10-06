@@ -59,6 +59,18 @@ curl https://your-kukan-site/api/v1/users/me \
   -H "Authorization: Bearer kukan_xxxxxxxx..."
 ```
 
+When the site sits behind basic auth, the `Authorization` header carries the basic auth credentials.
+Send the token in the `X-KUKAN-API-Key` header instead. It works on the REST API, MCP and the
+CKAN-compatible API alike.
+
+```bash
+curl https://your-kukan-site/api/v1/users/me \
+  -u "<basic-user>:<basic-password>" \
+  -H "X-KUKAN-API-Key: kukan_xxxxxxxx..."
+```
+
+When both are sent, `Authorization: Bearer` takes precedence.
+
 ### Managing tokens
 
 ```bash

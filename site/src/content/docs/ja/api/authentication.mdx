@@ -59,6 +59,17 @@ curl https://your-kukan-site/api/v1/users/me \
   -H "Authorization: Bearer kukan_xxxxxxxx..."
 ```
 
+サイトが Basic 認証の裏にあると、`Authorization` ヘッダーは Basic 認証の資格情報で埋まります。その場合は
+トークンを `X-KUKAN-API-Key` ヘッダーで送ってください。REST API・MCP・CKAN 互換 API のどれでも使えます。
+
+```bash
+curl https://your-kukan-site/api/v1/users/me \
+  -u "<basic-user>:<basic-password>" \
+  -H "X-KUKAN-API-Key: kukan_xxxxxxxx..."
+```
+
+両方を送った場合は `Authorization: Bearer` が優先されます。
+
 ### トークンの管理
 
 ```bash
