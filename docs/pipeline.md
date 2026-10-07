@@ -279,7 +279,12 @@ zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、�
 `previews/{package}/{resource}.{token}.text.ndjson.zst` に書き、text head（AI 提案・抄録の材料）は
 ここから切り出して同じトークンで書く。どちらも `updateInterpretResult` で参照する。Index は
 このファイルを読んで索引を作るだけで、文書を開かない。本文の無い文書（スキャン）にも書く —
-ページと図の一覧は、後から読み取るときの出発点になる。プレビューを持たない文書は、このキーで
+ページと図の一覧は、後から読み取るときの出発点になる。字形を文字に戻す対応表（ToUnicode）を
+持たないフォントで書かれた本文は、字形番号の羅列にしかならないので捨て、ページの大半がそうなら
+`unreadable: 'unmapped-fonts'` を付ける。文字の無いページ（`unreadable: 'no-text'`）と同じく、
+後から画像として読み取る対象になる。
+PDF のフォントと図は、暗号化されていても空のパスワードで復号して調べる（閲覧は自由で、本文の
+コピーだけを禁じた PDF が多い）。プレビューを持たない文書は、このキーで
 「同じ bytes から作ってある」（`derivativesDescribe`）と判定される。
 
 かつて 6 つ目だった `resource_version.lake_source_key` は撤去した（ADR-046 §4）。層 2 が読むのは

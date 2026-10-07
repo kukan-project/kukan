@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import { OfficeParser, type OfficeContentNode, type OfficeParserConfig } from 'officeparser'
-import { PDFDocument, PDFName, drawObject } from 'pdf-lib'
+import {
+  PDFDocument,
+  PDFName,
+  PDFString,
+  beginText,
+  drawObject,
+  endText,
+  setFontAndSize,
+} from '@cantoo/pdf-lib'
 import JSZip from 'jszip'
 import { DOCUMENT_TEXT_SCHEMA, type DocumentTextBlock } from '@kukan/shared'
 import { artifactBlocks } from './test-helpers/document-text'
@@ -243,7 +251,7 @@ describe('PDF', () => {
     expect(await blocks(path, 'pdf')).toEqual([
       { loc: { page: 1, label: 'i' }, text: 'cover' },
       // Kept, so a page with nothing to read is on record as one
-      { loc: { page: 2 }, text: '', textLayer: false },
+      { loc: { page: 2 }, text: '', unreadable: 'no-text' },
       { loc: { page: 3 }, text: 'body' },
     ])
   })
@@ -372,6 +380,321 @@ describe('PDF', () => {
     const path = await file('not-really.pdf', Buffer.from('not a pdf'))
 
     expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: 'text' }])
+  })
+
+  /** A run of text in a font, as officeparser names it. */
+  const run = (text: string, font: string) =>
+    ({ type: 'text', text, formatting: { font } }) as OfficeContentNode
+
+  /** A PDF page made of runs, a paragraph each. */
+  const pageOfRuns = (pageNumber: number, runs: OfficeContentNode[]) =>
+    node(
+      'page',
+      '',
+      { pageNumber },
+      runs.map((r) => node('paragraph', r.text!, {}, [r]))
+    )
+
+  /**
+   * A font, `[name, kind, fontName]`: its BaseFont — a composite font's, its
+   * descendant's — and a composite font with an Identity-H encoding and no
+   * ToUnicode, numbering its glyphs itself or as Adobe-Japan1, or a simple
+   * TrueType font; and the FontName of a descriptor, where it has one.
+   */
+  type FontSpec = [string, 'identity' | 'japan1' | 'simple', string?]
+
+  /** A font's dictionary: a composite one named by its descendant, as writers do. */
+  function fontOf(doc: PDFDocument, [name, kind, fontName]: FontSpec) {
+    const font =
+      kind === 'simple'
+        ? { Type: 'Font', Subtype: 'TrueType', BaseFont: name, Encoding: 'WinAnsiEncoding' }
+        : {
+            Type: 'Font',
+            Subtype: 'Type0',
+            BaseFont: `${name}-Identity-H`,
+            Encoding: 'Identity-H',
+            DescendantFonts: [
+              {
+                Type: 'Font',
+                Subtype: 'CIDFontType0',
+                BaseFont: `ABCDEF+${name}`,
+                ...(fontName && {
+                  FontDescriptor: { Type: 'FontDescriptor', FontName: `ABCDEF+${fontName}` },
+                }),
+                CIDSystemInfo: {
+                  Registry: PDFString.of('Adobe'),
+                  Ordering: PDFString.of(kind === 'japan1' ? 'Japan1' : 'Identity'),
+                  Supplement: 0,
+                },
+              },
+            ],
+          }
+    return doc.context.register(doc.context.obj(font))
+  }
+
+  /** Content setting text in each of `count` fonts, named `prefix` and its index. */
+  const settingText = (prefix: string, count: number) =>
+    [...Array(count).keys()].flatMap((i) => [
+      beginText(),
+      setFontAndSize(`${prefix}${i}`, 12),
+      endText(),
+    ])
+
+  /**
+   * A PDF whose pages each set text in the given fonts; each also naming the
+   * `named` fonts without using them, and drawing a form that sets text in the
+   * `form` ones; encrypted for anyone to open, where asked.
+   */
+  async function pdfWithFonts(
+    pages: FontSpec[][],
+    {
+      named = [],
+      form,
+      encrypted,
+    }: { named?: FontSpec[]; form?: FontSpec[]; encrypted?: boolean } = {}
+  ): Promise<Buffer> {
+    const doc = await PDFDocument.create()
+    for (const fonts of pages) {
+      const page = doc.addPage()
+      fonts.forEach((font, i) =>
+        page.node.setFontDictionary(PDFName.of(`F${i}`), fontOf(doc, font))
+      )
+      named.forEach((font, i) =>
+        page.node.setFontDictionary(PDFName.of(`N${i}`), fontOf(doc, font))
+      )
+      page.pushOperators(...settingText('F', fonts.length))
+      if (form) {
+        const xobject = doc.context.formXObject(settingText('G', form.length), {
+          BBox: [0, 0, 10, 10],
+          Resources: {
+            Font: Object.fromEntries(form.map((font, i) => [`G${i}`, fontOf(doc, font)])),
+          },
+        })
+        page.node.setXObject(PDFName.of('Fm0'), doc.context.register(xobject))
+        page.pushOperators(drawObject('Fm0'))
+      }
+    }
+    if (!encrypted) return Buffer.from(await doc.save({ useObjectStreams: false }))
+    // Opened by anyone, its text not to be copied: encrypted under an empty
+    // user password, its dictionaries in object streams as writers put them,
+    // where unless decrypted they cannot be read
+    doc.encrypt({ userPassword: '', ownerPassword: 'owner', permissions: { copying: false } })
+    return Buffer.from(await doc.save({ useObjectStreams: true }))
+  }
+
+  it('leaves out text in a font with no map to characters, and marks a page mostly in one', async () => {
+    parseOffice.mockResolvedValue(
+      astOf(
+        [
+          pageOfRuns(1, [run('ࡢࡀ㈤㔠ㄪᰝ', 'MS-Mincho'), run('10', 'Century')]),
+          pageOfRuns(2, [run('ࡢ', 'MS-Mincho'), run('Annual report', 'Century')]),
+        ],
+        { metadata: { pages: 2 } }
+      )
+    )
+    const fonts: FontSpec[] = [
+      ['MS-Mincho', 'identity'],
+      ['Century', 'simple'],
+    ]
+    const path = await file('unmapped.pdf', await pdfWithFonts([fonts, fonts]))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '10', unreadable: 'unmapped-fonts' },
+      { loc: { page: 2 }, text: 'Annual report' },
+    ])
+  })
+
+  it('leaves out a run with no font named only where every font the page sets text in is unmapped', async () => {
+    const unnamed = { type: 'text', text: 'ࡢࡀ', formatting: {} } as OfficeContentNode
+    parseOffice.mockResolvedValue(
+      astOf(
+        [
+          pageOfRuns(1, [unnamed]),
+          // The generic family officeparser falls back to is no name either
+          pageOfRuns(2, [run('ࡢࡀ', 'serif')]),
+          pageOfRuns(3, [{ ...unnamed, text: '本文' }]),
+        ],
+        { metadata: { pages: 3 } }
+      )
+    )
+    const path = await file(
+      'unnamed.pdf',
+      await pdfWithFonts([
+        [['MS-Mincho', 'identity']],
+        [['MS-Mincho', 'identity']],
+        [
+          ['MS-Mincho', 'identity'],
+          ['Century', 'simple'],
+        ],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 2 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 3 }, text: '本文' },
+    ])
+  })
+
+  it('judges the fonts a form the page draws sets text in', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('ࡢࡀ', 'MS-Mincho')]), pageOfRuns(2, [run('本文', 'sans-serif')])], {
+        metadata: { pages: 2 },
+      })
+    )
+    const unmappedInForm = await file(
+      'form-unmapped.pdf',
+      await pdfWithFonts([[]], { form: [['MS-Mincho', 'identity']] })
+    )
+    const mappedInForm = await file(
+      'form-mapped.pdf',
+      await pdfWithFonts([[], [['MS-Mincho', 'identity']]], { form: [['Century', 'simple']] })
+    )
+
+    expect((await blocks(unmappedInForm, 'pdf'))[0]).toEqual({
+      loc: { page: 1 },
+      text: '',
+      unreadable: 'unmapped-fonts',
+    })
+    // A run with no font named may be the form's, in a mapped font
+    expect((await blocks(mappedInForm, 'pdf'))[1]).toEqual({ loc: { page: 2 }, text: '本文' })
+  })
+
+  it('judges only the fonts a page sets text in, not every one its resources name', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('ࡢࡀ', 'MS-Mincho')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'named-only.pdf',
+      // Pages share one dictionary of every font in the document
+      await pdfWithFonts([[['MS-Mincho', 'identity']]], { named: [['MS-Mincho', 'simple']] })
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+    ])
+  })
+
+  it('judges a form without resources of its own by the fonts of each page that draws it', async () => {
+    const unnamed = (text: string) => ({ type: 'text', text, formatting: {} }) as OfficeContentNode
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [unnamed('ࡢࡢ')]), pageOfRuns(2, [unnamed('AA')])], {
+        metadata: { pages: 2 },
+      })
+    )
+    // One form, setting text in /F0 of whichever page draws it
+    const doc = await PDFDocument.create()
+    const form = doc.context.register(
+      doc.context.formXObject(settingText('F', 1), { BBox: [0, 0, 10, 10] })
+    )
+    for (const font of [
+      ['MS-Mincho', 'identity'],
+      ['Century', 'simple'],
+    ] as FontSpec[]) {
+      const page = doc.addPage()
+      page.node.setFontDictionary(PDFName.of('F0'), fontOf(doc, font))
+      page.node.setXObject(PDFName.of('Fm0'), form)
+      page.pushOperators(drawObject('Fm0'))
+    }
+    const path = await file('shared-form.pdf', Buffer.from(await doc.save()))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 2 }, text: 'AA' },
+    ])
+  })
+
+  it('names a font as pdf.js does: its BaseFont where it is its FontName and more', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('ࡢࡢ', 'Lato-Medium')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'font-name.pdf',
+      await pdfWithFonts([[['Lato-Medium', 'identity', 'Lato']]])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+    ])
+  })
+
+  it("judges a font of Adobe's character collections neither way, pdf.js giving no text for it", async () => {
+    parseOffice.mockResolvedValue(
+      astOf(
+        [
+          pageOfRuns(1, [run('第２表', 'RyuminPr6N-Light')]),
+          // Without the CMaps officeparser does not pass, a run with no font
+          // named cannot be one the collection's font set
+          pageOfRuns(2, [{ type: 'text', text: 'ࡢࡀ', formatting: {} } as OfficeContentNode]),
+        ],
+        { metadata: { pages: 2 } }
+      )
+    )
+    const path = await file(
+      'japan1.pdf',
+      await pdfWithFonts([
+        [['RyuminPr6N-Light', 'japan1']],
+        [
+          ['RyuminPr6N-Light', 'japan1'],
+          ['MS-PMincho', 'identity'],
+        ],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '第２表' },
+      { loc: { page: 2 }, text: '', unreadable: 'unmapped-fonts' },
+    ])
+  })
+
+  it('judges the fonts of a PDF encrypted for anyone to open', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('ࡢࡀ㈤㔠', 'MS-Mincho')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'encrypted.pdf',
+      await pdfWithFonts([[['MS-Mincho', 'identity']]], { encrypted: true })
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+    ])
+  })
+
+  it('keeps text in a font of a name a mapped font on the page has too', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('本文', 'MS-Mincho')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'shared-name.pdf',
+      await pdfWithFonts([
+        [
+          ['MS-Mincho', 'identity'],
+          ['MS-Mincho', 'simple'],
+        ],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: '本文' }])
+  })
+
+  it("reads the codes of an ordinary font flagged as symbolic as ASCII, and not a symbol font's", async () => {
+    parseOffice.mockResolvedValue(
+      astOf(
+        [
+          pageOfRuns(1, [
+            run('平成\uF031\uF039年度\uF028Ａ\uF029', 'MS-Mincho+1'),
+            run('\uF0D8\uF06C 住宅火災', 'Wingdings'),
+          ]),
+        ],
+        { metadata: { pages: 1 } }
+      )
+    )
+    const path = await file('symbolic.pdf', await pdfWithFonts([[]]))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '平成19年度(Ａ)\n\uF0D8\uF06C 住宅火災' },
+    ])
   })
 
   it('gives no headings for a PDF without bookmarks, whatever its text looks like', async () => {
@@ -512,6 +835,24 @@ describe('the artifact', () => {
       { loc: {}, headings: ['Title'], text: 'Title\nbody' },
     ])
     expect(extracted).toEqual({ hasText: true, bytes: Buffer.byteLength('Title\nbody') })
+  })
+
+  it('writes control characters as spaces, and Kangxi radicals as the ideographs they look like', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([
+        node('heading', '⽇付', { level: 1 }),
+        node('paragraph', '活⽤\u0003する\u0085\tこと\uF039'),
+      ])
+    )
+    const path = await file('a.docx', Buffer.alloc(10))
+    const artifact = join(dir, 'text.ndjson.zst')
+
+    await extractDocumentText(path, 'docx', artifact)
+
+    expect(await artifactBlocks(await readFile(artifact))).toEqual([
+      // A private-use code is pdf.js's to explain, which an Office document did not pass through
+      { loc: {}, headings: ['日付'], text: '日付\n活用 する \tこと\uF039' },
+    ])
   })
 
   it('says there is no text when every block is blank', async () => {

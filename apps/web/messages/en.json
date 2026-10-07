@@ -883,6 +883,8 @@
     "documentTextSheet": "Sheet \"{sheet}\"",
     "documentTextOpenPage": "Open this page of the PDF",
     "documentTextNoTextLayer": "This page has no text (images only, or a scan)",
+    "documentTextUnreadable": "Most of this page's text cannot be read: the PDF's fonts carry no map from their glyphs to characters",
+    "documentTextUnreadableCount": "unreadable pages: {count}",
     "documentTextFigure": "Figure",
     "documentTextFigureSize": "{width}×{height} px",
     "documentTextFigureRepeated": "same image in {count} places",

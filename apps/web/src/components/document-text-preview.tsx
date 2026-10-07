@@ -88,7 +88,11 @@ export function DocumentTextPreview({ resourceId }: DocumentTextPreviewProps) {
   }
 
   const figures = text.blocks.filter((b) => b.figure).length
-  const blank = text.blocks.filter((b) => b.textLayer === false).length
+  const blank = text.blocks.filter((b) => b.unreadable === 'no-text').length
+  // Pages, not blocks: a long page is written as several
+  const unreadable = new Set(
+    text.blocks.filter((b) => b.unreadable === 'unmapped-fonts').map((b) => b.loc.page)
+  ).size
   const labelled = units.map((unit) => ({ ...unit, label: unitLabel(unit.loc, t) }))
   const byHeadings = outline.length > 0
   const navLabel = t(byHeadings ? 'documentTextOutline' : 'documentTextPages')
@@ -106,6 +110,7 @@ export function DocumentTextPreview({ resourceId }: DocumentTextPreviewProps) {
       <CardContent className="space-y-3 p-4">
         <p className="text-xs text-muted-foreground">
           {t('documentTextSummary', { units: units.length, figures, blank })}
+          {unreadable > 0 && ` · ${t('documentTextUnreadableCount', { count: unreadable })}`}
         </p>
         <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
           {nav.length > 0 && (
@@ -210,11 +215,23 @@ function BlockView({
       </div>
     )
   }
-  if (block.textLayer === false) {
+  if (block.unreadable === 'no-text') {
     return (
       <p id={id} className="rounded bg-muted p-2 text-xs text-muted-foreground">
         {t('documentTextNoTextLayer')}
       </p>
+    )
+  }
+  if (block.unreadable === 'unmapped-fonts') {
+    return (
+      <div id={id} className="space-y-1">
+        <p className="rounded bg-muted p-2 text-xs text-muted-foreground">
+          {t('documentTextUnreadable')}
+        </p>
+        {block.text.trim() && (
+          <pre className="font-sans text-sm whitespace-pre-wrap">{block.text}</pre>
+        )}
+      </div>
     )
   }
   return (

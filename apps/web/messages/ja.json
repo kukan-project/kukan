@@ -883,6 +883,8 @@
     "documentTextSheet": "シート「{sheet}」",
     "documentTextOpenPage": "PDF のこのページを開く",
     "documentTextNoTextLayer": "このページには文字情報がありません（画像のみ、またはスキャン）",
+    "documentTextUnreadable": "このページの文字の多くは読み取れません（PDF に文字の対応表がないフォントで書かれています）",
+    "documentTextUnreadableCount": "読み取れないページ {count}",
     "documentTextFigure": "図",
     "documentTextFigureSize": "{width}×{height} px",
     "documentTextFigureRepeated": "同じ画像が {count} 箇所",

@@ -46,7 +46,7 @@ describe('extracted text preview', () => {
     serve({
       blocks: [
         { loc: { page: 1, label: 'i' }, text: 'cover' },
-        { loc: { page: 2 }, text: '', textLayer: false },
+        { loc: { page: 2 }, text: '', unreadable: 'no-text' },
       ],
       truncated: false,
     })
@@ -56,6 +56,23 @@ describe('extracted text preview', () => {
     expect(screen.getByText('This page has no text (images only, or a scan)')).toBeInTheDocument()
     // With no headings in the file, the pages are the outline
     expect(screen.getByRole('navigation', { name: 'Pages' })).toBeInTheDocument()
+  })
+
+  it('says a page in fonts it cannot be read from is so, once a page, with what it has', async () => {
+    serve({
+      blocks: [
+        // One long page, written as two blocks
+        { loc: { page: 1 }, text: '10', unreadable: 'unmapped-fonts' },
+        { loc: { page: 1 }, text: '11', unreadable: 'unmapped-fonts' },
+        { loc: { page: 2 }, text: 'body' },
+      ],
+      truncated: false,
+    })
+    await showText()
+
+    expect(await screen.findByText(/· unreadable pages: 1$/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Most of this page's text cannot be read/)).toHaveLength(2)
+    expect(screen.getByText('10')).toBeInTheDocument()
   })
 
   it('outlines the headings, each where it first appears', async () => {

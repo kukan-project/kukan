@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream'
 import { describe, it, expect, vi } from 'vitest'
-import { PDFDocument, PDFString } from 'pdf-lib'
+import { PDFDocument, PDFString } from '@cantoo/pdf-lib'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { createLogger } from '@kukan/shared'
@@ -21,9 +21,9 @@ async function pdfOf(pages: number): Promise<Buffer> {
 }
 
 /**
- * A PDF that says it is protected. pdf-lib cannot encrypt, so the /Encrypt
- * entry is written into the trailer directly — which is all the reader
- * consults, and all the cut has to refuse on.
+ * A PDF that says it is protected: only the /Encrypt entry, written into the
+ * trailer directly — which is all the reader consults, and all the cut has to
+ * refuse on.
  */
 async function encryptedPdfOf(pages: number): Promise<Buffer> {
   const doc = await PDFDocument.load(await pdfOf(pages), { ignoreEncryption: true })

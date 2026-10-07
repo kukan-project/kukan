@@ -16,7 +16,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument } from '@cantoo/pdf-lib'
 import sharp from 'sharp'
 import type { Database } from '@kukan/db'
 import {

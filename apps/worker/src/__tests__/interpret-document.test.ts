@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { Readable } from 'node:stream'
-import { PDFDocument, StandardFonts } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib'
 import type { DocumentTextBlock } from '@kukan/shared'
 import { executeInterpret } from '../pipeline/steps/interpret'
 import {
@@ -55,7 +55,7 @@ describe('interpreting a document', () => {
 
     expect(await written()).toEqual([
       { loc: { page: 1 }, text: expect.stringContaining('First page') },
-      { loc: { page: 2 }, text: '', textLayer: false },
+      { loc: { page: 2 }, text: '', unreadable: 'no-text' },
       { loc: { page: 3 }, text: expect.stringContaining('Third page') },
     ])
     const text = result!.documentText!
@@ -77,7 +77,7 @@ describe('interpreting a document', () => {
   it('keeps the pages of a document with no text, and no head', async () => {
     const result = await interpret(await pdfOf(['', '']), 'PDF')
 
-    expect((await written()).map((b) => b.textLayer)).toEqual([false, false])
+    expect((await written()).map((b) => b.unreadable)).toEqual(['no-text', 'no-text'])
     expect(result!.documentText!.textHead).toBeUndefined()
     expect(uploaded('txt')).toBeUndefined()
   })

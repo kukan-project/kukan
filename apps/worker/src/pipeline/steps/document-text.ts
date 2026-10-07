@@ -30,8 +30,10 @@ import {
   PDFNumber,
   PDFRawStream,
   PDFRef,
+  PDFString,
+  PDFHexString,
   type PDFObject,
-} from 'pdf-lib'
+} from '@cantoo/pdf-lib'
 import {
   OfficeParser,
   type OfficeContentNode,
@@ -123,7 +125,8 @@ async function writeBlocks(
   let joined = 0
   try {
     await put({ schema: DOCUMENT_TEXT_SCHEMA })
-    for await (const whole of blocks) {
+    for await (const block of blocks) {
+      const whole = cleaned(block)
       if (whole.text) {
         bytes += Buffer.byteLength(whole.text, 'utf-8') + (joined++ > 0 ? 1 : 0)
         if (!hasText && whole.text.trim()) hasText = true
@@ -138,6 +141,27 @@ async function writeBlocks(
   }
   await written
   return { hasText, bytes }
+}
+
+/**
+ * Characters a text extractor gives that no reader means: control characters
+ * (C0 and C1) a font's glyph numbers came out as, and the Kangxi radicals (U+2F00) a PDF
+ * font maps its ideographs to — `⽇` for `日`, which look the same and search
+ * as different words.
+ */
+// eslint-disable-next-line no-control-regex -- matching them is what it is for
+const STRAY_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u2E80-\u2FDF]/g
+
+function cleanText(text: string): string {
+  return text.replace(STRAY_CHARACTERS, (c) => (c < '\u00A0' ? ' ' : c.normalize('NFKC')))
+}
+
+function cleaned(block: DocumentTextBlock): DocumentTextBlock {
+  return {
+    ...block,
+    ...(block.headings && { headings: block.headings.map(cleanText) }),
+    text: cleanText(block.text),
+  }
 }
 
 /**
@@ -340,7 +364,7 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
   let count = PDF_RANGE_MIN_PAGES
   let pages = Infinity
   let bookmarks: Bookmarks | undefined
-  const figures = await pdfFigures(filePath)
+  const facts = await pdfPageFacts(filePath)
   while (first <= pages) {
     const last = Math.min(first + count - 1, pages)
     const ast = await OfficeParser.parseOffice(filePath, {
@@ -351,7 +375,7 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
     if (typeof total !== 'number') {
       // Without the page count, ranges cannot be walked: read it whole, as before
       const whole = await OfficeParser.parseOffice(filePath, PDF_TEXT_ONLY)
-      yield* pageBlocks(whole, new Bookmarks(whole.auxiliary?.outline), figures)
+      yield* pageBlocks(whole, new Bookmarks(whole.auxiliary?.outline), facts)
       return
     }
     if (first === 1) {
@@ -364,15 +388,18 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
     first = last + 1
     // Every range carries the whole outline, so the first one's will do
     bookmarks ??= new Bookmarks(ast.auxiliary?.outline)
-    yield* pageBlocks(ast, bookmarks, figures)
+    yield* pageBlocks(ast, bookmarks, facts)
   }
 }
 
-/** A block per page, empty for a page with no text on it, then the page's images. */
+/**
+ * A block per page, then the page's images: empty for a page with no text on
+ * it, and marked for one whose text is mostly in fonts it cannot be read from.
+ */
 async function* pageBlocks(
   ast: OfficeParserAST,
   bookmarks: Bookmarks,
-  figures: Map<number, DocumentTextFigure[]>
+  { figures, fonts }: PdfPageFacts
 ): AsyncGenerator<DocumentTextBlock> {
   const pages = (ast.content ?? []).filter((node) => node.type === 'page')
   if (pages.length === 0) {
@@ -382,7 +409,8 @@ async function* pageBlocks(
   }
   for (const page of pages) {
     const meta = page.metadata as { pageNumber?: number; pageLabel?: string } | undefined
-    const text = await render(ast, [page])
+    const kept = readable(page, fonts.get(meta?.pageNumber ?? 0))
+    const text = await render(ast, kept.page ? [kept.page] : [])
     const under = headingsOf(
       meta?.pageNumber ? bookmarks.at(meta.pageNumber, anchorsOn(page)) : undefined
     )
@@ -390,7 +418,14 @@ async function* pageBlocks(
       ...(meta?.pageNumber !== undefined && { page: meta.pageNumber }),
       ...(meta?.pageLabel && { label: meta.pageLabel }),
     }
-    yield { loc, ...under, text, ...(!text.trim() && { textLayer: false as const }) }
+    yield {
+      loc,
+      ...under,
+      text,
+      ...(kept.unreadable
+        ? { unreadable: 'unmapped-fonts' as const }
+        : !text.trim() && { unreadable: 'no-text' as const }),
+    }
     for (const figure of figures.get(meta?.pageNumber ?? 0) ?? []) {
       yield { loc, ...under, text: '', figure }
     }
@@ -398,126 +433,171 @@ async function* pageBlocks(
 }
 
 /**
- * The images on each page of a PDF, from the pages' resources: which object,
- * its size in pixels, and a digest of its bytes as stored — none of it decoded,
- * which is what extracting them through officeparser costs (several times the
- * text's time, and PNGs larger than the PDF). Loading the file whole costs
- * about 1.6 times its size, gone before the text is parsed: 87MB and 0.2s for
- * a 54MB PDF of 226 pages.
+ * What each page of a PDF draws, from its content and resources: its images —
+ * which object, its size in pixels, and a digest of its bytes as stored, none
+ * of it decoded, which is what extracting them through officeparser costs
+ * (several times the text's time, and PNGs larger than the PDF) — and the
+ * fonts it sets text in. Loading the file whole costs about 1.6 times its
+ * size, gone before the text is parsed: 87MB and 0.2s for a 54MB PDF of 226
+ * pages.
  *
  * pdf-lib reads the page tree strictly where officeparser reads the text
- * leniently: none where it will not load the file, and none for a page it
- * cannot read. The text does not depend on them.
+ * leniently: nothing where it will not load the file, and nothing for a page
+ * it cannot read. The text is read without them, its fonts unjudged.
  */
-async function pdfFigures(filePath: string): Promise<Map<number, DocumentTextFigure[]>> {
+async function pdfPageFacts(filePath: string): Promise<PdfPageFacts> {
   const figures = new Map<number, DocumentTextFigure[]>()
+  const fonts = new Map<number, PageFonts>()
   try {
     const doc = await PDFDocument.load(await readFile(filePath), {
       updateMetadata: false,
-      ignoreEncryption: true,
+      // Decrypted with the empty user password: a PDF any viewer opens, whose
+      // permissions forbid copying its text, as a sixth of the ones we tried
+      // do. Encrypted, its content is ciphertext and the objects in its
+      // streams unreadable: upstream pdf-lib cannot decrypt, this fork can.
+      // It parses such a file twice, holding the first parse through the
+      // second — twice the memory, for those files only. One it cannot
+      // decrypt (a trailer without the /ID its key is made from) gives nothing
+      password: '',
       // Its default yields to the event loop every 100 objects, which in a
       // process doing nothing else is only waiting
       parseSpeed: ParseSpeeds.Fastest,
     })
-    // Per object rather than per page: a decoration drawn on every page is
-    // hashed once
-    const drawnBy = new Map<string, DocumentTextFigure[]>()
+    // Per object rather than per page: a decoration drawn on every page, or a
+    // font every page uses, is looked at once
+    const walk: PdfWalk = {
+      doc,
+      forms: new Map(),
+      inheriting: new WeakMap(),
+      fonts: new Map(),
+      opening: new Set(),
+    }
     doc.getPages().forEach((page, i) => {
       try {
-        const found = imagesIn(
-          doc,
-          page.node.Resources(),
-          pageContents(doc, page.node.Contents()),
-          drawnBy,
-          new Set()
-        )
+        const found = drawnBy(walk, page.node.Resources(), pageContents(doc, page.node.Contents()))
         // An image the page draws twice, or through two forms, is one figure
-        const distinct = [...new Map(found.map((f) => [f.ref, f])).values()]
+        const distinct = [...new Map(found.figures.map((f) => [f.ref, f])).values()]
         if (distinct.length > 0) figures.set(i + 1, distinct)
+        if (found.unmapped.size > 0) fonts.set(i + 1, found)
       } catch {
-        // No figures for this page
+        // Nothing for this page: no figures, its fonts unjudged
       }
     })
   } catch {
-    // No figures at all
+    // Nothing at all
   }
-  return figures
+  return { figures, fonts }
+}
+
+interface PdfPageFacts {
+  figures: Map<number, DocumentTextFigure[]>
+  /** Only for the pages that set text in an unmapped font */
+  fonts: Map<number, PageFonts>
 }
 
 /**
- * The images `contents` draw from a resource dictionary, through the forms
- * they draw too. The contents are read only where the dictionary names any
- * XObject: on a page of text alone, inflating them would be work for nothing.
+ * The fonts a page sets text in, by name, by whether the codes it draws with
+ * map to characters. A name can be in both: two fonts of one name.
  */
-function imagesIn(
-  doc: PDFDocument,
-  resources: PDFDict | undefined,
-  contents: PDFRawStream[],
-  drawnBy: Map<string, DocumentTextFigure[]>,
+interface PageFonts {
+  unmapped: Set<string>
+  mapped: Set<string>
+}
+
+/** What a content stream draws, through the forms it draws too. */
+interface Drawn extends PageFonts {
+  figures: DocumentTextFigure[]
+}
+
+/** One document's walk, and what it has found of the objects pages share. */
+interface PdfWalk {
+  doc: PDFDocument
+  /** What each image is, and each form with resources of its own draws, by its object */
+  forms: Map<string, Drawn>
+  /**
+   * What each form with none draws, by the resources it is drawn from — a form
+   * two pages draw is two forms where their fonts differ — and its object
+   */
+  inheriting: WeakMap<PDFDict, Map<string, Drawn>>
+  /** Each font's facts, by its object */
+  fonts: Map<string, FontFacts>
+  /** The forms being walked, so one that draws itself ends */
   opening: Set<string>
-): DocumentTextFigure[] {
+}
+
+/**
+ * What `contents` draw from a resource dictionary. The contents are read only
+ * where the dictionary names an XObject or an unmapped font: a page of text
+ * in mapped fonts has nothing in it to look for, and inflating it would be
+ * work for nothing. Its fonts are then all the ones it names, which, mapped,
+ * only ever keep text.
+ */
+function drawnBy(walk: PdfWalk, resources: PDFDict | undefined, contents: PDFRawStream[]): Drawn {
+  const drawn: Drawn = { figures: [], unmapped: new Set(), mapped: new Set() }
   const xobjects = resources?.lookupMaybe(PDFName.of('XObject'), PDFDict)
-  const named = xobjects?.entries() ?? []
-  if (named.length === 0) return []
-  const drawn = namesDrawnBy(contents)
-  return named.flatMap(([name, value]) => {
-    // Named is not drawn: pages share one dictionary of every image in it
-    if (!drawn.has(name) || !(value instanceof PDFRef)) return []
-    const key = value.toString()
-    const known = drawnBy.get(key)
-    if (known) return known
-    // A form that draws itself
-    if (opening.has(key)) return []
-    opening.add(key)
-    const figures = imagesOf(doc, value, drawnBy, opening)
-    opening.delete(key)
-    drawnBy.set(key, figures)
-    return figures
-  })
+  const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict)
+  const named = (fonts?.entries() ?? []).map(
+    ([name, value]) => [name, fontFactsOf(walk, value)] as const
+  )
+  const add = ({ names, text }: FontFacts) => {
+    if (text !== 'none') names.forEach((name) => drawn[text].add(name))
+  }
+  if (!xobjects?.entries().length && !named.some(([, facts]) => facts.text === 'unmapped')) {
+    named.forEach(([, facts]) => add(facts))
+    return drawn
+  }
+  const used = namesUsedBy(contents)
+  // Set is not named: pages share one dictionary of every font and image in it
+  for (const [name, facts] of named) if (used.fonts.has(name)) add(facts)
+  for (const [name, value] of xobjects?.entries() ?? []) {
+    if (!used.xobjects.has(name) || !(value instanceof PDFRef)) continue
+    const inner = xobjectDrawn(walk, value, resources)
+    drawn.figures.push(...inner.figures)
+    inner.unmapped.forEach((font) => drawn.unmapped.add(font))
+    inner.mapped.forEach((font) => drawn.mapped.add(font))
+  }
+  return drawn
 }
 
-/** A page's content streams: one, or an array of them. */
-function pageContents(doc: PDFDocument, contents: PDFObject | undefined): PDFRawStream[] {
-  const parts = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : []
-  return parts
-    .map((part) => (part instanceof PDFRef ? doc.context.lookup(part) : part))
-    .filter((part): part is PDFRawStream => part instanceof PDFRawStream)
-}
+const NOTHING: Drawn = { figures: [], unmapped: new Set(), mapped: new Set() }
 
 /**
- * The XObject names `streams` paint (`/Name Do`), as pdf-lib names them — it
- * reads their `#xx` escapes as its parser read the dictionary's, and interns
- * them, so the two compare as they are. Read from the operators as text: a
- * name inside a string that happens to read `/X Do` counts, which costs at
- * most a figure that was named anyway.
+ * The figure an XObject is, or what a form XObject draws — from its own
+ * resources, or those it is drawn from where it has none.
  */
-function namesDrawnBy(streams: PDFRawStream[]): Set<PDFName> {
-  const names = new Set<PDFName>()
-  for (const stream of streams) {
-    const decoded = decodePDFRawStream(stream).decode()
-    const operators = Buffer.from(decoded.buffer, decoded.byteOffset, decoded.byteLength)
-    for (const [, name] of operators.toString('latin1').matchAll(/\/([^\s/[\]()<>{}%]+)\s+Do\b/g)) {
-      names.add(PDFName.of(name))
-    }
+function xobjectDrawn(walk: PdfWalk, ref: PDFRef, inherited: PDFDict | undefined): Drawn {
+  const key = ref.toString()
+  const stream = walk.doc.context.lookup(ref)
+  if (!(stream instanceof PDFRawStream)) return NOTHING
+  const subtype = stream.dict.get(PDFName.of('Subtype'))
+  if (subtype === PDFName.of('Image')) {
+    const known = walk.forms.get(key)
+    if (known) return known
+    const figure = figureOf(stream, key)
+    const drawn = { ...NOTHING, figures: figure ? [figure] : [] }
+    walk.forms.set(key, drawn)
+    return drawn
   }
-  return names
+  if (subtype !== PDFName.of('Form')) return NOTHING
+  const own = stream.dict.lookupMaybe(PDFName.of('Resources'), PDFDict)
+  let forms = walk.forms
+  if (!own && inherited) {
+    forms = walk.inheriting.get(inherited) ?? new Map()
+    walk.inheriting.set(inherited, forms)
+  }
+  const known = forms.get(key)
+  if (known) return known
+  // A form that draws itself
+  if (walk.opening.has(key)) return NOTHING
+  walk.opening.add(key)
+  const drawn = drawnBy(walk, own ?? inherited, [stream])
+  walk.opening.delete(key)
+  forms.set(key, drawn)
+  return drawn
 }
 
-/** The figure an XObject is, or the figures a form XObject draws. */
-function imagesOf(
-  doc: PDFDocument,
-  ref: PDFRef,
-  drawnBy: Map<string, DocumentTextFigure[]>,
-  opening: Set<string>
-): DocumentTextFigure[] {
-  const stream = doc.context.lookup(ref)
-  if (!(stream instanceof PDFRawStream)) return []
-  const subtype = stream.dict.get(PDFName.of('Subtype'))
-  if (subtype === PDFName.of('Form')) {
-    const resources = stream.dict.lookupMaybe(PDFName.of('Resources'), PDFDict)
-    return imagesIn(doc, resources, [stream], drawnBy, opening)
-  }
-  if (subtype !== PDFName.of('Image')) return []
+/** An image XObject as a figure, unless too small for one. */
+function figureOf(stream: PDFRawStream, ref: string): DocumentTextFigure | undefined {
   const width = stream.dict.lookupMaybe(PDFName.of('Width'), PDFNumber)?.asNumber()
   const height = stream.dict.lookupMaybe(PDFName.of('Height'), PDFNumber)?.asNumber()
   if (
@@ -525,17 +605,189 @@ function imagesOf(
     height !== undefined &&
     (width < FIGURE_MIN_PIXELS || height < FIGURE_MIN_PIXELS)
   ) {
-    return []
+    return undefined
   }
   const digest = createHash('sha256').update(stream.getContents()).digest('hex')
-  return [
-    {
-      ref: ref.toString(),
-      ...(width !== undefined && { width }),
-      ...(height !== undefined && { height }),
-      digest: digest.slice(0, FIGURE_DIGEST_CHARS),
-    },
-  ]
+  return {
+    ref,
+    ...(width !== undefined && { width }),
+    ...(height !== undefined && { height }),
+    digest: digest.slice(0, FIGURE_DIGEST_CHARS),
+  }
+}
+
+/** A page's content streams: one, or an array of them. */
+function pageContents(doc: PDFDocument, contents: PDFObject | undefined): PDFRawStream[] {
+  const parts = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : []
+  return parts
+    .map((part) => doc.context.lookup(part))
+    .filter((part): part is PDFRawStream => part instanceof PDFRawStream)
+}
+
+/**
+ * The XObjects `streams` paint (`/Name Do`) and the fonts they set text in
+ * (`/Name size Tf`), named as pdf-lib names them — it reads their `#xx`
+ * escapes as its parser read the dictionary's, and interns them, so the two
+ * compare as they are. Read from the operators as text: a name inside a
+ * string that happens to read `/X Do` counts, which costs at most an object
+ * that was named anyway.
+ */
+function namesUsedBy(streams: PDFRawStream[]): { xobjects: Set<PDFName>; fonts: Set<PDFName> } {
+  const xobjects = new Set<PDFName>()
+  const fonts = new Set<PDFName>()
+  for (const stream of streams) {
+    const decoded = decodePDFRawStream(stream).decode()
+    const operators = Buffer.from(decoded.buffer, decoded.byteOffset, decoded.byteLength)
+    for (const [, name, operator] of operators
+      .toString('latin1')
+      .matchAll(/\/([^\s/[\]()<>{}%]+)\s+(?:[-+.\d]+\s+)?(Do|Tf)\b/g)) {
+      ;(operator === 'Do' ? xobjects : fonts).add(PDFName.of(name))
+    }
+  }
+  return { xobjects, fonts }
+}
+
+/** The names pdf.js may give a font, and what text pdf.js gives for it. */
+interface FontFacts {
+  names: string[]
+  /** Characters, glyph numbers, or nothing at all */
+  text: 'mapped' | 'unmapped' | 'none'
+}
+
+/** The tag a subset font's name starts with (`ACJJEK+MS-Mincho`), which officeparser drops. */
+const SUBSET_TAG = /^[A-Z]{6}\+/
+
+/** The character collections pdf.js maps to Unicode by their own tables. */
+const ADOBE_COLLECTIONS = new Set(['Japan1', 'GB1', 'CNS1', 'Korea1'])
+
+/**
+ * The facts of the font `value` is; mapped, with no name, where pdf-lib cannot
+ * read it, so its text is kept.
+ *
+ * Unmapped is a composite font whose codes are its glyph numbers (Identity-H
+ * or -V) and that has no ToUnicode to say what character each glyph is.
+ * pdf.js gives such a code as the character of that number — `の` as
+ * Samaritan `ࡢ` (U+0862) — and no font on the reader's side makes it read.
+ * Such a font numbering its glyphs as one of Adobe's character collections
+ * (Adobe-Japan1 and the like) has its codes looked up in pdf.js's CMaps: when
+ * it is given them, which officeparser does not do, and without them pdf.js
+ * gives no text for it at all. Given them, it would be mapped.
+ */
+function fontFactsOf(walk: PdfWalk, value: PDFObject): FontFacts {
+  const key = value instanceof PDFRef ? value.toString() : undefined
+  const known = key && walk.fonts.get(key)
+  if (known) return known
+  let facts: FontFacts = { names: [], text: 'mapped' }
+  try {
+    const font = walk.doc.context.lookup(value, PDFDict)
+    const descendant = font
+      .lookupMaybe(PDFName.of('DescendantFonts'), PDFArray)
+      ?.lookupMaybe(0, PDFDict)
+    const encoding = font.lookup(PDFName.of('Encoding'))
+    const glyphNumbers =
+      font.get(PDFName.of('Subtype')) === PDFName.of('Type0') &&
+      (encoding === PDFName.of('Identity-H') || encoding === PDFName.of('Identity-V')) &&
+      !font.has(PDFName.of('ToUnicode'))
+    facts = {
+      names: pdfjsNames(descendant ?? font, descendant !== undefined),
+      text: !glyphNumbers ? 'mapped' : inAdobeCollection(descendant) ? 'none' : 'unmapped',
+    }
+  } catch {
+    // Not a font pdf-lib reads
+  }
+  if (key) walk.fonts.set(key, facts)
+  return facts
+}
+
+/**
+ * The names pdf.js gives a font (`translateFont`), less the subset tag as
+ * officeparser gives them: a composite font's descendant's, not the
+ * composite's own, which has the CMap after it (`MS-Mincho-Identity-H`).
+ * A simple font with no descriptor — one of the standard 14 — by its
+ * BaseFont as pdf.js normalises it. Otherwise its descriptor's FontName,
+ * unless it is missing, or the BaseFont is it and more (`Lato` and
+ * `Lato-Medium`); where they differ otherwise, pdf.js picks by whether it
+ * knows either name, from tables of its own, so both are given.
+ */
+function pdfjsNames(dict: PDFDict, composite: boolean): string[] {
+  const descriptor = dict.lookupMaybe(PDFName.of('FontDescriptor'), PDFDict)
+  const base = dict.lookupMaybe(PDFName.of('BaseFont'), PDFName)?.decodeText()
+  const fontName = descriptor?.lookupMaybe(PDFName.of('FontName'), PDFName)?.decodeText()
+  let names: (string | undefined)[]
+  if (!descriptor && !composite) names = [base?.replaceAll(/[,_]/g, '-').replaceAll(/\s/g, '')]
+  else if (!fontName || !base || fontName === base) names = [fontName ?? base]
+  else if (base.startsWith(fontName)) names = [base]
+  else names = [fontName, base]
+  return names.filter((name) => name !== undefined).map((name) => name.replace(SUBSET_TAG, ''))
+}
+
+function inAdobeCollection(descendant: PDFDict | undefined): boolean {
+  const info = descendant?.lookupMaybe(PDFName.of('CIDSystemInfo'), PDFDict)
+  const text = (key: string) => {
+    const value = info?.lookup(PDFName.of(key))
+    return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : ''
+  }
+  return text('Registry') === 'Adobe' && ADOBE_COLLECTIONS.has(text('Ordering'))
+}
+
+/** The family officeparser gives a run whose font pdf.js has no name for. */
+const GENERIC_FAMILY = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/
+
+/** Fonts whose codes are symbols, not the letters they would be in ASCII. */
+const SYMBOL_FONT = /symbol|dingbat|wingding|webding/i
+
+/**
+ * Codes pdf.js moves to U+F000 and up for a font flagged as symbolic — which
+ * a subset of an ordinary font can be: `<U+F039>` for `9`.
+ */
+const SYMBOLIC_CODES = /[\uF020-\uF07E]/g
+
+/**
+ * `page` with the text in its unmapped fonts left out, and the codes of an
+ * ordinary font flagged as symbolic read as the ASCII they are; unreadable
+ * where most of its text was left out. A run's font is named as officeparser
+ * names it — pdf.js's name less the subset tag, a `+1` added to tell two of a
+ * name apart. Where a mapped font has the name too, its text is kept: which
+ * of the two drew it cannot be told. A run officeparser names no font for —
+ * pdf.js has none for a font the file does not embed, and officeparser then
+ * gives the generic family — is left out only where every font the page sets
+ * text in is unmapped.
+ */
+function readable(
+  page: OfficeContentNode,
+  fonts: PageFonts | undefined
+): { page: OfficeContentNode | undefined; unreadable: boolean } {
+  let unmapped = 0
+  let mapped = 0
+  const visit = (node: OfficeContentNode): OfficeContentNode | undefined => {
+    if (node.type === 'text') {
+      const named = (node.formatting as { font?: string } | undefined)?.font
+      const font = named && !GENERIC_FAMILY.test(named) ? named.replace(/\+\d+$/, '') : undefined
+      if (fonts) {
+        const chars = (node.text ?? '').replace(/\s/g, '').length
+        const lost = font
+          ? fonts.unmapped.has(font) && !fonts.mapped.has(font)
+          : fonts.mapped.size === 0
+        if (lost) {
+          unmapped += chars
+          return undefined
+        }
+        mapped += chars
+      }
+      if (!font || SYMBOL_FONT.test(font) || !node.text) return node
+      const text = node.text.replace(SYMBOLIC_CODES, (c) =>
+        String.fromCharCode(c.charCodeAt(0) - 0xf000)
+      )
+      return text === node.text ? node : { ...node, text }
+    }
+    if (!node.children?.length) return node
+    const visited = node.children.map(visit)
+    if (visited.every((child, i) => child === node.children![i])) return node
+    const children = visited.filter((child) => child !== undefined)
+    // Gone with its text: left without children, it would render a text of its own
+    return children.length > 0 ? { ...node, children } : undefined
+  }
+  return { page: visit(page), unreadable: unmapped > mapped }
 }
 
 /** The anchors on a page, which an outline entry can point at instead of the page. */

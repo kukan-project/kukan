@@ -442,7 +442,7 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       const interpreted = documentInterpreted(ctx, [
         { loc: { page: 1 }, headings: ['第1章'], text: '本文\n二行目' },
-        { loc: { page: 2 }, text: '', textLayer: false },
+        { loc: { page: 2 }, text: '', unreadable: 'no-text' },
         { loc: { page: 2 }, text: '市域の地図', figure: { ref: '9 0 R' } },
       ])
 
@@ -462,7 +462,7 @@ describe('executeIndexContent', () => {
     it('leaves what was indexed before for a document with no text', async () => {
       const ctx = createMockCtx()
       const interpreted = documentInterpreted(ctx, [
-        { loc: { page: 1 }, text: '', textLayer: false },
+        { loc: { page: 1 }, text: '', unreadable: 'no-text' },
       ])
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', interpreted, ctx)

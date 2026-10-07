@@ -342,8 +342,13 @@ export interface DocumentTextBlock {
    */
   headings?: string[]
   text: string
-  /** A page with nothing to read on it: a scan, or a page of images. */
-  textLayer?: false
+  /**
+   * A page whose text has to be read from its picture — OCR — and why:
+   * `no-text`, it has none to read (a scan, a page of images); `unmapped-fonts`,
+   * most of it is in fonts with no map from their glyphs to characters, and
+   * `text` is what it has in other fonts, which may be nothing.
+   */
+  unreadable?: 'no-text' | 'unmapped-fonts'
   /**
    * An image rather than text, after the block of the page or slide it is on.
    * Its `text` is the description its author gave it, where there is one.
