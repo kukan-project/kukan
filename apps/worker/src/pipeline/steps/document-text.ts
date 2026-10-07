@@ -248,10 +248,11 @@ async function* officeBlocks(filePath: string): AsyncGenerator<DocumentTextBlock
     yield { loc: {}, ...under, text: await render(ast, nodes) }
     yield* figureBlocks(nodes, {}, under, partOf)
   }
+  let sheets = 0
   for (const node of top) {
     if (node.type === 'slide' || node.type === 'sheet') {
       yield* section()
-      yield* unitBlocks(ast, node, partOf)
+      yield* unitBlocks(ast, node, partOf, node.type === 'sheet' ? ++sheets : undefined)
       continue
     }
     if (node.type === 'heading') {
@@ -266,17 +267,19 @@ async function* officeBlocks(filePath: string): AsyncGenerator<DocumentTextBlock
   yield* section()
 }
 
-/** A slide under its title, or a sheet by its name, and then its pictures. */
+/** A slide under its title, or a sheet by its number and name, and then its pictures. */
 async function* unitBlocks(
   ast: OfficeParserAST,
   node: OfficeContentNode,
-  partOf: (name: string) => Promise<string>
+  partOf: (name: string) => Promise<string>,
+  /** The sheet's number, where `node` is one. */
+  sheet?: number
 ): AsyncGenerator<DocumentTextBlock> {
   const meta = node.metadata as { sheetName?: string; slideNumber?: number } | undefined
   let loc: DocumentTextLoc = {}
   let under: { headings?: string[] } = {}
-  if (node.type === 'sheet') {
-    if (meta?.sheetName) loc = { sheet: meta.sheetName }
+  if (sheet !== undefined) {
+    loc = { sheet, ...(meta?.sheetName && { sheetName: meta.sheetName }) }
   } else {
     if (meta?.slideNumber !== undefined) loc = { slide: meta.slideNumber }
     const title = findNodes(node, (n) => n.type === 'heading')[0]
@@ -859,9 +862,11 @@ const WORKBOOK_RELS = 'xl/_rels/workbook.xml.rels'
 const SHEET = /^xl\/worksheets\/sheet(\d+)\.xml$/
 
 /**
- * A block per row, its non-empty cells separated by tabs, sheet after sheet in
- * the workbook's tab order. Only the shared strings are held whole — every
- * cell refers to them by index.
+ * A sheet's rows a line each, their non-empty cells separated by tabs, as
+ * blocks of consecutive rows up to BLOCK_MAX_CHARS, sheet after sheet in the
+ * workbook's tab order. Each block says which row of its sheet each of its
+ * lines is: empty rows are not in it, so the first row and a count would not.
+ * Only the shared strings are held whole — every cell refers to them by index.
  */
 async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
   const zip = await openZip(filePath)
@@ -873,15 +878,34 @@ async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> 
     const shared: string[] = []
     const strings = entries.get(SHARED_STRINGS)
     if (strings) {
-      for await (const text of readPart(zip, strings, sharedStringParser)) shared.push(text)
-    }
-    for (const { part, name } of await sheetOrder(zip, entries)) {
-      const sheet = entries.get(part)
-      if (!sheet) continue
-      const rows = readPart<SheetRow>(zip, sheet, (emit) => sheetRowParser(emit, shared))
-      for await (const { row, text } of rows) {
-        yield { loc: { ...(name !== undefined && { sheet: name }), row }, text }
+      for await (const text of readPart(zip, strings, sharedStringParser)) {
+        shared.push(oneLine(text))
       }
+    }
+    for (const [index, { part, name }] of (await sheetOrder(zip, entries)).entries()) {
+      const entry = entries.get(part)
+      if (!entry) continue
+      const sheet = { sheet: index + 1, ...(name !== undefined && { sheetName: name }) }
+      let rows: number[] = []
+      let lines: string[] = []
+      let length = 0
+      const block = (): DocumentTextBlock => {
+        const done = { loc: { ...sheet, rows }, text: lines.join('\n') }
+        rows = []
+        lines = []
+        length = 0
+        return done
+      }
+      for await (const { row, text } of readPart<SheetRow>(zip, entry, (emit) =>
+        sheetRowParser(emit, shared)
+      )) {
+        // `length` counts a line break after each line, the last one's not in the text
+        if (rows.length > 0 && length + text.length > BLOCK_MAX_CHARS) yield block()
+        length += text.length + 1
+        rows.push(row)
+        lines.push(text)
+      }
+      if (rows.length > 0) yield block()
     }
   } finally {
     zip.close()
@@ -890,8 +914,9 @@ async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> 
 
 /**
  * The sheets' parts and names in the workbook's tab order, which need not
- * follow their file names; by the number in the name, and named by the part,
- * where the workbook does not say.
+ * follow their file names; by the number in the name, and unnamed, where the
+ * workbook does not say — the part's name (`sheet2`) would read as the
+ * sheet's own.
  */
 async function sheetOrder(
   zip: yauzl.ZipFile,
@@ -925,13 +950,18 @@ async function sheetOrder(
     }
     if (order.length > 0) return order
   }
-  return (
-    [...entries.keys()]
-      .filter((name) => SHEET.test(name))
-      .sort((a, b) => Number(SHEET.exec(a)![1]) - Number(SHEET.exec(b)![1]))
-      // No names to give: the part's own (`sheet2`) tells the sheets apart
-      .map((part) => ({ part, name: posix.basename(part, '.xml') }))
-  )
+  return [...entries.keys()]
+    .filter((name) => SHEET.test(name))
+    .sort((a, b) => Number(SHEET.exec(a)![1]) - Number(SHEET.exec(b)![1]))
+    .map((part) => ({ part }))
+}
+
+/**
+ * A cell's text with its line breaks and tabs as spaces: a row is one line,
+ * and its cells are told apart by tabs.
+ */
+function oneLine(text: string): string {
+  return text.replace(/[\t\n\r]+/g, ' ')
 }
 
 /** Each `<si>`'s text; a phonetic reading (`<rPh>`) is not part of it. */
@@ -989,7 +1019,7 @@ function sheetRowParser(emit: (row: SheetRow) => void, shared: string[]): PartPa
       if (tag.name === 'v' || tag.name === 't') inValue = false
       else if (tag.name === 'rPh') phonetic--
       else if (tag.name === 'c') {
-        const text = type === 's' ? (shared[Number(value)] ?? '') : value
+        const text = type === 's' ? (shared[Number(value)] ?? '') : oneLine(value)
         // Formatted but empty: officeparser leaves such cells out, and rows of them
         if (text) cells.push(text)
       } else if (tag.name === 'row') {

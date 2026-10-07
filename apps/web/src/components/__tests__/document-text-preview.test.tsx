@@ -75,6 +75,29 @@ describe('extracted text preview', () => {
     expect(screen.getByText('10')).toBeInTheDocument()
   })
 
+  it('numbers each line of a sheet with its row, and the sheet by name or number', async () => {
+    serve({
+      blocks: [
+        {
+          loc: { sheet: 1, sheetName: '4月度', rows: [2, 5] },
+          text: '期間\t内容\n1～30\t机・イス',
+        },
+        { loc: { sheet: 2, rows: [1] }, text: '合計' },
+      ],
+      truncated: false,
+    })
+    await showText()
+
+    expect(await screen.findByRole('heading', { name: 'Sheet "4月度"' })).toBeInTheDocument()
+    // A workbook's outline is its sheets, not pages
+    expect(screen.getByRole('navigation', { name: 'Sheets' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sheet 2' })).toBeInTheDocument()
+    // The empty rows between are skipped, and the numbers say so
+    // Matched as Testing Library normalises it, the tab a space
+    const row = screen.getByText('1～30 机・イス').parentElement!
+    expect(row.textContent).toBe('51～30\t机・イス')
+  })
+
   it('outlines the headings, each where it first appears', async () => {
     serve({
       blocks: [

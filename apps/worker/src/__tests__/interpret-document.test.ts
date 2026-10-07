@@ -82,7 +82,7 @@ describe('interpreting a document', () => {
     expect(uploaded('txt')).toBeUndefined()
   })
 
-  it('reads a workbook a row at a time, by sheet and row', async () => {
+  it('reads a workbook by sheet, each line a row', async () => {
     const workbook = await xlsxBuffer({
       shared: ['<si><t>地域</t></si>', '<si><t>人口</t></si>'],
       sheets: {
@@ -97,8 +97,7 @@ describe('interpreting a document', () => {
     const result = await interpret(workbook, 'XLSX')
 
     expect(await written()).toEqual([
-      { loc: { sheet: 's1', row: 1 }, text: '地域\t人口' },
-      { loc: { sheet: 's1', row: 2 }, text: '東京\t14000000' },
+      { loc: { sheet: 1, sheetName: 's1', rows: [1, 2] }, text: '地域\t人口\n東京\t14000000' },
     ])
     expect(uploaded('txt')!.toString('utf-8')).toBe('地域\t人口\n東京\t14000000')
     expect(result!.documentText!.bytes).toBe(Buffer.byteLength('地域\t人口\n東京\t14000000'))

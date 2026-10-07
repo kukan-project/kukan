@@ -95,7 +95,7 @@ export function DocumentTextPreview({ resourceId }: DocumentTextPreviewProps) {
   ).size
   const labelled = units.map((unit) => ({ ...unit, label: unitLabel(unit.loc, t) }))
   const byHeadings = outline.length > 0
-  const navLabel = t(byHeadings ? 'documentTextOutline' : 'documentTextPages')
+  const navLabel = t(byHeadings ? 'documentTextOutline' : unitsLabel(units))
   const nav = byHeadings
     ? outline
     : labelled
@@ -234,15 +234,26 @@ function BlockView({
       </div>
     )
   }
+  const rows = block.loc.rows
+  if (rows) {
+    // A line per row of the sheet, numbered as the sheet numbers it
+    return (
+      <div id={id}>
+        {block.text.split('\n').map((line, i) => (
+          <div key={i} className="flex gap-2">
+            <span className="w-12 shrink-0 text-right font-mono text-xs text-muted-foreground">
+              {rows[i]}
+            </span>
+            <pre className="min-w-0 flex-1 font-sans text-sm whitespace-pre-wrap">{line}</pre>
+          </div>
+        ))}
+      </div>
+    )
+  }
   return (
-    <div id={id} className="flex gap-2">
-      {block.loc.row !== undefined && (
-        <span className="w-12 shrink-0 text-right font-mono text-xs text-muted-foreground">
-          {block.loc.row}
-        </span>
-      )}
-      <pre className="min-w-0 flex-1 font-sans text-sm whitespace-pre-wrap">{block.text}</pre>
-    </div>
+    <pre id={id} className="font-sans text-sm whitespace-pre-wrap">
+      {block.text}
+    </pre>
   )
 }
 
@@ -265,8 +276,16 @@ function unitsOf(blocks: DocumentTextBlock[]): Unit[] {
 function unitKey(loc: DocumentTextLoc): string {
   if (loc.page !== undefined) return `page:${loc.page}`
   if (loc.slide !== undefined) return `slide:${loc.slide}`
-  if (loc.sheet !== undefined || loc.row !== undefined) return `sheet:${loc.sheet ?? ''}`
+  if (loc.sheet !== undefined) return `sheet:${loc.sheet}`
   return ''
+}
+
+/** What the units are, by the kind every one of them is; pages where they are not all one. */
+function unitsLabel(units: Unit[]) {
+  const kinds = new Set(units.map((unit) => unitKey(unit.loc).split(':')[0]))
+  if (kinds.size === 1 && kinds.has('sheet')) return 'documentTextSheets'
+  if (kinds.size === 1 && kinds.has('slide')) return 'documentTextSlides'
+  return 'documentTextPages'
 }
 
 function unitLabel(loc: DocumentTextLoc, t: ReturnType<typeof useTranslations>): string {
@@ -276,7 +295,10 @@ function unitLabel(loc: DocumentTextLoc, t: ReturnType<typeof useTranslations>):
       : t('documentTextPage', { page: loc.page })
   }
   if (loc.slide !== undefined) return t('documentTextSlide', { slide: loc.slide })
-  return loc.sheet !== undefined ? t('documentTextSheet', { sheet: loc.sheet }) : ''
+  if (loc.sheet === undefined) return ''
+  return loc.sheetName !== undefined
+    ? t('documentTextSheet', { sheet: loc.sheetName })
+    : t('documentTextSheetNumber', { sheet: loc.sheet })
 }
 
 /** Each heading where the path first reaches it, nested by its depth in the path. */

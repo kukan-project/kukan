@@ -310,9 +310,15 @@ export interface DocumentTextLoc {
   label?: string
   /** 1-based. */
   slide?: number
-  sheet?: string
-  /** 1-based, as the sheet numbers it. */
-  row?: number
+  /** 1-based, in the order of the workbook's tabs. */
+  sheet?: number
+  /** The sheet's name, where the workbook gives one. */
+  sheetName?: string
+  /**
+   * The row of the sheet each line of `text` is, 1-based as the sheet numbers
+   * them: rows run together into a block, and empty ones are not in it.
+   */
+  rows?: number[]
 }
 
 /**

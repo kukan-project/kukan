@@ -99,6 +99,11 @@ function astOf(content: OfficeContentNode[], extra: object = {}) {
 }
 
 describe('XLSX', () => {
+  /** Each line of each block: a row of a sheet. */
+  async function rows(path: string): Promise<string[]> {
+    return (await lines(path, 'xlsx')).flatMap((text) => text.split('\n'))
+  }
+
   it('reads the sheets in their numbered order, a row per line', async () => {
     const path = await file(
       'a.xlsx',
@@ -115,15 +120,45 @@ describe('XLSX', () => {
     expect(await lines(path, 'xlsx')).toEqual(['3', '1', '2'])
   })
 
-  it('says which sheet and row each block is', async () => {
+  it("runs a sheet's rows into a block, saying which sheet and which row each line is", async () => {
     const path = await file(
       'where.xlsx',
       await xlsxBuffer({ sheets: { 1: [[1], [], [3]], 2: [[4]] }, tabs: [2, 1] })
     )
+    expect(await blocks(path, 'xlsx')).toEqual([
+      { loc: { sheet: 1, sheetName: 's2', rows: [1] }, text: '4' },
+      // The empty row is in neither the text nor the numbers
+      { loc: { sheet: 2, sheetName: 's1', rows: [1, 3] }, text: '1\n3' },
+    ])
+  })
+
+  it('numbers a sheet the workbook does not name, and makes up no name for it', async () => {
+    const path = await file('unnamed.xlsx', await xlsxBuffer({ sheets: { 1: [[1]], 2: [[2]] } }))
+
     expect((await blocks(path, 'xlsx')).map((b) => b.loc)).toEqual([
-      { sheet: 's2', row: 1 },
-      { sheet: 's1', row: 1 },
-      { sheet: 's1', row: 3 },
+      { sheet: 1, rows: [1] },
+      { sheet: 2, rows: [1] },
+    ])
+  })
+
+  it('starts another block where the next row would take it past its size', async () => {
+    const long = 'あ'.repeat(20_000)
+    const path = await file(
+      'long.xlsx',
+      await xlsxBuffer({ sheets: { 1: [[{ inline: long }], [{ inline: long }], [1]] } })
+    )
+
+    expect((await blocks(path, 'xlsx')).map((b) => b.loc.rows)).toEqual([[1], [2, 3]])
+  })
+
+  it('reads a line break or a tab in a cell as a space, a row staying one line', async () => {
+    const path = await file(
+      'breaks.xlsx',
+      await xlsxBuffer({ sheets: { 1: [[{ inline: '東京\n都' }, { inline: 'a\tb' }], [2]] } })
+    )
+
+    expect(await blocks(path, 'xlsx')).toEqual([
+      { loc: { sheet: 1, rows: [1, 2] }, text: '東京 都\ta b\n2' },
     ])
   })
 
@@ -143,7 +178,7 @@ describe('XLSX', () => {
       'gaps.xlsx',
       await xlsxBuffer({ sheets: { 1: [[1, 2], [], [3, { empty: true }, 4], [{ empty: true }]] } })
     )
-    expect(await lines(path, 'xlsx')).toEqual(['1\t2', '3\t4'])
+    expect(await rows(path)).toEqual(['1\t2', '3\t4'])
   })
 
   it('refuses an archive with more entries than the limit', async () => {
@@ -166,10 +201,10 @@ describe('XLSX', () => {
   })
 
   it('keeps characters whole across the chunks a large sheet arrives in', async () => {
-    const rows = Array.from({ length: 5000 }, (_, i) => [{ inline: `行${i}：日本語のテキスト` }])
-    const path = await file('c.xlsx', await xlsxBuffer({ sheets: { 1: rows } }))
+    const sheet = Array.from({ length: 5000 }, (_, i) => [{ inline: `行${i}：日本語のテキスト` }])
+    const path = await file('c.xlsx', await xlsxBuffer({ sheets: { 1: sheet } }))
 
-    const out = await lines(path, 'xlsx')
+    const out = await rows(path)
     expect(out).toHaveLength(5000)
     expect(out[4999]).toBe('行4999：日本語のテキスト')
     expect(out.join('')).not.toContain('�')
