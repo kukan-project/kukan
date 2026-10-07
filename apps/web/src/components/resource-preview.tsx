@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import type { CsvDialect, ResourceSchema } from '@kukan/shared'
@@ -12,6 +12,7 @@ import {
   isJsonFormat,
   isZipFormat,
   isOfficeFormat,
+  isDocumentFormat,
   isPdfFormat,
   isGeoJsonFormat,
   isImageFormat,
@@ -25,6 +26,7 @@ import { GeoJsonPreview } from './geojson-preview'
 import { JsonPreview } from './json-preview'
 import { ZipPreview } from './zip-preview'
 import { ImagePreview } from './image-preview'
+import { DocumentTextPreview } from './document-text-preview'
 
 interface ResourcePreviewProps {
   resourceId: string
@@ -58,7 +60,14 @@ export function ResourcePreview({
   const f = format ?? null
 
   if (isImageFormat(f)) return <ImagePreview resourceId={resourceId} />
-  if (isPdfFormat(f)) return <PdfPreview resourceId={resourceId} />
+  if (isPdfFormat(f))
+    return (
+      <DocumentPreview
+        key={resourceId}
+        resourceId={resourceId}
+        original={<PdfPreview resourceId={resourceId} />}
+      />
+    )
   if (isCsvFormat(f))
     return (
       <TablePreview
@@ -71,10 +80,77 @@ export function ResourcePreview({
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
   if (isJsonFormat(f)) return <JsonPreview resourceId={resourceId} />
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
-  if (isOfficeFormat(f))
-    return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
+  if (isOfficeFormat(f)) {
+    const original = <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
+    // DOC/XLS/PPT have no text extracted from them
+    if (!isDocumentFormat(f)) return original
+    return <DocumentPreview key={resourceId} resourceId={resourceId} original={original} />
+  }
   if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />
+  if (isDocumentFormat(f)) return <DocumentTextPreview resourceId={resourceId} />
   return <PreviewNotAvailable />
+}
+
+type DocumentSource = 'original' | 'text'
+
+/**
+ * A document as itself, where the browser can show it, or as the text
+ * extracted from it — the second is what search and AI see of the file. Each
+ * view stays mounted once shown, so switching back does not load it again.
+ */
+function DocumentPreview({ resourceId, original }: { resourceId: string; original: ReactNode }) {
+  const t = useTranslations('resource')
+  const [source, setSource] = useState<DocumentSource>('original')
+  const [shown, setShown] = useState<Set<DocumentSource>>(() => new Set(['original']))
+  const show = (key: DocumentSource) => {
+    setSource(key)
+    setShown((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <SourceToggle
+        sources={[
+          { key: 'original', label: t('previewSourceOriginal') },
+          { key: 'text', label: t('previewSourceExtractedText') },
+        ]}
+        value={source}
+        onChange={show}
+      />
+      <div hidden={source !== 'original'}>{original}</div>
+      {shown.has('text') && (
+        <div hidden={source !== 'text'}>
+          <DocumentTextPreview resourceId={resourceId} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The row of badges a preview switches its views with. */
+function SourceToggle<K extends string>({
+  sources,
+  value,
+  onChange,
+}: {
+  sources: { key: K; label: string }[]
+  value: K
+  onChange: (key: K) => void
+}) {
+  return (
+    <div className="flex gap-2">
+      {sources.map((s) => (
+        <Badge
+          key={s.key}
+          variant={value === s.key ? 'default' : 'outline'}
+          className="cursor-pointer"
+          onClick={() => onChange(s.key)}
+        >
+          {s.label}
+        </Badge>
+      ))}
+    </div>
+  )
 }
 
 function TextOnlyPreview({ resourceId }: { resourceId: string }) {
@@ -109,18 +185,7 @@ function TablePreview({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
-        {sources.map((s) => (
-          <Badge
-            key={s.key}
-            variant={source === s.key ? 'default' : 'outline'}
-            className="cursor-pointer"
-            onClick={() => setSource(s.key)}
-          >
-            {s.label}
-          </Badge>
-        ))}
-      </div>
+      <SourceToggle sources={sources} value={source} onChange={setSource} />
       {source === 'parquet' && <DroppedRowsNote schema={schema} />}
       {source === 'parquet' && (
         <DataExplorer

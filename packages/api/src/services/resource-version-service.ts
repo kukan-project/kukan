@@ -3139,12 +3139,13 @@ export class ResourceVersionService {
    * Destroy what was derived from the content being retracted, and the pointers
    * that name it.
    *
-   * Three artifacts, not one. The preview lives in a column; the text head
-   * (ADR-040) lives in `metadata` and the table profile's artifact (ADR-063) in
-   * `profile`, and being referenced there the sweep would never take them
-   * either — so a purge that dropped only the preview left an extract of the
-   * purged content in the bucket, still readable through the suggestion path. A purge cannot end with the content still readable, which
-   * is the whole of ADR-043 §5.
+   * Four artifacts, not one. The preview lives in a column; the text head
+   * (ADR-040) and the document text it is cut from live in `metadata` and the
+   * table profile's artifact (ADR-063) in `profile`, and being referenced there
+   * the sweep would never take them either — so a purge that dropped only the
+   * preview left an extract of the purged content in the bucket, still readable
+   * through the suggestion path. A purge cannot end with the content still
+   * readable, which is the whole of ADR-043 §5.
    *
    * Destroyed immediately for both callers: a purge because destroying it is
    * the point, a revert because the artifacts describe the very file the caller
@@ -3170,15 +3171,19 @@ export class ResourceVersionService {
         id: resourcePipeline.id,
         previewKey: resourcePipeline.previewKey,
         textHeadKey: sql<string | null>`${resourcePipeline.metadata} ->> 'textHeadKey'`,
+        documentTextKey: sql<string | null>`${resourcePipeline.metadata} ->> 'documentTextKey'`,
         profileKey: sql<string | null>`${resourcePipeline.profile} ->> 'key'`,
       })
       .from(resourcePipeline)
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
 
-    const keys = [pipe?.previewKey, pipe?.textHeadKey, pipe?.profileKey].filter(
-      (k): k is string => !!k
-    )
+    const keys = [
+      pipe?.previewKey,
+      pipe?.textHeadKey,
+      pipe?.documentTextKey,
+      pipe?.profileKey,
+    ].filter((k): k is string => !!k)
     if (keys.length === 0) return
 
     const detached = await this.db.execute(sql`
@@ -3187,10 +3192,12 @@ export class ResourceVersionService {
         SET preview_key = CASE
               WHEN preview_key IS NOT DISTINCT FROM ${pipe!.previewKey}::text THEN NULL
               ELSE preview_key END,
-            metadata = CASE
-              WHEN metadata ->> 'textHeadKey' IS NOT DISTINCT FROM ${pipe!.textHeadKey}::text
-              THEN metadata - 'textHeadKey'
-              ELSE metadata END,
+            metadata = metadata - array_remove(ARRAY[
+              CASE WHEN metadata ->> 'textHeadKey' IS NOT DISTINCT FROM ${pipe!.textHeadKey}::text
+                THEN 'textHeadKey' END,
+              CASE WHEN metadata ->> 'documentTextKey' IS NOT DISTINCT FROM ${pipe!.documentTextKey}::text
+                THEN 'documentTextKey' END
+            ], NULL),
             profile = CASE
               WHEN profile ->> 'key' IS NOT DISTINCT FROM ${pipe!.profileKey}::text THEN NULL
               ELSE profile END,

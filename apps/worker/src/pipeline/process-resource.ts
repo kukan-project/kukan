@@ -24,7 +24,7 @@ import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../
 import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
-import { executeInterpret } from './steps/interpret'
+import { documentTextMetadata, executeInterpret } from './steps/interpret'
 import { executeLake, type LakeStepOptions } from './steps/lake'
 import { executeIndexContent } from './steps/index-content'
 import {
@@ -215,10 +215,8 @@ async function runPipeline(
         )
         if (interpretResult === null) {
           await tracker.skipStep(interpretStepId)
-          // The interpretation produces no preview/schema for this format
-          // (non-text, e.g.
-          // PDF/image — the Index step may still persist a document text-head
-          // artifact, ADR-040).
+          // The interpretation produces nothing for this format (an image, a
+          // legacy Office file).
           // Clear any stale values a previous run left behind — e.g. a resource
           // that was a CSV (with a schema + Parquet preview) and was then replaced
           // with a PDF must not keep reporting the old schema as queryable.
@@ -230,7 +228,10 @@ async function runPipeline(
           await tracker.updateInterpretResult(
             interpretResult.previewKey,
             {
-              encoding: interpretResult.encoding,
+              ...(interpretResult.encoding && { encoding: interpretResult.encoding }),
+              // A document's text and its head (ADR-040), where it is one
+              ...(interpretResult.documentText &&
+                documentTextMetadata(interpretResult.documentText)),
               // The unit a feed page is read in (ADR-055); absent where the
               // interpretation wrote no Parquet.
               ...(interpretResult.rowGroupRows !== undefined && {

@@ -11,7 +11,8 @@ import { webLakeConfig } from '../services/query/lake-scan'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
-import { PipelineService, isQueryable } from '../services/pipeline-service'
+import { PipelineService, isQueryable, parseDocumentTextKey } from '../services/pipeline-service'
+import { readDocumentText } from '../services/document-text'
 import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
@@ -289,6 +290,30 @@ resourcesRouter.get('/:id/text', async (c) => {
       'Cache-Control': 'private, max-age=300',
     },
   })
+})
+
+// GET /api/v1/resources/:id/document-text - A document's extracted text as
+// blocks, with the page, slide or sheet each is from and the headings over it.
+// Hard-limited to TEXT_PREVIEW_LIMIT bytes of text, like /text.
+resourcesRouter.get('/:id/document-text', async (c) => {
+  const id = c.req.param('id')
+  const db = c.get('db')
+  const user = c.get('user')
+  const [, pipelineStatus] = await Promise.all([
+    new ResourceService(db).getByIdWithAccessCheck(id, user),
+    new PipelineService(db).getStatus(id),
+  ])
+  const key = parseDocumentTextKey(pipelineStatus?.metadata)
+  if (!key) throw new NotFoundError('Document text', id)
+
+  let text
+  try {
+    text = await readDocumentText(c.get('storage'), key, TEXT_PREVIEW_LIMIT)
+  } catch (err) {
+    throwIfNotFound(err, id)
+  }
+  c.header('Cache-Control', 'private, max-age=300')
+  return c.json(text)
 })
 
 // GET /api/v1/resources/:id/json - Serve minified JSON/GeoJSON.

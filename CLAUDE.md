@@ -313,7 +313,7 @@ pnpm format        # Prettier フォーマット
 
 パイプラインは Fetch → Version → Interpret → Lake → Index → Summarize の6ステップ
 （Summarize は `AI_SUMMARY_MODEL` を設定したサイトのみ、ADR-053）。
-Index ステップでリソースコンテンツのテキスト抽出・OpenSearch 投入を行う（ADR-021）。
+Index ステップでリソースコンテンツの OpenSearch 投入を行う（ADR-021）。文書（PDF・Office）のテキスト抽出は Interpret が行い、ページ・見出し・図の位置付きの成果物（`text.ndjson.zst`）を Index が読む。
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Interpret のみフォーマット別処理を行う。
 

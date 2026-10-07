@@ -16,7 +16,7 @@ export type HeavyRequest =
       skipRows: number
       profilePath?: string
     }
-  | { kind: 'extract-text'; documentPath: string; format: string; textPath: string }
+  | { kind: 'extract-text'; documentPath: string; format: string; artifactPath: string }
 
 interface HeavyResults {
   'interpret-csv': InterpretedCsv

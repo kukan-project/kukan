@@ -103,6 +103,22 @@ describe('derivativesDescribe', () => {
     expect(await ask()).toBe(false)
   })
 
+  it('accounts for the bytes of a document by the text it was read into', async () => {
+    // A document has no preview; its text artifact is what it was interpreted
+    // into, and reading it again would only write the same one
+    await versionExists({ format: 'PDF', snapshot: null })
+    await rowSays(
+      {
+        sourceHash: HASH,
+        contentIndexed: true,
+        documentTextKey: 'previews/p/r.tok.text.ndjson.zst',
+      },
+      null
+    )
+
+    expect(await ask()).toBe(true)
+  })
+
   it('does not, when the preview describes content since replaced', async () => {
     await versionExists()
     await rowSays({ sourceHash: 'sha256:older', contentIndexed: true })

@@ -185,14 +185,14 @@ live のプレビュー Parquet を読む — ただし `sourceHash` が live �
 
 `step-tracker.ts` の全文。条件が外れれば書き込みは 0 行に着地し、実行は静かに抜ける。
 
-| 書き込み                | 条件             | 副作用                                               |
-| ----------------------- | ---------------- | ---------------------------------------------------- |
-| `beginRun`              | `heldBy(claim)`  | 前回のステップ記録を削除                             |
-| `startStep`             | `heldBy(claim)`  | 0 行なら `RunCancelledError`                         |
-| `completeStep` 他       | step 経由で join | ステップ行と pipeline 行の両方を検査                 |
-| `updateInterpretResult` | `heldBy(claim)`  | 旧プレビュー・旧 text head・旧プロファイルを回収予約 |
-| `mergeMetadata`         | `heldBy(claim)`  | 旧 text head を回収予約                              |
-| `updateStatus`          | `heldBy(claim)`  | —                                                    |
+| 書き込み                | 条件             | 副作用                                                               |
+| ----------------------- | ---------------- | -------------------------------------------------------------------- |
+| `beginRun`              | `heldBy(claim)`  | 前回のステップ記録を削除                                             |
+| `startStep`             | `heldBy(claim)`  | 0 行なら `RunCancelledError`                                         |
+| `completeStep` 他       | step 経由で join | ステップ行と pipeline 行の両方を検査                                 |
+| `updateInterpretResult` | `heldBy(claim)`  | 旧プレビュー・旧 text head・旧文書テキスト・旧プロファイルを回収予約 |
+| `mergeMetadata`         | `heldBy(claim)`  | 置き換えたキーの旧オブジェクトを回収予約                             |
+| `updateStatus`          | `heldBy(claim)`  | —                                                                    |
 
 回収予約をする 2 つ（`movePointers`）は、同じ文で、表の列名（`metadata.schema`）が変わったときに
 `resource.doc_sync_due_at` を立てる。列名はリソースの検索文書に載る（ADR-063）。立てる文と書き換える文が
@@ -256,19 +256,31 @@ sweep（`sweep-orphans.ts`）は期限切れの鍵を最大 5000 件取り、**�
 いるか」を問う**。参照されていれば消すのは記録の方で、オブジェクトは残る。これが先行記録の
 唯一の危険（消し忘れが生きたデータの削除に化ける）を自己修復に変えている。
 
-参照元は 6 つ。**1 つでも漏らすとその列が指すオブジェクトを消す**:
+参照元は 7 つ。**1 つでも漏らすとその列が指すオブジェクトを消す**:
 
 `resource.storage_key` / `resource.pending_storage_key` / `resource_version.storage_key` /
 `resource_pipeline.preview_key` / `resource_pipeline.metadata->>'textHeadKey'` /
-`resource_pipeline.profile->>'key'`
+`resource_pipeline.metadata->>'documentTextKey'` / `resource_pipeline.profile->>'key'`
 
-`resource_pipeline` の 3 つは `pipelineObjectKeys`（`packages/db/src/schema/resource-pipeline.ts`）が
+`resource_pipeline` の 4 つは `pipelineObjectKeys`（`packages/db/src/schema/resource-pipeline.ts`）が
 一覧として持ち、sweep の参照判定と、行を書き換えるときの回収予約（`StepTracker` の `movePointers`）は
 そこから組み立てる。ポインタを足すときはそこに足す。
 
 6 つ目は表のプロファイルの成果物（ADR-063）。Interpret がプレビューと同じトークンで
 `previews/{package}/{resource}.{token}.profile.ndjson.zst` に書き、プレビューと同じ文で参照する。
 版の取り消しとパージでは、プレビュー・text head と一緒に外して消す（`discardDerivedArtifacts`）。
+
+7 つ目は文書テキストの成果物。PDF・Office 系の本文を、ページ・スライド・シートと行、文書が持つ
+見出し（PDF のしおり、Word の見出しスタイル、スライドのタイトル）とともに 1 ブロック 1 行で持つ
+zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、どちらも
+`packages/shared/src/pipeline-types.ts`）。図も 1 ブロックとして持つが、画像そのものは持たず、
+ファイルの中で指す名前（PDF のオブジェクト番号、パッケージ内のパス）と寸法だけを持つ。Index が
+テーブルのプロファイルと同じく **Interpret が版ファイルから作る**（抽出は重い処理の子プロセス）。
+`previews/{package}/{resource}.{token}.text.ndjson.zst` に書き、text head（AI 提案・抄録の材料）は
+ここから切り出して同じトークンで書く。どちらも `updateInterpretResult` で参照する。Index は
+このファイルを読んで索引を作るだけで、文書を開かない。本文の無い文書（スキャン）にも書く —
+ページと図の一覧は、後から読み取るときの出発点になる。プレビューを持たない文書は、このキーで
+「同じ bytes から作ってある」（`derivativesDescribe`）と判定される。
 
 かつて 6 つ目だった `resource_version.lake_source_key` は撤去した（ADR-046 §4）。層 2 が読むのは
 版ファイルなので、実行より長生きするオブジェクトを名指しで守る必要が無くなった。

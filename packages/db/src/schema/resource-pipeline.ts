@@ -60,6 +60,7 @@ export const resourcePipeline = pgTable(
     // deleting its object (ADR-045 §3), and these are the ones it could not
     // answer on an index otherwise.
     index('idx_resource_pipeline_text_head').on(sql`(${table.metadata} ->> 'textHeadKey')`),
+    index('idx_resource_pipeline_document_text').on(sql`(${table.metadata} ->> 'documentTextKey')`),
     index('idx_resource_pipeline_profile_key').on(sql`(${table.profile} ->> 'key')`),
   ]
 )
@@ -76,6 +77,7 @@ export function pipelineObjectKeys(alias: string): SQL[] {
   return [
     sql.raw(`${alias}.preview_key`),
     sql.raw(`(${alias}.metadata ->> 'textHeadKey')`),
+    sql.raw(`(${alias}.metadata ->> 'documentTextKey')`),
     sql.raw(`(${alias}.profile ->> 'key')`),
   ]
 }

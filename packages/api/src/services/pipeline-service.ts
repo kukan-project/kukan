@@ -41,6 +41,12 @@ export function parseSourceEncoding(metadata: unknown): string | null {
   return typeof encoding === 'string' ? encoding : null
 }
 
+/** The document text artifact's key, where the Interpret step wrote one. */
+export function parseDocumentTextKey(metadata: unknown): string | null {
+  const key = (metadata as { documentTextKey?: unknown } | null | undefined)?.documentTextKey
+  return typeof key === 'string' ? key : null
+}
+
 /**
  * Rows in one row group of the preview Parquet, where the interpretation
  * recorded it.

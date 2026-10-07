@@ -549,12 +549,12 @@ describe('executeInterpret', () => {
     expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
-  it('should return null for non-text formats', async () => {
+  it('should return null for formats it reads nothing from', async () => {
     const result = await executeInterpret(
       'res-6',
       'pkg-1',
       version('resources/pkg-1/res-6'),
-      'PDF',
+      'PNG',
       ctx
     )
     expect(result).toBeNull()

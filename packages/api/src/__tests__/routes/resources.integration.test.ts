@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { Readable } from 'stream'
 import { randomUUID } from 'node:crypto'
+import { zstdCompressSync } from 'node:zlib'
 import {
   job,
   resource as resourceTable,
@@ -9,7 +10,12 @@ import {
   resourcePipelineStep,
   resourceVersion,
 } from '@kukan/db'
-import { getStorageKey, MAX_UPLOAD_SIZE, JSON_PREVIEW_LIMIT } from '@kukan/shared'
+import {
+  getStorageKey,
+  MAX_UPLOAD_SIZE,
+  JSON_PREVIEW_LIMIT,
+  TEXT_PREVIEW_LIMIT,
+} from '@kukan/shared'
 import type { ResourceColumnType } from '@kukan/shared'
 import { PostgresJobQueue } from '@kukan/queue'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
@@ -311,6 +317,80 @@ describe('Resources API Routes', () => {
 
       const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/text`)
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/document-text', () => {
+    const KEY = 'previews/pkg/res.tok.text.ndjson.zst'
+    const artifact = (lines: object[]) =>
+      zstdCompressSync(Buffer.from(lines.map((line) => JSON.stringify(line) + '\n').join('')))
+    const appReading = (body: Buffer, read: string[] = []) =>
+      createTestApp(db, {
+        storage: {
+          ...mockStorage,
+          download: async (key: string) => {
+            read.push(key)
+            return Readable.from(body)
+          },
+        },
+      })
+
+    async function withDocumentText(resourceId: string) {
+      await db
+        .insert(resourcePipeline)
+        .values({ resourceId, status: 'complete', metadata: { documentTextKey: KEY } })
+    }
+
+    it('returns the blocks of the artifact the pipeline row names', async () => {
+      const pkg = await createPackage('document-text-pkg')
+      const resource = await createResource(pkg.id, { name: 'a.pdf' })
+      await withDocumentText(resource.id)
+      const blocks = [
+        { loc: { page: 1 }, headings: ['第1章'], text: '本文' },
+        { loc: { page: 1 }, text: '', figure: { ref: '9 0 R', width: 900, height: 800 } },
+      ]
+      const read: string[] = []
+
+      const res = await appReading(artifact([{ schema: 1 }, ...blocks]), read).request(
+        `/api/v1/resources/${resource.id}/document-text`
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ blocks, truncated: false })
+      expect(read).toEqual([KEY])
+    })
+
+    it('says there is none for a resource without the artifact', async () => {
+      const pkg = await createPackage('document-text-none-pkg')
+      const resource = await createResource(pkg.id, { name: 'a.pdf' })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/document-text`)
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 404 for a private package resource to an outsider', async () => {
+      const pkg = await createPackage('document-text-private-pkg', { private: true })
+      const resource = await createResource(pkg.id, { name: 'a.pdf' })
+      await withDocumentText(resource.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/document-text`)
+      expect(res.status).toBe(404)
+    })
+
+    it('stops at the preview limit, at the end of the block that crosses it', async () => {
+      const pkg = await createPackage('document-text-long-pkg')
+      const resource = await createResource(pkg.id, { name: 'a.pdf' })
+      await withDocumentText(resource.id)
+      const page = 'あ'.repeat(TEXT_PREVIEW_LIMIT / 3 / 2 + 1)
+      const blocks = [1, 2, 3].map((n) => ({ loc: { page: n }, text: page }))
+
+      const res = await appReading(artifact([{ schema: 1 }, ...blocks])).request(
+        `/api/v1/resources/${resource.id}/document-text`
+      )
+
+      const body = await res.json()
+      expect(body.blocks.map((b: { loc: { page: number } }) => b.loc.page)).toEqual([1, 2])
+      expect(body.truncated).toBe(true)
     })
   })
 

@@ -25,7 +25,7 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
       return (await extractDocumentText(
         request.documentPath,
         request.format,
-        request.textPath
+        request.artifactPath
       )) as HeavyResult<R>
     }
   }

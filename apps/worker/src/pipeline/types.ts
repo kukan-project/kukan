@@ -148,8 +148,8 @@ export interface PipelineContext {
    * the file that is already there.
    *
    * A previous run that got partway through must still be finished, so every
-   * part of this is a thing that could be missing: the preview key and a
-   * `sourceHash` naming these bytes, `contentIndexed`, and no lake ingest still
+   * part of this is a thing that could be missing: the preview key (or, for a
+   * document, which has none, its text's) and a `sourceHash` naming these bytes, `contentIndexed`, and no lake ingest still
    * outstanding for the version. The first two are written by the same run —
    * Interpret replaces the metadata and Index merges into it — so they never
    * describe two different contents.

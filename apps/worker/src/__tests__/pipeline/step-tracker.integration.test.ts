@@ -185,6 +185,20 @@ describe('mergeMetadata', () => {
     expect(await tracked()).toEqual([OLD_TEXT_HEAD])
   })
 
+  it('parks the document text it replaces', async () => {
+    const OLD_TEXT = 'previews/pkg/res.old.text.ndjson.zst'
+    const NEW_TEXT = 'previews/pkg/res.new.text.ndjson.zst'
+    await db
+      .update(resourcePipeline)
+      .set({ metadata: { documentTextKey: OLD_TEXT } })
+      .where(eq(resourcePipeline.id, pipelineId))
+    await reserve(NEW_TEXT)
+
+    await new StepTracker(db, claim).mergeMetadata({ documentTextKey: NEW_TEXT })
+
+    expect(await tracked()).toEqual([OLD_TEXT])
+  })
+
   it('parks nothing when the merge names the text head already there', async () => {
     await db
       .update(resourcePipeline)

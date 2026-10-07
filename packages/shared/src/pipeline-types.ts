@@ -285,6 +285,100 @@ export type TableProfileLine =
 /** UTF-8 bytes of sentences kept per table (ADR-063 §決定 3). */
 export const TABLE_SENTENCES_MAX_BYTES = 500 * 1024
 
+// ── Document text ──
+// A document's extracted text, kept beside its preview as zstd NDJSON: a header
+// line, then a block per line in document order. What the content index is
+// built from, and what a citation points into — a block says where in the file
+// its text is, which the text alone no longer can.
+
+/** The shape of the artifact's lines; a reader that finds another refuses it. */
+export const DOCUMENT_TEXT_SCHEMA = 1
+
+/** The artifact's first line. */
+export interface DocumentTextHeader {
+  schema: typeof DOCUMENT_TEXT_SCHEMA
+}
+
+/**
+ * Where a block is in the file, in the unit its format has. Empty for a
+ * document that has none — a DOCX has no pages until it is laid out.
+ */
+export interface DocumentTextLoc {
+  /** 1-based, as a viewer's `#page=` counts. */
+  page?: number
+  /** The page's printed number (`iv`, `A-1`), where the PDF gives one that differs. */
+  label?: string
+  /** 1-based. */
+  slide?: number
+  sheet?: string
+  /** 1-based, as the sheet numbers it. */
+  row?: number
+}
+
+/**
+ * An image in the file, named so it can be fetched from the file again — to be
+ * read by OCR, or shown — without the artifact carrying its bytes.
+ */
+export interface DocumentTextFigure {
+  /** A PDF object (`9 0 R`), or a part of the package (`ppt/media/image3.png`). */
+  ref: string
+  /** Pixels, where the file says. */
+  width?: number
+  height?: number
+  /**
+   * The start of the SHA-256 of the image's bytes as stored. The same picture
+   * on many pages — a page decoration — has one, whatever object holds it.
+   */
+  digest?: string
+}
+
+/** One block: text under one location and one heading path. */
+export interface DocumentTextBlock {
+  loc: DocumentTextLoc
+  /**
+   * The headings the text is under, outermost first: the PDF's bookmarks, the
+   * document's heading styles, the slide's title. Absent where the file marks
+   * none — they are never guessed from how the text looks.
+   */
+  headings?: string[]
+  text: string
+  /** A page with nothing to read on it: a scan, or a page of images. */
+  textLayer?: false
+  /**
+   * An image rather than text, after the block of the page or slide it is on.
+   * Its `text` is the description its author gave it, where there is one.
+   */
+  figure?: DocumentTextFigure
+}
+
+/**
+ * The blocks of a document text artifact, from its lines as decompressed: the
+ * header checked, blank lines skipped. The one reader of the format, so the
+ * worker that indexes it and the API that shows it cannot disagree on it.
+ */
+export async function* documentTextBlocks(
+  lines: AsyncIterable<string>
+): AsyncGenerator<DocumentTextBlock> {
+  let header = true
+  for await (const line of lines) {
+    if (!line) continue
+    if (header) {
+      const { schema } = JSON.parse(line) as DocumentTextHeader
+      if (schema !== DOCUMENT_TEXT_SCHEMA) throw new Error(`Document text schema ${schema}`)
+      header = false
+      continue
+    }
+    yield JSON.parse(line) as DocumentTextBlock
+  }
+}
+
+/** A document's text as the API returns it, for its preview. */
+export interface DocumentText {
+  blocks: DocumentTextBlock[]
+  /** Blocks past the preview's limit were left out. */
+  truncated: boolean
+}
+
 /**
  * Why a resource is not served as an OData feed (ADR-055), or how it is not.
  *

@@ -11,6 +11,7 @@ import type { SearchAdapter, ContentDoc, IndexContentOptions } from '@kukan/sear
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
+import { parseDocumentTextKey } from '@kukan/api/services/pipeline-service'
 import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
@@ -308,7 +309,8 @@ export function buildPipelineContext(
         .where(eq(resourcePipeline.resourceId, resourceId))
         .limit(1)
       const metadata = (row?.metadata ?? {}) as Record<string, unknown>
-      if (!row?.previewKey) return false
+      // A preview, or a document's text, made from these bytes
+      if (!row?.previewKey && !parseDocumentTextKey(metadata)) return false
       if (metadata.sourceHash !== contentHash) return false
       if (metadata.contentIndexed !== true) return false
 

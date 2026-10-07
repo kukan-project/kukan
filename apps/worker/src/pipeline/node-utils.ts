@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { Readable, pipeline } from 'node:stream'
 import { promisify } from 'node:util'
+import { createZstdDecompress } from 'node:zlib'
 
 import { ENCODING_SAMPLE_SIZE, ENCODING_SCAN_LIMIT } from '@/config'
 
@@ -106,6 +107,15 @@ function firstNonAscii(buf: Buffer): number {
     if (buf[i] & 0x80) return i
   }
   return -1
+}
+
+/**
+ * The lines of a zstd-compressed UTF-8 stream — the NDJSON artifacts the
+ * pipeline writes beside a preview. Through `pipeline`, not `pipe`: a read
+ * that fails midway has to fail the lines.
+ */
+export function zstdLines(stream: Readable): AsyncGenerator<string> {
+  return streamUtf8Lines(pipeline(stream, createZstdDecompress(), () => {}))
 }
 
 /** Yield lines from a UTF-8 stream without loading the entire file into memory.

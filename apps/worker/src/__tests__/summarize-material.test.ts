@@ -96,8 +96,8 @@ const withTextHead: MaterialArtifacts = {
   pipelineMetadata: { textHeadKey: 'previews/text-head' },
   liveStorageKey: 'resources/pkg/res/v1',
 }
-/** Both steps of the last run wrote what they were meant to */
-const USABLE = { interpreted: true, textHead: true }
+/** The last run's interpretation wrote what it was meant to */
+const INTERPRETED = true
 
 const noArtifacts: MaterialArtifacts = {
   pipelineStatus: 'complete',
@@ -113,7 +113,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: await pdfOf(2), textHead: 'あ'.repeat(600) })
       )
 
@@ -126,7 +126,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: await pdfOf(5), textHead: 'あ'.repeat(50) })
       )
 
@@ -135,7 +135,12 @@ describe('choosing what to send (ADR-053 §3)', () => {
     })
 
     it('sends the original when nothing was extracted at all', async () => {
-      const plan = await planMaterial(input(), noArtifacts, USABLE, deps({ bytes: await pdfOf(3) }))
+      const plan = await planMaterial(
+        input(),
+        noArtifacts,
+        INTERPRETED,
+        deps({ bytes: await pdfOf(3) })
+      )
 
       expect(plan).toMatchObject({ kind: 'original' })
     })
@@ -148,7 +153,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: Buffer.from('%PDF-1.4\nnot really a pdf'), textHead: 'あ'.repeat(600) })
       )
 
@@ -162,7 +167,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: Buffer.from('<!doctype html>\n<html lang="ja"><title>東京消防庁</title>') })
       )
 
@@ -174,7 +179,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: Buffer.from('%PDF-1.4\nnot really a pdf') })
       )
 
@@ -191,7 +196,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         // Japanese, three bytes a character: past the 16KB cap
         deps({ bytes: await pdfOf(467), textHead: '下'.repeat(6000) })
       )
@@ -205,7 +210,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: await pdfOf(60), textHead: 'あ'.repeat(300) })
       )
 
@@ -220,7 +225,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: await pdfOf(60) })
       )
 
@@ -241,7 +246,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: await encryptedPdfOf(60), textHead: 'あ'.repeat(300) })
       )
 
@@ -251,7 +256,12 @@ describe('choosing what to send (ADR-053 §3)', () => {
     it('leaves a document inside the limit whole, and claims nothing about pages', async () => {
       // "All of it" is what an absent coverage says, and saying it twice would
       // move every digest written before this.
-      const plan = await planMaterial(input(), noArtifacts, USABLE, deps({ bytes: await pdfOf(3) }))
+      const plan = await planMaterial(
+        input(),
+        noArtifacts,
+        INTERPRETED,
+        deps({ bytes: await pdfOf(3) })
+      )
 
       expect(plan).toMatchObject({ kind: 'original' })
       expect((plan as MaterialPlan).coverage).toBeUndefined()
@@ -261,7 +271,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ size: 40 * 1024 * 1024 }),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ textHead: 'あ'.repeat(600) })
       )
 
@@ -272,7 +282,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ size: 40 * 1024 * 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({})
       )
 
@@ -283,7 +293,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input(),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: await pdfOf(5), textHead: 'あ'.repeat(50), documents: false })
       )
 
@@ -296,7 +306,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'XLSX', size: 500 * 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: XLSX_BYTES })
       )
 
@@ -309,7 +319,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'XLSX', size: 500 * 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: Buffer.from('<!doctype html>') })
       )
 
@@ -320,7 +330,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'XLSX', size: 2 * 1024 * 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({})
       )
 
@@ -331,7 +341,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'XLSX', size: null }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({})
       )
 
@@ -344,7 +354,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'PPTX', size: 100 * 1024 }),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ textHead: 'あ'.repeat(400) })
       )
 
@@ -355,7 +365,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'PPTX', size: 100 * 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({})
       )
 
@@ -368,7 +378,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'XLSX', size: 500 * 1024 }),
         withTextHead,
-        USABLE,
+        INTERPRETED,
         deps({ bytes: XLSX_BYTES, textHead: 'あ'.repeat(400) })
       )
 
@@ -382,7 +392,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'JPEG', size: 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ bytes })
       )
 
@@ -394,7 +404,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
       const plan = await planMaterial(
         input({ format: 'PNG', size: 1024 }),
         noArtifacts,
-        USABLE,
+        INTERPRETED,
         deps({ documents: false })
       )
 
@@ -406,7 +416,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
     const plan = await planMaterial(
       input({ format: 'RDF', size: 1024 }),
       { ...noArtifacts, pipelineStatus: 'complete' },
-      USABLE,
+      INTERPRETED,
       deps({})
     )
 
@@ -415,14 +425,14 @@ describe('choosing what to send (ADR-053 §3)', () => {
 })
 
 describe('each kind is gated on the step that wrote what it reads', () => {
-  it('refuses an ODT whose Index step failed', async () => {
-    // The extracted text of an ODT comes from Index, not Interpret. Asking
-    // Interpret about it let a run whose Index failed describe the file with
-    // the text of the version before it — the artifact is still on the row.
+  it('refuses an ODT whose interpretation failed', async () => {
+    // The extracted text of an ODT comes from Interpret. A run whose
+    // interpretation failed would describe the file with the text of the
+    // version before it — the artifact is still on the row.
     const plan = await planMaterial(
       input({ format: 'ODT' }),
       withTextHead,
-      { interpreted: true, textHead: false },
+      false,
       deps({ textHead: 'これは前の版から抽出されたテキストで、十分な長さがあります。'.repeat(4) })
     )
 
@@ -435,7 +445,7 @@ describe('each kind is gated on the step that wrote what it reads', () => {
     const plan = await planMaterial(
       input({ format: 'TXT' }),
       { ...noArtifacts, liveStorageKey: 'resources/pkg/res/v1' },
-      { interpreted: false, textHead: false },
+      false,
       deps({ textHead: 'これは本体から読んだ十分な長さの日本語テキストです。'.repeat(4) })
     )
 
@@ -446,7 +456,7 @@ describe('each kind is gated on the step that wrote what it reads', () => {
     const plan = await planMaterial(
       input({ format: 'CSV' }),
       { ...noArtifacts, previewKey: 'previews/p.parquet' },
-      { interpreted: false, textHead: true },
+      false,
       deps({})
     )
 

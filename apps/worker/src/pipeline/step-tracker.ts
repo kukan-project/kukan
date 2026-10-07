@@ -101,9 +101,9 @@ export class StepTracker {
    * Move the preview pointer and replace the metadata and the table profile
    * describing it (ADR-063), parking the objects that leaves behind (ADR-043).
    *
-   * The previous run's text head goes too: the metadata is replaced wholesale
-   * rather than merged, so its pointer goes with it and nothing else would ever
-   * park that object.
+   * The pointers the previous run kept in the metadata go too: it is replaced
+   * wholesale rather than merged, so they go with it and nothing else would
+   * ever park their objects.
    */
   async updateInterpretResult(
     previewKey: string | null,
@@ -117,9 +117,9 @@ export class StepTracker {
   }
 
   /**
-   * Merge into the pipeline's metadata, parking the text head the merge
-   * replaces. Reached when the interpretation threw and so left the previous
-   * metadata in place; one that succeeded has already parked it.
+   * Merge into the pipeline's metadata, parking the objects whose pointers the
+   * merge replaces. Reached when the interpretation threw and so left the
+   * previous metadata in place; one that succeeded has already parked them.
    */
   async mergeMetadata(metadata: Record<string, unknown>) {
     await this.movePointers(

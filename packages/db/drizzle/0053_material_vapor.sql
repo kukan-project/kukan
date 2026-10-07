@@ -1,0 +1,1 @@
+CREATE INDEX "idx_resource_pipeline_document_text" ON "resource_pipeline" USING btree (("metadata" ->> 'documentTextKey'));

@@ -16,12 +16,23 @@ import {
   streamToBuffer,
   streamToTempFile,
   cleanupTempFile,
+  siblingTempPath,
   readEncodingSample,
 } from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
-import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
+import {
+  getPreviewKey,
+  isCsvFormat,
+  isDocumentFormat,
+  isTextFormat,
+  isZipFormat,
+} from '@kukan/shared'
 import type { NoTableReason, ResourceSchema, TableProfile } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
+import { documentTextLines } from '../document-text-lines'
+import { stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
+import { runHeavy } from '@/heavy'
+import { TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
 import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline-service'
@@ -29,7 +40,8 @@ const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface InterpretResult {
   previewKey: string | null
-  encoding: string
+  /** The encoding text was read in; none for a document read by its parser. */
+  encoding?: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
   schema?: ResourceSchema
   /** Rows in a row group of the preview, as the written file reports them —
@@ -40,6 +52,29 @@ export interface InterpretResult {
   reason?: NoTableReason
   /** The table profile (ADR-063), with its artifact uploaded beside the preview. */
   profile?: TableProfile
+  /** A document's text artifact and the head cut from it, both uploaded. */
+  documentText?: InterpretedDocument
+}
+
+/** What interpreting a document (PDF, Office) wrote: see `DocumentTextBlock`. */
+export interface InterpretedDocument {
+  key: string
+  /** UTF-8 bytes of the text, a newline between the blocks that have any. */
+  bytes: number
+  /**
+   * The head of the text, as suggestion and abstract material (ADR-040) —
+   * where there was any text to cut one from, which is how a document with
+   * none is told apart.
+   */
+  textHead?: { key: string; bytes: number }
+}
+
+/** The pointers a document's interpretation leaves in the pipeline's metadata. */
+export function documentTextMetadata(text: InterpretedDocument): Record<string, unknown> {
+  return {
+    documentTextKey: text.key,
+    ...(text.textHead && { textHeadKey: text.textHead.key, textHeadBytes: text.textHead.bytes }),
+  }
 }
 
 /** The created version this step interprets. */
@@ -79,9 +114,10 @@ export interface InterpretHooks {
 }
 
 /**
- * Detect encoding for text-based formats.
- * For CSV/TSV, also generates Parquet preview inline.
- * Returns encoding (always) and previewKey (CSV/TSV only), or null for non-text formats.
+ * Interpret the version's bytes by their format: a text format's encoding, a
+ * CSV/TSV's Parquet preview and profile, a ZIP's manifest, a document's text.
+ * Null for a format there is nothing to read from (an image, a legacy Office
+ * file).
  */
 export async function executeInterpret(
   resourceId: string,
@@ -111,6 +147,20 @@ export async function executeInterpret(
       return { previewKey, encoding: 'UTF8' }
     } finally {
       await cleanupTempFile(tmpPath)
+    }
+  }
+
+  if (isDocumentFormat(format)) {
+    return {
+      previewKey: null,
+      documentText: await interpretDocument(
+        resourceId,
+        packageId,
+        storageKey,
+        format!,
+        writeToken,
+        ctx
+      ),
     }
   }
 
@@ -195,4 +245,70 @@ export async function executeInterpret(
     rowGroupRows: used ? (rowGroupRows ?? NO_ROW_GROUP_FIGURE) : rowGroupRows,
     ...used,
   }
+}
+
+/**
+ * Read a document's text, with where in the file each part of it is, and keep
+ * it beside where a preview would be, under the same token (ADR-063 keeps a
+ * table's profile there the same way). The head of the text is cut from it
+ * for the suggest side and the abstract (ADR-040, ADR-053).
+ *
+ * Kept whether or not there is text: a scan's pages and figures are what
+ * reading it later starts from.
+ */
+async function interpretDocument(
+  resourceId: string,
+  packageId: string,
+  storageKey: string,
+  format: string,
+  writeToken: string,
+  ctx: PipelineContext
+): Promise<InterpretedDocument> {
+  const fmt = format.toLowerCase()
+  const tempPath = await streamToTempFile(await ctx.storage.download(storageKey), fmt)
+  const artifactPath = siblingTempPath(tempPath, 'text.ndjson.zst')
+  try {
+    // In the heavy process: parsing is where a document's memory goes
+    const { hasText, bytes } = await runHeavy(
+      { kind: 'extract-text', documentPath: tempPath, format: fmt, artifactPath },
+      ctx.assertHeld
+    )
+    const key = getPreviewKey(packageId, resourceId, 'text.ndjson.zst', writeToken)
+    const kept = ctx.putObject(key, createReadStream(artifactPath), {
+      contentType: 'application/zstd',
+    })
+    if (!hasText) {
+      await kept
+      return { key, bytes }
+    }
+
+    // Plain UTF-8, so the suggest side reads it without encoding detection
+    const textHeadKey = getPreviewKey(packageId, resourceId, 'txt', writeToken)
+    const keepTextHead = async () => {
+      const head = await headOf(documentTextLines(createReadStream(artifactPath)))
+      await ctx.putObject(textHeadKey, head, { contentType: 'text/plain; charset=utf-8' })
+      return head
+    }
+    const [, head] = await Promise.all([kept, keepTextHead()])
+    return { key, bytes, textHead: { key: textHeadKey, bytes: head.length } }
+  } finally {
+    await cleanupTempFile(tempPath)
+  }
+}
+
+/**
+ * The first TEXT_HEAD_ARTIFACT_SIZE bytes of `lines` joined by newlines; a
+ * character the cut splits is dropped.
+ */
+async function headOf(lines: AsyncIterable<string>): Promise<Buffer> {
+  const parts: Buffer[] = []
+  let bytes = 0
+  for await (const line of lines) {
+    const part = Buffer.from(parts.length > 0 ? '\n' + line : line, 'utf-8')
+    parts.push(part)
+    bytes += part.length
+    if (bytes >= TEXT_HEAD_ARTIFACT_SIZE) break
+  }
+  const head = Buffer.concat(parts).subarray(0, TEXT_HEAD_ARTIFACT_SIZE)
+  return Buffer.from(stripTrailingReplacementChar(head.toString('utf-8')), 'utf-8')
 }

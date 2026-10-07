@@ -2289,20 +2289,22 @@ describe('repairDerivatives — the repair a screen can offer (ADR-044 §4)', ()
 })
 
 describe('the artifacts derived from retracted content', () => {
-  // The preview lives in a column, the text head inside `metadata` (ADR-040)
-  // and the table profile's artifact inside `profile` (ADR-063). Being
+  // The preview lives in a column, the text head (ADR-040) and the document
+  // text inside `metadata`, and the table profile's artifact inside `profile`
+  // (ADR-063). Being
   // referenced there, the sweep leaves them alone — so whatever retracts the
   // content has to destroy them, or an extract of it stays in the bucket and
   // stays readable.
   const PREVIEW = 'previews/pkg/res.tok.parquet'
   const TEXT_HEAD = 'previews/pkg/res.tok.txt'
   const PROFILE = 'previews/pkg/res.tok.profile.ndjson.zst'
+  const DOCUMENT_TEXT = 'previews/pkg/res.tok.text.ndjson.zst'
 
   async function withArtifacts() {
     await db.insert(resourcePipeline).values({
       resourceId,
       previewKey: PREVIEW,
-      metadata: { textHeadKey: TEXT_HEAD, contentIndexed: true },
+      metadata: { textHeadKey: TEXT_HEAD, documentTextKey: DOCUMENT_TEXT, contentIndexed: true },
       profile: { columns: [], key: PROFILE },
     })
   }
@@ -2325,7 +2327,7 @@ describe('the artifacts derived from retracted content', () => {
     await service.executePurge(resourceId, 2, deps)
 
     expect(vi.mocked(deps.storage.deleteMany).mock.calls[0][0].sort()).toEqual(
-      [PREVIEW, TEXT_HEAD, PROFILE].sort()
+      [PREVIEW, TEXT_HEAD, DOCUMENT_TEXT, PROFILE].sort()
     )
     const row = await pipelineRow()
     expect(row.previewKey).toBeNull()
@@ -2344,7 +2346,7 @@ describe('the artifacts derived from retracted content', () => {
     await revertFromLive(deps)
 
     expect(vi.mocked(deps.storage.deleteMany).mock.calls[0][0].sort()).toEqual(
-      [PREVIEW, TEXT_HEAD, PROFILE].sort()
+      [PREVIEW, TEXT_HEAD, DOCUMENT_TEXT, PROFILE].sort()
     )
     expect((await pipelineRow()).metadata).toEqual({ contentIndexed: false })
     expect((await pipelineRow()).profile).toBeNull()

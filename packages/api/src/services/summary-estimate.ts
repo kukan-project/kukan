@@ -128,9 +128,6 @@ function failedStepAgg(db: Database) {
       interpretFailed: sql<boolean>`bool_or(${resourcePipelineStep.stepName} = 'interpret')`.as(
         'interpret_failed'
       ),
-      indexFailed: sql<boolean>`bool_or(${resourcePipelineStep.stepName} = 'index')`.as(
-        'index_failed'
-      ),
     })
     .from(resourcePipeline)
     .innerJoin(
@@ -204,7 +201,6 @@ export async function summaryEstimate(
   // none, and the worker reads their absence the same way.
   const ranCleanly = sql`COALESCE(${resourcePipeline.status}, '') <> 'error'`
   const interpretOk = sql`(${ranCleanly} AND NOT COALESCE(${failedAgg.interpretFailed}, false))`
-  const indexOk = sql`(${ranCleanly} AND NOT COALESCE(${failedAgg.indexFailed}, false))`
   // The derivatives, as they stand right now. Asked on every estimate rather
   // than trusting the reason a past run recorded: a re-interpretation that
   // finally writes a schema does not create a version, so a refusal pinned to
@@ -215,7 +211,8 @@ export async function summaryEstimate(
   // nothing to describe. An archive's is the manifest the preview key names.
   const hasSchema = sql`(${resourcePipeline.metadata}->'schema' IS NOT NULL AND ${interpretOk})`
   const hasManifest = sql`(${resourcePipeline.previewKey} IS NOT NULL AND ${interpretOk})`
-  const extracted = sql`(${resourcePipeline.metadata}->>'textHeadKey' IS NOT NULL AND ${indexOk})`
+  // A document's text head is Interpret's too, cut from the text it extracted
+  const extracted = sql`(${resourcePipeline.metadata}->>'textHeadKey' IS NOT NULL AND ${interpretOk})`
   // Past the byte limit the original cannot go, but the extracted text still
   // can — so a large PDF with a text layer is work, not a refusal.
   const pdfReadable = sql`(${withinDoc} OR ${extracted})`

@@ -68,8 +68,8 @@ export type MaterialKind = 'tabular' | 'text' | 'document' | 'zip'
 /**
  * Which of the four materials this resource has, or null.
  *
- * Documents need the Index step's text-head artifact (ADR-040 addendum) and
- * ZIPs their Interpret-step manifest.
+ * Documents need the text-head artifact (ADR-040 addendum) and ZIPs their
+ * manifest, both written by the Interpret step.
  *
  * **Whether the run that produced them has finished is the caller's question,
  * not this one's.** A suggestion is asked for from outside any run and wants a
@@ -168,7 +168,7 @@ export async function loadMaterial(
   }
 }
 
-/** `metadata.textHeadKey` persisted by the Index step (document formats, ADR-040) */
+/** `metadata.textHeadKey` persisted by the Interpret step (document formats, ADR-040) */
 export function textHeadKeyOf(metadata: unknown): string | null {
   const key = (metadata as { textHeadKey?: unknown } | null | undefined)?.textHeadKey
   return typeof key === 'string' && key ? key : null
@@ -216,7 +216,7 @@ export async function readTextHead(
   return stripTrailingReplacementChar(bufferToUtf8(buffer, encoding))
 }
 
-/** Head of the Index step's text-head artifact (document formats) — the
+/** Head of the Interpret step's text-head artifact (document formats) — the
  *  worker wrote it as UTF-8, so no encoding detection (ADR-040 addendum) */
 export async function readArtifactTextHead(
   textHeadKey: string,

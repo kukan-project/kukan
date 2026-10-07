@@ -180,7 +180,7 @@ export async function executeSummarize(
   // After the two answers above, which the row gives on its own: the material
   // is read from storage, and a catalogue that has its abstracts would
   // otherwise read every file to be told so.
-  const plan = await planMaterial(input, row.artifacts, row.usable, deps)
+  const plan = await planMaterial(input, row.artifacts, row.interpreted, deps)
   if ('reason' in plan) return { status: 'skipped', reason: plan.reason }
 
   const material: ResourceMaterial = {
@@ -220,8 +220,9 @@ export async function executeSummarize(
   return { status: 'written', material: plan.kind, grounded: output.groundedInMaterial }
 }
 
-/**
- * Whether the derivatives on the row describe the content being summarized.
+/*
+ * Whether the derivatives on the row describe the content being summarized —
+ * `interpreted`, below.
  *
  * **The run's own status does not answer this.** A failed interpretation is
  * recorded on its step and the run goes on to finish, so a resource whose new
@@ -229,18 +230,13 @@ export async function executeSummarize(
  * version's preview still on it. Reading that as this version's material is how
  * an abstract comes to describe a file nobody has.
  *
- * So it is asked of the step that writes each artifact, in the run that last
- * touched the resource — step rows are cleared at the start of every run, so
+ * So it is asked of the step that writes them all — Interpret: a schema,
+ * sample rows, a ZIP's manifest, a document's text head — in the run that last
+ * touched the resource. Step rows are cleared at the start of every run, so
  * what is there describes that run. The originals are exempt: a version's
  * object is settled (ADR-046), so the paths that send one need nothing from
- * here.
+ * here, and nor does a text file, read from the object itself.
  */
-interface ArtifactsUsable {
-  /** Schema, sample rows and the ZIP manifest — written by Interpret */
-  interpreted: boolean
-  /** The extracted-text artifact — written by Index */
-  textHead: boolean
-}
 
 // ── Material ──
 
@@ -263,7 +259,7 @@ export interface MaterialPlan {
 export async function planMaterial(
   input: SummaryInput,
   artifacts: MaterialArtifacts,
-  usable: ArtifactsUsable,
+  interpreted: boolean,
   deps: SummaryDeps
 ): Promise<MaterialPlan | { reason: SummarySkipReason }> {
   // Lower-cased: the format is matched against what the provider lists, and
@@ -286,18 +282,18 @@ export async function planMaterial(
   }
 
   if (isPdfFormat(input.format)) {
-    return planPdf(input, artifacts, documentInfo, deps, usable.textHead)
+    return planPdf(input, artifacts, documentInfo, deps, interpreted)
   }
 
   if (isOfficeFormat(input.format)) {
     if (!documentInfo?.documentFormats.includes(format)) {
       // No provider lists PPT, so its original can never go. That was once the
       // whole answer, but Phase B settled that extracted text reads at least
-      // as well as a document sent whole (§3.6) — and Index has already
+      // as well as a document sent whole (§3.6) — and Interpret has already
       // written some for every one of these formats. Refusing before looking
       // at it threw away material that was sitting on the row.
       return (
-        textPlan(await readExtractedText(artifacts, deps, usable.textHead)) ?? {
+        textPlan(await readExtractedText(artifacts, deps, interpreted)) ?? {
           reason: 'unsupported-format',
         }
       )
@@ -319,7 +315,7 @@ export async function planMaterial(
   }
 
   const kind = materialKind({ id: input.resourceId, format: input.format }, artifacts)
-  if (!kind || !usableFor(kind, usable)) return { reason: 'no-material' }
+  if (!kind || (kind !== 'text' && !interpreted)) return { reason: 'no-material' }
   const loaded = await loadMaterial(
     kind,
     { id: input.resourceId, format: input.format },
@@ -345,7 +341,7 @@ function textPlan(text: string | null): MaterialPlan | null {
   }
 }
 
-/** The Index step's extracted text, where this run's Index is to be trusted */
+/** A document's extracted text, where this run's Interpret is to be trusted */
 async function readExtractedText(
   artifacts: MaterialArtifacts,
   deps: SummaryDeps,
@@ -367,29 +363,6 @@ function coverageOf(kind: MaterialKind, loaded: LoadedMaterial): SummaryCoverage
       // Characters, which is what the notice quotes for text — the byte budget
       // is ours, not something a reader can check against anything.
       return { read: loaded.textHead?.length ?? 0 }
-  }
-}
-
-/**
- * Whether the step that writes what this kind reads left something describing
- * this content.
- *
- * Asked per kind, because the kinds do not read the same artifact. A table and
- * an archive come from Interpret; the extracted text of an ODT or an RTF comes
- * from Index, and asking Interpret about it is how a run whose Index failed
- * gets to describe the file with the *previous* version's text. A text file
- * comes from the object itself, which is settled (ADR-046) and answers to no
- * step at all.
- */
-function usableFor(kind: MaterialKind, usable: ArtifactsUsable): boolean {
-  switch (kind) {
-    case 'tabular':
-    case 'zip':
-      return usable.interpreted
-    case 'document':
-      return usable.textHead
-    case 'text':
-      return true
   }
 }
 
@@ -675,10 +648,7 @@ async function readRow(input: SummaryInput, deps: SummaryDeps) {
       // The most useful context and the most parroted, so it is capped
       notes: row.notes?.slice(0, SUMMARY_CONTEXT_NOTES_CHARS) ?? null,
     } satisfies SummaryDatasetContext,
-    usable: {
-      interpreted: ranCleanly && !failedSteps.has('interpret'),
-      textHead: ranCleanly && !failedSteps.has('index'),
-    } satisfies ArtifactsUsable,
+    interpreted: ranCleanly && !failedSteps.has('interpret'),
     artifacts: {
       pipelineStatus: row.pipelineStatus,
       previewKey: row.previewKey,

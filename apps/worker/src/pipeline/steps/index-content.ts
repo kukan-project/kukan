@@ -5,48 +5,31 @@
  * Large texts are split into multiple chunks (up to MAX_CONTENT_CHUNKS × MAX_CONTENT_CHUNK_SIZE).
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
- * Document formats additionally persist the head of the extracted text to
- * storage as AI-suggest material (ADR-040 addendum). Drafts run only that
- * extraction + persistence — search indexing starts at publish (ADR-039).
+ * Document formats are indexed from the text artifact the Interpret step
+ * wrote, which also cut the AI-suggest text head from it (ADR-040 addendum).
+ * Drafts are not indexed — search indexing starts at publish (ADR-039).
  *
  * Supported formats: CSV, TSV, TXT, MD, HTML, HTM, JSON, GeoJSON, XML, ZIP,
  *                    PDF, DOCX, XLSX, PPTX, ODT, ODP, ODS, RTF
  * Non-text formats (DOC, XLS, PPT, RDF, images) are skipped (contentIndexed: false).
  */
 
-import { randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { pipeline } from 'node:stream'
-import { createZstdDecompress } from 'node:zlib'
 import {
   isTextFormat,
   isCsvFormat,
   isZipFormat,
   isDocumentFormat,
-  getPreviewKey,
   type ContentType,
   type TableProfile,
   type TableProfileLine,
 } from '@kukan/shared'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
-import type { InterpretResult } from './interpret'
-import { runHeavy } from '@/heavy'
-import {
-  streamToBuffer,
-  streamUtf8Lines,
-  streamToTempFile,
-  cleanupTempFile,
-  readHead,
-  siblingTempPath,
-} from '../node-utils'
+import type { InterpretedDocument, InterpretResult } from './interpret'
+import { documentTextLines } from '../document-text-lines'
+import { streamToBuffer, streamUtf8Lines, zstdLines } from '../node-utils'
 import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
-import {
-  MAX_CONTENT_CHUNK_SIZE,
-  MAX_FETCH_SIZE,
-  TEXT_HEAD_ARTIFACT_SIZE,
-  UNPROFILED_TABLE_HEAD_SIZE,
-} from '@/config'
+import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -55,9 +38,6 @@ export interface IndexContentResult {
   contentIndexedSize: number
   contentTruncated: boolean
   contentChunks: number
-  /** Storage key/size of the persisted text head — document formats only (ADR-040) */
-  textHeadKey?: string
-  textHeadBytes?: number
 }
 
 /**
@@ -75,15 +55,13 @@ export async function executeIndexContent(
 ): Promise<IndexContentResult | null> {
   const normalizedFormat = format?.toLowerCase() ?? null
 
-  // Draft packages stay out of the content index until publish (ADR-039), but
-  // document formats still persist the text-head artifact so AI suggestions
-  // work during draft editing (ADR-040 addendum). Deleted/purging packages
-  // skip everything — they must not be re-indexed.
+  // Draft packages stay out of the content index until publish (ADR-039), and
+  // deleted/purging ones must not be re-indexed. A draft document's text and
+  // its head (ADR-040 addendum) were kept by Interpret, which drafts run too.
   const pkgState = await ctx.getPackageState(packageId)
-  if (pkgState !== 'active' && pkgState !== 'draft') return null
+  if (pkgState !== 'active') return null
 
   const contentType = getContentType(normalizedFormat)
-  if (pkgState === 'draft' && contentType !== 'document') return null
 
   if (!contentType) {
     // Clean up any previously indexed content (e.g. format changed to non-indexable)
@@ -99,15 +77,7 @@ export async function executeIndexContent(
   }
 
   if (contentType === 'document') {
-    return indexDocument(
-      resourceId,
-      packageId,
-      storageKey,
-      normalizedFormat!,
-      contentType,
-      pkgState === 'active',
-      ctx
-    )
+    return indexDocument(resourceId, packageId, contentType, interpretResult?.documentText, ctx)
   }
 
   // A table by its profile (ADR-063 §決定 7). One the interpretation made no
@@ -163,12 +133,7 @@ async function indexTableProfile(
         resourceId,
         packageId,
         'tabular',
-        profileLines(
-          streamUtf8Lines(
-            // pipeline, not pipe: a download that fails midway has to fail the read
-            pipeline(await ctx.storage.download(profile.key), createZstdDecompress(), () => {})
-          )
-        ),
+        profileLines(zstdLines(await ctx.storage.download(profile.key))),
         ctx
       )
     : { chunks: 0, indexedBytes: 0, originalBytes: 0 }
@@ -258,84 +223,47 @@ async function indexManifest(
 }
 
 /**
- * Extract text from a binary document (PDF, etc.), persist the text head as
- * AI-suggest material (ADR-040), then chunk and index. When `indexToSearch`
- * is false (draft package) only the artifact is produced.
+ * Index a document's content from the text artifact its interpretation wrote
+ * (see `interpretDocument`).
  *
- * The text streams a line at a time (`documentLines`) into a file beside the
- * document, never held whole. Only once it has all been read are the old
- * chunks deleted and the new ones written: a document that fails partway, at a
- * later page range or sheet, leaves what was indexed before as it was.
+ * A document with no text, or none interpreted this run, leaves what was
+ * indexed before as it was: the old chunks are deleted only once there are
+ * new ones to write.
  */
 async function indexDocument(
   resourceId: string,
   packageId: string,
-  storageKey: string,
-  format: string,
   contentType: ContentType,
-  indexToSearch: boolean,
+  text: InterpretedDocument | undefined,
   ctx: PipelineContext
-): Promise<IndexContentResult> {
-  const stream = await ctx.storage.download(storageKey)
-  const tempPath = await streamToTempFile(stream, format)
-  const textPath = siblingTempPath(tempPath, 'text.txt')
-
-  try {
-    // In the heavy process: parsing is where a document's memory goes.
-    // Writing the chunks after goes on here, beside the rest
-    const extracted = await runHeavy(
-      { kind: 'extract-text', documentPath: tempPath, format, textPath },
-      ctx.assertHeld
-    )
-    // A document with no text leaves what was indexed before as it was
-    if (!extracted.hasText) {
-      return {
-        contentIndexed: false,
-        contentType,
-        contentOriginalSize: 0,
-        contentIndexedSize: 0,
-        contentTruncated: false,
-        contentChunks: 0,
-      }
-    }
-
-    // Plain UTF-8, so the suggest side reads it without encoding detection;
-    // a character the cut splits is dropped
-    const textHead = Buffer.from(
-      stripTrailingReplacementChar(
-        (await readHead(textPath, TEXT_HEAD_ARTIFACT_SIZE)).toString('utf-8')
-      ),
-      'utf-8'
-    )
-    const textHeadKey = getPreviewKey(packageId, resourceId, 'txt', randomUUID())
-    await ctx.putObject(textHeadKey, textHead, {
-      contentType: 'text/plain; charset=utf-8',
-    })
-
-    let written: WrittenChunks = { chunks: 0, indexedBytes: 0, originalBytes: 0 }
-    if (indexToSearch) {
-      await ctx.deleteContent(resourceId)
-      written = await writeChunks(
-        resourceId,
-        packageId,
-        contentType,
-        streamUtf8Lines(createReadStream(textPath)),
-        ctx
-      )
-    }
-
+): Promise<IndexContentResult | null> {
+  if (!text) return null
+  // No head is no text to cut one from
+  if (!text.textHead) {
     return {
-      contentIndexed: written.chunks > 0,
+      contentIndexed: false,
       contentType,
-      contentOriginalSize: extracted.bytes,
-      contentIndexedSize: written.indexedBytes,
+      contentOriginalSize: 0,
+      contentIndexedSize: 0,
       contentTruncated: false,
-      contentChunks: written.chunks,
-      textHeadKey,
-      textHeadBytes: textHead.length,
+      contentChunks: 0,
     }
-  } finally {
-    await cleanupTempFile(tempPath)
+  }
+  await ctx.deleteContent(resourceId)
+  const written = await writeChunks(
+    resourceId,
+    packageId,
+    contentType,
+    documentTextLines(await ctx.storage.download(text.key)),
+    ctx
+  )
+  return {
+    contentIndexed: written.chunks > 0,
+    contentType,
+    contentOriginalSize: text.bytes,
+    contentIndexedSize: written.indexedBytes,
+    contentTruncated: false,
+    contentChunks: written.chunks,
   }
 }
 

@@ -47,9 +47,12 @@ export function createPipelineContextMock(): PipelineContextMock {
   return ctx as PipelineContextMock
 }
 
-/** What the preview `putObject` was handed, filled in once the step has run. */
+/** What `putObject` was handed, filled in once the step has run. */
 export interface UploadCapture {
+  /** The preview's bytes */
   body: Buffer | undefined
+  /** Every upload's bytes, by key: the preview and whatever went beside it */
+  uploads: Map<string, Buffer>
 }
 
 /**
@@ -60,9 +63,10 @@ export interface UploadCapture {
  * past to be asserted on at all.
  */
 export function captureUpload(ctx: PipelineContextMock): UploadCapture {
-  const capture: UploadCapture = { body: undefined }
+  const capture: UploadCapture = { body: undefined, uploads: new Map() }
   ctx.putObject.mockImplementation(async (key: string, body: Buffer | Readable) => {
     const bytes = Buffer.isBuffer(body) ? body : await streamToBuffer(body)
+    capture.uploads.set(key, bytes)
     // The preview, of whatever the step uploads beside it (ADR-063)
     if (key.endsWith('.parquet')) capture.body = bytes
   })

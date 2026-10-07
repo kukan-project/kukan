@@ -8,7 +8,8 @@ import { getStorageKey } from '@kukan/shared'
 vi.mock('../pipeline/steps/fetch', () => ({
   executeFetch: vi.fn(),
 }))
-vi.mock('../pipeline/steps/interpret', () => ({
+vi.mock('../pipeline/steps/interpret', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../pipeline/steps/interpret')>()),
   executeInterpret: vi.fn(),
 }))
 vi.mock('../pipeline/steps/lake', () => ({
@@ -283,6 +284,46 @@ describe('processResource', () => {
       noTableReason: undefined,
       claim: expect.objectContaining({ owner: 'run-1' }),
     })
+  })
+
+  it('records the text a document was interpreted into, and its head (ADR-040)', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'PDF',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    const documentText = {
+      key: 'previews/pkg-1/res-1.tok.text.ndjson.zst',
+      bytes: 120,
+      textHead: { key: 'previews/pkg-1/res-1.tok.txt', bytes: 100 },
+    }
+    vi.mocked(executeInterpret).mockResolvedValue({ previewKey: null, documentText })
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(
+      null,
+      {
+        documentTextKey: documentText.key,
+        textHeadKey: documentText.textHead.key,
+        textHeadBytes: 100,
+        sourceHash: 'sha256:abc',
+      },
+      null
+    )
+    // Index is handed the same text to build the content index from
+    expect(executeIndexContent).toHaveBeenCalledWith(
+      'res-1',
+      'pkg-1',
+      'resources/pkg-1/res-1',
+      'PDF',
+      expect.objectContaining({ documentText }),
+      expect.anything()
+    )
   })
 
   it('skips the interpretation when no version holds this run’s content', async () => {
