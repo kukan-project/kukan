@@ -16,7 +16,7 @@
  * shows what it dropped, in review.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { packageTable, resource, resourceVersion } from '@kukan/db'
+import { packageTable, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createTestApp, mockTransaction } from '../test-helpers/test-app'
 import { PackageService } from '../../services/package-service'
 import { listPurgeTargets } from '../../services/package-cleanup'
@@ -269,6 +269,37 @@ describe('emitted SQL shape', () => {
           } as never,
         }
       )
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
+  // The pointers come from the one list of them (`pipelineObjectKeys`), each
+  // cleared only while it still names the key that was read. A pointer added
+  // to the list shows up here, in the read and in the SET alike.
+  describe('ResourceVersionService.discardDerivedArtifacts', () => {
+    it('pins the shape', async () => {
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'shape-pkg-discard', state: 'active' })
+        .returning()
+      const [r] = await db
+        .insert(resource)
+        .values({ packageId: pkg.id, name: 'shape-discard', urlType: 'upload' })
+        .returning()
+      await db.insert(resourcePipeline).values({
+        resourceId: r.id,
+        previewKey: 'shape/discard.parquet',
+        metadata: {
+          textHeadKey: 'shape/discard.txt',
+          documentTextKey: 'shape/discard.text.ndjson.zst',
+        },
+        profile: { columns: [], key: 'shape/discard.profile.ndjson.zst' },
+      })
+      queries.length = 0
+
+      await new ResourceVersionService(recorder)['discardDerivedArtifacts'](r.id, {
+        deleteMany: async (keys: string[]) => keys,
+      } as never)
       expect(recorded()).toMatchSnapshot()
     })
   })

@@ -20,7 +20,15 @@ import {
   sql,
 } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
-import { resource, resourceVersion, resourcePipeline, auditLog, schemaColumnNames } from '@kukan/db'
+import {
+  resource,
+  resourceVersion,
+  resourcePipeline,
+  auditLog,
+  schemaColumnNames,
+  pipelineObjectKeys,
+  clearPipelineObjectKeys,
+} from '@kukan/db'
 import {
   canIdentifyRows,
   ConflictError,
@@ -3169,39 +3177,21 @@ export class ResourceVersionService {
     const [pipe] = await this.db
       .select({
         id: resourcePipeline.id,
-        previewKey: resourcePipeline.previewKey,
-        textHeadKey: sql<string | null>`${resourcePipeline.metadata} ->> 'textHeadKey'`,
-        documentTextKey: sql<string | null>`${resourcePipeline.metadata} ->> 'documentTextKey'`,
-        profileKey: sql<string | null>`${resourcePipeline.profile} ->> 'key'`,
+        keys: sql<
+          (string | null)[]
+        >`ARRAY[${sql.join(pipelineObjectKeys('resource_pipeline'), sql`, `)}]`,
       })
       .from(resourcePipeline)
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
 
-    const keys = [
-      pipe?.previewKey,
-      pipe?.textHeadKey,
-      pipe?.documentTextKey,
-      pipe?.profileKey,
-    ].filter((k): k is string => !!k)
+    const keys = (pipe?.keys ?? []).filter((k): k is string => !!k)
     if (keys.length === 0) return
 
     const detached = await this.db.execute(sql`
       WITH cleared AS (
         UPDATE resource_pipeline
-        SET preview_key = CASE
-              WHEN preview_key IS NOT DISTINCT FROM ${pipe!.previewKey}::text THEN NULL
-              ELSE preview_key END,
-            metadata = metadata - array_remove(ARRAY[
-              CASE WHEN metadata ->> 'textHeadKey' IS NOT DISTINCT FROM ${pipe!.textHeadKey}::text
-                THEN 'textHeadKey' END,
-              CASE WHEN metadata ->> 'documentTextKey' IS NOT DISTINCT FROM ${pipe!.documentTextKey}::text
-                THEN 'documentTextKey' END
-            ], NULL),
-            profile = CASE
-              WHEN profile ->> 'key' IS NOT DISTINCT FROM ${pipe!.profileKey}::text THEN NULL
-              ELSE profile END,
-            updated = NOW()
+        SET ${clearPipelineObjectKeys(pipe!.keys)}, updated = NOW()
         WHERE id = ${pipe!.id}::uuid AND ${onRevision(resourceId, ifRevision)}
         RETURNING id
       ),

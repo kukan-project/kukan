@@ -262,9 +262,12 @@ sweep（`sweep-orphans.ts`）は期限切れの鍵を最大 5000 件取り、**�
 `resource_pipeline.preview_key` / `resource_pipeline.metadata->>'textHeadKey'` /
 `resource_pipeline.metadata->>'documentTextKey'` / `resource_pipeline.profile->>'key'`
 
-`resource_pipeline` の 4 つは `pipelineObjectKeys`（`packages/db/src/schema/resource-pipeline.ts`）が
-一覧として持ち、sweep の参照判定と、行を書き換えるときの回収予約（`StepTracker` の `movePointers`）は
-そこから組み立てる。ポインタを足すときはそこに足す。
+`resource_pipeline` の 4 つは `packages/db/src/schema/resource-pipeline.ts` が一覧として持つ。
+sweep の参照判定と、行を書き換えるときの回収予約（`StepTracker` の `movePointers`）は、読む式
+（`pipelineObjectKeys`）をそこから組み立てる。版の取り消しとパージで外して消す処理
+（`discardDerivedArtifacts`）も、読む式と、まだ同じ鍵を指しているときだけ外す SET 句
+（`clearPipelineObjectKeys`）をそこから組み立てる。ポインタを足すときは、その一覧に列か JSON の欄を
+1 行足す（JSON の欄なら、sweep の参照判定が使う式インデックスも足す）。
 
 6 つ目は表のプロファイルの成果物（ADR-063）。Interpret がプレビューと同じトークンで
 `previews/{package}/{resource}.{token}.profile.ndjson.zst` に書き、プレビューと同じ文で参照する。

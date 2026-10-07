@@ -66,20 +66,75 @@ export const resourcePipeline = pgTable(
 )
 
 /**
- * Every storage key a pipeline row names, as SQL over the row under `alias`.
- *
- * The one list of them: the orphan sweep asks it before deleting an object
- * (ADR-045 §3), and a writer that replaces the row parks whatever it names. A
- * pointer missing from here is an object the sweep deletes out from under its
- * row, so a new one is added here and nowhere else.
+ * Where a pipeline row names a storage key: a column of its own, or a field
+ * of a jsonb column. `whole` marks a jsonb column that describes the key's
+ * object and nothing else — a table profile and its artifact — so that
+ * clearing the pointer clears the column.
  */
+interface PipelinePointer {
+  column: string
+  field?: string
+  whole?: true
+}
+
+/**
+ * Every storage key a pipeline row names. The one list of them: the orphan
+ * sweep asks it before deleting an object (ADR-045 §3), a writer that replaces
+ * the row parks whatever it names, and retracting content clears and destroys
+ * them (ADR-043 §5). A pointer missing from here is an object the sweep
+ * deletes out from under its row, or an extract a purge leaves readable, so a
+ * new one is added here and nowhere else.
+ */
+const PIPELINE_POINTERS: readonly PipelinePointer[] = [
+  { column: 'preview_key' },
+  { column: 'metadata', field: 'textHeadKey' },
+  { column: 'metadata', field: 'documentTextKey' },
+  { column: 'profile', field: 'key', whole: true },
+]
+
+function pointerExpression({ column, field }: PipelinePointer, alias?: string): string {
+  const qualified = alias ? `${alias}.${column}` : column
+  return field ? `(${qualified} ->> '${field}')` : qualified
+}
+
+/** Every storage key a pipeline row names, as SQL over the row under `alias`, in one order. */
 export function pipelineObjectKeys(alias: string): SQL[] {
-  return [
-    sql.raw(`${alias}.preview_key`),
-    sql.raw(`(${alias}.metadata ->> 'textHeadKey')`),
-    sql.raw(`(${alias}.metadata ->> 'documentTextKey')`),
-    sql.raw(`(${alias}.profile ->> 'key')`),
-  ]
+  return PIPELINE_POINTERS.map((pointer) => sql.raw(pointerExpression(pointer, alias)))
+}
+
+/**
+ * The SET assignments that clear each pointer of a pipeline row while it still
+ * names the key it was read naming — `keys` as `pipelineObjectKeys` read them,
+ * in its order — and leave alone one another writer has moved on since.
+ *
+ * A column of its own goes to NULL, as does a `whole` jsonb column; a field
+ * goes from its column, the rest of which stays.
+ */
+export function clearPipelineObjectKeys(keys: (string | null)[]): SQL {
+  const read = PIPELINE_POINTERS.map((pointer, i) => ({ pointer, key: keys[i] ?? null }))
+  const stillNames = ({ pointer, key }: (typeof read)[number]) =>
+    sql`${sql.raw(pointerExpression(pointer))} IS NOT DISTINCT FROM ${key}::text`
+  const columns = [...new Set(PIPELINE_POINTERS.map((pointer) => pointer.column))]
+  return sql.join(
+    columns.map((column) => {
+      const own = read.filter(({ pointer }) => pointer.column === column)
+      const fields = own.filter(({ pointer }) => pointer.field && !pointer.whole)
+      let kept = sql.raw(column)
+      if (fields.length > 0) {
+        kept = sql`${kept} - array_remove(ARRAY[${sql.join(
+          fields.map(
+            (read) => sql`CASE WHEN ${stillNames(read)} THEN '${sql.raw(read.pointer.field!)}' END`
+          ),
+          sql`, `
+        )}], NULL)`
+      }
+      for (const read of own.filter(({ pointer }) => !pointer.field || pointer.whole)) {
+        kept = sql`CASE WHEN ${stillNames(read)} THEN NULL ELSE ${kept} END`
+      }
+      return sql`${sql.raw(column)} = ${kept}`
+    }),
+    sql`, `
+  )
 }
 
 /**

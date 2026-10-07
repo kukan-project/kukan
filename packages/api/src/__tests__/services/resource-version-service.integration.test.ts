@@ -6,7 +6,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
-import { auditLog, job, resource, resourcePipeline, resourceVersion } from '@kukan/db'
+import {
+  auditLog,
+  clearPipelineObjectKeys,
+  job,
+  resource,
+  resourcePipeline,
+  resourceVersion,
+} from '@kukan/db'
 import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { ResourceSchema, VersionState } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -2369,6 +2376,34 @@ describe('the artifacts derived from retracted content', () => {
     await revertFromLive(deps)
 
     expect((await pipelineRow()).previewKey).toBe('previews/pkg/res.newer.parquet')
+  })
+
+  it('clear each pointer only while it names the key that was read', async () => {
+    // Every kind of pointer the list holds: a column of its own, a field of
+    // `metadata` (the rest of which stays), and the profile, which goes whole
+    await withArtifacts()
+    const stale = (key: string) => key.replace('.tok.', '.older.')
+
+    await db.execute(sql`
+      UPDATE resource_pipeline
+      SET ${clearPipelineObjectKeys([PREVIEW, stale(TEXT_HEAD), DOCUMENT_TEXT, stale(PROFILE)])}
+      WHERE resource_id = ${resourceId}
+    `)
+
+    const row = await pipelineRow()
+    expect(row.previewKey).toBeNull()
+    expect(row.metadata).toEqual({ textHeadKey: TEXT_HEAD, contentIndexed: true })
+    expect(row.profile).toEqual({ columns: [], key: PROFILE })
+
+    await db.execute(sql`
+      UPDATE resource_pipeline
+      SET ${clearPipelineObjectKeys([null, TEXT_HEAD, null, PROFILE])}
+      WHERE resource_id = ${resourceId}
+    `)
+
+    const after = await pipelineRow()
+    expect(after.metadata).toEqual({ contentIndexed: true })
+    expect(after.profile).toBeNull()
   })
 
   it('does nothing when there are none', async () => {

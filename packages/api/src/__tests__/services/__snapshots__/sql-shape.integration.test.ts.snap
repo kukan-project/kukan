@@ -226,6 +226,25 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
 ]
 `;
 
+exports[`emitted SQL shape > ResourceVersionService.discardDerivedArtifacts > pins the shape 1`] = `
+[
+  "select "id", ARRAY[resource_pipeline.preview_key, (resource_pipeline.metadata ->> 'textHeadKey'), (resource_pipeline.metadata ->> 'documentTextKey'), (resource_pipeline.profile ->> 'key')] from "resource_pipeline" where "resource_pipeline"."resource_id" = $1 limit $2",
+  "WITH cleared AS (
+        UPDATE resource_pipeline
+        SET preview_key = CASE WHEN preview_key IS NOT DISTINCT FROM $1::text THEN NULL ELSE preview_key END, metadata = metadata - array_remove(ARRAY[CASE WHEN (metadata ->> 'textHeadKey') IS NOT DISTINCT FROM $2::text THEN 'textHeadKey' END, CASE WHEN (metadata ->> 'documentTextKey') IS NOT DISTINCT FROM $3::text THEN 'documentTextKey' END], NULL), profile = CASE WHEN (profile ->> 'key') IS NOT DISTINCT FROM $4::text THEN NULL ELSE profile END, updated = NOW()
+        WHERE id = $5::uuid AND TRUE
+        RETURNING id
+      ),
+      parked AS (
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT v.key, NOW() + INTERVAL '1 hour'
+        FROM (VALUES ($6::text), ($7::text), ($8::text), ($9::text)) AS v(key), cleared
+        ON CONFLICT (key) DO NOTHING
+      )
+      SELECT id FROM cleared",
+]
+`;
+
 exports[`emitted SQL shape > ResourceVersionService.setColumnSettings > pins the pending-run shape 1`] = `
 [
   "select "column_settings" from "resource" where "resource"."id" = $1 limit $2",
