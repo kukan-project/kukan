@@ -8,7 +8,8 @@ import {
   type PipelineContextMock,
 } from './test-helpers/pipeline-context'
 import type { ContentDoc } from '@kukan/search-adapter'
-import { DOCUMENT_TEXT_SCHEMA, type DocumentTextBlock } from '@kukan/shared'
+import type { DocumentTextBlock } from '@kukan/shared'
+import { artifactOf } from './test-helpers/document-text'
 import { UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
 
 function bufferToStream(buf: Buffer): Readable {
@@ -26,24 +27,11 @@ function documentInterpreted(
   ctx: PipelineContextMock,
   blocks: DocumentTextBlock[]
 ): InterpretResult {
-  const artifact = zstdCompressSync(
-    Buffer.from(
-      [{ schema: DOCUMENT_TEXT_SCHEMA }, ...blocks]
-        .map((line) => JSON.stringify(line) + '\n')
-        .join('')
-    )
-  )
+  const artifact = artifactOf(blocks)
   vi.mocked(ctx.storage.download).mockImplementation(async () => Readable.from(artifact))
   const texts = blocks.map((b) => b.text).filter(Boolean)
-  const bytes = Buffer.byteLength(texts.join('\n'))
-  return {
-    previewKey: null,
-    documentText: {
-      key: DOCUMENT_TEXT,
-      bytes,
-      ...(texts.some((t) => t.trim()) && { textHead: { key: 'previews/head.txt', bytes } }),
-    },
-  }
+  const bytes = texts.some((t) => t.trim()) ? Buffer.byteLength(texts.join('\n')) : 0
+  return { previewKey: null, documentText: { key: DOCUMENT_TEXT, bytes } }
 }
 
 function createMockCtx(): PipelineContextMock {

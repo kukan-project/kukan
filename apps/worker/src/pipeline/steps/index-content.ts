@@ -6,7 +6,7 @@
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
  * Document formats are indexed from the text artifact the Interpret step
- * wrote, which also cut the AI-suggest text head from it (ADR-040 addendum).
+ * wrote, which the AI suggestion reads its text head from too (ADR-040).
  * Drafts are not indexed — search indexing starts at publish (ADR-039).
  *
  * Supported formats: CSV, TSV, TXT, MD, HTML, HTM, JSON, GeoJSON, XML, ZIP,
@@ -28,7 +28,11 @@ import type { PipelineContext } from '../types'
 import type { InterpretedDocument, InterpretResult } from './interpret'
 import { documentTextLines } from '../document-text-lines'
 import { streamToBuffer, streamUtf8Lines, zstdLines } from '../node-utils'
-import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
+import {
+  bufferToUtf8,
+  stripTrailingReplacementChar,
+  truncateToByteLimit,
+} from '@kukan/shared/encoding-node'
 import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
 
 export interface IndexContentResult {
@@ -238,8 +242,7 @@ async function indexDocument(
   ctx: PipelineContext
 ): Promise<IndexContentResult | null> {
   if (!text) return null
-  // No head is no text to cut one from
-  if (!text.textHead) {
+  if (text.bytes === 0) {
     return {
       contentIndexed: false,
       contentType,
@@ -439,12 +442,4 @@ function getContentType(format: string | null): ContentType | null {
   if (isTextFormat(format)) return 'text'
   if (isDocumentFormat(format)) return 'document'
   return null
-}
-
-/** Truncate a UTF-8 string to fit within a byte limit without splitting multi-byte characters */
-function truncateToByteLimit(text: string, maxBytes: number): string {
-  const buf = Buffer.from(text, 'utf-8')
-  if (buf.length <= maxBytes) return text
-  const sliced = buf.subarray(0, maxBytes)
-  return stripTrailingReplacementChar(sliced.toString('utf-8'))
 }

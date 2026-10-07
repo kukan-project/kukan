@@ -87,6 +87,8 @@ interface PipelinePointer {
  */
 const PIPELINE_POINTERS: readonly PipelinePointer[] = [
   { column: 'preview_key' },
+  // No longer written: the text head is read from the document's text. Rows
+  // from before still name one, and interpreting them again parks it.
   { column: 'metadata', field: 'textHeadKey' },
   { column: 'metadata', field: 'documentTextKey' },
   { column: 'profile', field: 'key', whole: true },

@@ -271,6 +271,11 @@ document 系と ZIP に広げる。
   Extract 失敗時は「前回プレビュー温存」の既存設計に従い前回値が残るが、
   次の成功実行で解消される）。Storage 上の旧成果物は Parquet プレビューと
   同じ扱い（同名キーの上書き・package purge 時の `deleteByPrefix` で削除）
+- 2026-10 補足: 文書の本文は、ページ・見出し付きの成果物（`text.ndjson.zst`）として
+  Interpret が保存するようになった。text head は別のオブジェクトにせず、読み手が成果物の
+  先頭から切り出す（`readDocumentHead`）。`metadata` には `documentTextKey` と
+  `documentTextBytes`（本文が無ければ 0）を記録する。成果物の無い古い行は、再処理されるまで
+  従来の `textHeadKey` を読む
 
 ## 追記: リソース単位の並列生成（2026-07-16）
 

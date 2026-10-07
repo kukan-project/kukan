@@ -869,7 +869,7 @@ describe('the artifact', () => {
       { schema: DOCUMENT_TEXT_SCHEMA },
       { loc: {}, headings: ['Title'], text: 'Title\nbody' },
     ])
-    expect(extracted).toEqual({ hasText: true, bytes: Buffer.byteLength('Title\nbody') })
+    expect(extracted).toEqual({ bytes: Buffer.byteLength('Title\nbody') })
   })
 
   it('writes control characters as spaces, and Kangxi radicals as the ideographs they look like', async () => {
@@ -894,9 +894,6 @@ describe('the artifact', () => {
     parseOffice.mockResolvedValue(astOf([page(1, ' '), page(2, '')], { metadata: { pages: 2 } }))
     const path = await file('scan.pdf', Buffer.alloc(10))
 
-    expect(await extractDocumentText(path, 'pdf', join(dir, 'out.zst'))).toEqual({
-      hasText: false,
-      bytes: 1,
-    })
+    expect(await extractDocumentText(path, 'pdf', join(dir, 'out.zst'))).toEqual({ bytes: 0 })
   })
 })

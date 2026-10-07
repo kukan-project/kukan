@@ -302,6 +302,12 @@ Notes:
   design, and the next successful run resolves it). Stale storage artifacts
   are handled like Parquet previews (same-key overwrite; removed by
   `deleteByPrefix` on package purge)
+- 2026-10 addendum: a document's text is now kept by Interpret as an
+  artifact with its pages and headings (`text.ndjson.zst`). The text head is
+  no longer an object of its own; readers cut it from the start of the
+  artifact (`readDocumentHead`). The metadata records `documentTextKey` and
+  `documentTextBytes` (0 where there is no text). An older row without the
+  artifact is read by its `textHeadKey` until it is interpreted again
 
 ## Addendum: per-resource parallel generation (2026-07-16)
 

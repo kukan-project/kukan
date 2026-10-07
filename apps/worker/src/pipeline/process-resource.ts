@@ -229,7 +229,7 @@ async function runPipeline(
             interpretResult.previewKey,
             {
               ...(interpretResult.encoding && { encoding: interpretResult.encoding }),
-              // A document's text and its head (ADR-040), where it is one
+              // A document's text (ADR-040), where it is one
               ...(interpretResult.documentText &&
                 documentTextMetadata(interpretResult.documentText)),
               // The unit a feed page is read in (ADR-055); absent where the

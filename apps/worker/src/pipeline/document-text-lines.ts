@@ -1,6 +1,6 @@
 /**
  * The text of a document text artifact (see `DocumentTextBlock`), as lines:
- * what the content index is built from, and what the text head is cut from.
+ * what the content index is built from.
  * Apart from the extraction so the parent process can read an artifact
  * without loading the document parsers.
  */

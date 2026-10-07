@@ -232,13 +232,6 @@ export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 6
 export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 
 /**
- * Bytes of extracted document text persisted to storage as AI-suggest material
- * (ADR-040 addendum). Larger than the suggest-side read budget so a future
- * budget increase doesn't require reprocessing stored resources.
- */
-export const TEXT_HEAD_ARTIFACT_SIZE = 64 * 1024
-
-/**
  * Bytes of a table indexed by its contents, when the interpretation made no
  * table of it to profile (ADR-063): its headings and first rows, not the codes
  * and counts that fill the rest.

@@ -11,6 +11,7 @@ import {
   type SummaryDeps,
   type SummaryInput,
 } from '../pipeline/steps/summarize'
+import { artifactOf } from './test-helpers/document-text'
 import { SUMMARY_MAX_PDF_PAGES } from '@kukan/shared'
 
 /** A real PDF, because the routing reads its page count */
@@ -41,14 +42,25 @@ async function encryptedPdfOf(pages: number): Promise<Buffer> {
   return Buffer.from(await doc.save())
 }
 
+const DOCUMENT_TEXT = 'previews/document-text'
+
 function deps(opts: {
   bytes?: Buffer
-  /** What the Index step extracted, served through downloadRange */
+  /**
+   * What Interpret extracted: in the text artifact, or for an earlier run's
+   * text head, served through downloadRange
+   */
   textHead?: string
   documents?: boolean
 }): SummaryDeps {
   const storage = {
-    download: vi.fn(async () => Readable.from([opts.bytes ?? Buffer.from('x')])),
+    download: vi.fn(async (key: string) =>
+      Readable.from([
+        key === DOCUMENT_TEXT
+          ? artifactOf([{ loc: { page: 1 }, text: opts.textHead ?? '' }])
+          : (opts.bytes ?? Buffer.from('x')),
+      ])
+    ),
     readUrl: (key: string) => `s3://test/${key}`,
     downloadRange: vi.fn(async () => ({
       stream: Readable.from([Buffer.from(opts.textHead ?? '', 'utf-8')]),
@@ -93,7 +105,7 @@ function input(over: Partial<SummaryInput> = {}): SummaryInput {
 const withTextHead: MaterialArtifacts = {
   pipelineStatus: 'complete',
   previewKey: null,
-  pipelineMetadata: { textHeadKey: 'previews/text-head' },
+  pipelineMetadata: { documentTextKey: DOCUMENT_TEXT, documentTextBytes: 1 },
   liveStorageKey: 'resources/pkg/res/v1',
 }
 /** The last run's interpretation wrote what it was meant to */
@@ -119,6 +131,23 @@ describe('choosing what to send (ADR-053 §3)', () => {
 
       expect(plan).toMatchObject({ kind: 'text-head' })
       expect(plan).not.toHaveProperty('attachment')
+    })
+
+    it('reads the text head an earlier run kept apart, where there is no artifact', async () => {
+      const storage = deps({ bytes: await pdfOf(2), textHead: 'あ'.repeat(600) })
+      const plan = await planMaterial(
+        input(),
+        { ...withTextHead, pipelineMetadata: { textHeadKey: 'previews/text-head.txt' } },
+        INTERPRETED,
+        storage
+      )
+
+      expect(plan).toMatchObject({ kind: 'text-head', coverage: { read: 600 } })
+      expect(storage.storage.downloadRange).toHaveBeenCalledWith(
+        'previews/text-head.txt',
+        0,
+        expect.any(Number)
+      )
     })
 
     it('sends the original when the text layer is too thin to describe the file', async () => {

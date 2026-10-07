@@ -11,7 +11,6 @@ import {
 } from './test-helpers/pipeline-context'
 import { artifactBlocks } from './test-helpers/document-text'
 import { xlsxBuffer } from './test-helpers/xlsx'
-import { TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
 
 // Read by the real heavy process: the parsers, not a mock of them
 
@@ -50,7 +49,7 @@ async function pdfOf(pages: string[]): Promise<Buffer> {
 }
 
 describe('interpreting a document', () => {
-  it('keeps its text a page at a time, and the head of it, under one token', async () => {
+  it('keeps its text a page at a time, and nothing beside it', async () => {
     const result = await interpret(await pdfOf(['First page', '', 'Third page']), 'PDF')
 
     expect(await written()).toEqual([
@@ -60,10 +59,9 @@ describe('interpreting a document', () => {
     ])
     const text = result!.documentText!
     expect(text.key).toMatch(KEY_RE('text\\.ndjson\\.zst'))
-    expect(text.textHead!.key).toBe(text.key.replace('.text.ndjson.zst', '.txt'))
-    const head = uploaded('txt')!.toString('utf-8')
-    expect(head).toMatch(/First page[\s\S]*Third page/)
-    expect(text.textHead!.bytes).toBe(uploaded('txt')!.length)
+    expect(text.bytes).toBeGreaterThan(0)
+    // The head the suggestion and the abstract read is cut from the artifact
+    expect(capture.uploads.size).toBe(1)
     // Nothing a text format would carry
     expect(result!.previewKey).toBeNull()
     expect(result!.encoding).toBeUndefined()
@@ -74,12 +72,11 @@ describe('interpreting a document', () => {
     expect(ctx.storage.download).toHaveBeenCalledWith('v1')
   })
 
-  it('keeps the pages of a document with no text, and no head', async () => {
+  it('keeps the pages of a document with no text, saying it has none', async () => {
     const result = await interpret(await pdfOf(['', '']), 'PDF')
 
     expect((await written()).map((b) => b.unreadable)).toEqual(['no-text', 'no-text'])
-    expect(result!.documentText!.textHead).toBeUndefined()
-    expect(uploaded('txt')).toBeUndefined()
+    expect(result!.documentText!.bytes).toBe(0)
   })
 
   it('reads a workbook by sheet, each line a row', async () => {
@@ -99,18 +96,7 @@ describe('interpreting a document', () => {
     expect(await written()).toEqual([
       { loc: { sheet: 1, sheetName: 's1', rows: [1, 2] }, text: '地域\t人口\n東京\t14000000' },
     ])
-    expect(uploaded('txt')!.toString('utf-8')).toBe('地域\t人口\n東京\t14000000')
     expect(result!.documentText!.bytes).toBe(Buffer.byteLength('地域\t人口\n東京\t14000000'))
-  })
-
-  it('cuts the head to its size without splitting a character', async () => {
-    const rows = Array.from({ length: 30 }, () => [{ inline: 'あ'.repeat(1000) }])
-    await interpret(await xlsxBuffer({ sheets: { 1: rows } }), 'XLSX')
-
-    const head = uploaded('txt')!
-    expect(head.length).toBeLessThanOrEqual(TEXT_HEAD_ARTIFACT_SIZE)
-    expect(head.length).toBeGreaterThan(TEXT_HEAD_ARTIFACT_SIZE - 3)
-    expect(head.toString('utf-8')).not.toContain('�')
   })
 
   it('fails, keeping nothing, on a file its parser cannot read', async () => {

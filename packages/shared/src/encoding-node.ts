@@ -153,3 +153,11 @@ export function bufferToUtf8(buf: Buffer, encoding: string): string {
 export function stripTrailingReplacementChar(text: string): string {
   return text.replace(/\uFFFD$/, '')
 }
+
+/** Truncate a UTF-8 string to fit within a byte limit without splitting multi-byte characters */
+export function truncateToByteLimit(text: string, maxBytes: number): string {
+  const buf = Buffer.from(text, 'utf-8')
+  if (buf.length <= maxBytes) return text
+  const sliced = buf.subarray(0, maxBytes)
+  return stripTrailingReplacementChar(sliced.toString('utf-8'))
+}

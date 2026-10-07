@@ -262,6 +262,9 @@ sweep（`sweep-orphans.ts`）は期限切れの鍵を最大 5000 件取り、**�
 `resource_pipeline.preview_key` / `resource_pipeline.metadata->>'textHeadKey'` /
 `resource_pipeline.metadata->>'documentTextKey'` / `resource_pipeline.profile->>'key'`
 
+`textHeadKey` はもう書かない（text head は文書テキストの成果物から切り出す）。成果物より前に処理した
+行がまだ指しているので一覧に残し、再処理のときに旧オブジェクトを回収予約させる。
+
 `resource_pipeline` の 4 つは `packages/db/src/schema/resource-pipeline.ts` が一覧として持つ。
 sweep の参照判定と、行を書き換えるときの回収予約（`StepTracker` の `movePointers`）は、読む式
 （`pipelineObjectKeys`）をそこから組み立てる。版の取り消しとパージで外して消す処理
@@ -271,7 +274,7 @@ sweep の参照判定と、行を書き換えるときの回収予約（`StepTra
 
 6 つ目は表のプロファイルの成果物（ADR-063）。Interpret がプレビューと同じトークンで
 `previews/{package}/{resource}.{token}.profile.ndjson.zst` に書き、プレビューと同じ文で参照する。
-版の取り消しとパージでは、プレビュー・text head と一緒に外して消す（`discardDerivedArtifacts`）。
+版の取り消しとパージでは、プレビューと一緒に外して消す（`discardDerivedArtifacts`）。
 
 7 つ目は文書テキストの成果物。PDF・Office 系の本文を、ページ・スライド・シートと行、文書が持つ
 見出し（PDF のしおり、Word の見出しスタイル、スライドのタイトル）とともに 1 ブロック 1 行で持つ
@@ -279,8 +282,9 @@ zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、�
 `packages/shared/src/pipeline-types.ts`）。図も 1 ブロックとして持つが、画像そのものは持たず、
 ファイルの中で指す名前（PDF のオブジェクト番号、パッケージ内のパス）と寸法だけを持つ。Index が
 テーブルのプロファイルと同じく **Interpret が版ファイルから作る**（抽出は重い処理の子プロセス）。
-`previews/{package}/{resource}.{token}.text.ndjson.zst` に書き、text head（AI 提案・抄録の材料）は
-ここから切り出して同じトークンで書く。どちらも `updateInterpretResult` で参照する。Index は
+`previews/{package}/{resource}.{token}.text.ndjson.zst` に書き、`updateInterpretResult` で参照する。
+本文の UTF-8 バイト数（本文が無ければ 0）を `documentTextBytes` に並べて持つ。text head（AI 提案・
+抄録の材料）は別のオブジェクトにせず、読み手がこのファイルの先頭から切り出す。Index は
 このファイルを読んで索引を作るだけで、文書を開かない。本文の無い文書（スキャン）にも書く —
 ページと図の一覧は、後から読み取るときの出発点になる。字形を文字に戻す対応表（ToUnicode）を
 持たないフォントで書かれた本文は、字形番号の羅列にしかならないので捨て、ページの大半がそうなら

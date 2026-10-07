@@ -58,8 +58,7 @@ import {
   loadMaterial,
   materialKind,
   readAll,
-  readArtifactTextHead,
-  textHeadKeyOf,
+  readDocumentHead,
   textHeadWasCapped,
   EMPTY_MATERIAL,
   type LoadedMaterial,
@@ -347,9 +346,8 @@ async function readExtractedText(
   deps: SummaryDeps,
   usable: boolean
 ): Promise<string | null> {
-  const key = usable ? textHeadKeyOf(artifacts.pipelineMetadata) : null
-  if (!key) return null
-  return readArtifactTextHead(key, deps).catch(() => null)
+  if (!usable) return null
+  return readDocumentHead(artifacts.pipelineMetadata, deps).catch(() => null)
 }
 
 /** What was actually read, in the unit the material is counted in */
@@ -388,10 +386,7 @@ async function planPdf(
   deps: SummaryDeps,
   artifactsUsable: boolean
 ): Promise<MaterialPlan | { reason: SummarySkipReason }> {
-  const textHeadKey = artifactsUsable ? textHeadKeyOf(artifacts.pipelineMetadata) : null
-  const textHead = textHeadKey
-    ? await readArtifactTextHead(textHeadKey, deps).catch(() => null)
-    : null
+  const textHead = await readExtractedText(artifacts, deps, artifactsUsable)
   const asText = textPlan(textHead)
 
   // Past the byte limit the original is not an option, so the text layer is

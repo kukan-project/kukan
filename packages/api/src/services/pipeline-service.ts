@@ -3,7 +3,17 @@
  * Handles enqueue and status queries — Worker-side execution is separate.
  */
 
-import { eq, and, exists, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm'
+import {
+  eq,
+  and,
+  exists,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  sql,
+  type AnyColumn,
+  type SQL,
+} from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import {
@@ -45,6 +55,34 @@ export function parseSourceEncoding(metadata: unknown): string | null {
 export function parseDocumentTextKey(metadata: unknown): string | null {
   const key = (metadata as { documentTextKey?: unknown } | null | undefined)?.documentTextKey
   return typeof key === 'string' ? key : null
+}
+
+/**
+ * Where a document's text is read from, for the suggestion and the abstract
+ * (ADR-040, ADR-053): its text artifact where that has any text, or the text
+ * head a run from before `documentTextBytes` kept as an object of its own
+ * (`legacy`), until the row is interpreted again. Null where there is no text.
+ * {@link hasDocumentText} is the same in SQL.
+ */
+export function documentTextOf(metadata: unknown): { key: string; legacy?: true } | null {
+  const { documentTextBytes: bytes, textHeadKey } =
+    (metadata as Record<string, unknown> | null | undefined) ?? {}
+  if (typeof bytes === 'number') {
+    const key = parseDocumentTextKey(metadata)
+    return bytes > 0 && key ? { key } : null
+  }
+  return typeof textHeadKey === 'string' && textHeadKey ? { key: textHeadKey, legacy: true } : null
+}
+
+/**
+ * {@link documentTextOf}, as a condition on a pipeline row's metadata: the
+ * key as well as the bytes, since a purge clears the key and leaves the bytes.
+ */
+export function hasDocumentText(metadata: SQL | AnyColumn): SQL {
+  return sql`CASE WHEN ${metadata}->>'documentTextBytes' IS NOT NULL
+    THEN (${metadata}->>'documentTextBytes')::bigint > 0
+      AND COALESCE(${metadata}->>'documentTextKey', '') <> ''
+    ELSE COALESCE(${metadata}->>'textHeadKey', '') <> '' END`
 }
 
 /**

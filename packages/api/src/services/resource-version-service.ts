@@ -3147,8 +3147,8 @@ export class ResourceVersionService {
    * Destroy what was derived from the content being retracted, and the pointers
    * that name it.
    *
-   * Four artifacts, not one. The preview lives in a column; the text head
-   * (ADR-040) and the document text it is cut from live in `metadata` and the
+   * Four artifacts, not one. The preview lives in a column; the document text
+   * and the text head runs before it kept apart (ADR-040) live in `metadata` and the
    * table profile's artifact (ADR-063) in `profile`, and being referenced there
    * the sweep would never take them either — so a purge that dropped only the
    * preview left an extract of the purged content in the bucket, still readable

@@ -82,9 +82,11 @@ const FIGURE_MIN_PIXELS = 48
 const FIGURE_DIGEST_CHARS = 16
 
 export interface ExtractedText {
-  /** Whether any block had more than white space in it */
-  hasText: boolean
-  /** UTF-8 bytes of the text, a newline between the blocks that have any */
+  /**
+   * UTF-8 bytes of the text, a newline between the blocks that have any; 0
+   * where no block has more than white space in it, which is how a document
+   * with no text is told apart.
+   */
   bytes: number
 }
 
@@ -140,7 +142,7 @@ async function writeBlocks(
     throw err
   }
   await written
-  return { hasText, bytes }
+  return { bytes: hasText ? bytes : 0 }
 }
 
 /**

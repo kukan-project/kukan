@@ -28,7 +28,8 @@ import {
   stripTrailingReplacementChar,
 } from '@kukan/shared/encoding-node'
 import { QueryService } from '../query-service'
-import { parseResourceSchema } from '../pipeline-service'
+import { readDocumentTextHead } from '../document-text'
+import { documentTextOf, parseResourceSchema } from '../pipeline-service'
 import type { AuthUser } from '../../auth/permissions'
 import {
   SUGGEST_TEXT_HEAD_BYTES,
@@ -85,7 +86,7 @@ export function materialKind(
   if (isCsvFormat(resource.format, resource.mimetype ?? null)) return 'tabular'
   // Text is read from the live object; the others from pipeline artifacts.
   if (isTextFormat(resource.format)) return artifacts.liveStorageKey ? 'text' : null
-  if (isDocumentFormat(resource.format) && textHeadKeyOf(artifacts.pipelineMetadata)) {
+  if (isDocumentFormat(resource.format) && documentTextOf(artifacts.pipelineMetadata)) {
     return 'document'
   }
   if (isZipFormat(resource.format) && artifacts.previewKey) return 'zip'
@@ -159,7 +160,7 @@ export async function loadMaterial(
     case 'document':
       return {
         ...EMPTY_MATERIAL,
-        textHead: await readArtifactTextHead(textHeadKeyOf(artifacts.pipelineMetadata)!, deps),
+        textHead: await readDocumentHead(artifacts.pipelineMetadata, deps),
       }
     case 'zip': {
       const manifest = await readZipFileList(artifacts.previewKey!, deps)
@@ -168,10 +169,16 @@ export async function loadMaterial(
   }
 }
 
-/** `metadata.textHeadKey` persisted by the Interpret step (document formats, ADR-040) */
-export function textHeadKeyOf(metadata: unknown): string | null {
-  const key = (metadata as { textHeadKey?: unknown } | null | undefined)?.textHeadKey
-  return typeof key === 'string' && key ? key : null
+/** The head of a document's text, or null where it has none (see `documentTextOf`). */
+export async function readDocumentHead(
+  metadata: unknown,
+  deps: MaterialDeps
+): Promise<string | null> {
+  const text = documentTextOf(metadata)
+  if (!text) return null
+  return text.legacy
+    ? readArtifactTextHead(text.key, deps)
+    : readDocumentTextHead(deps.storage, text.key, SUGGEST_TEXT_HEAD_BYTES)
 }
 
 /** First rows of the preview Parquet via the sandboxed query path (ADR-032) */
@@ -216,12 +223,9 @@ export async function readTextHead(
   return stripTrailingReplacementChar(bufferToUtf8(buffer, encoding))
 }
 
-/** Head of the Interpret step's text-head artifact (document formats) — the
- *  worker wrote it as UTF-8, so no encoding detection (ADR-040 addendum) */
-export async function readArtifactTextHead(
-  textHeadKey: string,
-  deps: MaterialDeps
-): Promise<string> {
+/** Head of the text head an earlier Interpret wrote as an object of its own —
+ *  as UTF-8, so no encoding detection (ADR-040 addendum) */
+async function readArtifactTextHead(textHeadKey: string, deps: MaterialDeps): Promise<string> {
   const { stream } = await deps.storage.downloadRange(textHeadKey, 0, SUGGEST_TEXT_HEAD_BYTES - 1)
   const buffer = await readAll(stream)
   return stripTrailingReplacementChar(buffer.toString('utf-8'))

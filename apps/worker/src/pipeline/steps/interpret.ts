@@ -29,10 +29,9 @@ import {
 } from '@kukan/shared'
 import type { NoTableReason, ResourceSchema, TableProfile } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
-import { documentTextLines } from '../document-text-lines'
-import { stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
 import { runHeavy } from '@/heavy'
-import { TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
+// A type only: the parsers stay in the heavy process
+import type { ExtractedText } from './document-text'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
 import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline-service'
@@ -52,29 +51,22 @@ export interface InterpretResult {
   reason?: NoTableReason
   /** The table profile (ADR-063), with its artifact uploaded beside the preview. */
   profile?: TableProfile
-  /** A document's text artifact and the head cut from it, both uploaded. */
+  /** A document's text artifact, uploaded. */
   documentText?: InterpretedDocument
 }
 
 /** What interpreting a document (PDF, Office) wrote: see `DocumentTextBlock`. */
-export interface InterpretedDocument {
+export interface InterpretedDocument extends ExtractedText {
   key: string
-  /** UTF-8 bytes of the text, a newline between the blocks that have any. */
-  bytes: number
-  /**
-   * The head of the text, as suggestion and abstract material (ADR-040) —
-   * where there was any text to cut one from, which is how a document with
-   * none is told apart.
-   */
-  textHead?: { key: string; bytes: number }
 }
 
-/** The pointers a document's interpretation leaves in the pipeline's metadata. */
+/**
+ * The pointers a document's interpretation leaves in the pipeline's metadata:
+ * the suggestion and the abstract read the head of the text from the artifact,
+ * and its bytes say whether there is any (ADR-040, ADR-053).
+ */
 export function documentTextMetadata(text: InterpretedDocument): Record<string, unknown> {
-  return {
-    documentTextKey: text.key,
-    ...(text.textHead && { textHeadKey: text.textHead.key, textHeadBytes: text.textHead.bytes }),
-  }
+  return { documentTextKey: text.key, documentTextBytes: text.bytes }
 }
 
 /** The created version this step interprets. */
@@ -250,8 +242,8 @@ export async function executeInterpret(
 /**
  * Read a document's text, with where in the file each part of it is, and keep
  * it beside where a preview would be, under the same token (ADR-063 keeps a
- * table's profile there the same way). The head of the text is cut from it
- * for the suggest side and the abstract (ADR-040, ADR-053).
+ * table's profile there the same way). The suggest side and the abstract read
+ * the head of the text from it (ADR-040, ADR-053).
  *
  * Kept whether or not there is text: a scan's pages and figures are what
  * reading it later starts from.
@@ -269,46 +261,16 @@ async function interpretDocument(
   const artifactPath = siblingTempPath(tempPath, 'text.ndjson.zst')
   try {
     // In the heavy process: parsing is where a document's memory goes
-    const { hasText, bytes } = await runHeavy(
+    const { bytes } = await runHeavy(
       { kind: 'extract-text', documentPath: tempPath, format: fmt, artifactPath },
       ctx.assertHeld
     )
     const key = getPreviewKey(packageId, resourceId, 'text.ndjson.zst', writeToken)
-    const kept = ctx.putObject(key, createReadStream(artifactPath), {
+    await ctx.putObject(key, createReadStream(artifactPath), {
       contentType: 'application/zstd',
     })
-    if (!hasText) {
-      await kept
-      return { key, bytes }
-    }
-
-    // Plain UTF-8, so the suggest side reads it without encoding detection
-    const textHeadKey = getPreviewKey(packageId, resourceId, 'txt', writeToken)
-    const keepTextHead = async () => {
-      const head = await headOf(documentTextLines(createReadStream(artifactPath)))
-      await ctx.putObject(textHeadKey, head, { contentType: 'text/plain; charset=utf-8' })
-      return head
-    }
-    const [, head] = await Promise.all([kept, keepTextHead()])
-    return { key, bytes, textHead: { key: textHeadKey, bytes: head.length } }
+    return { key, bytes }
   } finally {
     await cleanupTempFile(tempPath)
   }
-}
-
-/**
- * The first TEXT_HEAD_ARTIFACT_SIZE bytes of `lines` joined by newlines; a
- * character the cut splits is dropped.
- */
-async function headOf(lines: AsyncIterable<string>): Promise<Buffer> {
-  const parts: Buffer[] = []
-  let bytes = 0
-  for await (const line of lines) {
-    const part = Buffer.from(parts.length > 0 ? '\n' + line : line, 'utf-8')
-    parts.push(part)
-    bytes += part.length
-    if (bytes >= TEXT_HEAD_ARTIFACT_SIZE) break
-  }
-  const head = Buffer.concat(parts).subarray(0, TEXT_HEAD_ARTIFACT_SIZE)
-  return Buffer.from(stripTrailingReplacementChar(head.toString('utf-8')), 'utf-8')
 }

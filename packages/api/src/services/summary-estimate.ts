@@ -34,6 +34,7 @@ import {
   tokensToUsd,
   type SummaryLocale,
 } from '@kukan/shared'
+import { hasDocumentText } from './pipeline-service'
 
 /**
  * Input tokens for a resource whose material is a schema and five rows, the
@@ -211,8 +212,8 @@ export async function summaryEstimate(
   // nothing to describe. An archive's is the manifest the preview key names.
   const hasSchema = sql`(${resourcePipeline.metadata}->'schema' IS NOT NULL AND ${interpretOk})`
   const hasManifest = sql`(${resourcePipeline.previewKey} IS NOT NULL AND ${interpretOk})`
-  // A document's text head is Interpret's too, cut from the text it extracted
-  const extracted = sql`(${resourcePipeline.metadata}->>'textHeadKey' IS NOT NULL AND ${interpretOk})`
+  // A document's text is Interpret's too
+  const extracted = sql`(${hasDocumentText(resourcePipeline.metadata)} AND ${interpretOk})`
   // Past the byte limit the original cannot go, but the extracted text still
   // can — so a large PDF with a text layer is work, not a refusal.
   const pdfReadable = sql`(${withinDoc} OR ${extracted})`

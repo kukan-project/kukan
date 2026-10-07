@@ -911,9 +911,11 @@ describe('Admin API Routes', () => {
      */
     async function insertReachable(
       values: (typeof resource.$inferInsert)[],
-      /** Whether Index extracted any text — the only path left where no
-       *  provider takes the original */
-      opts: { textHead?: boolean } = {}
+      /** What Interpret extracted — text is the only path left where no
+       *  provider takes the original. `legacy` is a run from before the text
+       *  artifact, which kept the head of the text apart; `purged` is the
+       *  artifact's key cleared by a purge, its bytes left behind */
+      opts: { text?: 'artifact' | 'none' | 'legacy' | 'purged' } = {}
     ) {
       const rows = await db
         .insert(resource)
@@ -936,7 +938,14 @@ describe('Admin API Routes', () => {
           previewKey: `previews/${r.id}.parquet`,
           metadata: {
             schema: { columns: [], rowCount: 0 },
-            ...(opts.textHead === false ? {} : { textHeadKey: `previews/${r.id}.txt` }),
+            ...(opts.text === 'legacy'
+              ? { textHeadKey: `previews/${r.id}.txt` }
+              : opts.text === 'purged'
+                ? { documentTextBytes: 100 }
+                : {
+                    documentTextKey: `previews/${r.id}.text.ndjson.zst`,
+                    documentTextBytes: opts.text === 'none' ? 0 : 100,
+                  }),
           },
         }))
       )
@@ -964,7 +973,7 @@ describe('Admin API Routes', () => {
           // Nothing takes PPTX
           { packageId: pkg.id, name: 'd', format: 'PPTX', size: 1000, state: 'active' },
         ],
-        { textHead: false }
+        { text: 'none' }
       )
 
       const res = await summaryApp.request('/api/v1/admin/summary-estimate')
@@ -986,6 +995,34 @@ describe('Admin API Routes', () => {
       // output is a third of the bill on a catalogue of small files
       expect(body.model).toBe('gemma4:e4b')
       expect(body.fill.estimatedCostUsd).toBeNull()
+    })
+
+    it('reads text where it is: by the text head before the artifact, and not once purged', async () => {
+      const orgId = await ensureOrg('estimate-legacy-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-legacy-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      // Both past the byte limit, so only extracted text makes either one work
+      await insertReachable(
+        [{ packageId: pkg.id, name: 'a', format: 'PDF', size: 90_000_000, state: 'active' }],
+        { text: 'legacy' }
+      )
+      await insertReachable(
+        [{ packageId: pkg.id, name: 'b', format: 'PDF', size: 90_000_000, state: 'active' }],
+        { text: 'none' }
+      )
+      // Its text purged: the bytes say there was some, and there is none to read
+      await insertReachable(
+        [{ packageId: pkg.id, name: 'c', format: 'PDF', size: 90_000_000, state: 'active' }],
+        { text: 'purged' }
+      )
+
+      const res = await summaryApp.request('/api/v1/admin/summary-estimate')
+      const body = await res.json()
+
+      expect(body.fill.resources).toBe(1)
+      expect(body.skipped).toEqual({ tooLarge: 2, unsupportedFormat: 0, noMaterial: 0 })
     })
 
     it("leaves out what generation always skips: an editor's text, and a hidden one", async () => {

@@ -298,7 +298,6 @@ describe('processResource', () => {
     const documentText = {
       key: 'previews/pkg-1/res-1.tok.text.ndjson.zst',
       bytes: 120,
-      textHead: { key: 'previews/pkg-1/res-1.tok.txt', bytes: 100 },
     }
     vi.mocked(executeInterpret).mockResolvedValue({ previewKey: null, documentText })
     vi.mocked(executeIndexContent).mockResolvedValue(null)
@@ -309,8 +308,7 @@ describe('processResource', () => {
       null,
       {
         documentTextKey: documentText.key,
-        textHeadKey: documentText.textHead.key,
-        textHeadBytes: 100,
+        documentTextBytes: 120,
         sourceHash: 'sha256:abc',
       },
       null
