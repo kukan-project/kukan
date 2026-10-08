@@ -11,7 +11,7 @@ import { webLakeConfig } from '../services/query/lake-scan'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
-import { PipelineService, isQueryable, parseDocumentTextKey } from '../services/pipeline-service'
+import { PipelineService, isQueryable } from '../services/pipeline-service'
 import { readDocumentText } from '../services/document-text'
 import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline-claim'
@@ -299,16 +299,15 @@ resourcesRouter.get('/:id/document-text', async (c) => {
   const id = c.req.param('id')
   const db = c.get('db')
   const user = c.get('user')
-  const [, pipelineStatus] = await Promise.all([
+  const [, documentText] = await Promise.all([
     new ResourceService(db).getByIdWithAccessCheck(id, user),
-    new PipelineService(db).getStatus(id),
+    new PipelineService(db).getDocumentText(id),
   ])
-  const key = parseDocumentTextKey(pipelineStatus?.metadata)
-  if (!key) throw new NotFoundError('Document text', id)
+  if (!documentText) throw new NotFoundError('Document text', id)
 
   let text
   try {
-    text = await readDocumentText(c.get('storage'), key, TEXT_PREVIEW_LIMIT)
+    text = await readDocumentText(c.get('storage'), documentText.key, TEXT_PREVIEW_LIMIT)
   } catch (err) {
     throwIfNotFound(err, id)
   }

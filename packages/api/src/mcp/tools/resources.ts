@@ -123,8 +123,11 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
       annotations: { readOnlyHint: true },
     },
     async ({ id }) => {
-      const service = new ResourceService(db)
-      const res = await service.getByIdWithAccessCheck(id, user)
+      // Read together: a refused resource throws before either is used
+      const [res, documentText] = await Promise.all([
+        new ResourceService(db).getByIdWithAccessCheck(id, user),
+        new PipelineService(db).getDocumentText(id),
+      ])
 
       const url = res.urlType === 'upload' ? resourceDownloadPath(res.id) : res.url
 
@@ -137,6 +140,11 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         res.format && `Format: ${res.format}`,
         url && `URL: ${url}`,
         `Size: ${res.size != null ? `${res.size} bytes` : 'unknown'}`,
+        // Where its text can be read, so a caller finds the document tools from here
+        documentText &&
+          (documentText.hasText
+            ? 'Document text: see its headings and pages with get_document_outline, then read it with get_document_section.'
+            : 'Document text: none to read (its pages are scans or images); get_document_outline lists its pages.'),
         `Created: ${res.created}`,
         `Updated: ${res.updated}`,
         // The abstract last, because it is the long field and everything above

@@ -69,16 +69,18 @@ curl -X POST https://your-kukan-site/api/mcp \
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
 
-| Tool                  | Description                                                                                               |
-| --------------------- | --------------------------------------------------------------------------------------------------------- |
-| `search_datasets`     | Search datasets by keyword or natural language (hybrid search). Also says which file matched              |
-| `get_dataset`         | Get detailed dataset information including resource list                                                  |
-| `get_resource`        | Get resource (file) metadata, URL, and its AI-written description                                         |
-| `get_resource_schema` | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only |
-| `query_resource`      | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                         |
-| `list_organizations`  | List organizations                                                                                        |
-| `list_groups`         | List groups (categories)                                                                                  |
-| `list_tags`           | List tags                                                                                                 |
+| Tool                   | Description                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                        |
+| `get_dataset`          | Get detailed dataset information including resource list                                                            |
+| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                   |
+| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only           |
+| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                                   |
+| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel |
+| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel           |
+| `list_organizations`   | List organizations                                                                                                  |
+| `list_groups`          | List groups (categories)                                                                                            |
+| `list_tags`            | List tags                                                                                                           |
 
 ## Tool Details
 
@@ -118,6 +120,9 @@ to the same depth as on the public page, and the resources under a heading one l
 
 Get resource metadata. Returns the download URL for uploaded files. A resource inside a
 section carries a `Section:` line.
+A document whose text has been extracted (PDF, Word, PowerPoint, Excel) carries a
+`Document text:` line saying it can be read with `get_document_outline` and
+`get_document_section` (or, for a document of scans, that it has none to read).
 
 Where the site has [AI-written descriptions](/en/data-admin-guide/#ai-written-descriptions)
 enabled, one is appended, together with **how much of the file it was written from**
@@ -166,6 +171,59 @@ result as a Markdown table. The data is exposed as a table named `data`. Use
 Runs in a throwaway in-memory DuckDB instance with external access disabled and row/byte/time
 limits. Double-quote column names that contain non-ASCII characters. See the REST
 `/resources/{id}/query` endpoint for limits and error details.
+
+### get_document_outline
+
+Get a document's outline, to choose what to read before calling `get_document_section`.
+
+- **Headings**: the PDF's bookmarks, the Word file's heading styles or the slides' titles, indented by
+  level, each with the pages (slides) it spans — `pages 15–18  1-1-3 Staff`
+- **Workbooks**: the sheets in place of headings, with their names and rows
+- **Pages and unreadable pages**: the range of pages (slides, sheets), and the pages with no text to
+  read (scans)
+- The response opens with the same source as `get_document_section`
+
+A document that is all scans, with no text, still has its pages, headings and unreadable pages listed.
+A long outline is cut at about 12,000 characters (a heading at 120, the list of unreadable pages at a
+quarter of it), with a count of what was left out; give `from` and `to` to see part of it.
+
+| Parameter | Type   | Required | Description                          |
+| --------- | ------ | -------- | ------------------------------------ |
+| `id`      | string | Yes      | Resource UUID                        |
+| `from`    | number | No       | First page, slide or sheet (1-based) |
+| `to`      | number | No       | Last page, slide or sheet            |
+
+### get_document_section
+
+Read the text KUKAN extracted from a document (PDF, Word, PowerPoint, Excel) by where it is in the
+file: a range of pages — a PDF's pages, a presentation's slides, a workbook's sheets — a heading,
+or both. No AI model is called; what comes back is the file's own text.
+
+The response opens with the source to cite: the resource and dataset names, the resource page and
+file URLs (for a PDF, add `#page=N` to open it at a page), the format and the version. Each block of
+text is labelled with its page (and printed page number, where it differs), slide, or sheet and
+rows, and the headings it is under — `--- page 12 (iv) · Chapter 2 > Population`. A page with no
+text to read (a scan) says so rather than being left out. If the file has been replaced and its text
+not yet extracted again, the response gives the version the text is from (`Text from: version 1`)
+and the file's current version (`Current file version: 2`) in place of `Version:`; cite the version
+the text is from.
+
+A heading matches when it contains the text given, ignoring case, width and spaces; it also matches a
+sheet's name. A Word file has no pages until it is laid out, so it is selected by heading only. When
+Joining headings with `>`, as in `Chapter 1 > Overview`, picks a heading under another. When nothing
+matches, the response gives the document's page range and points to `get_document_outline`.
+
+| Parameter   | Type   | Required | Description                                                                        |
+| ----------- | ------ | -------- | ---------------------------------------------------------------------------------- |
+| `id`        | string | Yes      | Resource UUID                                                                      |
+| `from`      | number | No       | First page, slide or sheet (1-based)                                               |
+| `to`        | number | No       | Last page, slide or sheet (inclusive)                                              |
+| `heading`   | string | No       | Part of a heading the text is under, or of a sheet's name                          |
+| `max_chars` | number | No       | Characters of text to return (default: 8,000, max: 32,000)                         |
+| `cursor`    | string | No       | The cursor a previous response ended with; `from`, `to` and `heading` come from it |
+
+A longer section is cut — at a line break where it can be — and the response ends with a cursor to
+read on. A cursor stops working once the document is extracted again.
 
 ### list_organizations
 

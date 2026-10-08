@@ -258,7 +258,7 @@ export class ResourceService {
 
   /**
    * As {@link getByIdWithAccessCheck}, but also returns the parent's ownership,
-   * which the visibility check has already read. Kept off the plain getter so
+   * which the visibility check has already read, and its name and title. Kept off the plain getter so
    * the fields stay out of the responses that serialize a resource directly.
    */
   async getByIdWithOwnership(id: string, viewer?: AuthUser) {
@@ -281,6 +281,8 @@ export class ResourceService {
         pkgPrivate: packageTable.private,
         pkgOwnerOrg: packageTable.ownerOrg,
         pkgCreatorUserId: packageTable.creatorUserId,
+        pkgName: packageTable.name,
+        pkgTitle: packageTable.title,
       })
       .from(resource)
       .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
@@ -303,6 +305,8 @@ export class ResourceService {
       private: row.pkgPrivate,
       ownerOrg: row.pkgOwnerOrg,
       creatorUserId: row.pkgCreatorUserId,
+      name: row.pkgName,
+      title: row.pkgTitle,
     }
 
     // Draft resources (incl. download/preview, ADR-017/039): draft editors only

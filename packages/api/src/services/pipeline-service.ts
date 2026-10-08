@@ -10,12 +10,19 @@ import {
   getTableColumns,
   inArray,
   isNotNull,
+  max,
   sql,
   type AnyColumn,
   type SQL,
 } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
-import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
+import {
+  packageTable,
+  resource,
+  resourcePipeline,
+  resourcePipelineStep,
+  resourceVersion,
+} from '@kukan/db'
 import {
   NotFoundError,
   ValidationError,
@@ -292,6 +299,49 @@ export class PipelineService {
     return parseTableProfile(row?.profile)
   }
 
+  /**
+   * The document text artifact the last run wrote, and whether that run read
+   * the bytes the resource holds now — a failed Interpret keeps the previous
+   * artifact, as it keeps the previous preview. Null where there is none.
+   */
+  async getDocumentText(resourceId: string): Promise<DocumentTextTarget | null> {
+    const [row] = await this.db
+      .select({
+        metadata: resourcePipeline.metadata,
+        describesLiveContent: schemaDescribesLiveContent(this.db),
+      })
+      .from(resourcePipeline)
+      .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
+      .where(eq(resourcePipeline.resourceId, resourceId))
+      .limit(1)
+
+    const key = parseDocumentTextKey(row?.metadata)
+    if (!row || !key) return null
+    const { documentTextBytes: bytes, sourceHash } = row.metadata as {
+      documentTextBytes?: unknown
+      sourceHash?: unknown
+    }
+    return {
+      key,
+      hasText: bytes !== 0,
+      describesLiveContent: row.describesLiveContent,
+      // Only asked where it is not the live one: the version holding the bytes
+      // it was read from, the latest of them where a revert made two
+      sourceVersion:
+        row.describesLiveContent || typeof sourceHash !== 'string'
+          ? null
+          : await this.versionHolding(resourceId, sourceHash),
+    }
+  }
+
+  private async versionHolding(resourceId: string, hash: string): Promise<number | null> {
+    const [row] = await this.db
+      .select({ version: max(resourceVersion.version) })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.hash, hash)))
+    return row?.version ?? null
+  }
+
   async getQueryTarget(resourceId: string): Promise<QueryTarget | null> {
     const [row] = await this.db
       .select({
@@ -326,6 +376,19 @@ export class PipelineService {
 export function parseTableProfile(profile: unknown): TableProfile | null {
   const parsed = tableProfileSchema.safeParse(profile)
   return parsed.success ? parsed.data : null
+}
+
+export interface DocumentTextTarget {
+  key: string
+  /** False where no block has any text: a scan, or a document of images. */
+  hasText: boolean
+  /** Whether the artifact was extracted from the bytes the resource holds now. */
+  describesLiveContent: boolean
+  /**
+   * Where it was not, the version it was extracted from; null where that is
+   * the live one, or where no version holds those bytes any more.
+   */
+  sourceVersion: number | null
 }
 
 export interface QueryTarget {

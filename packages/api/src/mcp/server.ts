@@ -13,6 +13,7 @@ import { registerDatasetTools } from './tools/datasets'
 import { registerResourceTools } from './tools/resources'
 import { registerCatalogTools } from './tools/catalog'
 import { registerQueryTools } from './tools/query'
+import { registerDocumentTools } from './tools/documents'
 
 interface McpContext {
   db: Database
@@ -36,6 +37,12 @@ export function createMcpServer(ctx: McpContext): McpServer {
   registerResourceTools(server, { db: ctx.db, user: ctx.user, env: ctx.env, ai: ctx.ai })
   registerCatalogTools(server, { db: ctx.db, user: ctx.user })
   registerQueryTools(server, { db: ctx.db, storage: ctx.storage, user: ctx.user })
+  registerDocumentTools(server, {
+    db: ctx.db,
+    storage: ctx.storage,
+    env: ctx.env,
+    user: ctx.user,
+  })
 
   return server
 }

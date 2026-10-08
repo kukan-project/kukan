@@ -540,3 +540,26 @@ export const SUGGEST_THROTTLE_BACKOFF_MS = [500, 2_000]
  *  datasets an hour */
 export const SUGGEST_RATE_LIMIT = 60
 export const SUGGEST_RATE_WINDOW_MS = 60 * 60 * 1000
+
+/** Characters of text `get_document_section` returns when the caller names no
+ *  limit — about a few pages, which an agent can quote from without paging */
+export const MCP_SECTION_DEFAULT_CHARS = 8_000
+
+/** The most a caller may ask for at once; past it the text is paged */
+export const MCP_SECTION_MAX_CHARS = 32_000
+
+/** Blocks per response, whatever their text: a run of scanned pages has none,
+ *  and would otherwise come back as hundreds of notices at once */
+export const MCP_SECTION_MAX_BLOCKS = 100
+
+/** Characters of outline `get_document_outline` returns, about as much as a
+ *  section; past it, a page range narrows the outline to part of the document */
+export const MCP_OUTLINE_MAX_CHARS = 12_000
+
+/** Characters of one heading in an outline: a body paragraph styled as a
+ *  heading would otherwise fill it */
+export const MCP_OUTLINE_TITLE_CHARS = 120
+
+/** The highest page, slide or sheet number the document tools take: far past
+ *  any real document, and only there so the schema states a bound */
+export const MCP_SECTION_MAX_UNIT = 100_000

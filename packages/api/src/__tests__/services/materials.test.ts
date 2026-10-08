@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Readable } from 'node:stream'
-import { zstdCompressSync } from 'node:zlib'
-import { DOCUMENT_TEXT_SCHEMA, type DocumentTextBlock, type Logger } from '@kukan/shared'
+import type { DocumentTextBlock, Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ValidationError } from '@kukan/shared'
@@ -12,6 +11,7 @@ import {
 } from '../../services/suggest/materials'
 import { readDocumentTextHead } from '../../services/document-text'
 import { SUGGEST_TEXT_HEAD_BYTES } from '../../config'
+import { artifactOf } from '../test-helpers/document-text'
 
 const query = vi.fn()
 vi.mock('../../services/query-service', () => ({
@@ -113,12 +113,6 @@ describe('loadMaterial, tabular', () => {
 
 describe('loadMaterial, document', () => {
   const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger
-
-  function artifactOf(blocks: DocumentTextBlock[]): Buffer {
-    return zstdCompressSync(
-      [{ schema: DOCUMENT_TEXT_SCHEMA }, ...blocks].map((b) => JSON.stringify(b) + '\n').join('')
-    )
-  }
 
   async function headOf(blocks: DocumentTextBlock[]) {
     const source = Readable.from([artifactOf(blocks)])

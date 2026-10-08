@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { createTestApp, mockCompletionAi, rankingSearch } from '../test-helpers/test-app'
+import { artifactOf } from '../test-helpers/document-text'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { resource, resourceVersion } from '@kukan/db'
+import { Readable } from 'node:stream'
+import type { DocumentTextBlock } from '@kukan/shared'
+import type { StorageAdapter } from '@kukan/storage-adapter'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
@@ -153,6 +157,8 @@ describe('MCP Server', () => {
       expect(toolNames).toContain('list_organizations')
       expect(toolNames).toContain('list_groups')
       expect(toolNames).toContain('list_tags')
+      expect(toolNames).toContain('get_document_section')
+      expect(toolNames).toContain('get_document_outline')
     })
   })
 
@@ -683,6 +689,392 @@ describe('MCP Server', () => {
       const anonymous = await mcpToolCall(mcpApp(null), 'list_tags', { limit: 50 })
       expect(anonymous.result.content[0].text).toContain('pub-tag')
       expect(anonymous.result.content[0].text).not.toContain('priv-tag')
+    })
+  })
+
+  describe('get_document_section', () => {
+    const KEY = 'previews/p/r.token.text.ndjson.zst'
+    const report: DocumentTextBlock[] = [
+      { loc: { page: 1 }, headings: ['はじめに'], text: '計画の目的' },
+      { loc: { page: 2, label: 'ii' }, headings: ['第1章 現状'], text: '人口は減っている。' },
+      { loc: { page: 3 }, text: '', unreadable: 'no-text' },
+    ]
+
+    /** An app whose storage serves `blocks` as the document's text artifact */
+    function documentApp(blocks: DocumentTextBlock[], user?: Parameters<typeof mcpApp>[0]) {
+      const artifact = artifactOf(blocks)
+      const storage = {
+        download: async (key: string) => {
+          if (key !== KEY) throw new Error(`unexpected key ${key}`)
+          return Readable.from([artifact])
+        },
+      } as unknown as StorageAdapter
+      return createTestApp(db, { search, storage, user })
+    }
+
+    /** A PDF whose last finished run wrote the artifact at `key` */
+    async function createDocument(
+      app: ReturnType<typeof mcpApp>,
+      pkgData: Record<string, unknown>,
+      metadata: Record<string, unknown> = { documentTextKey: KEY, documentTextBytes: 100 }
+    ) {
+      const pkg = await createPackage(app, pkgData)
+      const res = await createResource(app, pkg.id, {
+        name: 'plan.pdf',
+        format: 'PDF',
+        url: 'plan.pdf',
+        urlType: 'upload',
+      })
+      await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, res.id))
+      const json = JSON.stringify({ sourceHash: 'sha256:live', ...metadata })
+      await db.execute(sql`
+        INSERT INTO resource_pipeline (resource_id, status, metadata)
+        VALUES (${res.id}, 'complete', ${json}::jsonb)
+        ON CONFLICT (resource_id) DO UPDATE SET status = 'complete', metadata = ${json}::jsonb
+      `)
+      return { pkg, res }
+    }
+
+    async function call(app: ReturnType<typeof mcpApp>, args: Record<string, unknown>) {
+      const result = await mcpToolCall(app, 'get_document_section', args)
+      return result.result.content[0].text as string
+    }
+
+    it('returns the pages asked for, each labelled, under the source to cite', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-plan', title: '総合計画' })
+
+      const text = await call(app, { id: res.id, from: 2, to: 3 })
+
+      expect(text).toContain('Source: plan.pdf — 総合計画')
+      expect(text).toContain(
+        `Resource page: http://localhost:3000/dataset/ds-plan/resource/${res.id}`
+      )
+      expect(text).toContain(
+        `File: http://localhost:3000/api/v1/resources/${res.id}/download (add #page=N`
+      )
+      // The source, a blank line, then the text
+      expect(text).toContain('Format: PDF\nShowing: pages 2–3\n\n--- page 2')
+      expect(text).toContain('--- page 2 (ii) · 第1章 現状\n人口は減っている。\n\n--- page 3')
+      expect(text).toContain('--- page 3\n[This page has no text to read')
+      expect(text).not.toContain('計画の目的')
+      expect(text).toContain('End of the selected text.')
+      expect(text).not.toContain('earlier version')
+    })
+
+    it('pages a long section with a cursor that carries the selection', async () => {
+      const long = Array.from({ length: 40 }, (_, i) => `第${i}行`).join('\n')
+      const app = documentApp([
+        { loc: { page: 1 }, headings: ['付録'], text: long },
+        { loc: { page: 2 }, headings: ['本編'], text: 'not in the section' },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-long', title: 'Long' })
+
+      const first = await call(app, { id: res.id, heading: '付録', max_chars: 100 })
+      const cursor = first.match(/cursor "([^"]+)"/)?.[1]
+      expect(cursor).toBeTruthy()
+
+      const second = await call(app, { id: res.id, cursor })
+      expect(second).toContain('--- page 1 · 付録 · (continued)')
+      expect(second).toContain('第39行')
+      expect(second).not.toContain('not in the section')
+      expect(second).toContain('End of the selected text.')
+    })
+
+    it('names the rows of a sheet a cut part holds, not the whole block', async () => {
+      const app = documentApp([
+        {
+          loc: { sheet: 1, sheetName: '集計', rows: [2, 3, 5, 6] },
+          text: '行2\t10\n行3\t20\n行5\t30\n行6\t40',
+        },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-sheet', title: 'Sheet' })
+
+      const first = await call(app, { id: res.id, max_chars: 12 })
+      expect(first).toContain('Showing: sheet 1')
+      expect(first).toContain('--- sheet 1 "集計", rows 2–3\n行2\t10\n行3\t20')
+      const cursor = first.match(/cursor "([^"]+)"/)?.[1]
+
+      const second = await call(app, { id: res.id, cursor })
+      expect(second).toContain('--- sheet 1 "集計", rows 5–6 · (continued)\n行5\t30\n行6\t40')
+    })
+
+    it('refuses a cursor from before the document was extracted again', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-stale', title: 'Stale' })
+      const stale = Buffer.from(
+        JSON.stringify({ k: 'other', q: {}, at: { block: 1, offset: 0 } })
+      ).toString('base64url')
+
+      expect(await call(app, { id: res.id, cursor: stale })).toContain('extracted again')
+      expect(await call(app, { id: res.id, cursor: 'nonsense' })).toContain('not one this tool')
+    })
+
+    it('refuses a heading of only spaces, which would match everything', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-blank', title: 'Blank' })
+
+      const result = await mcpToolCall(app, 'get_document_section', { id: res.id, heading: '  ' })
+
+      expect(result.error || result.result.isError).toBeTruthy()
+    })
+
+    it('says the text is not available when its object has gone', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-gone', title: 'Gone' })
+      const gone = createTestApp(db, {
+        search,
+        storage: {
+          download: async () => {
+            throw Object.assign(new Error('The specified key does not exist.'), {
+              name: 'NoSuchKey',
+            })
+          },
+        } as unknown as StorageAdapter,
+      })
+
+      expect(await call(gone, { id: res.id })).toContain('not available just now')
+    })
+
+    it('points to the outline when nothing matches', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-miss', title: 'Miss' })
+
+      const text = await call(app, { id: res.id, heading: '財政' })
+
+      expect(text).toContain('No text matches heading "財政".')
+      expect(text).toContain('run 1–3')
+      expect(text).toContain('Call get_document_outline')
+    })
+
+    it('lists the headings with the pages they span, under the source', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-outline', title: '総合計画' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Source: plan.pdf — 総合計画')
+      expect(text).toContain('(add #page=N to open a PDF at page N)')
+      expect(text).toContain('Pages: 1–3')
+      expect(text).toContain(
+        'Pages whose text cannot be read (scans, or fonts with no map to characters): 3'
+      )
+      // Each heading with its pages, in one column, for a reader to choose from
+      expect(text).toContain('Headings with the pages they span.')
+      expect(text).toContain('page 1  はじめに\npage 2  第1章 現状')
+    })
+
+    it('says a range holds nothing, not that the document has no pages', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-past', title: 'Past' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id, from: 9 })
+
+      expect(result.result.content[0].text).toContain('Nothing is on pages, slides or sheets 9–…')
+    })
+
+    it('cuts long headings and a long outline, saying how many it left out', async () => {
+      const app = documentApp(
+        Array.from({ length: 200 }, (_, i) => ({
+          loc: { page: i + 1 },
+          headings: [`${i + 1}`.padStart(3, '0') + '見'.repeat(200)],
+          text: 'x',
+        }))
+      )
+      const { res } = await createDocument(app, { name: 'ds-long-outline', title: 'Long' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain(`001${'見'.repeat(117)}…`)
+      expect(text).not.toContain('見'.repeat(118))
+      expect(text).toMatch(/… and \d+ more\. Give from\/to/)
+      expect(text.length).toBeLessThan(13_000)
+    })
+
+    it('outlines a workbook by its sheets and their rows', async () => {
+      const app = documentApp([
+        { loc: { sheet: 1, sheetName: '集計', rows: [1, 2] }, text: 'a\nb' },
+        { loc: { sheet: 2, sheetName: '内訳', rows: [3, 40] }, text: 'c\nd' },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-book', title: 'Book' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Sheets: 1–2')
+      expect(text).toContain("Give a sheet's name as heading")
+      expect(text).toContain('sheet 1  集計  (rows 1–2)\nsheet 2  内訳  (rows 3–40)')
+    })
+
+    it('says how to read a document with neither pages nor headings', async () => {
+      const app = documentApp([{ loc: {}, text: '本文だけの文書' }])
+      const { res } = await createDocument(app, { name: 'ds-plain', title: 'Plain' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+
+      expect(result.result.content[0].text).toContain(
+        'marks no headings and has no pages. Read it from the start'
+      )
+      expect(await call(app, { id: res.id })).toContain('本文だけの文書')
+    })
+
+    it('says so for a resource with no text, and for a scan', async () => {
+      const app = documentApp(report)
+      const { res: csv } = await createDocument(app, { name: 'ds-csv', title: 'CSV' }, {})
+      const { res: scan } = await createDocument(
+        app,
+        { name: 'ds-scan', title: 'Scan' },
+        { documentTextKey: KEY, documentTextBytes: 0 }
+      )
+
+      expect(await call(app, { id: csv.id })).toContain('has no extracted document text')
+      expect(await call(app, { id: scan.id })).toContain('scans or images')
+    })
+
+    it('outlines a document that is all scans, which has pages and bookmarks but no text', async () => {
+      const app = documentApp([
+        { loc: { page: 1 }, headings: ['表紙'], text: '', unreadable: 'no-text' },
+        { loc: { page: 2 }, headings: ['本文'], text: '', unreadable: 'no-text' },
+      ])
+      const { res } = await createDocument(
+        app,
+        { name: 'ds-all-scan', title: 'Scan' },
+        { documentTextKey: KEY, documentTextBytes: 0 }
+      )
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Pages: 1–2')
+      expect(text).toContain('cannot be read (scans, or fonts with no map to characters): 1–2')
+      expect(text).toContain('page 2  本文')
+    })
+
+    it('cuts a long list of unreadable pages too, saying how to see the rest', async () => {
+      // Text and scans in turn: a range of one page each
+      const app = documentApp(
+        Array.from({ length: 4000 }, (_, i) => ({
+          loc: { page: i + 1 },
+          text: i % 2 ? '' : 'x',
+          ...(i % 2 ? { unreadable: 'no-text' as const } : {}),
+        }))
+      )
+      const { res } = await createDocument(app, { name: 'ds-interleaved', title: 'Interleaved' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toMatch(/… and \d+ more ranges; give from\/to/)
+      expect(text.length).toBeLessThan(13_000)
+    })
+
+    it('points get_resource at the document tools, where the file has text', async () => {
+      const app = documentApp(report)
+      const { res: pdf } = await createDocument(app, { name: 'ds-hint', title: 'Hint' })
+      const { res: scan } = await createDocument(
+        app,
+        { name: 'ds-hint-scan', title: 'Scan' },
+        { documentTextKey: KEY, documentTextBytes: 0 }
+      )
+      const { res: csv } = await createDocument(app, { name: 'ds-hint-csv', title: 'CSV' }, {})
+      const describe = async (id: string) =>
+        (await mcpToolCall(app, 'get_resource', { id })).result.content[0].text as string
+
+      expect(await describe(pdf.id)).toContain(
+        'Document text: see its headings and pages with get_document_outline, then read it with get_document_section.'
+      )
+      expect(await describe(scan.id)).toContain('Document text: none to read')
+      expect(await describe(csv.id)).not.toContain('Document text')
+    })
+
+    it('cites the version the text is from, not the file it was replaced by', async () => {
+      // Extracted from v1; v2 replaced it and its Interpret failed, leaving v1's text
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-changed', title: 'Changed' })
+      await db.insert(resourceVersion).values([
+        {
+          resourceId: res.id,
+          version: 1,
+          state: 'active',
+          storageKey: 'k1',
+          origin: 'upload',
+          hash: 'sha256:live',
+        },
+        {
+          resourceId: res.id,
+          version: 2,
+          state: 'active',
+          storageKey: 'k2',
+          origin: 'upload',
+          hash: 'sha256:new',
+        },
+      ])
+      await db.update(resource).set({ hash: 'sha256:new' }).where(eq(resource.id, res.id))
+
+      const text = await call(app, { id: res.id })
+
+      expect(text).toContain('Text from: version 1\nCurrent file version: 2\nNote:')
+      expect(text).not.toContain('Version: 2')
+    })
+
+    it('says the text is from an earlier version where none holds its bytes any more', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-gone-version', title: 'Gone' })
+      await db.insert(resourceVersion).values([
+        {
+          resourceId: res.id,
+          version: 2,
+          state: 'active',
+          storageKey: 'k2',
+          origin: 'upload',
+          hash: 'sha256:new',
+        },
+      ])
+      await db.update(resource).set({ hash: 'sha256:new' }).where(eq(resource.id, res.id))
+
+      const text = await call(app, { id: res.id })
+
+      expect(text).toContain('Text from: an earlier version of the file\nCurrent file version: 2')
+    })
+
+    it('gives the one version where the text is from the live file', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-live', title: 'Live' })
+      await db.insert(resourceVersion).values([
+        {
+          resourceId: res.id,
+          version: 1,
+          state: 'active',
+          storageKey: 'k1',
+          origin: 'upload',
+          hash: 'sha256:live',
+        },
+      ])
+
+      const text = await call(app, { id: res.id })
+
+      expect(text).toContain('Version: 1')
+      expect(text).not.toContain('Text from')
+    })
+
+    it('does not read the text of a private dataset to someone outside it', async () => {
+      const admin = documentApp(report)
+      const { res } = await createDocument(admin, {
+        name: 'ds-secret',
+        title: 'Secret Plan',
+        private: true,
+      })
+
+      const result = await mcpToolCall(documentApp(report, null), 'get_document_section', {
+        id: res.id,
+      })
+
+      expect(result.error || result.result.isError).toBeTruthy()
+      const body = JSON.stringify(result)
+      expect(body).not.toContain('人口は減っている')
+      expect(body).not.toContain('Secret Plan')
     })
   })
 
