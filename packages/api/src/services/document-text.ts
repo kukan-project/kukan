@@ -257,6 +257,15 @@ export interface DocumentOutline {
   entries: OutlineEntry[]
   /** Pages whose text has to be read from their image (`unreadable`), as ranges. */
   unreadable: UnitRange[]
+  /** Pages with some of their text left out, but not most (`unmappedChars`), as ranges. */
+  partlyUnreadable: UnitRange[]
+}
+
+/** `ranges` with page `unit` added: in unit order, it either extends the last range or starts one. */
+function addUnit(ranges: UnitRange[], unit: number) {
+  const last = ranges.at(-1)
+  if (last && unit <= last.max + 1) last.max = Math.max(last.max, unit)
+  else ranges.push({ min: unit, max: unit })
 }
 
 function widen(range: UnitRange | undefined, n: number): UnitRange {
@@ -279,6 +288,7 @@ export async function readDocumentOutline(
   const entries: OutlineEntry[] = []
   let units = null as DocumentOutline['units']
   const unreadable: UnitRange[] = []
+  const partlyUnreadable: UnitRange[] = []
   // The entries of the headings the last block was under, outermost first
   let open: OutlineEntry[] = []
   for await (const block of documentTextBlocks(artifactLines(storage, key))) {
@@ -287,12 +297,8 @@ export async function readDocumentOutline(
       if (to !== undefined && unit > to) break
       if (from !== undefined && unit < from) continue
       units = { kind: units?.kind ?? unitKind(block.loc)!, ...widen(units ?? undefined, unit) }
-      if (block.unreadable) {
-        // In unit order, so a page either extends the last range or starts one
-        const last = unreadable.at(-1)
-        if (last && unit <= last.max + 1) last.max = unit
-        else unreadable.push({ min: unit, max: unit })
-      }
+      if (block.unreadable) addUnit(unreadable, unit)
+      else if (block.unmappedChars) addUnit(partlyUnreadable, unit)
     }
     const path = blockPath(block)
     let same = 0
@@ -309,7 +315,7 @@ export async function readDocumentOutline(
       if (rows?.length) entry.rows = widen(widen(entry.rows, rows[0]!), rows.at(-1)!)
     }
   }
-  return { units, entries, unreadable }
+  return { units, entries, unreadable, partlyUnreadable }
 }
 
 /**

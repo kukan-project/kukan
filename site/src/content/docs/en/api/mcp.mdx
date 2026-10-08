@@ -179,8 +179,9 @@ Get a document's outline, to choose what to read before calling `get_document_se
 - **Headings**: the PDF's bookmarks, the Word file's heading styles or the slides' titles, indented by
   level, each with the pages (slides) it spans — `pages 15–18  1-1-3 Staff`
 - **Workbooks**: the sheets in place of headings, with their names and rows
-- **Pages and unreadable pages**: the range of pages (slides, sheets), and the pages with no text to
-  read (scans)
+- **Pages and unreadable pages**: the range of pages (slides, sheets), the pages with no text to
+  read (scans), and those with some characters that cannot be read (a PDF font that does not map
+  them), which are left out of their text
 - The response opens with the same source as `get_document_section`
 
 A document that is all scans, with no text, still has its pages, headings and unreadable pages listed.
@@ -203,7 +204,8 @@ The response opens with the source to cite: the resource and dataset names, the 
 file URLs (for a PDF, add `#page=N` to open it at a page), the format and the version. Each block of
 text is labelled with its page (and printed page number, where it differs), slide, or sheet and
 rows, and the headings it is under — `--- page 12 (iv) · Chapter 2 > Population`. A page with no
-text to read (a scan) says so rather than being left out. If the file has been replaced and its text
+text to read (a scan) says so rather than being left out, and one with characters that cannot be
+read says how many were left out of its text. If the file has been replaced and its text
 not yet extracted again, the response gives the version the text is from (`Text from: version 1`)
 and the file's current version (`Current file version: 2`) in place of `Version:`; cite the version
 the text is from.

@@ -208,18 +208,28 @@ describe('readDocumentOutline', () => {
       { loc: { page: 4 }, headings: ['第1章', '1.1 背景'], text: 'c' },
       { loc: { page: 5 }, headings: ['第1章', '1.2 課題'], text: 'd' },
       { loc: { page: 6 }, headings: ['第1章', '1.2 課題'], text: '', unreadable: 'no-text' },
-      { loc: { page: 7 }, headings: ['第2章'], text: 'e', unreadable: 'unmapped-fonts' },
+      {
+        loc: { page: 7 },
+        headings: ['第2章'],
+        text: 'e',
+        unreadable: 'unmapped-fonts',
+        unmappedChars: 3,
+      },
+      // Some of the page left out, but not most
+      { loc: { page: 8 }, headings: ['第2章'], text: 'f', unmappedChars: 1 },
+      { loc: { page: 9 }, headings: ['第2章'], text: 'g', unmappedChars: 1 },
     ]
 
     expect(await outlineOf(plan)).toEqual({
-      units: { kind: 'page', min: 1, max: 7 },
+      units: { kind: 'page', min: 1, max: 9 },
       entries: [
         { depth: 0, title: '第1章', units: { min: 2, max: 6 } },
         { depth: 1, title: '1.1 背景', units: { min: 3, max: 4 } },
         { depth: 1, title: '1.2 課題', units: { min: 5, max: 6 } },
-        { depth: 0, title: '第2章', units: { min: 7, max: 7 } },
+        { depth: 0, title: '第2章', units: { min: 7, max: 9 } },
       ],
       unreadable: [{ min: 6, max: 7 }],
+      partlyUnreadable: [{ min: 8, max: 9 }],
     })
   })
 
@@ -283,6 +293,7 @@ describe('readDocumentOutline', () => {
         { depth: 1, title: '目的' },
       ],
       unreadable: [],
+      partlyUnreadable: [],
     })
   })
 })

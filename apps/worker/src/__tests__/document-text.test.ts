@@ -431,34 +431,63 @@ describe('PDF', () => {
     )
 
   /**
-   * A font, `[name, kind, fontName]`: its BaseFont — a composite font's, its
-   * descendant's — and a composite font with an Identity-H encoding and no
-   * ToUnicode, numbering its glyphs itself or as Adobe-Japan1, or a simple
-   * TrueType font; and the FontName of a descriptor, where it has one.
+   * A font, `[name, kind, fontName, { toUnicode, embedded }]`: its BaseFont —
+   * a composite font's, its descendant's — and a composite font with an
+   * Identity-H encoding, numbering its glyphs itself or as Adobe-Japan1, or
+   * one with a CMap of Unicode (`unicode`), or a simple TrueType font; the
+   * FontName of a descriptor, where it has one; the body of a ToUnicode CMap,
+   * where it has one; and whether the file embeds it.
    */
-  type FontSpec = [string, 'identity' | 'japan1' | 'simple', string?]
+  type FontSpec = [
+    string,
+    'identity' | 'japan1' | 'unicode' | 'simple',
+    string?,
+    { toUnicode?: string; embedded?: boolean }?,
+  ]
 
   /** A font's dictionary: a composite one named by its descendant, as writers do. */
-  function fontOf(doc: PDFDocument, [name, kind, fontName]: FontSpec) {
+  function fontOf(
+    doc: PDFDocument,
+    [name, kind, fontName, { toUnicode, embedded } = {}]: FontSpec
+  ) {
+    const cmap =
+      toUnicode &&
+      doc.context.register(
+        doc.context.stream(
+          `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n` +
+            `1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n${toUnicode}\n` +
+            `endcmap\nend\nend`
+        )
+      )
+    const descriptor = (fontName || embedded) && {
+      Type: 'FontDescriptor',
+      ...(fontName && { FontName: `ABCDEF+${fontName}` }),
+      ...(embedded && { FontFile2: doc.context.register(doc.context.stream('')) }),
+    }
     const font =
       kind === 'simple'
-        ? { Type: 'Font', Subtype: 'TrueType', BaseFont: name, Encoding: 'WinAnsiEncoding' }
+        ? {
+            Type: 'Font',
+            Subtype: 'TrueType',
+            BaseFont: name,
+            Encoding: 'WinAnsiEncoding',
+            ...(cmap && { ToUnicode: cmap }),
+          }
         : {
             Type: 'Font',
             Subtype: 'Type0',
-            BaseFont: `${name}-Identity-H`,
-            Encoding: 'Identity-H',
+            BaseFont: `${name}-${kind === 'unicode' ? 'UniJIS-UCS2-H' : 'Identity-H'}`,
+            Encoding: kind === 'unicode' ? 'UniJIS-UCS2-H' : 'Identity-H',
+            ...(cmap && { ToUnicode: cmap }),
             DescendantFonts: [
               {
                 Type: 'Font',
                 Subtype: 'CIDFontType0',
                 BaseFont: `ABCDEF+${name}`,
-                ...(fontName && {
-                  FontDescriptor: { Type: 'FontDescriptor', FontName: `ABCDEF+${fontName}` },
-                }),
+                ...(descriptor && { FontDescriptor: descriptor }),
                 CIDSystemInfo: {
                   Registry: PDFString.of('Adobe'),
-                  Ordering: PDFString.of(kind === 'japan1' ? 'Japan1' : 'Identity'),
+                  Ordering: PDFString.of(kind === 'identity' ? 'Identity' : 'Japan1'),
                   Supplement: 0,
                 },
               },
@@ -534,8 +563,8 @@ describe('PDF', () => {
     const path = await file('unmapped.pdf', await pdfWithFonts([fonts, fonts]))
 
     expect(await blocks(path, 'pdf')).toEqual([
-      { loc: { page: 1 }, text: '10', unreadable: 'unmapped-fonts' },
-      { loc: { page: 2 }, text: 'Annual report' },
+      { loc: { page: 1 }, text: '10', unreadable: 'unmapped-fonts', unmappedChars: 6 },
+      { loc: { page: 2 }, text: 'Annual report', unmappedChars: 1 },
     ])
   })
 
@@ -565,8 +594,8 @@ describe('PDF', () => {
     )
 
     expect(await blocks(path, 'pdf')).toEqual([
-      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
-      { loc: { page: 2 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 2 },
+      { loc: { page: 2 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 2 },
       { loc: { page: 3 }, text: '本文' },
     ])
   })
@@ -590,6 +619,7 @@ describe('PDF', () => {
       loc: { page: 1 },
       text: '',
       unreadable: 'unmapped-fonts',
+      unmappedChars: 2,
     })
     // A run with no font named may be the form's, in a mapped font
     expect((await blocks(mappedInForm, 'pdf'))[1]).toEqual({ loc: { page: 2 }, text: '本文' })
@@ -606,7 +636,7 @@ describe('PDF', () => {
     )
 
     expect(await blocks(path, 'pdf')).toEqual([
-      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 2 },
     ])
   })
 
@@ -634,7 +664,7 @@ describe('PDF', () => {
     const path = await file('shared-form.pdf', Buffer.from(await doc.save()))
 
     expect(await blocks(path, 'pdf')).toEqual([
-      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 2 },
       { loc: { page: 2 }, text: 'AA' },
     ])
   })
@@ -649,7 +679,7 @@ describe('PDF', () => {
     )
 
     expect(await blocks(path, 'pdf')).toEqual([
-      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 2 },
     ])
   })
 
@@ -678,7 +708,7 @@ describe('PDF', () => {
 
     expect(await blocks(path, 'pdf')).toEqual([
       { loc: { page: 1 }, text: '第２表' },
-      { loc: { page: 2 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 2 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 2 },
     ])
   })
 
@@ -692,7 +722,7 @@ describe('PDF', () => {
     )
 
     expect(await blocks(path, 'pdf')).toEqual([
-      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts' },
+      { loc: { page: 1 }, text: '', unreadable: 'unmapped-fonts', unmappedChars: 4 },
     ])
   })
 
@@ -711,6 +741,232 @@ describe('PDF', () => {
     )
 
     expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: '本文' }])
+  })
+
+  /** A font of glyph numbers whose ToUnicode maps `body`, embedded as writers do. */
+  const partly = (name: string, body: string): FontSpec => [
+    name,
+    'identity',
+    undefined,
+    { toUnicode: body, embedded: true },
+  ]
+
+  it('leaves out the characters a partial ToUnicode does not give, counts them, and marks a page mostly of them', async () => {
+    parseOffice.mockResolvedValue(
+      astOf(
+        [
+          // `年` and `９`, which it leaves out, as the characters of their glyphs' numbers
+          pageOfRuns(1, [run('平成0ᖺ度 あぃい fi ſt', 'MS-Mincho')]),
+          pageOfRuns(2, [run('ᖺ㸵ᖺ平', 'MS-Mincho')]),
+        ],
+        { metadata: { pages: 2 } }
+      )
+    )
+    const font = partly(
+      'MS-Mincho',
+      [
+        '4 beginbfchar',
+        '<0013> <0030>',
+        '<1414> <5E73>',
+        // Ligatures, which pdf.js gives as their letters: `ﬅ` as `ſt`, not as NFKC's `st`
+        '<0050> <FB01>',
+        '<0051> <FB05>',
+        'endbfchar',
+        '2 beginbfrange',
+        '<0836> <0838> <3042>',
+        '<0900> <0901> [<6210> <5EA6>]',
+        'endbfrange',
+      ].join('\n')
+    )
+    const path = await file('partly.pdf', await pdfWithFonts([[font], [font]]))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '平成0度 あぃい fi ſt', unmappedChars: 1 },
+      { loc: { page: 2 }, text: '平', unreadable: 'unmapped-fonts', unmappedChars: 3 },
+    ])
+  })
+
+  it('keeps what a simple font of the same name gives through its encoding, but not glyph numbers past it', async () => {
+    parseOffice.mockResolvedValue(
+      // `の` as its glyph's number, in Latin Extended
+      astOf([pageOfRuns(1, [run('あƷ12 é', 'lrSVbN')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'shared-simple.pdf',
+      await pdfWithFonts([
+        [
+          partly('lrSVbN', '1 beginbfchar\n<0836> <3042>\nendbfchar'),
+          [
+            'lrSVbN',
+            'simple',
+            undefined,
+            { toUnicode: '1 beginbfrange\n<30> <39> <0030>\nendbfrange' },
+          ],
+        ],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: 'あ12 é', unmappedChars: 1 },
+    ])
+  })
+
+  it('judges a run by the font whose own name ends as officeparser tells two of a name apart', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('\uF028ᖺ\uF029', 'MS-Mincho+1')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'plus-one.pdf',
+      await pdfWithFonts([
+        [partly('MS-Mincho+1', '2 beginbfchar\n<000A> <F028>\n<000B> <F029>\nendbfchar')],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: '()', unmappedChars: 1 }])
+  })
+
+  it('keeps any text where the page draws a composite font the file does not embed, whose runs can carry another name', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('あ', 'MS-Mincho'), run('-40-', 'MS-Mincho')])], {
+        metadata: { pages: 1 },
+      })
+    )
+    const path = await file(
+      'not-embedded.pdf',
+      await pdfWithFonts([
+        [partly('MS-Mincho', '1 beginbfchar\n<0836> <3042>\nendbfchar'), ['MS-PGothic', 'unicode']],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: 'あ\n-40-' }])
+  })
+
+  it('judges no character of a font whose ToUnicode maps more codes than two bytes have, or too long a value', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('ᖺ度', 'MS-Mincho')]), pageOfRuns(2, [run('ᖺ度', 'Gothic')])], {
+        metadata: { pages: 2 },
+      })
+    )
+    // Each range alone within bounds, as a file made to cost its reader would have them
+    const ranges = Array.from({ length: 50 }, () => '<0000> <FFFF> <5EA6>').join('\n')
+    const path = await file(
+      'overlong.pdf',
+      await pdfWithFonts([
+        [partly('MS-Mincho', `50 beginbfrange\n${ranges}\nendbfrange`)],
+        [partly('Gothic', `1 beginbfchar\n<0901> <${'5EA6'.repeat(17)}>\nendbfchar`)],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: 'ᖺ度' },
+      { loc: { page: 2 }, text: 'ᖺ度' },
+    ])
+  })
+
+  it('reads a value of an odd number of digits, or of bytes, as pdf.js does', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('一Aあᖺ', 'MS-Mincho')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'cmap-odd.pdf',
+      await pdfWithFonts([
+        // `<4E0>` as `<4E00>`, `一`; `<41>` as `<0041>`, `A`; `<003042>` as `<00003042>`, `あ`
+        [
+          partly(
+            'MS-Mincho',
+            '3 beginbfchar\n<0836> <4E0>\n<0837> <41>\n<0838> <003042>\nendbfchar'
+          ),
+        ],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: '一Aあ', unmappedChars: 1 },
+    ])
+  })
+
+  it('reads entries written as literal strings, with their escapes, as pdf.js does', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('あい()ᖺ', 'MS-Mincho')])], { metadata: { pages: 1 } })
+    )
+    const body = [
+      '3 beginbfchar',
+      // Octal escapes: `\060\102` is 0x30 0x42, `あ`
+      String.raw`(\000\001) (\060\102)`,
+      // A backslash before a line break continues the string: `0D`, `い`
+      '<0002> (0\\\nD)',
+      // Escaped parentheses: 0x0028 0x0029
+      String.raw`<0003> (\000\(\000\))`,
+      'endbfchar',
+    ].join('\n')
+    const path = await file('cmap-literal.pdf', await pdfWithFonts([[partly('MS-Mincho', body)]]))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: 'あい()', unmappedChars: 1 },
+    ])
+  })
+
+  it('reads a ToUnicode with comments in it, and judges none with what it cannot read', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('あᖺ', 'MS-Mincho')]), pageOfRuns(2, [run('あᖺ', 'Gothic')])], {
+        metadata: { pages: 2 },
+      })
+    )
+    const path = await file(
+      'cmap-comments.pdf',
+      await pdfWithFonts([
+        [partly('MS-Mincho', '% maps\n1 beginbfchar\n<0836> % あ\n<3042>\nendbfchar')],
+        // An entry in a form it does not read, whose character would be taken out
+        [partly('Gothic', '2 beginbfchar\n<0836> <3042>\n<0837> /uni3044\nendbfchar')],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: 'あ', unmappedChars: 1 },
+      { loc: { page: 2 }, text: 'あᖺ' },
+    ])
+  })
+
+  it('reads a ToUnicode made to cost its reader in a time its length bounds', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('あᖺ', 'MS-Mincho')]), pageOfRuns(2, [run('あᖺ', 'Gothic')])], {
+        metadata: { pages: 2 },
+      })
+    )
+    const started = performance.now()
+    const path = await file(
+      'cmap-slow.pdf',
+      await pdfWithFonts([
+        // Strings and sections that never end, each read to the end of the map from every start
+        [partly('MS-Mincho', '('.repeat(60_000))],
+        [partly('Gothic', 'beginbfchar <0836> <3042> '.repeat(20_000))],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: 'あᖺ' },
+      { loc: { page: 2 }, text: 'あᖺ' },
+    ])
+    expect(performance.now() - started).toBeLessThan(2_000)
+  })
+
+  it('judges no character of a font whose ToUnicode takes another CMap in', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([pageOfRuns(1, [run('ᖺ度', 'MS-Mincho')])], { metadata: { pages: 1 } })
+    )
+    const path = await file(
+      'usecmap.pdf',
+      await pdfWithFonts([
+        [
+          partly(
+            'MS-Mincho',
+            '/Adobe-Japan1-UCS2 usecmap\n1 beginbfchar\n<0901> <5EA6>\nendbfchar'
+          ),
+        ],
+      ])
+    )
+
+    expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: 'ᖺ度' }])
   })
 
   it("reads the codes of an ordinary font flagged as symbolic as ASCII, and not a symbol font's", async () => {

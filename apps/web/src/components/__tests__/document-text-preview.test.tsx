@@ -75,6 +75,26 @@ describe('extracted text preview', () => {
     expect(screen.getByText('10')).toBeInTheDocument()
   })
 
+  it('says how many characters of a page it could not read, where they are not most of it', async () => {
+    serve({
+      blocks: [
+        { loc: { page: 1 }, text: '成２８度', unmappedChars: 2 },
+        { loc: { page: 2 }, text: '10', unreadable: 'unmapped-fonts', unmappedChars: 9 },
+        { loc: { page: 3 }, text: 'body' },
+      ],
+      truncated: false,
+    })
+    await showText()
+
+    expect(await screen.findByText(/· partly unreadable pages: 1$/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/^2 characters on this page cannot be read and are left out/)
+    ).toBeInTheDocument()
+    expect(screen.getByText('成２８度')).toBeInTheDocument()
+    // A page mostly unreadable says so instead
+    expect(screen.queryByText(/^9 characters/)).not.toBeInTheDocument()
+  })
+
   it('numbers each line of a sheet with its row, and the sheet by name or number', async () => {
     serve({
       blocks: [

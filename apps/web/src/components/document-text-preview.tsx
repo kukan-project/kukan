@@ -93,6 +93,9 @@ export function DocumentTextPreview({ resourceId }: DocumentTextPreviewProps) {
   const unreadable = new Set(
     text.blocks.filter((b) => b.unreadable === 'unmapped-fonts').map((b) => b.loc.page)
   ).size
+  const partly = new Set(
+    text.blocks.filter((b) => b.unmappedChars && !b.unreadable).map((b) => b.loc.page)
+  ).size
   const labelled = units.map((unit) => ({ ...unit, label: unitLabel(unit.loc, t) }))
   const byHeadings = outline.length > 0
   const navLabel = t(byHeadings ? 'documentTextOutline' : unitsLabel(units))
@@ -111,6 +114,7 @@ export function DocumentTextPreview({ resourceId }: DocumentTextPreviewProps) {
         <p className="text-xs text-muted-foreground">
           {t('documentTextSummary', { units: units.length, figures, blank })}
           {unreadable > 0 && ` · ${t('documentTextUnreadableCount', { count: unreadable })}`}
+          {partly > 0 && ` · ${t('documentTextPartlyUnreadableCount', { count: partly })}`}
         </p>
         <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
           {nav.length > 0 && (
@@ -231,6 +235,16 @@ function BlockView({
         {block.text.trim() && (
           <pre className="font-sans text-sm whitespace-pre-wrap">{block.text}</pre>
         )}
+      </div>
+    )
+  }
+  if (block.unmappedChars) {
+    return (
+      <div id={id} className="space-y-1">
+        <p className="rounded bg-muted p-2 text-xs text-muted-foreground">
+          {t('documentTextPartlyUnreadable', { count: block.unmappedChars })}
+        </p>
+        <pre className="font-sans text-sm whitespace-pre-wrap">{block.text}</pre>
       </div>
     )
   }

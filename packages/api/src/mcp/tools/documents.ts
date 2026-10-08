@@ -122,6 +122,10 @@ const UNREADABLE_NOTE: Record<NonNullable<DocumentTextBlock['unreadable']>, stri
     '[Most of this page is in fonts whose characters cannot be read; only the rest is shown.]',
 }
 
+/** For a page with some characters left out, but not most. */
+const partlyUnreadableNote = (chars: number) =>
+  `[${chars} characters of this page are in glyphs its fonts give no character for, and are left out of the text below.]`
+
 function partLines(part: DocumentSectionPart): string[] {
   const { block, text } = part
   const continued = part.offset > 0
@@ -136,6 +140,9 @@ function partLines(part: DocumentSectionPart): string[] {
   return [
     `--- ${label}`.trimEnd(),
     ...(block.unreadable && !continued ? [UNREADABLE_NOTE[block.unreadable]] : []),
+    ...(!block.unreadable && block.unmappedChars && !continued
+      ? [partlyUnreadableNote(block.unmappedChars)]
+      : []),
     ...(text ? [text] : []),
   ]
 }
@@ -170,7 +177,7 @@ function outlineLines(
   outline: DocumentOutline,
   { from, to }: { from?: number; to?: number }
 ): (string | false)[] {
-  const { units, entries, unreadable } = outline
+  const { units, entries, unreadable, partlyUnreadable } = outline
   const ranged = from !== undefined || to !== undefined
   if (!units && ranged) {
     return [
@@ -181,17 +188,22 @@ function outlineLines(
   const labels = entries.map((e) => (units && e.units ? span(units.kind, e.units) : ''))
   const width = Math.max(0, ...labels.map((l) => l.length))
   // Cut to a budget like a section's, so a long outline does not fill the reader's context.
-  // The unreadable pages take at most a quarter of it, for a scan interleaved with text
-  // can have thousands of them; the headings take the rest.
-  const unreadableShown: string[] = []
+  // The unreadable pages, and then those partly so, take at most a quarter of it, for a scan
+  // interleaved with text can have thousands of them; the headings take the rest.
   let chars = 0
-  for (const r of unreadable) {
-    const text = range(r)
-    if (chars + text.length > MCP_OUTLINE_MAX_CHARS / 4) break
-    unreadableShown.push(text)
-    chars += text.length + 2
+  const shown = (ranges: UnitRange[]) => {
+    const texts: string[] = []
+    for (const r of ranges) {
+      const text = range(r)
+      if (chars + text.length > MCP_OUTLINE_MAX_CHARS / 4) break
+      texts.push(text)
+      chars += text.length + 2
+    }
+    const omitted = ranges.length - texts.length
+    return `${texts.join(', ')}${omitted > 0 ? `, … and ${omitted} more ranges; give from/to to see those of part of the document` : ''}`
   }
-  const unreadableOmitted = unreadable.length - unreadableShown.length
+  const unreadableShown = shown(unreadable)
+  const partlyShown = shown(partlyUnreadable)
   const listed: string[] = []
   for (const [i, e] of entries.entries()) {
     const title =
@@ -207,7 +219,9 @@ function outlineLines(
   return [
     !!units && `${KIND_PLURAL[units.kind]}${ranged ? ' shown' : ''}: ${range(units)}`,
     unreadable.length > 0 &&
-      `${KIND_PLURAL[units?.kind ?? 'page']} whose text cannot be read (scans, or fonts with no map to characters): ${unreadableShown.join(', ')}${unreadableOmitted > 0 ? `, … and ${unreadableOmitted} more ranges; give from/to to see those of part of the document` : ''}`,
+      `${KIND_PLURAL[units?.kind ?? 'page']} whose text cannot be read (scans, or fonts with no map, or an incomplete one, to characters): ${unreadableShown}`,
+    partlyUnreadable.length > 0 &&
+      `${KIND_PLURAL[units?.kind ?? 'page']} with some characters that cannot be read, left out of their text: ${partlyShown}`,
     '',
     outlineIntro(outline),
     ...listed,

@@ -399,7 +399,8 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
 
 /**
  * A block per page, then the page's images: empty for a page with no text on
- * it, and marked for one whose text is mostly in fonts it cannot be read from.
+ * it, marked for one whose text is mostly in fonts it cannot be read from, and
+ * with the count of what was left out of one with any.
  */
 async function* pageBlocks(
   ast: OfficeParserAST,
@@ -414,8 +415,8 @@ async function* pageBlocks(
   }
   for (const page of pages) {
     const meta = page.metadata as { pageNumber?: number; pageLabel?: string } | undefined
-    const kept = readable(page, fonts.get(meta?.pageNumber ?? 0))
-    const text = await render(ast, kept.page ? [kept.page] : [])
+    const read = readable(page, fonts.get(meta?.pageNumber ?? 0))
+    const text = await render(ast, read.page ? [read.page] : [])
     const under = headingsOf(
       meta?.pageNumber ? bookmarks.at(meta.pageNumber, anchorsOn(page)) : undefined
     )
@@ -427,9 +428,10 @@ async function* pageBlocks(
       loc,
       ...under,
       text,
-      ...(kept.unreadable
+      ...(read.lost > read.kept
         ? { unreadable: 'unmapped-fonts' as const }
         : !text.trim() && { unreadable: 'no-text' as const }),
+      ...(read.lost > 0 && { unmappedChars: read.lost }),
     }
     for (const figure of figures.get(meta?.pageNumber ?? 0) ?? []) {
       yield { loc, ...under, text: '', figure }
@@ -483,7 +485,7 @@ async function pdfPageFacts(filePath: string): Promise<PdfPageFacts> {
         // An image the page draws twice, or through two forms, is one figure
         const distinct = [...new Map(found.figures.map((f) => [f.ref, f])).values()]
         if (distinct.length > 0) figures.set(i + 1, distinct)
-        if (found.unmapped.size > 0) fonts.set(i + 1, found)
+        if (found.judged) fonts.set(i + 1, found)
       } catch {
         // Nothing for this page: no figures, its fonts unjudged
       }
@@ -496,17 +498,28 @@ async function pdfPageFacts(filePath: string): Promise<PdfPageFacts> {
 
 interface PdfPageFacts {
   figures: Map<number, DocumentTextFigure[]>
-  /** Only for the pages that set text in an unmapped font */
+  /** Only for the pages that set text in a font whose codes are its glyph numbers */
   fonts: Map<number, PageFonts>
 }
 
 /**
- * The fonts a page sets text in, by name, by whether the codes it draws with
- * map to characters. A name can be in both: two fonts of one name.
+ * The characters a font's text can hold: those its ToUnicode maps its codes
+ * to, and where `encoded`, those an encoding of a simple font gives
+ * ({@link ENCODED}); null where it can hold any.
+ */
+type FontCharacters = { mapped: ReadonlySet<string>; encoded: boolean } | null
+
+/**
+ * The fonts a page sets text in, by name, by what their text can hold: of two
+ * fonts of one name, what either can. `judged` where one is a font whose
+ * codes are its glyph numbers, which is all that can give a character none
+ * of them maps.
  */
 interface PageFonts {
-  unmapped: Set<string>
-  mapped: Set<string>
+  byName: Map<string, FontCharacters>
+  /** What the fonts whose runs can carry any name hold (`FontFacts.anyName`) */
+  anyName?: FontCharacters
+  judged: boolean
 }
 
 /** What a content stream draws, through the forms it draws too. */
@@ -532,22 +545,25 @@ interface PdfWalk {
 
 /**
  * What `contents` draw from a resource dictionary. The contents are read only
- * where the dictionary names an XObject or an unmapped font: a page of text
- * in mapped fonts has nothing in it to look for, and inflating it would be
- * work for nothing. Its fonts are then all the ones it names, which, mapped,
- * only ever keep text.
+ * where the dictionary names an XObject or a font whose codes are its glyph
+ * numbers: a page of text in other fonts has nothing in it to look for, and
+ * inflating it would be work for nothing. Its fonts are then all the ones it
+ * names, which only ever keep text.
  */
 function drawnBy(walk: PdfWalk, resources: PDFDict | undefined, contents: PDFRawStream[]): Drawn {
-  const drawn: Drawn = { figures: [], unmapped: new Set(), mapped: new Set() }
+  const drawn: Drawn = { figures: [], byName: new Map(), judged: false }
   const xobjects = resources?.lookupMaybe(PDFName.of('XObject'), PDFDict)
   const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict)
   const named = (fonts?.entries() ?? []).map(
     ([name, value]) => [name, fontFactsOf(walk, value)] as const
   )
-  const add = ({ names, text }: FontFacts) => {
-    if (text !== 'none') names.forEach((name) => drawn[text].add(name))
+  const add = ({ names, characters, glyphNumbers, anyName }: FontFacts) => {
+    if (characters === 'none') return
+    names.forEach((name) => addFont(drawn.byName, name, characters))
+    if (anyName) drawn.anyName = eitherFont(drawn.anyName, characters)
+    drawn.judged ||= glyphNumbers
   }
-  if (!xobjects?.entries().length && !named.some(([, facts]) => facts.text === 'unmapped')) {
+  if (!xobjects?.entries().length && !named.some(([, facts]) => facts.glyphNumbers)) {
     named.forEach(([, facts]) => add(facts))
     return drawn
   }
@@ -558,13 +574,32 @@ function drawnBy(walk: PdfWalk, resources: PDFDict | undefined, contents: PDFRaw
     if (!used.xobjects.has(name) || !(value instanceof PDFRef)) continue
     const inner = xobjectDrawn(walk, value, resources)
     drawn.figures.push(...inner.figures)
-    inner.unmapped.forEach((font) => drawn.unmapped.add(font))
-    inner.mapped.forEach((font) => drawn.mapped.add(font))
+    inner.byName.forEach((characters, font) => addFont(drawn.byName, font, characters))
+    if (inner.anyName !== undefined) drawn.anyName = eitherFont(drawn.anyName, inner.anyName)
+    drawn.judged ||= inner.judged
   }
   return drawn
 }
 
-const NOTHING: Drawn = { figures: [], unmapped: new Set(), mapped: new Set() }
+/** `font` added to the fonts of its name: their text holds what either's can. */
+function addFont(byName: Map<string, FontCharacters>, font: string, characters: FontCharacters) {
+  byName.set(font, eitherFont(byName.get(font), characters))
+}
+
+/** What either font's text can hold; the second's where there is no first. */
+function eitherFont(a: FontCharacters | undefined, b: FontCharacters): FontCharacters {
+  if (a === undefined) return b
+  if (a === null || b === null) return null
+  const mapped =
+    a.mapped === b.mapped || b.mapped.size === 0
+      ? a.mapped
+      : a.mapped.size === 0
+        ? b.mapped
+        : new Set([...a.mapped, ...b.mapped])
+  return { mapped, encoded: a.encoded || b.encoded }
+}
+
+const NOTHING: Drawn = { figures: [], byName: new Map(), judged: false }
 
 /**
  * The figure an XObject is, or what a form XObject draws — from its own
@@ -655,8 +690,15 @@ function namesUsedBy(streams: PDFRawStream[]): { xobjects: Set<PDFName>; fonts: 
 /** The names pdf.js may give a font, and what text pdf.js gives for it. */
 interface FontFacts {
   names: string[]
-  /** Characters, glyph numbers, or nothing at all */
-  text: 'mapped' | 'unmapped' | 'none'
+  /** What its text can hold; none where pdf.js gives no text for it */
+  characters: FontCharacters | 'none'
+  /** Whether its codes are its glyph numbers, a glyph it does not map given as its number */
+  glyphNumbers: boolean
+  /**
+   * A composite font the file does not embed, whose runs officeparser can
+   * give under another font's name: pdf.js stands one of its own in for it
+   */
+  anyName?: boolean
 }
 
 /** The tag a subset font's name starts with (`ACJJEK+MS-Mincho`), which officeparser drops. */
@@ -666,42 +708,83 @@ const SUBSET_TAG = /^[A-Z]{6}\+/
 const ADOBE_COLLECTIONS = new Set(['Japan1', 'GB1', 'CNS1', 'Korea1'])
 
 /**
- * The facts of the font `value` is; mapped, with no name, where pdf-lib cannot
- * read it, so its text is kept.
+ * The facts of the font `value` is; any characters, with no name, where
+ * pdf-lib cannot read it, so its text is kept.
  *
- * Unmapped is a composite font whose codes are its glyph numbers (Identity-H
- * or -V) and that has no ToUnicode to say what character each glyph is.
- * pdf.js gives such a code as the character of that number — `の` as
- * Samaritan `ࡢ` (U+0862) — and no font on the reader's side makes it read.
+ * A composite font whose codes are its glyph numbers (Identity-H or -V) has
+ * them given by pdf.js as the character of that number wherever its
+ * ToUnicode does not say what character the glyph is — `の` as Samaritan `ࡢ`
+ * (U+0862) — and no font on the reader's side makes it read. Without a
+ * ToUnicode that is all of its text; a Ghostscript-made PDF has one that
+ * leaves glyphs out, its `年` read as `ᖺ` (U+15BA) on a line whose other
+ * glyphs read right. Either way its text can hold only what the map gives.
  * Such a font numbering its glyphs as one of Adobe's character collections
  * (Adobe-Japan1 and the like) has its codes looked up in pdf.js's CMaps: when
  * it is given them, which officeparser does not do, and without them pdf.js
- * gives no text for it at all. Given them, it would be mapped.
+ * gives no text for it at all.
+ *
+ * A simple font with a ToUnicode has what it leaves out given by its encoding
+ * ({@link ENCODED}); one whose encoding names glyphs of its own
+ * (`Differences`), or with no ToUnicode, or of symbols, can give any.
  */
 function fontFactsOf(walk: PdfWalk, value: PDFObject): FontFacts {
   const key = value instanceof PDFRef ? value.toString() : undefined
   const known = key && walk.fonts.get(key)
   if (known) return known
-  let facts: FontFacts = { names: [], text: 'mapped' }
+  let facts: FontFacts = { names: [], characters: null, glyphNumbers: false }
   try {
     const font = walk.doc.context.lookup(value, PDFDict)
     const descendant = font
       .lookupMaybe(PDFName.of('DescendantFonts'), PDFArray)
       ?.lookupMaybe(0, PDFDict)
+    const names = pdfjsNames(descendant ?? font, descendant !== undefined)
+    const subtype = font.get(PDFName.of('Subtype'))
     const encoding = font.lookup(PDFName.of('Encoding'))
-    const glyphNumbers =
-      font.get(PDFName.of('Subtype')) === PDFName.of('Type0') &&
-      (encoding === PDFName.of('Identity-H') || encoding === PDFName.of('Identity-V')) &&
-      !font.has(PDFName.of('ToUnicode'))
-    facts = {
-      names: pdfjsNames(descendant ?? font, descendant !== undefined),
-      text: !glyphNumbers ? 'mapped' : inAdobeCollection(descendant) ? 'none' : 'unmapped',
+    const toUnicode = font.lookup(PDFName.of('ToUnicode'))
+    // A ToUnicode that names a CMap, or that cannot be read, is no measure
+    const mapped =
+      toUnicode instanceof PDFRawStream
+        ? toUnicodeCharacters(toUnicode)
+        : toUnicode
+          ? undefined
+          : NO_TEXT
+    if (
+      subtype === PDFName.of('Type0') &&
+      (encoding === PDFName.of('Identity-H') || encoding === PDFName.of('Identity-V'))
+    ) {
+      const none = !toUnicode && inAdobeCollection(descendant)
+      facts = {
+        names,
+        characters: none ? 'none' : mapped ? { mapped, encoded: false } : null,
+        glyphNumbers: !none && mapped !== undefined,
+        ...(!embedded(descendant) && { anyName: true }),
+      }
+    } else if (subtype === PDFName.of('Type0')) {
+      facts = { names, characters: null, glyphNumbers: false, anyName: !embedded(descendant) }
+    } else {
+      const simple =
+        subtype !== PDFName.of('Type3') &&
+        toUnicode instanceof PDFRawStream &&
+        !(encoding instanceof PDFDict && encoding.has(PDFName.of('Differences'))) &&
+        !names.some((name) => SYMBOL_FONT.test(name))
+      facts = {
+        names,
+        characters: simple && mapped ? { mapped, encoded: true } : null,
+        glyphNumbers: false,
+      }
     }
   } catch {
     // Not a font pdf-lib reads
   }
   if (key) walk.fonts.set(key, facts)
   return facts
+}
+
+const NO_TEXT: ReadonlySet<string> = new Set()
+
+function embedded(font: PDFDict | undefined): boolean {
+  const descriptor = font?.lookupMaybe(PDFName.of('FontDescriptor'), PDFDict)
+  return ['FontFile', 'FontFile2', 'FontFile3'].some((key) => descriptor?.has(PDFName.of(key)))
 }
 
 /**
@@ -723,8 +806,15 @@ function pdfjsNames(dict: PDFDict, composite: boolean): string[] {
   else if (!fontName || !base || fontName === base) names = [fontName ?? base]
   else if (base.startsWith(fontName)) names = [base]
   else names = [fontName, base]
-  return names.filter((name) => name !== undefined).map((name) => name.replace(SUBSET_TAG, ''))
+  return names.filter((name) => name !== undefined).map(runFont)
 }
+
+/**
+ * A font's name as a run is judged by: less the subset tag, which officeparser
+ * drops, and a `+1` it adds to tell two of a name apart — or the font's own
+ * name has (`MS-Mincho+1`).
+ */
+const runFont = (name: string) => name.replace(SUBSET_TAG, '').replace(/\+\d+$/, '')
 
 function inAdobeCollection(descendant: PDFDict | undefined): boolean {
   const info = descendant?.lookupMaybe(PDFName.of('CIDSystemInfo'), PDFDict)
@@ -733,6 +823,186 @@ function inAdobeCollection(descendant: PDFDict | undefined): boolean {
     return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : ''
   }
   return text('Registry') === 'Adobe' && ADOBE_COLLECTIONS.has(text('Ordering'))
+}
+
+/**
+ * Codes a ToUnicode can map: all two bytes can be. One that maps more, by
+ * ranges or entries that repeat, is not one a writer made, and is not read.
+ */
+const TO_UNICODE_MAX_CODES = 65_536
+
+/** UTF-16 units a code's value can have: a ligature, or a few characters, not a text. */
+const TO_UNICODE_MAX_VALUE_UNITS = 16
+
+/**
+ * A token of a CMap: a string's bytes, as hex digits, whether written in hex
+ * (`<3042>`) or literally (`(0B)`); or any other word, `[` and `]` among them.
+ */
+type CMapToken = { hex: string } | { word: string }
+
+/** What a literal string's escapes stand for, but the octal ones and a line break. */
+const STRING_ESCAPES: Record<string, string> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }
+
+/** Where a word of a CMap ends: white space, or a delimiter. */
+const CMAP_DELIMITER = /[\s()<>[\]{}/%]/
+
+/**
+ * A CMap's tokens, read once from its start to its end, so that what it costs
+ * is its length, whatever it holds: white space and comments (`%` to the end
+ * of the line) passed over, and strings read as PDF reads them — a literal
+ * one's parentheses nested and its escapes taken (`\060` for `0`), as pdf.js
+ * reads `bfchar` entries written so. None where a string does not end, or a
+ * hex string has more than hex digits in it.
+ */
+function cmapTokens(cmap: string): CMapToken[] | undefined {
+  const tokens: CMapToken[] = []
+  let i = 0
+  while (i < cmap.length) {
+    const c = cmap[i]!
+    if (/\s/.test(c)) {
+      i++
+    } else if (c === '%') {
+      while (i < cmap.length && cmap[i] !== '\n' && cmap[i] !== '\r') i++
+    } else if (c === '(') {
+      let bytes = ''
+      let depth = 1
+      i++
+      while (i < cmap.length) {
+        const ch = cmap[i]!
+        if (ch === '\\') {
+          const octal = /^[0-7]{1,3}/.exec(cmap.slice(i + 1, i + 4))?.[0]
+          const next = cmap[i + 1]
+          if (octal) bytes += String.fromCharCode(parseInt(octal, 8) & 0xff)
+          // A backslash before a line break continues the string on the next line
+          else if (next === '\r' && cmap[i + 2] === '\n') i++
+          else if (next !== '\r' && next !== '\n') bytes += STRING_ESCAPES[next!] ?? next ?? ''
+          i += 2 + (octal ? octal.length - 1 : 0)
+          continue
+        }
+        if (ch === '(') depth++
+        else if (ch === ')' && --depth === 0) break
+        bytes += ch
+        i++
+      }
+      if (depth > 0) return undefined
+      tokens.push({ hex: Buffer.from(bytes, 'latin1').toString('hex') })
+      i++
+    } else if (c === '<' && cmap[i + 1] !== '<') {
+      const close = cmap.indexOf('>', i)
+      if (close < 0) return undefined
+      const hex = cmap.slice(i + 1, close).replace(/\s/g, '')
+      if (!/^[\dA-Fa-f]*$/.test(hex)) return undefined
+      // An odd digit at the end is followed by a 0, as PDF reads it: `<4E0>` is `<4E00>`
+      tokens.push({ hex: hex.length % 2 ? `${hex}0` : hex })
+      i = close + 1
+    } else if ('<>[]{}'.includes(c)) {
+      const pair = (c === '<' || c === '>') && cmap[i + 1] === c
+      tokens.push({ word: pair ? c + c : c })
+      i += pair ? 2 : 1
+    } else {
+      let end = i + 1
+      while (end < cmap.length && !CMAP_DELIMITER.test(cmap[end]!)) end++
+      tokens.push({ word: cmap.slice(i, end) })
+      i = end
+    }
+  }
+  return tokens
+}
+
+/**
+ * The characters a ToUnicode maps codes to, and those pdf.js gives for them:
+ * its `normalizeUnicode` takes a ligature or a compatibility form to their
+ * NFKC form, but for `ﬅ`, which it gives as `ſt`. Every value's NFKC form
+ * is more than it gives, which only keeps more. None where it maps more
+ * codes than {@link TO_UNICODE_MAX_CODES}, or a value longer than
+ * {@link TO_UNICODE_MAX_VALUE_UNITS}, or takes another CMap in (`usecmap`) —
+ * where what it leaves out cannot be told; nor where a `bfchar` or `bfrange`
+ * holds anything that is not an entry, or does not end, for an entry left
+ * unread would have the characters it maps taken out of the text. Bounded
+ * so: the CMap is read once (`cmapTokens`), what each code costs is fixed,
+ * and the codes are counted, not the characters they come to.
+ */
+function toUnicodeCharacters(stream: PDFRawStream): ReadonlySet<string> | undefined {
+  let tokens: CMapToken[] | undefined
+  try {
+    const decoded = decodePDFRawStream(stream).decode()
+    tokens = cmapTokens(
+      Buffer.from(decoded.buffer, decoded.byteOffset, decoded.byteLength).toString('latin1')
+    )
+  } catch {
+    return undefined
+  }
+  if (!tokens) return undefined
+  const characters = new Set<string>()
+  let codes = 0
+  /** The characters of a code's value added; false where the map is past its bounds. */
+  const add = (units: number[]): boolean => {
+    if (++codes > TO_UNICODE_MAX_CODES || units.length > TO_UNICODE_MAX_VALUE_UNITS) return false
+    const text = String.fromCharCode(...units)
+    for (const c of text) characters.add(c)
+    for (const c of text.normalize('NFKC')) characters.add(c)
+    for (const c of text.replaceAll('\uFB05', 'ſt')) characters.add(c)
+    return true
+  }
+  const hexOf = (token: CMapToken | undefined) => (token && 'hex' in token ? token.hex : undefined)
+  const isWord = (token: CMapToken, word: string) => 'word' in token && token.word === word
+  let section: 'bfchar' | 'bfrange' | undefined
+  // The tokens of the entry being read
+  let entry: CMapToken[] = []
+  for (const token of tokens) {
+    if (isWord(token, 'usecmap')) return undefined
+    if (!section) {
+      if (isWord(token, 'beginbfchar')) section = 'bfchar'
+      else if (isWord(token, 'beginbfrange')) section = 'bfrange'
+      continue
+    }
+    if (isWord(token, `end${section}`)) {
+      if (entry.length > 0) return undefined
+      section = undefined
+      continue
+    }
+    entry.push(token)
+    // The first three only, so a long array of values costs a step a value
+    const [low, high, to] = [entry[0], entry[1], entry[2]].map(hexOf)
+    if (low === undefined || (entry.length > 1 && high === undefined)) return undefined
+    if (section === 'bfchar') {
+      if (entry.length < 2) continue
+      if (!add(utf16Units(high!))) return undefined
+    } else if (entry.length < 3) {
+      continue
+    } else if (to !== undefined) {
+      // Each code past the first maps to the next value of the last unit
+      const first = utf16Units(to)
+      const span = parseInt(high!, 16) - parseInt(low, 16)
+      if (!(span >= 0) || first.length === 0) return undefined
+      for (let i = 0; i <= span; i++) {
+        if (!add([...first.slice(0, -1), first.at(-1)! + i])) return undefined
+      }
+    } else {
+      // An array of values, a code each: `[`, hex strings, `]`
+      const last = entry.at(-1)!
+      if (!isWord(entry[2]!, '[')) return undefined
+      if (entry.length === 3) continue
+      if (!isWord(last, ']')) {
+        if (hexOf(last) === undefined) return undefined
+        continue
+      }
+      for (const each of entry.slice(3, -1)) if (!add(utf16Units(hexOf(each)!))) return undefined
+    }
+    entry = []
+  }
+  return section ? undefined : characters
+}
+
+/**
+ * A ToUnicode value's bytes as UTF-16 code units, two each; one of an odd
+ * number of bytes has a 0 before them, as pdf.js reads it: `<41>` is `A`.
+ */
+function utf16Units(hex: string): number[] {
+  const units: number[] = []
+  const even = (hex.length / 2) % 2 ? `00${hex}` : hex
+  for (let i = 0; i < even.length; i += 4) units.push(parseInt(even.slice(i, i + 4), 16))
+  return units
 }
 
 /** The family officeparser gives a run whose font pdf.js has no name for. */
@@ -748,42 +1018,71 @@ const SYMBOL_FONT = /symbol|dingbat|wingding|webding/i
 const SYMBOLIC_CODES = /[\uF020-\uF07E]/g
 
 /**
- * `page` with the text in its unmapped fonts left out, and the codes of an
- * ordinary font flagged as symbolic read as the ASCII they are; unreadable
- * where most of its text was left out. A run's font is named as officeparser
- * names it — pdf.js's name less the subset tag, a `+1` added to tell two of a
- * name apart. Where a mapped font has the name too, its text is kept: which
- * of the two drew it cannot be told. A run officeparser names no font for —
- * pdf.js has none for a font the file does not embed, and officeparser then
- * gives the generic family — is left out only where every font the page sets
- * text in is unmapped.
+ * What a simple font's encoding can give for a code its ToUnicode leaves out:
+ * Latin-1 past its controls, and the letters and signs beyond it that the
+ * standard encodings (Standard, WinAnsi, MacRoman, PDFDoc) name — no more,
+ * as a composite font of the same name gives its glyph numbers in Latin
+ * Extended (`Ʒ` for `の`) — and a symbolic font's codes (U+F000 and up).
+ */
+const ENCODED =
+  /[\u0020-\u00FF\u0131\u0141\u0142\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192\u02C6\u02C7\u02D8-\u02DD\u03A9\u03C0\u2013\u2014\u2018-\u201A\u201C-\u201E\u2020-\u2022\u2026\u2030\u2039\u203A\u2044\u20AC\u2122\u2202\u2206\u220F\u2211\u2212\u221A\u221E\u222B\u2248\u2260\u2264\u2265\u25CA\uF000-\uF0FF\uFB01\uFB02]/
+
+/**
+ * `page` with the characters its fonts cannot hold left out — all the text
+ * of a font with glyph numbers and no ToUnicode, those a partial ToUnicode
+ * does not give — and the codes of an ordinary font flagged as symbolic read
+ * as the ASCII they are; with the characters left out and kept counted.
+ * A run's font is named as officeparser names it, less the `+1` it adds to
+ * tell two of a name apart (`runFont`), and which of the fonts of that name
+ * drew it cannot be told: it keeps what any of them can hold. A run
+ * officeparser names no font for — pdf.js has none for a font the file does
+ * not embed, and officeparser then gives the generic family — may be in any
+ * of the page's fonts.
  */
 function readable(
   page: OfficeContentNode,
   fonts: PageFonts | undefined
-): { page: OfficeContentNode | undefined; unreadable: boolean } {
-  let unmapped = 0
-  let mapped = 0
+): { page: OfficeContentNode | undefined; lost: number; kept: number } {
+  let lost = 0
+  let kept = 0
+  // By the run's font name, and for a run with none, what any of the page's fonts holds
+  const held = new Map<string | undefined, FontCharacters>()
+  const holds = (font: string | undefined): FontCharacters => {
+    if (!fonts) return null
+    if (!held.has(font)) {
+      const can =
+        font === undefined
+          ? [...fonts.byName.values()].reduce<FontCharacters | undefined>(eitherFont, fonts.anyName)
+          : fonts.byName.has(font)
+            ? eitherFont(fonts.anyName, fonts.byName.get(font)!)
+            : null
+      held.set(font, can ?? null)
+    }
+    return held.get(font)!
+  }
   const visit = (node: OfficeContentNode): OfficeContentNode | undefined => {
     if (node.type === 'text') {
       const named = (node.formatting as { font?: string } | undefined)?.font
-      const font = named && !GENERIC_FAMILY.test(named) ? named.replace(/\+\d+$/, '') : undefined
-      if (fonts) {
-        const chars = (node.text ?? '').replace(/\s/g, '').length
-        const lost = font
-          ? fonts.unmapped.has(font) && !fonts.mapped.has(font)
-          : fonts.mapped.size === 0
-        if (lost) {
-          unmapped += chars
-          return undefined
-        }
-        mapped += chars
+      const font = named && !GENERIC_FAMILY.test(named) ? runFont(named) : undefined
+      let text = node.text ?? ''
+      const can = holds(font)
+      if (can) {
+        const before = text.replace(/\s/g, '').length
+        text = [...text]
+          .filter((c) => can.mapped.has(c) || (can.encoded && ENCODED.test(c)) || /\s/.test(c))
+          .join('')
+        const after = text.replace(/\s/g, '').length
+        lost += before - after
+        kept += after
+        // Gone with its text: left as white space, it would part the words around it
+        if (after === 0 && before > 0) return undefined
+      } else if (fonts) {
+        kept += text.replace(/\s/g, '').length
       }
-      if (!font || SYMBOL_FONT.test(font) || !node.text) return node
-      const text = node.text.replace(SYMBOLIC_CODES, (c) =>
-        String.fromCharCode(c.charCodeAt(0) - 0xf000)
-      )
-      return text === node.text ? node : { ...node, text }
+      if (font && !SYMBOL_FONT.test(font)) {
+        text = text.replace(SYMBOLIC_CODES, (c) => String.fromCharCode(c.charCodeAt(0) - 0xf000))
+      }
+      return text === (node.text ?? '') ? node : { ...node, text }
     }
     if (!node.children?.length) return node
     const visited = node.children.map(visit)
@@ -792,7 +1091,7 @@ function readable(
     // Gone with its text: left without children, it would render a text of its own
     return children.length > 0 ? { ...node, children } : undefined
   }
-  return { page: visit(page), unreadable: unmapped > mapped }
+  return { page: visit(page), lost, kept }
 }
 
 /** The anchors on a page, which an outline entry can point at instead of the page. */

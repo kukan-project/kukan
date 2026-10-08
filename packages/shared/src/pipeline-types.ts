@@ -351,10 +351,17 @@ export interface DocumentTextBlock {
   /**
    * A page whose text has to be read from its picture — OCR — and why:
    * `no-text`, it has none to read (a scan, a page of images); `unmapped-fonts`,
-   * most of it is in fonts with no map from their glyphs to characters, and
-   * `text` is what it has in other fonts, which may be nothing.
+   * most of it is in glyphs its fonts have no map to characters for — a font
+   * with no map, or one that leaves them out — and `text` is the rest, which
+   * may be nothing.
    */
   unreadable?: 'no-text' | 'unmapped-fonts'
+  /**
+   * Characters of the page left out of `text` because its fonts give no
+   * character for their glyphs — where there are any, whether or not they are
+   * most of it (`unreadable`). A page of several blocks has it on each.
+   */
+  unmappedChars?: number
   /**
    * An image rather than text, after the block of the page or slide it is on.
    * Its `text` is the description its author gave it, where there is one.

@@ -858,11 +858,29 @@ describe('MCP Server', () => {
       expect(text).toContain('(add #page=N to open a PDF at page N)')
       expect(text).toContain('Pages: 1–3')
       expect(text).toContain(
-        'Pages whose text cannot be read (scans, or fonts with no map to characters): 3'
+        'Pages whose text cannot be read (scans, or fonts with no map, or an incomplete one, to characters): 3'
       )
       // Each heading with its pages, in one column, for a reader to choose from
       expect(text).toContain('Headings with the pages they span.')
       expect(text).toContain('page 1  はじめに\npage 2  第1章 現状')
+    })
+
+    it('says which pages have some characters left out, on the page and in the outline', async () => {
+      const app = documentApp([
+        { loc: { page: 1 }, text: '成２８度', unmappedChars: 2 },
+        { loc: { page: 2 }, text: '本文' },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-partly', title: 'Partly' })
+
+      const section = await call(app, { id: res.id })
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+
+      expect(section).toContain(
+        '--- page 1\n[2 characters of this page are in glyphs its fonts give no character for, and are left out of the text below.]\n成２８度\n\n--- page 2\n本文'
+      )
+      expect(result.result.content[0].text).toContain(
+        'Pages with some characters that cannot be read, left out of their text: 1'
+      )
     })
 
     it('says a range holds nothing, not that the document has no pages', async () => {
@@ -948,7 +966,9 @@ describe('MCP Server', () => {
       const text = result.result.content[0].text as string
 
       expect(text).toContain('Pages: 1–2')
-      expect(text).toContain('cannot be read (scans, or fonts with no map to characters): 1–2')
+      expect(text).toContain(
+        'cannot be read (scans, or fonts with no map, or an incomplete one, to characters): 1–2'
+      )
       expect(text).toContain('page 2  本文')
     })
 
