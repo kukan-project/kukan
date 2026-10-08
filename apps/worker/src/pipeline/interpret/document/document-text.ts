@@ -3,7 +3,8 @@
  * artifact the Index step reads — without parsing the whole document at once,
  * which took gigabytes for megabytes of text (see PDF_RANGE_BYTES). PDFs go
  * through officeparser a range of pages at a time; XLSX sheets are read as a
- * stream of XML; other formats whole.
+ * stream of XML; the legacy Office formats — XLS, DOC, PPT — and Ichitaro by
+ * readers of our own, as officeparser does not read them; other formats whole.
  *
  * Each block says where in the file its text is: the page, the slide, the
  * sheet and row, and the headings the file itself marks over it. A heading is
@@ -48,12 +49,17 @@ import {
   type DocumentTextLoc,
 } from '@kukan/shared'
 import {
+  DOCUMENT_TEXT_MAX_BYTES,
   PDF_RANGE_BYTES,
   PDF_RANGE_MAX_PAGES,
   PDF_RANGE_MIN_PAGES,
   XLSX_MAX_ENTRIES,
   XLSX_MAX_PART_BYTES,
 } from '@/config'
+import { docText } from './legacy/doc'
+import { jtdText } from './legacy/jtd'
+import { pptSlides } from './legacy/ppt'
+import { xlsSheets, type XlsRow } from './legacy/xls'
 
 /**
  * Flowing text, not the v8 default: a PDF page rendered as a space-padded
@@ -131,6 +137,9 @@ async function writeBlocks(
       const whole = cleaned(block)
       if (whole.text) {
         bytes += Buffer.byteLength(whole.text, 'utf-8') + (joined++ > 0 ? 1 : 0)
+        if (bytes > DOCUMENT_TEXT_MAX_BYTES) {
+          throw new Error(`Document text is over ${DOCUMENT_TEXT_MAX_BYTES} bytes`)
+        }
         if (!hasText && whole.text.trim()) hasText = true
       }
       for (const block of bounded(whole)) await put(block)
@@ -198,6 +207,10 @@ export async function* documentBlocks(
 ): AsyncGenerator<DocumentTextBlock> {
   if (format === 'pdf') yield* pdfBlocks(filePath)
   else if (format === 'xlsx') yield* xlsxBlocks(filePath)
+  else if (format === 'xls') yield* xlsBlocks(filePath)
+  else if (format === 'doc') yield* docBlocks(filePath)
+  else if (format === 'ppt') yield* pptBlocks(filePath)
+  else if (format === 'jtd' || format === 'jtt') yield* jtdBlocks(filePath)
   else yield* officeBlocks(filePath)
 }
 
@@ -223,7 +236,11 @@ async function render(ast: OfficeParserAST, nodes?: OfficeContentNode[]): Promis
 }
 
 function headingText(node: OfficeContentNode): string {
-  return (node.text ?? '').replace(/\s+/g, ' ').trim().slice(0, HEADING_MAX_CHARS)
+  return oneHeading(node.text ?? '')
+}
+
+function oneHeading(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, HEADING_MAX_CHARS)
 }
 
 /**
@@ -1164,10 +1181,9 @@ const SHEET = /^xl\/worksheets\/sheet(\d+)\.xml$/
 
 /**
  * A sheet's rows a line each, their non-empty cells separated by tabs, as
- * blocks of consecutive rows up to BLOCK_MAX_CHARS, sheet after sheet in the
- * workbook's tab order. Each block says which row of its sheet each of its
- * lines is: empty rows are not in it, so the first row and a count would not.
- * Only the shared strings are held whole — every cell refers to them by index.
+ * blocks of consecutive rows (`sheetBlocks`), sheet after sheet in the
+ * workbook's tab order. Only the shared strings are held whole — every cell
+ * refers to them by index.
  */
 async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
   const zip = await openZip(filePath)
@@ -1186,31 +1202,72 @@ async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> 
     for (const [index, { part, name }] of (await sheetOrder(zip, entries)).entries()) {
       const entry = entries.get(part)
       if (!entry) continue
-      const sheet = { sheet: index + 1, ...(name !== undefined && { sheetName: name }) }
-      let rows: number[] = []
-      let lines: string[] = []
-      let length = 0
-      const block = (): DocumentTextBlock => {
-        const done = { loc: { ...sheet, rows }, text: lines.join('\n') }
-        rows = []
-        lines = []
-        length = 0
-        return done
-      }
-      for await (const { row, text } of readPart<SheetRow>(zip, entry, (emit) =>
-        sheetRowParser(emit, shared)
-      )) {
-        // `length` counts a line break after each line, the last one's not in the text
-        if (rows.length > 0 && length + text.length > BLOCK_MAX_CHARS) yield block()
-        length += text.length + 1
-        rows.push(row)
-        lines.push(text)
-      }
-      if (rows.length > 0) yield block()
+      yield* sheetBlocks(
+        { sheet: index + 1, ...(name !== undefined && { sheetName: name }) },
+        readPart<SheetRow>(zip, entry, (emit) => sheetRowParser(emit, shared))
+      )
     }
   } finally {
     zip.close()
   }
+}
+
+/** An XLS workbook's rows, as an XLSX's are read. */
+async function* xlsBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
+  for (const { sheet, name, rows } of xlsSheets(await readFile(filePath))) {
+    yield* sheetBlocks({ sheet, ...(name && { sheetName: name }) }, xlsLines(rows))
+  }
+}
+
+function* xlsLines(rows: Iterable<XlsRow>): Generator<SheetRow> {
+  for (const { row, cells } of rows) yield { row, text: cells.map(oneLine).join('\t') }
+}
+
+/** A Word 97–2003 document's text, as a block: it marks no headings a reader of it can find. */
+async function* docBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
+  yield { loc: {}, text: docText(await readFile(filePath)) }
+}
+
+/** An Ichitaro document's text, as a block: what marks its headings is not yet read (ADR-051). */
+async function* jtdBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
+  yield { loc: {}, text: jtdText(await readFile(filePath)) }
+}
+
+/** A PowerPoint 97–2003 presentation a slide at a time, under its title. */
+async function* pptBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
+  for (const [index, { title, text }] of pptSlides(await readFile(filePath)).entries()) {
+    const heading = oneHeading(title ?? '')
+    yield { loc: { slide: index + 1 }, ...headingsOf(heading ? [heading] : undefined), text }
+  }
+}
+
+/**
+ * A sheet's rows as blocks of consecutive rows up to BLOCK_MAX_CHARS. Each
+ * block says which row of its sheet each of its lines is: empty rows are not
+ * in it, so the first row and a count would not.
+ */
+async function* sheetBlocks(
+  sheet: DocumentTextLoc,
+  lines: AsyncIterable<SheetRow> | Iterable<SheetRow>
+): AsyncGenerator<DocumentTextBlock> {
+  let rows: number[] = []
+  let texts: string[] = []
+  let length = 0
+  const block = (): DocumentTextBlock => {
+    const done = { loc: { ...sheet, rows }, text: texts.join('\n') }
+    rows = []
+    texts = []
+    length = 0
+    return done
+  }
+  for await (const { row, text } of lines) {
+    // `length` counts a line break after each line, the last one's not in the text
+    if (rows.length > 0 && length + text.length > BLOCK_MAX_CHARS) yield block()
+    length += text.length + 1
+    rows.push(row)
+    texts.push(text)
+  }
+  if (rows.length > 0) yield block()
 }
 
 /**

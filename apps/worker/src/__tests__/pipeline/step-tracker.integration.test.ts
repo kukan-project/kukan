@@ -16,7 +16,7 @@ import {
   releaseResourceClaims,
   type ResourceClaim,
 } from '@kukan/api/services/pipeline-claim'
-import { StepTracker, RunCancelledError } from '../../pipeline/step-tracker'
+import { StepTracker, RunCancelledError } from '../../pipeline/run/step-tracker'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()

@@ -13,7 +13,7 @@
 import { vi, type Mocked } from 'vitest'
 import { getStorageKey } from '@kukan/shared'
 import type { Readable } from 'node:stream'
-import type { PipelineContext } from '../../pipeline/types'
+import type { PipelineContext } from '../../pipeline/run/types'
 import { streamToBuffer } from '../../pipeline/node-utils'
 
 export function createPipelineContextMock(): PipelineContextMock {

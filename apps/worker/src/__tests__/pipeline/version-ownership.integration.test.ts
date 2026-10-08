@@ -12,7 +12,7 @@ import { eq, sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { claimResources, CLAIM_STALE_AFTER_MS } from '@kukan/api/services/pipeline-claim'
-import { buildPipelineContext } from '../../pipeline/build-context'
+import { buildPipelineContext } from '../../pipeline/run/build-context'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()

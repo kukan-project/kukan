@@ -12,7 +12,7 @@ import type { PublishedContent } from '@kukan/api/services/storage-pointer'
 import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
 import type { VersionResult } from './version-gate'
-import type { SummaryDeps } from './steps/summarize'
+import type { SummaryDeps } from '../steps/summarize'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {

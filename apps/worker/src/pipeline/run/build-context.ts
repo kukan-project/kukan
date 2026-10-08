@@ -25,7 +25,7 @@ import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
-import type { SummaryDeps } from './steps/summarize'
+import type { SummaryDeps } from '../steps/summarize'
 import { FETCH_RATE_LIMIT_INTERVAL_S } from '@/config'
 
 /** Displaced mid-create: the claim went, or the pointer did. */

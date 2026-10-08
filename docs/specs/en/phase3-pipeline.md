@@ -385,7 +385,7 @@ interface PipelineContext {
 ```
 
 The `PipelineContext` is assembled by `buildPipelineContext()` in
-`apps/worker/src/pipeline/build-context.ts`. The accessors are implemented directly as Drizzle ORM
+`apps/worker/src/pipeline/run/build-context.ts`. The accessors are implemented directly as Drizzle ORM
 queries.
 
 ### 6.5 Pipeline steps
@@ -452,7 +452,7 @@ async function processResource(
 **Splitting the pipeline management classes:**
 
 - `PipelineService` (API side: `packages/api/src/services/pipeline-service.ts`) — enqueue, getStatus
-- `StepTracker` (Worker side: `apps/worker/src/pipeline/step-tracker.ts`) — startPipeline,
+- `StepTracker` (Worker side: `apps/worker/src/pipeline/run/step-tracker.ts`) — startPipeline,
   startStep, completeStep, failStep, skipStep, updateStatus, updateExtractResult
 
 ### 6.7 The Fetch step

@@ -282,6 +282,15 @@ zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、�
 `packages/shared/src/pipeline-types.ts`）。図も 1 ブロックとして持つが、画像そのものは持たず、
 ファイルの中で指す名前（PDF のオブジェクト番号、パッケージ内のパス）と寸法だけを持つ。Index が
 テーブルのプロファイルと同じく **Interpret が版ファイルから作る**（抽出は重い処理の子プロセス）。
+2007 より前の Office（XLS・DOC・PPT）と一太郎（JTD・JTT、ADR-051）は officeparser が読まないので、複合文書
+（MS-CFB）とその中身を自前で読む（`apps/worker/src/pipeline/interpret/document/legacy/` の `compound-file.ts`・
+`xls.ts`・`doc.ts`・`ppt.ts`・`jtd.ts`）。XLS は XLSX と同じシートと行、PPT はスライドとタイトル、DOC と一太郎は
+見出しを持たない本文になる。一太郎の圧縮形式（JTDC・JTTC）は形式名だけ登録し、読まない。
+中身が ZIP なら名乗りによらず XLSX・DOCX・PPTX として読む（判定は Interpret が `contentFormat` で行い、
+抄録が原本を送るときも同じ判定に従う）。暗号化されたもの、Word 95 以前のもの、複合文書でも ZIP でもないもの
+（HTML を `.xls` と名乗らせたものなど）は読まず、Interpret が失敗する（パイプラインは続く）。
+本文が `DOCUMENT_TEXT_MAX_BYTES`（256 MB）を超える文書も同じく失敗にする。共有文字列やスライドを繰り返し
+指せば、小さなファイルから桁違いの本文が作れるため。
 `previews/{package}/{resource}.{token}.text.ndjson.zst` に書き、`updateInterpretResult` で参照する。
 本文の UTF-8 バイト数（本文が無ければ 0）を `documentTextBytes` に並べて持つ。text head（AI 提案・
 抄録の材料）は別のオブジェクトにせず、読み手がこのファイルの先頭から切り出す。Index は

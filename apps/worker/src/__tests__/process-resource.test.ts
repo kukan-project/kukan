@@ -32,7 +32,7 @@ const mockTracker = {
   updateInterpretResult: vi.fn(),
 }
 
-vi.mock('../pipeline/step-tracker', () => ({
+vi.mock('../pipeline/run/step-tracker', () => ({
   StepTracker: vi.fn(function () {
     return mockTracker
   }),
@@ -695,7 +695,7 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    const { RunCancelledError } = await import('../pipeline/step-tracker')
+    const { RunCancelledError } = await import('../pipeline/run/step-tracker')
     mockTracker.startStep
       .mockImplementationOnce(() => Promise.resolve('step-0'))
       .mockImplementationOnce(() => Promise.reject(new RunCancelledError('res-1')))

@@ -13,6 +13,7 @@ import {
   isZipFormat,
   isOfficeFormat,
   isDocumentFormat,
+  isIchitaroFormat,
   isPdfFormat,
   isGeoJsonFormat,
   isImageFormat,
@@ -80,12 +81,22 @@ export function ResourcePreview({
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
   if (isJsonFormat(f)) return <JsonPreview resourceId={resourceId} />
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
-  if (isOfficeFormat(f)) {
-    const original = <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
-    // DOC/XLS/PPT have no text extracted from them
-    if (!isDocumentFormat(f)) return original
-    return <DocumentPreview key={resourceId} resourceId={resourceId} original={original} />
-  }
+  if (isOfficeFormat(f))
+    return (
+      <DocumentPreview
+        key={resourceId}
+        resourceId={resourceId}
+        original={<OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />}
+      />
+    )
+  if (isIchitaroFormat(f))
+    return (
+      <DocumentPreview
+        key={resourceId}
+        resourceId={resourceId}
+        original={<OriginalNotShown message="previewIchitaroOriginal" />}
+      />
+    )
   if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />
   if (isDocumentFormat(f)) return <DocumentTextPreview resourceId={resourceId} />
   return <PreviewNotAvailable />
@@ -443,6 +454,18 @@ function OfficeOnlinePreview({
 }
 
 // --- Shared UI ---
+
+/** In place of an original no browser can show: what to open it in instead. */
+function OriginalNotShown({ message }: { message: 'previewIchitaroOriginal' }) {
+  const t = useTranslations('resource')
+  return (
+    <Card>
+      <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        {t(message)}
+      </CardContent>
+    </Card>
+  )
+}
 
 function PreviewNotAvailable() {
   const t = useTranslations('resource')

@@ -12,7 +12,7 @@ import type { HeavyRequest, HeavyResult } from './protocol'
 export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyResult<R>> {
   switch (request.kind) {
     case 'interpret-csv': {
-      const { interpretCsv } = await import('../pipeline/interpret/csv')
+      const { interpretCsv } = await import('../pipeline/interpret/table/csv')
       return (await interpretCsv(
         request.csvPath,
         request.parquetPath,
@@ -21,7 +21,7 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
       )) as HeavyResult<R>
     }
     case 'extract-text': {
-      const { extractDocumentText } = await import('../pipeline/steps/document-text')
+      const { extractDocumentText } = await import('../pipeline/interpret/document/document-text')
       return (await extractDocumentText(
         request.documentPath,
         request.format,

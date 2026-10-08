@@ -70,9 +70,9 @@ The decision must lean **toward "not a table" when in doubt**.
 
 | Part                             | Where                                                           | Use in this ADR                                                  |
 | -------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------- |
-| CSV interpretation               | `interpretCsv` in `interpret/csv.ts` (DuckDB sniffer)           | Hand the table range over as CSV (decision 4)                    |
-| Title-row detection              | `countTitleRows` in `interpret/csv-title-rows.ts`               | Drop single-cell rows above the table                            |
-| Footer-row removal               | `trimFooter` in `interpret/csv.ts`                              | Drop sources and notes below the table                           |
+| CSV interpretation               | `interpretCsv` in `interpret/table/csv.ts` (DuckDB sniffer)     | Hand the table range over as CSV (decision 4)                    |
+| Title-row detection              | `countTitleRows` in `interpret/table/csv-title-rows.ts`         | Drop single-cell rows above the table                            |
+| Footer-row removal               | `trimFooter` in `interpret/table/csv.ts`                        | Drop sources and notes below the table                           |
 | Recording that no table exists   | `NO_TABLE` + `reason`                                           | Keep the reason a file failed the rules                          |
 | Column settings a person settled | `resource.column_settings` (primary key; settled types in ii-c) | Hold the settled table range (decision 7)                        |
 | Freezing into the version        | A version freezes the settings it was created under (spec §6.7) | Freeze the settled range too                                     |

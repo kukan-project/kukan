@@ -681,6 +681,7 @@
     "preview": "プレビュー",
     "previewPlaceholder": "データプレビューは今後のフェーズで対応予定です",
     "previewNotAvailable": "このフォーマットのプレビューには対応していません",
+    "previewIchitaroOriginal": "一太郎の原本はブラウザで表示できません。ダウンロードして、一太郎または一太郎ビューア（いずれも Windows 用）で開いてください。本文は「抽出テキスト」で読めます。",
     "previewNoData": "プレビューデータがありません",
     "previewError": "プレビューの読み込みに失敗しました",
     "previewJsonTooLarge": "ファイルサイズが大きいため JSON プレビューを表示できません。ダウンロードしてご確認ください。",

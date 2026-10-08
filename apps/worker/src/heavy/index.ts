@@ -19,7 +19,7 @@ import {
   HEAVY_RESTART_MB,
 } from '@/config'
 import { heavySection } from '@/heavy-section'
-import { RunCancelledError } from '../pipeline/step-tracker'
+import { RunCancelledError } from '../pipeline/run/step-tracker'
 import { HeavyProcess } from './process'
 import type { HeavyRequest, HeavyResult } from './protocol'
 

@@ -7,7 +7,7 @@
 
 import type { Readable } from 'node:stream'
 import { documentTextBlocks } from '@kukan/shared'
-import { zstdLines } from './node-utils'
+import { zstdLines } from '../../node-utils'
 
 /** Each block's lines, the blocks with none left out. */
 export async function* documentTextLines(artifact: Readable): AsyncGenerator<string> {

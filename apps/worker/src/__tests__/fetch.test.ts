@@ -3,7 +3,7 @@ import { createHash } from 'crypto'
 import { Readable } from 'stream'
 import { executeFetch } from '../pipeline/steps/fetch'
 import { MAX_FETCH_SIZE } from '../config'
-import type { ResourceForPipeline } from '../pipeline/types'
+import type { ResourceForPipeline } from '../pipeline/run/types'
 import {
   createPipelineContextMock,
   type PipelineContextMock,

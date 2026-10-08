@@ -2354,7 +2354,7 @@ bites as versions × table size.
 DuckLake passes no compression option when none is configured
 (`TryGetConfigOption("parquet_compression", ...)` in `ducklake_insert.cpp`), so **it is written with
 DuckDB's default = snappy**. Layer 3's preview generation already specifies zstd explicitly
-(`interpret/csv.ts`); only layer 2 was left at the default.
+(`interpret/table/csv.ts`); only layer 2 was left at the default.
 
 Measured (360 versions, base 20,000 rows, decomposed into column chunks and footers etc. with
 `parquet_metadata`):

@@ -17,6 +17,8 @@ import {
   getStorageKey,
   getPreviewKey,
   declaredFormatMismatch,
+  contentFormat,
+  isIchitaroFormat,
 } from '../formats'
 
 describe('normalizeFormat', () => {
@@ -78,6 +80,28 @@ describe('detectFormat', () => {
 
   it('should uppercase unknown extensions', () => {
     expect(detectFormat('file.parquet')).toBe('PARQUET')
+  })
+})
+
+describe('Ichitaro', () => {
+  it('is named and typed, its compressed forms too', () => {
+    for (const ext of ['jtd', 'jtt', 'jtdc', 'jttc']) {
+      expect(detectFormat(`様式.${ext}`)).toBe(ext.toUpperCase())
+      expect(getMimeType(ext)).toBe('application/x-js-taro')
+    }
+  })
+
+  it('is read as Ichitaro, not its compressed forms', () => {
+    expect(isIchitaroFormat('JTD')).toBe(true)
+    expect(isIchitaroFormat('jtt')).toBe(true)
+    expect(isIchitaroFormat('jtdc')).toBe(false)
+    expect(isIchitaroFormat(null)).toBe(false)
+  })
+
+  it('is known by the compound file it is', () => {
+    const compound = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+    expect(declaredFormatMismatch('JTD', compound)).toBe(false)
+    expect(declaredFormatMismatch('JTD', new TextEncoder().encode('<html>'))).toBe(true)
   })
 })
 
@@ -291,10 +315,17 @@ describe('isDocumentFormat', () => {
     expect(isDocumentFormat('PDF')).toBe(true)
   })
 
-  it('should return false for legacy Office formats', () => {
-    expect(isDocumentFormat('doc')).toBe(false)
-    expect(isDocumentFormat('xls')).toBe(false)
-    expect(isDocumentFormat('ppt')).toBe(false)
+  it('should return true for legacy Office formats', () => {
+    expect(isDocumentFormat('doc')).toBe(true)
+    expect(isDocumentFormat('xls')).toBe(true)
+    expect(isDocumentFormat('ppt')).toBe(true)
+  })
+
+  it('reads Ichitaro, but not its compressed forms', () => {
+    expect(isDocumentFormat('JTD')).toBe(true)
+    expect(isDocumentFormat('jtt')).toBe(true)
+    expect(isDocumentFormat('jtdc')).toBe(false)
+    expect(isDocumentFormat('jttc')).toBe(false)
   })
 
   it('should return false for non-document formats', () => {
@@ -416,6 +447,16 @@ describe('declaredFormatMismatch', () => {
     ).toBe(false)
   })
 
+  it('knows the legacy Office formats by the compound file they are, or the package that followed', () => {
+    const compound = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+    const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4])
+    for (const format of ['XLS', 'DOC', 'PPT']) {
+      expect(declaredFormatMismatch(format, compound)).toBe(false)
+      expect(declaredFormatMismatch(format, zip)).toBe(false)
+      expect(declaredFormatMismatch(format, bytes('<html><table>'))).toBe(true)
+    }
+  })
+
   it('answers false where it cannot know, so acting on true stays safe', () => {
     // A format whose first bytes no specification fixes, and nothing to read
     expect(declaredFormatMismatch('CSV', bytes('<!doctype html>'))).toBe(false)
@@ -426,5 +467,22 @@ describe('declaredFormatMismatch', () => {
   it('reads the format as the catalogue spells it', () => {
     expect(declaredFormatMismatch('pdf', bytes('<!doctype html>'))).toBe(true)
     expect(declaredFormatMismatch('  PDF  '.trim(), bytes('%PDF-'))).toBe(false)
+  })
+})
+
+describe('contentFormat', () => {
+  const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4])
+  const compound = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+
+  it('reads a legacy Office format whose bytes are a ZIP package as the format that followed', () => {
+    expect(contentFormat('XLS', zip)).toBe('xlsx')
+    expect(contentFormat('doc', zip)).toBe('docx')
+    expect(contentFormat('PPT', zip)).toBe('pptx')
+  })
+
+  it('gives back any other format, lower-cased, whatever its bytes', () => {
+    expect(contentFormat('XLS', compound)).toBe('xls')
+    expect(contentFormat('PDF', zip)).toBe('pdf')
+    expect(contentFormat('xlsx', compound)).toBe('xlsx')
   })
 })

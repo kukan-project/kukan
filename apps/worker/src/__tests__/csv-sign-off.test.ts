@@ -8,7 +8,7 @@
  * costs nothing here.
  */
 import { describe, it, expect } from 'vitest'
-import { looksLikeSignOff } from '../pipeline/interpret/csv-sign-off'
+import { looksLikeSignOff } from '../pipeline/interpret/table/csv-sign-off'
 
 /** The scan's answer for an ordinary comma-separated file. */
 const signOff = (text: string, columns: number) =>

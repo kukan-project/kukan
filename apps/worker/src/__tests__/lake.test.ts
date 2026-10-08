@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { executeLake } from '../pipeline/steps/lake'
-import { RunCancelledError } from '../pipeline/step-tracker'
+import { RunCancelledError } from '../pipeline/run/step-tracker'
 import {
   createPipelineContextMock,
   type PipelineContextMock,

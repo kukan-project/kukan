@@ -21,8 +21,8 @@ import {
 } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../heavy/process'
-import { RunCancelledError, StepTracker } from './step-tracker'
-import { heldContext } from './held-context'
+import { RunCancelledError, StepTracker } from './run/step-tracker'
+import { heldContext } from './run/held-context'
 import { executeFetch } from './steps/fetch'
 import { documentTextMetadata, executeInterpret } from './steps/interpret'
 import { executeLake, type LakeStepOptions } from './steps/lake'
@@ -33,7 +33,7 @@ import {
   type SummaryDeps,
   type SummaryInput,
 } from './steps/summarize'
-import type { PipelineContext } from './types'
+import type { PipelineContext } from './run/types'
 import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
 
 /**
@@ -215,8 +215,7 @@ async function runPipeline(
         )
         if (interpretResult === null) {
           await tracker.skipStep(interpretStepId)
-          // The interpretation produces nothing for this format (an image, a
-          // legacy Office file).
+          // The interpretation produces nothing for this format (an image).
           // Clear any stale values a previous run left behind — e.g. a resource
           // that was a CSV (with a schema + Parquet preview) and was then replaced
           // with a PDF must not keep reporting the old schema as queryable.

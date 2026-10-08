@@ -4,8 +4,8 @@
  * DuckDB and the document parsers.
  */
 
-import type { InterpretedCsv } from '../pipeline/interpret/csv'
-import type { ExtractedText } from '../pipeline/steps/document-text'
+import type { InterpretedCsv } from '../pipeline/interpret/table/csv'
+import type { ExtractedText } from '../pipeline/interpret/document/document-text'
 
 /** Files in, files and JSON out: the process holds no connection of any kind. */
 export type HeavyRequest =

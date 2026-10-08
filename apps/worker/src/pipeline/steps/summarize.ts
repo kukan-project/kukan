@@ -50,6 +50,7 @@ import {
   type SummaryLocale,
   type SummaryMaterial,
   type SummarySkipReason,
+  contentFormat,
   declaredFormatMismatch,
 } from '@kukan/shared'
 import { stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
@@ -303,13 +304,15 @@ export async function planMaterial(
     // rest of it (ADR-053 §3.4).
     if (!withinBytes(input.size, SUMMARY_MAX_OFFICE_BYTES)) return { reason: 'too-large' }
     const bytes = await readAll(await deps.storage.download(input.storageKey))
-    // The same test as the PDF path: an office format is a ZIP container, and
-    // a publisher's error page is not one (ADR-047)
+    // The same test as the PDF path: an office format is a ZIP container, or a
+    // compound file before 2007, and a publisher's error page is neither (ADR-047)
     if (declaredFormatMismatch(input.format, bytes)) return { reason: 'format-mismatch' }
+    // Sent as what the bytes are: an XLSX published as `.xls` is an XLSX to the provider
+    const sent = contentFormat(format, bytes)
     return {
       kind: 'original',
       material: EMPTY_MATERIAL,
-      attachment: { kind: 'document', format, name: format, bytes },
+      attachment: { kind: 'document', format: sent, name: sent, bytes },
     }
   }
 

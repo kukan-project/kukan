@@ -15,8 +15,8 @@ import {
   claimResources,
   type ResourceClaim,
 } from '@kukan/api/services/pipeline-claim'
-import { heldContext } from '../../pipeline/held-context'
-import { RunCancelledError } from '../../pipeline/step-tracker'
+import { heldContext } from '../../pipeline/run/held-context'
+import { RunCancelledError } from '../../pipeline/run/step-tracker'
 import { createPipelineContextMock } from '../test-helpers/pipeline-context'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 

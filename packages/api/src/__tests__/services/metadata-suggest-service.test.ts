@@ -391,8 +391,8 @@ describe('MetadataSuggestService', () => {
   })
 
   it('keeps documents without a text-head artifact as metadata-only', async () => {
-    // Legacy formats (DOC/XLS/PPT) and documents whose extraction yielded no
-    // text have no artifact — the metadata slot still applies
+    // Documents whose extraction failed or yielded no text have no artifact —
+    // the metadata slot still applies
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
     addResult(liveKeys('r1'))

@@ -11,6 +11,7 @@ import {
 } from './test-helpers/pipeline-context'
 import { artifactBlocks } from './test-helpers/document-text'
 import { xlsxBuffer } from './test-helpers/xlsx'
+import { cell, xlsBuffer } from './test-helpers/legacy-office'
 
 // Read by the real heavy process: the parsers, not a mock of them
 
@@ -97,6 +98,26 @@ describe('interpreting a document', () => {
       { loc: { sheet: 1, sheetName: 's1', rows: [1, 2] }, text: '地域\t人口\n東京\t14000000' },
     ])
     expect(result!.documentText!.bytes).toBe(Buffer.byteLength('地域\t人口\n東京\t14000000'))
+  })
+
+  it('reads a workbook of the format before 2007 as a workbook of the one after', async () => {
+    const workbook = xlsBuffer({
+      sheets: [{ name: '人口', cells: [cell.label(0, 0, '東京'), cell.number(0, 1, 14000000)] }],
+    })
+
+    await interpret(workbook, 'XLS')
+
+    expect(await written()).toEqual([
+      { loc: { sheet: 1, sheetName: '人口', rows: [1] }, text: '東京\t14000000' },
+    ])
+  })
+
+  it('reads a workbook saved as XLSX and published as .xls as an XLSX', async () => {
+    const workbook = await xlsxBuffer({ sheets: { 1: [[1, 2]] } })
+
+    await interpret(workbook, 'XLS')
+
+    expect(await written()).toEqual([{ loc: { sheet: 1, rows: [1] }, text: '1\t2' }])
   })
 
   it('fails, keeping nothing, on a file its parser cannot read', async () => {

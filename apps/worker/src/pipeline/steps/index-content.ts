@@ -24,9 +24,9 @@ import {
   type TableProfileLine,
 } from '@kukan/shared'
 import type { ContentDoc } from '@kukan/search-adapter'
-import type { PipelineContext } from '../types'
+import type { PipelineContext } from '../run/types'
 import type { InterpretedDocument, InterpretResult } from './interpret'
-import { documentTextLines } from '../document-text-lines'
+import { documentTextLines } from '../interpret/document/document-text-lines'
 import { streamToBuffer, streamUtf8Lines, zstdLines } from '../node-utils'
 import {
   bufferToUtf8,

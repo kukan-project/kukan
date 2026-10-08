@@ -267,6 +267,14 @@ export const XLSX_MAX_PART_BYTES = 512 * 1024 * 1024
  */
 export const XLSX_MAX_ENTRIES = 10_000
 
+/**
+ * UTF-8 bytes of text a document may come to. A cell or a slide can name the
+ * same text over and over — a shared string, a slide — so a small file can
+ * make text thousands of times its size for the index to take. The largest
+ * any real file here came to was 68 MB, from a 13 MB workbook.
+ */
+export const DOCUMENT_TEXT_MAX_BYTES = 256 * 1024 * 1024
+
 // ── Semantic Search Embedding (ADR-034) ──
 
 /** Maximum characters of the embedding source text — conservative bound for the

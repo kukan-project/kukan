@@ -23,9 +23,9 @@ import {
   transcodeToUtf8,
 } from '../node-utils'
 import { HeavyTooLargeError, runHeavy } from '@/heavy'
-import { countTitleRows } from './csv-title-rows'
-import type { PipelineContext } from '../types'
-import type { InterpretedProfile } from './csv-profile'
+import { countTitleRows } from './table/csv-title-rows'
+import type { PipelineContext } from '../run/types'
+import type { InterpretedProfile } from './table/csv-profile'
 import { MAX_CSV_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */

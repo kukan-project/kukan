@@ -11,16 +11,19 @@
 
 import { randomUUID } from 'crypto'
 import { createReadStream } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { rename, rm } from 'node:fs/promises'
 import {
   streamToBuffer,
   streamToTempFile,
   cleanupTempFile,
   siblingTempPath,
   readEncodingSample,
+  readHead,
 } from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
 import {
+  contentFormat,
+  FORMAT_SIGNATURE_BYTES,
   getPreviewKey,
   isCsvFormat,
   isDocumentFormat,
@@ -31,9 +34,9 @@ import type { NoTableReason, ResourceSchema, TableProfile } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
 import { runHeavy } from '@/heavy'
 // A type only: the parsers stay in the heavy process
-import type { ExtractedText } from './document-text'
+import type { ExtractedText } from '../interpret/document/document-text'
 import { extractZipManifest } from '../interpret/zip'
-import type { PipelineContext } from '../types'
+import type { PipelineContext } from '../run/types'
 import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline-service'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
@@ -108,8 +111,7 @@ export interface InterpretHooks {
 /**
  * Interpret the version's bytes by their format: a text format's encoding, a
  * CSV/TSV's Parquet preview and profile, a ZIP's manifest, a document's text.
- * Null for a format there is nothing to read from (an image, a legacy Office
- * file).
+ * Null for a format there is nothing to read from (an image).
  */
 export async function executeInterpret(
   resourceId: string,
@@ -256,10 +258,18 @@ async function interpretDocument(
   writeToken: string,
   ctx: PipelineContext
 ): Promise<InterpretedDocument> {
-  const fmt = format.toLowerCase()
-  const tempPath = await streamToTempFile(await ctx.storage.download(storageKey), fmt)
+  const declared = format.toLowerCase()
+  let tempPath = await streamToTempFile(await ctx.storage.download(storageKey), declared)
   const artifactPath = siblingTempPath(tempPath, 'text.ndjson.zst')
   try {
+    // Read as what the bytes are: an XLSX published as `.xls` is read as XLSX,
+    // and named so, as officeparser goes by the name
+    const fmt = contentFormat(declared, await readHead(tempPath, FORMAT_SIGNATURE_BYTES))
+    if (fmt !== declared) {
+      const renamed = siblingTempPath(tempPath, `data.${fmt}`)
+      await rename(tempPath, renamed)
+      tempPath = renamed
+    }
     // In the heavy process: parsing is where a document's memory goes
     const { bytes } = await runHeavy(
       { kind: 'extract-text', documentPath: tempPath, format: fmt, artifactPath },

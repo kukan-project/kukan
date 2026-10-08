@@ -202,5 +202,25 @@ describe('ResourcePreview', () => {
       render(<ResourcePreview resourceId="r1" format="XLS" />)
       expect(screen.queryByText('Preview is not available for this format')).not.toBeInTheDocument()
     })
+
+    it('offers an Ichitaro document as its extracted text, saying where to open the original', () => {
+      render(<ResourcePreview resourceId="r1" format="JTD" />)
+      expect(screen.getByText('Original')).toBeInTheDocument()
+      expect(screen.getByText('Extracted text')).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          'An Ichitaro document cannot be shown in the browser. Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). Its text can be read under Extracted text.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('offers the extracted text of the formats before 2007, as of the ones after', () => {
+      for (const format of ['XLS', 'DOC', 'PPT']) {
+        const { unmount } = render(<ResourcePreview resourceId="r1" format={format} />)
+        expect(screen.getByText('Original')).toBeInTheDocument()
+        expect(screen.getByText('Extracted text')).toBeInTheDocument()
+        unmount()
+      }
+    })
   })
 })

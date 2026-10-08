@@ -2083,7 +2083,7 @@ DuckLake の欠陥ではない** — v6 の内容は v5 のファイルに依存
 **`parquet_compression` を `zstd` にする**（`CALL lake.set_option('parquet_compression', 'zstd')`）。
 DuckLake は設定が無ければ圧縮オプションを渡さないので（`ducklake_insert.cpp` の
 `TryGetConfigOption("parquet_compression", ...)`）、**DuckDB の既定 = snappy で書かれる**。
-層 3 のプレビュー生成は既に zstd を明示しており（`interpret/csv.ts`）、層 2 だけが既定のまま
+層 3 のプレビュー生成は既に zstd を明示しており（`interpret/table/csv.ts`）、層 2 だけが既定のまま
 だった。
 
 実測（360 版・基底 2 万行、`parquet_metadata` で列チャンクとフッタ等に分解）:

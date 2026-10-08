@@ -13,7 +13,7 @@ import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
 import { getStorageKey } from '@kukan/shared'
-import { buildPipelineContext } from '../../pipeline/build-context'
+import { buildPipelineContext } from '../../pipeline/run/build-context'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()

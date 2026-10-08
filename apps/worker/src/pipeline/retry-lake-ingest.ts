@@ -20,7 +20,7 @@ import {
 } from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
 import { interruptsRun } from '../heavy/process'
-import type { PipelineContext } from './types'
+import type { PipelineContext } from './run/types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
 export async function retryLakeIngest(

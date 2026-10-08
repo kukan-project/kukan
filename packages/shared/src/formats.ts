@@ -22,6 +22,11 @@ const FORMAT_MAP: Record<string, string> = {
   odp: 'ODP',
   ods: 'ODS',
   rtf: 'RTF',
+  // Ichitaro, and its compressed forms, which are named but not read (ADR-051)
+  jtd: 'JTD',
+  jtt: 'JTT',
+  jtdc: 'JTDC',
+  jttc: 'JTTC',
   txt: 'TXT',
   html: 'HTML',
   htm: 'HTML',
@@ -56,6 +61,11 @@ const MIME_MAP: Record<string, string> = {
   odp: 'application/vnd.oasis.opendocument.presentation',
   ods: 'application/vnd.oasis.opendocument.spreadsheet',
   rtf: 'application/rtf',
+  // No IANA registration; the name PRONOM and Apache's mime.types give it
+  jtd: 'application/x-js-taro',
+  jtt: 'application/x-js-taro',
+  jtdc: 'application/x-js-taro',
+  jttc: 'application/x-js-taro',
   txt: 'text/plain',
   html: 'text/html',
   htm: 'text/html',
@@ -182,12 +192,24 @@ export function toCharset(encoding: string): string {
  * government servers routinely get wrong. A format absent from this table has
  * no verdict — {@link declaredFormatMismatch} answers `false` for it.
  */
+/** The first bytes of a ZIP archive, and so of an Office 2007 package. */
+export const ZIP_SIGNATURE = 'PK\x03\x04'
+
+/** The first bytes of a compound file (MS-CFB), the container of the Office formats before 2007. */
+export const COMPOUND_FILE_SIGNATURE = '\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
+
 const FORMAT_SIGNATURES: Record<string, readonly string[]> = {
   PDF: ['%PDF-'],
-  ZIP: ['PK\x03\x04'],
-  XLSX: ['PK\x03\x04'],
-  DOCX: ['PK\x03\x04'],
-  PPTX: ['PK\x03\x04'],
+  ZIP: [ZIP_SIGNATURE],
+  XLSX: [ZIP_SIGNATURE],
+  DOCX: [ZIP_SIGNATURE],
+  PPTX: [ZIP_SIGNATURE],
+  // Or the package that followed: a file saved as XLSX is published as `.xls` often enough
+  XLS: [COMPOUND_FILE_SIGNATURE, ZIP_SIGNATURE],
+  DOC: [COMPOUND_FILE_SIGNATURE, ZIP_SIGNATURE],
+  PPT: [COMPOUND_FILE_SIGNATURE, ZIP_SIGNATURE],
+  JTD: [COMPOUND_FILE_SIGNATURE],
+  JTT: [COMPOUND_FILE_SIGNATURE],
   PNG: ['\x89PNG\r\n'],
   JPEG: ['\xFF\xD8\xFF'],
   GIF: ['GIF87a', 'GIF89a'],
@@ -195,6 +217,10 @@ const FORMAT_SIGNATURES: Record<string, readonly string[]> = {
 
 /** Longest signature above — how many bytes a caller has to hold to ask */
 export const FORMAT_SIGNATURE_BYTES = 8
+
+function startOf(head: Uint8Array): string {
+  return String.fromCharCode(...head.subarray(0, FORMAT_SIGNATURE_BYTES))
+}
 
 /**
  * Whether these bytes cannot be what the resource says they are.
@@ -209,8 +235,22 @@ export const FORMAT_SIGNATURE_BYTES = 8
 export function declaredFormatMismatch(format: string | null, head: Uint8Array): boolean {
   const signatures = FORMAT_SIGNATURES[normalizeFormat(format ?? '')]
   if (!signatures || head.length === 0) return false
-  const start = String.fromCharCode(...head.subarray(0, FORMAT_SIGNATURE_BYTES))
+  const start = startOf(head)
   return !signatures.some((signature) => start.startsWith(signature))
+}
+
+/** The Office 2007 format that followed each before it. */
+const OFFICE_SUCCESSORS: Record<string, string> = { xls: 'xlsx', doc: 'docx', ppt: 'pptx' }
+
+/**
+ * The format a file's bytes are, where they settle it apart from what it is
+ * declared as: a legacy Office format (`xls`) whose bytes are a ZIP package is
+ * its successor (`xlsx`). Any other format is given back, lower-cased.
+ */
+export function contentFormat(format: string, head: Uint8Array): string {
+  const declared = format.toLowerCase()
+  const successor = OFFICE_SUCCESSORS[declared]
+  return successor && startOf(head).startsWith(ZIP_SIGNATURE) ? successor : declared
 }
 
 export const MAX_UPLOAD_SIZE_MB = 100
@@ -314,12 +354,33 @@ export function isOfficeFormat(format: string | null): boolean {
   return OFFICE_FORMATS.has(format.toLowerCase())
 }
 
-const DOCUMENT_FORMATS = new Set(['pdf', 'docx', 'xlsx', 'pptx', 'odt', 'odp', 'ods', 'rtf'])
+const DOCUMENT_FORMATS = new Set([
+  'pdf',
+  'docx',
+  'xlsx',
+  'pptx',
+  'doc',
+  'xls',
+  'ppt',
+  'jtd',
+  'jtt',
+  'odt',
+  'odp',
+  'ods',
+  'rtf',
+])
 
-/** Check if a format is a document that supports text extraction via officeparser */
+/** Check if a format is a document Interpret extracts text from */
 export function isDocumentFormat(format: string | null): boolean {
   if (!format) return false
   return DOCUMENT_FORMATS.has(format.toLowerCase())
+}
+
+/** Check if a format is an Ichitaro document Interpret reads (not its compressed forms) */
+export function isIchitaroFormat(format: string | null): boolean {
+  if (!format) return false
+  const f = format.toLowerCase()
+  return f === 'jtd' || f === 'jtt'
 }
 
 /** Check if a format is a PDF document */

@@ -9,7 +9,7 @@ import {
   type ColumnProfile,
   type TableProfileLine,
 } from '@kukan/shared'
-import { interpretCsv } from '../pipeline/interpret/csv'
+import { interpretCsv } from '../pipeline/interpret/table/csv'
 
 /**
  * Column roles (ADR-063), counted by DuckDB over a real interpretation — the

@@ -261,7 +261,7 @@ pnpm format        # Prettier フォーマット
 - テーブルプレビューの一枚化（閲覧=Range 配信 / 対話=クライアント計算、解析モードトグル廃止） → `docs/adr/jp/048-modeless-table-preview.md`（ADR-016 を置換）
 - マルチサイトの ALB 統合（共有 ALB + オリジンカスタムヘッダールーティング） → `docs/adr/jp/049-shared-alb-multi-site.md`（ADR-041 拡張）
 - リソースのセクション分け（`position` は 1 本のまま、`section` は表示ラベル、公開側は `/` で入れ子表示） → `docs/adr/jp/050-resource-section.md`
-- 一太郎文書のテキスト抽出（自前の複合文書パーサ、Ver.8 以降の非圧縮のみ、索引のみでプレビューは作らない、提案） → `docs/adr/jp/051-ichitaro-text-extraction.md`
+- 一太郎文書のテキスト抽出（自前の複合文書パーサ、Ver.8 以降の非圧縮のみ、原本のプレビューは作らず抽出テキストを出す） → `docs/adr/jp/051-ichitaro-text-extraction.md`
 - シェープファイルの地図プレビュー（ZIP 内の SHP を GeoJSON として解釈、提案・着手保留） → `docs/adr/jp/052-shapefile-map-preview.md`
 - リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない） → `docs/adr/jp/053-ai-resource-summary.md`
 - 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
@@ -332,6 +332,7 @@ Interpret のみフォーマット別処理を行う。
 | XLSX/XLS                       |      No      | スキップ                                     |      -       | Office Online Viewer  |
 | DOC/DOCX                       |      No      | スキップ                                     |      -       | Office Online Viewer  |
 | PPT/PPTX                       |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| JTD/JTT（一太郎）              |      No      | スキップ                                     |      -       |     抽出テキスト      |
 | ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |      -       |     ファイル一覧      |
 | PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |      -       |      img（本体）      |
 

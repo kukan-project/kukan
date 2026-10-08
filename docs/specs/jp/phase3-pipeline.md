@@ -369,7 +369,7 @@ interface PipelineContext {
 }
 ```
 
-`PipelineContext` の組み立ては `apps/worker/src/pipeline/build-context.ts` の `buildPipelineContext()` で行う。アクセサは Drizzle ORM クエリで直接実装。
+`PipelineContext` の組み立ては `apps/worker/src/pipeline/run/build-context.ts` の `buildPipelineContext()` で行う。アクセサは Drizzle ORM クエリで直接実装。
 
 ### 6.5 パイプラインステップ
 
@@ -434,7 +434,7 @@ async function processResource(
 **パイプライン管理クラスの分離:**
 
 - `PipelineService`（API 側: `packages/api/src/services/pipeline-service.ts`）— enqueue, getStatus
-- `StepTracker`（Worker 側: `apps/worker/src/pipeline/step-tracker.ts`）— startPipeline, startStep, completeStep, failStep, skipStep, updateStatus, updateExtractResult
+- `StepTracker`（Worker 側: `apps/worker/src/pipeline/run/step-tracker.ts`）— startPipeline, startStep, completeStep, failStep, skipStep, updateStatus, updateExtractResult
 
 ### 6.7 Fetch ステップ
 

@@ -16,7 +16,7 @@ import {
 } from '@kukan/shared'
 import { HopRefusedError, discardBody, safeFetch } from '@/safe-fetch'
 import { HASH_PREFIX, digestStream } from '@kukan/shared/hash-node'
-import type { PipelineContext } from '../types'
+import type { PipelineContext } from '../run/types'
 import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
 
 const SIZE_LIMIT_MSG = `Resource exceeds ${MAX_FETCH_SIZE / 1024 / 1024}MB limit`

@@ -4,7 +4,7 @@ import { DuckDBInstance } from '@duckdb/node-api'
 describe('DuckDB casting a sign alone (duckdb/duckdb#26532)', () => {
   it('still reads a sign followed by spaces as the integer 0', async () => {
     // The CSV interpretation works around this (`signOnlyCandidates` in
-    // `interpret/csv.ts`). When this fails, DuckDB has fixed the cast: remove
+    // `interpret/table/csv.ts`). When this fails, DuckDB has fixed the cast: remove
     // the workaround and this test. The re-read of columns a cast refused stays,
     // since it is right whatever the cast does.
     const conn = await (await DuckDBInstance.create(':memory:')).connect()

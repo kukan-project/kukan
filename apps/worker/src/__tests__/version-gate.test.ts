@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { VersionIdentity } from '@kukan/shared'
-import { decideVersionCreate } from '../pipeline/version-gate'
+import { decideVersionCreate } from '../pipeline/run/version-gate'
 
 /** The object a run published; the row still names it unless someone overtook. */
 const KEY = 'resources/pkg-1/res-1.run-a'

@@ -1,17 +1,30 @@
 > **Note**: This is a machine-translated version of the original Japanese ADR for reference purposes. The authoritative version is [`jp/051-ichitaro-text-extraction.md`](../jp/051-ichitaro-text-extraction.md).
 
-# ADR-051: Text Extraction for Ichitaro Documents (In-House Compound-File Parser, Indexing Only)
+# ADR-051: Text Extraction for Ichitaro Documents (In-House Compound-File Parser, Ver.8 and Later Uncompressed Only)
 
 ## Status
 
-**Proposed** — drafted 2026-09-11.
+**Accepted** — drafted 2026-09-11; revised to match the implementation and accepted 2026-10-08.
 
-Put the body text of Ichitaro documents (`.jtd` / `.jtt`) **into the search index**.
-Extract it with a small compound-file (OLE2) parser in the worker rather than an
-off-the-shelf library. Cover only the uncompressed formats of Ichitaro Ver.8 and later;
-the compressed formats (`.jtdc` / `.jttc`) and everything before Ver.7 are out of scope.
-**No preview is produced** — this ADR buys the ability to find content, nothing about
-reproducing its appearance.
+Extract the body text of Ichitaro documents (`.jtd` / `.jtt`) **into the same document text
+artifact as other documents**. Extract it with a small compound-file (OLE2) parser in the
+worker rather than an off-the-shelf library. Cover only the uncompressed formats of Ichitaro
+Ver.8 and later; the compressed formats (`.jtdc` / `.jttc`) and everything before Ver.7 are
+out of scope. **No preview of the original's appearance is produced**; the extracted text's
+preview appears as it does for other documents.
+
+> **Revised since the draft (2026-10-08).** After the draft, a document's text came to be
+> extracted by Interpret into a located artifact (`text.ndjson.zst`) that Index, the text
+> head, the extracted-text preview and the MCP section reader all read, and extracting
+> the legacy Office formats produced an in-house compound-file reader. Accordingly:
+>
+> - Extraction sits in Interpret's document text extraction, not in place of officeparser in Index (decision 2)
+> - npm `cfb` is not added; the compound-file reader shared with legacy Office is used (option B)
+> - The text's extent comes from `TextV.01`'s length, and records are skipped by their length
+>   (decision 3), following observations in OpenJTD's RFC 0003 made after the draft
+> - Readings and template instructions go at the end of their line, not where they stand (decision 5)
+> - No parse size cap of Ichitaro's own (decision 6)
+> - The extracted-text preview is shown (decision 7; resolves open item 4)
 
 ## Context
 
@@ -116,9 +129,11 @@ catalog keeps holding content nobody can find.
 
 ### B) Add an in-house compound-file parser (chosen)
 
-Open the compound file with `cfb` and read `DocumentText` and `LayoutBoxText` in a worker
-function. One new dependency, under 100 lines of code. Format knowledge comes from
-OpenJTD's public specification notes; no independent reverse engineering.
+Open the compound file and read `DocumentText` and `LayoutBoxText` in a worker function. The
+draft planned to add npm `cfb`; extracting the legacy Office formats (XLS, DOC, PPT) produced
+an in-house compound-file reader (`legacy/compound-file.ts`), which this shares, adding no
+dependency. Format knowledge comes from OpenJTD's public specification notes; no independent
+reverse engineering.
 
 ### C) Use OpenJTD via WASM or a sidecar
 
@@ -148,64 +163,81 @@ has no LHA lh5 decompressor, and the pre-Ver.8 files are not compound files at a
 Registering now means at least showing "this is Ichitaro", and means adding extraction
 later does not change the meaning of existing data.
 
-### 2. `ContentType` is `document`; reuse the existing path
+### 2. Write the same document text artifact as other documents
 
-Add `jtd` / `jtt` to `isDocumentFormat`. That makes the Index step's branch, the text-head
-artifact, the draft handling, and the AI-suggestion material check all work **unchanged**.
-The predicate's doc comment, which says "formats officeparser can extract", no longer
-matches reality and becomes "formats whose text can be extracted from a binary document".
-No new `ContentType` is added: from the search side there is no reason to distinguish PDF
-from Ichitaro.
+Add `jtd` / `jtt` to `isDocumentFormat`. Interpret writes the document text artifact, and
+Index (`ContentType` `document`), the text head (material for AI metadata suggestions and
+summaries), draft handling, the extracted-text preview and the MCP section reader **all read it
+unchanged**. No new `ContentType` — search has no reason to tell a PDF from Ichitaro.
 
-Becoming eligible for AI metadata suggestions is an **intended** effect. The suggestion
-side keys off the presence of the text-head artifact, so no extra branch is needed.
+Entering AI metadata suggestions automatically is **the intended effect**.
+
+The artifact is one block with neither pages nor headings: what marks page breaks and
+paragraph headings lives in other streams not yet decoded.
 
 ### 3. Read two streams: `DocumentText` and `LayoutBoxText`
 
-`LayoutBoxText` is read because in newer forms some headings exist only there. OpenJTD does
-not currently read this stream, so this is the one place the in-house parser is ahead. Join
-both into a single text, `DocumentText` first.
+`LayoutBoxText` is read because newer versions keep some form headings only there. Both are
+concatenated into one text, `DocumentText` first.
+
+The reading follows OpenJTD's RFC 0003:
+
+- A stream opens with `SsmgV.01`; where it has a `TextV.01` block, the next 4 bytes (big-endian)
+  give the text's length in UTF-16 units. **The text ends at that length**, and the style section
+  after it is not read. An older version with no block is read whole by the rules below
+- Text runs from a `0x001F` to the next control code; line breaks, CRs and tabs do not end it
+- A record starting at `0x001C` gives its kind in its second unit and its length up to the
+  `0x001F` it ends in in its third. **Records are skipped by their length** — their parameters
+  hold printable values and `0x001D` too, so reading control codes one at a time mixes formatting
+  into the text
+- A non-inline record between runs of text is a table cell's end and becomes a tab; `0x000E`
+  (a table row) and `0x000C` (a page break) become line breaks
 
 ### 4. Drop formatting data with a line-level plausibility filter
 
-For each extracted line, **drop the line when the share of non-whitespace characters inside
-the kana / kanji / fullwidth / ASCII ranges falls below 0.5**. Line level rather than
-character level, for two reasons:
+For each extracted line, **drop it if under 0.5 of its non-whitespace characters fall in the
+ranges Japanese documents are written in**: ASCII; symbols (punctuation, arrows, circled
+numbers, box drawing, shapes); CJK symbols, kana and kanji (with their extensions, past the BMP
+too); full and half widths. Symbols were added to the draft's "kana, kanji, full-width, ASCII"
+so lines of only circled numbers or rules are not dropped. Lines, not characters, for two
+reasons:
 
-- Dropping per character also strips symbols and foreign words embedded in real text. At
-  line level, a sentence that genuinely contains Greek survives and a purely binary line
-  disappears
-- The katakana middle dot (`・`) and the prolonged sound mark (`ー`) have Unicode Script
-  `Common`, not `Katakana`. A Script-property test damages real text. **Test by code point
-  range**
+- Dropping per character would also strip symbols and foreign words embedded in body text.
+  Per line, a body line that really contains Greek letters survives while a binary-only line
+  goes
+- The middle dot (`・`) and the prolonged sound mark (`ー`) have Unicode Script Common, not
+  Katakana. A Script-property test breaks body text. **Test by code-point range**
 
-The 0.5 threshold takes the middle of the gap the measurements showed; anything from 0.5 to
-0.8 behaves identically.
+The 0.5 threshold sits mid-gap in the measurements; anything from 0.5 to 0.8 gives the same
+result. Newer versions, read by their length-delimited blocks, carry almost no formatting under
+decision 3; the filter mainly matters for older versions with no block.
 
-### 5. Include inline text in the index
+### 5. Include inline text in the index, readings at the end of their line
 
-OpenJTD splits the `0x001D`–`0x001E` region into visible text and ruby / template
-instruction text and drops the latter. KUKAN **keeps both without selecting**. In the forms
-measured, this region held form content such as "ア", "イ", and "印", a handful per file.
-A few extra characters in the index do less harm than losing body text. In documents that
-do use ruby, the readings also land in the index, which helps recall rather than hurting
-it.
+An inline is a record of kind 1 holding characters between `0x001D` and `0x001E`. A fourth unit
+of 0 is what is shown (a ruby's base, a form field's `○○○`); 1 is a reading or a template's
+instruction. KUKAN **indexes both rather than discarding the latter**, but **puts the latter at
+the end of its line, not where it stands**: there, `午后の授業` would become `午后ごごの授業` and
+miss a phrase search. At the end of the line, a reading still finds the document.
 
-### 6. Cap the size that gets parsed
+### 6. No parse size cap of Ichitaro's own
 
-Parsing a compound file loads the whole file into memory. Ichitaro forms are normally under
-1 MB, so **put a parse cap in the worker config**, separate from the fetch cap (100 MB),
-and record rather than index anything above it. The existing document path has no such cap;
-this format gets one first.
+Parsing a compound file loads the whole file. The draft planned a cap for Ichitaro alone, but
+extraction runs in the heavy child process (ADR-059), and the fetch limit (100 MB) and the cap
+on a document's total text (`DOCUMENT_TEXT_MAX_BYTES`, 256 MB) apply to every document. Ichitaro
+forms are usually under 1 MB; a cap per format no longer earns its place.
 
-### 7. Produce no preview
+### 7. No preview of the original; the extracted text's preview is shown
 
-Ichitaro previews stay "not available", because no means of reproducing the layout exists
-today. OpenJTD's PDF export is blank (each page's content stream is only a white
-rectangle), and its SVG export is a text flow at a fixed line pitch with no rules and no
-frames. Given that Ichitaro files are mostly forms, a preview without rules reads as a
-different document from the original. Emitting a text-only preview is an option, but it
-sits outside this ADR and is decided separately.
+There is no way to reproduce the original's appearance today. OpenJTD's PDF output is blank
+(content streams contain only white rectangles) and its SVG output is fixed-pitch text flow with
+no rules or frames. Given that Ichitaro files are mostly forms, a preview without rules looks
+like a different document.
+
+The extracted text is shown in the "extracted text" preview, as for other documents. The draft
+left this as a separate decision (open item 4); with the document text artifact and its preview
+now common to every document, there is no reason to leave Ichitaro out. That the text carries no
+rules is true of every document's extracted text.
 
 ## Trade-offs
 
@@ -221,24 +253,25 @@ sits outside this ADR and is decided separately.
   and can appear in a distribution. Having put it out of scope, users need to see that
   compressed Ichitaro files are not indexed
 
-## Impact (what implementation touches)
+## Impact (where it was implemented)
 
-- `packages/shared/src/formats.ts`: `jtd` / `jtt` (and, as out-of-scope entries, `jtdc` /
-  `jttc`) in `FORMAT_MAP` and `MIME_MAP`. Use `application/x-js-taro` as the MIME type —
-  unregistered with IANA, but the type PRONOM and Apache convention use. Add `jtd` / `jtt`
-  to `isDocumentFormat` and correct its doc comment
-- `apps/worker/src/pipeline/ichitaro.ts` (new): a pure function that takes a Buffer and
-  returns the body text, touching neither storage nor the database
-- `apps/worker/src/pipeline/steps/index-content.ts`: branch `extractDocumentText` on format
-  and route Ichitaro to that function. Without the branch, officeparser always throws
-- `apps/worker/package.json`: add `cfb`
-- `apps/worker/src/config.ts`: the parse size cap
-- `apps/worker/src/__tests__/`: unit tests for extraction, with inputs **synthesized using
-  `cfb`** — building a compound file with the signature, text runs, an inline region, and a
-  binary line inside the test pins the rules without putting third-party documents in the
-  repository
-- `packages/shared/src/__tests__/formats.test.ts`: the new predicate cases
-- `CLAUDE.md`: a row in the per-format pipeline matrix
+- `packages/shared/src/formats.ts`: `jtd` / `jtt` (and, out of scope, `jtdc` / `jttc`) in
+  `FORMAT_MAP` and `MIME_MAP`. The MIME type is `application/x-js-taro` — not IANA-registered,
+  but used by PRONOM and Apache convention. `jtd` / `jtt` in `isDocumentFormat`, the
+  compound-file signature in `FORMAT_SIGNATURES`
+- `apps/worker/src/pipeline/interpret/document/legacy/jtd.ts` (new): a pure function taking a
+  Buffer and returning a string, touching neither storage nor the DB
+- `apps/worker/src/pipeline/interpret/document/document-text.ts`: branch by format, routing
+  Ichitaro to the function above
+- `apps/worker/src/__tests__/`: extraction unit tests. **Inputs are built in the test** —
+  compound files with the signature, length-delimited blocks, records, inlines and a style
+  section pin the rules without committing third-party documents
+- `packages/shared/src/__tests__/formats.test.ts`: the added predicates
+- `CLAUDE.md`: a row in the pipeline per-format matrix
+
+Checked against real files (2026-10-08): text came out of all 21 forms published by Hokkaido,
+Saitama and Tokushima (15 with length-delimited blocks, 6 without). The one piece of formatting
+left was a check mark from a symbol font, stored as a character.
 
 ## Open Items
 
@@ -247,11 +280,13 @@ sits outside this ADR and is decided separately.
    the public specification notes
 2. **Whether to add pre-Ver.8 formats later.** The body is plain Shift_JIS so extraction is
    light, but Ver.8 shipped 29 years ago and no real files have been verified
-3. **The value of the parse size cap.** A few MB suffices for real forms, but whether to
-   align it with the existing document path is an implementation-time call
-4. **A text preview.** Serving the extracted text as a preview artifact would put Ichitaro
-   in the same shape as the ZIP manifest and make content readable. Treat it as a separate
-   decision once indexing works
+3. **Pages and headings.** The artifact is one block with no location. Page breaks and
+   paragraph formatting live in other streams (`DocumentTextPositionTables` among them); as
+   their decoding progresses, pages and headings can be looked up as for a PDF
+4. **A way to draw the original in the browser.** Since the draft, an open-source engine that
+   shows Ichitaro in the browser alone (WebAssembly, MIT) has been published. It draws ruled
+   tables and ruby too, but the project has only just begun. Trial it for the quality of what it
+   shows, its size and its effect on the CSP, and revise decision 7 if it is adopted
 5. **How this surfaces to users.** Where and how to say that Ichitaro is an indexed format
    and that the compressed variants are not
 
@@ -260,7 +295,9 @@ sits outside this ADR and is decided separately.
 - ADR-021 (resource content full-text search): where this ADR adds material
 - ADR-039 (draft state) / ADR-040 (AI metadata suggestions): text-head artifact handling and
   suspending search indexing for drafts, both applying unchanged through the `document` path
-- ADR-046 (Interpret stage): Ichitaro has no Interpret work. It produces neither a preview
-  artifact nor a schema, so the stage passes it through
-- ADR-048 (single-surface table preview): the stance behind producing no preview, that
-  appearance is built head-on per format
+- ADR-046 (Interpret stage): Ichitaro's text, like other documents', is extracted by
+  Interpret from the version file into the artifact
+- ADR-048 (single-surface table preview): the stance behind producing no preview of the
+  original, that appearance is built head-on per format
+- ADR-059 (heavy child process): where extraction runs, and one reason for no parse cap of
+  Ichitaro's own

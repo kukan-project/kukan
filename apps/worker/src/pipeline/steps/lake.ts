@@ -15,8 +15,8 @@
  */
 
 import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
-import { RunCancelledError } from '../step-tracker'
-import type { PipelineContext } from '../types'
+import { RunCancelledError } from '../run/step-tracker'
+import type { PipelineContext } from '../run/types'
 
 /** `failed` carries what a retry needs; the caller queues it (ADR-043). */
 export type LakeStepResult =
