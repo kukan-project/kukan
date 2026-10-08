@@ -4,3 +4,6 @@ site/src/pages/index.astro
 
 # Vendored third-party assets (DuckDB-WASM minified workers) — not formatted.
 apps/web/public/duckdb/
+
+# Vendored EZPZ File JTD build (wasm-bindgen glue) — not formatted.
+apps/web/public/vendor/

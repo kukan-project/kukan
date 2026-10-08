@@ -1,7 +1,11 @@
 /**
  * The text of an Ichitaro document (`.jtd`, `.jtt`) of Ver.8 or later (ADR-051),
- * read from its `DocumentText` stream and then its `LayoutBoxText`, where newer
- * versions keep the text of their layout boxes. The format has no published
+ * a sheet at a time, each read from its `DocumentText` stream and then its
+ * `LayoutBoxText`, where newer versions keep the text of their layout boxes.
+ * The first sheet's streams are at the top of the file, and each sheet after
+ * it in a storage under `ObjectSheets/DocSheet/`, taken in the order of their
+ * names — the order EZPZ File JTD shows them in, so the preview's sheet
+ * numbers are the text's. The format has no published
  * specification: what is read follows the OpenJTD project's observations
  * (RFC 0003, Apache-2.0), not a reverse engineering of our own.
  *
@@ -43,11 +47,31 @@ const ANNOTATION = 1
  */
 const TEXT_SHARE = 0.5
 
-/** The document's text, its paragraphs a line each; throws where it cannot read it. */
-export function jtdText(bytes: Buffer): string {
+/** Where a sheet after the first keeps its streams: `ObjectSheets/DocSheet/DOCS_0001/`. */
+const SHEET_STORAGE = /^(ObjectSheets\/DocSheet\/[^/]+\/)DocumentText$/i
+
+/** Each sheet's text, its paragraphs a line each; throws where it cannot read it. */
+export function jtdSheets(bytes: Buffer): string[] {
   const file = readCompoundFile(bytes)
-  const streams = STREAMS.map((name) => file.stream(name))
-  if (!streams[0]) throw new Error('JTD has no DocumentText stream')
+  const storages = file
+    .paths()
+    .flatMap((path) => SHEET_STORAGE.exec(path)?.[1] ?? [])
+    .sort()
+  // A writer gives each sheet's streams sectors of their own, so all of them
+  // together fit in the file. Past that, many sheets name the same sectors:
+  // read for each, they would make text without bound in what the file holds
+  let budget = bytes.length
+  return ['', ...storages].map((storage) => {
+    const streams = STREAMS.map((name) => file.stream(storage + name))
+    if (!storage && !streams[0]) throw new Error('JTD has no DocumentText stream')
+    budget -= streams.reduce((sum, stream) => sum + (stream?.length ?? 0), 0)
+    if (budget < 0) throw new Error('JTD sheets read the same text over and over')
+    return sheetText(streams)
+  })
+}
+
+/** The text of a sheet, from its `DocumentText` and `LayoutBoxText` streams. */
+function sheetText(streams: (Buffer | undefined)[]): string {
   const parts: string[] = []
   for (const stream of streams) {
     if (!stream) continue

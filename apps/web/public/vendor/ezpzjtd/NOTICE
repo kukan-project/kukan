@@ -1,0 +1,23 @@
+EZPZ File JTD
+Copyright 2026 EZPZ File (https://ezpzfile.com)
+
+This project reads documents produced by JustSystems Ichitaro (一太郎).
+It is not affiliated with or endorsed by JustSystems Corporation.
+"一太郎" and "Ichitaro" are trademarks of JustSystems Corporation.
+
+The format was reverse-engineered from public files only. We built on the
+published research of:
+  - OpenJTD  https://github.com/KimEJ/OpenJTD   (Apache-2.0), RFC 0001-0009
+  - Tika-JTD https://github.com/KHiyowa/Tika-JTD (Apache-2.0), RFC 0001-0011
+No code was copied from those projects; findings are cited in docs/spec.
+
+User interface assets
+  - Icons: Lucide (https://lucide.dev), ISC License.
+      Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of
+      Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+      Permission to use, copy, modify, and/or distribute this software for any purpose
+      with or without fee is hereby granted, provided that the above copyright notice
+      and this permission notice appear in all copies.
+  - UI font: Pretendard (SIL Open Font License 1.1), loaded from jsDelivr when online.
+  - EZPZ File logos (docs/images/ezpz_*.svg and the editor's logo): (c) EZPZ File.
+    Not covered by the code licence (LICENSE).

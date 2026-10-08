@@ -17,3 +17,5 @@ infra
 docs
 *.md
 !pnpm-workspace.yaml
+# Rust build output of the Ichitaro viewer; its build is committed under apps/web/public/vendor
+apps/web/wasm/*/target

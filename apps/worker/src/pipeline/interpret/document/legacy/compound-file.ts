@@ -1,8 +1,9 @@
 /**
  * The streams of a compound file (MS-CFB), the container the legacy Office
- * formats — XLS, DOC, PPT — and Ichitaro keep their parts in. Only the
- * streams at the top of the file are reachable: each of those formats keeps
- * its text there.
+ * formats — XLS, DOC, PPT — and Ichitaro keep their parts in. A stream is
+ * reached by its path, its storages' names before its own: each of those
+ * formats keeps its text at the top of the file, but an Ichitaro document
+ * keeps a sheet after its first in a storage of its own.
  *
  * The file is read whole: what a format needs of a stream is scattered across
  * it, and the formats that reach here are bounded by the fetch limit. A
@@ -23,12 +24,25 @@ const DIRECTORY_ENTRY_BYTES = 128
 const HEADER_DIFAT_ENTRIES = 109
 const NO_STREAM = 0xffffffff
 
+/**
+ * Storages within storages a path may pass through. An Ichitaro document's
+ * deepest is 6; past this a path's names, each repeating its parent's, would
+ * grow with the square of the nesting.
+ */
+const MAX_DEPTH = 32
+
+const STORAGE = 1
 const STREAM = 2
 const ROOT = 5
 
 export interface CompoundFile {
-  /** A stream at the top of the file, by name, ignoring case; undefined where there is none. */
-  stream(name: string): Buffer | undefined
+  /**
+   * A stream by its path (`DocumentText`, `ObjectSheets/DocSheet/DOCS_0001/DocumentText`),
+   * ignoring case; undefined where there is none.
+   */
+  stream(path: string): Buffer | undefined
+  /** The paths of the file's streams, as `stream` takes them. */
+  paths(): string[]
 }
 
 /** Read the compound file `bytes` is, or throw where it is not one or is broken. */
@@ -56,10 +70,19 @@ export function readCompoundFile(bytes: Buffer): CompoundFile {
   }
   const entriesPerSector = sectorSize / 4
 
-  /** The sectors of a chain from `first`, each at most once: a loop is a broken file. */
-  const chain = (first: number, next: (n: number) => number, limit: number): number[] => {
+  /**
+   * The sectors of a chain from `first`, each at most once: a loop is a broken
+   * file. A stream's chain is walked only as far as its size needs (`wanted`):
+   * one running on past it would otherwise be walked whole for a few bytes.
+   */
+  const chain = (
+    first: number,
+    next: (n: number) => number,
+    limit: number,
+    wanted = Infinity
+  ): number[] => {
     const sectors: number[] = []
-    for (let n = first; n !== END_OF_CHAIN; n = next(n)) {
+    for (let n = first; n !== END_OF_CHAIN && sectors.length < wanted; n = next(n)) {
       if (n > MAX_REGULAR_SECTOR || sectors.length >= limit) {
         throw new Error('Compound file has a broken sector chain')
       }
@@ -92,14 +115,15 @@ export function readCompoundFile(bytes: Buffer): CompoundFile {
     if (n * 4 + 4 > fat.length) throw new Error(`Compound file sector ${n} is not in its FAT`)
     return fat.readUInt32LE(n * 4)
   }
-  /** The bytes of the chain of sectors from `first`. */
-  const chainBytes = (first: number) => {
-    const sectors = chain(first, nextSector, sectorCount)
+  /** The bytes of the chain of sectors from `first`, or of its first `wanted`. */
+  const chainBytes = (first: number, wanted?: number) => {
+    const sectors = chain(first, nextSector, sectorCount, wanted)
     if (sectors.some((n) => n >= sectorCount))
       throw new Error('Compound file sector is past its end')
     return gather(bytes, sectors, sectorSize, sectorSize)
   }
-  const read = (first: number, size: number) => fitted(chainBytes(first), size)
+  const read = (first: number, size: number) =>
+    fitted(chainBytes(first, Math.ceil(size / sectorSize)), size)
 
   const directory = chainBytes(bytes.readUInt32LE(0x30))
   const entryCount = Math.floor(directory.length / DIRECTORY_ENTRY_BYTES)
@@ -121,18 +145,24 @@ export function readCompoundFile(bytes: Buffer): CompoundFile {
   const root = entry(0)
   if (root.type !== ROOT) throw new Error('Compound file has no root entry')
 
-  // The root's children, a tree by name: walked, not searched, as a writer may not balance it
-  const streams = new Map<string, ReturnType<typeof entry>>()
-  const pending = root.child === NO_STREAM ? [] : [root.child]
+  // A storage's children, a tree by name: walked, not searched, as a writer may
+  // not balance it. An entry is reached once at most, whatever storage names it
+  const streams = new Map<string, { path: string; start: number; size: number }>()
+  const pending: [number, string, number][] = root.child === NO_STREAM ? [] : [[root.child, '', 0]]
   const visited = new Set<number>()
   while (pending.length > 0) {
-    const i = pending.pop()!
+    const [i, parent, depth] = pending.pop()!
     if (visited.has(i)) throw new Error('Compound file directory has a loop')
     visited.add(i)
     const e = entry(i)
-    if (e.type === STREAM) streams.set(e.name.toLowerCase(), e)
-    if (e.left !== NO_STREAM) pending.push(e.left)
-    if (e.right !== NO_STREAM) pending.push(e.right)
+    const path = parent + e.name
+    if (e.type === STREAM) streams.set(path.toLowerCase(), { path, ...e })
+    if (e.type === STORAGE && e.child !== NO_STREAM) {
+      if (depth >= MAX_DEPTH) throw new Error('Compound file storages nest too deep')
+      pending.push([e.child, `${path}/`, depth + 1])
+    }
+    if (e.left !== NO_STREAM) pending.push([e.left, parent, depth])
+    if (e.right !== NO_STREAM) pending.push([e.right, parent, depth])
   }
 
   const miniCutoff = bytes.readUInt32LE(0x38)
@@ -155,19 +185,20 @@ export function readCompoundFile(bytes: Buffer): CompoundFile {
         throw new Error(`Compound file mini sector ${n} is not in its FAT`)
       return miniFat.readUInt32LE(n * 4)
     }
-    const sectors = chain(first, next, limit)
+    const sectors = chain(first, next, limit, Math.ceil(size / MINI_SECTOR_BYTES))
     if (sectors.some((n) => n >= limit))
       throw new Error('Compound file mini sector is past its end')
     return fitted(gather(stream, sectors, MINI_SECTOR_BYTES, 0), size)
   }
 
   return {
-    stream(name) {
-      const e = streams.get(name.toLowerCase())
+    stream(path) {
+      const e = streams.get(path.toLowerCase())
       if (!e) return undefined
       if (e.size === 0) return Buffer.alloc(0)
       return e.size < miniCutoff ? readMini(e.start, e.size) : read(e.start, e.size)
     },
+    paths: () => [...streams.values()].map((e) => e.path),
   }
 }
 

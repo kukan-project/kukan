@@ -26,7 +26,9 @@ import {
   chartSubstream,
   EOF_RECORD,
   jtd,
+  cutShort,
   jtdBuffer,
+  sharingSectors,
   jtdStream,
   docBuffer,
   ppt,
@@ -1598,6 +1600,73 @@ describe('Ichitaro', () => {
       })
     )
     expect(await lines(path, 'jtd')).toEqual(['本文\n見出し\n枠の中'])
+  })
+
+  it('reads a sheet after the first from its storage, a block a sheet in the order of their names', async () => {
+    const path = await file(
+      'sheets.jtd',
+      jtdBuffer({
+        DocumentText: jtdStream({ blocks: [['表紙']] }),
+        'ObjectSheets/DocSheet/DOCS_0002/DocumentText': jtdStream({ blocks: [['三枚目']] }),
+        'ObjectSheets/DocSheet/DOCS_0001/DocumentText': jtdStream({ blocks: [['二枚目']] }),
+        'ObjectSheets/DocSheet/DOCS_0001/LayoutBoxText': jtdStream({ blocks: [['枠']] }),
+        'ObjectSheets/DocSheet/DocItemInfo': Buffer.alloc(8),
+      })
+    )
+    expect(await blocks(path, 'jtd')).toEqual([
+      { loc: { sheet: 1 }, text: '表紙' },
+      { loc: { sheet: 2 }, text: '二枚目\n枠' },
+      { loc: { sheet: 3 }, text: '三枚目' },
+    ])
+  })
+
+  it('refuses sheets that read the same text over and over', async () => {
+    // Read for each sheet, one large stream would make text out of proportion to the file
+    const sheets = Object.fromEntries(
+      Array.from({ length: 4 }, (_, i) => [
+        `ObjectSheets/DocSheet/DOCS_000${i}/DocumentText`,
+        jtdStream({ blocks: [['枚']] }),
+      ])
+    )
+    const path = await file(
+      'shared.jtd',
+      sharingSectors(
+        jtdBuffer({ DocumentText: jtdStream({ blocks: [['本文'.repeat(5_000)]] }), ...sheets }),
+        'DocumentText'
+      )
+    )
+    await expect(blocks(path, 'jtd')).rejects.toThrow('over and over')
+  })
+
+  it('reads a stream only as far as its size, not on along its chain', async () => {
+    // Walked whole for a few bytes, a long chain named by many sheets would go uncounted
+    const body = jtdStream({ blocks: [['本'.repeat(3_000)]] })
+    const path = await file(
+      'cut.jtd',
+      cutShort(jtdBuffer({ DocumentText: body }), 'DocumentText', 4_608)
+    )
+    const [block] = await blocks(path, 'jtd')
+    expect(block!.text).toMatch(/^本+$/)
+  })
+
+  it('refuses storages nested past any document', async () => {
+    const deep = `${Array.from({ length: 40 }, (_, i) => `S${i}`).join('/')}/DocumentText`
+    const path = await file(
+      'deep.jtd',
+      jtdBuffer({ DocumentText: jtdStream({ blocks: [['本文']] }), [deep]: Buffer.alloc(4) })
+    )
+    await expect(blocks(path, 'jtd')).rejects.toThrow('nest too deep')
+  })
+
+  it('leaves out an empty sheet, the others keeping their numbers', async () => {
+    const path = await file(
+      'empty-sheet.jtd',
+      jtdBuffer({
+        DocumentText: jtdStream({ blocks: [[]] }),
+        'ObjectSheets/DocSheet/DOCS_0000/DocumentText': jtdStream({ blocks: [['二枚目']] }),
+      })
+    )
+    expect(await blocks(path, 'jtd')).toEqual([{ loc: { sheet: 2 }, text: '二枚目' }])
   })
 
   it("reads an older version's text from its markers, leaving out the lines that are not text", async () => {

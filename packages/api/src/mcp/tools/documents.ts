@@ -161,7 +161,10 @@ const KIND_PLURAL: Record<UnitKind, string> = { page: 'Pages', slide: 'Slides', 
 function outlineIntro({ units, entries }: DocumentOutline): string {
   const kind = units?.kind
   if (kind === 'sheet') {
-    return "Sheets with their rows. Give a sheet's name as heading, or its number as from/to, to get_document_section:"
+    // An Ichitaro document's sheets have no rows, nor names
+    return entries.some((e) => e.rows)
+      ? "Sheets with their rows. Give a sheet's name as heading, or its number as from/to, to get_document_section:"
+      : 'Sheets. Give their numbers as from/to to get_document_section:'
   }
   if (entries.length === 0) {
     return kind
@@ -210,7 +213,11 @@ function outlineLines(
       e.title.length > MCP_OUTLINE_TITLE_CHARS
         ? `${e.title.slice(0, MCP_OUTLINE_TITLE_CHARS)}…`
         : e.title
-    const line = `${width ? `${labels[i]!.padEnd(width)}  ` : ''}${'  '.repeat(e.depth)}${title}${e.rows ? `  (${span('row', e.rows)})` : ''}`
+    // A sheet with no name is titled by its number, which its label already gives
+    const line =
+      title === labels[i]
+        ? title
+        : `${width ? `${labels[i]!.padEnd(width)}  ` : ''}${'  '.repeat(e.depth)}${title}${e.rows ? `  (${span('row', e.rows)})` : ''}`
     if (chars + line.length > MCP_OUTLINE_MAX_CHARS) break
     listed.push(line)
     chars += line.length + 1
@@ -308,7 +315,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
       description:
         "List a document resource's headings (PDF bookmarks, Word heading styles, slide titles) or a workbook's sheets, each with the pages, slides or rows it spans, and how many pages it has. " +
         'For PDF, Word, PowerPoint and Excel files, the formats before 2007 (DOC, PPT, XLS) included, and Ichitaro (JTD, JTT); not for CSV (use get_resource_schema and query_resource for those tables). ' +
-        'A DOC or an Ichitaro file marks no headings a reader of it can find: its text is one block. ' +
+        "A DOC or an Ichitaro file marks no headings a reader of it can find: its text is one block, an Ichitaro file's a block a sheet where it has several. " +
         'Call it before get_document_section to choose what to read: give that tool a heading or the pages listed here. ' +
         'It also names the pages whose text cannot be read (scans): get_document_section returns nothing for them, as text is not read from images. ' +
         'The response opens with the source to cite. A long outline is cut; give from/to to see that of part of the document.',

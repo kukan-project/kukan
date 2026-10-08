@@ -28,6 +28,7 @@ import { JsonPreview } from './json-preview'
 import { ZipPreview } from './zip-preview'
 import { ImagePreview } from './image-preview'
 import { DocumentTextPreview } from './document-text-preview'
+import { IchitaroPreview } from './ichitaro-preview'
 
 interface ResourcePreviewProps {
   resourceId: string
@@ -94,7 +95,12 @@ export function ResourcePreview({
       <DocumentPreview
         key={resourceId}
         resourceId={resourceId}
-        original={<OriginalNotShown message="previewIchitaroOriginal" />}
+        original={
+          <IchitaroPreview
+            resourceId={resourceId}
+            fallback={<OriginalNotShown message="previewIchitaroOriginal" />}
+          />
+        }
       />
     )
   if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />

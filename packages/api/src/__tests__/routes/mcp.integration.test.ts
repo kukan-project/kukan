@@ -926,6 +926,21 @@ describe('MCP Server', () => {
       expect(text).toContain('sheet 1  集計  (rows 1–2)\nsheet 2  内訳  (rows 3–40)')
     })
 
+    it('outlines sheets with neither names nor rows by their numbers alone', async () => {
+      const app = documentApp([
+        { loc: { sheet: 1 }, text: '表紙' },
+        { loc: { sheet: 2 }, text: '本文' },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-jtd-sheets', title: 'Sheets' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Sheets. Give their numbers as from/to')
+      expect(text).not.toContain('with their rows')
+      expect(text).toContain('get_document_section:\nsheet 1\nsheet 2')
+    })
+
     it('says how to read a document with neither pages nor headings', async () => {
       const app = documentApp([{ loc: {}, text: '本文だけの文書' }])
       const { res } = await createDocument(app, { name: 'ds-plain', title: 'Plain' })

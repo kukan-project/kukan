@@ -1,0 +1,21 @@
+[package]
+name = "ezpzjtd-viewer"
+description = "The read-only part of EZPZ File JTD that KUKAN's Ichitaro preview uses: a sheet laid out into pages"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# EZPZ File JTD (MIT), pinned: build.sh records this commit beside the build
+ezpzjtd-core = { git = "https://github.com/ezpzfile/ezpzfile-jtd", rev = "f82feb92760879d60c65d202b73df3d35f6ba34e" }
+serde_json = "1"
+# The same version as the wasm-bindgen CLI build.sh runs
+wasm-bindgen = "=0.2.129"
+
+[profile.release]
+opt-level = "s"
+lto = true

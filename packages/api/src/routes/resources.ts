@@ -37,6 +37,7 @@ import {
   versionedFilename,
   toCharset,
   isOfficeFormat,
+  isIchitaroFormat,
   isImageFormat,
   isPdfFormat,
   isJsonFormat,
@@ -184,6 +185,7 @@ async function resolvePreviewTarget(
   if (
     isPdfFormat(resource.format) ||
     isOfficeFormat(resource.format) ||
+    isIchitaroFormat(resource.format) ||
     isImageFormat(resource.format)
   ) {
     return {

@@ -38,6 +38,12 @@ const FORMAT_COLORS: Record<string, string> = {
   // PDF — red
   pdf: 'bg-red-600 text-white',
 
+  // Ichitaro — a deep red, apart from PDF's
+  jtd: 'bg-red-900 text-white',
+  jtt: 'bg-red-900 text-white',
+  jtdc: 'bg-red-900 text-white',
+  jttc: 'bg-red-900 text-white',
+
   // Images — fuchsia
   png: 'bg-fuchsia-600 text-white',
   jpeg: 'bg-fuchsia-600 text-white',

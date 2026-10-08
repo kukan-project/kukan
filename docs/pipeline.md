@@ -285,7 +285,8 @@ zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、�
 2007 より前の Office（XLS・DOC・PPT）と一太郎（JTD・JTT、ADR-051）は officeparser が読まないので、複合文書
 （MS-CFB）とその中身を自前で読む（`apps/worker/src/pipeline/interpret/document/legacy/` の `compound-file.ts`・
 `xls.ts`・`doc.ts`・`ppt.ts`・`jtd.ts`）。XLS は XLSX と同じシートと行、PPT はスライドとタイトル、DOC と一太郎は
-見出しを持たない本文になる。一太郎の圧縮形式（JTDC・JTTC）は形式名だけ登録し、読まない。
+見出しを持たない本文になる。一太郎はシートごとに読み（2 枚目以降は `ObjectSheets/DocSheet/` の下のストレージ）、
+シートが 2 枚以上ならシートの番号だけを持つブロックをシートごとに作る。一太郎の圧縮形式（JTDC・JTTC）は形式名だけ登録し、読まない。
 中身が ZIP なら名乗りによらず XLSX・DOCX・PPTX として読む（判定は Interpret が `contentFormat` で行い、
 抄録が原本を送るときも同じ判定に従う）。暗号化されたもの、Word 95 以前のもの、複合文書でも ZIP でもないもの
 （HTML を `.xls` と名乗らせたものなど）は読まず、Interpret が失敗する（パイプラインは続く）。

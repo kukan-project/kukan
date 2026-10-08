@@ -203,15 +203,17 @@ describe('ResourcePreview', () => {
       expect(screen.queryByText('Preview is not available for this format')).not.toBeInTheDocument()
     })
 
-    it('offers an Ichitaro document as its extracted text, saying where to open the original', () => {
+    it('says where to open an Ichitaro original it cannot draw, beside its extracted text', async () => {
+      mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
       render(<ResourcePreview resourceId="r1" format="JTD" />)
       expect(screen.getByText('Original')).toBeInTheDocument()
       expect(screen.getByText('Extracted text')).toBeInTheDocument()
       expect(
-        screen.getByText(
-          'An Ichitaro document cannot be shown in the browser. Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). Its text can be read under Extracted text.'
+        await screen.findByText(
+          'This Ichitaro document could not be shown in the browser (a compressed or broken file, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). Its text can be read under Extracted text.'
         )
       ).toBeInTheDocument()
+      expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/preview')
     })
 
     it('offers the extracted text of the formats before 2007, as of the ones after', () => {

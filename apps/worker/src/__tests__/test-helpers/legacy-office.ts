@@ -25,8 +25,48 @@ function padded(data: Buffer, size: number): Buffer {
  * whose entries are a chain of right siblings. A stream under 4096 bytes is
  * in the mini stream, as a writer puts it.
  */
+/** A storage or stream of a compound file's directory, the root among them. */
+interface DirNode {
+  name: string
+  /** The stream's key in `streams`; a storage has none. */
+  stream?: string
+  children: DirNode[]
+}
+
+/**
+ * A compound file of `streams`, each keyed by its path: `Storage/Stream`
+ * puts it in a storage, made for it where no other stream has.
+ */
 function compoundFile(streams: Record<string, Buffer>): Buffer {
   const names = Object.keys(streams)
+  const root: DirNode = { name: 'Root Entry', children: [] }
+  for (const path of names) {
+    const parts = path.split('/')
+    let at = root
+    for (const [i, name] of parts.entries()) {
+      let next = at.children.find((c) => c.name === name)
+      if (!next) {
+        next = { name, children: [], ...(i === parts.length - 1 && { stream: path }) }
+        at.children.push(next)
+      }
+      at = next
+    }
+  }
+  // The entries in the order they are written, root first; each storage's
+  // children a chain of right siblings from its first
+  const nodes: DirNode[] = []
+  const visit = (node: DirNode) => {
+    nodes.push(node)
+    node.children.forEach(visit)
+  }
+  visit(root)
+  const indexOf = new Map(nodes.map((node, i) => [node, i]))
+  const rightOf = new Map<DirNode, number>()
+  for (const node of nodes) {
+    node.children.forEach((child, i) => {
+      if (i + 1 < node.children.length) rightOf.set(child, indexOf.get(node.children[i + 1])!)
+    })
+  }
   const mini: Buffer[] = []
   const miniFat: number[] = []
   const starts = new Map<string, number>()
@@ -43,7 +83,7 @@ function compoundFile(streams: Record<string, Buffer>): Buffer {
 
   // The regular sectors' contents, in order; the FAT goes before them all
   const blocks: { name: string; data: Buffer }[] = [
-    { name: '<directory>', data: Buffer.alloc(128 * (names.length + 1)) },
+    { name: '<directory>', data: Buffer.alloc(128 * nodes.length) },
     { name: '<minifat>', data: Buffer.alloc(miniFat.length * 4) },
     { name: '<ministream>', data: miniStream },
     ...names
@@ -82,20 +122,25 @@ function compoundFile(streams: Record<string, Buffer>): Buffer {
     e.writeUInt32LE(opts.size ?? 0, 0x78)
     return e
   }
-  const directory = Buffer.concat([
-    entry('Root Entry', 5, {
-      child: names.length > 0 ? 1 : NO_STREAM,
-      start: firstSector.get('<ministream>') ?? END_OF_CHAIN,
-      size: miniStream.length,
-    }),
-    ...names.map((name, i) =>
-      entry(name, 2, {
-        right: i + 1 < names.length ? i + 2 : NO_STREAM,
-        start: starts.get(name) ?? firstSector.get(name) ?? END_OF_CHAIN,
-        size: streams[name].length,
+  const directory = Buffer.concat(
+    nodes.map((node) => {
+      const child = node.children.length > 0 ? indexOf.get(node.children[0]) : undefined
+      if (node === root) {
+        return entry(node.name, 5, {
+          child,
+          start: firstSector.get('<ministream>') ?? END_OF_CHAIN,
+          size: miniStream.length,
+        })
+      }
+      const right = rightOf.get(node)
+      if (node.stream === undefined) return entry(node.name, 1, { child, right })
+      return entry(node.name, 2, {
+        right,
+        start: starts.get(node.stream) ?? firstSector.get(node.stream) ?? END_OF_CHAIN,
+        size: streams[node.stream].length,
       })
-    ),
-  ])
+    })
+  )
 
   const header = Buffer.alloc(SECTOR)
   header.write(COMPOUND_FILE_SIGNATURE, 'latin1')
@@ -534,4 +579,46 @@ export const jtd = {
 
 export function jtdBuffer(streams: Record<string, Buffer>): Buffer {
   return compoundFile(streams)
+}
+
+/**
+ * `file` with the stream `name` declared `size` bytes and its sector chain
+ * broken just past them: a reader walking the whole chain fails on it.
+ */
+export function cutShort(file: Buffer, name: string, size: number): Buffer {
+  const out = Buffer.from(file)
+  const first = out.readUInt32LE(0x30)
+  for (let at = (first + 1) * SECTOR; at + 128 <= out.length; at += 128) {
+    const nameBytes = out.readUInt16LE(at + 0x40)
+    if (nameBytes === 0) break
+    if (out.toString('utf16le', at, at + nameBytes - 2) !== name) continue
+    const start = out.readUInt32LE(at + 0x74)
+    out.writeUInt32LE(size, at + 0x78)
+    // The FAT comes first, right after the header; past the last sector kept, a sector not in it
+    out.writeUInt32LE(0x00fffff0, SECTOR + (start + Math.ceil(size / SECTOR) - 1) * 4)
+    return out
+  }
+  throw new Error(`No stream ${name}`)
+}
+
+/**
+ * `file` with every stream named `name` pointed at the first one's sectors,
+ * as a crafted file names the same bytes many times over.
+ */
+export function sharingSectors(file: Buffer, name: string): Buffer {
+  const out = Buffer.from(file)
+  const first = out.readUInt32LE(0x30)
+  let target: { start: number; size: number } | undefined
+  for (let at = (first + 1) * SECTOR; at + 128 <= out.length; at += 128) {
+    const nameBytes = out.readUInt16LE(at + 0x40)
+    if (nameBytes === 0) break
+    if (out.toString('utf16le', at, at + nameBytes - 2) !== name) continue
+    if (!target) {
+      target = { start: out.readUInt32LE(at + 0x74), size: out.readUInt32LE(at + 0x78) }
+    } else {
+      out.writeUInt32LE(target.start, at + 0x74)
+      out.writeUInt32LE(target.size, at + 0x78)
+    }
+  }
+  return out
 }

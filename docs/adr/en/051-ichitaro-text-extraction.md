@@ -10,8 +10,9 @@ Extract the body text of Ichitaro documents (`.jtd` / `.jtt`) **into the same do
 artifact as other documents**. Extract it with a small compound-file (OLE2) parser in the
 worker rather than an off-the-shelf library. Cover only the uncompressed formats of Ichitaro
 Ver.8 and later; the compressed formats (`.jtdc` / `.jttc`) and everything before Ver.7 are
-out of scope. **No preview of the original's appearance is produced**; the extracted text's
-preview appears as it does for other documents.
+out of scope. The original is **drawn in the browser** by EZPZ File JTD, an open-source engine
+that shows Ichitaro in the browser alone (WebAssembly, MIT); the extracted text's preview
+appears as well, as it does for other documents.
 
 > **Revised since the draft (2026-10-08).** After the draft, a document's text came to be
 > extracted by Interpret into a located artifact (`text.ndjson.zst`) that Index, the text
@@ -25,6 +26,15 @@ preview appears as it does for other documents.
 > - Readings and template instructions go at the end of their line, not where they stand (decision 5)
 > - No parse size cap of Ichitaro's own (decision 6)
 > - The extracted-text preview is shown (decision 7; resolves open item 4)
+
+> **Revised after acceptance (2026-10-08).** The original's display and the handling of sheets
+> were added.
+>
+> - The text is read a sheet at a time, and a document of two or more sheets is a block a sheet
+>   (decisions 2 and 3). As first accepted only the first sheet was read, and 7 of the 21 test
+>   files lost the text of their later sheets
+> - The original is drawn in the browser by EZPZ File JTD (decision 7, replacing the draft's "no
+>   preview of the original"; resolves open item 4)
 
 ## Context
 
@@ -172,13 +182,20 @@ unchanged**. No new `ContentType` — search has no reason to tell a PDF from Ic
 
 Entering AI metadata suggestions automatically is **the intended effect**.
 
-The artifact is one block with neither pages nor headings: what marks page breaks and
+The artifact has neither pages nor headings. A document of one sheet is one block; one of
+several is a block a sheet, numbered as a workbook's sheets are (`loc.sheet`). Sheets are not
+named (`DocItemInfo`, which holds their names, is not yet decoded). What marks page breaks and
 paragraph headings lives in other streams not yet decoded.
 
 ### 3. Read two streams: `DocumentText` and `LayoutBoxText`
 
 `LayoutBoxText` is read because newer versions keep some form headings only there. Both are
 concatenated into one text, `DocumentText` first.
+
+Both streams are there **a sheet at a time**. The first sheet's are at the top of the file; each
+later sheet's are in a storage of its own under `ObjectSheets/DocSheet/` (`DOCS_0001` and so on).
+The sheets are taken first sheet first, then in the order of the storages' names — the order EZPZ
+File JTD shows them in, so the original's preview and the extracted text number them alike.
 
 The reading follows OpenJTD's RFC 0003:
 
@@ -227,12 +244,54 @@ extraction runs in the heavy child process (ADR-059), and the fetch limit (100 M
 on a document's total text (`DOCUMENT_TEXT_MAX_BYTES`, 256 MB) apply to every document. Ichitaro
 forms are usually under 1 MB; a cap per format no longer earns its place.
 
-### 7. No preview of the original; the extracted text's preview is shown
+### 7. The original is drawn in the browser by EZPZ File JTD; the extracted text's preview is shown too
 
-There is no way to reproduce the original's appearance today. OpenJTD's PDF output is blank
-(content streams contain only white rectangles) and its SVG output is fixed-pitch text flow with
-no rules or frames. Given that Ichitaro files are mostly forms, a preview without rules looks
-like a different document.
+The draft produced no preview of the original, as there was no way to reproduce its appearance.
+OpenJTD's PDF output is blank (content streams contain only white rectangles) and its SVG output
+is fixed-pitch text flow with no rules or frames. Given that Ichitaro files are mostly forms, a
+preview without rules looks like a different document.
+
+Since the draft, EZPZ File JTD (Rust compiled to WebAssembly, MIT, not affiliated with
+JustSystems) has been published to draw Ichitaro in the browser alone. It draws ruled tables,
+character sizes, ruby and paper sizes, and opened all 21 test files; it does not draw figures,
+vertical writing, headers or footers. It is used for the "original" tab.
+
+- **Loading**: only when the tab opens, the file's bytes are fetched from the preview endpoint
+  (`/preview`, the PDF's route) and read by the WASM in the browser. The server converts nothing.
+  The WASM runs in a Web Worker, so laying pages out does not hold up the page
+- **When it does not end**: a request (opening, or laying out a sheet) that has not come back in 15
+  seconds ends the worker and falls back to the guidance, as EZPZ has only just begun and inputs it
+  cannot finish laying out may remain. The one known is avoided beforehand: where a file's margins
+  do not fit its paper EZPZ falls back to its default margins, which on a small paper do not fit
+  either; the line pitch goes negative and laying out never ends. A setup whose pitch would be under
+  1pt is replaced by the default A4
+- **Layout**: EZPZ's editor's layout engine sets each page on the grid of the document's style
+  (paper, margins, characters × lines), and each page is painted on a canvas. The HTML export the
+  upstream's simple viewer uses flows the text, so its line breaks and pages drift from the
+  original's, and it is not used. The painting is ported from the editor
+  (`ichitaro-paint.ts`, keeping its MIT notice)
+- **Isolation**: what comes from the file is only coordinates and characters; nothing reaches the
+  page as markup, so a crafted file cannot reach it
+- **Sheets**: pages are laid out a sheet at a time; with two or more, a list of sheets inside the
+  preview's frame switches between them. Their order and numbers match the extracted text's
+  sheets (decision 3). Only the pages near the view are painted, and a canvas is emptied once
+  it leaves (a document of many pages holds no pile of bitmaps)
+- **Text cannot be selected**: being canvases, the pages do not take selection or find-in-page;
+  the text is read under "extracted text"
+- **When it cannot draw**: a compressed file, a broken one or an unsupported version falls back to
+  the draft's guidance (download it and open it in Ichitaro or Ichitaro Viewer)
+- **Distribution**: it is not on npm, so a wrapper crate (`apps/web/wasm/ezpzjtd-viewer/`) takes
+  the upstream at a pinned commit and exports reading only. The editor is left out and the .wasm
+  is about 320 KB. The build is committed under `apps/web/public/vendor/ezpzjtd/` and reaches the
+  web image with `public/`; CI uses no Rust. Raising the version means running `build.sh`, which
+  also regenerates the licence notices (LICENSE, NOTICE, THIRD_PARTY_NOTICES) and the commit taken
+  (SOURCE)
+- **Attribution**: "Powered by EZPZ File" at the preview's top right, and a note that figures,
+  vertical writing, headers and footers are not shown. EZPZ's logos are not used (they are outside
+  its licence)
+
+The worry that the project has only just begun is held down by falling back to the guidance when
+it cannot draw, and by taking a pinned version and comparing before raising it.
 
 The extracted text is shown in the "extracted text" preview, as for other documents. The draft
 left this as a separate decision (open item 4); with the document text artifact and its preview
@@ -249,6 +308,10 @@ rules is true of every document's extracted text.
   or column relationship. Enough for full-text search, not usable as a table
 - **Junk is not eliminated entirely.** Even after the line filter, one or two stray symbols
   inside a real line survive. Harmless for search, but noise in AI-suggestion material
+- **The original's display depends on an outside project.** EZPZ File JTD has only just begun,
+  and a broken rendering makes KUKAN look broken. A pinned version does not change on its own,
+  but taking its improvements means raising the version by hand, and the build is outside
+  dependency audits (Dependabot and the like)
 - **Compressed files remain unhandled.** `.jtdc` is a save format offered since Ichitaro 10
   and can appear in a distribution. Having put it out of scope, users need to see that
   compressed Ichitaro files are not indexed
@@ -268,6 +331,17 @@ rules is true of every document's extracted text.
   section pin the rules without committing third-party documents
 - `packages/shared/src/__tests__/formats.test.ts`: the added predicates
 - `CLAUDE.md`: a row in the pipeline per-format matrix
+- `apps/worker/src/pipeline/interpret/document/legacy/compound-file.ts`: reads streams by path,
+  into nested storages (the sheets after the first)
+- `apps/web/src/components/ichitaro-preview.tsx` (new): the original's display and the list of
+  sheets (decision 7)
+- `apps/web/src/components/ichitaro-paint.ts` (new): the page painting ported from EZPZ File
+  JTD's editor
+- `apps/web/src/components/ichitaro-viewer.ts` and `ichitaro-viewer.worker.ts` (new): the Web Worker
+  the WASM runs in, and the timeout on its requests
+- `apps/web/wasm/ezpzjtd-viewer/` (new): the wrapper crate exporting EZPZ File JTD's reading only,
+  and its build script; the build goes to `apps/web/public/vendor/ezpzjtd/`
+- `packages/api/src/routes/resources.ts`: the preview endpoint serves an Ichitaro original too
 
 Checked against real files (2026-10-08): text came out of all 21 forms published by Hokkaido,
 Saitama and Tokushima (15 with length-delimited blocks, 6 without). The one piece of formatting
@@ -280,15 +354,16 @@ left was a check mark from a symbol font, stored as a character.
    the public specification notes
 2. **Whether to add pre-Ver.8 formats later.** The body is plain Shift_JIS so extraction is
    light, but Ver.8 shipped 29 years ago and no real files have been verified
-3. **Pages and headings.** The artifact is one block with no location. Page breaks and
+3. **Pages and headings.** The artifact's only location is the sheet's number. Page breaks and
    paragraph formatting live in other streams (`DocumentTextPositionTables` among them); as
    their decoding progresses, pages and headings can be looked up as for a PDF
-4. **A way to draw the original in the browser.** Since the draft, an open-source engine that
-   shows Ichitaro in the browser alone (WebAssembly, MIT) has been published. It draws ruled
-   tables and ruby too, but the project has only just begun. Trial it for the quality of what it
-   shows, its size and its effect on the CSP, and revise decision 7 if it is adopted
+4. ~~**A way to draw the original in the browser.**~~ Resolved by decision 7 (EZPZ File JTD)
 5. **How this surfaces to users.** Where and how to say that Ichitaro is an indexed format
    and that the compressed variants are not
+6. **What extraction misses.** Against EZPZ File JTD's text output, this extraction reads far less
+   of some documents, even of one sheet (a cover, contents and overview missing: 299 characters
+   against 2,863 in one case). Decide whether to refine the in-house reading or to extract with
+   EZPZ File JTD's engine as well (revisiting the judgement in option C)
 
 ## Related
 
@@ -297,7 +372,7 @@ left was a check mark from a symbol font, stored as a character.
   suspending search indexing for drafts, both applying unchanged through the `document` path
 - ADR-046 (Interpret stage): Ichitaro's text, like other documents', is extracted by
   Interpret from the version file into the artifact
-- ADR-048 (single-surface table preview): the stance behind producing no preview of the
-  original, that appearance is built head-on per format
+- ADR-048 (single-surface table preview): the stance that appearance is built head-on per
+  format, behind the draft's producing no preview of the original
 - ADR-059 (heavy child process): where extraction runs, and one reason for no parse cap of
   Ichitaro's own

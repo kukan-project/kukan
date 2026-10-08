@@ -57,7 +57,7 @@ import {
   XLSX_MAX_PART_BYTES,
 } from '@/config'
 import { docText } from './legacy/doc'
-import { jtdText } from './legacy/jtd'
+import { jtdSheets } from './legacy/jtd'
 import { pptSlides } from './legacy/ppt'
 import { xlsSheets, type XlsRow } from './legacy/xls'
 
@@ -1228,9 +1228,20 @@ async function* docBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
   yield { loc: {}, text: docText(await readFile(filePath)) }
 }
 
-/** An Ichitaro document's text, as a block: what marks its headings is not yet read (ADR-051). */
+/**
+ * An Ichitaro document's text, a block per sheet where it has more than one,
+ * as a workbook's are: what marks its headings is not yet read (ADR-051). A
+ * sheet's name is not read either, so it goes by its number.
+ */
 async function* jtdBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
-  yield { loc: {}, text: jtdText(await readFile(filePath)) }
+  const sheets = jtdSheets(await readFile(filePath))
+  if (sheets.length === 1) {
+    yield { loc: {}, text: sheets[0]! }
+    return
+  }
+  for (const [index, text] of sheets.entries()) {
+    if (text) yield { loc: { sheet: index + 1 }, text }
+  }
 }
 
 /** A PowerPoint 97–2003 presentation a slide at a time, under its title. */
