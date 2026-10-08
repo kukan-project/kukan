@@ -257,7 +257,8 @@ document formats and ZIP.
 
 1. **worker (Index step)**: for document formats (those supported by
    officeparser — PDF / DOCX / XLSX / PPTX / ODT / ODP / ODS / RTF; legacy
-   DOC / XLS / PPT remain unsupported), save the first 64 KB of the
+   DOC / XLS / PPT remain unsupported — later, readers of our own brought DOC / XLS /
+   PPT and Ichitaro into extraction too), save the first 64 KB of the
    extracted text to storage as `previews/{packageId}/{resourceId}.txt`
    (UTF-8), and record the key and size in `resource_pipeline.metadata`
    (`textHeadKey` / `textHeadBytes`). The suggest side trusts only the DB

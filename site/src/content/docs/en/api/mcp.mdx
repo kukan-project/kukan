@@ -69,18 +69,18 @@ curl -X POST https://your-kukan-site/api/mcp \
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
 
-| Tool                   | Description                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                        |
-| `get_dataset`          | Get detailed dataset information including resource list                                                            |
-| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                   |
-| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only           |
-| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                                   |
-| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel |
-| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel           |
-| `list_organizations`   | List organizations                                                                                                  |
-| `list_groups`          | List groups (categories)                                                                                            |
-| `list_tags`            | List tags                                                                                                           |
+| Tool                   | Description                                                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                                 |
+| `get_dataset`          | Get detailed dataset information including resource list                                                                     |
+| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                            |
+| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only                    |
+| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                                            |
+| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel/Ichitaro |
+| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel/Ichitaro           |
+| `list_organizations`   | List organizations                                                                                                           |
+| `list_groups`          | List groups (categories)                                                                                                     |
+| `list_tags`            | List tags                                                                                                                    |
 
 ## Tool Details
 
@@ -120,7 +120,8 @@ to the same depth as on the public page, and the resources under a heading one l
 
 Get resource metadata. Returns the download URL for uploaded files. A resource inside a
 section carries a `Section:` line.
-A document whose text has been extracted (PDF, Word, PowerPoint, Excel) carries a
+A document whose text has been extracted (PDF, Word, PowerPoint, Excel, Ichitaro, the Office formats
+before 2007 included) carries a
 `Document text:` line saying it can be read with `get_document_outline` and
 `get_document_section` (or, for a document of scans, that it has none to read).
 
@@ -184,6 +185,9 @@ Get a document's outline, to choose what to read before calling `get_document_se
   them), which are left out of their text
 - The response opens with the same source as `get_document_section`
 
+A Word file from before 2007 (DOC) and an Ichitaro file mark no headings a reader can find, so their
+text is one block.
+
 A document that is all scans, with no text, still has its pages, headings and unreadable pages listed.
 A long outline is cut at about 12,000 characters (a heading at 120, the list of unreadable pages at a
 quarter of it), with a count of what was left out; give `from` and `to` to see part of it.
@@ -196,7 +200,8 @@ quarter of it), with a count of what was left out; give `from` and `to` to see p
 
 ### get_document_section
 
-Read the text KUKAN extracted from a document (PDF, Word, PowerPoint, Excel) by where it is in the
+Read the text KUKAN extracted from a document (PDF, Word, PowerPoint, Excel, Ichitaro, the Office
+formats before 2007 included) by where it is in the
 file: a range of pages — a PDF's pages, a presentation's slides, a workbook's sheets — a heading,
 or both. No AI model is called; what comes back is the file's own text.
 

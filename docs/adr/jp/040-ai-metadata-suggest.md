@@ -230,7 +230,8 @@ document 系と ZIP に広げる。
 
 1. **worker（Index ステップ）**: document 系（officeparser が対応する
    PDF / DOCX / XLSX / PPTX / ODT / ODP / ODS / RTF。レガシー
-   DOC / XLS / PPT は引き続き対象外）の抽出テキスト先頭 64KB を
+   DOC / XLS / PPT は引き続き対象外 — のちに自前の読み手で DOC / XLS / PPT と一太郎も
+   抽出の対象に入った）の抽出テキスト先頭 64KB を
    `previews/{packageId}/{resourceId}.txt`（UTF-8）として Storage に保存し、
    キーとサイズを `resource_pipeline.metadata`（`textHeadKey` /
    `textHeadBytes`）に記録する。suggest 側は DB の記録だけを信頼して

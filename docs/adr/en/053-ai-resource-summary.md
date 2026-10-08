@@ -507,13 +507,13 @@ decision 5's on-screen reasons.
 
 ### 5. State explicitly when nothing is generated, and show the reason
 
-| Condition                    | Test                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| Over the cap, size unknown   | `resource.size`. **Applies only to formats handed over as binaries**      |
-| Formats outside the MVP      | PPT formats, formats the provider cannot take (decision 3)                |
-| **Rejected on sending**      | **`ValidationException`; recorded as a permanent failure** (decision 3.4) |
-| Empty material               | No schema extracted from a CSV, empty text                                |
-| Drafts and private resources | Only resources belonging to `state = active` packages                     |
+| Condition                    | Test                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| Over the cap, size unknown   | `resource.size`. **Applies only to formats handed over as binaries**                         |
+| Formats outside the MVP      | Formats whose original the provider cannot take and that have no extracted text (decision 3) |
+| **Rejected on sending**      | **`ValidationException`; recorded as a permanent failure** (decision 3.4)                    |
+| Empty material               | No schema extracted from a CSV, empty text                                                   |
+| Drafts and private resources | Only resources belonging to `state = active` packages                                        |
 
 **The size cap applies only to formats handed over as binaries.** CSV uses its schema and
 sample rows, so **it is generated regardless of file size** — the target catalogue holds ten CSVs over 4 MB

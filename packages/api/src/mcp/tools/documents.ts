@@ -265,7 +265,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     ])
     if (!text) {
       return reply([
-        `Resource ${id} has no extracted document text. Text is extracted from PDF, Word, PowerPoint and Excel files when they are processed.`,
+        `Resource ${id} has no extracted document text. Text is extracted from PDF, Word, PowerPoint, Excel and Ichitaro files when they are processed.`,
       ])
     }
     // An outline is worth having without text: the pages, the bookmarks, which to read by OCR
@@ -307,7 +307,8 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     {
       description:
         "List a document resource's headings (PDF bookmarks, Word heading styles, slide titles) or a workbook's sheets, each with the pages, slides or rows it spans, and how many pages it has. " +
-        'For PDF, DOCX, PPTX and XLSX files; not the older DOC, XLS and PPT, nor CSV (use get_resource_schema and query_resource for those tables). ' +
+        'For PDF, Word, PowerPoint and Excel files, the formats before 2007 (DOC, PPT, XLS) included, and Ichitaro (JTD, JTT); not for CSV (use get_resource_schema and query_resource for those tables). ' +
+        'A DOC or an Ichitaro file marks no headings a reader of it can find: its text is one block. ' +
         'Call it before get_document_section to choose what to read: give that tool a heading or the pages listed here. ' +
         'It also names the pages whose text cannot be read (scans): get_document_section returns nothing for them, as text is not read from images. ' +
         'The response opens with the source to cite. A long outline is cut; give from/to to see that of part of the document.',
@@ -335,7 +336,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     'get_document_section',
     {
       description:
-        "Read a document resource's text (PDF, DOCX, PPTX, XLSX) by where it is in the file: a range of pages (a PDF's pages, a presentation's slides, a workbook's sheets), a heading, or both. " +
+        "Read a document resource's text (PDF, Word, PowerPoint, Excel, Ichitaro) by where it is in the file: a range of pages (a PDF's pages, a presentation's slides, a workbook's sheets), a heading, or both. " +
         'Call get_document_outline first to see the headings and the pages they span. A Word file has no pages: select it by heading. ' +
         'A heading selects everything under it, its subheadings included; give the deepest heading, or a path (`Chapter 1 > Overview`), to narrow it. ' +
         "A workbook's text is its rows with tab-separated cells; to compute over a CSV's values, use query_resource instead. " +
