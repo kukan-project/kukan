@@ -24,6 +24,7 @@ import {
 import { Sparkles } from 'lucide-react'
 import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
+import { datasetEditPath } from '@/lib/paths'
 import { useFetch } from '@/hooks/use-fetch'
 import { hasRole } from '@/hooks/use-my-roles'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
@@ -87,6 +88,12 @@ type LoadedPackage = PackageDetail & { resources: Resource[] }
  *  standing in does not itself produce a new array each render. */
 const EMPTY_RESOURCES: Resource[] = []
 
+/** Rewrite the address bar without navigating: a navigation to another
+ *  `nameOrId` would remount the page and drop what it shows */
+function showEditUrl(packageId: string, query: string) {
+  window.history.replaceState(null, '', `${datasetEditPath(packageId)}${query}`)
+}
+
 /** API response → form defaults */
 function toFormDefaults(pkg: PackageDetail) {
   return {
@@ -143,24 +150,29 @@ export default function EditDatasetPage() {
   // fresh pipeline statuses back
   const fetchSeq = useRef(0)
   const appliedSeq = useRef(0)
+  // Requests go to the id once known: saving a new name leaves the URL's
+  // `nameOrId` naming nothing
+  const packageIdRef = useRef<string | null>(null)
   /** Refetch the package; false = this refresh failed (callers may retry) */
   const fetchData = useCallback(async (): Promise<boolean> => {
     const seq = ++fetchSeq.current
     const apply = (data: PackageDetail) => {
       if (seq > appliedSeq.current) {
         appliedSeq.current = seq
+        packageIdRef.current = data.id
         setPkg({ ...data, resources: data.resources ?? [] })
       }
     }
+    const target = packageIdRef.current ?? nameOrId
     try {
       const stateQuery =
         stateParam === 'deleted' || stateParam === 'draft' ? `?state=${stateParam}` : ''
-      const pkgRes = await clientFetch(`/api/v1/packages/${nameOrId}${stateQuery}`)
+      const pkgRes = await clientFetch(`/api/v1/packages/${target}${stateQuery}`)
       if (pkgRes.ok) {
         apply(await pkgRes.json())
       } else if (!stateQuery) {
         // A draft opened without ?state=draft 404s on the active path — retry as draft
-        const draftRes = await clientFetch(`/api/v1/packages/${nameOrId}?state=draft`)
+        const draftRes = await clientFetch(`/api/v1/packages/${target}?state=draft`)
         if (!draftRes.ok) return false
         apply(await draftRes.json())
       } else if (stateParam === 'draft') {
@@ -168,12 +180,12 @@ export default function EditDatasetPage() {
         // follow-up search sync may have failed — offer the idempotent re-publish.
         // Not when this session already published: a pre-publish refetch firing
         // late must not resurrect the warning
-        const activeRes = await clientFetch(`/api/v1/packages/${nameOrId}`)
+        const activeRes = await clientFetch(`/api/v1/packages/${target}`)
         if (!activeRes.ok) return false
         apply(await activeRes.json())
         if (!publishedRef.current) {
           setSyncWarning(true)
-          router.replace(`/dashboard/datasets/${nameOrId}/edit`)
+          showEditUrl(packageIdRef.current ?? nameOrId, '')
         }
       } else {
         return false
@@ -184,11 +196,18 @@ export default function EditDatasetPage() {
     } finally {
       setLoading(false)
     }
-  }, [nameOrId, stateParam, router])
+  }, [nameOrId, stateParam])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // A page opened by name keeps working after a rename here only if a reload
+  // asks for the id
+  const loadedId = pkg?.id
+  useEffect(() => {
+    if (loadedId && loadedId !== nameOrId) showEditUrl(loadedId, window.location.search)
+  }, [loadedId, nameOrId])
 
   // The org options never change with the package — fetch once on mount
   const { data: orgData } = useFetch<{ items: Organization[] }>('/api/v1/users/me/organizations')
@@ -240,13 +259,14 @@ export default function EditDatasetPage() {
     setPublished(true)
     publishedRef.current = true
     // Now active: drop ?state=draft so the refetch hits the active path
-    router.replace(`/dashboard/datasets/${nameOrId}/edit`)
-  }, [nameOrId, router])
+    if (loadedId) showEditUrl(loadedId, '')
+  }, [loadedId])
 
   async function handleDelete() {
+    if (!pkg) return
     setDeleting(true)
     try {
-      const url = isDeleted ? `/api/v1/packages/${nameOrId}/purge` : `/api/v1/packages/${nameOrId}`
+      const url = isDeleted ? `/api/v1/packages/${pkg.id}/purge` : `/api/v1/packages/${pkg.id}`
       const method = isDeleted ? 'POST' : 'DELETE'
       const res = await clientFetch(url, { method })
       if (res.ok) {
@@ -261,10 +281,11 @@ export default function EditDatasetPage() {
   const [restorePrivate, setRestorePrivate] = useState(false)
 
   async function handleRestore() {
+    if (!pkg) return
     setRestoring(true)
     try {
       // Only when asked — a plain restore keeps the visibility it was deleted with
-      const res = await clientFetch(`/api/v1/packages/${nameOrId}/restore`, {
+      const res = await clientFetch(`/api/v1/packages/${pkg.id}/restore`, {
         method: 'POST',
         ...(restorePrivate && {
           headers: { 'Content-Type': 'application/json' },
@@ -272,7 +293,7 @@ export default function EditDatasetPage() {
         }),
       })
       if (res.ok) {
-        router.push(`/dashboard/datasets/${nameOrId}/edit`)
+        router.push(datasetEditPath(pkg.id))
       }
     } finally {
       setRestoring(false)
@@ -350,7 +371,7 @@ export default function EditDatasetPage() {
         </Alert>
       )}
 
-      {syncWarning && <PublishSyncBanner nameOrId={nameOrId} onPublished={handlePublished} />}
+      {syncWarning && <PublishSyncBanner nameOrId={pkg.id} onPublished={handlePublished} />}
 
       {suggestNudge && metadataSuggestEnabled === true && !isDeleted && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
@@ -462,7 +483,7 @@ export default function EditDatasetPage() {
               <DatasetForm
                 key={pkg.state}
                 mode="edit"
-                nameOrId={nameOrId}
+                nameOrId={pkg.id}
                 defaultValues={toFormDefaults(pkg)}
                 organizations={organizations}
                 isDraft={isDraft}

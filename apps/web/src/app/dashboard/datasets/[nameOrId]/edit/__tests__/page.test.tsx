@@ -7,10 +7,9 @@ vi.mock('@/lib/client-api', () => ({
 }))
 
 // Override the setup.ts navigation mock: these tests need to control the
-// ?state= query and observe router.replace. The router object must be stable
-// across renders (like the real one) — it is a useCallback dependency
+// ?state= query and observe router.push
 const nav = vi.hoisted(() => ({
-  router: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
+  router: { push: vi.fn(), back: vi.fn() },
   search: '',
 }))
 vi.mock('next/navigation', () => ({
@@ -22,18 +21,27 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/components/dashboard/dataset/dataset-form', () => ({
   // Publishing now happens inside the form ("Save & Publish") — surface the
-  // onPublished callback so the page-level flow can be exercised, and the
-  // suggest.processing flag for the AI-suggest gating tests
+  // onPublished callback so the page-level flow can be exercised, the target
+  // the form sends to, and the suggest.processing flag for the AI-suggest gating tests
   DatasetForm: ({
+    nameOrId,
+    onSaved,
     onPublished,
     suggest,
   }: {
+    nameOrId?: string
+    onSaved?: () => void
     onPublished?: () => void
     suggest?: { processing?: boolean }
   }) => (
-    <div data-testid="dataset-form">
+    <div data-testid="dataset-form" data-target={nameOrId}>
       DatasetForm
       {suggest && <span data-testid="suggest-processing">{String(suggest.processing)}</span>}
+      {onSaved && (
+        <button type="button" onClick={onSaved}>
+          MockSaved
+        </button>
+      )}
       {onPublished && (
         <button type="button" onClick={onPublished}>
           MockPublish
@@ -76,7 +84,14 @@ vi.mock('@/components/dashboard/dataset/resource-list', () => ({
 }))
 
 vi.mock('@/components/dashboard/delete-confirm-dialog', () => ({
-  DeleteConfirmDialog: () => <div data-testid="delete-confirm-dialog">DeleteConfirmDialog</div>,
+  DeleteConfirmDialog: ({ onConfirm }: { onConfirm: () => void }) => (
+    <div data-testid="delete-confirm-dialog">
+      DeleteConfirmDialog
+      <button type="button" onClick={onConfirm}>
+        MockConfirmDelete
+      </button>
+    </div>
+  ),
 }))
 
 const mockClientFetch = vi.mocked(clientFetch)
@@ -112,11 +127,22 @@ const sampleOrgs = {
 
 import EditDatasetPage from '../page'
 
+/** Open the page by name with this query: the hook mock and the address bar
+ *  (which the page rewrites with history.replaceState) both see it */
+function openWith(search: string) {
+  nav.search = search
+  window.history.replaceState(null, '', `/dashboard/datasets/test-entity/edit?${search}`)
+}
+
+function addressBar() {
+  return window.location.pathname + window.location.search
+}
+
 describe('EditDatasetPage', () => {
   beforeEach(() => {
     mockClientFetch.mockReset()
-    nav.router.replace.mockReset()
-    nav.search = ''
+    nav.router.push.mockReset()
+    openWith('')
     resourceListProps.resources.length = 0
   })
 
@@ -240,7 +266,7 @@ describe('EditDatasetPage', () => {
 
   describe('deleted package', () => {
     function mockDeletedFetch(pkg = { ...samplePackage, state: 'deleted' }) {
-      nav.search = 'state=deleted'
+      openWith('state=deleted')
       mockClientFetch.mockImplementation(async (path: string) => {
         if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
         return jsonResponse(pkg)
@@ -257,7 +283,7 @@ describe('EditDatasetPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore Dataset' }))
 
       await waitFor(() => {
-        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity/restore', {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/pkg-1/restore', {
           method: 'POST',
         })
       })
@@ -274,7 +300,7 @@ describe('EditDatasetPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore Dataset' }))
 
       await waitFor(() => {
-        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity/restore', {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/pkg-1/restore', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ private: true }),
@@ -326,6 +352,7 @@ describe('EditDatasetPage', () => {
     })
 
     it('should show the success link and drop ?state=draft when the form publishes', async () => {
+      openWith('state=draft')
       mockDraftFetch(sampleDraft)
       render(<EditDatasetPage />)
 
@@ -341,13 +368,13 @@ describe('EditDatasetPage', () => {
         'href',
         '/dataset/test-dataset'
       )
-      expect(nav.router.replace).toHaveBeenCalledWith('/dashboard/datasets/test-entity/edit')
+      expect(addressBar()).toBe('/dashboard/datasets/pkg-1/edit')
     })
 
     it('should fall back to active when ?state=draft 404s and offer a resync', async () => {
       // Publish committed on the server, but the page was reloaded with the
       // stale ?state=draft URL (e.g. after a publish-time search-sync failure)
-      nav.search = 'state=draft'
+      openWith('state=draft')
       mockClientFetch.mockImplementation(async (path: string) => {
         if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
         if (path.includes('state=draft')) return jsonResponse(null, false)
@@ -361,14 +388,14 @@ describe('EditDatasetPage', () => {
         ).toBeInTheDocument()
       })
       expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity')
-      expect(nav.router.replace).toHaveBeenCalledWith('/dashboard/datasets/test-entity/edit')
+      expect(addressBar()).toBe('/dashboard/datasets/pkg-1/edit')
       // The package is active: no publish entry in the form, but the resync banner
       expect(screen.queryByRole('button', { name: 'MockPublish' })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Retry sync' })).toBeEnabled()
     })
 
     it('should re-run publish from the resync banner and clear it on success', async () => {
-      nav.search = 'state=draft'
+      openWith('state=draft')
       mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
         if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
         if (init?.method === 'POST') return jsonResponse(samplePackage)
@@ -383,7 +410,7 @@ describe('EditDatasetPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Retry sync' }))
 
       await waitFor(() => {
-        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity/publish', {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/pkg-1/publish', {
           method: 'POST',
         })
       })
@@ -396,7 +423,7 @@ describe('EditDatasetPage', () => {
     })
 
     it('should not resurrect the sync warning from a stale draft refetch after publish', async () => {
-      nav.search = 'state=draft'
+      openWith('state=draft')
       let publishedNow = false
       mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
         if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
@@ -435,6 +462,80 @@ describe('EditDatasetPage', () => {
           'This draft and all its resources will be permanently deleted. This cannot be undone.'
         )
       ).toBeInTheDocument()
+    })
+  })
+
+  describe('opened by a name that a save then changes', () => {
+    // The URL's `test-entity` stops resolving once the rename lands. Only a
+    // draft's name is editable here; an active package must not depend on it either
+    function mockRenamableFetch(pkg: typeof samplePackage) {
+      const server = { renamed: false }
+      mockClientFetch.mockImplementation(async (path: string) => {
+        if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
+        if (path.startsWith('/api/v1/packages/test-entity'))
+          return server.renamed ? jsonResponse(null, false) : jsonResponse(pkg)
+        if (path.startsWith('/api/v1/packages/pkg-1'))
+          return jsonResponse(server.renamed ? { ...pkg, name: 'renamed', title: 'Renamed' } : pkg)
+        return jsonResponse(null, false)
+      })
+      return server
+    }
+
+    const kinds = [
+      ['a draft', sampleDraft],
+      ['an active package', samplePackage],
+    ] as const
+
+    it.each(kinds)('should have the form send to the id for %s', async (_label, pkg) => {
+      mockRenamableFetch(pkg)
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('dataset-form')).toHaveAttribute('data-target', 'pkg-1')
+      })
+    })
+
+    it('should put the id in the address bar, keeping the query', async () => {
+      openWith('state=draft&resource=r1')
+      mockRenamableFetch(sampleDraft)
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(addressBar()).toBe('/dashboard/datasets/pkg-1/edit?state=draft&resource=r1')
+      })
+    })
+
+    it('should refetch a draft by its id', async () => {
+      const server = mockRenamableFetch(sampleDraft)
+      render(<EditDatasetPage />)
+      await screen.findByRole('button', { name: 'MockSaved' })
+      server.renamed = true
+      mockClientFetch.mockClear()
+      fireEvent.click(screen.getByRole('button', { name: 'MockSaved' }))
+
+      await waitFor(() => {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/pkg-1')
+      })
+      expect(mockClientFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/packages/test-entity')
+      )
+      expect(screen.getByTestId('dataset-form')).toBeInTheDocument()
+    })
+
+    it.each(kinds)('should delete %s by its id', async (_label, pkg) => {
+      const server = mockRenamableFetch(pkg)
+      render(<EditDatasetPage />)
+      await screen.findByTestId('dataset-form')
+      server.renamed = true
+
+      fireEvent.click(screen.getByRole('button', { name: 'MockConfirmDelete' }))
+
+      await waitFor(() => {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/pkg-1', {
+          method: 'DELETE',
+        })
+      })
+      await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith('/dashboard/datasets'))
     })
   })
 
