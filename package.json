@@ -60,7 +60,8 @@
       "sharp"
     ],
     "patchedDependencies": {
-      "pdfjs-dist@6.2.108": "patches/pdfjs-dist@6.2.108.patch"
+      "pdfjs-dist@6.2.108": "patches/pdfjs-dist@6.2.108.patch",
+      "officeparser@8.1.0": "patches/officeparser@8.1.0.patch"
     },
     "overrides": {
       "@hono/node-server@<2.0.5": ">=2.0.5 <3",

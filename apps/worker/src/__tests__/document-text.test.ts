@@ -93,6 +93,14 @@ function page(pageNumber: number, text: string, extra: object = {}, anchorIds?: 
   return node('page', text, { pageNumber, ...extra }, [node('paragraph', text, { anchorIds })])
 }
 
+/** A PDF page of top-level nodes, as officeparser gives a tagged one. */
+const tagged = (pageNumber: number, nodes: OfficeContentNode[]) =>
+  node('page', '', { pageNumber }, nodes)
+/** A heading, its text its runs' where it is given them. */
+const h = (level: number, text: string, runs?: OfficeContentNode[]) =>
+  node('heading', text, { level }, runs)
+const p = (text: string) => node('paragraph', text)
+
 /**
  * An AST that renders whatever part of it is asked for, a line per top-level
  * node, the way officeparser does: a picture as `[Image: description]` unless
@@ -296,6 +304,20 @@ describe('PDF', () => {
     expect(ranges()).toEqual(['1-3', undefined])
   })
 
+  it('reads on when a later range does not say the page count', async () => {
+    parseOffice.mockImplementation(async (_path, config) => {
+      const range = rangeOf(config)
+      return {
+        metadata: range === '1-3' ? { pages: 6 } : {},
+        to: async () => ({ value: `pages ${range}` }),
+      } as never
+    })
+    const path = await file('later.pdf', Buffer.alloc(6 * 1024 * 1024))
+
+    expect(await lines(path, 'pdf')).toEqual(['pages 1-3', 'pages 4-6'])
+    expect(ranges()).toEqual(['1-3', '4-6'])
+  })
+
   it('reads a block per page, saying which page and where it is printed otherwise', async () => {
     parseOffice.mockResolvedValue(
       astOf([page(1, 'cover', { pageLabel: 'i' }), page(2, ''), page(3, 'body')], {
@@ -399,6 +421,19 @@ describe('PDF', () => {
     expect(first.ref).toMatch(/^\d+ 0 R$/)
     expect(first.ref).not.toBe(second.ref)
     expect(first.digest).toBe(second.digest)
+  })
+
+  it('puts the images of a page split at its tagged headings under those it ends under', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([tagged(1, [h(1, 'A'), h(1, 'B')])], { metadata: { pages: 1 } })
+    )
+    const path = await file('split-figures.pdf', await pdfWithImages([[['map', 900, 800]]]))
+
+    expect((await blocks(path, 'pdf')).map((b) => [b.text, b.headings, !!b.figure])).toEqual([
+      ['A', ['A'], false],
+      ['B', ['B'], false],
+      ['', ['B'], true],
+    ])
   })
 
   it('reads the text of a PDF whose page tree its images are listed from is broken', async () => {
@@ -586,6 +621,32 @@ describe('PDF', () => {
     expect(await blocks(path, 'pdf')).toEqual([
       { loc: { page: 1 }, text: '10', unreadable: 'unmapped-fonts', unmappedChars: 6 },
       { loc: { page: 2 }, text: 'Annual report', unmappedChars: 1 },
+    ])
+  })
+
+  it('marks each block of a page split at its tagged headings, and titles them without what is left out', async () => {
+    parseOffice.mockResolvedValue(
+      astOf(
+        [
+          tagged(1, [
+            node('paragraph', '', {}, [run('ࡢࡀ㈤㔠ㄪᰝ', 'MS-Mincho')]),
+            h(1, 'Summaryࡢࡀ', [run('Summary', 'Century'), run('ࡢࡀ', 'MS-Mincho')]),
+            h(1, 'Detail', [run('Detail', 'Century')]),
+          ]),
+        ],
+        { metadata: { pages: 1 } }
+      )
+    )
+    const fonts: FontSpec[] = [
+      ['MS-Mincho', 'identity'],
+      ['Century', 'simple'],
+    ]
+    const path = await file('split-marks.pdf', await pdfWithFonts([fonts]))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      // The run before the first heading lost all its text, and is left out
+      { loc: { page: 1 }, headings: ['Summary'], text: 'Summary', unmappedChars: 8 },
+      { loc: { page: 1 }, headings: ['Detail'], text: 'Detail', unmappedChars: 8 },
     ])
   })
 
@@ -1009,15 +1070,68 @@ describe('PDF', () => {
     ])
   })
 
-  it('gives no headings for a PDF without bookmarks, whatever its text looks like', async () => {
+  it('asks for the headings the tags mark, never those the font size suggests', async () => {
+    parseOffice.mockResolvedValue(astOf([page(1, 'a')], { metadata: { pages: 1 } }))
+    const path = await file('asked.pdf', Buffer.alloc(10))
+
+    await blocks(path, 'pdf')
+    for (const [, config] of parseOffice.mock.calls) {
+      expect((config as OfficeParserConfig).pdfParserConfig?.headingDetection).toBe('tags')
+    }
+  })
+
+  it('without bookmarks, splits each page at its tagged headings, across pages and ranges', async () => {
+    parseOffice.mockImplementation(async (_path, config) => {
+      const pages =
+        rangeOf(config) === '1-3'
+          ? [
+              tagged(1, [p('cover')]),
+              tagged(2, [h(1, '第1章'), p('a'), h(2, '1.1 目的'), p('b')]),
+              tagged(3, [p('c'), h(2, '1.2 範囲'), p('d')]),
+            ]
+          : [tagged(4, [p('e'), h(1, '第2章')])]
+      return astOf(pages, { metadata: { pages: 4 } })
+    })
+    const path = await file('tagged.pdf', Buffer.alloc(4 * 1024 * 1024))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, text: 'cover' },
+      { loc: { page: 2 }, headings: ['第1章'], text: '第1章\na' },
+      { loc: { page: 2 }, headings: ['第1章', '1.1 目的'], text: '1.1 目的\nb' },
+      // The page opens under the headings the page before ended under
+      { loc: { page: 3 }, headings: ['第1章', '1.1 目的'], text: 'c' },
+      { loc: { page: 3 }, headings: ['第1章', '1.2 範囲'], text: '1.2 範囲\nd' },
+      { loc: { page: 4 }, headings: ['第1章', '1.2 範囲'], text: 'e' },
+      { loc: { page: 4 }, headings: ['第2章'], text: '第2章' },
+    ])
+  })
+
+  it('reads the bookmarks, not the tags, where a PDF has both', async () => {
     parseOffice.mockResolvedValue(
-      astOf([node('page', '２', { pageNumber: 1 }, [node('heading', '２', { level: 3 })])], {
+      astOf([tagged(1, [h(1, 'tag'), p('a'), h(2, 'sub'), p('b')])], {
         metadata: { pages: 1 },
+        auxiliary: { outline: [bookmark('しおり', '#page=1')] },
       })
     )
-    const path = await file('flat.pdf', Buffer.alloc(10))
+    const path = await file('both.pdf', Buffer.alloc(10))
 
-    expect(await blocks(path, 'pdf')).toEqual([{ loc: { page: 1 }, text: '２' }])
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, headings: ['しおり'], text: 'tag\na\nsub\nb' },
+    ])
+  })
+
+  it('leaves out a run with no text, so the runs are the page text', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([tagged(1, [node('table', ''), h(1, 'A'), p('a')]), tagged(2, [])], {
+        metadata: { pages: 2 },
+      })
+    )
+    const path = await file('empty-run.pdf', Buffer.alloc(10))
+
+    expect(await blocks(path, 'pdf')).toEqual([
+      { loc: { page: 1 }, headings: ['A'], text: 'A\na' },
+      { loc: { page: 2 }, headings: ['A'], text: '', unreadable: 'no-text' },
+    ])
   })
 })
 
@@ -1042,6 +1156,22 @@ describe('Office documents', () => {
       { loc: {}, headings: ['第1章 総則', '1.1 目的'], text: '1.1  目的\npurpose' },
       { loc: {}, headings: ['第2章'], text: '第2章\ntwo' },
     ])
+  })
+
+  it('titles a heading by its text, a line break in it a space between its words', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([
+        node('heading', 'Annual\nreport', { level: 1 }, [
+          node('text', 'Annual'),
+          node('break', ''),
+          node('text', 'report'),
+        ]),
+        node('paragraph', 'body'),
+      ])
+    )
+    const path = await file('break.docx', Buffer.alloc(10))
+
+    expect((await blocks(path, 'docx')).map((b) => b.headings)).toEqual([['Annual report']])
   })
 
   it('follows a run with its pictures, the run rendered without them', async () => {

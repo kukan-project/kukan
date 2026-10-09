@@ -9,7 +9,8 @@
  * Each block says where in the file its text is: the page, the slide, the
  * sheet and row, and the headings the file itself marks over it. A heading is
  * never inferred from how text looks — on the PDFs we tried, the font-size
- * guess made a decorative numeral a heading and a running header a chapter.
+ * guess made a decorative numeral a heading and a running header a chapter;
+ * a PDF's are its bookmarks, or where it has none, its heading tags.
  */
 
 import { createHash } from 'node:crypto'
@@ -69,10 +70,14 @@ import { xlsSheets, type XlsRow } from './legacy/xls'
  */
 const TEXT_OPTIONS = { textConfig: { preserveLayout: false }, includeImages: 'none' } as const
 
-/** What the text does not need: colours, and every node's coordinates. */
+/**
+ * What the text does not need: colours, and every node's coordinates. Its
+ * headings are those the tags mark, never one guessed from the font size —
+ * an option of our patch to officeparser (patches/officeparser@*.patch).
+ */
 const PDF_TEXT_ONLY: OfficeParserConfig = {
   ignorePageGeometry: true,
-  pdfParserConfig: { extractTextColor: false },
+  pdfParserConfig: { extractTextColor: false, headingDetection: 'tags' },
 }
 
 /** Characters of a heading kept; a "heading" longer than this is a paragraph styled as one. */
@@ -239,6 +244,20 @@ function headingText(node: OfficeContentNode): string {
   return oneHeading(node.text ?? '')
 }
 
+/**
+ * A tagged PDF heading's title from its runs, not the text officeparser
+ * joined them into: the runs are what `readable` leaves out a font's unmapped
+ * characters of. A PDF heading is runs alone, its line breaks a space at the
+ * end of one; another format's holds more — a Word heading's line break is a
+ * node of its own — and is titled by its text.
+ */
+function taggedHeadingText(node: OfficeContentNode): string {
+  const runs = findNodes(node, (n) => n.type === 'text')
+  return runs.length > 0
+    ? oneHeading(runs.map((run) => run.text ?? '').join(''))
+    : headingText(node)
+}
+
 function oneHeading(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, HEADING_MAX_CHARS)
 }
@@ -257,13 +276,13 @@ async function* officeBlocks(filePath: string): AsyncGenerator<DocumentTextBlock
     return
   }
   const partOf = packageParts(filePath)
-  const path: { level: number; title: string }[] = []
+  const path: HeadingPath = []
   let run: OfficeContentNode[] = []
   async function* section(): AsyncGenerator<DocumentTextBlock> {
     if (run.length === 0) return
     const nodes = run
     run = []
-    const under = headingsOf(path.map((h) => h.title))
+    const under = headingsOver(path)
     yield { loc: {}, ...under, text: await render(ast, nodes) }
     yield* figureBlocks(nodes, {}, under, partOf)
   }
@@ -276,10 +295,7 @@ async function* officeBlocks(filePath: string): AsyncGenerator<DocumentTextBlock
     }
     if (node.type === 'heading') {
       yield* section()
-      const level = (node.metadata as { level?: number } | undefined)?.level ?? 1
-      const title = headingText(node)
-      while (path.length > 0 && path[path.length - 1].level >= level) path.pop()
-      if (title) path.push({ level, title })
+      enterHeading(path, node)
     }
     run.push(node)
   }
@@ -371,6 +387,24 @@ function findNodes(
   ]
 }
 
+/** The headings over what is read next, outermost first. */
+type HeadingPath = { level: number; title: string }[]
+
+/** `path` with `heading` read: it closes the headings at its level and below. */
+function enterHeading(path: HeadingPath, heading: OfficeContentNode, title = headingText(heading)) {
+  const level = (heading.metadata as { level?: number } | undefined)?.level ?? 1
+  while (path.length > 0 && path[path.length - 1].level >= level) path.pop()
+  if (title) path.push({ level, title })
+}
+
+/** `{ headings }` of `path`, as {@link headingsOf} leaves them out where there are none. */
+function headingsOver(path: HeadingPath): { headings?: string[] } {
+  return headingsOf(path.map((h) => h.title))
+}
+
+/** A page's text, or a run of it, under the headings it reads under. */
+type PagePart = { headings?: string[]; text: string }
+
 /** `{ headings }` where there are any: a block with none leaves the key out. */
 function headingsOf(headings: string[] | undefined): { headings?: string[] } {
   return headings && headings.length > 0 ? { headings } : {}
@@ -386,6 +420,8 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
   let count = PDF_RANGE_MIN_PAGES
   let pages = Infinity
   let bookmarks: Bookmarks | undefined
+  // A range's first page is under the tagged headings of the ranges before
+  const tagged: HeadingPath = []
   const facts = await pdfPageFacts(filePath)
   while (first <= pages) {
     const last = Math.min(first + count - 1, pages)
@@ -393,14 +429,14 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
       ...PDF_TEXT_ONLY,
       pdfParserConfig: { ...PDF_TEXT_ONLY.pdfParserConfig, pageRange: `${first}-${last}` },
     })
-    const total = ast.metadata?.pages
-    if (typeof total !== 'number') {
-      // Without the page count, ranges cannot be walked: read it whole, as before
-      const whole = await OfficeParser.parseOffice(filePath, PDF_TEXT_ONLY)
-      yield* pageBlocks(whole, new Bookmarks(whole.auxiliary?.outline), facts)
-      return
-    }
     if (first === 1) {
+      const total = ast.metadata?.pages
+      if (typeof total !== 'number') {
+        // Without the page count, ranges cannot be walked: read it whole, as before
+        const whole = await OfficeParser.parseOffice(filePath, PDF_TEXT_ONLY)
+        yield* pageBlocks(whole, new Bookmarks(whole.auxiliary?.outline), tagged, facts)
+        return
+      }
       pages = total
       count = Math.min(
         Math.max(Math.floor(PDF_RANGE_BYTES / (size / pages)), PDF_RANGE_MIN_PAGES),
@@ -410,18 +446,21 @@ async function* pdfBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
     first = last + 1
     // Every range carries the whole outline, so the first one's will do
     bookmarks ??= new Bookmarks(ast.auxiliary?.outline)
-    yield* pageBlocks(ast, bookmarks, facts)
+    yield* pageBlocks(ast, bookmarks, tagged, facts)
   }
 }
 
 /**
- * A block per page, then the page's images: empty for a page with no text on
- * it, marked for one whose text is mostly in fonts it cannot be read from, and
- * with the count of what was left out of one with any.
+ * A block per page, or where the PDF has no bookmarks, per run of a page from
+ * one tagged heading to the next; then the page's images, under the headings
+ * its text ends under. A page with no text on it is a block, empty; one whose
+ * text is mostly in fonts it cannot be read from is marked, and one with any
+ * left out says how much, on each of its blocks.
  */
 async function* pageBlocks(
   ast: OfficeParserAST,
   bookmarks: Bookmarks,
+  tagged: HeadingPath,
   { figures, fonts }: PdfPageFacts
 ): AsyncGenerator<DocumentTextBlock> {
   const pages = (ast.content ?? []).filter((node) => node.type === 'page')
@@ -433,27 +472,53 @@ async function* pageBlocks(
   for (const page of pages) {
     const meta = page.metadata as { pageNumber?: number; pageLabel?: string } | undefined
     const read = readable(page, fonts.get(meta?.pageNumber ?? 0))
-    const text = await render(ast, read.page ? [read.page] : [])
-    const under = headingsOf(
-      meta?.pageNumber ? bookmarks.at(meta.pageNumber, anchorsOn(page)) : undefined
-    )
+    const bookmarked = meta?.pageNumber ? bookmarks.at(meta.pageNumber, anchorsOn(page)) : undefined
+    const parts = bookmarks.empty
+      ? await taggedParts(ast, read.page, tagged)
+      : [{ ...headingsOf(bookmarked), text: await render(ast, read.page ? [read.page] : []) }]
     const loc = {
       ...(meta?.pageNumber !== undefined && { page: meta.pageNumber }),
       ...(meta?.pageLabel && { label: meta.pageLabel }),
     }
-    yield {
-      loc,
-      ...under,
-      text,
+    const marks = {
       ...(read.lost > read.kept
         ? { unreadable: 'unmapped-fonts' as const }
-        : !text.trim() && { unreadable: 'no-text' as const }),
+        : parts.every((part) => !part.text.trim()) && { unreadable: 'no-text' as const }),
       ...(read.lost > 0 && { unmappedChars: read.lost }),
     }
+    for (const part of parts) yield { loc, ...part, ...marks }
+    const under = headingsOf(parts.at(-1)!.headings)
     for (const figure of figures.get(meta?.pageNumber ?? 0) ?? []) {
       yield { loc, ...under, text: '', figure }
     }
   }
+}
+
+/**
+ * `page`'s text in runs from one tagged heading to the next, each under the
+ * headings that lead to it, the first under those of the pages before. A run
+ * with no text is left out — its page's text is the runs', a line between
+ * each — and a page with none is one run, empty.
+ */
+async function taggedParts(
+  ast: OfficeParserAST,
+  page: OfficeContentNode | undefined,
+  path: HeadingPath
+): Promise<PagePart[]> {
+  const runs = [{ ...headingsOver(path), nodes: [] as OfficeContentNode[] }]
+  for (const node of page?.children ?? []) {
+    if (node.type === 'heading') {
+      enterHeading(path, node, taggedHeadingText(node))
+      runs.push({ ...headingsOver(path), nodes: [] })
+    }
+    runs.at(-1)!.nodes.push(node)
+  }
+  const parts: PagePart[] = []
+  for (const { nodes, ...run } of runs) {
+    const text = nodes.length > 0 ? await render(ast, [{ ...page!, children: nodes }]) : ''
+    if (text) parts.push({ ...run, text })
+  }
+  return parts.length > 0 ? parts : [{ ...headingsOver(path), text: '' }]
 }
 
 /**
@@ -1138,6 +1203,11 @@ class Bookmarks {
 
   constructor(outline: OfficeContentNode[] | undefined) {
     this.add(outline, [])
+  }
+
+  /** No bookmark to put a page under: the tagged headings are read instead. */
+  get empty(): boolean {
+    return this.entries.length === 0
   }
 
   private add(items: OfficeContentNode[] | undefined, parent: string[]) {

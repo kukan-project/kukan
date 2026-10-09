@@ -26,6 +26,9 @@ overrides:
   undici@>=7.0.0 <7.29.0: '>=7.29.0 <8'
 
 patchedDependencies:
+  officeparser@8.1.0:
+    hash: b2fe84a9c8cc667f67fae1430e1dd48c91631238f82de478984226fa061181bf
+    path: patches/officeparser@8.1.0.patch
   pdfjs-dist@6.2.108:
     hash: 6eab6b778b4ddc2fe22015a9d093d6bc829a92ea581b725aacda6872456dc0e5
     path: patches/pdfjs-dist@6.2.108.patch
@@ -259,7 +262,7 @@ importers:
         version: 4.13.12
       officeparser:
         specifier: ^8.1.0
-        version: 8.1.0(pdf-lib@1.17.1)
+        version: 8.1.0(patch_hash=b2fe84a9c8cc667f67fae1430e1dd48c91631238f82de478984226fa061181bf)(pdf-lib@1.17.1)
       p-limit:
         specifier: ^7.3.3
         version: 7.3.3
@@ -11344,7 +11347,7 @@ snapshots:
       node-fetch-native: 1.6.7
       ufo: 1.6.4
 
-  officeparser@8.1.0(pdf-lib@1.17.1):
+  officeparser@8.1.0(patch_hash=b2fe84a9c8cc667f67fae1430e1dd48c91631238f82de478984226fa061181bf)(pdf-lib@1.17.1):
     dependencies:
       '@xmldom/xmldom': 0.9.12
       fflate: 0.8.3

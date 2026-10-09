@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { rawPdf } from './test-helpers/raw-pdf'
 
 /**
  * patches/pdfjs-dist@*.patch stops pdf.js compiling each glyph of a font to a
@@ -17,7 +18,7 @@ const fontPath = join(dirname(pdfjsPath), '../../standard_fonts/LiberationSans-R
 /** One page of text in an embedded TrueType font. */
 function pdfWithEmbeddedFont(font: Buffer): Buffer {
   const content = 'BT /F1 24 Tf 72 700 Td (Hello) Tj ET'
-  const objects: (string | Buffer)[] = [
+  return rawPdf([
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
@@ -29,26 +30,7 @@ function pdfWithEmbeddedFont(font: Buffer): Buffer {
       font,
       Buffer.from('\nendstream'),
     ]),
-  ]
-  const parts: Buffer[] = [Buffer.from('%PDF-1.7\n')]
-  const offsets: number[] = []
-  let at = parts[0].length
-  objects.forEach((body, i) => {
-    const part = Buffer.concat([
-      Buffer.from(`${i + 1} 0 obj\n`),
-      Buffer.isBuffer(body) ? body : Buffer.from(body),
-      Buffer.from('\nendobj\n'),
-    ])
-    offsets.push(at)
-    parts.push(part)
-    at += part.length
-  })
-  const xref = [
-    `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`,
-    ...offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`),
-    `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${at}\n%%EOF\n`,
-  ].join('')
-  return Buffer.concat([...parts, Buffer.from(xref)])
+  ])
 }
 
 describe('pdf.js as patched', () => {

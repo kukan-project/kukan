@@ -277,7 +277,7 @@ sweep の参照判定と、行を書き換えるときの回収予約（`StepTra
 版の取り消しとパージでは、プレビューと一緒に外して消す（`discardDerivedArtifacts`）。
 
 7 つ目は文書テキストの成果物。PDF・Office 系の本文を、ページ・スライド・シートと行、文書が持つ
-見出し（PDF のしおり、Word の見出しスタイル、スライドのタイトル）とともに 1 ブロック 1 行で持つ
+見出し（PDF のしおり、しおりが無ければ見出しのタグ、Word の見出しスタイル、スライドのタイトル）とともに 1 ブロック 1 行で持つ
 zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、どちらも
 `packages/shared/src/pipeline-types.ts`）。図も 1 ブロックとして持つが、画像そのものは持たず、
 ファイルの中で指す名前（PDF のオブジェクト番号、パッケージ内のパス）と寸法だけを持つ。Index が

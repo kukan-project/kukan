@@ -342,8 +342,9 @@ export interface DocumentTextFigure {
 export interface DocumentTextBlock {
   loc: DocumentTextLoc
   /**
-   * The headings the text is under, outermost first: the PDF's bookmarks, the
-   * document's heading styles, the slide's title. Absent where the file marks
+   * The headings the text is under, outermost first: the PDF's bookmarks, or
+   * where it has none its heading tags; the document's heading styles; the
+   * slide's title. Absent where the file marks
    * none — they are never guessed from how the text looks.
    */
   headings?: string[]

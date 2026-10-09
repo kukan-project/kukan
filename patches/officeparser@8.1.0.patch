@@ -1,0 +1,46 @@
+diff --git a/dist/parsers/pdf/pdfTypes.d.ts b/dist/parsers/pdf/pdfTypes.d.ts
+index f8e94989eab47a68533f2d4fa111028886812123..85b331cdcd41dc40f70bf3a3a9b9e5a5c8d6d0db 100644
+--- a/dist/parsers/pdf/pdfTypes.d.ts
++++ b/dist/parsers/pdf/pdfTypes.d.ts
+@@ -111,7 +111,7 @@ export interface PdfLayoutConfig {
+     mergeHyphenatedWords: boolean;
+     lineToleranceFactor: number;
+     spaceToleranceFactor: number;
+-    headingDetection: 'auto' | 'font-size' | 'off';
++    headingDetection: 'auto' | 'font-size' | 'off' | 'tags';
+     normalizeText: boolean;
+     /** Extract per-run fill color from the operator list into `formatting.color` (costs an op-list fetch per page). */
+     extractTextColor: boolean;
+diff --git a/dist/parsers/pdf/textLayout.js b/dist/parsers/pdf/textLayout.js
+index f9c5a7ba574b1c5f3cf71ba06bd39f8040e8ef6f..80f197761d64847b0c61ffbb25632639c9ed2673 100644
+--- a/dist/parsers/pdf/textLayout.js
++++ b/dist/parsers/pdf/textLayout.js
+@@ -1306,7 +1306,8 @@ function paragraphNode(group, page, doc, forcedLevel) {
+     return node;
+ }
+ function headingLevel(group, doc) {
+-    if (doc.cfg.headingDetection === 'off')
++    // 'tags': only a tagged heading is one, so the size/weight guess never makes one
++    if (doc.cfg.headingDetection === 'off' || doc.cfg.headingDetection === 'tags')
+         return 0;
+     const size = group.fontSize;
+     if (size < 1.2 * doc.bodyFontSize)
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+index 3820172933db0c042a13a31b9d0da66d79f2f04c..d243c423722c3cef3117143a3c50b73290593074 100644
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -576,10 +576,13 @@ export interface PdfParserConfig {
+      *   call a plain paragraph is left as one. Use this when a PDF's heading tags are present but wrong
+      *   or flat.
+      * - 'off': never emit headings; every block is a paragraph.
++     * - 'tags': a heading only where the tags mark one (`H`/`H1`..`H6`), at its tagged level; text
++     *   assembled from geometry (an untagged PDF, a page the tags cover too little of, text outside
++     *   the tags) is never a heading.
+      *
+      * Default is 'auto'.
+      */
+-    headingDetection?: 'auto' | 'font-size' | 'off';
++    headingDetection?: 'auto' | 'font-size' | 'off' | 'tags';
+     /**
+      * Restrict parsing to a subset of pages, e.g. '1-3,7' or '2,4,6'. Pages are 1-based and the
+      * output keeps their original page numbers. An empty string parses all pages; an unparseable or

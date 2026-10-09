@@ -313,7 +313,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     'get_document_outline',
     {
       description:
-        "List a document resource's headings (PDF bookmarks, Word heading styles, slide titles) or a workbook's sheets, each with the pages, slides or rows it spans, and how many pages it has. " +
+        "List a document resource's headings (PDF bookmarks or heading tags, Word heading styles, slide titles) or a workbook's sheets, each with the pages, slides or rows it spans, and how many pages it has. " +
         'For PDF, Word, PowerPoint and Excel files, the formats before 2007 (DOC, PPT, XLS) included, and Ichitaro (JTD, JTT); not for CSV (use get_resource_schema and query_resource for those tables). ' +
         "A DOC or an Ichitaro file marks no headings a reader of it can find: its text is one block, an Ichitaro file's a block a sheet where it has several. " +
         'Call it before get_document_section to choose what to read: give that tool a heading or the pages listed here. ' +
