@@ -65,6 +65,15 @@ curl -X POST https://your-kukan-site/api/mcp \
   }'
 ```
 
+## Guidance on Connecting
+
+The `instructions` of the `initialize` result tell the client how the tools go together. MCP clients add them to what the model is told.
+
+- **Language to search in**: search in the catalog's language and answer in the user's. The catalog's language is judged from the characters of the public datasets' titles (the 50 most recently updated). Only Japanese and Korean are named. A catalog of kanji alone (which cannot tell Japanese from Chinese), of a language in Latin script, or of mixed languages gets no language named — only "in the language of the titles the searches return"
+- **Choosing the words**: give a few words a dataset's title or a document would use, not the whole question; if nothing fits, drop a word or try another
+- **Which tools go together**: where the answer is in documents' text, `search_passages` then `get_document_section`; where it is a figure in a table, `search_datasets` then `get_resource_schema` and `query_resource`
+- **Citing**: cite the resource, the page or rows, and the URL each tool gives. Judging what the text means is left to the caller
+
 ## Available Tools
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
@@ -89,6 +98,8 @@ All tools are read-only. Access to private datasets is controlled based on the a
 
 Search the data catalog. Besides keywords, natural-language queries work too —
 semantically related datasets are included in the results (hybrid search).
+By keyword, a dataset matches only if it holds **every word** of the query, so a few words
+its title or description would use find more than the whole question.
 
 When a dataset holds several files, the result says **which of them matched**, under
 `Matched files:`, each with what the match is on account of — `in its name or
