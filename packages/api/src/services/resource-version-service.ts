@@ -73,8 +73,8 @@ import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { jobsFor, readyJobsFor, type JobQueue } from '@kukan/queue'
-import { lakeStandDown, withLakeIngestLock } from './lake-ingest'
-import { reclaimInSession } from './lake-reclaim'
+import { lakeStandDown, withLakeIngestLock } from './lake/lake-ingest'
+import { reclaimInSession } from './lake/lake-reclaim'
 import {
   CLAIM_STALE_AFTER_MS,
   onRevision,
@@ -84,12 +84,17 @@ import {
   withResourceClaims,
   withResourceClaimsOrConflict,
   type ResourceClaim,
-} from './pipeline-claim'
-import { leasePassed as leasePassedWithin } from './lease'
-import { copyObject, publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
-import { PipelineService, schemaDescribesLiveContent } from './pipeline-service'
+} from './pipeline/pipeline-claim'
+import { leasePassed as leasePassedWithin } from './concurrency/lease'
+import {
+  copyObject,
+  publishLiveContent,
+  PARKED_UNTIL,
+  ownedByVersion,
+} from './pipeline/storage-pointer'
+import { PipelineService, schemaDescribesLiveContent } from './pipeline/pipeline-service'
 import { scanLake } from './query/lake-scan'
-import { markContentUnindexed } from './content-index-record'
+import { markContentUnindexed } from './search/content-index-record'
 
 /** The row creating a version adds, minus everything the table fills in. */
 export interface CreatedVersion {

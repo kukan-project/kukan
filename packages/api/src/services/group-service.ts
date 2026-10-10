@@ -13,7 +13,7 @@ import type {
   CreateGroupInput,
   UpdateGroupInput,
 } from '@kukan/shared'
-import { markPackageDocs } from './doc-marks'
+import { markPackageDocs } from './search/doc-marks'
 import { orderTerms } from './list-order'
 import { groupMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
 

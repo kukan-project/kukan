@@ -7,7 +7,7 @@ import { Hono } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { GroupService } from '../services/group-service'
-import { enqueueSearchDocSync } from '../services/search-index'
+import { enqueueSearchDocSync } from '../services/search/search-index'
 import {
   createGroupSchema,
   updateGroupSchema,

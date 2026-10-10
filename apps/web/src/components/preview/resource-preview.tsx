@@ -22,7 +22,7 @@ import {
   TEXT_PREVIEW_LIMIT_MB,
 } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
-import { DataExplorer } from '../data-explorer/data-explorer'
+import { DataExplorer } from '@/components/data-explorer/data-explorer'
 import { GeoJsonPreview } from './geojson-preview'
 import { JsonPreview } from './json-preview'
 import { ZipPreview } from './zip-preview'

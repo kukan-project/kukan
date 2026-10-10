@@ -34,12 +34,12 @@ import {
   type Database,
 } from '@kukan/db'
 import { embeddingKey } from '@kukan/ai-adapter'
-import { leasePassed } from '../services/lease'
+import { leasePassed } from '../services/concurrency/lease'
 import {
   EMBED_NOTICE_GRACE_MS,
   markAllResourceEmbeddings,
   requestResourceEmbeds,
-} from '../services/resource-embedding'
+} from '../services/search/resource-embedding'
 import { DEFAULT_VECTOR_MIN_SIMILARITY } from '@kukan/search-adapter'
 import {
   UnauthorizedError,
@@ -62,15 +62,15 @@ import {
   SysadminRequiredError,
   NotFoundError,
 } from '@kukan/shared'
-import { PipelineService, reprocessAllPending } from '../services/pipeline-service'
+import { PipelineService, reprocessAllPending } from '../services/pipeline/pipeline-service'
 import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
-import { summaryEstimate } from '../services/summary-estimate'
+import { summaryEstimate } from '../services/ai/summary-estimate'
 import { AI_USAGE_GRANULARITIES } from '@kukan/shared'
-import { aiUsageReport } from '../services/ai-usage-report'
+import { aiUsageReport } from '../services/ai/ai-usage-report'
 import { getSummaryModel } from '../services/suggest/availability'
 
 import { AI_SUMMARY_LOCALE_KEY } from '../services/system-setting'
-import { markContentUnindexed } from '../services/content-index-record'
+import { markContentUnindexed } from '../services/search/content-index-record'
 import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA } from '@kukan/lake'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { UserService } from '../services/user-service'

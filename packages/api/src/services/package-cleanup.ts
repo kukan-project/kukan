@@ -23,7 +23,7 @@ import { resource, resourceVersion } from '@kukan/db'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
+import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from './concurrency/advisory-lock'
 
 /**
  * What a purge of these packages has to account for, read while the rows still

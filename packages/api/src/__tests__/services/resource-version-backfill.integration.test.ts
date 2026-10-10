@@ -16,7 +16,7 @@ import {
   recordLakeIngestFailure,
   ResourceVersionService,
 } from '../../services/resource-version-service'
-import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
+import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline/pipeline-claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 import { mapStorage } from '../test-helpers/fixtures'
 import { mockTransaction } from '../test-helpers/test-app'

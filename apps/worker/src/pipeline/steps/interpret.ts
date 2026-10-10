@@ -37,7 +37,7 @@ import { runHeavy } from '@/heavy'
 import type { ExtractedText } from '../interpret/document/document-text'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../run/types'
-import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline-service'
+import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline/pipeline-service'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface InterpretResult {

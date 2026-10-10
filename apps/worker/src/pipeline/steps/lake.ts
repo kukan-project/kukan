@@ -14,7 +14,7 @@
  * no format test here.
  */
 
-import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
+import type { LakeIngestRow } from '@kukan/api/services/lake/lake-ingest'
 import { RunCancelledError } from '../run/step-tracker'
 import type { PipelineContext } from '../run/types'
 

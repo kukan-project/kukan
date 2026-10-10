@@ -28,7 +28,7 @@
  * inherits it.
  */
 import type { Database } from '@kukan/db'
-import { stillHolds, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
+import { stillHolds, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { RunCancelledError } from './step-tracker'
 import type { PipelineContext } from './types'
 

@@ -14,7 +14,7 @@
 
 import type { OdataKey, OdataRefusal, OdataRefusalReason, ResourceSchema } from '@kukan/shared'
 import type { Database } from '@kukan/db'
-import { isQueryable, type QueryTarget } from '../pipeline-service'
+import { isQueryable, type QueryTarget } from '../pipeline/pipeline-service'
 import { ResourceVersionService } from '../resource-version-service'
 import { buildModel, edmRefusal, odataKeyOf, type EdmModel, type EdmRefusal } from './edm'
 import { estimateRowBytes, rowsMayBeTooWide } from './page-budget'

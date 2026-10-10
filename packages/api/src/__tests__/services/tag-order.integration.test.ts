@@ -10,7 +10,7 @@ import { sql } from 'drizzle-orm'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import type { DatasetDoc, SearchAdapter } from '@kukan/search-adapter'
 import { PackageService } from '../../services/package-service'
-import { syncDueSearchDocs } from '../../services/search-index'
+import { syncDueSearchDocs } from '../../services/search/search-index'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()

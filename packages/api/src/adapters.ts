@@ -17,7 +17,7 @@ import {
   OllamaAdapter,
   meterAI,
 } from '@kukan/ai-adapter'
-import { createAiUsageRecorder, type AiUsageRecorder } from './services/ai-usage-recorder'
+import { createAiUsageRecorder, type AiUsageRecorder } from './services/ai/ai-usage-recorder'
 
 const globalForSearch = globalThis as unknown as {
   __kukanOpenSearchAdapter?: OpenSearchAdapter

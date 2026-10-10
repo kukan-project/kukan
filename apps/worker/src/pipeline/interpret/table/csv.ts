@@ -220,7 +220,7 @@ export async function interpretCsv(
     // to fetch — the read is still two ranges, since compression is per page
     // inside a column chunk, so nothing has to be pulled whole.
     //
-    // The browser reader was taught ZSTD first (`hooks/parquet-codecs.ts`); the
+    // The browser reader was taught ZSTD first (`lib/parquet-codecs.ts`); the
     // other two readers, the DuckDB explorer (ADR-016) and the server sandbox,
     // have always handled it. Files written before this stay Snappy and are
     // never rewritten (ADR-029 §7), so the reader keeps both.

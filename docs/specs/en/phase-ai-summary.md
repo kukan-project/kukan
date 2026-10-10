@@ -505,7 +505,7 @@ resource whose content has not changed still gets an abstract if it has none.
 ### 8.1 Material assembly moves out of `suggest/`
 
 Assembly is currently private to
-[metadata-suggest-service.ts](../../../packages/api/src/services/metadata-suggest-service.ts).
+[metadata-suggest-service.ts](../../../packages/api/src/services/suggest/metadata-suggest-service.ts).
 It becomes `collectResourceMaterial()` in
 `packages/api/src/services/suggest/materials.ts` so the worker can call it.
 

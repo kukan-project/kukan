@@ -59,12 +59,12 @@ import {
   publicResourceColumns,
   ResourceService,
 } from './resource-service'
-import { markPackageDocs } from './doc-marks'
+import { markPackageDocs } from './search/doc-marks'
 import type { JobQueue } from '@kukan/queue'
-import { queueLakeTablesDrop } from './lake-reclaim'
-import { markPackageResourceEmbeddings } from './resource-embedding'
+import { queueLakeTablesDrop } from './lake/lake-reclaim'
+import { markPackageResourceEmbeddings } from './search/resource-embedding'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
-import { withResourceClaimsOrConflict } from './pipeline-claim'
+import { withResourceClaimsOrConflict } from './pipeline/pipeline-claim'
 
 /** Random placeholder name for a draft (ADR-039) — replaced before publish */
 export function generateDraftPackageName(): string {

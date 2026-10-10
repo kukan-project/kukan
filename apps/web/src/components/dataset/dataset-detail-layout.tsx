@@ -6,7 +6,7 @@ import { resolveLicenseLabel } from '@kukan/shared'
 import { serverFetch, getCurrentUser } from '@/lib/server-api'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
-import { DatasetMetadata } from '@/components/dataset/dataset-metadata'
+import { DatasetMetadata } from './dataset-metadata'
 import { ResourceExplorer, type Resource } from '@/components/resource/resource-explorer'
 
 interface Organization {

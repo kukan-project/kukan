@@ -31,11 +31,11 @@ import type {
   ResourceSectionAssignment,
 } from '@kukan/shared'
 import type { PendingResourceMetadata } from '@kukan/db'
-import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
-import { cancelResourceRun } from './pipeline-claim'
-import { lockedInIdOrder } from './doc-marks'
-import { embeddingDueIf } from './resource-embedding'
-import { PARKED_UNTIL, ownedByVersion } from './storage-pointer'
+import { RESOURCE_POSITION_LOCK, lockInTransaction } from './concurrency/advisory-lock'
+import { cancelResourceRun } from './pipeline/pipeline-claim'
+import { lockedInIdOrder } from './search/doc-marks'
+import { embeddingDueIf } from './search/resource-embedding'
+import { PARKED_UNTIL, ownedByVersion } from './pipeline/storage-pointer'
 import {
   hasOrgMembership,
   hasDraftAccess,

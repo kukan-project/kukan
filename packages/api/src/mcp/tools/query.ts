@@ -7,7 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { AuthUser } from '../../auth/permissions'
-import { QueryService } from '../../services/query-service'
+import { QueryService } from '../../services/query/query-service'
 
 interface QueryToolsContext {
   db: Database

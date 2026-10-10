@@ -19,8 +19,8 @@ import type {
   PipelineStepName,
   TableProfile,
 } from '@kukan/shared'
-import { heldBy, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
-import { PARKED_UNTIL } from '@kukan/api/services/storage-pointer'
+import { heldBy, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+import { PARKED_UNTIL } from '@kukan/api/services/pipeline/storage-pointer'
 
 /**
  * The run no longer holds its resource: something killed it, or took it over

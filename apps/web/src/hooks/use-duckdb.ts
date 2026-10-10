@@ -1,31 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { AsyncDuckDB, AsyncDuckDBConnection, DuckDBBundles } from '@duckdb/duckdb-wasm'
 import { clientFetch } from '@/lib/client-api'
-import { parquetFileName, buildQuery } from './duckdb-sql'
+import { parquetFileName, buildQuery, type DuckDBQueryParams } from '@/lib/duckdb-sql'
 import { formatCell } from '@/lib/format-utils'
 
 type ArrowTable = Awaited<ReturnType<AsyncDuckDBConnection['query']>>
 
 // --- Types ---
 
-export interface ColumnFilter {
-  column: string
-  operator: 'eq' | 'neq' | 'contains' | 'starts_with' | 'ends_with'
-  value: string
-}
-
-export interface SortState {
-  column: string
-  direction: 'ASC' | 'DESC'
-}
-
-export interface DuckDBQueryParams {
-  sort?: SortState
-  filters?: ColumnFilter[]
-  searchKeyword?: string
-  page: number
-  pageSize: number
-}
+export type { ColumnFilter, SortState, DuckDBQueryParams } from '@/lib/duckdb-sql'
 
 interface UseDuckDBOptions {
   resourceId: string

@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Client } from 'pg'
 import { packageTable, type Transaction } from '@kukan/db'
-import { SEARCH_DOC_SYNC_LOCK, lockInTransaction } from '../../services/advisory-lock'
+import { SEARCH_DOC_SYNC_LOCK, lockInTransaction } from '../../services/concurrency/advisory-lock'
 import { getTestDb, getTestDatabaseUrl } from './test-db'
 
 /** Run `take` in another transaction and hold what it took until the returned release */

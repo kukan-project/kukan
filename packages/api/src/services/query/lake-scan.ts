@@ -21,7 +21,7 @@ import {
   RequestTimeoutError,
   WEB_LAKE_CATALOG_CONNECTIONS,
 } from '@kukan/shared'
-import { withDuckdbSlot } from './semaphore'
+import { withDuckdbSlot } from './duckdb-slot'
 import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../../config'
 
 /**

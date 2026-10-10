@@ -27,9 +27,9 @@ import {
   bufferToUtf8,
   stripTrailingReplacementChar,
 } from '@kukan/shared/encoding-node'
-import { QueryService } from '../query-service'
+import { QueryService } from '../query/query-service'
 import { readDocumentTextHead } from '../document-text'
-import { documentTextOf, parseResourceSchema } from '../pipeline-service'
+import { documentTextOf, parseResourceSchema } from '../pipeline/pipeline-service'
 import type { AuthUser } from '../../auth/permissions'
 import {
   SUGGEST_TEXT_HEAD_BYTES,

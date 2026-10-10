@@ -17,7 +17,7 @@ import { PURGE_ORG_JOB_TYPE } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { PackageService } from '../../services/package-service'
 import { OrganizationService } from '../../services/organization-service'
-import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
+import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline/pipeline-claim'
 import {
   getTestDb,
   cleanDatabase,

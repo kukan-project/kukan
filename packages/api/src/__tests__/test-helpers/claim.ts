@@ -12,7 +12,7 @@ import {
   CLAIM_STALE_AFTER_MS,
   claimResources,
   type ResourceClaim,
-} from '../../services/pipeline-claim'
+} from '../../services/pipeline/pipeline-claim'
 import { getTestDb } from './test-db'
 
 /** Give the resource a pipeline row and claim it, as a run would. */

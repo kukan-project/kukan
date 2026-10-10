@@ -10,7 +10,7 @@ import type { MatchedResource, MatchedResourcesCount, SearchAdapter } from '@kuk
 import type { MeteredAI } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import { PackageService } from '../../services/package-service'
-import { hybridSearch } from '../../services/hybrid-search'
+import { hybridSearch } from '../../services/search/hybrid-search'
 import { resolveUserOrgIds, buildVisibilityFilters, type AuthUser } from '../../auth/permissions'
 
 interface DatasetToolsContext {

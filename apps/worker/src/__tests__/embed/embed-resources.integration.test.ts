@@ -8,7 +8,10 @@ import { createHash } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { packageTable, packageTag, resource, tag } from '@kukan/db'
 import { AiInputRejectedError, type MeteredAI } from '@kukan/ai-adapter'
-import { RESOURCE_EMBED_LOCK, tryLockInTransaction } from '@kukan/api/services/advisory-lock'
+import {
+  RESOURCE_EMBED_LOCK,
+  tryLockInTransaction,
+} from '@kukan/api/services/concurrency/advisory-lock'
 import { embedDueResources } from '../../embed/embed-resources'
 import { EMBED_BATCH_SIZE } from '../../config'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'

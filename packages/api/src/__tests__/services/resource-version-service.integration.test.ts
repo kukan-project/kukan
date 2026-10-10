@@ -28,7 +28,7 @@ import {
   CLAIM_STALE_AFTER_MS,
   cancelResourceRun,
   claimResources,
-} from '../../services/pipeline-claim'
+} from '../../services/pipeline/pipeline-claim'
 import { unreachableLake } from '../test-helpers/fixtures'
 import {
   getTestDb,

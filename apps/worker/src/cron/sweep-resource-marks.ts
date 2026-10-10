@@ -19,8 +19,8 @@ import { packageTable, resource } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
-import { requestSearchDocSync } from '@kukan/api/services/search-index'
-import { requestResourceEmbeds } from '@kukan/api/services/resource-embedding'
+import { requestSearchDocSync } from '@kukan/api/services/search/search-index'
+import { requestResourceEmbeds } from '@kukan/api/services/search/resource-embedding'
 
 /** Old enough that the job it was marked for has had its chance */
 const MIN_AGE_MS = 10 * 60_000

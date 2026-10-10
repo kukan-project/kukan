@@ -15,7 +15,7 @@ import type {
 import type { Database } from '@kukan/db'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { ResourceService, resourceDownloadPath } from '../../services/resource-service'
-import { PipelineService, isQueryable } from '../../services/pipeline-service'
+import { PipelineService, isQueryable } from '../../services/pipeline/pipeline-service'
 import {
   describeFeed,
   FEED_REFUSAL_REASON,

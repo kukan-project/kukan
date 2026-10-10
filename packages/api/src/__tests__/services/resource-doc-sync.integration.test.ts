@@ -23,7 +23,10 @@ import {
 import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { createLogger } from '@kukan/shared'
-import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from '../../services/advisory-lock'
+import {
+  SEARCH_DOC_SYNC_LOCK,
+  withGlobalAdvisoryLock,
+} from '../../services/concurrency/advisory-lock'
 import { GroupService } from '../../services/group-service'
 import { OrganizationService } from '../../services/organization-service'
 import { PackageService } from '../../services/package-service'
@@ -35,9 +38,9 @@ import {
   syncPackageMetadata,
   writeMarkedPackageDoc,
   writeMarkedResourceDocs,
-} from '../../services/search-index'
+} from '../../services/search/search-index'
 import { purgePackagesSearchDocs } from '../../services/package-cleanup'
-import { markPackageDocs } from '../../services/doc-marks'
+import { markPackageDocs } from '../../services/search/doc-marks'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 import {
   holdDocSyncLock,

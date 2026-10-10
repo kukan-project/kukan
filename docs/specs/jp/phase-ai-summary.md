@@ -482,7 +482,7 @@ LLM 呼び出し → 書き込み
 
 ### 8.1 材料の組み立ては `suggest/` から切り出す
 
-材料の組み立ては今 [metadata-suggest-service.ts](../../../packages/api/src/services/metadata-suggest-service.ts)
+材料の組み立ては今 [metadata-suggest-service.ts](../../../packages/api/src/services/suggest/metadata-suggest-service.ts)
 の private メソッドに閉じている。`packages/api/src/services/suggest/materials.ts` に
 `collectResourceMaterial()` として切り出し、worker から呼べるようにする。
 

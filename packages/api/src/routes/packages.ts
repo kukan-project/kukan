@@ -37,11 +37,11 @@ import {
   syncPackageResources,
   rebuildPackageSearch,
   settleResourceWrites,
-} from '../services/search-index'
-import { markContentUnindexed } from '../services/content-index-record'
-import { hybridSearch } from '../services/hybrid-search'
-import { enqueueResourceEmbedsIfDue } from '../services/resource-embedding'
-import { MetadataSuggestService } from '../services/metadata-suggest-service'
+} from '../services/search/search-index'
+import { markContentUnindexed } from '../services/search/content-index-record'
+import { hybridSearch } from '../services/search/hybrid-search'
+import { enqueueResourceEmbedsIfDue } from '../services/search/resource-embedding'
+import { MetadataSuggestService } from '../services/suggest/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
 import { getSuggestAvailability } from '../services/suggest/availability'
 import type { AppContext } from '../context'

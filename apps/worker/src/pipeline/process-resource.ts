@@ -19,7 +19,7 @@ import {
   rootCauseMessage,
   type PipelineJobPayload,
 } from '@kukan/shared'
-import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
+import { withResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../heavy/process'
 import { RunCancelledError, StepTracker } from './run/step-tracker'
 import { heldContext } from './run/held-context'

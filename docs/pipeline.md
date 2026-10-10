@@ -166,7 +166,7 @@ live のプレビュー Parquet を読む — ただし `sourceHash` が live �
 - **`run` だけが止められる。** `job` は書き込みごとの所有者検査を持たないため、claim を外しても
   止まらず、排他だけが消える（ADR-044 §4）。
 
-取り方は 3 つ。すべて `packages/api/src/services/pipeline-claim.ts` にある。
+取り方は 3 つ。すべて `packages/api/src/services/pipeline/pipeline-claim.ts` にある。
 
 | 入口                 | 使う側                                                | 取れなかったら             |
 | -------------------- | ----------------------------------------------------- | -------------------------- |

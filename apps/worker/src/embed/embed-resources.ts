@@ -19,7 +19,10 @@ import { asc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, publicSummary, resource, packageTag, tag } from '@kukan/db'
 import { type MeteredAI, AiInputRejectedError, embeddingKey } from '@kukan/ai-adapter'
-import { RESOURCE_EMBED_LOCK, tryLockInTransaction } from '@kukan/api/services/advisory-lock'
+import {
+  RESOURCE_EMBED_LOCK,
+  tryLockInTransaction,
+} from '@kukan/api/services/concurrency/advisory-lock'
 import {
   EMBED_BATCH_SIZE,
   EMBED_JOB_MAX_BATCHES,

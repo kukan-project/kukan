@@ -10,8 +10,8 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
-import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
-import { parseDocumentTextKey } from '@kukan/api/services/pipeline-service'
+import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake/lake-ingest'
+import { parseDocumentTextKey } from '@kukan/api/services/pipeline/pipeline-service'
 import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
@@ -19,7 +19,11 @@ import {
   objectOwnerIsPurging,
   pendingLakeVersionSource,
 } from '@kukan/api/services/resource-version-service'
-import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
+import {
+  copyObject,
+  publishLiveContent,
+  reserveObject,
+} from '@kukan/api/services/pipeline/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'

@@ -33,7 +33,7 @@ import type { Database } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { Logger } from '@kukan/shared'
-import { RESERVED_UNTIL } from '@kukan/api/services/storage-pointer'
+import { RESERVED_UNTIL } from '@kukan/api/services/pipeline/storage-pointer'
 import type { ListedObject, StorageAdapter } from '@kukan/storage-adapter'
 import { referenced } from './sweep-orphans'
 

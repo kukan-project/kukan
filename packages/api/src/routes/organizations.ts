@@ -13,7 +13,7 @@ import {
   SysadminRequiredError,
 } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
-import { enqueueSearchDocSync } from '../services/search-index'
+import { enqueueSearchDocSync } from '../services/search/search-index'
 import { checkOrgRole, ROSTER_ROLE } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'

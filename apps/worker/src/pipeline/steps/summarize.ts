@@ -53,8 +53,8 @@ import {
   contentFormat,
   declaredFormatMismatch,
 } from '@kukan/shared'
-import { stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
-import { embeddingDueIf } from '@kukan/api/services/resource-embedding'
+import { stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+import { embeddingDueIf } from '@kukan/api/services/search/resource-embedding'
 import {
   loadMaterial,
   materialKind,

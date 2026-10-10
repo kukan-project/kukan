@@ -46,16 +46,19 @@ import {
   enqueueResourceDocSyncIfDue,
   rebuildMetadataIndex,
   syncDueSearchDocs,
-} from '@kukan/api/services/search-index'
+} from '@kukan/api/services/search/search-index'
 import {
   enqueueResourceEmbedsIfDue,
   requestResourceEmbeds,
-} from '@kukan/api/services/resource-embedding'
-import { markContentUnindexed } from '@kukan/api/services/content-index-record'
-import { PipelineService } from '@kukan/api/services/pipeline-service'
+} from '@kukan/api/services/search/resource-embedding'
+import { markContentUnindexed } from '@kukan/api/services/search/content-index-record'
+import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
-import { dropPurgedLakeTables, queueStrandedLakeTables } from '@kukan/api/services/lake-reclaim'
+import {
+  dropPurgedLakeTables,
+  queueStrandedLakeTables,
+} from '@kukan/api/services/lake/lake-reclaim'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createMeteredAI } from '@kukan/api/adapters'
 import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
@@ -78,7 +81,7 @@ import { sweepSearchDocs, sweepResourceEmbeds } from './cron/sweep-resource-mark
 import {
   expirePendingUploads,
   markUploadsThatNeverArrived,
-} from '@kukan/api/services/storage-pointer'
+} from '@kukan/api/services/pipeline/storage-pointer'
 import {
   DEAD_JOB_RETENTION_MS,
   LAKE_INGEST_SWEEP_CRON,

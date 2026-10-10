@@ -15,7 +15,7 @@ import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { AuthUser } from '../../auth/permissions'
 import { ResourceService, resourceDownloadPath } from '../../services/resource-service'
-import { PipelineService } from '../../services/pipeline-service'
+import { PipelineService } from '../../services/pipeline/pipeline-service'
 import {
   blockUnit,
   readDocumentOutline,

@@ -1,0 +1,895 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { basename, dirname } from 'node:path'
+import { Readable } from 'stream'
+import JSZip from 'jszip'
+import { executeInterpret } from '../../../pipeline/steps/interpret'
+import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
+import { ENCODING_SCAN_LIMIT, MAX_CSV_COLUMNS } from '@/config'
+import {
+  captureUpload,
+  createPipelineContextMock,
+  type UploadCapture,
+} from '../../test-helpers/pipeline-context'
+import { HeavyTooLargeError, runHeavy } from '@/heavy'
+import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline/pipeline-service'
+
+// The real heavy process, unless a test says how the request ends
+vi.mock('@/heavy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/heavy')>()
+  return { ...actual, runHeavy: vi.fn(actual.runHeavy) }
+})
+
+/**
+ * Preview keys carry a per-run UUID (ADR-043 layer 2: the object a reader
+ * resolved must never be rewritten), so they are matched by shape.
+ */
+const PREVIEW_KEY_RE = (pkg: string, res: string, ext: string) =>
+  new RegExp(`^previews/${pkg}/${res}\\.[0-9a-f-]{36}\\.${ext}$`)
+
+const previewKeyMatching = (pkg: string, res: string, ext: string) =>
+  expect.stringMatching(PREVIEW_KEY_RE(pkg, res, ext))
+
+/** The created version the step reads (ADR-046); sized under the interpret cap. */
+const version = (storageKey: string, size = 1024) => ({ storageKey, size })
+
+/**
+ * A real Shift_JIS CSV: header "都道府県コード又は市区町村コード,地域コード,都道府県名"
+ * over rows of "402303,糸島市,2019-05-31,板持,1515,758,757". Real bytes rather
+ * than a synthetic run of high bytes, because chardet weighs byte *patterns* —
+ * an invented one is as likely to come back ISO-8859-5.
+ */
+function shiftJisCsv(rows = 20): Buffer {
+  const header = Buffer.from([
+    0x93, 0x73, 0x93, 0xb9, 0x95, 0x7b, 0x8c, 0xa7, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c, 0x92,
+    0x6e, 0x88, 0xe6, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c, 0x93, 0x73, 0x93, 0xb9, 0x95, 0x7b,
+    0x8c, 0xa7, 0x96, 0xbc, 0x0a,
+  ])
+  // Three fields, as the header has. It used to carry seven, which made every
+  // data row one the reader cannot place: the table came out with the header's
+  // three columns and no rows at all, and the file is now refused for it
+  // (`ragged-rows`). What these tests are about is the encoding, so the fixture
+  // is a well-formed file in it.
+  const dataRow = Buffer.from([
+    0x34, 0x30, 0x32, 0x33, 0x30, 0x33, 0x2c, 0x8e, 0x85, 0x93, 0x87, 0x8e, 0x73, 0x2c, 0x32, 0x30,
+    0x31, 0x39, 0x2d, 0x30, 0x35, 0x2d, 0x33, 0x31, 0x0a,
+  ])
+  return Buffer.concat([header, ...Array(rows).fill(dataRow)])
+}
+
+describe('executeInterpret', () => {
+  let ctx: ReturnType<typeof createPipelineContextMock>
+  let upload: UploadCapture
+
+  beforeEach(() => {
+    ctx = createPipelineContextMock()
+    upload = captureUpload(ctx)
+  })
+
+  /** The preview's uploads, apart from the profile uploaded beside it (ADR-063). */
+  const previewUploads = () =>
+    ctx.putObject.mock.calls.filter(([key]) => String(key).endsWith('.parquet'))
+
+  function mockStorageDownload(content: string) {
+    ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from(content)))
+  }
+
+  it('should extract CSV from Storage and upload Parquet', async () => {
+    mockStorageDownload('name,age\nAlice,30\nBob,25\n')
+
+    const result = await executeInterpret(
+      'res-1',
+      'pkg-1',
+      version('resources/pkg-1/res-1'),
+      'CSV',
+      ctx
+    )
+
+    expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
+    expect(result).toEqual({
+      previewKey: previewKeyMatching('pkg-1', 'res-1', 'parquet'),
+      encoding: expect.stringMatching(/^(ASCII|ISO-8859-1)$/),
+      // Read back from the written file, so a fixture of two rows reports two
+      // rather than the row group size asked for (ADR-055).
+      rowGroupRows: 2,
+      // The roles beside the schema rather than on it (ADR-063), and the
+      // artifact uploaded beside the preview
+      profile: {
+        columns: [
+          { role: 'category', roleBasis: { rule: 'other' }, values: ['Alice', 'Bob'] },
+          { role: 'measure', roleBasis: { rule: 'typed' } },
+        ],
+        key: previewKeyMatching('pkg-1', 'res-1', 'profile\\.ndjson\\.zst'),
+      },
+      schema: {
+        rowCount: 2,
+        columns: [
+          {
+            name: 'name',
+            type: 'string',
+            nullable: false,
+            nullCount: 0,
+            distinctCount: 2,
+            unique: true,
+          },
+          {
+            name: 'age',
+            type: 'integer',
+            nullable: false,
+            nullCount: 0,
+            distinctCount: 2,
+            unique: true,
+            stats: { min: '25', max: '30' },
+          },
+        ],
+      },
+    })
+    expect(previewUploads()).toHaveLength(1)
+
+    const [key, , meta] = ctx.putObject.mock.calls[0]
+    // Unique per run so a later run cannot rewrite it (ADR-043 layer 2).
+    expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-1', 'parquet'))
+    expect(meta).toEqual({ contentType: 'application/vnd.apache.parquet' })
+    // The magic bytes, not just "something was uploaded": the preview is now
+    // written by DuckDB rather than assembled in process, so what leaves has to
+    // be a Parquet file (ADR-046).
+    expect(upload.body!.subarray(0, 4).toString('ascii')).toBe('PAR1')
+  })
+
+  it('records a preview whose row groups give no single size, so it is not taken for unasked', async () => {
+    // The parallel writer can leave groups of different sizes, which have no
+    // one figure to page by (`readRowGroupRows`)
+    const { runHeavy: actual } = await vi.importActual<typeof import('@/heavy')>('@/heavy')
+    vi.mocked(runHeavy).mockImplementationOnce(async (request, held) => ({
+      ...(await actual(request, held)),
+      rowGroupRows: undefined,
+    }))
+    mockStorageDownload('name,age\nAlice,30\nBob,25\n')
+
+    const result = await executeInterpret(
+      'res-uneven',
+      'pkg-1',
+      version('resources/pkg-1/res-uneven'),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toMatchObject({
+      previewKey: previewKeyMatching('pkg-1', 'res-uneven', 'parquet'),
+      rowGroupRows: NO_ROW_GROUP_FIGURE,
+    })
+  })
+
+  it('should handle title row skipping in Parquet output', async () => {
+    mockStorageDownload('Title Row,,,\n\nname,age,city\nAlice,30,Tokyo\n')
+
+    const result = await executeInterpret(
+      'res-2',
+      'pkg-1',
+      version('resources/pkg-1/res-2'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-2', 'parquet'))
+    expect(previewUploads()).toHaveLength(1)
+    // The columns, not just "a Parquet came out": skipping one line too many
+    // hands DuckDB the header as data and the first data row as the header,
+    // which a preview-key assertion cannot see.
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+  })
+
+  it('keeps a header that has no trailing newline', async () => {
+    // The last parsed row is only dropped when the read stopped at the 64KB
+    // cap. Dropped unconditionally, a file whose whole content is one line
+    // reads as empty — and ADR-046 then records an empty schema, which takes
+    // it out of the layer-2 sweep for good.
+    mockStorageDownload('name,age\nAlice,30')
+
+    const result = await executeInterpret(
+      'res-nonl',
+      'pkg-1',
+      version('resources/pkg-1/res-nonl.v1'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age'])
+    expect(result?.schema?.rowCount).toBe(1)
+  })
+
+  it('reads a title row above a header that has no trailing newline', async () => {
+    // Dropping the last row here left only the title, which DuckDB then read
+    // as the header.
+    mockStorageDownload('Report Title,,\nname,age,city\nAlice,30,Tokyo')
+
+    const result = await executeInterpret(
+      'res-title-nonl',
+      'pkg-1',
+      version('resources/pkg-1/res-title-nonl.v1'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+  })
+
+  it('reads a title row above a header in a file that starts with a byte-order mark', async () => {
+    // The mark shifted every cursor Papa reported, so the skip came out zero
+    // and DuckDB read the title as data — left without a header it named the
+    // columns `column00`, `column01`, ... A BOM and a title row meet in most
+    // municipal CSVs, and until this test they never met in the suite.
+    mockStorageDownload('\uFEFF測定結果,,\r\nname,age,city\r\nAlice,30,Tokyo\r\n')
+
+    const result = await executeInterpret(
+      'res-bom-title',
+      'pkg-1',
+      version('resources/pkg-1/res-bom-title'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+    expect(result?.schema?.rowCount).toBe(1)
+  })
+
+  it('reads a title row in a file that carries two byte-order marks', async () => {
+    // Papa strips one mark of its own, so dropping only one here would put the
+    // cursors back out by one. Excel round trips produce these.
+    mockStorageDownload('\uFEFF\uFEFF測定結果,,\nname,age,city\nAlice,30,Tokyo\n')
+
+    const result = await executeInterpret(
+      'res-bom2-title',
+      'pkg-1',
+      version('resources/pkg-1/res-bom2-title'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+    expect(result?.schema?.rowCount).toBe(1)
+  })
+
+  it('should extract TSV data', async () => {
+    mockStorageDownload('name\tage\nAlice\t30\n')
+
+    const result = await executeInterpret(
+      'res-3',
+      'pkg-1',
+      version('resources/pkg-1/res-3'),
+      'TSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-3', 'parquet'))
+    expect(previewUploads()).toHaveLength(1)
+  })
+
+  it('should store all rows without truncation', async () => {
+    const lines = ['name,value']
+    for (let i = 0; i < 300; i++) {
+      lines.push(`row-${i},${i}`)
+    }
+    mockStorageDownload(lines.join('\n') + '\n')
+
+    const result = await executeInterpret(
+      'res-4',
+      'pkg-1',
+      version('resources/pkg-1/res-4'),
+      'CSV',
+      ctx
+    )
+
+    // Parquet stores all rows (no 200-row limit)
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-4', 'parquet'))
+    expect(previewUploads()).toHaveLength(1)
+  })
+
+  it('hands the interpreted table over while it is still on disk', async () => {
+    mockStorageDownload('name,age\nAlice,30\n')
+    let seen: { magic: string; path: string; leftInDir: string[] } | undefined
+
+    await executeInterpret('res-t', 'pkg-1', version('resources/pkg-1/res-t.v1'), 'CSV', ctx, {
+      onTable: async (parquetPath) => {
+        // Still there, and a real Parquet: layer 2 loads from here rather
+        // than from the preview in storage (ADR-046).
+        seen = {
+          magic: readFileSync(parquetPath).subarray(0, 4).toString('ascii'),
+          path: parquetPath,
+          // And nothing else: the hook waits on a catalog-wide lock, so the
+          // source CSV and its transcoded copy must not be held through it.
+          leftInDir: readdirSync(dirname(parquetPath)),
+        }
+      },
+    })
+
+    expect(seen?.magic).toBe('PAR1')
+    expect(seen?.leftInDir).toEqual([basename(seen!.path)])
+    // And gone once the step returns — the temp directory belongs to the step.
+    expect(existsSync(seen!.path)).toBe(false)
+  })
+
+  it('does not hand a table over for a format that produces none', async () => {
+    // The gate layer 2 used to apply to the preview key is structural now: the
+    // hook simply never fires.
+    mockStorageDownload('Hello, world!')
+    const onTable = vi.fn()
+
+    await executeInterpret('res-u', 'pkg-1', version('resources/pkg-1/res-u.v1'), 'TXT', ctx, {
+      onTable,
+    })
+
+    expect(onTable).not.toHaveBeenCalled()
+  })
+
+  it('refuses a CSV too large to interpret, without transferring it whole', async () => {
+    // Decided from the version row's size, before the download, and answered as
+    // an interpretation that produced no table rather than as an absence — so
+    // both callers give one answer. The sweep still decides eligibility
+    // from the size itself, because the cap is configuration; this is what puts
+    // the reason on the row for whoever asks why there is no preview.
+    mockStorageDownload('a,b\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-huge',
+      'pkg-1',
+      version('resources/pkg-1/res-huge.v1', MAX_PARQUET_SOURCE_SIZE + 1),
+      'CSV',
+      ctx
+    )
+
+    // No schema at all, not an empty one. An empty schema means "interpreted,
+    // found nothing", and it is what takes a version out of the lake sweep for
+    // good — settle an over-cap version that way and raising the cap no longer
+    // brings it back, because the sweep never looks at it again.
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.any(String),
+      reason: 'too-large',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('reads only the encoding sample of an oversized CSV, not the object', async () => {
+    // The version row carries the size and the file behind it is immutable, so
+    // this is decided before the download rather than after it (ADR-046).
+    const CHUNK = 64 * 1024
+    const CHUNKS = 16
+    let read = 0
+    ctx.storage.download.mockImplementation(async () =>
+      // Chunked like a real object-store read: the cap only saves anything if
+      // the source is delivered in pieces.
+      Readable.from(
+        (function* () {
+          for (let i = 0; i < CHUNKS; i++) {
+            read += CHUNK
+            yield Buffer.alloc(CHUNK, 'a,b\n1,2\n')
+          }
+        })()
+      )
+    )
+
+    const result = await executeInterpret(
+      'res-big',
+      'pkg-1',
+      version('resources/pkg-1/res-big.v1', MAX_PARQUET_SOURCE_SIZE + 1),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toMatchObject({ previewKey: null, reason: 'too-large' })
+    // Only the encoding sample crossed the wire, not the whole object.
+    expect(read).toBeLessThanOrEqual(CHUNK * CHUNKS)
+  })
+
+  it('reads past an ASCII head to the bytes encoding detection needs', async () => {
+    // A fixed head is not enough. chardet decides from the non-ASCII bytes, so
+    // a file whose first 100KB are ids and dates gives it nothing to work from
+    // and the Japanese further down comes back as mojibake.
+    const asciiHead = Buffer.from('id,date,count\n'.repeat(8000)) // ~104KB, all ASCII
+    ctx.storage.download.mockResolvedValue(
+      Readable.from(Buffer.concat([asciiHead, shiftJisCsv(200)]))
+    )
+
+    const result = await executeInterpret(
+      'res-ascii-head',
+      'pkg-1',
+      version('resources/pkg-1/res-ascii-head'),
+      'TXT',
+      ctx
+    )
+
+    expect(result?.encoding).toBe('Shift_JIS')
+  })
+
+  it('stops reading a file that is ASCII all the way down', async () => {
+    // Nothing to find, so the scan must not pull a 100MB text across to say so
+    // — every candidate encoding decodes ASCII identically.
+    const CHUNK = 1024 * 1024
+    let read = 0
+    ctx.storage.download.mockResolvedValue(
+      Readable.from(
+        (function* () {
+          for (let i = 0; i < 32; i++) {
+            read += CHUNK
+            yield Buffer.alloc(CHUNK, 0x61)
+          }
+        })()
+      )
+    )
+
+    await executeInterpret(
+      'res-all-ascii',
+      'pkg-1',
+      version('resources/pkg-1/res-all-ascii'),
+      'TXT',
+      ctx
+    )
+
+    expect(read).toBeLessThanOrEqual(ENCODING_SCAN_LIMIT + CHUNK)
+  })
+
+  it('hands the encoding over before anything that can fail', async () => {
+    // Settled from the bytes before anything heavy runs, so a later failure
+    // must not take it back — losing it is silent, since all three readers fall
+    // back to UTF-8 and serve mojibake rather than erroring.
+    ctx.storage.download.mockResolvedValue(Readable.from(shiftJisCsv()))
+    ctx.putObject.mockRejectedValueOnce(new Error('storage is down'))
+    const onEncoding = vi.fn()
+
+    const failure = await executeInterpret(
+      'res-fail',
+      'pkg-1',
+      version('resources/pkg-1/res-fail'),
+      'CSV',
+      ctx,
+      { onEncoding }
+    ).catch((err: unknown) => err)
+
+    // The interpretation failed on its own terms, unwrapped — the caller sees
+    // what actually went wrong rather than a name for where it happened.
+    expect((failure as Error).message).toBe('storage is down')
+    expect(onEncoding).toHaveBeenCalledWith('Shift_JIS')
+  })
+
+  // Real DuckDB statistics over MAX_CSV_COLUMNS columns, batched: the work is
+  // proportional to the declared ceiling, and it lands near 5s once the runner's
+  // cores are shared rather than held one to a worker — the default then turns a
+  // slow machine into a failure that passes on rerun. Raised for this case alone;
+  // the next slowest test in the suite is 1.5s, so the default stays a signal
+  // everywhere else.
+  it('describes a CSV as wide as the limit allows', async () => {
+    // Width alone used to exhaust the memory limit, so the declared ceiling was
+    // never reachable — see STATS_COLUMNS_PER_QUERY for why.
+    const header = Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => `c${i}`).join(',')
+    const row = Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i)).join(',')
+    mockStorageDownload(`${header}\n${row}\n${row}\n`)
+
+    const result = await executeInterpret(
+      'res-max',
+      'pkg-1',
+      version('resources/pkg-1/res-max'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns).toHaveLength(MAX_CSV_COLUMNS)
+    expect(result?.schema?.rowCount).toBe(2)
+    // Every column holds its own index, so the statistics are asserted against
+    // it rather than against a shape they all share: batches merge into one row
+    // by alias, and a fixture whose columns are indistinguishable cannot tell a
+    // correct merge from one that shifted every value by a batch.
+    expect(result?.schema?.columns.map((c) => c.stats?.min)).toEqual(
+      Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i))
+    )
+  }, 30_000)
+
+  it('refuses a CSV too wide to preview without leaving it outstanding', async () => {
+    // Throwing here left the version with no schema, which is how "nothing has
+    // interpreted this yet" is written down — so the hourly sweep handed the
+    // file back every hour, forever, and every task read up to 100MB of it to
+    // reach the same exception. The width is a property of the file, so
+    // no retry can reach a different answer.
+    const wide = `${Array.from({ length: MAX_CSV_COLUMNS + 1 }, (_, i) => `c${i}`).join(',')}\n`
+    mockStorageDownload(wide + wide.replace(/c/g, 'v'))
+
+    const result = await executeInterpret(
+      'res-wide',
+      'pkg-1',
+      version('resources/pkg-1/res-wide'),
+      'CSV',
+      ctx
+    )
+
+    // An empty schema is the mark that takes it out of the pending set, and the
+    // reason is what keeps "no table here" and "too wide for one" apart.
+    expect(result).toMatchObject({
+      previewKey: null,
+      schema: { rowCount: 0, columns: [] },
+      reason: 'too-many-columns',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('records a CSV whose interpretation ran out of memory without leaving it outstanding', async () => {
+    // The heavy process went with it (ADR-059): left with no schema, the hourly
+    // sweep would hand it to the process every hour to go the same way
+    vi.mocked(runHeavy).mockRejectedValueOnce(new HeavyTooLargeError())
+    mockStorageDownload('a,b\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-oom',
+      'pkg-1',
+      version('resources/pkg-1/res-oom'),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toMatchObject({
+      previewKey: null,
+      schema: { rowCount: 0, columns: [] },
+      reason: 'out-of-memory',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('should detect encoding for TXT without Parquet generation', async () => {
+    mockStorageDownload('Hello, world!')
+
+    const result = await executeInterpret(
+      'res-5',
+      'pkg-1',
+      version('resources/pkg-1/res-5'),
+      'TXT',
+      ctx
+    )
+
+    expect(result).toEqual({ previewKey: null, encoding: 'ASCII' })
+    expect(ctx.storage.download).toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('should return null for formats it reads nothing from', async () => {
+    const result = await executeInterpret(
+      'res-6',
+      'pkg-1',
+      version('resources/pkg-1/res-6'),
+      'PNG',
+      ctx
+    )
+    expect(result).toBeNull()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+  })
+
+  it('should return null for null format', async () => {
+    const result = await executeInterpret(
+      'res-7',
+      'pkg-1',
+      version('resources/pkg-1/res-7'),
+      null,
+      ctx
+    )
+    expect(result).toBeNull()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+  })
+
+  it('reports an empty interpretation for an empty CSV', async () => {
+    // Not a missing answer: the schema records that this version was
+    // interpreted and holds nothing to load, which is what keeps the hourly
+    // lake sweep from handing it back for good (ADR-046).
+    mockStorageDownload('')
+
+    const result = await executeInterpret(
+      'res-8',
+      'pkg-1',
+      version('resources/pkg-1/res-8'),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+      schema: { rowCount: 0, columns: [] },
+      // Which nothing. The empty schema alone cannot say.
+      reason: 'no-columns',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('should return UTF8 for GeoJSON without downloading', async () => {
+    const result = await executeInterpret(
+      'res-9',
+      'pkg-1',
+      version('resources/pkg-1/res-9'),
+      'GeoJSON',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+    })
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('should return UTF8 for JSON without downloading', async () => {
+    const result = await executeInterpret(
+      'res-10',
+      'pkg-1',
+      version('resources/pkg-1/res-10'),
+      'JSON',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+    })
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('should return UTF8 for MD without downloading', async () => {
+    const result = await executeInterpret(
+      'res-10b',
+      'pkg-1',
+      version('resources/pkg-1/res-10b'),
+      'MD',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+    })
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+  })
+
+  it('should parse XML encoding declaration', async () => {
+    mockStorageDownload('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
+
+    const result = await executeInterpret(
+      'res-11',
+      'pkg-1',
+      version('resources/pkg-1/res-11'),
+      'XML',
+      ctx
+    )
+
+    expect(result).toEqual({ previewKey: null, encoding: 'Shift_JIS' })
+  })
+
+  it('should default to UTF8 for XML without encoding declaration', async () => {
+    mockStorageDownload('<?xml version="1.0"?><root/>')
+
+    const result = await executeInterpret(
+      'res-12',
+      'pkg-1',
+      version('resources/pkg-1/res-12'),
+      'XML',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+    })
+  })
+
+  it('should remove footer rows (合計, ※)', async () => {
+    mockStorageDownload('name,count\nA,10\nB,20\n合計,30\n※ 2024年データ,,\n')
+
+    const result = await executeInterpret(
+      'res-13',
+      'pkg-1',
+      version('resources/pkg-1/res-13'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-13', 'parquet'))
+    // The preview, and the profile listing the values of `name` (ADR-063)
+    expect(ctx.putObject).toHaveBeenCalledTimes(2)
+  })
+
+  it('should detect and convert Shift_JIS encoding', async () => {
+    ctx.storage.download.mockResolvedValue(Readable.from(shiftJisCsv()))
+
+    const result = await executeInterpret(
+      'res-14',
+      'pkg-1',
+      version('resources/pkg-1/res-14'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.encoding).toBe('Shift_JIS')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-14', 'parquet'))
+  })
+
+  it('should not skip header in single-column CSV', async () => {
+    mockStorageDownload('name\nAlice\nBob\n')
+
+    const result = await executeInterpret(
+      'res-16',
+      'pkg-1',
+      version('resources/pkg-1/res-16'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-16', 'parquet'))
+    expect(previewUploads()).toHaveLength(1)
+  })
+
+  it('should handle multiple title rows before header', async () => {
+    mockStorageDownload(
+      'Report Title,,,\nSubtitle,,,\n,,,\nname,age,city,country\nAlice,30,Tokyo,Japan\n'
+    )
+
+    const result = await executeInterpret(
+      'res-15',
+      'pkg-1',
+      version('resources/pkg-1/res-15'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-15', 'parquet'))
+    expect(previewUploads()).toHaveLength(1)
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city', 'country'])
+  })
+
+  it('reads a CSV that carries two byte-order marks', async () => {
+    // `read_csv` strips one BOM; the second stays on the first column's name,
+    // which `DESCRIBE` then reported without it, and the trim failed to bind
+    // the column. Excel round trips produce these.
+    mockStorageDownload('\uFEFF\uFEFF区分,金額\nA,1\nB,2\n')
+
+    const result = await executeInterpret(
+      'res-bom',
+      'pkg-1',
+      version('resources/pkg-1/res-bom'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-bom', 'parquet'))
+    expect(result?.schema?.rowCount).toBe(2)
+    // Bare, so the column matches its own name in a version with one BOM.
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['区分', '金額'])
+  })
+
+  it('keeps the mark when the bare name is taken under DuckDB case folding', async () => {
+    // Quoted or not, DuckDB compares identifiers without ASCII case, so
+    // renaming to `foo` beside `FOO` is a catalog error that would fail the
+    // whole interpretation.
+    mockStorageDownload('\uFEFF\uFEFFfoo,FOO\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-bom3',
+      'pkg-1',
+      version('resources/pkg-1/res-bom3'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.rowCount).toBe(1)
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['\uFEFFfoo', 'FOO'])
+  })
+
+  it('re-reads an oversize integer column under its marked name', async () => {
+    // The `types` map on the re-read is keyed by the name the reader gave,
+    // mark included; stripping it first would name a column the file lacks.
+    mockStorageDownload('\uFEFF\uFEFFcode,金額\n99999999999999999999,1\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-bom2',
+      'pkg-1',
+      version('resources/pkg-1/res-bom2'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.rowCount).toBe(2)
+    expect(result?.schema?.columns.map((c) => [c.name, c.type])).toEqual([
+      ['code', 'string'],
+      ['金額', 'integer'],
+    ])
+  })
+
+  it('reads a file whose line endings are mixed, and says the standard was relaxed', async () => {
+    // The sniffer cannot settle on a dialect when CRLF and LF both end records
+    // in one file, and no option that keeps the standard gets it past that.
+    mockStorageDownload(
+      'id,note,c\r\n' +
+        Array.from(
+          { length: 5 },
+          (_, k) => `${k},"note ${k}\nmore",x${k % 2 ? '\r\n' : '\n'}`
+        ).join('')
+    )
+
+    const result = await executeInterpret(
+      'res-mixed',
+      'pkg-1',
+      version('resources/pkg-1/res-mixed'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-mixed', 'parquet'))
+    expect(result?.schema).toMatchObject({ rowCount: 5, lenient: true })
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['id', 'note', 'c'])
+    expect(result?.schema?.droppedRows).toBeUndefined()
+  })
+
+  it('refuses a ragged row under the relaxed reading on the same terms', async () => {
+    // Relaxing the standard is about the dialect, not about rows: a row short
+    // of the width is still refused and the file still has no table, and the
+    // schema says both.
+    mockStorageDownload('id,note,c\r\n0,a,x\n1,b,x\r\n2,c\r\n3,d,x\n')
+
+    const result = await executeInterpret(
+      'res-mixed2',
+      'pkg-1',
+      version('resources/pkg-1/res-mixed2'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toBeNull()
+    expect(result?.reason).toBe('ragged-rows')
+    expect(result?.schema).toMatchObject({ droppedRows: 1, droppedLines: [4], lenient: true })
+  })
+
+  it('should generate ZIP manifest and upload as JSON', async () => {
+    const zip = new JSZip()
+    zip.file('data.csv', 'a,b\n1,2')
+    zip.file('readme.txt', 'hello')
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
+    ctx.storage.download.mockResolvedValue(Readable.from(zipBuffer))
+
+    const result = await executeInterpret(
+      'res-zip',
+      'pkg-1',
+      version('resources/pkg-1/res-zip'),
+      'ZIP',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: previewKeyMatching('pkg-1', 'res-zip', 'json'),
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+    })
+    expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-zip')
+    expect(ctx.putObject).toHaveBeenCalledOnce()
+
+    const [key, buf, meta] = ctx.putObject.mock.calls[0]
+    expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-zip', 'json'))
+    expect(meta).toEqual({ contentType: 'application/json' })
+
+    const manifest = JSON.parse(buf.toString())
+    expect(manifest.totalFiles).toBe(2)
+    expect(manifest.entries).toHaveLength(2)
+    expect(manifest.truncated).toBe(false)
+  })
+
+  it('should return null for corrupt ZIP', async () => {
+    ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from('not a zip')))
+
+    const result = await executeInterpret(
+      'res-badzip',
+      'pkg-1',
+      version('resources/pkg-1/res-badzip'),
+      'ZIP',
+      ctx
+    )
+
+    expect(result).toBeNull()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+})

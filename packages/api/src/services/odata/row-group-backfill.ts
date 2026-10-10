@@ -17,7 +17,7 @@ import {
   PipelineService,
   parseResourceSchema,
   parseSourceEncoding,
-} from '../pipeline-service'
+} from '../pipeline/pipeline-service'
 import { prepareFeedInstance } from './session'
 import { estimateRowBytes, rowsMayBeTooWide } from './page-budget'
 import {

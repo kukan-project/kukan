@@ -43,10 +43,10 @@ import {
   packageVisibilitySql,
   type AuthUser,
 } from '../auth/permissions'
-import { reclaimLakeStorage } from './lake-reclaim'
+import { reclaimLakeStorage } from './lake/lake-reclaim'
 import { listPurgeTargets, purgePackageStorage, purgePackagesSearchDocs } from './package-cleanup'
-import { markPackageDocs } from './doc-marks'
-import { withResourceClaimsOrConflict } from './pipeline-claim'
+import { markPackageDocs } from './search/doc-marks'
+import { withResourceClaimsOrConflict } from './pipeline/pipeline-claim'
 import { deleteOrphanFreeTags } from './tag-service'
 
 /** Concurrency cap for per-package external cleanup during an org purge — keeps

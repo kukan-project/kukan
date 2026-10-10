@@ -1,8 +1,11 @@
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import { type Database, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { dropIndexedWithoutRow, rebuildMetadataIndex } from '@kukan/api/services/search-index'
-import { markContentUnindexed } from '@kukan/api/services/content-index-record'
-import { PipelineService } from '@kukan/api/services/pipeline-service'
+import {
+  dropIndexedWithoutRow,
+  rebuildMetadataIndex,
+} from '@kukan/api/services/search/search-index'
+import { markContentUnindexed } from '@kukan/api/services/search/content-index-record'
+import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
 import type { Logger } from '@kukan/shared'
 import type { JobQueue } from '@kukan/queue'
 import type { SearchAdapter } from '@kukan/search-adapter'

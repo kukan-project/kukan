@@ -11,14 +11,14 @@ import { webLakeConfig } from '../services/query/lake-scan'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
-import { PipelineService, isQueryable } from '../services/pipeline-service'
+import { PipelineService, isQueryable } from '../services/pipeline/pipeline-service'
 import { readDocumentText } from '../services/document-text'
 import { describeFeed } from '../services/odata/feed-eligibility'
-import { cancelResourceRun } from '../services/pipeline-claim'
+import { cancelResourceRun } from '../services/pipeline/pipeline-claim'
 import { PackageService } from '../services/package-service'
-import { QueryService } from '../services/query-service'
-import { enqueueResourceEmbedsIfDue } from '../services/resource-embedding'
-import { setResourceSummary } from '../services/resource-summary-service'
+import { QueryService } from '../services/query/query-service'
+import { enqueueResourceEmbedsIfDue } from '../services/search/resource-embedding'
+import { setResourceSummary } from '../services/ai/resource-summary-service'
 import {
   updateResourceSchema,
   resourceSummaryBodySchema,
@@ -58,7 +58,7 @@ import {
   MANAGE_ROLE,
   type AuthUser,
 } from '../auth/permissions'
-import { settleResourceWrites, writeMarkedResourceDocs } from '../services/search-index'
+import { settleResourceWrites, writeMarkedResourceDocs } from '../services/search/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'

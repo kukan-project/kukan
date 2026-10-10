@@ -22,7 +22,7 @@ import type { ResourceSchema } from '@kukan/shared'
 import { CodeBlock, CopyButton, CODE_BLOCK_CLASS } from './code-block'
 import { clientFetch, readProblem } from '@/lib/client-api'
 import { useProblemMessage } from '@/hooks/use-problem-message'
-import { quoteColumn } from '@/hooks/duckdb-sql'
+import { quoteColumn } from '@/lib/duckdb-sql'
 import { highlight, useHighlighter } from '@/hooks/use-shiki'
 
 /** Rendering cap for the result table; the full payload is summarized by rowCount. */

@@ -19,7 +19,7 @@ import {
 import type { ResourceColumnType } from '@kukan/shared'
 import { PostgresJobQueue } from '@kukan/queue'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
-import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
+import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline/pipeline-claim'
 import {
   getTestDb,
   cleanDatabase,

@@ -60,7 +60,7 @@ export function useParquetPreview({
         // Dynamically imported, like the reader: neither belongs in the bundle
         // of a page that never opens a preview.
         const [{ asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects }, zstd] =
-          await Promise.all([import('hyparquet'), import('./parquet-codecs')])
+          await Promise.all([import('hyparquet'), import('@/lib/parquet-codecs')])
 
         let file: AsyncBuffer
         try {
@@ -121,7 +121,7 @@ export function useParquetPreview({
         setPageLoading(true)
         const [{ parquetReadObjects }, zstd] = await Promise.all([
           import('hyparquet'),
-          import('./parquet-codecs'),
+          import('@/lib/parquet-codecs'),
         ])
 
         const rowStart = clampedPage * pageSize

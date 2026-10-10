@@ -12,7 +12,7 @@ import type { Database } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
-import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
+import { withResourceClaims } from '@kukan/api/services/pipeline/pipeline-claim'
 import {
   pendingLakeVersionSource,
   recordLakeIngestFailure,
