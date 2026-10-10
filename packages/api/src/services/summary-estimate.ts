@@ -31,7 +31,8 @@ import {
   SUMMARY_MAX_PDF_PAGES,
   SUMMARY_PDF_TOKENS_PER_PAGE,
   tokenRate,
-  tokensToUsd,
+  requestUsd,
+  roundUsd,
   type SummaryLocale,
 } from '@kukan/shared'
 import { hasDocumentText } from './pipeline-service'
@@ -270,6 +271,12 @@ export async function summaryEstimate(
     )
     .groupBy(sql`COALESCE(${versionAgg.format}, ${resource.format})`)
 
+  // Priced per resource as it is counted, not from the totals: a model priced
+  // by prompt length charges each request by its own input, so a total can
+  // say neither which band applies nor how many requests crossed it. Output
+  // is a third of this bill on a catalogue of small files, so it is priced too.
+  const rate = tokenRate(model)
+  const usd = new Map<SummaryEstimateOperation, { low: number; high: number }>()
   const empty = (): SummaryEstimateOperation => ({
     resources: 0,
     estimatedInputTokens: { low: 0, high: 0 },
@@ -288,6 +295,11 @@ export async function summaryEstimate(
     op.estimatedInputTokens.low += n * low
     op.estimatedInputTokens.high += n * high
     op.estimatedOutputTokens += n * OUTPUT_TOKENS
+    if (!rate || n === 0) return
+    const sum = usd.get(op) ?? { low: 0, high: 0 }
+    sum.low += n * requestUsd(rate, low, OUTPUT_TOKENS)
+    sum.high += n * requestUsd(rate, high, OUTPUT_TOKENS)
+    usd.set(op, sum)
   }
   /** A refresh covers what is missing and what was written some other way */
   const both = (missing: number, stale: number, low: number, high: number) => {
@@ -371,15 +383,10 @@ export async function summaryEstimate(
     estimate.skipped.unsupportedFormat += row.missing
   }
 
-  // Priced last, from the totals: output is a third of this bill on a catalogue
-  // of small files, so quoting input alone would understate it badly.
-  const rate = tokenRate(model)
   if (rate) {
     for (const op of [estimate.fill, estimate.refresh]) {
-      op.estimatedCostUsd = {
-        low: tokensToUsd(rate, op.estimatedInputTokens.low, op.estimatedOutputTokens),
-        high: tokensToUsd(rate, op.estimatedInputTokens.high, op.estimatedOutputTokens),
-      }
+      const sum = usd.get(op) ?? { low: 0, high: 0 }
+      op.estimatedCostUsd = { low: roundUsd(sum.low), high: roundUsd(sum.high) }
     }
   }
   return estimate

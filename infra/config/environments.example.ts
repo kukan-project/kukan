@@ -108,10 +108,10 @@ export const environments = {
 
     // --- AI (Bedrock: semantic search ADR-034, metadata suggestions ADR-040,
     //     resource abstracts ADR-053) ---
-    // Presence enables it. Amazon models (Titan v2 embedding, the default Nova Lite
-    // completion) work on first invocation; Anthropic models (Claude, only if you add
-    // them to completionModels) need a one-time per-account step: submit the Anthropic
-    // use-case form in the Bedrock console.
+    // Presence enables it. Amazon models (the Titan v2 embedding) work on first
+    // invocation; Anthropic models — the default completion model, Claude Haiku 5.5,
+    // is one — need a one-time per-account step: submit the Anthropic use-case form
+    // in the Bedrock console and subscribe through Marketplace (system admin guide).
     // (The Model access page is retired — serverless models auto-enable on first
     // invoke; Marketplace models like Cohere need the one-time invoke below.)
     // `bedrock: false` opts out (AI_TYPE=none).
@@ -127,14 +127,15 @@ export const environments = {
     //   embeddingModel: 'cohere.embed-v4:0',
     //   // AI-suggestion completion models (ADR-040): the task role is granted InvokeModel
     //   // on exactly these and they become the admin model-picker options. The first
-    //   // entry is the provider default (a Nova-only list is fine). Omit → the default
-    //   // jp. Nova Lite profile only. Use region-appropriate profiles (jp.* stays in Japan):
-    //   completionModels: ['jp.amazon.nova-2-lite-v1:0', 'jp.anthropic.claude-haiku-4-5-20251001-v1:0', 'jp.anthropic.claude-sonnet-4-6'],
+    //   // entry is the provider default. Omit → the default jp. Claude Haiku 5.5 profile
+    //   // only. Use region-appropriate profiles (jp.* stays in Japan):
+    //   completionModels: ['jp.anthropic.claude-haiku-5-5', 'jp.anthropic.claude-sonnet-4-6'],
     //   // Model that writes the AI resource abstracts (ADR-053). Omit → no abstracts
     //   // and nothing billed for them; it must be one of completionModels above
-    //   // (that list is the IAM grant). Nova cannot write them — name a Claude
-    //   // Sonnet 4.6 class model, whatever the suggestion default is:
-    //   summaryModel: 'jp.anthropic.claude-sonnet-4-6',
+    //   // (that list is the IAM grant). Nova cannot write them; Claude Haiku 5.5
+    //   // wrote them better than Sonnet 4.6 at a thirtieth of the cost (ADR-053
+    //   // appendix 20):
+    //   summaryModel: 'jp.anthropic.claude-haiku-5-5',
     // },
     // Sites adjust this per site — see sites[].bedrock below.
 
@@ -175,7 +176,7 @@ export const environments = {
         // Per-site AI over the environment's `bedrock` above: an object deep-merges
         // (arrays replace, so completionModels is given whole), `false` turns AI off
         // for this site alone. Requires the environment to declare `bedrock`.
-        // bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' }, // cheaper abstracts here
+        // bedrock: { summaryModel: 'jp.anthropic.claude-sonnet-4-6' }, // another abstract model here
         // bedrock: { summaryModel: undefined }, // no abstracts for this site
         // bedrock: false, // no AI at all for this site
       },

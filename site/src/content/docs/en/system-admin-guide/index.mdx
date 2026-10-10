@@ -342,7 +342,7 @@ Semantic search (embeddings) and AI metadata suggestions use the provider chosen
 The AI metadata suggestion model can be switched from the admin dashboard (AI Management → AI metadata suggestions) without redeploying. The embedding model cannot be changed from the dashboard: it is set by `AI_EMBEDDING_MODEL` (on AWS, `bedrock.embeddingModel` in `environments.ts`), and changing it needs a redeploy and regenerated embeddings. Candidate generation models are set via the `AI_COMPLETION_MODELS` environment variable (comma-separated). This is **the list of models approved for the deployment**: across all providers it becomes the admin picker options, with the first entry as the default (the dashboard's "provider default"). A model being available on the server does not put it in the picker — only listed models appear. On **Bedrock**, CDK injects this variable from `bedrock.completionModels` in `environments.ts` (the models granted `InvokeModel` in IAM), so add candidates there and redeploy. On **Ollama**, Docker Compose's `ollama-init` pulls every listed model at startup, so listed models become available automatically. When unset, only the built-in default model is offered (Ollama: gemma4:e4b / OpenAI-compatible: gpt-4o-mini). To run Ollama on a GPU, see the [Getting Started guide](/en/getting-started/).
 
 :::caution[Suggestion quality of small local models]
-Small local models aimed at on-premises / CPU-only deployments (effective 4–8B class, such as Gemma 4 E4B) are **underpowered at metadata suggestion quality**. Even when they return valid JSON, the content tends to degrade — descriptions miss the point, tags are off-target, and Japanese output is unstable. Treat AI suggestions strictly as a **draft starting point** and keep a human in the loop to review and correct before adopting (every field is OFF by default; only the fields you accept are written to the metadata). Where generation quality matters, choose Bedrock (Amazon Nova Lite and up, or Claude Haiku class if needed) or a larger Ollama model given sufficient VRAM (larger Gemma 4 sizes, Qwen3-class). The generation model can be switched from the admin dashboard without redeploying.
+Small local models aimed at on-premises / CPU-only deployments (effective 4–8B class, such as Gemma 4 E4B) are **underpowered at metadata suggestion quality**. Even when they return valid JSON, the content tends to degrade — descriptions miss the point, tags are off-target, and Japanese output is unstable. Treat AI suggestions strictly as a **draft starting point** and keep a human in the loop to review and correct before adopting (every field is OFF by default; only the fields you accept are written to the metadata). Where generation quality matters, choose Bedrock (the default Claude Haiku 5.5) or a larger Ollama model given sufficient VRAM (larger Gemma 4 sizes, Qwen3-class). The generation model can be switched from the admin dashboard without redeploying.
 
 Even on an on-premises deployment without AWS, you can secure quality by connecting to a hosted commercial AI. Keep `AI_TYPE=openai` and point `OPENAI_BASE_URL` at an OpenAI-compatible commercial endpoint or gateway (LiteLLM, etc.) to use a high-quality generation model — the suggestion feature relies on structured output (a `response_format` JSON schema), so the endpoint must support it. To use Claude natively, AWS Bedrock (`AI_TYPE=bedrock`) is currently the only path; there is no dedicated provider that calls the Anthropic API directly with an API key.
 :::
@@ -357,7 +357,7 @@ The **connection test** under AI metadata suggestions on AI Management runs one 
 | `use case details have not been submitted`            | The Anthropic use-case form hasn't been submitted          | Submit the Anthropic "use case details" form in the Bedrock console (once per account; ~15 min to activate)                                                                                                                                                                                                                  |
 | `AccessDenied` mentioning `aws-marketplace:Subscribe` | A Marketplace-served model isn't subscribed on the account | Invoke the model once to enable it — see "[First-time subscription for Marketplace models](#first-time-subscription-for-marketplace-models)" below. If an organization SCP restricts it, grant `aws-marketplace:Subscribe` / `ViewSubscriptions` from the **management account** (an SCP overrides even AdministratorAccess) |
 
-All of these are **out-of-app AWS setup** — one-time console actions. Note that Anthropic models (Claude, etc.) require both the use-case form and a Marketplace subscription, whereas Amazon Titan / Nova need neither (both auto-enable on first invocation).
+All of these are **out-of-app AWS setup** — one-time console actions. Note that Anthropic models (Claude, etc.) require both the use-case form and a Marketplace subscription — including the default generation model, Claude Haiku 5.5, so a deployment that names no model needs them too — whereas Amazon Titan / Nova need neither (both auto-enable on first invocation).
 
 :::note
 The former Bedrock **Model access** page has been retired. Serverless foundation models are enabled automatically the first time they are invoked in your account, so there is no longer a manual "enable" step. Access control is consolidated into IAM policies and SCPs.
@@ -394,30 +394,32 @@ the `AI_SUMMARY_MODEL` environment variable.
 // AWS (infra/config/environments.ts) — CDK injects AI_SUMMARY_MODEL from this
 bedrock: {
   completionModels: [
+    'jp.anthropic.claude-haiku-5-5',
     'jp.anthropic.claude-sonnet-4-6',
-    'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
-    'jp.amazon.nova-2-lite-v1:0',
   ],
-  summaryModel: 'jp.anthropic.claude-sonnet-4-6',
+  summaryModel: 'jp.anthropic.claude-haiku-5-5',
 }
 ```
 
 ```bash
 # Docker Compose (.env)
-AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
+AI_SUMMARY_MODEL=jp.anthropic.claude-haiku-5-5
 ```
 
-:::caution[On Bedrock the default is not enough]
-Omitting `bedrock.completionModels` leaves a single model in it, **Amazon Nova
-Lite**. `summaryModel` only accepts a model from that allow-list — the
+:::caution[Before turning abstracts on with Bedrock]
+Omitting `bedrock.completionModels` leaves a single model in it, **Claude Haiku
+5.5**. `summaryModel` only accepts a model from that allow-list — the
 allow-list being exactly what the task role is granted `InvokeModel` on — so a
 model that is not in it is rejected when the environment is synthesized, before
 anything deploys.
 
-And **Nova cannot write these abstracts**: measured, the document block goes
+Haiku 5.5 is an Anthropic model, so **even the default needs a one-time step
+per AWS account: the Anthropic use-case form and a Marketplace subscription**
+(see "When AI suggestions do not work" below).
+
+**Amazon Nova cannot write these abstracts**: measured, the document block goes
 through but forced JSON breaks, and on a scanned document it invented the
-contents (ADR-053, appendix). Rather than settling for the default model, add
-the recommended one to `completionModels` as above.
+contents (ADR-053, appendix 18).
 
 The first entry of `completionModels` becomes the default for AI metadata
 suggestions. Abstracts name their model separately in `summaryModel`, so the
@@ -427,13 +429,13 @@ order does not decide for them.
 :::tip[Per site]
 In a multi-site environment (ADR-041), `bedrock` on the environment entry is
 the shared setting and `sites[].bedrock` adjusts it for one site — which is how
-one site gets a cheaper model — Haiku 4.5 rather than Sonnet, say — or none at
+one site gets another model — Sonnet 4.6 rather than Haiku 5.5, say — or none at
 all, while the rest keep the environment's.
 
 ```ts
 sites: [
   { name: 'main' }, // the environment's
-  { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' } },
+  { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-sonnet-4-6' } },
   { name: 'cityb', bedrock: { summaryModel: undefined } }, // no abstracts here
   { name: 'cityc', bedrock: false }, // no AI here at all
 ]
@@ -447,10 +449,12 @@ On Docker Compose the same split is per-site env files: `AI_SUMMARY_MODEL` in
 An abstract is generated per resource, so **the bill scales with the size of
 the catalog**. That is why this is an environment variable rather than a
 dashboard toggle: it belongs to whoever pays for the inference. Choosing
-between models is a threefold difference in the bill and, measured, the
-difference between reading a scan and inventing one — so name the model
-explicitly, whatever happens to be first in `AI_COMPLETION_MODELS`. A Claude
-Sonnet 4.6 class model is recommended.
+between models is close to a thirtyfold difference in the bill and, measured,
+the difference between reading a scan and inventing one — so name the model
+explicitly, whatever happens to be first in `AI_COMPLETION_MODELS`. Claude
+Haiku 5.5 is recommended: compared on 472 files, it wrote fewer statements its
+material did not support than Sonnet 4.6, at about a thirtieth of the cost
+(ADR-053, appendix 20).
 
 Before any bulk generation runs, the dashboard **shows how many resources it
 covers and what it is estimated to cost**. Read that before pressing the button.

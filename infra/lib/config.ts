@@ -87,7 +87,7 @@ export interface BedrockConfig {
    *  recommendation, held by the AI adapter (Titan 0.15 / Cohere 0.3). */
   vectorMinSimilarity?: number
   /** Completion models the task role may invoke (ADR-040); also the admin
-   *  model-picker options. Omit → the default Nova Lite profile. Changing needs redeploy. */
+   *  model-picker options. Omit → the default Haiku 5.5 profile. Changing needs redeploy. */
   completionModels?: string[]
   /** Model that writes the AI resource abstracts (ADR-053), and by its absence
    *  the switch that leaves them off. Must be one of `completionModels` — the

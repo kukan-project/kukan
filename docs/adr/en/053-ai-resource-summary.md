@@ -5,7 +5,7 @@
 ## Status
 
 **Accepted** — implemented 2026-09-16. Spikes Phase A and Phase B have both been run
-(Appendix). What remains is the before/after nDCG comparison (pass criterion 6), measured
+(Appendix). Revised 2026-10: the default model is Claude Haiku 5.5 (decision 6, Appendix 20). What remains is the before/after nDCG comparison (pass criterion 6), measured
 separately on local and on demo.
 
 Give each resource a short AI-generated **abstract** — in the bibliographic sense (JIS X 0813):
@@ -602,6 +602,15 @@ about units, and **glosses terms in everyday language unprompted** (Appendix 10)
 - Routing by whether a text layer exists stays a lever for when volume makes it matter ("After
   the MVP")
 
+**Revised 2026-10: the default is Claude Haiku 5.5 (Appendix 20).** The line drawn above
+stands — the default is a generation that can read degraded material, and Haiku 5.5, though
+small, is of that generation. It did not fabricate a degraded scan (one character misread), has a
+1M context, and is available on `jp.*`. In a blind comparison of all 472 files it made fewer
+claims beyond the material than Sonnet 4.6, at about a thirtieth of the cost. "A small model is
+imprecise" held up to Haiku 4.5; Haiku 5.5's errors have moved to misreading details (miscounting
+or misordering items). Haiku 4.5 went beyond the material on the scan, the image and the HTML in
+Appendix 20 as well, and stays excluded
+
 **Amazon's Nova models run the same way. The larger, older Nova Pro is worse than the smaller,
 newer Nova 2.0 Lite** (Appendix 18). Nova Pro did not read even a clean scan: it wrote from the
 dataset's metadata alone. It costs a ninth of Sonnet 4.6, and **neither model can be used**.
@@ -925,6 +934,8 @@ catalogue updating 5% a month costs **$7–$35 a month**.
 
 **Cost is not a design input.** Cheapest against dearest is $12 against $59 on a
 2,600-resource backfill. Choose on quality — and per decision 6, default to the larger model.
+(Revised 2026-10: choosing on quality again landed on the cheapest, Haiku 5.5. At Appendix 20's
+rates a 25,000-resource backfill is $16 against Sonnet 4.6's $474.)
 
 Prompt caching does not help here. Only the system prompt (~700 tokens) is shared, and the
 material differs per resource, so there is no prefix to reuse.
@@ -970,6 +981,13 @@ on the medium model.
 Amazon Nova costs an order of magnitude less, so it was measured separately. **It cannot be
 used.** Document blocks go through, but forced JSON breaks and scans are fabricated.
 **The results are in Appendix 18.**
+
+### Phase D — Haiku 5.5 (2026-10-09 to 10, done)
+
+The new small Haiku 5.5 became available on `jp.*`, so the default model was measured again.
+**It can be the default.** It did not fabricate a degraded scan, and in a blind comparison of all
+472 files it was chosen over Sonnet 4.6 more often. Its habit of adding disclaimers was held back
+by one prompt rule. **The results are in Appendix 20.**
 
 **What remains is the before/after nDCG comparison** (pass criterion 6). The embedding
 similarities are confirmed; the `pnpm eval:search` comparison needs the abstracts themselves, so
@@ -1918,6 +1936,80 @@ memory; the page cap guards cost (note under decision 3.3).
 **Only the bytes were varied.** A real request also carries the system prompt and the user
 content, so if the limit applies to the whole request the usable figure is lower. The 16 MB
 setting is that margin.
+
+### 20. Haiku 5.5 — it can be the default (2026-10-09 to 10)
+
+**Conditions.** Bedrock Tokyo, `jp.*`, called with the same prompt, material and output cap as
+the production `executeSummarize`, inside a transaction that was rolled back. The JSON comes back
+through a forced tool choice, and **Haiku 5.5 does not reason (no thinking) when called that
+way** — it reasons by default, but under a forced tool choice the Converse response carries no
+reasoning block. So these figures, too, are without thinking (the same condition as Appendix 17).
+Costs are Anthropic's list prices × 1.1 (the `jp.*` premium); all three matched the Price List
+API's `jp.*` figures (Haiku 5.5's, both bands, confirmed listed on 2026-10-10). Haiku 5.5 is $0.11 input and $0.55 output per million tokens, five
+times that for a request over 100,000 input tokens.
+
+#### A stratified sample: 26 files × 3 models
+
+A few files of each kind (PDF, synthetic scan, CSV, Excel, Word, PowerPoint, Ichitaro, GeoJSON,
+HTML, ZIP, JPEG), written by Haiku 5.5, Haiku 4.5 and Sonnet 4.6. The scans are a real page with
+a table turned into an image-only PDF, clean (200 dpi) and degraded (low resolution, skewed, low
+contrast, noise); the page's text layer is the answer.
+
+| Check                                              | Haiku 5.5                      | Haiku 4.5                                         | Sonnet 4.6 |
+| -------------------------------------------------- | ------------------------------ | ------------------------------------------------- | ---------- |
+| Clean scan                                         | Correct                        | Nearly (one name misspelled)                      | Correct    |
+| Degraded scan                                      | Nearly (one character misread) | **Fabricated** (facilities that do not exist)     | Correct    |
+| JPEG (double cherry blossom, named "Spring roses") | Correct                        | **Beyond the material** (wrote "roses")           | Correct    |
+| HTML (only the menu came through)                  | Said it could not be read      | **Beyond the material** (said the list was there) | Correct    |
+| Median latency                                     | **2.1 s**                      | 2.2 s                                             | 3.6 s      |
+| Cost of the 25                                     | **$0.016**                     | $0.146                                            | $0.474     |
+
+The context is 1M (confirmed by the rejection of an oversized input). Decision 6's coincidence —
+the generation that reads scans is the 1M one — holds for the small model too.
+
+#### A blind comparison of all 472 files
+
+Every resource in the development environment with a stored Sonnet 4.6 abstract (CSV 282,
+extracted text 84, original 80, text 16, ZIP 9, image 1) was rewritten with Haiku 5.5 and compared
+with the stored Sonnet 4.6 abstract. The judge was Claude Opus 5.5 (`jp.*`), given the material
+Haiku 5.5 saw (attachments included) and both abstracts, unlabelled and in random order. Opus 5.5
+refuses a forced tool choice (400), so the judge alone was called with `toolChoice: auto`.
+
+| Finding                                   | Haiku 5.5        | Sonnet 4.6 (stored)   |
+| ----------------------------------------- | ---------------- | --------------------- |
+| Chosen for publication                    | **326**          | 140 (6 ties)          |
+| Abstracts with claims beyond the material | 131 (152 claims) | 313 (525 claims)      |
+| Abstracts contradicting the material      | 80 (93)          | 121 (136)             |
+| Abstracts with neither                    | **291 (62%)**    | 115 (24%)             |
+| Mean usefulness (1–5)                     | 3.89             | 3.69                  |
+| Cost of writing all 472                   | **$0.77**        | about $13 (estimated) |
+
+**The errors differ in kind.** Haiku 5.5 misreads details ("five categories" followed by four,
+miscounted columns, items misordered); Sonnet 4.6 adds interpretation ("positioned as the
+basic indicator of…", "the whole prefecture" from a head-only excerpt). Sonnet 4.6's count also
+includes the everyday glosses in brackets that decision 3.2 asks for, so it runs higher than the
+real problem.
+
+**The comparison's limits.** 365 of the 472 stored Sonnet 4.6 abstracts (77%) were written by
+the previous generation (2), and document extraction changed on 2026-10-07. The judge read both
+against today's material, so the difference in conditions works against Sonnet 4.6. Restricted to
+the 107 written by the current generation (3) it was still Haiku 5.5 65, Sonnet 4.6 42.
+
+#### The disclaimer habit and the prompt
+
+Haiku 5.5 adds sentences about the abstract or the material — "this abstract does not give the
+count", "cannot be confirmed from this description". Even with decision 7's rule against writing
+about the material it did so in 25% of all abstracts (counted mechanically against a list of
+phrasings). One added rule (no sentence that is not about the file, the one exception being the
+plain notice when the material is too thin) brought it to **9%**. Most of what remains is files
+whose material really is thin — column names that are only years, three rows — where a short
+notice is what decision 7 asks for. The rule is in, and the generation is raised to 4.
+
+**A measurement trap.** Writing abstracts from outside the worker, the query child process that
+reads a CSV's sample rows does not start without `QUERY_CHILD_ENTRY`, and generation goes on with
+the column definitions alone after a warning in the log. The first run did that, and the
+"could not describe it from the material" self-report reached 66% of the CSVs (187/282); given the
+sample rows it fell to 5% (13/282). The self-reports were not a Haiku 5.5 habit.
 
 ## Related ADRs
 

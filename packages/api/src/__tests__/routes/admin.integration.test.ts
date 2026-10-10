@@ -1092,6 +1092,39 @@ describe('Admin API Routes', () => {
       expect(body.fill.estimatedCostUsd.low).toBeCloseTo(0.01, 2)
     })
 
+    it('prices a request past the long-prompt line at the upper band', async () => {
+      // Haiku 5.5 charges a request over 100k input tokens five times the lower
+      // rate, and a PDF original at the page limit is 125k. Priced from the
+      // totals at the lower band, this quoted a fifth of the bill
+      const orgId = await ensureOrg('estimate-band-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-band-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        { packageId: pkg.id, name: 'a', format: 'PDF', size: 1_000_000, state: 'active' },
+      ])
+      const haiku = 'jp.anthropic.claude-haiku-5-5'
+      const bandedApp = createTestApp(db, {
+        search: mockSearch,
+        ai: {
+          ...mockCompletionAi(),
+          getCompletionInfo: () => ({
+            provider: 'bedrock',
+            defaultModel: haiku,
+            allowlist: [haiku],
+          }),
+        } as unknown as AIAdapter,
+        env: { AI_SUMMARY_MODEL: haiku },
+      })
+
+      const body = await (await bandedApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.estimatedInputTokens.high).toBe(125_000)
+      // 125,000 × $0.55 + 300 × $2.75 per million — not 125,000 × $0.11 + 300 × $0.55
+      expect(body.fill.estimatedCostUsd.high).toBeCloseTo(0.07, 2)
+    })
+
     it('does not quote for a file this same model has already refused', async () => {
       // The refusal stands until something about the generation changes, so
       // counting it would promise work the ordinary generation will not do

@@ -2146,7 +2146,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
-                "Value": "jp.amazon.nova-2-lite-v1:0",
+                "Value": "jp.anthropic.claude-haiku-5-5",
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -2489,7 +2489,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::AccountId",
                     },
-                    ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -2515,7 +2515,7 @@ function expandV6(addr) {
                           {
                             "Ref": "AWS::AccountId",
                           },
-                          ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                          ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
                       ],
                     },
@@ -2531,7 +2531,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::Partition",
                     },
-                    ":bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                    ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -5783,7 +5783,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
-                "Value": "jp.amazon.nova-2-lite-v1:0",
+                "Value": "jp.anthropic.claude-haiku-5-5",
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -6161,7 +6161,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::AccountId",
                     },
-                    ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -6187,7 +6187,7 @@ function expandV6(addr) {
                           {
                             "Ref": "AWS::AccountId",
                           },
-                          ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                          ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
                       ],
                     },
@@ -6203,7 +6203,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::Partition",
                     },
-                    ":bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                    ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -12651,7 +12651,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
-                "Value": "jp.amazon.nova-2-lite-v1:0",
+                "Value": "jp.anthropic.claude-haiku-5-5",
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -12981,7 +12981,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::AccountId",
                     },
-                    ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -13007,7 +13007,7 @@ function expandV6(addr) {
                           {
                             "Ref": "AWS::AccountId",
                           },
-                          ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                          ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
                       ],
                     },
@@ -13023,7 +13023,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::Partition",
                     },
-                    ":bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                    ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -16107,7 +16107,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
-                "Value": "jp.amazon.nova-2-lite-v1:0",
+                "Value": "jp.anthropic.claude-haiku-5-5",
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -16450,7 +16450,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::AccountId",
                     },
-                    ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
                   ],
                 ],
               },
@@ -16476,7 +16476,7 @@ function expandV6(addr) {
                           {
                             "Ref": "AWS::AccountId",
                           },
-                          ":inference-profile/jp.amazon.nova-2-lite-v1:0",
+                          ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
                       ],
                     },
@@ -16492,7 +16492,7 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::Partition",
                     },
-                    ":bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+                    ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
                   ],
                 ],
               },

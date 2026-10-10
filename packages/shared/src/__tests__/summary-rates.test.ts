@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tokenRate, tokensToUsd } from '../summary'
+import { requestUsd, roundUsd, tokenRate } from '../summary'
 
 describe('tokenRate (ADR-053)', () => {
   it('charges a geography-limited profile the premium the base rate does not carry', () => {
@@ -22,6 +22,23 @@ describe('tokenRate (ADR-053)', () => {
     expect(tokenRate('jp.anthropic.claude-opus-4-8')!.outputPerMillion).toBeCloseTo(27.5, 5)
   })
 
+  it('prices Haiku 5.5 at its lower, under-100k-token rate', () => {
+    const jp = tokenRate('jp.anthropic.claude-haiku-5-5')!
+    expect(jp.inputPerMillion).toBeCloseTo(0.11, 5)
+    expect(jp.outputPerMillion).toBeCloseTo(0.55, 5)
+  })
+
+  it('does not price Opus 5.5 as the Opus 5 its id contains', () => {
+    expect(tokenRate('global.anthropic.claude-opus-5-5')).toEqual({
+      inputPerMillion: 4,
+      outputPerMillion: 20,
+    })
+    expect(tokenRate('global.anthropic.claude-opus-5')).toEqual({
+      inputPerMillion: 5,
+      outputPerMillion: 25,
+    })
+  })
+
   it('takes no premium on a model priced per Region rather than per profile', () => {
     // Amazon's own models are quoted for the Region, so a prefix changes nothing
     expect(tokenRate('jp.amazon.nova-2-lite-v1:0')).toEqual({
@@ -39,6 +56,20 @@ describe('tokenRate (ADR-053)', () => {
   it('prices both token counts, to the cent', () => {
     const rate = { inputPerMillion: 3.3, outputPerMillion: 16.5 }
     // 10.4M input and 0.78M output — ADR-053's 2,600-resource catalogue
-    expect(tokensToUsd(rate, 10_400_000, 780_000)).toBeCloseTo(47.19, 2)
+    expect(roundUsd(requestUsd(rate, 10_400_000, 780_000))).toBeCloseTo(47.19, 2)
+  })
+
+  it('charges Haiku 5.5 its long-prompt band per request', () => {
+    const rate = tokenRate('jp.anthropic.claude-haiku-5-5')!
+    // A 50-page original: 125k input is over the 100k line, so both counts
+    // take the upper band (0.55 / 2.75 with the premium)
+    expect(requestUsd(rate, 125_000, 300)).toBeCloseTo((125_000 * 0.55 + 300 * 2.75) / 1e6, 8)
+    // At the line it is still the lower band
+    expect(requestUsd(rate, 100_000, 300)).toBeCloseTo((100_000 * 0.11 + 300 * 0.55) / 1e6, 8)
+  })
+
+  it('leaves a model without a second band on its one rate however long the prompt', () => {
+    const rate = tokenRate('jp.anthropic.claude-sonnet-4-6')!
+    expect(requestUsd(rate, 125_000, 300)).toBeCloseTo((125_000 * 3.3 + 300 * 16.5) / 1e6, 8)
   })
 })

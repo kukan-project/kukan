@@ -74,7 +74,14 @@ describe('summary prompt (ADR-053)', () => {
     expect(prompt).toMatch(/do not report a column as empty/)
   })
 
+  it('forbids sentences about what the abstract leaves out', () => {
+    // Haiku 5.5 closed a quarter of its abstracts on 「…は確認できない」
+    const prompt = buildSummarySystemPrompt('ja')
+    expect(prompt).toMatch(/Every sentence says something about the file/)
+    expect(prompt).toMatch(/The one exception is the plain sentence below/)
+  })
+
   it('pins the version that stales every stored abstract when it moves', () => {
-    expect(SUMMARY_GENERATION_VERSION).toBe(3)
+    expect(SUMMARY_GENERATION_VERSION).toBe(4)
   })
 })

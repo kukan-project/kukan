@@ -199,8 +199,10 @@ export const SUMMARY_CONTEXT_NOTES_CHARS = 400
  *
  * 3: an abstract now stands while its version does (was: while a digest of
  *    the derived material did)
+ * 4: no sentences about what the abstract leaves out or could not confirm
+ *    (ADR-053, appendix 20)
  */
-export const SUMMARY_GENERATION_VERSION = 3
+export const SUMMARY_GENERATION_VERSION = 4
 
 /**
  * How a deployment writes abstracts now: the model, the generation and the
@@ -225,22 +227,40 @@ export function generationKey(model: string, locale: SummaryLocale): string {
  *
  * Provenance, because these are money: Opus 4.7 / 4.8 / 5, Sonnet 5 and the
  * Fable and Mythos lines come from the AWS Price List API, both figures. Haiku
- * 4.5 and Sonnet 4.5 / 4.6 have their input from the same place and their
+ * 4.5 and Sonnet 4.6 have their input from the same place and their
  * output from the bill ADR-053 measured — the API publishes no output SKU for
- * them in this Region.
+ * them in this Region. Haiku 5.5 (both bands) and Opus 5.5 are from the Price
+ * List API, both figures (2026-10).
+ *
+ * Haiku 5.5 is priced by prompt length: a request over 100,000 input tokens
+ * pays 5× both rates — the fourth column. An original PDF crosses it at about
+ * 40 pages, so it has to be decided per request (see requestUsd). No call
+ * caches its prompt (ADR-053, cost), so every input token is billed at these
+ * rates; one that did would pay other rates, and its cache reads would still
+ * count toward Haiku 5.5's line.
  *
  * **A model that is not listed has no rate, and the screen shows tokens only.**
  * Rates move, and a figure nobody checked is worse than none when the subject
  * is money. Matched on a substring, so one entry covers the bare model id and
- * every profile prefix it can carry.
+ * every profile prefix it can carry — and matched in order, so a model id
+ * that another one's contains (`claude-opus-5-5` holds `claude-opus-5`) is
+ * listed first.
  */
-const BASE_RATES_USD: ReadonlyArray<[match: string, input: number, output: number]> = [
+const BASE_RATES_USD: ReadonlyArray<
+  [match: string, input: number, output: number, longPrompt?: LongPromptRate]
+> = [
   ['claude-haiku-4-5', 1.0, 5.0],
-  ['claude-sonnet-4-5', 3.0, 15.0],
+  [
+    'claude-haiku-5-5',
+    0.1,
+    0.5,
+    { aboveInputTokens: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5 },
+  ],
   ['claude-sonnet-4-6', 3.0, 15.0],
   ['claude-sonnet-5', 2.0, 10.0],
   ['claude-opus-4-7', 5.0, 25.0],
   ['claude-opus-4-8', 5.0, 25.0],
+  ['claude-opus-5-5', 4.0, 20.0],
   ['claude-opus-5', 5.0, 25.0],
   ['claude-fable-5', 10.0, 50.0],
   ['claude-mythos-5', 10.0, 50.0],
@@ -265,9 +285,17 @@ const REGION_RATES_USD: ReadonlyArray<[match: string, input: number, output: num
   ['nova-2-lite', 0.36, 3.01],
 ]
 
+/** The band a model priced by prompt length charges a long request, on both counts */
+export interface LongPromptRate {
+  aboveInputTokens: number
+  inputPerMillion: number
+  outputPerMillion: number
+}
+
 export interface TokenRate {
   inputPerMillion: number
   outputPerMillion: number
+  longPrompt?: LongPromptRate
 }
 
 /**
@@ -284,14 +312,33 @@ export function tokenRate(model: string | null): TokenRate | null {
   const base = BASE_RATES_USD.find(([match]) => model.includes(match))
   if (!base) return null
   const factor = model.startsWith('global.') ? 1 : GEO_PROFILE_PREMIUM
+  const long = base[3]
   return {
     inputPerMillion: base[1] * factor,
     outputPerMillion: base[2] * factor,
+    ...(long && {
+      longPrompt: {
+        aboveInputTokens: long.aboveInputTokens,
+        inputPerMillion: long.inputPerMillion * factor,
+        outputPerMillion: long.outputPerMillion * factor,
+      },
+    }),
   }
 }
 
-/** USD for a number of tokens at a rate, to the cent */
-export function tokensToUsd(rate: TokenRate, input: number, output: number): number {
-  const usd = (input * rate.inputPerMillion + output * rate.outputPerMillion) / 1_000_000
+/**
+ * USD for one request, unrounded.
+ *
+ * Per request rather than for a total, because the band is chosen by each
+ * request's own input: a hundred 125k-token PDFs on Haiku 5.5 cost five times
+ * what their sum priced at the lower band says.
+ */
+export function requestUsd(rate: TokenRate, input: number, output: number): number {
+  const band = rate.longPrompt && input > rate.longPrompt.aboveInputTokens ? rate.longPrompt : rate
+  return (input * band.inputPerMillion + output * band.outputPerMillion) / 1_000_000
+}
+
+/** USD to the cent, for showing */
+export function roundUsd(usd: number): number {
   return Math.round(usd * 100) / 100
 }

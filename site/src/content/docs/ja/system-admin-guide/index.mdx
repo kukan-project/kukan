@@ -337,7 +337,7 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 AI メタデータ提案の生成モデルは管理画面（生成AI管理 → AI メタデータ提案）から再デプロイなしで切り替えられます。埋め込みモデルは管理画面からは変えられません — `AI_EMBEDDING_MODEL`（AWS では `environments.ts` の `bedrock.embeddingModel`）で指定し、変更には再デプロイと埋め込みベクトルの再生成が要ります。生成モデルの候補は `AI_COMPLETION_MODELS` 環境変数（カンマ区切り）で指定します。これは**このデプロイで利用を許可するモデルのリスト**で、全プロバイダ共通に管理画面ピッカーの選択肢となり、先頭エントリが既定（「プロバイダ既定」）になります。サーバー側で利用可能でも、リストに無いモデルは候補に現れません。**Bedrock** では CDK が `environments.ts` の `bedrock.completionModels`（IAM で `InvokeModel` を許可したモデル）からこの変数を注入するため、候補を増やす場合はそこに追加して再デプロイしてください。**Ollama** では Docker Compose の `ollama-init` が列挙された全モデルを起動時に pull するため、リストのモデルは自動で利用可能になります。未設定時は組み込み既定モデルのみが候補になります（Ollama: gemma4:e4b / OpenAI 互換: gpt-4o-mini）。Ollama を GPU で動かす手順は[開発環境セットアップ](/ja/getting-started/)を参照してください。
 
 :::caution[小規模ローカルモデルの提案品質]
-オンプレミス / CPU-only 環境向けの小規模ローカルモデル（実効 4〜8B クラス、Gemma 4 E4B 等）は、**メタデータ提案の品質としては非力**です。JSON 形式は正しく返しても、説明文が要点を外す・タグが的外れ・日本語の出力が不安定といった内容面の劣化が起きやすくなります。AI 提案はあくまで**下書きの叩き台**と位置づけ、採用前に人が必ず確認・修正する運用にしてください（提案はどのフィールドも初期 OFF で、採用したものだけがメタデータに反映されます）。生成品質を重視する場合は、Bedrock（Amazon Nova Lite 以上、必要なら Claude Haiku 系）や、十分な VRAM を確保した上での上位 Ollama モデル（Gemma 4 の上位サイズ・Qwen3 系）を選んでください。生成モデルは管理画面から再デプロイなしに切り替えられます。
+オンプレミス / CPU-only 環境向けの小規模ローカルモデル（実効 4〜8B クラス、Gemma 4 E4B 等）は、**メタデータ提案の品質としては非力**です。JSON 形式は正しく返しても、説明文が要点を外す・タグが的外れ・日本語の出力が不安定といった内容面の劣化が起きやすくなります。AI 提案はあくまで**下書きの叩き台**と位置づけ、採用前に人が必ず確認・修正する運用にしてください（提案はどのフィールドも初期 OFF で、採用したものだけがメタデータに反映されます）。生成品質を重視する場合は、Bedrock（既定の Claude Haiku 5.5）や、十分な VRAM を確保した上での上位 Ollama モデル（Gemma 4 の上位サイズ・Qwen3 系）を選んでください。生成モデルは管理画面から再デプロイなしに切り替えられます。
 
 AWS を使わないオンプレミス構成でも、常用の商用 AI に接続して品質を確保する方法があります。`AI_TYPE=openai` のまま `OPENAI_BASE_URL` を OpenAI 互換の商用エンドポイントやゲートウェイ（LiteLLM 等）に向けると、高性能な生成モデルを利用できます（提案機能は構造化出力〈`response_format` の JSON スキーマ〉を用いるため、エンドポイント側がこれに対応している必要があります）。Claude を純正で使う場合は現状 AWS の Bedrock（`AI_TYPE=bedrock`）が唯一の経路で、Anthropic API を API キーで直接叩く専用プロバイダは未提供です。
 :::
@@ -352,7 +352,7 @@ AWS を使わないオンプレミス構成でも、常用の商用 AI に接続
 | `use case details have not been submitted`       | Anthropic の利用ユースケースフォーム未提出         | Bedrock コンソールで Anthropic の「利用ユースケース詳細」フォームを提出（アカウントに一度・約15分で有効化）                                                                                                                                                                                              |
 | `aws-marketplace:Subscribe` 系の AccessDenied    | Marketplace 提供モデルがアカウント未サブスクライブ | 下記「[Marketplace モデルの初回サブスクライブ](#marketplace-モデルの初回サブスクライブ)」の手順で一度 invoke して有効化。組織で SCP により制限されている場合は、**管理アカウント**側で `aws-marketplace:Subscribe` / `ViewSubscriptions` の許可が必要（AdministratorAccess でも SCP は上書きできません） |
 
-これらはいずれも**アプリ外（AWS 側）の設定**で、コンソールでの一度きりの作業です。Claude 等の Anthropic モデルはフォーム提出と Marketplace サブスクライブの両方が必要になる点に注意してください（Amazon Titan / Nova はどちらも不要 — 初回呼び出しで自動有効化されます）。
+これらはいずれも**アプリ外（AWS 側）の設定**で、コンソールでの一度きりの作業です。Claude 等の Anthropic モデルはフォーム提出と Marketplace サブスクライブの両方が必要になる点に注意してください。既定の生成モデル（Claude Haiku 5.5）も Anthropic のモデルなので、モデルを指定しない配備でも必要です（Amazon Titan / Nova はどちらも不要 — 初回呼び出しで自動有効化されます）。
 
 :::note
 かつての Bedrock **Model access（モデルアクセス）** ページは廃止されました。サーバーレス基盤モデルはアカウント内で初回に呼び出した時点で自動的に有効化されるため、手動で「有効化」する操作はもうありません。アクセス制御は IAM ポリシーと SCP に一本化されています。
@@ -383,34 +383,35 @@ Cohere Embed v4 のような **AWS Marketplace 提供モデル**は自動有効�
 // AWS（infra/config/environments.ts）— CDK がここから AI_SUMMARY_MODEL を注入します
 bedrock: {
   completionModels: [
+    'jp.anthropic.claude-haiku-5-5',
     'jp.anthropic.claude-sonnet-4-6',
-    'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
-    'jp.amazon.nova-2-lite-v1:0',
   ],
-  summaryModel: 'jp.anthropic.claude-sonnet-4-6',
+  summaryModel: 'jp.anthropic.claude-haiku-5-5',
 }
 ```
 
 ```bash
 # Docker Compose（.env）
-AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
+AI_SUMMARY_MODEL=jp.anthropic.claude-haiku-5-5
 ```
 
-:::caution[Bedrock では既定のままでは足りません]
-`bedrock.completionModels` を省略したときの既定は **Amazon Nova Lite 1 本**です。`summaryModel` はこの許可リストに含まれるモデルしか受け付けないため（許可リストは IAM で `InvokeModel` を許可した範囲そのものです）、リストに無いモデルを指定すると、デプロイされる前に合成（synth）の時点で拒否されます。
+:::caution[Bedrock で抄録を有効にする前に]
+`bedrock.completionModels` を省略したときの既定は **Claude Haiku 5.5 1 本**です。`summaryModel` はこの許可リストに含まれるモデルしか受け付けないため（許可リストは IAM で `InvokeModel` を許可した範囲そのものです）、リストに無いモデルを指定すると、デプロイされる前に合成（synth）の時点で拒否されます。
 
-しかも **Nova は抄録には使えません** — 実測では document ブロックは通るものの、強制 JSON が壊れ、スキャン文書では内容を捏造しました（ADR-053 の付録）。既定のモデルで妥協するのではなく、上の例のように `completionModels` に推奨モデルを追加してください。
+Haiku 5.5 は Anthropic のモデルなので、**既定のままでも、AWS アカウントごとに一度だけ、Anthropic の利用ユースケースフォームの提出と Marketplace でのサブスクライブが要ります**（下の「AI 提案が動かないとき」）。
+
+**Amazon Nova は抄録には使えません** — 実測では document ブロックは通るものの、強制 JSON が壊れ、スキャン文書では内容を捏造しました（ADR-053 の付録 18）。
 
 `completionModels` の先頭が AI メタデータ提案の既定になります。抄録用のモデルは `summaryModel` で別に指定するため、並び順に引きずられません。
 :::
 
 :::tip[サイト単位の指定]
-マルチサイト環境（ADR-041）では、環境エントリの `bedrock` が共通の設定、`sites[].bedrock` がサイト単位の上書きです。1 つのサイトだけ安いモデル（Sonnet でなく Haiku 4.5 など）にする、あるいは抄録を生成しない、といった指定ができます。
+マルチサイト環境（ADR-041）では、環境エントリの `bedrock` が共通の設定、`sites[].bedrock` がサイト単位の上書きです。1 つのサイトだけ別のモデル（Haiku 5.5 でなく Sonnet 4.6 など）にする、あるいは抄録を生成しない、といった指定ができます。
 
 ```ts
 sites: [
   { name: 'main' }, // 環境の設定をそのまま使う
-  { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' } },
+  { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-sonnet-4-6' } },
   { name: 'cityb', bedrock: { summaryModel: undefined } }, // このサイトは抄録なし
   { name: 'cityc', bedrock: false }, // このサイトは AI 自体なし
 ]
@@ -420,7 +421,7 @@ Docker Compose でも同じ分け方ができます — サイトごとの env �
 :::
 
 :::caution[有効化すると推論費用が発生します]
-抄録はリソース 1 件ごとに生成されるため、**カタログの規模に比例して課金されます**。これが管理画面のトグルではなく環境変数になっているのは、費用を負担する側が決めるべき設定だからです。モデルの選択は請求額で 3 倍の開きがあり、かつ実測では「資料を読んだ説明」と「作文」の差になります — 生成モデルの候補（`AI_COMPLETION_MODELS`）の先頭が何であれ、抄録用のモデルは明示してください。推奨は Claude Sonnet 4.6 相当です。
+抄録はリソース 1 件ごとに生成されるため、**カタログの規模に比例して課金されます**。これが管理画面のトグルではなく環境変数になっているのは、費用を負担する側が決めるべき設定だからです。モデルの選択は請求額で 30 倍近い開きがあり、かつ実測では「資料を読んだ説明」と「作文」の差になります — 生成モデルの候補（`AI_COMPLETION_MODELS`）の先頭が何であれ、抄録用のモデルは明示してください。推奨は Claude Haiku 5.5 です。472 ファイルでの比較で、Sonnet 4.6 より材料にない記述が少なく、費用は約 30 分の 1 でした（ADR-053 の付録 20）。
 
 一括生成を実行する前に、管理画面が**対象件数と推定費用を表示します**。確認してから実行してください。
 :::

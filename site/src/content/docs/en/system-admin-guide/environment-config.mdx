@@ -89,7 +89,7 @@ CI/CD.
 | `embeddingModel`      | string   | `amazon.titan-embed-text-v2:0`      | Embedding model ID. Changing it needs a redeploy and regenerated embeddings                                                                                   |
 | `embeddingDimensions` | number   | adapter default (1024)              | Embedding dimensions                                                                                                                                          |
 | `vectorMinSimilarity` | number   | the model's measured recommendation | Override of the similarity floor for semantic search                                                                                                          |
-| `completionModels`    | string[] | `['jp.amazon.nova-2-lite-v1:0']`    | Generation models the task role may `InvokeModel`. Also the dashboard's model options; the first is the default for AI metadata suggestions. Needs a redeploy |
+| `completionModels`    | string[] | `['jp.anthropic.claude-haiku-5-5']` | Generation models the task role may `InvokeModel`. Also the dashboard's model options; the first is the default for AI metadata suggestions. Needs a redeploy |
 | `summaryModel`        | string   | none (no AI-written descriptions)   | Model that writes AI descriptions (abstracts). Synth fails unless it is in `completionModels`                                                                 |
 
 ## Site entry fields (`sites[]`)

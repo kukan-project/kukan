@@ -127,12 +127,12 @@ assembled on demand from the DB and storage originals, then discarded.**
 
 Four implementations following the same deployment pattern as ADR-034.
 
-| Environment       | Implementation                                        |
-| ----------------- | ----------------------------------------------------- |
-| AWS               | Bedrock Converse API (default Amazon Nova Lite class) |
-| On-premises       | Ollama (Japanese-capable model)                       |
-| OpenAI-compatible | Chat Completions                                      |
-| No AI             | NoOp — reports no capability; feature is hidden       |
+| Environment       | Implementation                                  |
+| ----------------- | ----------------------------------------------- |
+| AWS               | Bedrock Converse API (default Claude Haiku 5.5) |
+| On-premises       | Ollama (Japanese-capable model)                 |
+| OpenAI-compatible | Chat Completions                                |
+| No AI             | NoOp — reports no capability; feature is hidden |
 
 - Add the suggestion capability to `GET /api/v1/site` so the frontend hides
   the button entirely (same pattern as exposing vector-search support)
@@ -167,7 +167,16 @@ Four implementations following the same deployment pattern as ADR-034.
   via Converse API tool use; the `jp.` cross-region inference profile keeps
   inference within the Tokyo/Osaka regions for domestic data-processing
   requirements; the Claude Haiku class and above can be added to
-  completionModels to opt into higher quality) and **Gemma 4 class (E4B and up) on Ollama** (140+
+  completionModels to opt into higher quality. **2026-10 addendum:** the
+  default is now Claude Haiku 5.5, by the "cheapest that meets the bar" rule
+  below. On the same golden set, 8 datasets × 2 runs, Haiku 5.5 cost $0.0042
+  per suggestion and Nova 2.0 Lite $0.0114 (Haiku 5.5 at Anthropic's list
+  price × 1.1). Title/description keyword recall and the fabrication canaries
+  were about the same (Haiku 5.5 missed one description keyword, 94%). Nova is
+  faster: a mean of 3.3 s against Haiku 5.5's 5.1 s. It also matches the
+  abstracts' default (ADR-053), so one model serves both. Being an Anthropic
+  model, it needs the account's one-time use-case form and Marketplace
+  subscription) and **Gemma 4 class (E4B and up) on Ollama** (140+
   languages, Apache 2.0, CPU-efficient effective-parameter design; JSON
   enforced via structured outputs). Qwen3 instruct remains the alternative
   where Japanese quality matters most. Evaluate like ADR-034 with a small
@@ -194,8 +203,7 @@ Four implementations following the same deployment pattern as ADR-034.
   multilingual models. Closed-network / CPU-only deployments should therefore
   operate on the premise that "a suggestion is only a draft" and treat human
   review (human-in-the-loop, option C) as a mandatory step. Where generation
-  quality matters, choose Bedrock (Nova Lite and up, or Claude Haiku class if
-  needed) or a larger Ollama model given sufficient VRAM (larger Gemma 4
+  quality matters, choose Bedrock (the default Claude Haiku 5.5) or a larger Ollama model given sufficient VRAM (larger Gemma 4
   sizes, Qwen3-class instruct). This is a scale limitation and improves by
   switching to a larger model (the generation model is a runtime setting,
   changeable without redeploy, and switching is safe because suggestions are

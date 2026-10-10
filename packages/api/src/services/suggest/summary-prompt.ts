@@ -104,6 +104,13 @@ export function buildSummarySystemPrompt(locale: SummaryLocale): string {
     '  constant or null because the rows you were given are: a handful of',
     '  rows says nothing about the rest. Say nothing about a column you',
     '  cannot characterise.',
+    // Measured on Haiku 5.5: a quarter of its abstracts carried such a
+    // sentence until told this (ADR-053, appendix 20)
+    '- Every sentence says something about the file. Never write what the',
+    '  abstract leaves out or what cannot be confirmed — no sentences such as',
+    '  「本摘要では…は示さない」「…は確認できない」「本文を直接確認する必要がある」.',
+    '  The one exception is the plain sentence below, when the material is too',
+    '  thin to describe the file.',
     ...GROUNDING_RULES,
     ...LOCALE_RULES[locale],
     '- datasetContext is context, not material. Use it to ground proper nouns',
