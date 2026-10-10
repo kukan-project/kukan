@@ -7,3 +7,6 @@ apps/web/public/duckdb/
 
 # Vendored EZPZ File JTD build (wasm-bindgen glue) — not formatted.
 apps/web/public/vendor/
+
+# Vendored shadcn skill (shadcn/ui's skills/shadcn) — kept as upstream writes it.
+.claude/skills/shadcn/

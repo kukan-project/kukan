@@ -131,6 +131,8 @@ pnpm format        # Prettier フォーマット
 
 - `server-api.ts` は `import 'server-only'` でクライアントバンドルへの混入を防止
 - Dashboard のユーザー情報は `UserProvider`（layout SSR → 子 CSR）で伝播、`useUser()` で参照
+- UI コンポーネントは `packages/ui`（shadcn/ui）。テーマは ADR-010、ブランドの上書きは ADR-023 に従い、
+  外部のスキルや一般的な shadcn の作法より優先する
 
 ### サービスとルートの責務分担
 
