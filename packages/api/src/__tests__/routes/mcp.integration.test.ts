@@ -141,6 +141,26 @@ describe('MCP Server', () => {
         capabilities: { tools: { listChanged: true } },
       })
     })
+
+    it("tells the client how the tools go together, and the catalog's language once its data says it", async () => {
+      const app = mcpApp()
+      const instructionsOf = async () =>
+        ((await mcpInit(app)).result as { instructions: string }).instructions
+
+      // An empty catalog names no language
+      const empty = await instructionsOf()
+      expect(empty).toContain('search_passages')
+      expect(empty).toContain('Search with a few words')
+      expect(empty).not.toContain('Japanese')
+
+      // A private dataset is not counted
+      await createPackage(app, { name: 'ds-private', title: '非公開のデータ', private: true })
+      expect(await instructionsOf()).not.toContain('Japanese')
+
+      await createPackage(app, { name: 'ds-1', title: '住宅火災の実態' })
+      await createPackage(app, { name: 'ds-2', title: '水道に関する意識調査' })
+      expect(await instructionsOf()).toContain('Search in Japanese')
+    })
   })
 
   describe('tools/list', () => {

@@ -81,7 +81,9 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
     'search_datasets',
     {
       description:
-        'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats, and — where a dataset holds several files — which of them matched and on what account (its name, its contents, its AI-written description, or its meaning). Results may include semantically related datasets beyond exact keyword matches.',
+        'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats, and — where a dataset holds several files — which of them matched and on what account (its name, its contents, its AI-written description, or its meaning). Results may include semantically related datasets beyond exact keyword matches. ' +
+        "A dataset matches by keyword only if it holds every word of q, so give a few words in the catalog's language, those its title or description would use; if nothing fits, drop a word or try another. " +
+        "To find the part of a document's text that answers a question, use search_passages.",
       inputSchema: {
         q: z.string().describe('Search query keywords'),
         organization: z.string().optional().describe('Filter by organization name (slug)'),

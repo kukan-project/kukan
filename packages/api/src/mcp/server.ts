@@ -15,6 +15,8 @@ import { registerResourceTools } from './tools/resources'
 import { registerCatalogTools } from './tools/catalog'
 import { registerQueryTools } from './tools/query'
 import { registerDocumentTools } from './tools/documents'
+import { mcpInstructions } from './instructions'
+import type { CatalogLanguage } from '../services/catalog-language'
 
 interface McpContext {
   db: Database
@@ -30,11 +32,11 @@ interface McpContext {
   user?: { id: string; sysadmin: boolean }
 }
 
-export function createMcpServer(ctx: McpContext): McpServer {
-  const server = new McpServer({
-    name: 'kukan',
-    version: '1.0.0',
-  })
+export function createMcpServer(ctx: McpContext, language: CatalogLanguage | null): McpServer {
+  const server = new McpServer(
+    { name: 'kukan', version: '1.0.0' },
+    { instructions: mcpInstructions(language) }
+  )
 
   registerDatasetTools(server, ctx)
   registerResourceTools(server, { db: ctx.db, user: ctx.user, env: ctx.env, ai: ctx.ai })

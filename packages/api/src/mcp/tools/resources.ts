@@ -116,7 +116,8 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
     'get_resource',
     {
       description:
-        'Get metadata about a specific resource (file) in a dataset. Where the site generates them, the response also carries an AI-written description of the file, how much of the file it was written from, and which version it describes.',
+        'Get metadata about a specific resource (file) in a dataset. Where the site generates them, the response also carries an AI-written description of the file, how much of the file it was written from, and which version it describes. ' +
+        'For a document whose text has been extracted, it says so: read it with get_document_outline and get_document_section. For a table, get_resource_schema and query_resource read its rows.',
       inputSchema: {
         id: z.string().describe('Resource UUID'),
       },

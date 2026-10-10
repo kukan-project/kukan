@@ -1,0 +1,29 @@
+# ゴールデンセット — MCP の使われ方の評価用の「質問 → 答えに含まれるべきもの」
+#
+# 記入ガイド付きのテンプレートです。環境ごとの実データは
+#   cd packages/api/scripts && cp golden-mcp.example.yaml golden-mcp.yaml
+# で作成してください（golden-mcp.yaml は .gitignore 対象 — カタログの中身は環境ごとに違うため）。
+#
+# 実行: pnpm eval:mcp（--base で対象環境、--models で使うモデル。`claude` CLI のログインが要る）
+# 計測: 正答、最初の手番の入口、手番の数、日本語以外の検索、費用（同ディレクトリの eval-mcp.ts）
+#
+# 記入ガイド:
+# - kind は答えのある場所で分ける:
+#     doc   : 文書の本文（近道の入口は search_passages）
+#     table : 表の数字（search_datasets → get_resource_schema → query_resource）
+#     find  : 資料そのものを探す（search_datasets）
+# - 日本語の質問に加えて、同じ内容の英語の質問も入れる（英語のまま検索してしまうかを見る）
+# - expect は答えに含まれるべき文字列の正規表現（数値、年度、ページなど）
+# - 語の多い検索で外れやすい質問（データセットの題名に無い語を含むもの）を入れる
+# - 説明や instructions を変えるときは、変更の前後で同じファイルを流して比べる
+# - 質問の答えそのものを、説明や instructions の例に書かない（測定が甘くなる）
+
+questions:
+  - id: J1
+    kind: doc
+    q: 住宅火災で亡くなる人は、何時ごろに多いですか？
+    expect: '2\s*時'
+  - id: E1
+    kind: doc
+    q: At what time of day do most deaths from residential fires occur in Tokyo?
+    expect: '2:00|2 ?a\.?m|between about 2'
