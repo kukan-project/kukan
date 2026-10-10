@@ -10,6 +10,7 @@ import type { Database } from '@kukan/db'
 import { systemSetting } from '@kukan/db'
 import {
   createCache,
+  searchExampleQueriesSchema,
   siteMetadataSchema,
   type SiteMetadataEntry,
   type SummaryLocale,
@@ -40,7 +41,7 @@ const SETTING_DEFINITIONS = {
   },
   // Example-query chips under the search box; empty = hidden
   [SEARCH_EXAMPLE_QUERIES_KEY]: {
-    schema: z.array(z.string().trim().min(1).max(100)).max(10),
+    schema: searchExampleQueriesSchema,
     default: [] as string[],
   },
   // Self-registration; overridden to allowed while the user table is empty (ADR-038)

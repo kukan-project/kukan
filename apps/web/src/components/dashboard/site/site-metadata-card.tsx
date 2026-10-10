@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import {
   Button,
   Card,
@@ -26,6 +26,8 @@ import {
   type SiteMetadataEntry,
 } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
+import { arrayMove } from '@dnd-kit/sortable'
+import { RowActions } from './row-actions'
 
 const SETTING_KEY = 'site-metadata'
 /**
@@ -147,30 +149,15 @@ export function SiteMetadataCard() {
   const hasInvalid = invalid.some(Boolean)
   const dirty = JSON.stringify(entries) !== original
 
+  /** Every edit goes through here, so each one clears the last save's outcome */
+  function edit(change: (current: Row[]) => Row[]) {
+    setRows(change)
+    setSaved(false)
+    setError(null)
+  }
+
   function update(id: number, patch: Partial<Row>) {
-    setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
-    setSaved(false)
-    setError(null)
-  }
-
-  function move(index: number, by: -1 | 1) {
-    setRows((current) => {
-      const next = [...current]
-      ;[next[index], next[index + by]] = [next[index + by], next[index]]
-      return next
-    })
-    setSaved(false)
-  }
-
-  function remove(id: number) {
-    setRows((current) => current.filter((row) => row.id !== id))
-    setSaved(false)
-    setError(null)
-  }
-
-  function add() {
-    setRows((current) => [...current, { id: nextId.current++, key: '', kind: 'number', ...blank }])
-    setSaved(false)
+    edit((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
   }
 
   async function save() {
@@ -209,119 +196,104 @@ export function SiteMetadataCard() {
           <p>{t('metadataDelay')}</p>
         </div>
 
-        {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('metadataEmpty')}</p>
-        ) : (
-          // Frozen while saving: the response replaces every row, so an edit
-          // made in between would be dropped and then reported as saved
-          <fieldset disabled={saving} className="contents">
-            {/* Headings, so a filled field never has to tell its column by a
+        {/* Frozen while saving: the response replaces every row, so an edit
+            made in between would be dropped and then reported as saved */}
+        <fieldset disabled={saving} className="contents">
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('metadataEmpty')}</p>
+          ) : (
+            <>
+              {/* Headings, so a filled field never has to tell its column by a
                 placeholder. A narrow card stacks the fields under their own labels */}
-            <div
-              aria-hidden
-              className={`${ROW_GRID} hidden border border-transparent px-2 text-sm font-medium @3xl/metadata:grid`}
-            >
-              <span>{t('metadataKey')}</span>
-              <span>{t('metadataType')}</span>
-              <span>{t('metadataValue')}</span>
-            </div>
-            <ul className="flex flex-col gap-3">
-              {rows.map((row, i) => (
-                <li
-                  key={row.id}
-                  className={`${ROW_GRID} rounded-md border p-2`}
-                  aria-invalid={invalid[i] || undefined}
-                >
-                  <div className="flex flex-col gap-1">
-                    <StackedLabel>{t('metadataKey')}</StackedLabel>
-                    <Input
-                      value={row.key}
-                      onChange={(e) => update(row.id, { key: e.target.value })}
-                      aria-label={t('metadataKey')}
-                      aria-invalid={invalid[i] || undefined}
-                      className="font-mono"
+              <div
+                aria-hidden
+                className={`${ROW_GRID} hidden border border-transparent px-2 text-sm font-medium @3xl/metadata:grid`}
+              >
+                <span>{t('metadataKey')}</span>
+                <span>{t('metadataType')}</span>
+                <span>{t('metadataValue')}</span>
+              </div>
+              <ul className="flex flex-col gap-3">
+                {rows.map((row, i) => (
+                  <li
+                    key={row.id}
+                    className={`${ROW_GRID} rounded-md border p-2`}
+                    aria-invalid={invalid[i] || undefined}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <StackedLabel>{t('metadataKey')}</StackedLabel>
+                      <Input
+                        value={row.key}
+                        onChange={(e) => update(row.id, { key: e.target.value })}
+                        aria-label={t('metadataKey')}
+                        aria-invalid={invalid[i] || undefined}
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <StackedLabel>{t('metadataType')}</StackedLabel>
+                      <Select
+                        value={row.kind}
+                        onValueChange={(value) => update(row.id, { kind: value as RowKind })}
+                      >
+                        <SelectTrigger className="w-full" aria-label={t('metadataType')}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROW_KINDS.map((kind) => (
+                            <SelectItem key={kind} value={kind}>
+                              {t(`metadataKind.${kind}`)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <StackedLabel>{t('metadataValue')}</StackedLabel>
+                      <ValueInput row={row} onChange={(patch) => update(row.id, patch)} />
+                    </div>
+                    <RowActions
+                      index={i}
+                      count={rows.length}
+                      onMove={(by) => edit((current) => arrayMove(current, i, i + by))}
+                      onRemove={() => edit((current) => current.filter((r) => r.id !== row.id))}
                     />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <StackedLabel>{t('metadataType')}</StackedLabel>
-                    <Select
-                      value={row.kind}
-                      onValueChange={(value) => update(row.id, { kind: value as RowKind })}
-                    >
-                      <SelectTrigger className="w-full" aria-label={t('metadataType')}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROW_KINDS.map((kind) => (
-                          <SelectItem key={kind} value={kind}>
-                            {t(`metadataKind.${kind}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <StackedLabel>{t('metadataValue')}</StackedLabel>
-                    <ValueInput row={row} onChange={(patch) => update(row.id, patch)} />
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => move(i, -1)}
-                      disabled={i === 0}
-                      aria-label={t('metadataMoveUp')}
-                    >
-                      <ArrowUp />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => move(i, 1)}
-                      disabled={i === rows.length - 1}
-                      aria-label={t('metadataMoveDown')}
-                    >
-                      <ArrowDown />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => remove(row.id)}
-                      aria-label={t('metadataRemove')}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </fieldset>
-        )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
-        <div className="flex flex-wrap items-center gap-4">
-          <Button
-            variant="outline"
-            onClick={add}
-            disabled={saving || rows.length >= SITE_METADATA_MAX_ENTRIES}
-          >
-            <Plus />
-            {t('metadataAdd')}
-          </Button>
-          <Button onClick={save} disabled={saving || !dirty || hasInvalid}>
-            {tc('save')}
-          </Button>
-          {hasInvalid && <span className="text-sm text-destructive">{t('metadataInvalid')}</span>}
-          {error && (
-            <span role="alert" className="text-sm text-destructive">
-              {error}
-            </span>
-          )}
-          {saved && (
-            <span role="status" className="text-sm text-muted-foreground">
-              {t('saved')}
-            </span>
-          )}
-        </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() =>
+                edit((current) => [
+                  ...current,
+                  { id: nextId.current++, key: '', kind: 'number', ...blank },
+                ])
+              }
+              disabled={rows.length >= SITE_METADATA_MAX_ENTRIES}
+            >
+              <Plus />
+              {t('rowAdd')}
+            </Button>
+            <Button onClick={save} disabled={!dirty || hasInvalid}>
+              {tc('save')}
+            </Button>
+            {hasInvalid && <span className="text-sm text-destructive">{t('metadataInvalid')}</span>}
+            {error && (
+              <span role="alert" className="text-sm text-destructive">
+                {error}
+              </span>
+            )}
+            {saved && (
+              <span role="status" className="text-sm text-muted-foreground">
+                {t('saved')}
+              </span>
+            )}
+          </div>
+        </fieldset>
       </CardContent>
     </Card>
   )
