@@ -112,6 +112,42 @@ describe('AiUsageCard', () => {
   })
 })
 
+describe('AiUsageCard with series hidden in the legend', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // jsdom has no layout; the chart draws nothing at width 0
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const segments = (container: HTMLElement) => container.querySelectorAll('g[clip-path] > rect')
+
+  it('says in the tooltip that its total leaves the hidden series out', async () => {
+    serve(report)
+    const { container } = render(<AiUsageCard />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Writing AI descriptions' }))
+
+    const hit = container.querySelectorAll('svg rect[fill="transparent"]')[1]
+    fireEvent.mouseEnter(hit)
+    expect(screen.getByText('Leaves out the series hidden in the legend')).toBeInTheDocument()
+  })
+
+  it('draws every series again when the new data has only hidden ones', async () => {
+    serve(report)
+    const { container } = render(<AiUsageCard />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Writing AI descriptions' }))
+
+    serve({ ...report, granularity: 'hour', buckets: [report.buckets[0]] })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Hour' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('cell', { name: 'Search query embeddings' })).toBeNull()
+    )
+    expect(segments(container)).toHaveLength(1)
+  })
+})
+
 describe('AiUsageCard while bulk work runs', () => {
   beforeEach(() => {
     vi.clearAllMocks()

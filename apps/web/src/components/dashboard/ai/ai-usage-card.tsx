@@ -29,7 +29,7 @@ import {
 } from '@kukan/shared/ai-usage'
 import { useLatestJson } from '@/hooks/use-latest-json'
 import { useQueuedWorkPoll } from '@/hooks/use-queued-work-poll'
-import { UsageChart, UsageLegend, type UsageColumn, type UsageSeries } from './ai-usage-chart'
+import { UsageChart, type UsageColumn, type UsageSeries } from './ai-usage-chart'
 
 type Granularity = AiUsageGranularity
 type Dimension = 'purpose' | 'model' | 'provider'
@@ -174,18 +174,20 @@ export function AiUsageCard({
         )}
         {data && data.buckets.length > 0 && (
           <>
-            <div className="flex flex-col gap-2">
-              {legend.length > 1 && <UsageLegend series={legend} />}
-              <UsageChart
-                series={legend}
-                columns={columns}
-                format={format}
-                tickLabel={(c) =>
-                  formatPeriod(c.start, granularity, data.timeZone, locale, 'short')
-                }
-                ariaLabel={t('usageChartLabel')}
-              />
-            </div>
+            {/* Keyed by dimension: the series it hides are that dimension's values */}
+            <UsageChart
+              key={dimension}
+              series={legend}
+              columns={columns}
+              format={format}
+              tickLabel={(c) => formatPeriod(c.start, granularity, data.timeZone, locale, 'short')}
+              ariaLabel={t('usageChartLabel')}
+              notes={{
+                lifted: t('usageChartLifted'),
+                legend: t('usageChartLegendHint'),
+                excluded: t('usageChartExcluded'),
+              }}
+            />
 
             <Table>
               <TableHeader>
