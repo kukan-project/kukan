@@ -68,6 +68,41 @@ describe('GET /api/v1/site/settings', () => {
     expect((await res.json()).searchExampleQueries).toEqual(['避難所の場所'])
   })
 
+  it('should serve the site metadata by key, without the types (ADR-064)', async () => {
+    const app = createTestApp(db)
+    let res = await app.request('/api/v1/site/settings')
+    expect((await res.json()).metadata).toEqual({})
+
+    const put = await app.request('/api/v1/admin/settings/site-metadata', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        value: [
+          { key: 'population', type: 'number', value: 123456 },
+          { key: 'population-as-of', type: 'date', value: '2026-06-01' },
+          { key: 'tagline', type: 'text', value: { ja: '探す', en: 'Find' } },
+        ],
+      }),
+    })
+    expect(put.status).toBe(200)
+
+    res = await createTestApp(db, { user: null }).request('/api/v1/site/settings')
+    expect((await res.json()).metadata).toEqual({
+      population: 123456,
+      'population-as-of': '2026-06-01',
+      tagline: { ja: '探す', en: 'Find' },
+    })
+  })
+
+  it('should refuse site metadata whose value does not match its type', async () => {
+    const res = await createTestApp(db).request('/api/v1/admin/settings/site-metadata', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: [{ key: 'as-of', type: 'date', value: '令和8年6月1日' }] }),
+    })
+    expect(res.status).toBe(400)
+  })
+
   it('should report metadata suggestions off without completion support', async () => {
     const res = await createTestApp(db, { user: null }).request('/api/v1/site/settings')
     const body = await res.json()

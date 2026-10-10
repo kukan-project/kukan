@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server'
 import { Badge, Button, Card, CardContent, Input, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { overrides } from '@/brand'
-import { serverFetch } from '@/lib/server-api'
+import { getSiteSettings, serverFetch } from '@/lib/server-api'
 import { safeExternalHref } from '@/lib/safe-url'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset/dataset-card'
 import { ExampleQueries } from '@/components/search/example-queries'
@@ -36,12 +36,13 @@ export default async function HomePage() {
   let exampleQueries: string[] = []
 
   try {
-    const [packagesRes, resourceCountRes, orgsRes, groupsRes, settingsRes] = await Promise.all([
+    const [packagesRes, resourceCountRes, orgsRes, groupsRes, settings] = await Promise.all([
       serverFetch('/api/v1/packages?limit=5'),
       serverFetch('/api/v1/resources/count'),
       serverFetch('/api/v1/organizations?limit=1'),
       serverFetch('/api/v1/groups?limit=1'),
-      serverFetch('/api/v1/site/settings'),
+      // Shared with anything else on the page that reads the site metadata
+      getSiteSettings(),
     ])
 
     if (packagesRes.ok) {
@@ -61,10 +62,9 @@ export default async function HomePage() {
       const data: PaginatedResult<unknown> = await groupsRes.json()
       groupTotal = data.total
     }
-    if (settingsRes.ok) {
-      const data = await settingsRes.json()
-      semanticSearchEnabled = data.semanticSearchEnabled !== false
-      exampleQueries = data.searchExampleQueries ?? []
+    if (settings) {
+      semanticSearchEnabled = settings.semanticSearchEnabled !== false
+      exampleQueries = settings.searchExampleQueries ?? []
     }
   } catch {
     // API unavailable (e.g. during build)

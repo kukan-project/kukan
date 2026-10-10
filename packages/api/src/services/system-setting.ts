@@ -8,7 +8,12 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Database } from '@kukan/db'
 import { systemSetting } from '@kukan/db'
-import { createCache, type SummaryLocale } from '@kukan/shared'
+import {
+  createCache,
+  siteMetadataSchema,
+  type SiteMetadataEntry,
+  type SummaryLocale,
+} from '@kukan/shared'
 import { SYSTEM_SETTING_CACHE_TTL_MS, VECTOR_SIMILARITY_MAX_NOTCHES } from '../config'
 
 export const VECTOR_SIMILARITY_NOTCHES_KEY = 'vector-similarity-notches'
@@ -18,6 +23,7 @@ export const REGISTRATION_ENABLED_KEY = 'registration-enabled'
 export const AI_SUGGEST_MODEL_KEY = 'ai-suggest-model'
 export const AI_SUGGEST_ENABLED_KEY = 'ai-suggest-enabled'
 export const AI_SUMMARY_LOCALE_KEY = 'ai-summary-locale'
+export const SITE_METADATA_KEY = 'site-metadata'
 
 /** Registry of runtime settings — adding a setting means adding an entry here */
 const SETTING_DEFINITIONS = {
@@ -63,6 +69,11 @@ const SETTING_DEFINITIONS = {
   [AI_SUMMARY_LOCALE_KEY]: {
     schema: z.enum(['ja', 'en']),
     default: 'ja' as SummaryLocale,
+  },
+  // Site-wide values brands and pages read by key (ADR-064). All public
+  [SITE_METADATA_KEY]: {
+    schema: siteMetadataSchema,
+    default: [] as SiteMetadataEntry[],
   },
 } as const
 

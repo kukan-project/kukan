@@ -1,6 +1,8 @@
 import 'server-only'
 
 import { cache } from 'react'
+import type { SiteMetadataValues } from '@kukan/shared'
+import { createSiteMetadata, type SiteMetadata } from './site-metadata'
 
 /**
  * Fetch wrapper for Server Components.
@@ -48,3 +50,24 @@ export const getCurrentUser = cache(async () => {
     sysadmin: boolean
   }>
 })
+
+/** Public site settings, read once per request however many components ask */
+export const getSiteSettings = cache(async () => {
+  try {
+    const res = await serverFetch('/api/v1/site/settings')
+    if (!res.ok) return null
+    return (await res.json()) as {
+      semanticSearchEnabled: boolean
+      searchExampleQueries: string[]
+      metadata: SiteMetadataValues
+    }
+  } catch {
+    // API unavailable (e.g. during build)
+    return null
+  }
+})
+
+/** Site-wide values an admin keeps at runtime, read by key (ADR-064) */
+export async function getSiteMetadata(): Promise<SiteMetadata> {
+  return createSiteMetadata((await getSiteSettings())?.metadata)
+}

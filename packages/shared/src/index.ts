@@ -44,6 +44,9 @@ export * from './column-settings'
 export * from './summary'
 export * from './ai-usage'
 
+// Site-wide custom metadata (ADR-064)
+export * from './site-metadata'
+
 // Licenses
 export * from './licenses'
 

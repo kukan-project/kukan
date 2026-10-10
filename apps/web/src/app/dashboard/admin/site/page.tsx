@@ -19,6 +19,7 @@ import {
 import { PageHeader } from '@/components/dashboard/page-header'
 import { RegistrationCard } from '@/components/dashboard/site/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/site/search-examples-card'
+import { SiteMetadataCard } from '@/components/dashboard/site/site-metadata-card'
 import { clientFetch } from '@/lib/client-api'
 
 interface ResetResult {
@@ -63,6 +64,9 @@ export default function AdminSitePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')} />
+
+      {/* Site-wide values brands read by key (ADR-064) */}
+      <SiteMetadataCard />
 
       {/* Example Query Chips */}
       <SearchExamplesCard />

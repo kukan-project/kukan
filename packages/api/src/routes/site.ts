@@ -5,10 +5,14 @@
 
 import { Hono } from 'hono'
 import { isLocalAIProvider } from '@kukan/shared/ai'
-import { passwordMinScore } from '@kukan/shared'
+import { passwordMinScore, toSiteMetadataValues } from '@kukan/shared'
 import { publicCache } from '../middleware/cache-control'
 import { isRegistrationAllowed } from '../services/bootstrap'
-import { SEMANTIC_SEARCH_ENABLED_KEY, SEARCH_EXAMPLE_QUERIES_KEY } from '../services/system-setting'
+import {
+  SEMANTIC_SEARCH_ENABLED_KEY,
+  SEARCH_EXAMPLE_QUERIES_KEY,
+  SITE_METADATA_KEY,
+} from '../services/system-setting'
 import { getSuggestAvailability, getSummaryModel } from '../services/suggest/availability'
 import type { AppContext } from '../context'
 
@@ -17,14 +21,20 @@ export const siteRouter = new Hono<{ Variables: AppContext }>()
 // GET /api/v1/site/settings — Public site settings for the frontend
 siteRouter.get('/settings', publicCache(), async (c) => {
   const settings = c.get('settings')
-  const [registrationEnabled, semanticSetting, searchExampleQueries, suggestAvailability] =
-    await Promise.all([
-      // Effective value: forced on while the user table is empty (ADR-038)
-      isRegistrationAllowed(c.get('db'), settings),
-      settings.getSetting(SEMANTIC_SEARCH_ENABLED_KEY),
-      settings.getSetting(SEARCH_EXAMPLE_QUERIES_KEY),
-      getSuggestAvailability(c.get('ai'), settings),
-    ])
+  const [
+    registrationEnabled,
+    semanticSetting,
+    searchExampleQueries,
+    suggestAvailability,
+    siteMetadata,
+  ] = await Promise.all([
+    // Effective value: forced on while the user table is empty (ADR-038)
+    isRegistrationAllowed(c.get('db'), settings),
+    settings.getSetting(SEMANTIC_SEARCH_ENABLED_KEY),
+    settings.getSetting(SEARCH_EXAMPLE_QUERIES_KEY),
+    getSuggestAvailability(c.get('ai'), settings),
+    settings.getSetting(SITE_METADATA_KEY),
+  ])
   // Lets the search UI hide semantic-search affordances (toggle, natural-
   // language placeholder) when the vector leg cannot or must not run
   const semanticSearchEnabled =
@@ -50,5 +60,7 @@ siteRouter.get('/settings', publicCache(), async (c) => {
     // The strength meter judges by the number this deployment enforces, so it
     // cannot pass a password the sign-up endpoint is about to refuse
     passwordMinScore: passwordMinScore(),
+    // Values by key without their types (ADR-064 §3); dates as ISO strings
+    metadata: toSiteMetadataValues(siteMetadata),
   })
 })

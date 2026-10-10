@@ -175,7 +175,7 @@ export const brandConfig: BrandConfig = {
 
 `noindex` は、検索エンジンにインデックスさせたくない検証環境や限定公開サイト向けのスイッチです。robots.txt でのクロール拒否は行いません（拒否するとクローラーが meta タグ自体を読めなくなるためです）。アクセス自体を制限したい場合は、Basic 認証や IP 制限などのアクセス制御を併用してください。
 
-検索例チップ（検索ボックス下のクエリ例）はブランド設定ではなく、**管理画面のサイト管理**（`/dashboard/admin/site`）から設定します。
+検索例チップ（検索ボックス下のクエリ例）はブランド設定ではなく、**管理画面のサイト管理**（`/dashboard/admin/site`）から設定します。人口や基準日のように更新のたびにビルドしたくない値も、同じ画面の「サイトのメタデータ」に置けます（[サイトのメタデータの参照](#サイトのメタデータの参照)）。
 
 ### ロゴの設定
 
@@ -323,6 +323,87 @@ export function SiteName() {
 :::caution[ロケールマップ対応より前に作成したカスタムコンポーネント]
 ブランドテキストのロケールマップ対応で、テキスト系フィールドの型が `string` から `LocalizedText` に広がりました。カスタムコンポーネントがこれらを直接描画している場合、設定値が文字列のままでも型エラーになります。上記のとおり `resolveBrandConfig()` 経由に切り替えてください（`pnpm typecheck` がエラー箇所を列挙します）。
 :::
+
+### サイトのメタデータの参照
+
+人口・世帯数・基準日のように月に一度ほど変わる値は、ブランド設定ではなく**管理画面のサイト管理**（`/dashboard/admin/site`）の「サイトのメタデータ」に入れます。値を直すたびにビルドし直す必要はありません。各値は key・種類（数値・文字列・言語別の文字列・日付）・値の組で、どの key を何に使うかはそれを読むコンポーネントが決めます。`kukan-` で始まる key は本体の予約なので、ブランドではそれ以外を使ってください。
+
+サーバーコンポーネントでは、整形の部品に key を `name` で渡します。key が無いときや種類が違うときは何も描きません。
+
+```tsx
+import { SiteDate, SiteNumber, SiteText } from '@/components/site-metadata'
+
+export async function PopulationBand() {
+  return (
+    <dl>
+      <dt>人口</dt>
+      <dd>
+        <SiteNumber name="population" />
+      </dd>
+      <dt>人口動態（前月比）</dt>
+      <dd>
+        <SiteNumber name="population-change" signed />
+      </dd>
+      <dd>
+        <SiteDate name="population-as-of" />
+      </dd>
+      <dd>
+        <SiteText name="tagline" />
+      </dd>
+    </dl>
+  )
+}
+```
+
+| 部品         | 描くもの                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `SiteNumber` | 数値を表示言語に合わせた桁区切りで描く。`signed` で正の値に `+` を付け、`fractionDigits` で小数桁を固定             |
+| `SiteDate`   | 日付を描く。既定は日本語表示なら和暦（令和8年6月1日）、英語表示なら西暦。`calendar="gregory"` / `"japanese"` で固定 |
+| `SiteText`   | 文字列を描く。言語別の文字列は表示言語で選び、無い言語はブランドのテキストと同じ順で補う                            |
+
+値を組み立てて使うときは、`getSiteMetadata()` で読み出します。1 リクエストの中で設定を読むのは 1 回だけです。
+
+```tsx
+import { getLocale } from 'next-intl/server'
+import { getSiteMetadata } from '@/lib/server-api'
+
+const [metadata, locale] = await Promise.all([getSiteMetadata(), getLocale()])
+metadata.number('population') // number | undefined
+metadata.text('tagline', locale) // string | undefined
+metadata.date('population-as-of') // 'YYYY-MM-DD' | undefined
+```
+
+#### クライアントコンポーネントで使う
+
+ここまでの部品と `getSiteMetadata()` はサーバー専用で、`'use client'` のファイルからは使えません。タブやカルーセルのように動きのある部品で値を使うときも、サーバー側で読んでから渡します。値が最初の HTML に入るので、読み込み中に表示がちらつかず、ブラウザから設定を読み直すこともありません。
+
+- **値を渡す**: サーバーコンポーネントで取り出した値（数値や ISO の日付の文字列）を props で渡す
+- **描いたものを渡す**: `SiteNumber` などでサーバーが描いた要素を、`children` などで渡す
+
+```tsx
+// overrides/top-page.tsx — server component
+import { SiteDate, SiteNumber } from '@/components/site-metadata'
+import { StatsCarousel, StatSlide } from './stats-carousel' // 'use client'
+
+export async function TopPage() {
+  return (
+    <StatsCarousel>
+      <StatSlide label="人口" asOf={<SiteDate name="population-as-of" />}>
+        <SiteNumber name="population" />
+      </StatSlide>
+      <StatSlide label="世帯" asOf={<SiteDate name="population-as-of" />}>
+        <SiteNumber name="households" />
+      </StatSlide>
+    </StatsCarousel>
+  )
+}
+```
+
+:::caution[差し替える部品自体はサーバーコンポーネントのままに]
+`Header` / `Footer` / `TopPage` のスロットに登録する部品は props を受け取りません。その部品自体に `'use client'` を付けると、サーバーから値を渡す入口がなくなります。登録する部品はサーバーコンポーネントのままにし、動きの要る部分だけをクライアントコンポーネントに切り出してください。
+:::
+
+値は公開の `GET /api/v1/site/settings` の `metadata` に key と値の組で載ります（日付は ISO の文字列）。保存してから、ログインしていない閲覧者に届くまで、AWS では最大で約 90 秒、Docker Compose では最大 30 秒かかります。
 
 ### ファイルの階層化
 

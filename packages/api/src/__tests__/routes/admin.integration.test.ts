@@ -790,6 +790,7 @@ describe('Admin API Routes', () => {
         'ai-suggest-model': '',
         'ai-suggest-enabled': true,
         'ai-summary-locale': 'ja',
+        'site-metadata': [],
       })
     })
 

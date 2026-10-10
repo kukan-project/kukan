@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { serverFetch } from '@/lib/server-api'
+import { getSiteSettings, serverFetch } from '@/lib/server-api'
 import HomePage from '../page'
 
 // Pin the brand layer to KUKAN defaults so fork customizations don't break body tests (ADR-023)
@@ -8,6 +8,7 @@ vi.mock('@/brand', () => import('@/__tests__/brand-defaults'))
 
 vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
+  getSiteSettings: vi.fn(),
 }))
 
 function mockResponse(data: unknown, ok = true) {
@@ -40,6 +41,7 @@ const sampleDatasets = [
 describe('HomePage', () => {
   beforeEach(() => {
     vi.mocked(serverFetch).mockReset()
+    vi.mocked(getSiteSettings).mockReset()
   })
 
   function setupMocks(
@@ -152,13 +154,14 @@ describe('HomePage', () => {
     setupMocks()
     await HomePage()
 
-    expect(serverFetch).toHaveBeenCalledTimes(6)
+    // The settings go through the per-request read the site metadata shares
+    expect(getSiteSettings).toHaveBeenCalledTimes(1)
+    expect(serverFetch).toHaveBeenCalledTimes(5)
     const urls = vi.mocked(serverFetch).mock.calls.map((c) => c[0] as string)
     expect(urls.some((u) => u.includes('/packages'))).toBe(true)
     expect(urls.some((u) => u.includes('/resources/count'))).toBe(true)
     expect(urls.some((u) => u.includes('/organizations'))).toBe(true)
     expect(urls.some((u) => u.includes('/groups'))).toBe(true)
     expect(urls.some((u) => u.includes('/announcements'))).toBe(true)
-    expect(urls.some((u) => u.includes('/site/settings'))).toBe(true)
   })
 })

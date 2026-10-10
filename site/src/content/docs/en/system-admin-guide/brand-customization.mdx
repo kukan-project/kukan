@@ -175,7 +175,7 @@ Text fields (`siteName`, `siteDescription`, `copyright`, `logo.alt`, `headerNavE
 
 `noindex` is a switch for staging or private deployments that should stay out of search engines. It does not block crawling in robots.txt (a crawl block would keep crawlers from ever seeing the meta tag). To restrict access itself, combine this with access controls such as Basic auth or IP restrictions.
 
-The example-query chips under the search box are configured from the **admin Site Management page** (`/dashboard/admin/site`), not the brand config.
+The example-query chips under the search box are configured from the **admin Site Management page** (`/dashboard/admin/site`), not the brand config. Values you would rather not rebuild for, such as a population and its as-of date, go in Site metadata on the same page ([Reading Site Metadata](#reading-site-metadata)).
 
 ### Logo Configuration
 
@@ -323,6 +323,87 @@ export function SiteName() {
 :::caution[Custom components written before locale-map support]
 Locale-map support widened the text field types from `string` to `LocalizedText`. Custom components that render these fields directly get type errors even if the config values are still plain strings. Switch to `resolveBrandConfig()` as shown above (`pnpm typecheck` lists every affected spot).
 :::
+
+### Reading Site Metadata
+
+Values that change about once a month, such as a population, a household count or their as-of date, belong in **Site metadata** on the **admin Site Management page** (`/dashboard/admin/site`) rather than in the brand config, so updating one needs no rebuild. Each value is a key, a type (number, text, text per language, date) and the value; the component that reads a key decides what it is for. Keys starting with `kukan-` are reserved for KUKAN itself, so brands use other keys.
+
+In a server component, pass the key to a formatting component as `name`. Nothing renders when the key is missing or holds another type.
+
+```tsx
+import { SiteDate, SiteNumber, SiteText } from '@/components/site-metadata'
+
+export async function PopulationBand() {
+  return (
+    <dl>
+      <dt>Population</dt>
+      <dd>
+        <SiteNumber name="population" />
+      </dd>
+      <dt>Change from last month</dt>
+      <dd>
+        <SiteNumber name="population-change" signed />
+      </dd>
+      <dd>
+        <SiteDate name="population-as-of" />
+      </dd>
+      <dd>
+        <SiteText name="tagline" />
+      </dd>
+    </dl>
+  )
+}
+```
+
+| Component    | Renders                                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SiteNumber` | A number with digit grouping for the page language. `signed` adds `+` to positive values; `fractionDigits` fixes the decimals                    |
+| `SiteDate`   | A date. Japanese era (令和8年6月1日) on a Japanese page and the Gregorian calendar on an English one, unless `calendar="gregory"` / `"japanese"` |
+| `SiteText`   | A text. A per-language text is picked by the page language, with the same fallback as the brand texts                                            |
+
+To combine values yourself, read them with `getSiteMetadata()`. The settings are read once per request however many components ask.
+
+```tsx
+import { getLocale } from 'next-intl/server'
+import { getSiteMetadata } from '@/lib/server-api'
+
+const [metadata, locale] = await Promise.all([getSiteMetadata(), getLocale()])
+metadata.number('population') // number | undefined
+metadata.text('tagline', locale) // string | undefined
+metadata.date('population-as-of') // 'YYYY-MM-DD' | undefined
+```
+
+#### Using Values in Client Components
+
+The components above and `getSiteMetadata()` are server-only; a `'use client'` file cannot use them. Even for interactive parts such as tabs or a carousel, read the values on the server and pass them down. The values are then in the first HTML, so nothing flickers while loading and the browser never reads the settings again.
+
+- **Pass the values**: read them in a server component and pass the plain values (numbers, ISO date strings) as props
+- **Pass what was rendered**: render with `SiteNumber` and the others on the server and pass the elements as `children` or other props
+
+```tsx
+// overrides/top-page.tsx — server component
+import { SiteDate, SiteNumber } from '@/components/site-metadata'
+import { StatsCarousel, StatSlide } from './stats-carousel' // 'use client'
+
+export async function TopPage() {
+  return (
+    <StatsCarousel>
+      <StatSlide label="Population" asOf={<SiteDate name="population-as-of" />}>
+        <SiteNumber name="population" />
+      </StatSlide>
+      <StatSlide label="Households" asOf={<SiteDate name="population-as-of" />}>
+        <SiteNumber name="households" />
+      </StatSlide>
+    </StatsCarousel>
+  )
+}
+```
+
+:::caution[Keep the override itself a server component]
+Components registered in the `Header` / `Footer` / `TopPage` slots take no props. Marking such a component itself `'use client'` leaves no way to hand it values from the server. Keep the registered component a server component and move only the interactive parts into client components.
+:::
+
+The values appear as key–value pairs under `metadata` in the public `GET /api/v1/site/settings` (dates as ISO strings). After a save, visitors who are not signed in see the change within about 90 seconds on AWS and 30 seconds on Docker Compose.
 
 ### Organizing Override Files
 
