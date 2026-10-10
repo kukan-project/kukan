@@ -28,12 +28,9 @@ import type { PipelineContext } from '../run/types'
 import type { InterpretedDocument, InterpretResult } from './interpret'
 import { documentTextLines } from '../interpret/document/document-text-lines'
 import { streamToBuffer, streamUtf8Lines, zstdLines } from '../node-utils'
-import {
-  bufferToUtf8,
-  stripTrailingReplacementChar,
-  truncateToByteLimit,
-} from '@kukan/shared/encoding-node'
-import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
+import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
+import { ContentChunkCutter } from '@kukan/shared/content-chunks'
+import { MAX_FETCH_SIZE, UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -375,7 +372,6 @@ async function writeChunks(
   ctx: PipelineContext
 ): Promise<WrittenChunks> {
   let chunkLines: string[] = []
-  let chunkBytes = 0
   let chunkIndex = 0
   let totalOriginalBytes = 0
   let totalIndexedBytes = 0
@@ -398,32 +394,18 @@ async function writeChunks(
     totalIndexedBytes += textBytes
     chunkIndex++
     chunkLines = []
-    chunkBytes = 0
   }
 
+  const cutter = new ContentChunkCutter()
   let lineCount = 0
   for await (const line of lines) {
-    const lineBytes = Buffer.byteLength(line, 'utf-8')
-    totalOriginalBytes += lineBytes + (lineCount > 0 ? 1 : 0) // +1 for newline separator
+    const { bytes, breakBefore, kept, alone } = cutter.place(line)
+    totalOriginalBytes += bytes + (lineCount > 0 ? 1 : 0) // +1 for newline separator
     lineCount++
 
-    const lineBytesWithSep = lineBytes + (chunkLines.length > 0 ? 1 : 0)
-    if (chunkBytes + lineBytesWithSep > MAX_CONTENT_CHUNK_SIZE && chunkLines.length > 0) {
-      await flushChunk()
-    }
-
-    if (lineBytes > MAX_CONTENT_CHUNK_SIZE) {
-      if (chunkLines.length > 0) {
-        await flushChunk()
-      }
-      chunkLines.push(truncateToByteLimit(line, MAX_CONTENT_CHUNK_SIZE))
-      chunkBytes = MAX_CONTENT_CHUNK_SIZE
-      await flushChunk()
-      continue
-    }
-
-    chunkLines.push(line)
-    chunkBytes += lineBytesWithSep
+    if (breakBefore) await flushChunk()
+    chunkLines.push(kept)
+    if (alone) await flushChunk()
   }
 
   // Flush remaining lines

@@ -228,9 +228,6 @@ export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 6
 
 // ── Content Indexing ──
 
-/** Maximum text size per chunk for content indexing (500 KB) */
-export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
-
 /**
  * Bytes of a table indexed by its contents, when the interpretation made no
  * table of it to profile (ADR-063): its headings and first rows, not the codes

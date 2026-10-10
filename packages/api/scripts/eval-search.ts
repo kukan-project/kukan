@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { load } from 'js-yaml'
-import { mean, pct, responseDetail } from './eval-utils.js'
+import { getJson, mean, pct } from './eval-utils.js'
 
 const K = 10
 // Default golden-set location, independent of the working directory
@@ -108,29 +108,16 @@ async function searchTopNames(
   if (!semantic) params.set('semantic', 'false')
   const url = `${base}/api/v1/packages?${params}`
 
-  // One retry on 5xx — a transient dev-server/backend blip should not abort a whole run
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url)
-    if (res.ok) {
-      const body = (await res.json()) as {
-        items: Array<{ name: string; matchedResources?: Array<{ name: string }> }>
-        semantic?: string
-      }
-      return {
-        names: body.items.map((item) => item.name),
-        resourceNames: body.items.flatMap((item) =>
-          (item.matchedResources ?? []).map((resource) => resource.name)
-        ),
-        semantic: body.semantic,
-      }
-    }
-    const detail = await responseDetail(res)
-    if (res.status >= 500 && attempt === 0) {
-      console.warn(`  retrying "${query}" after ${res.status}: ${detail}`)
-      await new Promise((r) => setTimeout(r, 1000))
-      continue
-    }
-    throw new Error(`search failed (${res.status}) for "${query}": ${detail}`)
+  const body = await getJson<{
+    items: Array<{ name: string; matchedResources?: Array<{ name: string }> }>
+    semantic?: string
+  }>(url, `search "${query}"`)
+  return {
+    names: body.items.map((item) => item.name),
+    resourceNames: body.items.flatMap((item) =>
+      (item.matchedResources ?? []).map((resource) => resource.name)
+    ),
+    semantic: body.semantic,
   }
 }
 

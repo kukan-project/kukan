@@ -1,0 +1,41 @@
+# ゴールデンセット — 箇所検索（search_passages）の評価用の「クエリ → 正解の箇所」ペア
+#
+# 記入ガイド付きのテンプレートです。環境ごとの実データは
+#   cd packages/api/scripts && cp golden-passages.example.yaml golden-passages.yaml
+# で作成してください（golden-passages.yaml は .gitignore 対象 — カタログの中身は
+# デプロイ環境ごとに異なるため、リポジトリにはコミットしません）。
+#
+# 実行: pnpm eval:passages（対象環境は --base で指定、既定 http://localhost:3000。
+#       `--` は挟まない — parseArgs が位置引数として弾く）
+# 計測: Hit@1 / Hit@5 / MRR@10 を semantic ON / OFF で比較（同ディレクトリの eval-passages.ts）
+#
+# 記入ガイド（ADR-061 §決定 4・§決定 5）:
+# - 文書（PDF・Word・PowerPoint・Excel・一太郎）の本文の「どの箇所か」を問うクエリを起こす。
+#   表（CSV）の値は対象外（golden-queries.yaml の value で測る）
+# - type は次の種類を混在させる:
+#     exact   : 文書に書かれている語そのもの
+#     natural : 住民が打ちそうな自然文・質問形
+#     synonym : 文書と語が一致しない言い換え（パッセージの埋め込みの要否を判断する材料。
+#               ADR-061 §決定 5）
+#     word    : 1 語
+# - relevant には正解の箇所を列挙する。どれか 1 つが返れば当たり。
+#     resource : リソース名（カタログに表示される名前。id は環境ごとに違うので使わない）
+#     pages    : 箇所のあるページ（スライド・シート）の範囲 [最初, 最後]。省略するとどのページでも可
+#     contains : 箇所に含まれるべき文字列（任意。幅と空白はそろえて比べる）
+# - 長い文書の後半のページを問うクエリを必ず入れる（抄録は先頭しか読まないため、
+#   リソースの埋め込みでは見つからない — ADR-061 §決定 5）
+# - 外れた問いは「first stage（リソースが見つからない）」と「second stage（リソースは
+#   見つかったが箇所が違う）」に分けて表示される。外れを読み、言い換えれば当たるかを
+#   人が判断する
+
+queries:
+  - query: 住宅火災で亡くなる人が多い時間帯
+    type: natural
+    relevant:
+      - resource: 住宅火災・放火火災の実態
+        pages: [26, 26]
+  - query: 住宅用火災警報器が役に立った事例
+    type: exact
+    relevant:
+      - resource: 住宅火災・放火火災の実態
+        pages: [45, 45]

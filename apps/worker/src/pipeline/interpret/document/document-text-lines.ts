@@ -7,11 +7,10 @@
 
 import type { Readable } from 'node:stream'
 import { documentTextBlocks } from '@kukan/shared'
+import { indexedLines } from '@kukan/shared/content-chunks'
 import { zstdLines } from '../../node-utils'
 
 /** Each block's lines, the blocks with none left out. */
 export async function* documentTextLines(artifact: Readable): AsyncGenerator<string> {
-  for await (const { text } of documentTextBlocks(zstdLines(artifact))) {
-    if (text) yield* text.split('\n')
-  }
+  for await (const block of documentTextBlocks(zstdLines(artifact))) yield* indexedLines(block)
 }

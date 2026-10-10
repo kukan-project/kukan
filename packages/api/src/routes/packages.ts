@@ -4,7 +4,7 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { zValidator } from '../middleware/validator'
+import { zValidator, repeatedParam } from '../middleware/validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
@@ -66,12 +66,6 @@ function makePublishAuthorize(db: Database, user: AuthUser): PackageAuthorize {
 }
 
 const stateParam = z.enum(PACKAGE_STATES).optional()
-
-// Repeated query param: normalizes string | string[] → string[] | undefined
-const repeatedParam = z
-  .union([z.string(), z.array(z.string())])
-  .optional()
-  .transform((v) => (v === undefined ? undefined : (Array.isArray(v) ? v : [v]).filter(Boolean)))
 
 // GET /api/v1/packages - List packages with pagination and search
 packagesRouter.get(

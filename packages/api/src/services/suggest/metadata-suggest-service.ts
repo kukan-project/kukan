@@ -59,6 +59,7 @@ import {
   SUGGEST_THROTTLE_BACKOFF_MS,
   suggestConcurrency,
 } from '../../config'
+import { mapWithConcurrency } from '../concurrency/map-with-concurrency'
 
 const MAX_NEW_TAGS = 2
 const MAX_TAGS = 5
@@ -701,24 +702,4 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  *  concurrent resource completions (Bedrock ThrottlingException, HTTP 429) */
 function isThrottleError(message: string): boolean {
   return /throttl|too many requests|rate.?limit|\b429\b/i.test(message)
-}
-
-/** Run `fn` over `items` with at most `limit` in flight (order preserved) */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let next = 0
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      for (;;) {
-        const index = next++
-        if (index >= items.length) return
-        results[index] = await fn(items[index])
-      }
-    })
-  )
-  return results
 }

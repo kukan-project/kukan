@@ -5,7 +5,7 @@
 
 import { zValidator as baseZValidator } from '@hono/zod-validator'
 import type { MiddlewareHandler } from 'hono'
-import type { z } from 'zod'
+import { z } from 'zod'
 import { ValidationError } from '@kukan/shared'
 
 /** "url: Invalid URL" — the field first, since that is what the caller must fix */
@@ -53,3 +53,9 @@ export const zValidator: typeof baseZValidator = ((target: never, schema: never)
   }
   return handler
 }) as typeof baseZValidator
+
+/** A query parameter that may be repeated: string | string[] → string[] | undefined */
+export const repeatedParam = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : (Array.isArray(v) ? v : [v]).filter(Boolean)))

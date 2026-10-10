@@ -1386,6 +1386,77 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
+  describe('fetchContentPassages', () => {
+    const options = { fragmentChars: 1200, fragmentsPerChunk: 3, chunksPerResource: 2 }
+
+    it("cuts each resource's best chunks by the highlighter, with the chunk they are from", async () => {
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              {
+                _id: 'res-1_chunk_0',
+                inner_hits: {
+                  chunks: {
+                    hits: {
+                      hits: [
+                        {
+                          _score: 4.2,
+                          _source: { resourceId: 'res-1', chunkIndex: 2 },
+                          highlight: { extractedText: ['\uE000汚泥\uE001は', '\uE000処理\uE001'] },
+                        },
+                        // A chunk the highlighter found nothing to mark in
+                        { _score: 1, _source: { resourceId: 'res-1', chunkIndex: 0 } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const hits = await adapter.fetchContentPassages(['res-1', 'res-2'], '汚泥の処理', options, {
+        excludePrivate: true,
+      })
+
+      expect(hits).toEqual([
+        {
+          resourceId: 'res-1',
+          chunkIndex: 2,
+          fragments: ['\uE000汚泥\uE001は', '\uE000処理\uE001'],
+        },
+      ])
+      const { body } = mockClient.search.mock.calls[0][0]
+      // Any word makes a passage: not every one of them need be in it
+      expect(body.query.bool.must).toEqual({ match: { extractedText: { query: '汚泥の処理' } } })
+      expect(body.query.bool.filter).toEqual(
+        expect.arrayContaining([
+          { terms: { resourceId: ['res-1', 'res-2'] } },
+          { term: { join_field: 'content' } },
+        ])
+      )
+      // The caller's visibility, at the dataset
+      expect(JSON.stringify(body.query.bool.filter)).toContain('has_parent')
+      expect(body.collapse.field).toBe('resourceId')
+      expect(body.collapse.inner_hits.size).toBe(2)
+      expect(body.collapse.inner_hits.highlight.fields.extractedText).toMatchObject({
+        type: 'unified',
+        fragment_size: 1200,
+        number_of_fragments: 3,
+        order: 'score',
+        pre_tags: ['\uE000'],
+        post_tags: ['\uE001'],
+      })
+    })
+
+    it('asks nothing of the index for no resources', async () => {
+      expect(await adapter.fetchContentPassages([], 'test', options)).toEqual([])
+      expect(mockClient.search).not.toHaveBeenCalled()
+    })
+  })
+
   describe('fetchContentHighlights', () => {
     it('should return highlights keyed by chunk doc ID', async () => {
       mockClient.search.mockResolvedValueOnce({

@@ -69,18 +69,19 @@ curl -X POST https://your-kukan-site/api/mcp \
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
 
-| Tool                   | Description                                                                                                                  |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                                 |
-| `get_dataset`          | Get detailed dataset information including resource list                                                                     |
-| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                            |
-| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only                    |
-| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                                            |
-| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel/Ichitaro |
-| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel/Ichitaro           |
-| `list_organizations`   | List organizations                                                                                                           |
-| `list_groups`          | List groups (categories)                                                                                                     |
-| `list_tags`            | List tags                                                                                                                    |
+| Tool                   | Description                                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                                      |
+| `get_dataset`          | Get detailed dataset information including resource list                                                                          |
+| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                                 |
+| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only                         |
+| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                                                 |
+| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel/Ichitaro      |
+| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel/Ichitaro                |
+| `search_passages`      | Find the passages of documents' text that match a query, with where each is from and its page. PDF/Word/PowerPoint/Excel/Ichitaro |
+| `list_organizations`   | List organizations                                                                                                                |
+| `list_groups`          | List groups (categories)                                                                                                          |
+| `list_tags`            | List tags                                                                                                                         |
 
 ## Tool Details
 
@@ -231,6 +232,34 @@ matches, the response gives the document's page range and points to `get_documen
 
 A longer section is cut — at a line break where it can be — and the response ends with a cursor to
 read on. A cursor stops working once the document is extracted again.
+
+### search_passages
+
+Return the passages of documents' text across the catalog (PDF, Word, PowerPoint, Excel, Ichitaro) that
+match a query, best first. Datasets and resources are found first, by the same search as
+`search_datasets`, and then the matching passages inside their documents. No generative AI is called
+(the query is embedded, to find documents by meaning as well; a site without an embedding model finds
+them by words alone). Tables such as CSV are not searched (use `get_resource_schema` and `query_resource`).
+
+Each passage opens with the same source as `get_document_section` (a PDF's file URL comes with
+`#page=N` for the passage's page), then where it is (page, slide or sheet, and the headings above it),
+the words that matched, and its text. Each comes with a cursor: give it to `get_document_section` to read
+around the passage from its page. A document without pages (Word) is read from where the passage is.
+
+Passages inside a document are matched by words, not meaning. If nothing fits, search again in the words
+a document would use (an administration's terms, for instance). Where more passages matched than were
+returned, the response ends by saying so.
+
+| Parameter      | Type     | Required | Description                                                                       |
+| -------------- | -------- | -------- | --------------------------------------------------------------------------------- |
+| `q`            | string   | Yes      | Words to search for                                                               |
+| `organization` | string   | No       | Filter by organization name (slug)                                                |
+| `tags`         | string[] | No       | Filter by tag names                                                               |
+| `k`            | number   | No       | Passages to return (default: 5, max: 20)                                          |
+| `per_resource` | number   | No       | Passages from one resource at most (default: 2)                                   |
+| `max_chars`    | number   | No       | Characters of text to return, all passages together (default: 8,000, max: 32,000) |
+
+The same search is available over REST as `GET /api/v1/passages`, with the same parameters, and `semantic=false` to match by words alone.
 
 ### list_organizations
 

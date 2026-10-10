@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm'
 import { createTestApp, mockCompletionAi, rankingSearch } from '../test-helpers/test-app'
 import { artifactOf } from '../test-helpers/document-text'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
-import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { PASSAGE_MARK, PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import { resource, resourceVersion } from '@kukan/db'
 import { Readable } from 'node:stream'
 import type { DocumentTextBlock } from '@kukan/shared'
@@ -1110,6 +1110,266 @@ describe('MCP Server', () => {
       const body = JSON.stringify(result)
       expect(body).not.toContain('人口は減っている')
       expect(body).not.toContain('Secret Plan')
+    })
+  })
+
+  describe('search_passages', () => {
+    const sewer: DocumentTextBlock[] = [
+      { loc: { page: 1 }, headings: ['目次'], text: '第1章 概要\n第2章 汚泥' },
+      { loc: { page: 2 }, text: '', unreadable: 'no-text' },
+      {
+        loc: { page: 3, label: '3' },
+        headings: ['第2章 汚泥'],
+        text: '下水道の汚泥は処理工場で処理する。\n焼却灰は資源化する。',
+      },
+    ]
+
+    /** An app whose storage serves each artifact at its key */
+    function passageApp(
+      artifacts: Record<string, DocumentTextBlock[]>,
+      {
+        user,
+        search: searchAdapter = search,
+      }: { user?: Parameters<typeof mcpApp>[0]; search?: SearchAdapter } = {}
+    ) {
+      const storage = {
+        download: async (key: string) => {
+          const blocks = artifacts[key]
+          if (!blocks) throw Object.assign(new Error(`no ${key}`), { name: 'NoSuchKey' })
+          return Readable.from([artifactOf(blocks)])
+        },
+      } as unknown as StorageAdapter
+      return createTestApp(db, { search: searchAdapter, storage, user })
+    }
+
+    /** A PDF in a dataset of its own, whose text artifact is at `key` */
+    async function createPdf(
+      app: ReturnType<typeof mcpApp>,
+      pkgData: Record<string, unknown>,
+      name: string,
+      key: string
+    ) {
+      const pkg = await createPackage(app, pkgData)
+      const res = await createResource(app, pkg.id, {
+        name,
+        format: 'PDF',
+        url: name,
+        urlType: 'upload',
+      })
+      await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, res.id))
+      const json = JSON.stringify({
+        sourceHash: 'sha256:live',
+        documentTextKey: key,
+        documentTextBytes: 100,
+      })
+      await db.execute(sql`
+        INSERT INTO resource_pipeline (resource_id, status, metadata)
+        VALUES (${res.id}, 'complete', ${json}::jsonb)
+        ON CONFLICT (resource_id) DO UPDATE SET status = 'complete', metadata = ${json}::jsonb
+      `)
+      return { pkg, res }
+    }
+
+    async function call(app: ReturnType<typeof mcpApp>, args: Record<string, unknown>) {
+      const result = await mcpToolCall(app, 'search_passages', args)
+      return result.result.content[0].text as string
+    }
+
+    it('finds the words in the text where the search indexes none, and says where they are', async () => {
+      const app = passageApp({ 'k/sewer': sewer })
+      const { res } = await createPdf(
+        app,
+        { name: 'ds-sewer', title: '下水道事業年報' },
+        '下水道計画.pdf',
+        'k/sewer'
+      )
+
+      const text = await call(app, { q: '下水道' })
+
+      expect(text).toContain('Passages for "下水道": 1, best first.')
+      expect(text).toContain('Source: 下水道計画.pdf — 下水道事業年報')
+      expect(text).toContain(
+        `File: http://localhost:3000/api/v1/resources/${res.id}/download#page=3`
+      )
+      expect(text).toContain('Where: page 3 (3) · 第2章 汚泥\nMatched: 下水道')
+      expect(text).toContain('\n\n下水道の汚泥は処理工場で処理する。\n焼却灰は資源化する。\n')
+
+      // The cursor reads the page the passage is on, and on from it
+      const cursor = /cursor "([^"]+)"/.exec(text)![1]
+      const result = await mcpToolCall(app, 'get_document_section', { id: res.id, cursor })
+      const section = result.result.content[0].text as string
+      expect(section).toContain('--- page 3 (3) · 第2章 汚泥\n下水道の汚泥は')
+      expect(section).not.toContain('第1章 概要')
+    })
+
+    it('returns nothing from a dataset the caller cannot see', async () => {
+      const admin = passageApp({ 'k/sewer': sewer })
+      await createPdf(
+        admin,
+        { name: 'ds-sewer', title: '下水道', private: true },
+        '下水道計画.pdf',
+        'k/sewer'
+      )
+
+      const text = await call(passageApp({ 'k/sewer': sewer }, { user: null }), { q: '下水道' })
+
+      expect(text).toContain('No passages found for "下水道"')
+    })
+
+    describe('with a search that indexes the text', () => {
+      const { open: O, close: C } = PASSAGE_MARK
+
+      /** A search that ranks `ids`' datasets, each naming its resource, and cuts the fragments given */
+      function indexedSearch(
+        found: { packageId: string; resourceId: string }[],
+        fragments: Record<string, string[]>
+      ): SearchAdapter {
+        return {
+          ...rankingSearch(found.map((f) => f.packageId)),
+          search: async () => ({
+            items: found.map((f) => ({
+              id: f.packageId,
+              name: '',
+              matchedResources: [{ id: f.resourceId, matchSource: 'content' as const }],
+            })),
+            total: found.length,
+            offset: 0,
+            limit: 10,
+          }),
+          fetchContentPassages: async (ids) =>
+            ids
+              .filter((id) => fragments[id])
+              .map((id) => ({
+                resourceId: id,
+                chunkIndex: 0,
+                fragments: fragments[id]!,
+              })),
+        }
+      }
+
+      const plan: DocumentTextBlock[] = [
+        { loc: { page: 1 }, headings: ['計画'], text: '汚泥の処理計画を定める。' },
+        { loc: { page: 2 }, headings: ['計画'], text: '処理の方針は次のとおり。' },
+      ]
+
+      it('places the fragments the index cut, ranks them, and keeps to what was asked', async () => {
+        const setup = passageApp({ 'k/sewer': sewer, 'k/plan': plan })
+        const a = await createPdf(setup, { name: 'ds-a', title: '年報' }, 'report.pdf', 'k/sewer')
+        const b = await createPdf(setup, { name: 'ds-b', title: '計画' }, 'plan.pdf', 'k/plan')
+        const app = passageApp(
+          { 'k/sewer': sewer, 'k/plan': plan },
+          {
+            search: indexedSearch(
+              [
+                { packageId: a.pkg.id, resourceId: a.res.id },
+                { packageId: b.pkg.id, resourceId: b.res.id },
+              ],
+              {
+                [a.res.id]: [`下水道の${O}汚泥${C}は処理工場で${O}処理${C}する。`],
+                [b.res.id]: [`${O}処理${C}の方針`, `${O}汚泥${C}の${O}処理${C}計画`],
+              }
+            ),
+          }
+        )
+
+        const text = await call(app, { q: '汚泥の処理', per_resource: 1 })
+
+        expect(text).toContain('Passages for "汚泥の処理": 2, best first.')
+        // One passage of each resource, the one holding both words first
+        expect(text).toMatch(
+          /\[1\]\nSource: report\.pdf[\s\S]*Where: page 3 \(3\) · 第2章 汚泥\nMatched: 汚泥, 処理/
+        )
+        expect(text).toMatch(
+          /\[2\]\nSource: plan\.pdf[\s\S]*Where: page 1 · 計画\nMatched: 汚泥, 処理/
+        )
+        expect(text).not.toContain('処理の方針')
+
+        const short = await call(app, { q: '汚泥の処理', max_chars: 10 })
+        expect(short).toContain('Some passages were cut or left out to keep to max_chars')
+      })
+
+      it('leaves out a dataset made private that the index has yet to hear of', async () => {
+        const setup = passageApp({ 'k/sewer': sewer })
+        const a = await createPdf(
+          setup,
+          { name: 'ds-a', title: '年報', private: true },
+          'report.pdf',
+          'k/sewer'
+        )
+        const app = passageApp(
+          { 'k/sewer': sewer },
+          {
+            user: null,
+            search: indexedSearch([{ packageId: a.pkg.id, resourceId: a.res.id }], {
+              [a.res.id]: [`${O}汚泥${C}は`],
+            }),
+          }
+        )
+
+        expect(await call(app, { q: '汚泥' })).toContain('No passages found')
+      })
+    })
+
+    it('answers over REST as well, with where each passage is and where to read on', async () => {
+      const app = passageApp({ 'k/sewer': sewer })
+      const { res } = await createPdf(
+        app,
+        { name: 'ds-sewer', title: '下水道' },
+        '下水道計画.pdf',
+        'k/sewer'
+      )
+
+      const response = await app.request(`/api/v1/passages?q=${encodeURIComponent('下水道')}`)
+      expect(response.status).toBe(200)
+      const body = await response.json()
+
+      expect(body.via).toBe('scan')
+      expect(body.passages).toEqual([
+        expect.objectContaining({
+          resourceId: res.id,
+          resourceName: '下水道計画.pdf',
+          packageName: 'ds-sewer',
+          first: { page: 3, label: '3' },
+          headings: ['第2章 汚泥'],
+          words: ['下水道'],
+          readFrom: { block: 2, offset: 0 },
+          describesLiveContent: true,
+        }),
+      ])
+    })
+
+    it('over REST, says which version the text is from where it is not the file the resource holds now', async () => {
+      const app = passageApp({ 'k/sewer': sewer })
+      const { res } = await createPdf(
+        app,
+        { name: 'ds-sewer', title: '下水道' },
+        '下水道計画.pdf',
+        'k/sewer'
+      )
+      // The file was replaced and the new one's text has yet to be extracted
+      await db.update(resource).set({ hash: 'sha256:newer' }).where(eq(resource.id, res.id))
+
+      const response = await app.request(`/api/v1/passages?q=${encodeURIComponent('下水道')}`)
+      const [passage] = (await response.json()).passages
+
+      expect(passage).toMatchObject({ resourceId: res.id, describesLiveContent: false })
+    })
+
+    it('over REST, narrows by tags given as tags[] as well as tags', async () => {
+      const app = passageApp({ 'k/sewer': sewer })
+      await createPdf(
+        app,
+        { name: 'ds-sewer', title: '下水道', tags: [{ name: 'water' }] },
+        '下水道計画.pdf',
+        'k/sewer'
+      )
+      const q = encodeURIComponent('下水道')
+      const count = async (tags: string) =>
+        (await (await app.request(`/api/v1/passages?q=${q}&${tags}`)).json()).passages.length
+
+      expect(await count('tags[]=water')).toBe(1)
+      expect(await count('tags[]=other')).toBe(0)
+      expect(await count('tags=other')).toBe(0)
     })
   })
 

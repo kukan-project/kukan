@@ -629,6 +629,21 @@ Member roles are one of `admin` / `editor` / `member`.
 | POST   | `/groups/{nameOrId}/members`          | Add member / change role                 | Category admin  |
 | DELETE | `/groups/{nameOrId}/members/{userId}` | Remove member                            | Category admin  |
 
+## Passages
+
+| Method | Path        | Description                                                                                              | Auth   |
+| ------ | ----------- | -------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/passages` | Passages of documents' text that match a query, with where each is from and its page (visible ones only) | Public |
+
+The same search as MCP's `search_passages`. Parameters: `q` (required, up to 500 characters),
+`organization`, `tags[]` (or `tags`), `k` (default: 5, max: 20), `per_resource` (default: 2), `max_chars`
+(default: 8,000, max: 32,000), and `semantic` (`false` for keyword matches only). Each passage carries its
+resource and dataset, where it is (`first` / `last` page, slide or sheet, and `headings`), the words that
+matched (`words`), its text (`text`), where `get_document_section` reads on from (`readFrom`), and its
+versions (`latestVersion` for the file the resource holds now, `sourceVersion` for the file the text was
+extracted from). Where `describesLiveContent` is `false`, the file has been replaced and its text not yet
+extracted again: cite `sourceVersion`.
+
 ## Tags
 
 | Method | Path         | Description | Auth   |

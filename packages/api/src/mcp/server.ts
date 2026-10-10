@@ -9,6 +9,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { MeteredAI } from '@kukan/ai-adapter'
 import type { Env, Logger } from '@kukan/shared'
+import type { SystemSettingService } from '../services/system-setting'
 import { registerDatasetTools } from './tools/datasets'
 import { registerResourceTools } from './tools/resources'
 import { registerCatalogTools } from './tools/catalog'
@@ -24,6 +25,8 @@ interface McpContext {
   ai: MeteredAI
   env: Env
   logger: Logger
+  /** Runtime settings the hybrid search reads (ADR-036) */
+  settings?: SystemSettingService
   user?: { id: string; sysadmin: boolean }
 }
 
@@ -37,12 +40,7 @@ export function createMcpServer(ctx: McpContext): McpServer {
   registerResourceTools(server, { db: ctx.db, user: ctx.user, env: ctx.env, ai: ctx.ai })
   registerCatalogTools(server, { db: ctx.db, user: ctx.user })
   registerQueryTools(server, { db: ctx.db, storage: ctx.storage, user: ctx.user })
-  registerDocumentTools(server, {
-    db: ctx.db,
-    storage: ctx.storage,
-    env: ctx.env,
-    user: ctx.user,
-  })
+  registerDocumentTools(server, ctx)
 
   return server
 }

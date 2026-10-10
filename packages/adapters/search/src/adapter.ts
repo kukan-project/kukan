@@ -89,6 +89,31 @@ export interface ContentDoc {
  *  Also used as OpenSearch inner_hits size (must be <= index.max_inner_result_window, default 100). */
 export const MAX_MATCHED_RESOURCES_PER_PACKAGE = 100
 
+/**
+ * What wraps a matched word in a passage fragment. Private-use characters, so
+ * no text a resource holds can be taken for one and no markup has to be escaped.
+ */
+export const PASSAGE_MARK = { open: '', close: '' } as const
+
+/** How a backend cuts the passages of the resources a search found (ADR-061 §決定 4). */
+export interface ContentPassageOptions {
+  /** The length of a fragment, in characters: about a passage's */
+  fragmentChars: number
+  /** Fragments to take from one chunk, best first */
+  fragmentsPerChunk: number
+  /** Chunks to take from one resource, best first: a long document is many, and would crowd out the rest */
+  chunksPerResource: number
+}
+
+/** One chunk of a resource's text that matched, and the fragments cut from it. */
+export interface ContentPassageHit {
+  resourceId: string
+  /** Which chunk of the resource's text, from 0 */
+  chunkIndex: number
+  /** Fragments of the chunk's text, best first, each matched word wrapped in {@link PASSAGE_MARK} */
+  fragments: string[]
+}
+
 export interface DatasetDoc {
   id: string
   name: string
@@ -343,6 +368,20 @@ export interface SearchAdapter {
     offset?: number
     limit?: number
   }): Promise<ContentBrowseResult | null>
+
+  /**
+   * The passages of `resourceIds`' text that match `queryText`, cut by the
+   * backend from its own index (ADR-061 §決定 4). A word need not be in every
+   * passage: any of them makes one. Absent on a backend that does not index
+   * text, where the caller reads the text itself.
+   * `filters` MUST carry the caller's visibility scope, as for fetchContentHighlights.
+   */
+  fetchContentPassages?(
+    resourceIds: string[],
+    queryText: string,
+    options: ContentPassageOptions,
+    filters?: SearchFilters
+  ): Promise<ContentPassageHit[]>
 
   /** Fetch content highlights for specific chunk document IDs.
    *  Returns a map of chunkDocId → highlighted snippet.

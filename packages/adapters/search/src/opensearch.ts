@@ -30,8 +30,15 @@ import type {
   ContentBrowseResult,
   ContentBrowseItem,
   MatchedResourcesCount,
+  ContentPassageHit,
+  ContentPassageOptions,
 } from './adapter'
-import { BulkIndexError, MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS } from './adapter'
+import {
+  BulkIndexError,
+  MAX_MATCHED_RESOURCES_PER_PACKAGE,
+  MATCHED_FIELDS,
+  PASSAGE_MARK,
+} from './adapter'
 
 /** The one shape of the search index: the create body, and what an index
  *  created under an older shape is brought up to (see ensureWritableIndex). */
@@ -1504,6 +1511,86 @@ export class OpenSearchAdapter implements SearchAdapter {
       }
     } catch {
       // Best-effort: display without metadata
+    }
+  }
+
+  /**
+   * The passages of the resources' text, as the highlighter cuts them: it reads
+   * the offsets the text is indexed with (`index_options: 'offsets'`) rather
+   * than analysing the text again, and orders a chunk's fragments by its own
+   * BM25-like score. The words are matched as the search matched them, through
+   * the same analyser.
+   */
+  async fetchContentPassages(
+    resourceIds: string[],
+    queryText: string,
+    { fragmentChars, fragmentsPerChunk, chunksPerResource }: ContentPassageOptions,
+    filters?: SearchFilters
+  ): Promise<ContentPassageHit[]> {
+    if (resourceIds.length === 0) return []
+    try {
+      await this.ensureIndex()
+      const response = await this.client.search({
+        index: this.searchIndex,
+        body: {
+          size: resourceIds.length,
+          query: {
+            bool: {
+              must: { match: { extractedText: { query: queryText } } },
+              filter: [
+                { terms: { resourceId: resourceIds } },
+                { term: { join_field: 'content' } },
+                {
+                  has_parent: {
+                    parent_type: 'package',
+                    query: { bool: { filter: this.buildFilterClauses(filters) } },
+                  },
+                },
+              ],
+            },
+          },
+          _source: false,
+          // A resource's best chunks only: highlighting reads each chunk's text
+          collapse: {
+            field: 'resourceId',
+            inner_hits: {
+              name: 'chunks',
+              size: chunksPerResource,
+              _source: ['resourceId', 'chunkIndex'],
+              highlight: {
+                fields: {
+                  extractedText: {
+                    type: 'unified',
+                    fragment_size: fragmentChars,
+                    number_of_fragments: fragmentsPerChunk,
+                    order: 'score',
+                    pre_tags: [PASSAGE_MARK.open],
+                    post_tags: [PASSAGE_MARK.close],
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return ((response.body.hits.hits ?? []) as any[]).flatMap((hit) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((hit.inner_hits?.chunks?.hits?.hits ?? []) as any[]).flatMap((chunk) => {
+          const fragments = (chunk.highlight?.extractedText ?? []) as string[]
+          return fragments.length > 0
+            ? [
+                {
+                  resourceId: chunk._source.resourceId as string,
+                  chunkIndex: chunk._source.chunkIndex as number,
+                  fragments,
+                },
+              ]
+            : []
+        })
+      )
+    } catch (err) {
+      this.mapBackendError(err)
     }
   }
 

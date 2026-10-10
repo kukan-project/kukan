@@ -34,6 +34,7 @@ import { apiTokensRouter } from '../../routes/api-tokens'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
 import { announcementsRouter } from '../../routes/announcements'
 import { siteRouter } from '../../routes/site'
+import { passagesRouter } from '../../routes/passages'
 import { mcpRouter } from '../../routes/mcp'
 import { odataRouter } from '../../routes/odata'
 import { ODATA_BASE_PATH } from '@kukan/shared'
@@ -282,6 +283,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   apiV1.route('/users', usersRouter)
   apiV1.route('/api-tokens', apiTokensRouter)
   apiV1.route('/announcements', announcementsRouter)
+  apiV1.route('/passages', passagesRouter)
   apiV1.route('/site', siteRouter)
   app.route('/api/v1', apiV1)
 

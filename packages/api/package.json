@@ -42,6 +42,7 @@
     "lint": "eslint src",
     "clean": "rm -rf dist",
     "eval:search": "tsx scripts/eval-search.ts",
+    "eval:passages": "tsx scripts/eval-passages.ts",
     "eval:suggest": "tsx scripts/eval-suggest.ts"
   },
   "dependencies": {

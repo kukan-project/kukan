@@ -10,14 +10,20 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { publicOrigin, type DocumentTextBlock, type Env } from '@kukan/shared'
-import type { Database } from '@kukan/db'
-import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { AuthUser } from '../../auth/permissions'
+import { publicOrigin, type DocumentTextBlock, type DocumentTextLoc, type Env } from '@kukan/shared'
+import { resolveUserOrgIds, buildVisibilityFilters, type AuthUser } from '../../auth/permissions'
+import type { DocumentTextTarget } from '../../services/pipeline/pipeline-service'
+import {
+  searchPassages,
+  type Passage,
+  type PassageSearchDeps,
+  type PassageSource,
+} from '../../services/search/passage-search'
 import { ResourceService, resourceDownloadPath } from '../../services/resource-service'
 import { PipelineService } from '../../services/pipeline/pipeline-service'
 import {
   blockUnit,
+  isGone,
   readDocumentOutline,
   readDocumentSection,
   unitKind,
@@ -30,6 +36,10 @@ import {
   type UnitRange,
 } from '../../services/document-text'
 import {
+  PASSAGE_DEFAULT_K,
+  PASSAGE_MAX_K,
+  PASSAGE_PER_RESOURCE,
+  PASSAGE_QUERY_MAX_CHARS,
   MCP_OUTLINE_MAX_CHARS,
   MCP_OUTLINE_TITLE_CHARS,
   MCP_SECTION_DEFAULT_CHARS,
@@ -38,9 +48,8 @@ import {
   MCP_SECTION_MAX_UNIT,
 } from '../../config'
 
-interface DocumentToolsContext {
-  db: Database
-  storage: StorageAdapter
+/** What the passage search needs (its first stage is the dataset search), and who is asking. */
+type DocumentToolsContext = PassageSearchDeps & {
   env: Env
   user?: AuthUser
 }
@@ -239,6 +248,57 @@ function outlineLines(
   ]
 }
 
+/** What a citation names of a resource, and of the dataset it is in. */
+interface Cited {
+  id: string
+  name: string | null
+  format: string | null
+  url: string | null
+  urlType: string | null
+  latestVersion?: number | null
+}
+
+/** The lines a response opens with, naming what to cite: the resource, where to read it, and its version. */
+function sourceLines(
+  env: Env,
+  res: Cited,
+  pkg: { name: string; title: string | null },
+  text: DocumentTextTarget,
+  { isPdf, page }: { isPdf: boolean; page?: number }
+): (string | false | null)[] {
+  const origin = publicOrigin(env)
+  const file = res.urlType === 'upload' ? `${origin}${resourceDownloadPath(res.id)}` : res.url
+  return [
+    `Source: ${res.name || '(untitled)'}${pkg.title ? ` — ${pkg.title}` : ''}`,
+    `Resource page: ${origin}/dataset/${pkg.name}/resource/${res.id}`,
+    !!file &&
+      (page !== undefined
+        ? `File: ${file}#page=${page}`
+        : `File: ${file}${isPdf ? ' (add #page=N to open a PDF at page N)' : ''}`),
+    !!res.format && `Format: ${res.format}`,
+    // A failed Interpret keeps the text of the bytes before: the version to
+    // cite is the one the text is from, kept apart from the file's
+    ...(text.describesLiveContent
+      ? [res.latestVersion != null && `Version: ${res.latestVersion}`]
+      : [
+          `Text from: ${text.sourceVersion != null ? `version ${text.sourceVersion}` : 'an earlier version of the file'}`,
+          res.latestVersion != null && `Current file version: ${res.latestVersion}`,
+          'Note: the file has changed since this text was extracted; cite the version the text is from.',
+        ]),
+  ]
+}
+
+/** Where a passage is: `page 5 (iv)`, `pages 5–6`, `slide 2`, `sheet 1 "Data"`. */
+function passagePlace(first: DocumentTextLoc, last: DocumentTextLoc): string {
+  const kind = unitKind(first)
+  if (!kind) return ''
+  const [a, b] = [blockUnit(first)!, blockUnit(last) ?? blockUnit(first)!]
+  if (a !== b) return span(kind, { min: a, max: b })
+  if (kind === 'page') return `page ${a}${first.label ? ` (${first.label})` : ''}`
+  if (kind === 'sheet') return `sheet ${a}${first.sheetName ? ` "${first.sheetName}"` : ''}`
+  return `${kind} ${a}`
+}
+
 /** Blank lines stay: they part the source from the text. */
 function reply(lines: (string | false | null)[]) {
   return {
@@ -246,11 +306,6 @@ function reply(lines: (string | false | null)[]) {
       { type: 'text' as const, text: lines.filter((line) => typeof line === 'string').join('\n') },
     ],
   }
-}
-
-/** Purged or replaced between reading the key and the object. */
-function isGone(err: unknown): boolean {
-  return err instanceof Error && err.name === 'NoSuchKey'
 }
 
 const gone = (id: string) =>
@@ -281,23 +336,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
         `Resource ${id} has no text to read: its pages are scans or images, and text is not read from pictures.`,
       ])
     }
-    const origin = publicOrigin(env)
-    const file = res.urlType === 'upload' ? `${origin}${resourceDownloadPath(res.id)}` : res.url
-    const source = (isPdf: boolean) => [
-      `Source: ${res.name || '(untitled)'}${pkg.title ? ` — ${pkg.title}` : ''}`,
-      `Resource page: ${origin}/dataset/${pkg.name}/resource/${res.id}`,
-      !!file && `File: ${file}${isPdf ? ' (add #page=N to open a PDF at page N)' : ''}`,
-      !!res.format && `Format: ${res.format}`,
-      // A failed Interpret keeps the text of the bytes before: the version to
-      // cite is the one the text is from, kept apart from the file's
-      ...(text.describesLiveContent
-        ? [res.latestVersion != null && `Version: ${res.latestVersion}`]
-        : [
-            `Text from: ${text.sourceVersion != null ? `version ${text.sourceVersion}` : 'an earlier version of the file'}`,
-            res.latestVersion != null && `Current file version: ${res.latestVersion}`,
-            'Note: the file has changed since this text was extracted; cite the version the text is from.',
-          ]),
-    ]
+    const source = (isPdf: boolean) => sourceLines(env, res, pkg, text, { isPdf })
     return { text, source }
   }
 
@@ -439,6 +478,117 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
         section.next
           ? `More text follows. Call get_document_section with cursor "${encodeCursor(text.key, query, section.next)}" to read on.`
           : 'End of the selected text.',
+      ])
+    }
+  )
+
+  /** A passage as a response gives it: the source to cite, where it is, and how to read on. */
+  function passageLines(
+    passage: Passage,
+    source: PassageSource,
+    i: number
+  ): (string | false | null)[] {
+    const place = passagePlace(passage.first, passage.last)
+    const cursor = encodeCursor(source.text.key, {}, passage.readFrom)
+    return [
+      `[${i + 1}]`,
+      ...sourceLines(
+        env,
+        source,
+        { name: source.packageName, title: source.packageTitle },
+        source.text,
+        { isPdf: false, page: passage.first.page }
+      ),
+      `Where: ${[place, passage.headings.join(' > ')].filter(Boolean).join(' · ') || 'the document has no pages or headings here'}`,
+      passage.words.length > 0 && `Matched: ${passage.words.join(', ')}`,
+      `Read around it: get_document_section with id "${source.id}" and cursor "${cursor}"`,
+      '',
+      passage.text,
+    ]
+  }
+
+  server.registerTool(
+    'search_passages',
+    {
+      description:
+        'Search the text of documents in the catalog (PDF, Word, PowerPoint, Excel, Ichitaro) for the passages that match a query, best first. ' +
+        'Datasets and resources are found first, as search_datasets finds them, and then the passages inside their documents; ' +
+        'tables such as CSV are not searched here (use get_resource_schema and query_resource for those). ' +
+        'Every passage opens with the source to cite — resource and dataset name, URL (a PDF opened at the page), version — then where it is (page, slide or sheet, and the headings it is under) and the words that matched. ' +
+        'Each gives a cursor: pass it to get_document_section to read the text around the passage and on from it. ' +
+        "Passages are matched by words, not meaning (the documents they are in are found by both): if nothing fits, search again in the words a document would use — an administration's terms rather than everyday ones. " +
+        'This server returns the text and where it is from; judging what it means — whether it applies, whether it is decided — is left to you.',
+      inputSchema: {
+        q: z
+          .string()
+          .regex(/\S/, 'Give some words to search for')
+          .max(PASSAGE_QUERY_MAX_CHARS)
+          .describe('Words to search for'),
+        organization: z
+          .string()
+          .optional()
+          .describe(
+            'Only datasets of this organization (its name, as list_organizations gives it)'
+          ),
+        tags: z.array(z.string()).optional().describe('Only datasets with these tags'),
+        k: z
+          .number()
+          .int()
+          .min(1)
+          .max(PASSAGE_MAX_K)
+          .optional()
+          .describe(`Passages to return (default ${PASSAGE_DEFAULT_K}, at most ${PASSAGE_MAX_K})`),
+        per_resource: z
+          .number()
+          .int()
+          .min(1)
+          .max(PASSAGE_MAX_K)
+          .optional()
+          .describe(`Passages from one resource at most (default ${PASSAGE_PER_RESOURCE})`),
+        max_chars: z
+          .number()
+          .int()
+          .min(1)
+          .max(MCP_SECTION_MAX_CHARS)
+          .optional()
+          .describe(
+            `Characters of passage text to return, all passages together (default ${MCP_SECTION_DEFAULT_CHARS}, at most ${MCP_SECTION_MAX_CHARS})`
+          ),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ q, organization, tags, k, per_resource, max_chars }) => {
+      const userOrgIds = await resolveUserOrgIds(db, user)
+      const result = await searchPassages(ctx, {
+        q,
+        filters: {
+          ...(organization && { organizations: [organization] }),
+          ...(tags?.length && { tags }),
+          ...buildVisibilityFilters(user, userOrgIds),
+        },
+        viewer: user,
+        k,
+        perResource: per_resource,
+        maxChars: max_chars,
+      })
+      if (result.passages.length === 0) {
+        return reply([
+          `No passages found for "${q}" in the documents' text.`,
+          'Try other words, or search_datasets to find datasets by their descriptions and tables.',
+        ])
+      }
+      return reply([
+        `Passages for "${q}": ${result.passages.length}, best first.`,
+        ...result.passages.flatMap((passage, i) => [
+          '',
+          ...passageLines(passage, result.sources.get(passage.resourceId)!, i),
+        ]),
+        '',
+        result.truncated
+          ? 'Some passages were cut or left out to keep to max_chars; ask for more characters, or read on with a cursor.'
+          : result.more
+            ? `More passages matched than k (${k ?? PASSAGE_DEFAULT_K}); ask for more with k, or narrow the words.`
+            : 'End of the passages.',
       ])
     }
   )

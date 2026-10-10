@@ -34,6 +34,19 @@ async function* artifactLines(storage: StorageAdapter, key: string): AsyncGenera
   }
 }
 
+/** Whether a read failed because the object is not there: purged, or replaced since its key was read. */
+export function isGone(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'NoSuchKey' || err.name === 'NotFound')
+}
+
+/** The artifact's blocks in order; the read stops, and the download with it, where the caller does. */
+export function readDocumentBlocks(
+  storage: StorageAdapter,
+  key: string
+): AsyncGenerator<DocumentTextBlock> {
+  return documentTextBlocks(artifactLines(storage, key))
+}
+
 /**
  * The artifact's blocks, up to `limit` bytes of them as stored: the rest is
  * left unread, and `truncated` says there was more. Counted by the line rather
@@ -160,7 +173,7 @@ function matcher({ from, to, heading }: SectionQuery): (block: DocumentTextBlock
  * its second half if there is one, so a line is not split; never between the
  * halves of a surrogate pair. Never 0, so a section always moves on.
  */
-function cutAt(text: string, max: number): number {
+export function cutAt(text: string, max: number): number {
   if (text.length <= max) return text.length
   const lineEnd = text.lastIndexOf('\n', max - 1)
   if (lineEnd >= max / 2) return lineEnd + 1
@@ -291,7 +304,7 @@ export async function readDocumentOutline(
   const partlyUnreadable: UnitRange[] = []
   // The entries of the headings the last block was under, outermost first
   let open: OutlineEntry[] = []
-  for await (const block of documentTextBlocks(artifactLines(storage, key))) {
+  for await (const block of readDocumentBlocks(storage, key)) {
     const unit = blockUnit(block.loc)
     if (unit !== undefined) {
       if (to !== undefined && unit > to) break
@@ -329,7 +342,7 @@ export async function readDocumentTextHead(
 ): Promise<string> {
   const texts: string[] = []
   let bytes = 0
-  for await (const { text } of documentTextBlocks(artifactLines(storage, key))) {
+  for await (const { text } of readDocumentBlocks(storage, key)) {
     if (!text) continue
     // The newline is before every block but the first
     bytes += Buffer.byteLength(text, 'utf-8') + (texts.length > 0 ? 1 : 0)

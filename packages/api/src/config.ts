@@ -563,3 +563,57 @@ export const MCP_OUTLINE_TITLE_CHARS = 120
 /** The highest page, slide or sheet number the document tools take: far past
  *  any real document, and only there so the schema states a bound */
 export const MCP_SECTION_MAX_UNIT = 100_000
+
+/** Datasets the first stage of a passage search reads the matched resources of (ADR-061 §決定 4) */
+export const PASSAGE_DATASETS = 10
+
+/** Resources the second stage looks inside: the first ones the datasets matched */
+export const PASSAGE_CANDIDATE_RESOURCES = 20
+
+/** Characters of a passage as cut: a few paragraphs, about what an answer quotes */
+export const PASSAGE_FRAGMENT_CHARS = 1_200
+
+/** Passages taken from one chunk of a resource's text, and chunks from one resource */
+export const PASSAGE_FRAGMENTS_PER_CHUNK = 3
+export const PASSAGE_CHUNKS_PER_RESOURCE = 2
+
+/** Passages kept from one resource's text, to be ranked after — those holding
+ *  most of the query's words, wherever they are: where the words are looked for
+ *  by their letters (no index cut the passages), a word on every page would
+ *  otherwise fill them from the start, and a cover and a table of contents hold
+ *  every word of a document's title */
+export const PASSAGE_SCAN_MAX_PASSAGES = 200
+
+/** Passage searches reading documents' text at once, in one process, and
+ *  those that may wait for a turn and how long; past either, 429 */
+export const PASSAGE_MAX_CONCURRENT = 2
+export const PASSAGE_QUEUE_MAX = 8
+export const PASSAGE_QUEUE_WAIT_MS = 10_000
+
+/** Documents one passage search reads at a time */
+export const PASSAGE_READS_PER_SEARCH = 4
+
+/** A passage search's query, at most: in characters, and in the words the
+ *  text is scanned for where no index cut the passages */
+export const PASSAGE_QUERY_MAX_CHARS = 500
+export const PASSAGE_QUERY_MAX_WORDS = 16
+
+/** Occurrences of one matched word a passage records, at most: a word that is
+ *  everywhere in a passage says no more after a few dozen. Counted per word, so
+ *  every word the passage holds is recorded however often another repeats */
+export const PASSAGE_MAX_MARKS = 64
+
+/** Characters of one document's text a passage search reads, at most — a
+ *  workbook's text can run to tens of millions; a fragment past this is not placed */
+export const PASSAGE_MAX_READ_CHARS = 20_000_000
+
+/** How far a passage is widened to start and end on a line break, at most */
+export const PASSAGE_WIDEN_CHARS = 200
+
+/** Passages a passage search returns when the caller names no number, and at most */
+export const PASSAGE_DEFAULT_K = 5
+export const PASSAGE_MAX_K = 20
+
+/** Passages from one resource, unless the caller asks for more: the rest of a
+ *  document is read with get_document_section from where a passage starts */
+export const PASSAGE_PER_RESOURCE = 2

@@ -305,33 +305,43 @@ export class PipelineService {
    * artifact, as it keeps the previous preview. Null where there is none.
    */
   async getDocumentText(resourceId: string): Promise<DocumentTextTarget | null> {
-    const [row] = await this.db
+    return (await this.getDocumentTexts([resourceId])).get(resourceId) ?? null
+  }
+
+  /** {@link getDocumentText} of several resources at once, keyed by resource; those without are absent. */
+  async getDocumentTexts(resourceIds: string[]): Promise<Map<string, DocumentTextTarget>> {
+    if (resourceIds.length === 0) return new Map()
+    const rows = await this.db
       .select({
+        resourceId: resourcePipeline.resourceId,
         metadata: resourcePipeline.metadata,
         describesLiveContent: schemaDescribesLiveContent(this.db),
       })
       .from(resourcePipeline)
       .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
-      .where(eq(resourcePipeline.resourceId, resourceId))
-      .limit(1)
+      .where(inArray(resourcePipeline.resourceId, resourceIds))
 
-    const key = parseDocumentTextKey(row?.metadata)
-    if (!row || !key) return null
-    const { documentTextBytes: bytes, sourceHash } = row.metadata as {
-      documentTextBytes?: unknown
-      sourceHash?: unknown
+    const targets = new Map<string, DocumentTextTarget>()
+    for (const row of rows) {
+      const key = parseDocumentTextKey(row.metadata)
+      if (!key) continue
+      const { documentTextBytes: bytes, sourceHash } = row.metadata as {
+        documentTextBytes?: unknown
+        sourceHash?: unknown
+      }
+      targets.set(row.resourceId, {
+        key,
+        hasText: bytes !== 0,
+        describesLiveContent: row.describesLiveContent,
+        // Only asked where it is not the live one: the version holding the bytes
+        // it was read from, the latest of them where a revert made two
+        sourceVersion:
+          row.describesLiveContent || typeof sourceHash !== 'string'
+            ? null
+            : await this.versionHolding(row.resourceId, sourceHash),
+      })
     }
-    return {
-      key,
-      hasText: bytes !== 0,
-      describesLiveContent: row.describesLiveContent,
-      // Only asked where it is not the live one: the version holding the bytes
-      // it was read from, the latest of them where a revert made two
-      sourceVersion:
-        row.describesLiveContent || typeof sourceHash !== 'string'
-          ? null
-          : await this.versionHolding(resourceId, sourceHash),
-    }
+    return targets
   }
 
   private async versionHolding(resourceId: string, hash: string): Promise<number | null> {
