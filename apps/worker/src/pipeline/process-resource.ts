@@ -90,13 +90,14 @@ async function runPipeline(
   ctx: PipelineContext,
   queue: JobQueue
 ): Promise<void> {
-  const { resourceId, rebuildOnly = false } = job
+  const { resourceId, rebuildOnly = false, indexOnly = false } = job
   await tracker.beginRun()
 
   try {
     // Step 1: Fetch — download external URL to Storage (uploads already there)
     const fetchStepId = await tracker.startStep('fetch')
-    const fetchResult = await executeFetch(resourceId, ctx, rebuildOnly)
+    // Neither a rebuild nor a reindex fetches: both work from the object held
+    const fetchResult = await executeFetch(resourceId, ctx, rebuildOnly || indexOnly)
 
     if (fetchResult.status === 'superseded') {
       // A newer run replaced the content while this one was fetching, and owns
@@ -172,18 +173,30 @@ async function runPipeline(
     try {
       const version = await ctx.versionForContent(resourceId, fetchResult.hash)
       summarySource = version
+      // What a reindex can index from in place of interpreting these bytes again
+      const stored =
+        indexOnly && version && !versionCreated
+          ? await ctx.storedInterpretation(resourceId, fetchResult.hash, fetchResult.format)
+          : null
       if (version === null) {
         // Nothing holds this run's content: the creation failed, or the pointer
         // moved and another run is describing the resource now. The previous
         // preview is left in place rather than cleared — it still describes some
         // content, and this run has none to replace it with.
         await tracker.skipStep(interpretStepId)
+      } else if (stored) {
+        // Only the index is asked for, and the row holds what interpreting
+        // these bytes left: Index reads that instead (ADR-021)
+        interpretResult = stored
+        await tracker.skipStep(interpretStepId)
       } else if (
         // A rebuild is somebody asking for the derivatives to be made again
         // (ADR-044 §4). It is the lever for the case the row cannot see — a
         // preview whose object went missing reads here as a preview — so it is
-        // the one run that never takes the row's word for it.
+        // the one run that never takes the row's word for it. A reindex the
+        // row could not serve has its index owed a run all the same.
         !rebuildOnly &&
+        !indexOnly &&
         !versionCreated &&
         (await ctx.derivativesDescribe(resourceId, fetchResult.hash, version.version))
       ) {
@@ -243,6 +256,9 @@ async function runPipeline(
               // (ADR-043 layer 2). The version this read was found by that same
               // measurement, so it is not a second pass over the file.
               sourceHash: fetchResult.hash,
+              // And the format they were read as: a reindex takes them only for
+              // the same format, as the same bytes relabelled read otherwise
+              ...(version.format && { sourceFormat: version.format }),
             },
             // The table profile (ADR-063), which only the live version has
             interpretResult.profile ?? null
@@ -294,7 +310,9 @@ async function runPipeline(
     // A failed interpretation does not stop this: the step reads the record of
     // each step to decide which artifacts describe this content, and the
     // originals it may still send need none of them.
-    if (ctx.summary && summarySource) {
+    // Not for a reindex: an index is all it was asked for, and an abstract this
+    // content is missing would be billed to a button about search (ADR-053)
+    if (ctx.summary && summarySource && !indexOnly) {
       await runSummarizeStep(tracker, ctx.summary, {
         resourceId,
         packageId: fetchResult.packageId,

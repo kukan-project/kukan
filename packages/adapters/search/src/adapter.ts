@@ -337,17 +337,12 @@ export interface SearchAdapter {
    * The resources that have content indexed, a page at a time, so a caller can
    * tell which of them the database no longer has. `after` continues from the
    * last id of the previous page. Empty on a backend that indexes no content.
-   *
    */
-  indexedContentResources(
-    after?: string,
-    limit?: number,
-    filter?: ContentResourceFilter
-  ): Promise<string[]>
+  indexedContentResources(after?: string, limit?: number): Promise<string[]>
 
   /**
-   * How many resources `indexedContentResources` would list under `filter`, in
-   * one request — exact up to the tens of thousands. Zero on a backend that
+   * How many resources have content indexed, narrowed by `filter`, in one
+   * request — exact up to the tens of thousands. Zero on a backend that
    * indexes no content.
    */
   countIndexedContentResources(filter?: ContentResourceFilter): Promise<number>

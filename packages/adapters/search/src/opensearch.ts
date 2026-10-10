@@ -225,11 +225,6 @@ function parseFormatBuckets(agg: unknown): SearchFacetBucket[] {
     .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
 }
 
-/** One type's documents, narrowed by `where` */
-function typed(type: string, where: object[]): object {
-  return { bool: { filter: [{ term: { join_field: type } }, ...where] } }
-}
-
 /** The clauses a content filter adds to the content documents */
 function contentFilter({ chunkedAbove }: ContentResourceFilter): object[] {
   if (chunkedAbove === undefined) return []
@@ -1049,12 +1044,8 @@ export class OpenSearchAdapter implements SearchAdapter {
    * Distinct `resourceId`s among the content documents, ascending, a page at a
    * time.
    */
-  async indexedContentResources(
-    after?: string,
-    limit = 1_000,
-    filter: ContentResourceFilter = {}
-  ): Promise<string[]> {
-    return this.distinctValues('content', 'resourceId', after, limit, contentFilter(filter))
+  async indexedContentResources(after?: string, limit = 1_000): Promise<string[]> {
+    return this.distinctValues('content', 'resourceId', after, limit)
   }
 
   async countIndexedContentResources(filter: ContentResourceFilter = {}): Promise<number> {
@@ -1063,7 +1054,9 @@ export class OpenSearchAdapter implements SearchAdapter {
       index: this.searchIndex,
       body: {
         size: 0,
-        query: typed('content', contentFilter(filter)),
+        query: {
+          bool: { filter: [{ term: { join_field: 'content' } }, ...contentFilter(filter)] },
+        },
         // The most the aggregation counts exactly
         aggs: { resources: { cardinality: { field: 'resourceId', precision_threshold: 40_000 } } },
       },
@@ -1090,15 +1083,14 @@ export class OpenSearchAdapter implements SearchAdapter {
     type: string,
     field: string,
     after: string | undefined,
-    limit: number,
-    where: object[] = []
+    limit: number
   ): Promise<string[]> {
     await this.ensureIndex()
     const res = await this.client.search({
       index: this.searchIndex,
       body: {
         size: 0,
-        query: typed(type, where),
+        query: { term: { join_field: type } },
         aggs: {
           values: {
             composite: {

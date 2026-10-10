@@ -25,9 +25,21 @@ export interface Job<T = unknown> {
   data: T
 }
 
+/**
+ * One use of a job type, told apart by its payload: the jobs of `type` whose
+ * payload contains `payload` are counted and listed as `kind` rather than as
+ * their type — for a screen that shows who set them off.
+ */
+export interface JobKind {
+  kind: string
+  type: string
+  payload: Record<string, unknown>
+}
+
 /** One job as the admin screen lists it. */
 export interface JobRecord {
   id: string
+  /** Its type, or the kind it was listed as */
   type: string
   payload: unknown
   status: JobStatus
@@ -94,15 +106,17 @@ export interface JobQueue {
    * How many jobs of each type stand in each status; only the pairs that
    * have any
    */
-  countJobs(): Promise<{ type: string; status: JobStatus; count: number }[]>
+  countJobs(kinds?: JobKind[]): Promise<{ type: string; status: JobStatus; count: number }[]>
 
   /**
-   * List jobs, optionally of one status and one type: waiting ones in the
-   * order they will be taken, the rest newest change first
+   * List jobs, optionally of one status and one type — or kind, among
+   * `kinds` — waiting ones in the order they will be taken, the rest newest
+   * change first
    */
   listJobs(options: {
     status?: JobStatus
     type?: string
+    kinds?: JobKind[]
     limit: number
     offset: number
   }): Promise<{ items: JobRecord[]; total: number }>

@@ -13,6 +13,7 @@ import type { LakeIngestRow } from '@kukan/api/services/lake/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import type { VersionResult } from './version-gate'
 import type { SummaryDeps } from '../steps/summarize'
+import type { InterpretResult } from '../steps/interpret'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -159,6 +160,24 @@ export interface PipelineContext {
    * resource.
    */
   derivativesDescribe(resourceId: string, contentHash: string, version: number): Promise<boolean>
+  /**
+   * What the last interpretation of these bytes left, as Index reads it: the
+   * preview key, a document's text, a table's profile and the text encoding —
+   * or null where the row does not describe these bytes, and only interpreting
+   * them again can say. For a run that indexes the content again without
+   * interpreting it (`indexOnly`).
+   *
+   * Asks less than {@link derivativesDescribe}: whether the content is indexed
+   * is the question the run is there to answer, and a lake ingest still owed
+   * is the hourly sweep's to finish. It asks one thing more: that what the row
+   * holds is of the kind `format` is indexed from. The same bytes relabelled,
+   * with an interpretation that then failed, leave the old format's on the row.
+   */
+  storedInterpretation(
+    resourceId: string,
+    contentHash: string,
+    format: string | null
+  ): Promise<Pick<InterpretResult, 'previewKey' | 'encoding' | 'profile' | 'documentText'> | null>
   /**
    * Record what Interpret made of a version (ADR-046).
    *

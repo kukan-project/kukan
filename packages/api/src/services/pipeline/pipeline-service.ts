@@ -225,7 +225,7 @@ export class PipelineService {
    * `queue.transaction` wakes the worker after the commit.
    */
   async enqueueMany(
-    items: { id: string; rebuildOnly?: boolean; reprocessAll?: boolean }[],
+    items: { id: string; rebuildOnly?: boolean; indexOnly?: boolean; reprocessAll?: boolean }[],
     opts: Pick<EnqueueOptions, 'priority' | 'tx'> = {}
   ): Promise<{ enqueued: number; failed: { id: string; reason: unknown }[] }> {
     const queue = this.requireQueue()
@@ -243,6 +243,7 @@ export class PipelineService {
         runs.map((item) => ({
           resourceId: item.id,
           rebuildOnly: item.rebuildOnly,
+          indexOnly: item.indexOnly,
           reprocessAll: item.reprocessAll,
         })),
         { tx, priority: opts.priority }

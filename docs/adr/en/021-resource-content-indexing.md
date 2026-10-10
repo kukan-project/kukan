@@ -165,11 +165,40 @@ Quality (golden sets, hybrid):
 Migration: a chunk's size is fixed when it is written, and a resource whose
 content has not changed is not written again. In a release that lowers the
 limit, a dashboard notice counts the resources holding a chunk above it, and one
-button rebuilds them (`rechunk-content`, `docs/jobs.md`). Locally 60 of 460
-resources qualified, done in 2 minutes. Until a resource is rebuilt it still
-turns up in dataset search with its old chunks, but the second stage of passage
-search looks for positions under the current rule and does not find it. Raising
-the limit raises no notice (use the reprocess of every resource).
+button rebuilds them. The rebuild does not interpret again: it queues a run for
+every resource that rewrites only the content index, from the interpretation the
+row keeps (`indexOnly`; `reindex-metadata` with `reindexContent`,
+`docs/jobs.md`, `docs/pipeline.md`). The switch on Index Management's rebuild
+is the same operation, for raising the limit or changing how content is
+indexed. The first measurement (with the earlier full `rebuildOnly` rebuild; 60
+of 460 resources, 3 at a time) finished in 2 minutes, about two thirds of it in
+Interpret. Until a resource is rebuilt it still turns up in dataset search with
+its old chunks, but the second stage of passage search looks for positions
+under the current rule and does not find it.
+
+Remeasured (2026-10-10, switching sizes with the index-only rebuild, comparing
+64KB / 128KB / 500KB and a 2GB / 1GB heap under the same conditions; 5 queries ×
+20 runs, twice, after `_forcemerge`. 1GB matches the heap of a
+`t3.small.search`):
+
+| Path (OpenSearch CPU / query)                                        | 64KB, 2GB | 128KB, 2GB | 500KB, 2GB                   | 64KB, 1GB | 500KB, 1GB               |
+| -------------------------------------------------------------------- | --------- | ---------- | ---------------------------- | --------- | ------------------------ |
+| Dataset search                                                       | 10–13ms   | 24–27ms    | 47ms (54–95% failed)         | 17–18ms   | 50–92ms (42–60% failed)  |
+| Passage search, stage 2 (N = 2)                                      | 78–86ms   | 155–165ms  | 566–571ms                    | 79–80ms   | 616–645ms                |
+| Content highlights                                                   | 66–69ms   | 108–111ms  | 198–230ms (about 50% failed) | 73–77ms   | 42–77ms (82–89% failed)  |
+| A web UI page (20 datasets with facets → snippets of the shown rows) | 91ms      | —          | 119–146ms (65–71% failed)    | 75ms      | 55–130ms (71–86% failed) |
+| Breaker trips / old-generation peak during evaluation                | 0 / 18%   | 0 / 18%    | 57 / 63%                     | 0 / 16%   | 54 / 57%                 |
+
+- Every failure was the parent circuit breaker. A failed query ends early, so
+  the CPU at 500KB reads lower than it is
+- At 64KB, a 1GB heap kept the old generation at 16% and ran no old GC. The
+  measurement queried one at a time, though, with no concurrent traffic: an
+  instance size for a real deployment is judged by its `JVMMemoryPressure` once
+  rebuilt at 64KB
+- 128KB costs about twice 64KB, and `eval:passages` reads 57% / 86% / 0.67 (one
+  query back in Hit@5, one lost from Hit@1). 64KB it is
+- The index-only rebuild took 1 min 36–37 s for about 500 resources at each
+  change of size
 
 ---
 

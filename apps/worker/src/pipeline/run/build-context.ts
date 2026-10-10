@@ -11,7 +11,12 @@ import type { SearchAdapter, ContentDoc, IndexContentOptions } from '@kukan/sear
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake/lake-ingest'
-import { parseDocumentTextKey } from '@kukan/api/services/pipeline/pipeline-service'
+import {
+  parseDocumentTextKey,
+  parseResourceSchema,
+  parseSourceEncoding,
+  parseTableProfile,
+} from '@kukan/api/services/pipeline/pipeline-service'
 import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
@@ -25,7 +30,7 @@ import {
   reserveObject,
 } from '@kukan/api/services/pipeline/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
-import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
+import { contentTypeOf, getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
@@ -328,6 +333,50 @@ export function buildPipelineContext(
       return (await pendingLakeVersionSource(db, { resourceId, version })) === null
     },
 
+    async storedInterpretation(resourceId: string, contentHash: string, format: string | null) {
+      const [row] = await db
+        .select({
+          previewKey: resourcePipeline.previewKey,
+          metadata: resourcePipeline.metadata,
+          profile: resourcePipeline.profile,
+        })
+        .from(resourcePipeline)
+        .where(eq(resourcePipeline.resourceId, resourceId))
+        .limit(1)
+      const metadata = (row?.metadata ?? {}) as Record<string, unknown>
+      if (!row || metadata.sourceHash !== contentHash) return null
+      // A text head from before `documentTextBytes` is not a text artifact
+      const textKey = parseDocumentTextKey(metadata)
+      const textBytes = metadata.documentTextBytes
+      const documentText =
+        textKey && typeof textBytes === 'number' ? { key: textKey, bytes: textBytes } : undefined
+      // A text file, or a CSV that made no table, leaves only how it was read
+      const encoding = parseSourceEncoding(metadata)
+      if (!row.previewKey && !documentText && !encoding) return null
+      // A table read before its profile was kept (ADR-063) is indexed by one
+      // only once it is interpreted again. A CSV that made no table keeps an
+      // empty schema, which says it was read, and has no profile to wait for
+      const profile = parseTableProfile(row.profile)
+      if (parseResourceSchema(metadata)?.columns.length && !profile) return null
+      const stored = {
+        previewKey: row.previewKey,
+        ...(encoding && { encoding }),
+        ...(profile && { profile }),
+        ...(documentText && { documentText }),
+      }
+      // Read as another format: the same bytes relabelled, interpreted again
+      // and failed. A row from before the format was recorded is asked only
+      // whether it holds what Index reads for this one
+      const sourceFormat = metadata.sourceFormat
+      if (
+        typeof sourceFormat === 'string' &&
+        sourceFormat.toLowerCase() !== format?.toLowerCase()
+      ) {
+        return null
+      }
+      return indexableAs(stored, format) ? stored : null
+    },
+
     async recordVersionSchema({ claim, noTableReason, ...v }) {
       // The column has to be cleared when a re-interpretation finds a table, so
       // the write spells "nothing" as null; callers spell it as absent.
@@ -370,5 +419,37 @@ export function buildPipelineContext(
         )
       )
     },
+  }
+}
+
+/**
+ * Whether what an interpretation left is what Index reads for `format`: a
+ * document's text, a table's profile or how it was read, a ZIP's file list, a
+ * text file's encoding. A format the index takes nothing from takes anything —
+ * Index only clears its content.
+ */
+function indexableAs(
+  stored: {
+    previewKey: string | null
+    encoding?: string
+    profile?: unknown
+    documentText?: unknown
+  },
+  format: string | null
+): boolean {
+  const other = stored.documentText !== undefined || stored.profile !== undefined
+  switch (contentTypeOf(format)) {
+    case 'document':
+      return stored.documentText !== undefined
+    case 'tabular':
+      return (
+        stored.documentText === undefined && (stored.profile !== undefined || !!stored.encoding)
+      )
+    case 'manifest':
+      return !!stored.previewKey && !other
+    case 'text':
+      return !!stored.encoding && !other
+    default:
+      return true
   }
 }

@@ -23,6 +23,7 @@ import { RefreshButton } from '@/components/dashboard/refresh-button'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { clientFetch } from '@/lib/client-api'
+import { requestReindex } from '@/lib/request-reindex'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { useLatestJson } from '@/hooks/use-latest-json'
@@ -165,11 +166,7 @@ export default function AdminJobsPage() {
     setContentBusy(true)
     setContentOutcome(null)
     try {
-      const res = await clientFetch('/api/v1/admin/reindex-metadata', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ includeContent: true }),
-      })
+      const res = await requestReindex({ includeContent: true })
       // 409: one is already on its way, which the reload shows
       setContentOutcome(res.status === 409 ? null : res.ok)
       await reload()

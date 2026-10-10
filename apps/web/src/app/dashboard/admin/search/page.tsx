@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
+import { SwitchField } from '@/components/switch-field'
+import { requestReindex } from '@/lib/request-reindex'
 import { MAX_CONTENT_CHUNK_SIZE } from '@kukan/shared'
 import { Database, Search } from 'lucide-react'
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite'
@@ -186,21 +188,20 @@ export default function AdminSearchPage() {
     }
   }
 
-  // Rebuilding the index. All resources are reprocessed from the resource
-  // processing page, where its runs are followed, and embeddings regenerated
-  // from the AI page.
+  // Rebuilding the index, and with it every resource's content from what its
+  // interpretation left (ADR-021). All resources are reprocessed from the
+  // resource processing page, where its runs are followed, and embeddings
+  // regenerated from the AI page.
+  const [reindexContent, setReindexContent] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [outcome, setOutcome] = useState<boolean | null>(null)
+  // What was queued, so the message speaks of it; false where nothing was
+  const [outcome, setOutcome] = useState<'metadata' | 'content' | false | null>(null)
   async function rebuild() {
     setBusy(true)
     setOutcome(null)
     try {
-      const res = await clientFetch('/api/v1/admin/reindex-metadata', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ includeContent: false }),
-      })
-      setOutcome(res.ok)
+      const res = await requestReindex({ includeContent: false, reindexContent })
+      setOutcome(res.ok && (reindexContent ? 'content' : 'metadata'))
     } catch {
       setOutcome(false)
     } finally {
@@ -230,14 +231,24 @@ export default function AdminSearchPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">{t('indexDescription')}</p>
+          <div className="flex flex-col gap-1">
+            <SwitchField
+              label={t('indexContentLabel')}
+              checked={reindexContent}
+              onCheckedChange={setReindexContent}
+              disabled={busy}
+            />
+            <p className="text-sm text-muted-foreground">{t('indexContentDescription')}</p>
+          </div>
           <div className="flex items-center gap-4">
             <Button variant="outline" onClick={rebuild} disabled={busy}>
               <Search className={`mr-2 h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
               {busy ? tc('queueing') : t('indexButton')}
             </Button>
-            {outcome === true && (
+            {outcome && (
               <p role="status" className="text-sm text-muted-foreground">
                 {t('indexQueued')}
+                {outcome === 'content' && ` ${t('indexContentQueued')}`}
               </p>
             )}
             {outcome === false && (

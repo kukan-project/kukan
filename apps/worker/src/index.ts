@@ -37,8 +37,6 @@ import {
   syncSearchDocsJobSchema,
   REANALYSE_INDEX_JOB_TYPE,
   reanalyseIndexJobSchema,
-  RECHUNK_CONTENT_JOB_TYPE,
-  rechunkContentJobSchema,
   WORKER_LAKE_CATALOG_CONNECTIONS,
 } from '@kukan/shared'
 import { eq } from 'drizzle-orm'
@@ -54,7 +52,7 @@ import {
   requestResourceEmbeds,
 } from '@kukan/api/services/search/resource-embedding'
 import { markContentUnindexed } from '@kukan/api/services/search/content-index-record'
-import { requestContentRechunk } from '@kukan/api/services/search/content-rechunk'
+import { requestContentReindex } from '@kukan/api/services/search/content-reindex'
 import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
@@ -436,14 +434,6 @@ await queue.process({
     await reanalyseSearchIndex(db, search, queue, log.child({ jobId: job.id, type: job.type }))
   },
 
-  // Content cut under a larger chunk size than the one in force
-  [RECHUNK_CONTENT_JOB_TYPE]: async (job: Job) => {
-    if (!parseJobPayload(job, rechunkContentJobSchema)) return
-    if (!search) return
-    const result = await requestContentRechunk(db, search, queue)
-    log.info({ jobId: job.id, type: job.type, ...result }, 'Content rechunk enqueued')
-  },
-
   // One-time migration: give previews written before it the figure a feed pages
   // by (ADR-055 §6). Reads footers only; the few whose grouping is what stops
   // them being served are handed to the pipeline from stored content.
@@ -467,8 +457,11 @@ await queue.process({
   [REINDEX_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, reindexJobSchema)
     if (!data) return
-    const { includeContent } = data
-    log.info({ jobId: job.id, type: job.type, includeContent }, 'Reindex metadata job started')
+    const { includeContent, reindexContent } = data
+    log.info(
+      { jobId: job.id, type: job.type, includeContent, reindexContent },
+      'Reindex metadata job started'
+    )
     const start = performance.now()
     if (search) {
       const jobLogger = osLogger.child({ jobId: job.id, type: job.type })
@@ -487,6 +480,9 @@ await queue.process({
           { jobId: job.id, type: job.type, enqueued, failed },
           'Content pipeline jobs enqueued'
         )
+      } else if (reindexContent) {
+        const result = await requestContentReindex(db, search, queue)
+        log.info({ jobId: job.id, type: job.type, ...result }, 'Content reindex enqueued')
       }
       const elapsed = Math.round(performance.now() - start)
       log.info({ jobId: job.id, type: job.type, elapsed }, 'Reindex metadata job completed')

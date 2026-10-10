@@ -1,27 +1,26 @@
 /**
- * Content cut under a larger chunk size than the one in force is indexed again,
- * from the object each resource holds, and never twice for one resource.
+ * Every resource's content is indexed again from its interpretation, never
+ * twice for one resource, and content no run would replace is dropped.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { createTestPool } from '@kukan/db-testing'
+import * as schema from '@kukan/db/schema'
 import { job, packageTable, resource, resourcePipeline } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { PostgresJobQueue } from '@kukan/queue'
-import { MAX_CONTENT_CHUNK_SIZE, PIPELINE_JOB_TYPE } from '@kukan/shared'
-import { requestContentRechunk } from '../../services/search/content-rechunk'
-import { drizzle } from 'drizzle-orm/node-postgres'
-import { Pool } from 'pg'
-import * as schema from '@kukan/db/schema'
+import { PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { requestContentReindex } from '../../services/search/content-reindex'
 import { getTestDb, getTestDatabaseUrl, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const queue = new PostgresJobQueue({ db })
 
-/** An index whose chunked-above listing holds `ids` */
-function chunkedIndex(ids: string[]) {
+/** An index holding content for `ids` */
+function contentIndex(ids: string[] = []) {
   return {
-    indexedContentResources: vi.fn(async (after?: string, limit = 1_000, filter?) => {
-      if (filter?.chunkedAbove !== MAX_CONTENT_CHUNK_SIZE) return []
+    indexedContentResources: vi.fn(async (after?: string, limit = 1_000) => {
       const from = after === undefined ? 0 : ids.indexOf(after) + 1
       return ids.slice(from, from + limit)
     }),
@@ -32,7 +31,7 @@ function chunkedIndex(ids: string[]) {
 }
 
 async function seed(
-  opts: { storageKey?: string | null; state?: string; packageState?: string } = {}
+  opts: { storageKey?: string | null; state?: string; packageState?: string; format?: string } = {}
 ) {
   const [pkg] = await db
     .insert(packageTable)
@@ -43,7 +42,7 @@ async function seed(
     .values({
       packageId: pkg.id,
       name: 'r',
-      format: 'PDF',
+      format: opts.format ?? 'PDF',
       state: opts.state ?? 'active',
       storageKey: opts.storageKey === undefined ? 'resources/x' : opts.storageKey,
     })
@@ -64,35 +63,56 @@ afterAll(async () => {
   await closeTestDb()
 })
 
-describe('requestContentRechunk', () => {
-  it('rebuilds each from its stored object', async () => {
-    const id = await seed()
+describe('requestContentReindex', () => {
+  it('indexes again every resource a run would index, from its interpretation', async () => {
+    const live = await seed()
+    await seed({ state: 'deleted' })
+    await seed({ packageState: 'draft' })
+    await seed({ storageKey: null })
+    await seed({ format: 'PNG' })
 
-    const result = await requestContentRechunk(db, chunkedIndex([id]), queue)
-
-    expect(result).toEqual({ enqueued: 1, dropped: 0 })
+    expect(await requestContentReindex(db, contentIndex(), queue)).toEqual({
+      enqueued: 1,
+      dropped: 0,
+    })
     expect(await queuedRuns()).toEqual([
-      expect.objectContaining({ resourceId: id, rebuildOnly: true }),
+      expect.objectContaining({ resourceId: live, indexOnly: true }),
     ])
+  })
+
+  it('leaves the content it will replace where it is until each run does', async () => {
+    const id = await seed()
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId: id, status: 'complete', metadata: { contentIndexed: true } })
+    const search = contentIndex([id])
+
+    await requestContentReindex(db, search, queue)
+
+    expect(search.deleteContent).not.toHaveBeenCalled()
+    const [row] = await db
+      .select({ metadata: resourcePipeline.metadata })
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, id))
+    expect(row.metadata).toMatchObject({ contentIndexed: true })
   })
 
   it('drops the content no run would replace, and says the rows hold none', async () => {
     const deleted = await seed({ state: 'deleted' })
     const draft = await seed({ packageState: 'draft' })
     const unstored = await seed({ storageKey: null })
+    const image = await seed({ format: 'PNG' })
     const gone = crypto.randomUUID()
-    const search = chunkedIndex([deleted, draft, unstored, gone, 'not-a-uuid'])
+    const unreplaced = [deleted, draft, unstored, image, gone, 'not-a-uuid']
+    const search = contentIndex(unreplaced)
     await db
       .insert(resourcePipeline)
       .values({ resourceId: draft, status: 'complete', metadata: { contentIndexed: true } })
 
-    const result = await requestContentRechunk(db, search, queue)
+    const result = await requestContentReindex(db, search, queue)
 
-    expect(result).toEqual({ enqueued: 0, dropped: 5 })
-    expect(await queuedRuns()).toEqual([])
-    for (const id of [deleted, draft, unstored, gone, 'not-a-uuid']) {
-      expect(search.deleteContent).toHaveBeenCalledWith(id)
-    }
+    expect(result).toEqual({ enqueued: 0, dropped: 6 })
+    for (const id of unreplaced) expect(search.deleteContent).toHaveBeenCalledWith(id)
     const [row] = await db
       .select({ metadata: resourcePipeline.metadata })
       .from(resourcePipeline)
@@ -100,11 +120,11 @@ describe('requestContentRechunk', () => {
     expect(row.metadata).toMatchObject({ contentIndexed: false })
   })
 
-  it('leaves a resource to a rebuild on its way, waiting or running, and to nothing else', async () => {
+  it('leaves a resource to a reindex or rebuild on its way, waiting or running, and to nothing else', async () => {
     const waiting = await seed()
     const running = await seed()
     const ordinary = await seed()
-    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: waiting, rebuildOnly: true })
+    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: waiting, indexOnly: true })
     await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: running, rebuildOnly: true })
     await db
       .update(job)
@@ -113,31 +133,24 @@ describe('requestContentRechunk', () => {
     // An ordinary run may find its derivatives current and skip Index
     await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: ordinary })
 
-    const result = await requestContentRechunk(
-      db,
-      chunkedIndex([waiting, running, ordinary]),
-      queue
-    )
-
-    expect(result).toEqual({ enqueued: 1, dropped: 0 })
+    expect(await requestContentReindex(db, contentIndex(), queue)).toEqual({
+      enqueued: 1,
+      dropped: 0,
+    })
     expect(await queuedRuns()).toContainEqual(
-      expect.objectContaining({ resourceId: ordinary, rebuildOnly: true })
+      expect.objectContaining({ resourceId: ordinary, indexOnly: true })
     )
   })
 
   it('gets through on a pool of one connection', async () => {
     const id = await seed()
     // A pass that held one connection and asked for another would wait out the timeout
-    const pool = new Pool({
-      connectionString: getTestDatabaseUrl(),
-      max: 1,
-      connectionTimeoutMillis: 2_000,
-    })
+    const pool = createTestPool(getTestDatabaseUrl(), { max: 1, connectionTimeoutMillis: 2_000 })
     const single = drizzle(pool, { schema })
     try {
-      const result = await requestContentRechunk(
+      const result = await requestContentReindex(
         single,
-        chunkedIndex([id, crypto.randomUUID()]),
+        contentIndex([id, crypto.randomUUID()]),
         new PostgresJobQueue({ db: single })
       )
       expect(result).toEqual({ enqueued: 1, dropped: 1 })
@@ -147,12 +160,11 @@ describe('requestContentRechunk', () => {
   })
 
   it('queues each resource once when two passes run at the same time', async () => {
-    const ids = await Promise.all([seed(), seed(), seed()])
-    const search = chunkedIndex(ids)
+    await Promise.all([seed(), seed(), seed()])
 
     const results = await Promise.all([
-      requestContentRechunk(db, search, queue),
-      requestContentRechunk(db, search, queue),
+      requestContentReindex(db, contentIndex(), queue),
+      requestContentReindex(db, contentIndex(), queue),
     ])
 
     expect(results.reduce((n, r) => n + r.enqueued, 0)).toBe(3)
@@ -160,11 +172,10 @@ describe('requestContentRechunk', () => {
   })
 
   it('adds nothing on a second press while the first one’s runs wait', async () => {
-    const id = await seed()
-    const search = chunkedIndex([id])
+    await seed()
 
-    await requestContentRechunk(db, search, queue)
-    expect(await requestContentRechunk(db, search, queue)).toEqual({
+    await requestContentReindex(db, contentIndex(), queue)
+    expect(await requestContentReindex(db, contentIndex(), queue)).toEqual({
       enqueued: 0,
       dropped: 0,
     })

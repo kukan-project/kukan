@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { clientFetch } from '@/lib/client-api'
+import { requestReindex } from '@/lib/request-reindex'
 import { useLatestJson } from '@/hooks/use-latest-json'
 import { useUser } from '@/components/dashboard/user-provider'
 import { MaintenanceNotice } from '@/components/dashboard/maintenance/maintenance-notice'
@@ -33,7 +33,8 @@ export function ContentChunkNotice() {
       running={t('rebuilding')}
       queued={t('queued')}
       reload={reload}
-      onRun={async () => (await clientFetch('/api/v1/admin/search/rechunk', { method: 'POST' })).ok}
+      // The rebuild the search admin page queues with its content switch on
+      onRun={async () => (await requestReindex({ reindexContent: true })).ok}
     />
   )
 }

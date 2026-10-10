@@ -628,14 +628,19 @@ export type DiffUnavailableReason =
 /** Pipeline (data-plane): process one resource through Fetch → Version → Interpret → Lake → Index → Summarize. */
 export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
 
+/**
+ * Pipeline runs an administrator's button fanned out, which the queue screen
+ * lists apart from the runs a write sets off: a reprocess of every resource
+ * (`reprocessAll`), and content indexed again (`indexOnly`).
+ */
+export const PIPELINE_REPROCESS_ALL_KIND = 'resource-pipeline-reprocess-all' as const
+export const PIPELINE_INDEX_ONLY_KIND = 'resource-pipeline-index-only' as const
+
 /** Maintenance: rebuild the search metadata index (optionally re-enqueue content). */
 export const REINDEX_JOB_TYPE = 'reindex-metadata' as const
 
 /** Maintenance: rebuild the search index under the current analysis (ADR-025). */
 export const REANALYSE_INDEX_JOB_TYPE = 'reanalyse-search-index' as const
-
-/** Maintenance: index again the content cut under a larger chunk size than the one in force. */
-export const RECHUNK_CONTENT_JOB_TYPE = 'rechunk-content' as const
 
 /** Maintenance: permanently erase a soft-deleted organization (externals then DB rows). */
 export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
@@ -745,6 +750,14 @@ export const pipelineJobSchema = z.object({
    */
   rebuildOnly: z.boolean().optional(),
   /**
+   * Index the content again from what the last interpretation left, without
+   * fetching or interpreting (ADR-021): for a change to how content is indexed,
+   * such as its chunk size. A resource whose interpretation does not describe
+   * its bytes is interpreted as `rebuildOnly` would — its index is owed a run
+   * either way.
+   */
+  indexOnly: z.boolean().optional(),
+  /**
    * One of the runs a reprocess of every resource fanned out. The run does
    * nothing different; it marks the reprocess as still on its way, which
    * another must wait for rather than empty the content index under it.
@@ -752,9 +765,11 @@ export const pipelineJobSchema = z.object({
   reprocessAll: z.boolean().optional(),
 })
 export type PipelineJobPayload = z.infer<typeof pipelineJobSchema>
-export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
+export const reindexJobSchema = z.object({
+  includeContent: z.boolean().optional(),
+  reindexContent: z.boolean().optional(),
+})
 export const reanalyseIndexJobSchema = z.object({})
-export const rechunkContentJobSchema = z.object({})
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({})
 export const syncSearchDocsJobSchema = z.object({})

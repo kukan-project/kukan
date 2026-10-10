@@ -57,13 +57,16 @@ import {
   userRoleSchema,
   passwordLengthSchema,
   REANALYSE_INDEX_JOB_TYPE,
-  RECHUNK_CONTENT_JOB_TYPE,
+  PIPELINE_JOB_TYPE,
+  PIPELINE_REPROCESS_ALL_KIND,
+  PIPELINE_INDEX_ONLY_KIND,
   MAX_CONTENT_CHUNK_SIZE,
   RECORD_ROW_GROUPS_JOB_TYPE,
   JOB_STATUSES,
   SysadminRequiredError,
   NotFoundError,
 } from '@kukan/shared'
+import type { JobKind } from '@kukan/queue'
 import { PipelineService, reprocessAllPending } from '../services/pipeline/pipeline-service'
 import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
 import { summaryEstimate } from '../services/ai/summary-estimate'
@@ -488,18 +491,23 @@ adminRouter.get('/search/chunk-status', async (c) => {
   return c.json({ resources })
 })
 
-// POST /api/v1/admin/search/rechunk — Index those resources again, from the
-// objects they already hold. A job rather than the request: the walk and the
-// enqueue grow with the catalogue, and the queue screen lists it with the rest
-adminRouter.post('/search/rechunk', async (c) => {
-  await c.get('queue').enqueue(RECHUNK_CONTENT_JOB_TYPE, {}, BULK)
-  return c.json({ queued: true })
-})
-
 // POST /api/v1/admin/reindex-metadata — Enqueue metadata rebuild job to Worker
 adminRouter.post(
   '/reindex-metadata',
-  zValidator('json', z.object({ includeContent: z.boolean().optional() }).default({})),
+  zValidator(
+    'json',
+    z
+      .object({
+        // Every resource's pipeline again, the content index emptied first
+        includeContent: z.boolean().optional(),
+        // Every resource's content indexed again from its interpretation (ADR-021)
+        reindexContent: z.boolean().optional(),
+      })
+      .refine((b) => !(b.includeContent && b.reindexContent), {
+        message: 'includeContent already indexes the content again',
+      })
+      .default({})
+  ),
   async (c) => {
     const search = c.get('search')
     const stats = await search.getIndexStats()
@@ -515,10 +523,10 @@ adminRouter.post(
       )
     }
 
-    const { includeContent } = c.req.valid('json')
+    const { includeContent, reindexContent } = c.req.valid('json')
     const queue = c.get('queue')
     if (includeContent) await refuseWhileReprocessing(c.get('db'))
-    await queue.enqueue(REINDEX_JOB_TYPE, { includeContent }, BULK)
+    await queue.enqueue(REINDEX_JOB_TYPE, { includeContent, reindexContent }, BULK)
     return c.json({ queued: true })
   }
 )
@@ -842,16 +850,24 @@ const jobListQuery = z.object({
   type: z.string().max(100).optional(),
 })
 
+/** The pipeline runs a button fanned out, counted and listed apart from the rest */
+const PIPELINE_KINDS: JobKind[] = [
+  { kind: PIPELINE_REPROCESS_ALL_KIND, type: PIPELINE_JOB_TYPE, payload: { reprocessAll: true } },
+  { kind: PIPELINE_INDEX_ONLY_KIND, type: PIPELINE_JOB_TYPE, payload: { indexOnly: true } },
+]
+
 // GET /api/v1/admin/queue/counts — Job counts by type and status
 adminRouter.get('/queue/counts', async (c) => {
-  return c.json({ items: await c.get('queue').countJobs() })
+  return c.json({ items: await c.get('queue').countJobs(PIPELINE_KINDS) })
 })
 
 // GET /api/v1/admin/queue/jobs — Paginated jobs, newest change first
 adminRouter.get('/queue/jobs', zValidator('query', jobListQuery), async (c) => {
   const { offset, limit } = parsePaginatedQuery(c)
   const { status, type } = c.req.valid('query')
-  const { items, total } = await c.get('queue').listJobs({ status, type, limit, offset })
+  const { items, total } = await c
+    .get('queue')
+    .listJobs({ status, type, kinds: PIPELINE_KINDS, limit, offset })
   return c.json({ items, total, offset, limit })
 })
 

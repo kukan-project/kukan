@@ -35,6 +35,7 @@ export function createPipelineContextMock(): PipelineContextMock {
     }),
     // Nothing derived yet, so a run does its steps unless a test says otherwise
     derivativesDescribe: vi.fn().mockResolvedValue(false),
+    storedInterpretation: vi.fn().mockResolvedValue(null),
     recordVersionSchema: vi.fn(),
     pendingLakeVersion: vi.fn().mockResolvedValue(null),
     ingestLakeVersion: vi.fn().mockResolvedValue(null),

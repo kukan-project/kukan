@@ -1363,7 +1363,7 @@ describe('OpenSearchAdapter', () => {
 
       expect(ids).toEqual(['r-2', 'r-3'])
       const { body } = mockClient.search.mock.calls[0][0]
-      expect(body.query).toEqual({ bool: { filter: [{ term: { join_field: 'resource' } }] } })
+      expect(body.query).toEqual({ term: { join_field: 'resource' } })
       expect(body.aggs.values.composite).toEqual({
         size: 2,
         sources: [{ value: { terms: { field: 'id' } } }],
@@ -1382,22 +1382,7 @@ describe('OpenSearchAdapter', () => {
     it('lists every resource with content', async () => {
       expect(await adapter.indexedContentResources()).toEqual(['r-1'])
       const { body } = mockClient.search.mock.calls[0][0]
-      expect(body.query).toEqual({ bool: { filter: [{ term: { join_field: 'content' } }] } })
-    })
-
-    it('keeps the resources with a chunk larger than asked, leaving file lists out', async () => {
-      await adapter.indexedContentResources(undefined, 100, { chunkedAbove: 65_536 })
-
-      const { body } = mockClient.search.mock.calls[0][0]
-      expect(body.query).toEqual({
-        bool: {
-          filter: [
-            { term: { join_field: 'content' } },
-            { range: { chunkSize: { gt: 65_536 } } },
-            { bool: { must_not: { term: { contentType: 'manifest' } } } },
-          ],
-        },
-      })
+      expect(body.query).toEqual({ term: { join_field: 'content' } })
     })
   })
 

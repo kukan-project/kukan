@@ -15,10 +15,7 @@
  */
 
 import {
-  isTextFormat,
-  isCsvFormat,
-  isZipFormat,
-  isDocumentFormat,
+  contentTypeOf,
   type ContentType,
   type TableProfile,
   type TableProfileLine,
@@ -62,7 +59,7 @@ export async function executeIndexContent(
   const pkgState = await ctx.getPackageState(packageId)
   if (pkgState !== 'active') return null
 
-  const contentType = getContentType(normalizedFormat)
+  const contentType = contentTypeOf(normalizedFormat)
 
   if (!contentType) {
     // Clean up any previously indexed content (e.g. format changed to non-indexable)
@@ -415,13 +412,4 @@ async function writeChunks(
   await writer.close()
 
   return { chunks: chunkIndex, indexedBytes: totalIndexedBytes, originalBytes: totalOriginalBytes }
-}
-
-/** Determine content type for indexing, or null if not indexable */
-function getContentType(format: string | null): ContentType | null {
-  if (isCsvFormat(format)) return 'tabular'
-  if (isZipFormat(format)) return 'manifest'
-  if (isTextFormat(format)) return 'text'
-  if (isDocumentFormat(format)) return 'document'
-  return null
 }

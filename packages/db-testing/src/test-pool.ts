@@ -73,9 +73,19 @@ export function budget(totalMs: number) {
 
 type Budget = ReturnType<typeof budget>
 
-/** A harness's pool, at the ceiling every harness shares. */
-export function createTestPool(connectionString: string): Pool {
-  return new Pool({ connectionString, max: POOL_MAX })
+/**
+ * A harness's pool, at the ceiling every harness shares — or under it, for a
+ * test that needs to see what a smaller pool does.
+ */
+export function createTestPool(
+  connectionString: string,
+  options: { max?: number; connectionTimeoutMillis?: number } = {}
+): Pool {
+  return new Pool({
+    connectionString,
+    connectionTimeoutMillis: options.connectionTimeoutMillis,
+    max: Math.min(options.max ?? POOL_MAX, POOL_MAX),
+  })
 }
 
 /**

@@ -109,11 +109,15 @@ describe('AdminSearchPage', () => {
   it('rebuilds the index first, and points to where the other reprocessing moved', () => {
     render(<AdminSearchPage />)
 
-    expect(screen.getByText('Rebuild metadata search index')).toBeInTheDocument()
+    expect(screen.getByText('Rebuild the search index')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled()
     expect(screen.queryByText('Regenerate embeddings')).not.toBeInTheDocument()
     expect(
-      screen.getByText('All resources are reprocessed from Resource Processing.').closest('a')
+      screen
+        .getByText(
+          'Reprocessing every resource, previews and interpretation included, is on Resource Processing.'
+        )
+        .closest('a')
     ).toHaveAttribute('href', '/dashboard/admin/jobs')
     expect(
       screen.getByText('Embeddings are regenerated from AI Management.').closest('a')
@@ -124,7 +128,7 @@ describe('AdminSearchPage', () => {
     render(<AdminSearchPage />)
     await waitFor(() => expect(screen.getByText('resources')).toBeInTheDocument())
 
-    const rebuild = screen.getByText('Rebuild metadata search index')
+    const rebuild = screen.getByText('Rebuild the search index')
     const indexCard = screen.getByText('resources')
     expect(
       rebuild.compareDocumentPosition(indexCard) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -140,8 +144,23 @@ describe('AdminSearchPage', () => {
     expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/admin/reindex-metadata', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ includeContent: false }),
+      body: JSON.stringify({ includeContent: false, reindexContent: false }),
     })
+  })
+
+  it('queues the content indexed again with it, once asked', async () => {
+    render(<AdminSearchPage />)
+
+    fireEvent.click(screen.getByRole('switch'))
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild' }))
+
+    await screen.findByRole('status')
+    expect(mockClientFetch).toHaveBeenCalledWith(
+      '/api/v1/admin/reindex-metadata',
+      expect.objectContaining({
+        body: JSON.stringify({ includeContent: false, reindexContent: true }),
+      })
+    )
   })
 
   it('has a search input and button', () => {

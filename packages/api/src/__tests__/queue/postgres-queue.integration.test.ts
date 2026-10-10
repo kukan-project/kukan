@@ -737,6 +737,29 @@ describe('PostgresJobQueue', () => {
     ])
   })
 
+  it('counts and lists the jobs of a kind apart from the rest of their type', async () => {
+    const queue = newQueue()
+    const kinds = [{ kind: 't-again', type: 't', payload: { again: true } }]
+    await queue.enqueue('t', { id: 1 })
+    const again = await queue.enqueue('t', { id: 2, again: true })
+    await queue.enqueue('u', { again: true })
+
+    expect(await queue.countJobs(kinds)).toEqual([
+      { type: 't', status: 'waiting', count: 1 },
+      { type: 't-again', status: 'waiting', count: 1 },
+      { type: 'u', status: 'waiting', count: 1 },
+    ])
+    const { items, total } = await queue.listJobs({
+      type: 't-again',
+      kinds,
+      limit: 10,
+      offset: 0,
+    })
+    expect(total).toBe(1)
+    expect(items.map((j) => [j.id, j.type])).toEqual([[again, 't-again']])
+    expect((await queue.listJobs({ type: 't', kinds, limit: 10, offset: 0 })).total).toBe(1)
+  })
+
   it('reports the whole total on a page past the end', async () => {
     // The last row of the last page retried or deleted: the page is empty,
     // and the total must still say where the list now ends

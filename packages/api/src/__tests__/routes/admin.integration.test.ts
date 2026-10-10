@@ -14,12 +14,7 @@ import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import {
-  MAX_CONTENT_CHUNK_SIZE,
-  PIPELINE_JOB_TYPE,
-  RECHUNK_CONTENT_JOB_TYPE,
-  generationKey,
-} from '@kukan/shared'
+import { MAX_CONTENT_CHUNK_SIZE, PIPELINE_JOB_TYPE, generationKey } from '@kukan/shared'
 import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import { randomUUID } from 'node:crypto'
 
@@ -156,6 +151,32 @@ describe('Admin API Routes', () => {
           method: 'POST',
         })
         expect(enqueueAll.status).toBe(409)
+      })
+    })
+
+    describe('with the content indexed again from its interpretation', () => {
+      const queue = new PostgresJobQueue({ db })
+      const queueApp = createTestApp(db, { search: mockSearch, queue })
+      const press = (body: object) =>
+        queueApp.request('/api/v1/admin/reindex-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+
+      it('asks the job for it, and lets it through while a reprocess is on its way', async () => {
+        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: randomUUID(), reprocessAll: true })
+
+        expect((await press({ reindexContent: true })).status).toBe(200)
+        const [queued] = await db
+          .select({ payload: job.payload })
+          .from(job)
+          .where(eq(job.type, 'reindex-metadata'))
+        expect(queued.payload).toMatchObject({ reindexContent: true })
+      })
+
+      it('refuses it alongside the reprocess, which indexes the content anyway', async () => {
+        expect((await press({ includeContent: true, reindexContent: true })).status).toBe(400)
       })
     })
 
@@ -535,25 +556,6 @@ describe('Admin API Routes', () => {
 
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ resources: 0 })
-    })
-
-    it('rejects non-sysadmin requests', async () => {
-      const res = await nonAdminApp.request('/api/v1/admin/search/rechunk', { method: 'POST' })
-      expect(res.status).toBe(403)
-    })
-
-    it('queues the rebuild as one job, for the worker to fan out', async () => {
-      const rechunkApp = createTestApp(db, {
-        search: mockSearch,
-        queue: new PostgresJobQueue({ db }),
-      })
-
-      const res = await rechunkApp.request('/api/v1/admin/search/rechunk', { method: 'POST' })
-
-      expect(await res.json()).toEqual({ queued: true })
-      expect(await db.select({ type: job.type, priority: job.priority }).from(job)).toEqual([
-        { type: RECHUNK_CONTENT_JOB_TYPE, priority: 'low' },
-      ])
     })
   })
 

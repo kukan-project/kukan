@@ -3,6 +3,7 @@ import { processResource } from '../../pipeline/process-resource'
 import type { Database } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import { getStorageKey } from '@kukan/shared'
+import { executeSummarize, type SummaryDeps } from '../../pipeline/steps/summarize'
 
 // Mock all step modules
 vi.mock('../../pipeline/steps/fetch', () => ({
@@ -14,6 +15,10 @@ vi.mock('../../pipeline/steps/interpret', async (importOriginal) => ({
 }))
 vi.mock('../../pipeline/steps/lake', () => ({
   executeLake: vi.fn(),
+}))
+vi.mock('../../pipeline/steps/summarize', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../pipeline/steps/summarize')>()),
+  executeSummarize: vi.fn(),
 }))
 vi.mock('../../pipeline/steps/index-content', () => ({
   executeIndexContent: vi.fn(),
@@ -196,8 +201,10 @@ describe('processResource', () => {
       'previews/pkg-1/res-1.parquet',
       {
         encoding: 'UTF8',
-        // Ties the preview to the bytes Fetch measured (ADR-043 layer 2).
+        // Ties the preview to the bytes Fetch measured (ADR-043 layer 2),
+        // and to the format the version read them as
         sourceHash: 'sha256:abc',
+        sourceFormat: 'CSV',
       },
       null
     )
@@ -271,7 +278,7 @@ describe('processResource', () => {
 
     expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(
       'previews/pkg-1/res-1.parquet',
-      { encoding: 'UTF8', schema, sourceHash: 'sha256:abc' },
+      { encoding: 'UTF8', schema, sourceHash: 'sha256:abc', sourceFormat: 'CSV' },
       null
     )
     // And onto the version it was read from, which is where the interpretation
@@ -310,6 +317,7 @@ describe('processResource', () => {
         documentTextKey: documentText.key,
         documentTextBytes: 120,
         sourceHash: 'sha256:abc',
+        sourceFormat: 'CSV',
       },
       null
     )
@@ -412,6 +420,71 @@ describe('processResource', () => {
       expect(ctx.derivativesDescribe).not.toHaveBeenCalled()
       expect(executeInterpret).toHaveBeenCalled()
       expect(executeIndexContent).toHaveBeenCalled()
+    })
+
+    describe('asked only to index again', () => {
+      const stored = {
+        previewKey: 'previews/res-1.parquet',
+        encoding: 'Shift_JIS',
+        documentText: { key: 'previews/res-1/text.ndjson.zst', bytes: 1200 },
+      }
+
+      it('indexes what the last interpretation left, without interpreting or fetching', async () => {
+        contentAlreadyHere()
+        ctx.storedInterpretation.mockResolvedValue(stored)
+        // Indexed already, by the row's account: the run is there to do it again
+        ctx.derivativesDescribe.mockResolvedValue(true)
+
+        await processResource({ resourceId: 'res-1', indexOnly: true }, ctx, db, queue)
+
+        expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true)
+        expect(ctx.storedInterpretation).toHaveBeenCalledWith('res-1', 'sha256:abc', 'CSV')
+        expect(executeInterpret).not.toHaveBeenCalled()
+        expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
+        expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
+        expect(executeIndexContent).toHaveBeenCalledWith(
+          'res-1',
+          'pkg-1',
+          'resources/pkg-1/res-1',
+          'CSV',
+          stored,
+          expect.anything()
+        )
+        expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+      })
+
+      it('interprets as a rebuild would where the row does not describe these bytes', async () => {
+        contentAlreadyHere()
+        ctx.storedInterpretation.mockResolvedValue(null)
+        ctx.derivativesDescribe.mockResolvedValue(true)
+
+        await processResource({ resourceId: 'res-1', indexOnly: true }, ctx, db, queue)
+
+        expect(ctx.derivativesDescribe).not.toHaveBeenCalled()
+        expect(executeInterpret).toHaveBeenCalled()
+        expect(executeIndexContent).toHaveBeenCalled()
+      })
+
+      it('writes no abstract', async () => {
+        contentAlreadyHere()
+        ctx.storedInterpretation.mockResolvedValue(stored)
+        ctx.summary = {} as SummaryDeps
+
+        await processResource({ resourceId: 'res-1', indexOnly: true }, ctx, db, queue)
+
+        expect(executeSummarize).not.toHaveBeenCalled()
+      })
+
+      it('interprets the bytes of a version it just created', async () => {
+        contentAlreadyHere()
+        ctx.createVersion.mockResolvedValue({ created: true, version: 2 })
+        ctx.storedInterpretation.mockResolvedValue(stored)
+
+        await processResource({ resourceId: 'res-1', indexOnly: true }, ctx, db, queue)
+
+        expect(ctx.storedInterpretation).not.toHaveBeenCalled()
+        expect(executeInterpret).toHaveBeenCalled()
+      })
     })
 
     it('derives when the version was created, without asking at all', async () => {

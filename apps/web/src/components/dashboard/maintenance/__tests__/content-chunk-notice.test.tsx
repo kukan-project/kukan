@@ -43,14 +43,18 @@ describe('ContentChunkNotice', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('asks the API to rebuild them', async () => {
+  it('asks for the rebuild with the content indexed again', async () => {
     mockStatus({ resources: 3 })
 
     render(<ContentChunkNotice />)
     fireEvent.click(await screen.findByRole('button'))
 
     await waitFor(() =>
-      expect(clientFetch).toHaveBeenCalledWith('/api/v1/admin/search/rechunk', { method: 'POST' })
+      expect(clientFetch).toHaveBeenCalledWith('/api/v1/admin/reindex-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reindexContent: true }),
+      })
     )
     expect(await screen.findByRole('status')).toBeInTheDocument()
   })

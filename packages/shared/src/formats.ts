@@ -3,6 +3,8 @@
  * Single source of truth for file format mapping across the codebase.
  */
 
+import type { ContentType } from './pipeline-types'
+
 /** Extension (lowercase) → canonical format name */
 const FORMAT_MAP: Record<string, string> = {
   csv: 'CSV',
@@ -414,6 +416,15 @@ export function isImageFormat(format: string | null): boolean {
 export function isZipFormat(format: string | null): boolean {
   if (!format) return false
   return format.toLowerCase() === 'zip'
+}
+
+/** How a format's content goes into the content index, or null where it does not (ADR-021) */
+export function contentTypeOf(format: string | null): ContentType | null {
+  if (isCsvFormat(format)) return 'tabular'
+  if (isZipFormat(format)) return 'manifest'
+  if (isTextFormat(format)) return 'text'
+  if (isDocumentFormat(format)) return 'document'
+  return null
 }
 
 /**

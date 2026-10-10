@@ -158,3 +158,117 @@ describe('derivativesDescribe', () => {
     expect(await ask(false)).toBe(true)
   })
 })
+
+describe('storedInterpretation', () => {
+  const stored = (format: string | null = 'CSV') =>
+    buildPipelineContext(db, storage, undefined, undefined).storedInterpretation(
+      resourceId,
+      HASH,
+      format
+    )
+
+  it('gives back what interpreting these bytes left, whether or not it was indexed', async () => {
+    const profile = { columns: [], key: 'previews/pkg/res.tok.profile.ndjson.zst' }
+    await rowSays({ sourceHash: HASH, encoding: 'Shift_JIS', contentIndexed: false })
+    await db
+      .update(resourcePipeline)
+      .set({ profile: profile as never })
+      .where(sql`${resourcePipeline.resourceId} = ${resourceId}`)
+
+    expect(await stored()).toEqual({ previewKey: PREVIEW_KEY, encoding: 'Shift_JIS', profile })
+  })
+
+  it("gives back a document's text, which has no preview", async () => {
+    await rowSays(
+      { sourceHash: HASH, documentTextKey: 'previews/pkg/text.ndjson.zst', documentTextBytes: 0 },
+      null
+    )
+
+    expect(await stored('PDF')).toEqual({
+      previewKey: null,
+      documentText: { key: 'previews/pkg/text.ndjson.zst', bytes: 0 },
+    })
+  })
+
+  it('gives back how a text file was read, which leaves nothing else', async () => {
+    await rowSays({ sourceHash: HASH, encoding: 'EUC-JP' }, null)
+
+    expect(await stored('TXT')).toEqual({ previewKey: null, encoding: 'EUC-JP' })
+  })
+
+  it('gives nothing back for a table read before its profile was kept', async () => {
+    await rowSays({
+      sourceHash: HASH,
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+    })
+
+    expect(await stored()).toBeNull()
+  })
+
+  it('gives back how a CSV that made no table was read', async () => {
+    // Too wide, or short of memory: interpreted, with nothing to profile
+    await rowSays(
+      { sourceHash: HASH, encoding: 'UTF8', schema: { columns: [], rowCount: 0 } },
+      null
+    )
+
+    expect(await stored()).toEqual({ previewKey: null, encoding: 'UTF8' })
+  })
+
+  describe('the same bytes relabelled, their interpretation failing', () => {
+    // The row keeps what the old format left, under the same hash
+
+    it('gives nothing back for a format other than the one it was read as', async () => {
+      await rowSays({ sourceHash: HASH, encoding: 'UTF8', sourceFormat: 'CSV' }, null)
+
+      // A TSV's index is of the same kind, and still not this one's
+      expect(await stored('TSV')).toBeNull()
+      expect(await stored('csv')).toEqual({ previewKey: null, encoding: 'UTF8' })
+    })
+
+    it("gives nothing back for a document from a table's interpretation", async () => {
+      await rowSays({ sourceHash: HASH, encoding: 'UTF8' })
+      await db
+        .update(resourcePipeline)
+        .set({ profile: { columns: [], key: 'previews/pkg/p.ndjson.zst' } as never })
+        .where(sql`${resourcePipeline.resourceId} = ${resourceId}`)
+
+      expect(await stored('PDF')).toBeNull()
+    })
+
+    it("gives nothing back for a table from a document's text", async () => {
+      await rowSays(
+        { sourceHash: HASH, documentTextKey: 'previews/pkg/t.ndjson.zst', documentTextBytes: 10 },
+        null
+      )
+
+      expect(await stored('CSV')).toBeNull()
+    })
+
+    it("gives nothing back for a ZIP from a table's preview", async () => {
+      await rowSays({ sourceHash: HASH, encoding: 'UTF8' })
+      await db
+        .update(resourcePipeline)
+        .set({ profile: { columns: [], key: 'previews/pkg/p.ndjson.zst' } as never })
+        .where(sql`${resourcePipeline.resourceId} = ${resourceId}`)
+
+      expect(await stored('ZIP')).toBeNull()
+    })
+  })
+
+  it('gives nothing back for other bytes', async () => {
+    await rowSays({ sourceHash: 'sha256:other' })
+
+    expect(await stored()).toBeNull()
+  })
+
+  it('gives nothing back where the interpretation left nothing to index from', async () => {
+    // A text head kept before `documentTextBytes` is not a text artifact
+    await rowSays({ sourceHash: HASH, documentTextKey: 'previews/pkg/head.txt' }, null)
+
+    expect(await stored()).toBeNull()
+  })
+})

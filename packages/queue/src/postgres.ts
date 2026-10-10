@@ -11,13 +11,30 @@
 
 import { AsyncLocalStorage } from 'async_hooks'
 import { randomUUID } from 'crypto'
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  ne,
+  not,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import { job as jobTable, type Database, type Transaction } from '@kukan/db'
 import { createLogger, type JobPriority, type JobStatus, type Logger } from '@kukan/shared'
 import {
   JobInterruptedError,
   type EnqueueOptions,
   type Job,
+  type JobKind,
   type JobRecord,
   type JobQueue,
 } from './job-queue'
@@ -91,6 +108,34 @@ const unleased = () => or(isNull(jobTable.lockedUntil), lt(jobTable.lockedUntil,
 
 const inSeconds = (s: number) => sql`now() + ${`${s} seconds`}::interval`
 
+const contains = (k: JobKind) => sql`${jobTable.payload} @> ${JSON.stringify(k.payload)}::jsonb`
+
+/**
+ * The rows listed as `listed`: those of a kind by their type and payload, the
+ * rest of a type by its own. Spelled out rather than compared against
+ * {@link kindOf}, so the type's index still narrows the rows.
+ */
+const listedAs = (listed: string, kinds: JobKind[] = []): SQL | undefined => {
+  const i = kinds.findIndex((k) => k.kind === listed)
+  const type = i >= 0 ? kinds[i].type : listed
+  // A row is the first kind it matches, so the ones before this one are not it
+  const earlier = (i >= 0 ? kinds.slice(0, i) : kinds).filter((k) => k.type === type)
+  return and(
+    eq(jobTable.type, type),
+    i >= 0 ? contains(kinds[i]) : undefined,
+    ...earlier.map((k) => not(contains(k)))
+  )
+}
+
+/** A row's type, or the first of `kinds` whose type and payload it matches */
+const kindOf = (kinds: JobKind[] = []): SQL<string> =>
+  kinds.length === 0
+    ? sql<string>`${jobTable.type}`
+    : sql<string>`case ${sql.join(
+        kinds.map((k) => sql`when ${jobTable.type} = ${k.type} and ${contains(k)} then ${k.kind}`),
+        sql` `
+      )} else ${jobTable.type} end`
+
 /** A row's `JobStatus`, as the admin screen reads it. */
 const jobStatus = () => sql<JobStatus>`case
   when ${jobTable.state} = 'dead' then 'dead'
@@ -138,6 +183,33 @@ export function readyJobsMatching(db: Database | Transaction, type: string, matc
     .select({})
     .from(jobTable)
     .where(and(eq(jobTable.type, type), ready(), sql`${jobTable.payload} @> ${match}`))
+}
+
+/**
+ * Of these resources, those with a ready job of `type` — waiting or running —
+ * whose payload contains one of `matches`. The index `idx_job_ready_resource`
+ * serves it.
+ */
+export async function resourcesWithReadyJobs(
+  db: Database | Transaction,
+  type: string,
+  resourceIds: string[],
+  matches: Record<string, unknown>[]
+): Promise<Set<string>> {
+  if (resourceIds.length === 0 || matches.length === 0) return new Set()
+  const resourceId = sql<string>`${jobTable.payload} ->> 'resourceId'`
+  const rows = await db
+    .select({ resourceId })
+    .from(jobTable)
+    .where(
+      and(
+        eq(jobTable.type, type),
+        ready(),
+        inArray(resourceId, resourceIds),
+        or(...matches.map((m) => sql`${jobTable.payload} @> ${JSON.stringify(m)}::jsonb`))
+      )
+    )
+  return new Set(rows.map((r) => r.resourceId))
 }
 
 /**
@@ -341,28 +413,36 @@ export class PostgresJobQueue implements JobQueue {
     if (this.handlers) this.requestPass()
   }
 
-  async countJobs(): Promise<{ type: string; status: JobStatus; count: number }[]> {
+  async countJobs(
+    kinds?: JobKind[]
+  ): Promise<{ type: string; status: JobStatus; count: number }[]> {
     const status = jobStatus()
-    return this.db
-      .select({
-        type: jobTable.type,
-        status,
-        count: sql<number>`count(*)`.mapWith(Number),
-      })
-      .from(jobTable)
-      .groupBy(jobTable.type, status)
-      .orderBy(jobTable.type)
+    const type = kindOf(kinds)
+    return (
+      this.db
+        .select({
+          type,
+          status,
+          count: sql<number>`count(*)`.mapWith(Number),
+        })
+        .from(jobTable)
+        // By position: the kinds' parameters are bound once per use, and an
+        // expression bound twice is not the one selected
+        .groupBy(sql`1`, sql`2`)
+        .orderBy(sql`1`)
+    )
   }
 
   async listJobs(options: {
     status?: JobStatus
     type?: string
+    kinds?: JobKind[]
     limit: number
     offset: number
   }): Promise<{ items: JobRecord[]; total: number }> {
     const where = and(
       options.status ? sql`${jobStatus()} = ${options.status}` : undefined,
-      options.type ? eq(jobTable.type, options.type) : undefined
+      options.type ? listedAs(options.type, options.kinds) : undefined
     )
     // The total apart from the page: counted over the page's own rows, a page
     // past the end — the last row on it just retried or deleted — reads 0
@@ -370,7 +450,7 @@ export class PostgresJobQueue implements JobQueue {
       this.db
         .select({
           id: jobTable.id,
-          type: jobTable.type,
+          type: kindOf(options.kinds),
           payload: jobTable.payload,
           status: jobStatus(),
           priority: jobTable.priority,
