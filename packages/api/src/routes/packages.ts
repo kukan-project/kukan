@@ -103,6 +103,8 @@ packagesRouter.get(
         .string()
         .optional()
         .transform((val) => val !== 'false'),
+      // match=relaxed: where no dataset holds every word of q, settle for fewer
+      match: z.enum(['all', 'relaxed']).default('all'),
     })
   ),
   async (c) => {
@@ -203,6 +205,7 @@ packagesRouter.get(
         sortOrder: sort_order,
         // Dashboard filtering (my_org) must stay deterministic — no fusion there
         semantic: rest.semantic && !my_org,
+        relax: rest.match === 'relaxed' && !my_org,
       }
     )
 
@@ -213,7 +216,9 @@ packagesRouter.get(
       string,
       { highlightedTitle?: string; highlightedNotes?: string }
     > = {}
+    const searchMissingWords: Record<string, string[]> = {}
     for (const item of searchResult.items) {
+      if (item.missingWords) searchMissingWords[item.id] = item.missingWords
       if (item.matchedResources && item.matchedResources.length > 0) {
         searchMatchedResources[item.id] = item.matchedResources
         if (item.matchedResourcesCount)
@@ -237,6 +242,7 @@ packagesRouter.get(
       searchSemanticIds: searchResult.items
         .filter((i) => i.matchSource === 'semantic')
         .map((i) => i.id),
+      searchMissingWords,
       state: effectiveState,
       viewer: user,
     })
@@ -246,11 +252,13 @@ packagesRouter.get(
     // without this nobody downstream can tell that apart from a hybrid run
     // where the vector leg simply cleared nothing (ADR-053 §8.1).
     const semantic = searchResult.semantic
+    // Present only where no dataset held every word (undefined is left out of the JSON)
+    const { minWords } = searchResult
     if (include_facets && searchResult.facets) {
       const facets = await service.enrichFacets(searchResult.facets, user)
-      return c.json({ ...result, facets, semantic })
+      return c.json({ ...result, facets, semantic, minWords })
     }
-    return c.json({ ...result, semantic })
+    return c.json({ ...result, semantic, minWords })
   }
 )
 

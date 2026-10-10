@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { publicOrigin, type DocumentTextBlock, type DocumentTextLoc, type Env } from '@kukan/shared'
+import { queryTerms } from '@kukan/search-adapter'
 import { resolveUserOrgIds, buildVisibilityFilters, type AuthUser } from '../../auth/permissions'
 import type { DocumentTextTarget } from '../../services/pipeline/pipeline-service'
 import {
@@ -579,6 +580,8 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
       }
       return reply([
         `Passages for "${q}": ${result.passages.length}, best first.`,
+        result.minWords !== undefined &&
+          `Nothing matched every word of the query at once, so the documents were found by at least ${result.minWords} of its ${queryTerms(q).length} words, or by meaning. Each passage names the words it matched.`,
         ...result.passages.flatMap((passage, i) => [
           '',
           ...passageLines(passage, result.sources.get(passage.resourceId)!, i),

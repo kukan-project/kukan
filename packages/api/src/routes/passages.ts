@@ -72,6 +72,7 @@ passagesRouter.get(
         }
       }),
       semantic: result.semantic,
+      minWords: result.minWords,
       via: result.via,
       truncated: result.truncated,
       more: result.more,

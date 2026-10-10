@@ -98,8 +98,10 @@ All tools are read-only. Access to private datasets is controlled based on the a
 
 Search the data catalog. Besides keywords, natural-language queries work too —
 semantically related datasets are included in the results (hybrid search).
-By keyword, a dataset matches only if it holds **every word** of the query, so a few words
-its title or description would use find more than the whole question.
+By keyword, a dataset matches if it holds **every word** of the query, so a few words
+its title or description would use find more than the whole question. Where no dataset holds every
+word, the datasets holding fewer of them are returned, the reply says so first, and each names the
+words it lacks under `Lacks:`.
 
 When a dataset holds several files, the result says **which of them matched**, under
 `Matched files:`, each with what the match is on account of — `in its name or
@@ -248,7 +250,8 @@ read on. A cursor stops working once the document is extracted again.
 
 Return the passages of documents' text across the catalog (PDF, Word, PowerPoint, Excel, Ichitaro) that
 match a query, best first. Datasets and resources are found first, by the same search as
-`search_datasets`, and then the matching passages inside their documents. No generative AI is called
+`search_datasets`, and then the matching passages inside their documents. Where no dataset holds every
+word, the documents are found by fewer of them, as `search_datasets` does, and the reply says so first. No generative AI is called
 (the query is embedded, to find documents by meaning as well; a site without an embedding model finds
 them by words alone). Tables such as CSV are not searched (use `get_resource_schema` and `query_resource`).
 

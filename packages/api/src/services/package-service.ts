@@ -134,6 +134,8 @@ export interface PackageFilterParams {
   searchHighlights?: Record<string, { highlightedTitle?: string; highlightedNotes?: string }>
   /** Package IDs that matched via vector search only (ADR-034) */
   searchSemanticIds?: string[]
+  /** The words of q each package lacks, where the search required fewer than all */
+  searchMissingWords?: Record<string, string[]>
   /** Package state filter, single or multiple (default: 'active') */
   state?: PackageDbState | PackageDbState[]
   /**
@@ -317,6 +319,9 @@ export class PackageService {
           }),
           ...(params.searchHighlights?.[row.id] && params.searchHighlights[row.id]),
           ...(semanticIds.has(row.id) && { matchSource: 'semantic' as const }),
+          ...(params.searchMissingWords?.[row.id] && {
+            missingWords: params.searchMissingWords[row.id],
+          }),
         }))
 
       return {

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { MatchedResource, MatchedResourcesCount, SearchAdapter } from '@kukan/search-adapter'
+import { queryTerms } from '@kukan/search-adapter'
 import type { MeteredAI } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import { PackageService } from '../../services/package-service'
@@ -82,7 +83,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
     {
       description:
         'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats, and — where a dataset holds several files — which of them matched and on what account (its name, its contents, its AI-written description, or its meaning). Results may include semantically related datasets beyond exact keyword matches. ' +
-        "A dataset matches by keyword only if it holds every word of q, so give a few words in the catalog's language, those its title or description would use; if nothing fits, drop a word or try another. " +
+        "A dataset matches by keyword if it holds every word of q; where none does, those holding most of them are returned instead, each with the words it lacks. Give a few words in the catalog's language, those its title or description would use; if nothing fits, drop a word or try another. " +
         "To find the part of a document's text that answers a question, use search_passages.",
       inputSchema: {
         q: z.string().describe('Search query keywords'),
@@ -106,6 +107,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         offset,
         limit,
         semantic,
+        relax: true,
         filters: {
           ...(organization && { organizations: [organization] }),
           ...(tags?.length && { tags }),
@@ -121,25 +123,34 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         searchTotal: result.total,
         viewer: user,
       })
+      // Said first, so no result below is read as holding every word
+      const relaxed =
+        result.minWords !== undefined && items.length > 0
+          ? `Nothing matched every word of "${q}" at once, so fewer were required: the keyword matches below hold at least ${result.minWords} of its ${queryTerms(q).length} words and name any they lack; matches by meaning may hold none.\n\n`
+          : ''
       const text =
         items.length === 0
           ? `No datasets found for "${q}".`
-          : items
+          : relaxed +
+            items
               .map((item, i) => {
                 const org = item.orgName || ''
                 const formats = item.formats.split(',').filter(Boolean).join(', ')
+                const missing = hitById.get(item.id)?.missingWords ?? []
                 return [
                   `${i + 1}. ${item.title || item.name}`,
                   `   Name: ${item.name}`,
                   org && `   Organization: ${org}`,
                   item.notes && `   Description: ${item.notes.slice(0, 200)}`,
                   formats && `   Formats: ${formats}`,
+                  missing.length > 0 && `   Lacks: ${missing.join(', ')}`,
                   ...matchedResourceLines(hitById.get(item.id) ?? {}),
                 ]
                   .filter(Boolean)
                   .join('\n')
               })
-              .join('\n\n') + `\n\nTotal: ${result.total} datasets found (showing ${items.length})`
+              .join('\n\n') +
+            `\n\nTotal: ${result.total} datasets found (showing ${items.length})`
 
       return { content: [{ type: 'text' as const, text }] }
     }

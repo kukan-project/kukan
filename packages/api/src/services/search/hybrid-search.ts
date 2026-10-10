@@ -18,7 +18,7 @@ import type {
   VectorHit,
   MatchedResource,
 } from '@kukan/search-adapter'
-import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from '@kukan/search-adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE, queryTerms } from '@kukan/search-adapter'
 import { resourceDocColumns } from '../resource-service'
 import { type MeteredAI, embeddingKey } from '@kukan/ai-adapter'
 import { createCache, type Logger, type SemanticState } from '@kukan/shared'
@@ -31,6 +31,7 @@ import {
   QUERY_EMBED_CACHE_MAX,
   QUERY_EMBED_CACHE_TTL_MS,
   VECTOR_SIMILARITY_STEP,
+  RELAX_MAX_WORDS,
 } from '../../config'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
@@ -53,6 +54,9 @@ export interface HybridSearchDeps {
 export type HybridSearchQuery = SearchQuery & {
   /** false disables the vector leg for this request (default true) */
   semantic?: boolean
+  /** Where no dataset holds every word of q, ask again for fewer of them
+   *  (`relaxedSteps`); the result's `minWords` says how many it settled on */
+  relax?: boolean
 }
 
 /** Query embeddings are tiny and hot (every search reuses them) — cache per process */
@@ -246,6 +250,35 @@ export function fuseRrf(bm25Ids: string[], vectorHits: WeightedId[]): string[] {
 }
 
 /**
+ * How many of n words to require on each retry of a keyword search that found
+ * nothing: one fewer, then half, then any one — so a query of many words does
+ * not cost a request a word. Nothing for a query of one word, nor for one of
+ * more than RELAX_MAX_WORDS: each word is a join over the resources and text.
+ */
+export function relaxedSteps(n: number): number[] {
+  if (n > RELAX_MAX_WORDS) return []
+  return [...new Set([n - 1, Math.ceil(n / 2), 1])].filter((k) => k >= 1 && k < n)
+}
+
+/**
+ * The keyword search, and — asked to relax and finding nothing — again with
+ * fewer of q's words required, a step at a time, until some dataset holds them.
+ */
+async function keywordSearch(
+  search: SearchAdapter,
+  query: SearchQuery,
+  relax: boolean | undefined
+): Promise<SearchResult> {
+  const all = await search.search(query)
+  if (!relax || !search.countsWords || all.total > 0) return all
+  for (const minWords of relaxedSteps(queryTerms(query.q).length)) {
+    const result = await search.search({ ...query, minWords })
+    if (result.total > 0) return result
+  }
+  return all
+}
+
+/**
  * Search datasets, fusing BM25 and vector similarity when possible.
  * Falls back to plain keyword search when any of these hold:
  * - semantic=false, empty query, or an explicit sort (relevance-only feature)
@@ -258,7 +291,7 @@ export async function hybridSearch(
   query: HybridSearchQuery
 ): Promise<HybridSearchResult> {
   const { db, search, dbSearch, ai, logger } = deps
-  const { semantic, ...searchQuery } = query
+  const { semantic, relax, ...searchQuery } = query
   const q = query.q.trim()
   const offset = query.offset ?? 0
   const limit = query.limit ?? 20
@@ -274,7 +307,7 @@ export async function hybridSearch(
     // The fused list holds at most FUSION_WINDOW ids per leg
     offset >= FUSION_WINDOW * 2
   ) {
-    return { ...(await search.search(searchQuery)), semantic: 'off' }
+    return { ...(await keywordSearch(search, searchQuery, relax)), semantic: 'off' }
   }
 
   // Admin runtime settings (ADR-036) — read after the cheap synchronous
@@ -286,7 +319,7 @@ export async function hybridSearch(
       deps.settings.getSetting(VECTOR_SIMILARITY_NOTCHES_KEY),
     ])
     if (!semanticEnabled) {
-      return { ...(await search.search(searchQuery)), semantic: 'off' }
+      return { ...(await keywordSearch(search, searchQuery, relax)), semantic: 'off' }
     }
     similarityOffset = notches * VECTOR_SIMILARITY_STEP || undefined
   }
@@ -294,7 +327,11 @@ export async function hybridSearch(
   // Also namespaces the query-embedding cache — a dimension change must not
   // serve vectors cached under the old dimension.
   const key = embeddingKey(info)
-  const bm25Promise = search.search({ ...searchQuery, offset: 0, limit: FUSION_WINDOW })
+  const bm25Promise = keywordSearch(
+    search,
+    { ...searchQuery, offset: 0, limit: FUSION_WINDOW },
+    relax
+  )
   // The state travels with the hits: an empty list is what a leg that ran and
   // cleared nothing looks like, and also what a failed one looks like.
   const vectorPromise: Promise<{ hits: VectorHit[]; state: SemanticState }> = (async () => {
@@ -333,7 +370,10 @@ export async function hybridSearch(
   // keyword order — reporting total=max(bm25, fused) on earlier pages and then
   // shrinking it here would strand the pagination on an empty page.
   if (offset >= fusedIds.length && bm25.total > offset) {
-    return { ...(await search.search(searchQuery)), semantic: vector.state }
+    return {
+      ...(await search.search({ ...searchQuery, minWords: bm25.minWords })),
+      semantic: vector.state,
+    }
   }
 
   // Enrich only the requested page — semantic docs outside it would be discarded
@@ -392,6 +432,7 @@ export async function hybridSearch(
     offset,
     limit,
     facets,
+    minWords: bm25.minWords,
     semantic: vector.state,
   }
 }

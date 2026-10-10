@@ -343,6 +343,10 @@ export const ODATA_INSTANCE_MAX_AGE_MS = 15 * 60_000
 
 // --- Hybrid (BM25 + vector) search (ADR-034) ---
 
+/** The most words a keyword search that found nothing is retried with fewer of:
+ *  a few words is what the search asks for, and each costs the retry its own joins */
+export const RELAX_MAX_WORDS = 8
+
 /** Top-k window fetched from each side (BM25 / vector) before RRF fusion.
  *  Hybrid ranking only affects the fused list (at most 2×FUSION_WINDOW ids);
  *  pages starting beyond it fall back to plain keyword search. */

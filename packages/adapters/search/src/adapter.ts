@@ -139,6 +139,9 @@ export interface DatasetDoc {
   highlightedNotes?: string
   /** 'semantic' when the hit came from vector search only (no keyword match) */
   matchSource?: 'semantic'
+  /** The words of q the dataset does not hold — on a hit of a search that
+   *  required fewer than all of them (`SearchQuery.minWords`) */
+  missingWords?: string[]
   [key: string]: unknown
 }
 
@@ -187,6 +190,21 @@ export interface SearchQuery {
   sortBy?: 'updated' | 'created' | 'name' | 'id'
   /** Sort direction (default: desc) */
   sortOrder?: 'asc' | 'desc'
+  /**
+   * How many of q's words (`queryTerms`) a dataset must hold to match; all of
+   * them when omitted. Ignored by an adapter without `countsWords`.
+   */
+  minWords?: number
+}
+
+/**
+ * The words of a query, as a search counts them for `SearchQuery.minWords`:
+ * what it is spaced into, each once. A word the analyser cuts further, as it
+ * does Japanese written without spaces, is still one word, held or not as a whole.
+ * Not the passage scan's `queryWords`, which cuts words into runs of script.
+ */
+export function queryTerms(q: string): string[] {
+  return [...new Set(q.split(/\s+/).filter(Boolean))]
 }
 
 /** Query parameters for resource count aggregation (no pagination needed) */
@@ -214,6 +232,8 @@ export interface SearchResult {
   offset: number
   limit: number
   facets?: SearchFacets
+  /** The `minWords` the search applied — unset when every word was required */
+  minWords?: number
 }
 
 // ============================================================
@@ -282,6 +302,10 @@ export interface SearchAdapter {
 
   /** Search for datasets (kukan-packages + kukan-resources + kukan-contents via msearch) */
   search(query: SearchQuery): Promise<SearchResult>
+
+  /** Whether `search` honours `SearchQuery.minWords` — the PostgreSQL fallback
+   *  matches q as one string, with no words to count */
+  readonly countsWords?: boolean
 
   /** Sum total active resource count across packages matching the given query/filters */
   sumResourceCount(query?: ResourceCountQuery): Promise<number>

@@ -38,6 +38,7 @@ import {
   MAX_MATCHED_RESOURCES_PER_PACKAGE,
   MATCHED_FIELDS,
   PASSAGE_MARK,
+  queryTerms,
 } from './adapter'
 
 /** The one shape of the search index: the create body, and what an index
@@ -381,6 +382,36 @@ function isAlreadyExists(err: unknown): boolean {
  */
 const RESOURCE_LEG_WEIGHT = 0.4
 const CONTENT_LEG_WEIGHT = 0.15
+
+/** What a dataset's own fields must hold: every word of `text`, across them */
+function packageMatch(text: string): Record<string, unknown> {
+  return {
+    multi_match: {
+      query: text,
+      fields: ['title^3', 'name^2', 'notes', 'tags'],
+      type: 'cross_fields',
+      operator: 'and',
+    },
+  }
+}
+
+/** What one resource's metadata must hold: every word of `text`, across its fields */
+function resourceMatch(text: string): Record<string, unknown> {
+  return {
+    multi_match: {
+      query: text,
+      // Column names weighed as a description is, to start with (ADR-063 §決定 7)
+      fields: ['name^3', 'description^2', 'section', 'summary', 'columns^2'],
+      type: 'cross_fields',
+      operator: 'and',
+    },
+  }
+}
+
+/** What one chunk of a resource's text must hold: every word of `text` */
+function contentMatch(text: string): Record<string, unknown> {
+  return { match: { extractedText: { query: text, operator: 'and' } } }
+}
 
 const REINDEX_BATCH_DOCS = 10
 /** Between polls of the copy task */
@@ -1167,18 +1198,6 @@ export class OpenSearchAdapter implements SearchAdapter {
     return clauses
   }
 
-  /** Build a package-level multi_match query clause */
-  private buildPackageMultiMatch(q: string): Record<string, unknown> {
-    return {
-      multi_match: {
-        query: q,
-        fields: ['title^3', 'name^2', 'notes', 'tags'],
-        type: 'cross_fields',
-        operator: 'and',
-      },
-    }
-  }
-
   /**
    * Map an OpenSearch backend outage (timeout / connection / 5xx / 429) to a 503;
    * re-throw anything else (bad query, parsing bug) so it still surfaces as a 500.
@@ -1190,6 +1209,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
     throw err
   }
+
+  readonly countsWords = true
 
   async search(query: SearchQuery): Promise<SearchResult> {
     // ensureIndex() hits the cluster first, so a down node throws here (not at search()).
@@ -1207,26 +1228,47 @@ export class OpenSearchAdapter implements SearchAdapter {
     const filter: Record<string, unknown>[] = [{ term: { join_field: 'package' } }]
     filter.push(...this.buildFilterClauses(query.filters))
 
+    // Fewer than all of q's words: a dataset holds a word where any of its legs
+    // does, and must hold `minWords` of them. Each word is a named filter, so
+    // the words it lacks are read off the hit by the same test that admitted
+    // it; the legs, any word each, only score and carry the matched resources
+    const words = hasQuery ? queryTerms(query.q) : []
+    const minWords =
+      query.minWords !== undefined && query.minWords < words.length ? query.minWords : undefined
+    const match = (one: (text: string) => Record<string, unknown>) =>
+      minWords === undefined
+        ? one(query.q)
+        : { bool: { should: words.map(one), minimum_should_match: 1 } }
+    if (minWords !== undefined) {
+      filter.push({
+        bool: {
+          should: words.map((word, i) => ({
+            bool: {
+              _name: String(i),
+              should: [
+                packageMatch(word),
+                { has_child: { type: 'resource', query: resourceMatch(word) } },
+                { has_child: { type: 'content', query: contentMatch(word) } },
+              ],
+              minimum_should_match: 1,
+            },
+          })),
+          minimum_should_match: minWords,
+        },
+      })
+    }
+
     // Build the must clause: keyword match or match_all
     const must: Record<string, unknown>[] = []
     if (hasQuery) {
       must.push({
         bool: {
           should: [
-            this.buildPackageMultiMatch(query.q!),
+            match(packageMatch),
             {
               has_child: {
                 type: 'resource',
-                query: {
-                  multi_match: {
-                    query: query.q!,
-                    // Column names weighed as a description is, to start
-                    // with (ADR-063 §決定 7)
-                    fields: ['name^3', 'description^2', 'section', 'summary', 'columns^2'],
-                    type: 'cross_fields',
-                    operator: 'and',
-                  },
-                },
+                query: match(resourceMatch),
                 score_mode: 'max',
                 boost: RESOURCE_LEG_WEIGHT,
                 inner_hits: {
@@ -1262,9 +1304,7 @@ export class OpenSearchAdapter implements SearchAdapter {
             {
               has_child: {
                 type: 'content',
-                query: {
-                  match: { extractedText: { query: query.q!, operator: 'and' } },
-                },
+                query: match(contentMatch),
                 score_mode: 'max',
                 boost: CONTENT_LEG_WEIGHT,
                 inner_hits: {
@@ -1337,14 +1377,21 @@ export class OpenSearchAdapter implements SearchAdapter {
       const response = await this.client.search({ index: this.searchIndex, body })
       const elapsed = Date.now() - t0
 
-      const result = this.parseSearchResponse(response, query, offset, limit)
+      const result = this.parseSearchResponse(
+        response,
+        query,
+        offset,
+        limit,
+        minWords === undefined ? undefined : words
+      )
+      result.minWords = minWords
 
       // For content-only matches, fetch resource metadata (name, format) via mget
       if (hasQuery) {
         await this.enrichContentMatchMetadata(result)
       }
 
-      this.log.info({ msg: 'search', q: query.q, took: elapsed, total: result.total })
+      this.log.info({ msg: 'search', q: query.q, minWords, took: elapsed, total: result.total })
 
       return result
     } catch (err) {
@@ -1359,7 +1406,9 @@ export class OpenSearchAdapter implements SearchAdapter {
     response: any,
     query: SearchQuery,
     offset: number,
-    limit: number
+    limit: number,
+    /** q's words, where the search required fewer than all: each hit's named filters say which it holds */
+    relaxedWords?: string[]
   ): SearchResult {
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1367,6 +1416,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       // `formats` is on dataset documents written before they lost it
       const { join_field: _, formats: _formats, ...source } = hit._source
       const doc: DatasetDoc = { ...source, id: hit._id }
+      if (relaxedWords) {
+        const held = new Set<string>(hit.matched_queries ?? [])
+        doc.missingWords = relaxedWords.filter((_, i) => !held.has(String(i)))
+      }
 
       // Package-level highlights
       if (hit.highlight?.title?.[0])
@@ -1612,7 +1665,9 @@ export class OpenSearchAdapter implements SearchAdapter {
           size: chunkDocIds.length,
           query: {
             bool: {
-              must: { match: { extractedText: { query: queryText, operator: 'and' } } },
+              // Any word: the ids already say which chunks, and a chunk a
+              // relaxed search returned holds only some of the words
+              must: { match: { extractedText: { query: queryText } } },
               filter: [
                 { ids: { values: chunkDocIds } },
                 { term: { join_field: 'content' } },
@@ -1658,7 +1713,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const parentFilter = this.buildFilterClauses(query?.filters)
 
     if (query?.q?.trim()) {
-      must.push(this.buildPackageMultiMatch(query.q))
+      must.push(packageMatch(query.q))
     } else {
       must.push({ match_all: {} })
     }
@@ -1906,9 +1961,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const limit = Math.min(options.limit ?? 20, 100)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const must: any = options.q?.trim()
-      ? { match: { extractedText: { query: options.q, operator: 'and' } } }
-      : { match_all: {} }
+    const must: any = options.q?.trim() ? contentMatch(options.q) : { match_all: {} }
 
     const response = await this.client.search({
       index: this.searchIndex,

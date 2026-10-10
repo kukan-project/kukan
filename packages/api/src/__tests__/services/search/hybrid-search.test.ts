@@ -4,9 +4,11 @@ import {
   hybridSearch,
   fuseRrf,
   mergeFacets,
+  relaxedSteps,
   vectorVoteWeight,
   withSemanticResource,
 } from '../../../services/search/hybrid-search'
+import { RELAX_MAX_WORDS } from '../../../config'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
@@ -517,5 +519,72 @@ describe('hybridSearch — fusion', () => {
     await hybridSearch(d, { q: 'q-cache-hit' })
     await hybridSearch(d, { q: 'q-cache-hit' })
     expect(d.ai.embed).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('relaxedSteps', () => {
+  it('asks for one fewer, then half, then any one word', () => {
+    expect(relaxedSteps(1)).toEqual([])
+    expect(relaxedSteps(2)).toEqual([1])
+    expect(relaxedSteps(3)).toEqual([2, 1])
+    expect(relaxedSteps(6)).toEqual([5, 3, 1])
+  })
+
+  it('leaves a query of many words as it is', () => {
+    expect(relaxedSteps(RELAX_MAX_WORDS + 1)).toEqual([])
+  })
+})
+
+describe('hybridSearch — relax', () => {
+  /** An adapter that finds `found` once a search requires `atMost` words or fewer */
+  function wordCounting(atMost: number, found: string[]) {
+    return {
+      countsWords: true,
+      search: vi.fn(async (query: { minWords?: number }) =>
+        query.minWords !== undefined && query.minWords <= atMost
+          ? { ...bm25Result(found), minWords: query.minWords }
+          : { ...bm25Result([]), ...(query.minWords !== undefined && { minWords: query.minWords }) }
+      ),
+    } as unknown as SearchAdapter
+  }
+
+  it('asks again for fewer words, a step at a time, until a dataset holds them', async () => {
+    const d = deps({ search: wordCounting(2, ['a']) })
+    const result = await hybridSearch(d, { q: 'w1 w2 w3 w4', semantic: false, relax: true })
+    expect(vi.mocked(d.search.search).mock.calls.map(([q]) => q.minWords)).toEqual([
+      undefined,
+      3,
+      2,
+    ])
+    expect(result.minWords).toBe(2)
+    expect(result.items.map((i) => i.id)).toEqual(['a'])
+  })
+
+  it('does not relax a search that found something, or one not asked to', async () => {
+    const found = deps({ search: makeSearch(bm25Result(['a'])) })
+    await hybridSearch(found, { q: 'w1 w2', semantic: false, relax: true })
+    expect(found.search.search).toHaveBeenCalledTimes(1)
+
+    const strict = deps({ search: wordCounting(1, ['a']) })
+    const result = await hybridSearch(strict, { q: 'w1 w2', semantic: false })
+    expect(strict.search.search).toHaveBeenCalledTimes(1)
+    expect(result.minWords).toBeUndefined()
+  })
+
+  it('does not ask again an adapter that cannot count words', async () => {
+    const d = deps({ search: makeSearch(bm25Result([])) })
+    const result = await hybridSearch(d, { q: 'w1 w2 w3 w4', semantic: false, relax: true })
+    expect(d.search.search).toHaveBeenCalledTimes(1)
+    expect(result.minWords).toBeUndefined()
+  })
+
+  it('fuses the relaxed keyword hits with the vector hits, and says so', async () => {
+    const d = deps({
+      search: wordCounting(1, ['a']),
+      dbSearch: makeDbSearch([{ id: 'b', similarity: 0.9 }]),
+    })
+    const result = await hybridSearch(d, { q: 'w1 w2', relax: true })
+    expect(result.minWords).toBe(1)
+    expect(result.items.map((i) => i.id)).toContain('a')
   })
 })

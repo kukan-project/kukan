@@ -49,6 +49,7 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 | `q`                | 検索クエリ（キーワードまたは自然文。ハイブリッド検索）                                                                         |
 | `name`             | データセット名の前方一致                                                                                                       |
 | `semantic`         | `false` でキーワード一致のみ（デフォルト: `true`）                                                                             |
+| `match`            | `relaxed` で、`q` のすべての語を持つデータセットが無いとき、語の少ない一致に緩める（デフォルト: `all`。後述）                  |
 | `offset` / `limit` | ページネーション（最大 100）                                                                                                   |
 | `organization[]`   | 組織で絞り込み                                                                                                                 |
 | `groups[]`         | カテゴリーで絞り込み                                                                                                           |
@@ -62,6 +63,13 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 | `sort_by`          | `updated` / `created` / `name`                                                                                                 |
 | `sort_order`       | `asc` / `desc`                                                                                                                 |
 | `include_facets`   | ファセット情報を含める                                                                                                         |
+
+### 語の一致を緩める（match=relaxed）
+
+語の一致では、`q` を空白で区切った**すべての語**を持つデータセットが一致します。`match=relaxed` を
+指定すると、すべての語を持つデータセットが 1 件も無いときに限り、1 語少ない数、半分、1 語の順に
+緩めて検索し直します。緩めたときは、応答に `minWords`（一致に求めた語の数）が付き、各データセットに
+持たない語が `missingWords` として付きます（意味だけで一致したデータセットには付きません）。すべての語で見つかったとき、`minWords` は付きません。
 
 ### 例: データセット検索
 
@@ -603,7 +611,8 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 
 MCP の `search_passages` と同じ検索です。パラメータは `q`（必須、500 字まで）、`organization`、`tags[]`（`tags` でも可）、
 `k`（デフォルト: 5、最大: 20）、`per_resource`（デフォルト: 2）、`max_chars`（デフォルト: 8,000、最大: 32,000）、
-`semantic`（`false` でキーワード一致のみ）。各箇所は、リソースとデータセット、位置（`first` / `last` のページ・
+`semantic`（`false` でキーワード一致のみ）。すべての語を持つデータセットが無いときは、語の少ない一致に
+緩めて文書を探し、応答に `minWords`（一致に求めた語の数）を付けます。各箇所は、リソースとデータセット、位置（`first` / `last` のページ・
 スライド・シート、`headings`）、一致した語（`words`）、本文（`text`）、`get_document_section` で前後を読むための
 開始位置（`readFrom`）と、版（`latestVersion` が今のファイルの版、`sourceVersion` が本文の抽出元の版）を持ちます。
 `describesLiveContent` が `false` のときは、ファイルが差し替えられて本文の抽出が追いついていないので、引用には

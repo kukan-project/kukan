@@ -398,6 +398,64 @@ describe('OpenSearchAdapter', () => {
       expect(result.items).toHaveLength(1)
     })
 
+    describe('minWords', () => {
+      const hit = (id: string, matched?: string[]) => ({
+        _id: id,
+        _source: { name: id, join_field: 'package' },
+        _score: 1,
+        ...(matched && { matched_queries: matched }),
+      })
+
+      it('requires that many words, each held by any leg, and names the words a dataset lacks', async () => {
+        mockClient.search.mockResolvedValue({
+          body: {
+            hits: {
+              total: { value: 2 },
+              hits: [hit('pkg-1', ['0', '2']), hit('pkg-2', ['1', '2'])],
+            },
+          },
+        })
+
+        const result = await adapter.search({ q: '都議選 投票率 2025', minWords: 2 })
+
+        const query = mockClient.search.mock.calls[0][0].body.query.bool
+        // One named filter a word, held where any leg holds it — the test that
+        // admits a dataset is the one its missing words are read from
+        const required = query.filter.at(-1).bool
+        expect(required.minimum_should_match).toBe(2)
+        expect(required.should.map((w: { bool: { _name: string } }) => w.bool._name)).toEqual([
+          '0',
+          '1',
+          '2',
+        ])
+        // The legs only score, on any word
+        const legs = query.must[0].bool.should
+        expect(legs[0].bool.should).toHaveLength(3)
+        expect(legs[0].bool.minimum_should_match).toBe(1)
+        expect(legs[1].has_child.query.bool.minimum_should_match).toBe(1)
+        expect(legs[2].has_child.query.bool.minimum_should_match).toBe(1)
+        expect(result.minWords).toBe(2)
+        expect(result.items.map((d) => d.missingWords)).toEqual([['投票率'], ['都議選']])
+      })
+
+      it('asks for every word as before when minWords is not fewer than the words', async () => {
+        mockClient.search.mockResolvedValue({
+          body: { hits: { total: { value: 1 }, hits: [hit('pkg-1')] } },
+        })
+
+        const result = await adapter.search({ q: '人口 推移', minWords: 2 })
+
+        const query = mockClient.search.mock.calls[0][0].body.query.bool
+        expect(query.must[0].bool.should[0].multi_match).toMatchObject({
+          query: '人口 推移',
+          operator: 'and',
+        })
+        expect(query.filter).toEqual([{ term: { join_field: 'package' } }])
+        expect(result.minWords).toBeUndefined()
+        expect(result.items[0]).not.toHaveProperty('missingWords')
+      })
+    })
+
     it('should use single search with match_all for empty query (browse mode)', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
@@ -1483,6 +1541,15 @@ describe('OpenSearchAdapter', () => {
       expect(callArgs.body.query.bool.filter).toEqual(
         expect.arrayContaining([{ term: { join_field: 'content' } }])
       )
+    })
+
+    it('marks the words a chunk holds, though it may hold only some of them', async () => {
+      mockClient.search.mockResolvedValueOnce({ body: { hits: { hits: [] } } })
+
+      await adapter.fetchContentHighlights(['chunk-1'], '人口 火星')
+
+      const must = mockClient.search.mock.calls[0][0].body.query.bool.must
+      expect(must).toEqual({ match: { extractedText: { query: '人口 火星' } } })
     })
 
     it('starts a snippet near its first match, from the line when that is near', async () => {

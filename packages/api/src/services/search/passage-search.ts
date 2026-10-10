@@ -102,6 +102,8 @@ export interface PassageSearchResult {
   sources: Map<string, PassageSource>
   /** What the first stage's vector leg did */
   semantic: SemanticState
+  /** How many of q's words the first stage settled for, where no dataset held them all */
+  minWords?: number
   /** Where the passages were cut: by the search backend, or by reading the text for the query's words */
   via: 'index' | 'scan'
   /** Whether passages were cut or left out to keep to `maxChars` */
@@ -212,6 +214,8 @@ export async function searchPassages(
     limit: PASSAGE_DATASETS,
     filters: query.filters,
     semantic: query.semantic,
+    // Not a list to answer with but the documents to read: finding none reads nothing
+    relax: true,
   })
   // The resources as the datasets matched them: dataset by dataset, each one's best first
   const candidates = [
@@ -315,6 +319,7 @@ export async function searchPassages(
     passages,
     sources: new Map(sources.map((s) => [s.id, s])),
     semantic: found.semantic,
+    minWords: found.minWords,
     via: hits ? 'index' : 'scan',
     truncated,
     more,
