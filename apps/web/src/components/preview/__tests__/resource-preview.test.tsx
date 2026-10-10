@@ -14,7 +14,7 @@ vi.mock('../geojson-preview', () => ({
 }))
 
 // The one table (ADR-048); mocked to avoid hyparquet and DuckDB-WASM in tests
-vi.mock('../data-explorer/data-explorer', () => ({
+vi.mock('../../data-explorer/data-explorer', () => ({
   DataExplorer: ({ resourceId }: { resourceId: string }) => (
     <div data-testid="data-explorer">Explorer for {resourceId}</div>
   ),

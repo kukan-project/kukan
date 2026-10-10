@@ -5,7 +5,7 @@ import type { PaginatedResult } from '@kukan/shared'
 import { overrides } from '@/brand'
 import { serverFetch } from '@/lib/server-api'
 import { safeExternalHref } from '@/lib/safe-url'
-import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
+import { DatasetCard, type DatasetCardItem } from '@/components/dataset/dataset-card'
 import { ExampleQueries } from '@/components/search/example-queries'
 import { CompactDate } from '@/components/date-time'
 

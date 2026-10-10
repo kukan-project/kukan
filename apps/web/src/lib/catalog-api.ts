@@ -2,7 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 import { serverFetch } from './server-api'
-import type { Package } from '@/components/dataset-detail-layout'
+import type { Package } from '@/components/dataset/dataset-detail-layout'
 
 /**
  * Cached catalog reads. Deduped per request so a route's `generateMetadata`

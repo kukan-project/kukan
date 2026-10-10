@@ -22,7 +22,7 @@ import {
   CardFooter,
 } from '@kukan/ui'
 import { signIn } from '@/lib/auth-client'
-import { PasswordField } from '@/components/password-field'
+import { PasswordField } from '@/components/auth/password-field'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signInSchema = z.object({

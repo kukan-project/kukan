@@ -6,8 +6,8 @@ import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { getEntity } from '@/lib/catalog-api'
 import { entityMetadata } from '@/lib/page-metadata'
-import { SearchForm } from '@/components/search-form'
-import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
+import { SearchForm } from '@/components/search/search-form'
+import { DatasetCard, type DatasetCardItem } from '@/components/dataset/dataset-card'
 import { PaginationNav } from '@/components/pagination-nav'
 
 interface Props {

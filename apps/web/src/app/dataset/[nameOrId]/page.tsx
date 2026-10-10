@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getPackage } from '@/lib/catalog-api'
 import { metaDescription } from '@/lib/page-metadata'
-import { DatasetDetailLayout } from '@/components/dataset-detail-layout'
+import { DatasetDetailLayout } from '@/components/dataset/dataset-detail-layout'
 
 interface Props {
   params: Promise<{ nameOrId: string }>

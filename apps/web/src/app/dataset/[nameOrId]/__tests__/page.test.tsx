@@ -9,7 +9,7 @@ vi.mock('@/lib/server-api', () => ({
   getCurrentUser: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/components/dataset-detail-layout', () => ({
+vi.mock('@/components/dataset/dataset-detail-layout', () => ({
   DatasetDetailLayout: ({
     pkg,
     initialResourceId,

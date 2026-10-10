@@ -24,8 +24,8 @@ import {
 import { userNameSchema, passwordLengthSchema } from '@kukan/shared'
 import { signUp } from '@/lib/auth-client'
 import { PASSWORD_LENGTH_KEYS, passwordLengthArgs } from '@/lib/password-messages'
-import { PasswordField } from '@/components/password-field'
-import { PasswordStrengthMeter } from '@/components/password-strength-meter'
+import { PasswordField } from '@/components/auth/password-field'
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signUpSchema = z.object({

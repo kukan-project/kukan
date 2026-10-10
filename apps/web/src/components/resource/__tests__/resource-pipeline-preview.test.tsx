@@ -21,13 +21,13 @@ vi.mock('../pipeline-status-detail', () => ({
   PipelineStatusDetail: () => <div data-testid="pipeline-status-detail">Pipeline Detail</div>,
 }))
 
-vi.mock('../resource-preview', () => ({
+vi.mock('../../preview/resource-preview', () => ({
   ResourcePreview: ({ resourceId }: { resourceId: string }) => (
     <div data-testid="resource-preview">Preview for {resourceId}</div>
   ),
 }))
 
-vi.mock('../date-time', () => ({
+vi.mock('../../date-time', () => ({
   useFormattedDateTime: (iso: string | null | undefined) => (iso ? '2024-01-01 12:00' : ''),
   CompactDate: ({ value }: { value: string }) => <span>{value}</span>,
 }))

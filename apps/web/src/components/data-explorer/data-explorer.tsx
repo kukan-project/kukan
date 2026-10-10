@@ -10,7 +10,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { formatCell } from '@/lib/format-utils'
 import { ExplorerToolbar } from './explorer-toolbar'
 import { ExplorerTable } from './explorer-table'
-import { PreviewFooter } from '../preview-footer'
+import { PreviewFooter } from '../preview/preview-footer'
 
 const PAGE_SIZE = 100
 

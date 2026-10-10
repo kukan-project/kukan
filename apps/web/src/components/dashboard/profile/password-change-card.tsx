@@ -18,8 +18,8 @@ import {
 import { passwordLengthSchema } from '@kukan/shared'
 import { PASSWORD_LENGTH_KEYS, passwordLengthArgs } from '@/lib/password-messages'
 import { changePassword } from '@/lib/auth-client'
-import { PasswordField } from '@/components/password-field'
-import { PasswordStrengthMeter } from '@/components/password-strength-meter'
+import { PasswordField } from '@/components/auth/password-field'
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter'
 import { useUser } from '@/components/dashboard/user-provider'
 
 // Messages are i18n keys under the `profile` namespace, resolved at render time

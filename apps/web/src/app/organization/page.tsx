@@ -4,9 +4,9 @@ import { Card, CardContent, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { titleMetadata } from '@/lib/page-metadata'
-import { SearchForm } from '@/components/search-form'
+import { SearchForm } from '@/components/search/search-form'
 import { PaginationNav } from '@/components/pagination-nav'
-import { SortLinks, parseListOrder, orderParam } from '@/components/sort-links'
+import { SortLinks, parseListOrder, orderParam } from '@/components/search/sort-links'
 import { EntityImage } from '@/components/entity-image'
 
 interface Organization {

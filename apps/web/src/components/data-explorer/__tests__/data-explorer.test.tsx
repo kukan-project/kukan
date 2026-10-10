@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { DataExplorer } from '../data-explorer/data-explorer'
+import { DataExplorer } from '../data-explorer'
 
 // Both engines are mocked as mutable state the tests drive between rerenders:
 // the static reader always has rows, the duck engine flips through the
