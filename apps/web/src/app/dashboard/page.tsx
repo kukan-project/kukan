@@ -12,6 +12,7 @@ import { VersionBackfillNotice } from '@/components/dashboard/maintenance/versio
 import { RowGroupBackfillNotice } from '@/components/dashboard/maintenance/row-group-backfill-notice'
 import { SearchAnalysisNotice } from '@/components/dashboard/maintenance/search-analysis-notice'
 import { EmbeddingBackfillNotice } from '@/components/dashboard/maintenance/embedding-backfill-notice'
+import { ContentChunkNotice } from '@/components/dashboard/maintenance/content-chunk-notice'
 
 interface PkgItem {
   id: string
@@ -61,6 +62,7 @@ export default function DashboardPage() {
       <RowGroupBackfillNotice />
       <SearchAnalysisNotice />
       <EmbeddingBackfillNotice />
+      <ContentChunkNotice />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label={t('datasetCount')} value={loading ? undefined : total} />

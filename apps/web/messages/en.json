@@ -592,6 +592,7 @@
         "summarize-all": "AI descriptions in bulk (all resources)",
         "reindex-metadata": "Search index rebuild (metadata; content when asked)",
         "reanalyse-search-index": "Search index re-analysis (whole index)",
+        "rechunk-content": "Content search index rebuild (resources in the older units)",
         "purge-resource-version": "Version deletion (resources)",
         "drop-lake-tables": "Lake data removal (purged datasets)",
         "purge-organization": "Purge (organizations)",
@@ -701,6 +702,13 @@
       "reanalyse": "Re-analyse",
       "reanalysing": "Running…",
       "queued": "Re-analysis queued. This notice goes away once it finishes. Anything saved while it runs is brought in again when it finishes."
+    },
+    "contentChunks": {
+      "title": "Rebuild the content search index",
+      "description": "The content of {count} resources is in the search index in the larger units used before. Search now reads content in smaller units, so rebuilding makes content search and passage search lighter. It works from the stored files — nothing is fetched from the publisher again. Each file is interpreted again, so a catalogue with many documents or tables takes a while. Until its turn comes, each resource still turns up in dataset search as it is indexed now (passage search finds it once it is rebuilt). This item disappears once it is done.",
+      "rebuild": "Rebuild",
+      "rebuilding": "Running…",
+      "queued": "Queued. The resources are rebuilt one by one and the count goes down as they are. This item disappears once it completes."
     },
     "embeddingBackfill": {
       "title": "Regenerate embeddings",

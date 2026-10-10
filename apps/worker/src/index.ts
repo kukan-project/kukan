@@ -37,6 +37,8 @@ import {
   syncSearchDocsJobSchema,
   REANALYSE_INDEX_JOB_TYPE,
   reanalyseIndexJobSchema,
+  RECHUNK_CONTENT_JOB_TYPE,
+  rechunkContentJobSchema,
   WORKER_LAKE_CATALOG_CONNECTIONS,
 } from '@kukan/shared'
 import { eq } from 'drizzle-orm'
@@ -52,6 +54,7 @@ import {
   requestResourceEmbeds,
 } from '@kukan/api/services/search/resource-embedding'
 import { markContentUnindexed } from '@kukan/api/services/search/content-index-record'
+import { requestContentRechunk } from '@kukan/api/services/search/content-rechunk'
 import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
@@ -431,6 +434,14 @@ await queue.process({
   [REANALYSE_INDEX_JOB_TYPE]: async (job: Job) => {
     if (!parseJobPayload(job, reanalyseIndexJobSchema)) return
     await reanalyseSearchIndex(db, search, queue, log.child({ jobId: job.id, type: job.type }))
+  },
+
+  // Content cut under a larger chunk size than the one in force
+  [RECHUNK_CONTENT_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, rechunkContentJobSchema)) return
+    if (!search) return
+    const result = await requestContentRechunk(db, search, queue)
+    log.info({ jobId: job.id, type: job.type, ...result }, 'Content rechunk enqueued')
   },
 
   // One-time migration: give previews written before it the figure a feed pages

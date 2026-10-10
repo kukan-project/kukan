@@ -537,12 +537,13 @@ card on AI Management, and Reprocess all resources on Resource Processing. The l
 follows the runs. Each runs asynchronously through the job queue and
 proceeds in the background once queued.
 
-| Action                        | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                                                                                                              |
-| ----------------------------- | ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rebuild metadata search index | The metadata index (not file content)                      | No                      | Search results look inconsistent. **After an upgrade that changed the fields of search documents** (analysis changes need the re-analysis below) (`POST /api/v1/admin/reindex-metadata`)                                                 |
-| Reprocess all resources       | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**. Cannot be pressed again while one is running                                                                                          |
-| Regenerate embeddings         | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped. **The dashboard also prompts while any resource is outside semantic search** (below) |
-| Re-analyse search index       | The index itself, under a new analysis                     | No                      | The search analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                            |
+| Action                           | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                                                                                                              |
+| -------------------------------- | ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rebuild metadata search index    | The metadata index (not file content)                      | No                      | Search results look inconsistent. **After an upgrade that changed the fields of search documents** (analysis changes need the re-analysis below) (`POST /api/v1/admin/reindex-metadata`)                                                 |
+| Reprocess all resources          | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**. Cannot be pressed again while one is running                                                                                          |
+| Regenerate embeddings            | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped. **The dashboard also prompts while any resource is outside semantic search** (below) |
+| Re-analyse search index          | The index itself, under a new analysis                     | No                      | The search analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                            |
+| Rebuild the content search index | Content indexed in the larger units used before            | No                      | Search reads content in smaller units. **Only when the page says so** (below)                                                                                                                                                            |
 
 None of this is ordinarily needed: the metadata index updates as datasets are
 created, updated, and deleted, and text and previews are built when the pipeline
@@ -561,6 +562,25 @@ leaves its analysis as it was, so this is the only action that applies one.
 It only re-reads text already stored — **no external URL is fetched and no file
 is reprocessed**. It is a one-time action per upgrade, and the notice disappears
 once it completes (`POST /api/v1/admin/search/reanalyse`).
+
+### Rebuilding the content search index
+
+Upgrading to a release that reads content in smaller units (chunks) puts a
+**rebuild the content search index** notice on the dashboard. The unit is fixed
+when content goes into the index, so a resource whose content has not changed
+stays in the larger units until it is rebuilt. Search still works in the
+meantime, but content search and passage search get lighter only for the
+resources that have been rebuilt.
+
+Only the resources indexed in the older units are rebuilt, and the notice shows
+how many there are. It works from the stored files — **no external URL is
+fetched** — but each file is interpreted again, so a catalogue with many
+documents or tables takes a while. Until its turn comes, each resource still
+turns up in dataset search as it is indexed now; passage search (the MCP
+`search_passages`) finds it once it is rebuilt. The content of a deleted
+resource, of a resource in a dataset that is not published, or of one with no
+stored file is removed from the index rather than rebuilt. The count goes down as the work proceeds, and
+the notice disappears once it completes (`POST /api/v1/admin/search/rechunk`).
 
 ## Background Job Status
 

@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto'
 import { Client, errors as osErrors } from '@opensearch-project/opensearch'
 import { createLogger, ServiceUnavailableError, type Logger } from '@kukan/shared'
 import type {
+  ContentResourceFilter,
   SearchAdapter,
   SearchQuery,
   SearchResult,
@@ -222,6 +223,21 @@ function parseFormatBuckets(agg: unknown): SearchFacetBucket[] {
   return [...counts]
     .map(([name, count]) => ({ name, count }))
     .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
+}
+
+/** One type's documents, narrowed by `where` */
+function typed(type: string, where: object[]): object {
+  return { bool: { filter: [{ term: { join_field: type } }, ...where] } }
+}
+
+/** The clauses a content filter adds to the content documents */
+function contentFilter({ chunkedAbove }: ContentResourceFilter): object[] {
+  if (chunkedAbove === undefined) return []
+  return [
+    { range: { chunkSize: { gt: chunkedAbove } } },
+    // A ZIP's file list is one document whatever its size
+    { bool: { must_not: { term: { contentType: 'manifest' } } } },
+  ]
 }
 
 /** `hits.total` as a number, whichever shape the engine sent it in */
@@ -1033,8 +1049,27 @@ export class OpenSearchAdapter implements SearchAdapter {
    * Distinct `resourceId`s among the content documents, ascending, a page at a
    * time.
    */
-  async indexedContentResources(after?: string, limit = 1_000): Promise<string[]> {
-    return this.distinctValues('content', 'resourceId', after, limit)
+  async indexedContentResources(
+    after?: string,
+    limit = 1_000,
+    filter: ContentResourceFilter = {}
+  ): Promise<string[]> {
+    return this.distinctValues('content', 'resourceId', after, limit, contentFilter(filter))
+  }
+
+  async countIndexedContentResources(filter: ContentResourceFilter = {}): Promise<number> {
+    await this.ensureIndex()
+    const res = await this.client.search({
+      index: this.searchIndex,
+      body: {
+        size: 0,
+        query: typed('content', contentFilter(filter)),
+        // The most the aggregation counts exactly
+        aggs: { resources: { cardinality: { field: 'resourceId', precision_threshold: 40_000 } } },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ((res.body.aggregations as any)?.resources?.value as number | undefined) ?? 0
   }
 
   async indexedDocumentIds(
@@ -1055,14 +1090,15 @@ export class OpenSearchAdapter implements SearchAdapter {
     type: string,
     field: string,
     after: string | undefined,
-    limit: number
+    limit: number,
+    where: object[] = []
   ): Promise<string[]> {
     await this.ensureIndex()
     const res = await this.client.search({
       index: this.searchIndex,
       body: {
         size: 0,
-        query: { term: { join_field: type } },
+        query: typed(type, where),
         aggs: {
           values: {
             composite: {
@@ -1463,8 +1499,10 @@ export class OpenSearchAdapter implements SearchAdapter {
         const existingResourceIds = new Set((doc.matchedResources ?? []).map((mr) => mr.id))
         for (const ch of contentInnerHits) {
           const resourceId = ch._source.resourceId as string
-          // If already matched by metadata, upgrade to content match
+          // If already matched by metadata, upgrade to content match. Hits come
+          // best first, so a resource's later chunks keep its best one
           const existing = (doc.matchedResources ?? []).find((mr) => mr.id === resourceId)
+          if (existing?.matchSource === 'content') continue
           if (existing) {
             existing.matchSource = 'content'
             existing._contentDocId = ch._id as string

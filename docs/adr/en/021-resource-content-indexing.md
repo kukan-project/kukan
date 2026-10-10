@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — 2026-04-18 (Decision 1 superseded by ADR-025)
+**Accepted** — 2026-04-18 (Decision 1 superseded by ADR-025; Decision 4's chunk size revised to 64KB on 2026-10-10)
 
 ## Context
 
@@ -109,7 +109,7 @@ Initially a 100KB limit with truncation, but migrated to chunk splitting and str
 - Snippets are lazily fetched via `POST /api/v1/packages/highlights` (ids query, no collapse)
 - Frontend displays cards first, then asynchronously adds snippets
 
-- `MAX_CONTENT_CHUNK_SIZE = 500 * 1024` (500KB / chunk)
+- `MAX_CONTENT_CHUNK_SIZE = 500 * 1024` (500KB / chunk; 64KB since 2026-10-10, see the revision below)
 - No chunk count limit (covers entire file size; `MAX_FETCH_SIZE` = 100MB is the practical limit)
 - Text formats use stream processing with line-by-line reading via `streamUtf8Lines` (memory usage ~500KB)
 - Non-UTF-8 encodings fall back to buffer conversion
@@ -120,6 +120,56 @@ Initially a 100KB limit with truncation, but migrated to chunk splitting and str
   - `contentOriginalSize`: number — total text byte count
   - `contentIndexedSize`: number — actually indexed byte count
   - `contentChunks`: number — number of chunks created
+
+### Revision: 64KB chunks (updated: 2026-10-10)
+
+`MAX_CONTENT_CHUNK_SIZE` is now 64KB. With the second stage of passage search
+(ADR-061), three paths read every matching chunk whole: the dataset search's
+`inner_hits`, the content highlights, and the second stage. Each costs in
+proportion to the chunks it reads, and at 500KB the parent circuit breaker of an
+OpenSearch with a 2GB heap tripped on every evaluation run.
+
+Measured locally (OpenSearch heap 2GB; 5 queries × 20 runs, twice; 500KB at
+5 queries × 5 runs, twice):
+
+| Path                            | 500KB: OpenSearch CPU / query | 64KB: OpenSearch CPU / query | Response time (500KB → 64KB) |
+| ------------------------------- | ----------------------------- | ---------------------------- | ---------------------------- |
+| Dataset search                  | 99–147ms                      | 10–15ms                      | about 100ms → 15ms           |
+| Passage search, stage 2 (N = 2) | 459–800ms                     | 100–106ms                    | 153–207ms → 25ms             |
+| Content highlights              | 474–478ms                     | 64–66ms                      | about 460ms → 68ms           |
+
+- Dataset search drops too because `inner_hits` decompresses the whole document
+  even with `_source` filtered
+- At 64KB the breaker did not trip during evaluation or measurement. Young GC
+  stayed under 0.2ms per query: the reason 100KB was turned down on 2026-04-25
+  (GC spikes from more matching chunks) did not appear
+- Content chunks grew from 1,033 to 5,221, while the index went from 296.5MB to
+  287MB
+
+Quality (golden sets, hybrid):
+
+| Setting      | `eval:search` overall nDCG | `eval:passages` Hit@1 / Hit@5 / MRR |
+| ------------ | -------------------------- | ----------------------------------- |
+| 500KB, N = 2 | 84%                        | 64% / 86% / 0.71                    |
+| 64KB, N = 2  | 84%                        | 64% / 79% / 0.69                    |
+| 64KB, N = 4  | 84%                        | 57% / 79% / 0.65                    |
+| 64KB, N = 8  | —                          | 57% / 79% / 0.66                    |
+
+- The one query lost at 64KB was pushed down by passages from the previous
+  year's edition of the right report, which holds nearly the same section
+- Reading more chunks per resource in the second stage (N) found more passages
+  but did not rank the right one higher, and cost in proportion to N. N stays at
+  2 (`PASSAGE_CHUNKS_PER_RESOURCE`). The passage golden set has only 14
+  queries; revisit once it has more
+
+Migration: a chunk's size is fixed when it is written, and a resource whose
+content has not changed is not written again. In a release that lowers the
+limit, a dashboard notice counts the resources holding a chunk above it, and one
+button rebuilds them (`rechunk-content`, `docs/jobs.md`). Locally 60 of 460
+resources qualified, done in 2 minutes. Until a resource is rebuilt it still
+turns up in dataset search with its old chunks, but the second stage of passage
+search looks for positions under the current rule and does not find it. Raising
+the limit raises no notice (use the reprocess of every resource).
 
 ---
 
@@ -263,7 +313,7 @@ per-resource deduplication.
 
 Chunk splitting + lazy highlights were introduced in Phase 4:
 
-- `kukan-contents` uses 1 resource = N documents (500KB chunks × unlimited)
+- `kukan-contents` uses 1 resource = N documents (500KB chunks × unlimited; 64KB since 2026-10-10, see Decision 4's revision)
 - Stream processing handles large files (up to 100MB)
 - `collapse` for per-resource deduplication
 - Highlights are lazily fetched via `POST /api/v1/packages/highlights` (separated from search response)

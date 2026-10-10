@@ -272,7 +272,7 @@ export const MAX_PARQUET_SOURCE_SIZE = 100 * 1024 * 1024
  * worker's own: the index and a passage search cut a document's text into
  * chunks by the one rule (`content-chunks.ts`, ADR-061 §決定 4).
  */
-export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
+export const MAX_CONTENT_CHUNK_SIZE = 64 * 1024
 
 /**
  * How much of a file a preview shows. Shared so the dashboard can tell an

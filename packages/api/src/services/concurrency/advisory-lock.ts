@@ -50,6 +50,13 @@ export const RESOURCE_EMBED_LOCK = 'resource_embed'
 export const STRANDED_LAKE_TABLES_LOCK = 'stranded_lake_tables'
 
 /**
+ * One content rechunk page at a time. A page reads which resources have a
+ * rebuild on its way and then queues the rest; two at once would both read
+ * none and queue each resource twice, and each rebuild re-interprets the file.
+ */
+export const CONTENT_RECHUNK_LOCK = 'content_rechunk'
+
+/**
  * Hold `<namespace>:<id>` for the rest of the transaction.
  *
  * Every query inside must run on `tx`: the lock *is* a pooled connection, and

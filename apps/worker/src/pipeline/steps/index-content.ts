@@ -2,7 +2,7 @@
  * KUKAN Pipeline — Index Step
  * Extracts text content from resources and indexes it into OpenSearch (kukan-contents).
  * Text formats are processed as a stream — no file size limit on indexable content.
- * Large texts are split into multiple chunks (up to MAX_CONTENT_CHUNKS × MAX_CONTENT_CHUNK_SIZE).
+ * Large texts are split into chunks of up to MAX_CONTENT_CHUNK_SIZE (`@kukan/shared/content-chunks`).
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
  * Document formats are indexed from the text artifact the Interpret step

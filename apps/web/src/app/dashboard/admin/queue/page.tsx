@@ -33,6 +33,7 @@ import {
   PURGE_ORG_JOB_TYPE,
   PURGE_VERSION_JOB_TYPE,
   REANALYSE_INDEX_JOB_TYPE,
+  RECHUNK_CONTENT_JOB_TYPE,
   RECORD_ROW_GROUPS_JOB_TYPE,
   REINDEX_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
@@ -73,13 +74,14 @@ const JOB_SECTIONS: { key: string; types: string[] }[] = [
     ],
   },
   {
-    // In the order an upgrade runs them; the re-analysis stands apart from the rest
+    // In the order an upgrade runs them; the search index's own come last
     key: 'migration',
     types: [
       BACKFILL_VERSIONS_JOB_TYPE,
       CONVERT_SET_ASIDE_JOB_TYPE,
       RECORD_ROW_GROUPS_JOB_TYPE,
       REANALYSE_INDEX_JOB_TYPE,
+      RECHUNK_CONTENT_JOB_TYPE,
     ],
   },
 ]

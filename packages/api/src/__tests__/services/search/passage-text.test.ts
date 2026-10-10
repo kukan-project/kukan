@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { DocumentTextBlock } from '@kukan/shared'
+import { MAX_CONTENT_CHUNK_SIZE, type DocumentTextBlock } from '@kukan/shared'
 import { PASSAGE_MARK } from '@kukan/search-adapter'
 import {
   FragmentFinder,
@@ -11,6 +11,9 @@ import {
 } from '../../../services/search/passage-text'
 
 const { open: O, close: C } = PASSAGE_MARK
+
+/** Most of a chunk: two of these do not fit in one, and each fits with a short line */
+const MOST_OF_A_CHUNK = Math.floor(MAX_CONTENT_CHUNK_SIZE * 0.6)
 
 async function* blocksOf(blocks: DocumentTextBlock[], readUpTo = Infinity) {
   for (const [i, block] of blocks.entries()) {
@@ -97,7 +100,8 @@ describe('cutPassages with the fragments an index cut', () => {
   it('finds a fragment late in a long text, holding only a window of it', async () => {
     const blocks: DocumentTextBlock[] = Array.from({ length: 500 }, (_, i) => ({
       loc: { page: i + 1 },
-      text: `${i + 1}ページ目の本文。`.repeat(20),
+      // Many times the window, all in chunk 0
+      text: `${i + 1}ページ目の本文。`.repeat(2),
     }))
     blocks[420] = { loc: { page: 421 }, text: '目当ての段落はここにある。' }
     const [passage] = await cutPassages(
@@ -110,10 +114,10 @@ describe('cutPassages with the fragments an index cut', () => {
   })
 
   it('gives a fragment up once its chunk is read, not the rest of the document after it', async () => {
-    // Two blocks of 300 KB: the second starts chunk 1, so chunk 0 is whole once it is in
+    // The second block starts chunk 1, so chunk 0 is whole once it is in
     const blocks: DocumentTextBlock[] = Array.from({ length: 10 }, (_, i) => ({
       loc: { page: i + 1 },
-      text: 'x'.repeat(300_000),
+      text: 'x'.repeat(MOST_OF_A_CHUNK),
     }))
     const cut = await cutPassages(
       blocksOf(blocks, 2),
@@ -124,7 +128,7 @@ describe('cutPassages with the fragments an index cut', () => {
   })
 
   it('finds a fragment in the chunk it is from, not the same words earlier', async () => {
-    const filler = 'x'.repeat(300_000)
+    const filler = 'x'.repeat(MOST_OF_A_CHUNK)
     const [passage] = await cutPassages(
       blocksOf([
         { loc: { page: 1 }, text: `目次\n第3章 汚泥の処理\n${filler}` },

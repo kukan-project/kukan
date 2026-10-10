@@ -667,6 +667,8 @@ MCP の `search_passages` と同じ検索です。パラメータは `q`（必�
 | GET    | `/admin/embedding-status`           | 意味検索から届かないリソース数（埋め込みベクトル未作成・モデル不一致、`{ missing }`）                                                                                     |
 | GET    | `/admin/search/analysis-status`     | 日本語解析の設定が更新され再解析が要るか（`{ stale }`）                                                                                                                   |
 | POST   | `/admin/search/reanalyse`           | 新しい解析設定でインデックスを作り直す（ジョブキュー経由、非同期）                                                                                                        |
+| GET    | `/admin/search/chunk-status`        | 以前の大きな単位で本文が索引されているリソース数（`{ resources }`）                                                                                                       |
+| POST   | `/admin/search/rechunk`             | それらのリソースを保存済みのファイルから処理し直す（作り直しがすでに待機中・実行中のものは除く。ジョブキュー経由、非同期）                                                |
 | GET    | `/admin/summary-estimate`           | AI による説明の一括生成の対象件数・推定トークン・推定費用                                                                                                                 |
 | POST   | `/admin/generate-summaries`         | AI による説明の一括生成（`{ refresh }` で書き直しも含む。ジョブキュー経由、非同期）                                                                                       |
 | GET    | `/admin/version-backfill-status`    | 移行作業の残件数（層1: 版なし / 層2: 差分未取り込み / 旧方式の巻き戻しの未変換）                                                                                          |

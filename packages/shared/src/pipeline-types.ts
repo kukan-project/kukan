@@ -634,6 +634,9 @@ export const REINDEX_JOB_TYPE = 'reindex-metadata' as const
 /** Maintenance: rebuild the search index under the current analysis (ADR-025). */
 export const REANALYSE_INDEX_JOB_TYPE = 'reanalyse-search-index' as const
 
+/** Maintenance: index again the content cut under a larger chunk size than the one in force. */
+export const RECHUNK_CONTENT_JOB_TYPE = 'rechunk-content' as const
+
 /** Maintenance: permanently erase a soft-deleted organization (externals then DB rows). */
 export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
 
@@ -751,6 +754,7 @@ export const pipelineJobSchema = z.object({
 export type PipelineJobPayload = z.infer<typeof pipelineJobSchema>
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const reanalyseIndexJobSchema = z.object({})
+export const rechunkContentJobSchema = z.object({})
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({})
 export const syncSearchDocsJobSchema = z.object({})

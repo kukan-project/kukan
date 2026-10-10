@@ -28,6 +28,7 @@
     "./services/organization-service": "./dist/services/organization-service.js",
     "./services/resource-version-service": "./dist/services/resource-version-service.js",
     "./services/search/content-index-record": "./dist/services/search/content-index-record.js",
+    "./services/search/content-rechunk": "./dist/services/search/content-rechunk.js",
     "./services/suggest/materials": "./dist/services/suggest/materials.js",
     "./services/suggest/prompt": "./dist/services/suggest/prompt.js",
     "./services/suggest/summary-prompt": "./dist/services/suggest/summary-prompt.js",

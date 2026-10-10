@@ -49,6 +49,7 @@ function searchWith(overrides: Partial<SearchAdapter> = {}) {
     pendingRepair: vi.fn().mockResolvedValue(new Date('2026-09-17T10:00:00.000Z')),
     markRepaired: vi.fn().mockResolvedValue(undefined),
     indexedContentResources: vi.fn().mockResolvedValue([]),
+    countIndexedContentResources: vi.fn().mockResolvedValue(0),
     deleteContent: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   } as unknown as SearchAdapter

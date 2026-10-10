@@ -14,7 +14,12 @@ import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { PIPELINE_JOB_TYPE, generationKey } from '@kukan/shared'
+import {
+  MAX_CONTENT_CHUNK_SIZE,
+  PIPELINE_JOB_TYPE,
+  RECHUNK_CONTENT_JOB_TYPE,
+  generationKey,
+} from '@kukan/shared'
 import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
 import { randomUUID } from 'node:crypto'
 
@@ -30,6 +35,7 @@ const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
   indexedContentResources: async () => [],
+  countIndexedContentResources: async () => 0,
   indexedDocumentIds: async () => [],
   pendingRepair: async () => null,
   markRepaired: async () => {},
@@ -501,6 +507,53 @@ describe('Admin API Routes', () => {
       )
 
       expect(res.status).toBe(200)
+    })
+  })
+
+  describe('content cut under a larger chunk size', () => {
+    it('counts the resources the index holds in larger chunks', async () => {
+      const search: SearchAdapter = {
+        ...mockSearch,
+        countIndexedContentResources: async (filter) =>
+          filter?.chunkedAbove === MAX_CONTENT_CHUNK_SIZE ? 3 : 0,
+      }
+
+      const res = await createTestApp(db, { search }).request('/api/v1/admin/search/chunk-status')
+
+      expect(await res.json()).toEqual({ resources: 3 })
+    })
+
+    it('says nothing when the index cannot be asked', async () => {
+      const search: SearchAdapter = {
+        ...mockSearch,
+        countIndexedContentResources: async () => {
+          throw new Error('service unavailable')
+        },
+      }
+
+      const res = await createTestApp(db, { search }).request('/api/v1/admin/search/chunk-status')
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ resources: 0 })
+    })
+
+    it('rejects non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/search/rechunk', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('queues the rebuild as one job, for the worker to fan out', async () => {
+      const rechunkApp = createTestApp(db, {
+        search: mockSearch,
+        queue: new PostgresJobQueue({ db }),
+      })
+
+      const res = await rechunkApp.request('/api/v1/admin/search/rechunk', { method: 'POST' })
+
+      expect(await res.json()).toEqual({ queued: true })
+      expect(await db.select({ type: job.type, priority: job.priority }).from(job)).toEqual([
+        { type: RECHUNK_CONTENT_JOB_TYPE, priority: 'low' },
+      ])
     })
   })
 

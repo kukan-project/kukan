@@ -57,6 +57,8 @@ import {
   userRoleSchema,
   passwordLengthSchema,
   REANALYSE_INDEX_JOB_TYPE,
+  RECHUNK_CONTENT_JOB_TYPE,
+  MAX_CONTENT_CHUNK_SIZE,
   RECORD_ROW_GROUPS_JOB_TYPE,
   JOB_STATUSES,
   SysadminRequiredError,
@@ -470,6 +472,27 @@ adminRouter.post('/search/reanalyse', async (c) => {
     )
   }
   await c.get('queue').enqueue(REANALYSE_INDEX_JOB_TYPE, {}, BULK)
+  return c.json({ queued: true })
+})
+
+// GET /api/v1/admin/search/chunk-status — Resources whose content was cut under
+// a larger chunk size than the one in force. Drives the one-time notice after
+// an upgrade that lowers it: nothing else rewrites content whose bytes have
+// not changed.
+adminRouter.get('/search/chunk-status', async (c) => {
+  // As the analysis status: a notice that cannot be checked says nothing
+  const resources = await c
+    .get('search')
+    .countIndexedContentResources({ chunkedAbove: MAX_CONTENT_CHUNK_SIZE })
+    .catch(() => 0)
+  return c.json({ resources })
+})
+
+// POST /api/v1/admin/search/rechunk — Index those resources again, from the
+// objects they already hold. A job rather than the request: the walk and the
+// enqueue grow with the catalogue, and the queue screen lists it with the rest
+adminRouter.post('/search/rechunk', async (c) => {
+  await c.get('queue').enqueue(RECHUNK_CONTENT_JOB_TYPE, {}, BULK)
   return c.json({ queued: true })
 })
 

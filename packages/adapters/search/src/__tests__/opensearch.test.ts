@@ -607,6 +607,50 @@ describe('OpenSearchAdapter', () => {
       )
     })
 
+    it("keeps a resource's best-scoring chunk when several of its chunks match", async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'population', join_field: 'package' },
+                _score: 5,
+                inner_hits: {
+                  resource: {
+                    hits: { hits: [{ _id: 'res-1', _source: { id: 'res-1', name: 'a.pdf' } }] },
+                  },
+                  content_hits: {
+                    hits: {
+                      hits: [
+                        { _id: 'chunk-res1-3', _source: { resourceId: 'res-1' }, _score: 4 },
+                        { _id: 'chunk-res2-1', _source: { resourceId: 'res-2' }, _score: 3 },
+                        { _id: 'chunk-res1-0', _source: { resourceId: 'res-1' }, _score: 2 },
+                        { _id: 'chunk-res2-0', _source: { resourceId: 'res-2' }, _score: 1 },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+      mockClient.mget.mockResolvedValueOnce({
+        body: { docs: [{ _id: 'res-2', found: true, _source: { name: 'b.pdf' } }] },
+      })
+
+      const result = await adapter.search({ q: '人口', offset: 0, limit: 10 })
+
+      expect(
+        result.items[0].matchedResources!.map(({ id, _contentDocId }) => ({ id, _contentDocId }))
+      ).toEqual([
+        { id: 'res-1', _contentDocId: 'chunk-res1-3' },
+        { id: 'res-2', _contentDocId: 'chunk-res2-1' },
+      ])
+    })
+
     it('should apply organization filter', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
@@ -1319,12 +1363,54 @@ describe('OpenSearchAdapter', () => {
 
       expect(ids).toEqual(['r-2', 'r-3'])
       const { body } = mockClient.search.mock.calls[0][0]
-      expect(body.query).toEqual({ term: { join_field: 'resource' } })
+      expect(body.query).toEqual({ bool: { filter: [{ term: { join_field: 'resource' } }] } })
       expect(body.aggs.values.composite).toEqual({
         size: 2,
         sources: [{ value: { terms: { field: 'id' } } }],
         after: { value: 'r-1' },
       })
+    })
+  })
+
+  describe('indexedContentResources', () => {
+    beforeEach(() => {
+      mockClient.search.mockResolvedValue({
+        body: { aggregations: { values: { buckets: [{ key: { value: 'r-1' } }] } } },
+      })
+    })
+
+    it('lists every resource with content', async () => {
+      expect(await adapter.indexedContentResources()).toEqual(['r-1'])
+      const { body } = mockClient.search.mock.calls[0][0]
+      expect(body.query).toEqual({ bool: { filter: [{ term: { join_field: 'content' } }] } })
+    })
+
+    it('keeps the resources with a chunk larger than asked, leaving file lists out', async () => {
+      await adapter.indexedContentResources(undefined, 100, { chunkedAbove: 65_536 })
+
+      const { body } = mockClient.search.mock.calls[0][0]
+      expect(body.query).toEqual({
+        bool: {
+          filter: [
+            { term: { join_field: 'content' } },
+            { range: { chunkSize: { gt: 65_536 } } },
+            { bool: { must_not: { term: { contentType: 'manifest' } } } },
+          ],
+        },
+      })
+    })
+  })
+
+  describe('countIndexedContentResources', () => {
+    it('counts the resources with a larger chunk in one request', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { aggregations: { resources: { value: 60 } } },
+      })
+
+      expect(await adapter.countIndexedContentResources({ chunkedAbove: 65_536 })).toBe(60)
+      const { body } = mockClient.search.mock.calls[0][0]
+      expect(body.query.bool.filter).toContainEqual({ range: { chunkSize: { gt: 65_536 } } })
+      expect(body.aggs.resources.cardinality.field).toBe('resourceId')
     })
   })
 

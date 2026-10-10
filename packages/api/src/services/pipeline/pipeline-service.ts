@@ -219,37 +219,44 @@ export class PipelineService {
    * Enqueue many runs, a batch per transaction: one refusal costs its batch,
    * not the rest, and each batch is two statements however large it is. A
    * resource deleted since it was listed is skipped, counted in neither.
+   *
+   * Given `tx`, every run is written in it instead, and a refusal throws: the
+   * caller's transaction decides, and whoever opened it with
+   * `queue.transaction` wakes the worker after the commit.
    */
   async enqueueMany(
     items: { id: string; rebuildOnly?: boolean; reprocessAll?: boolean }[],
-    opts: Pick<EnqueueOptions, 'priority'> = {}
+    opts: Pick<EnqueueOptions, 'priority' | 'tx'> = {}
   ): Promise<{ enqueued: number; failed: { id: string; reason: unknown }[] }> {
     const queue = this.requireQueue()
     // One run per resource: the upsert cannot touch the same row twice
     const unique = [...new Map(items.map((item) => [item.id, item])).values()]
+    // A resource deleted since it was listed is neither: it has nothing to run
+    const write = async (tx: Transaction, batch: typeof unique) => {
+      const marked = await this.markQueued(
+        tx,
+        batch.map((item) => item.id)
+      )
+      const runs = batch.filter((item) => marked.has(item.id))
+      await queue.enqueueMany(
+        PIPELINE_JOB_TYPE,
+        runs.map((item) => ({
+          resourceId: item.id,
+          rebuildOnly: item.rebuildOnly,
+          reprocessAll: item.reprocessAll,
+        })),
+        { tx, priority: opts.priority }
+      )
+      return runs.length
+    }
+    if (opts.tx) return { enqueued: await write(opts.tx, unique), failed: [] }
+
     let enqueued = 0
     const failed: { id: string; reason: unknown }[] = []
     for (let i = 0; i < unique.length; i += ENQUEUE_BATCH_SIZE) {
       const batch = unique.slice(i, i + ENQUEUE_BATCH_SIZE)
       try {
-        // A resource deleted since it was listed is neither: it has nothing to run
-        enqueued += await queue.transaction(this.db, async (tx) => {
-          const marked = await this.markQueued(
-            tx,
-            batch.map((item) => item.id)
-          )
-          const runs = batch.filter((item) => marked.has(item.id))
-          await queue.enqueueMany(
-            PIPELINE_JOB_TYPE,
-            runs.map((item) => ({
-              resourceId: item.id,
-              rebuildOnly: item.rebuildOnly,
-              reprocessAll: item.reprocessAll,
-            })),
-            { tx, priority: opts.priority }
-          )
-          return runs.length
-        })
+        enqueued += await queue.transaction(this.db, (tx) => write(tx, batch))
       } catch (reason) {
         failed.push(...batch.map((item) => ({ id: item.id, reason })))
       }

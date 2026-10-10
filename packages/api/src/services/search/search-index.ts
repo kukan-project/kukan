@@ -793,8 +793,8 @@ const PRUNE_PAGE = 1_000
 export async function dropIndexedWithoutRow(
   list: (after: string | undefined, limit: number) => Promise<string[]>,
   indexable: (ids: string[], q: Database | Transaction) => Promise<{ id: string }[]>,
-  /** The page's ids the database has no row for, removed together */
-  remove: (ids: string[]) => Promise<void>,
+  /** The page's ids the database has no row for, removed together, in the page's `q` */
+  remove: (ids: string[], q: Database | Transaction) => Promise<void>,
   /** How a page's check and its deletes run — under a lock, where a writer must not come between them */
   runPage: <T>(page: (q: Database | Transaction) => Promise<T>) => Promise<T>
 ): Promise<number> {
@@ -807,7 +807,7 @@ export async function dropIndexedWithoutRow(
       const ids = indexed.filter(isUuid)
       const keep = new Set(ids.length > 0 ? (await indexable(ids, q)).map((r) => r.id) : [])
       const gone = indexed.filter((id) => !keep.has(id))
-      if (gone.length > 0) await remove(gone)
+      if (gone.length > 0) await remove(gone, q)
       return gone.length
     })
     if (indexed.length < PRUNE_PAGE) break

@@ -207,6 +207,14 @@ export function queryTerms(q: string): string[] {
   return [...new Set(q.split(/\s+/).filter(Boolean))]
 }
 
+/** Narrows the resources with content indexed */
+export interface ContentResourceFilter {
+  /** Only those with a chunk of more bytes than this: text cut under a larger
+   *  chunk size than the one in force. A ZIP's file list is one document
+   *  whatever its size, so it is never among them. */
+  chunkedAbove?: number
+}
+
 /** Query parameters for resource count aggregation (no pagination needed) */
 export interface ResourceCountQuery {
   q?: string
@@ -329,8 +337,20 @@ export interface SearchAdapter {
    * The resources that have content indexed, a page at a time, so a caller can
    * tell which of them the database no longer has. `after` continues from the
    * last id of the previous page. Empty on a backend that indexes no content.
+   *
    */
-  indexedContentResources(after?: string, limit?: number): Promise<string[]>
+  indexedContentResources(
+    after?: string,
+    limit?: number,
+    filter?: ContentResourceFilter
+  ): Promise<string[]>
+
+  /**
+   * How many resources `indexedContentResources` would list under `filter`, in
+   * one request — exact up to the tens of thousands. Zero on a backend that
+   * indexes no content.
+   */
+  countIndexedContentResources(filter?: ContentResourceFilter): Promise<number>
 
   /**
    * The ids of the package or resource documents in the index, ascending, a

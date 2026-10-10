@@ -50,6 +50,7 @@ export const mockSearch: SearchAdapter = {
   deleteAllResources: async () => {},
   sumResourceCount: async () => 0,
   indexedContentResources: async () => [],
+  countIndexedContentResources: async () => 0,
   indexedDocumentIds: async () => [],
   pendingRepair: async () => null,
   markRepaired: async () => {},

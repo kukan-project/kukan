@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
+import { MAX_CONTENT_CHUNK_SIZE } from '@kukan/shared'
 import { Database, Search } from 'lucide-react'
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
@@ -90,9 +91,6 @@ type IndexTab = 'packages' | 'resources' | 'contents'
 
 /** Must match apps/worker/src/config.ts MAX_FETCH_SIZE */
 const MAX_FETCH_SIZE = 100 * 1024 * 1024
-
-/** Must match apps/worker/src/config.ts MAX_CONTENT_CHUNK_SIZE */
-const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 
 const PAGE_SIZE = 20
 
