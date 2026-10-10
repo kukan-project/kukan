@@ -40,6 +40,15 @@
   --ai: 265 70% 58%;
   --ai-tint-foreground: 265 55% 35%;
   --highlight: 53 98% 77%;
+  /* Categorical chart series, assigned in this order and never cycled. Checked
+     for colour-blind separation against the white surface; three fall under
+     3:1, so a chart using them carries a legend and a table. */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-other: #a3a29c;
   --border: 214 32% 91%;
   --input: 214 32% 91%;
   --ring: 214 81% 54%;

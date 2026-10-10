@@ -16,7 +16,7 @@ import type { z } from 'zod'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourcePipeline } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import {
   ServiceUnavailableError,
   ValidationError,
@@ -121,6 +121,8 @@ interface CompleteJsonArgs<T> {
   /** Wall-clock bound covering every attempt (throttle and JSON retries) */
   deadlineAt: number
   opts: SuggestOptions
+  /** The resource the call is about, for the usage record; none for the dataset's */
+  resourceId?: string
 }
 
 export class MetadataSuggestService {
@@ -129,7 +131,7 @@ export class MetadataSuggestService {
   constructor(
     private readonly db: Database,
     private readonly storage: StorageAdapter,
-    private readonly ai: AIAdapter,
+    private readonly ai: MeteredAI,
     logger?: Logger
   ) {
     this.log = logger ?? createLogger({ name: 'api' })
@@ -446,6 +448,7 @@ export class MetadataSuggestService {
         maxTokens: SUGGEST_RESOURCE_MAX_TOKENS,
         deadlineAt: phase1DeadlineAt,
         opts,
+        resourceId: material.id,
       })
       const name = output.name.trim().slice(0, MAX_MATERIAL_NAME_CHARS)
       const description = output.description.trim().slice(0, MAX_DESCRIPTION_LENGTH)
@@ -479,6 +482,7 @@ export class MetadataSuggestService {
       let raw: string
       try {
         raw = await this.ai.complete(content, {
+          usage: { purpose: 'suggest', resourceId: args.resourceId },
           system: args.system,
           model: args.opts.model,
           maxTokens: args.maxTokens,

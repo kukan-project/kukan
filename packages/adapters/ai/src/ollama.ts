@@ -119,7 +119,11 @@ export class OllamaAdapter implements AIAdapter {
       const detail = await response.text().catch(() => '')
       throw new Error(`Ollama embed failed: ${response.status} ${detail}`)
     }
-    const payload = (await response.json()) as { embeddings: number[][] }
+    const payload = (await response.json()) as {
+      embeddings: number[][]
+      prompt_eval_count?: number
+    }
+    options?.onUsage?.({ inputTokens: payload.prompt_eval_count })
     return payload.embeddings
   }
 

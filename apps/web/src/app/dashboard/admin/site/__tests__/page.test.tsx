@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
-vi.mock('@/components/dashboard/ai-suggest-card', () => ({
+vi.mock('@/components/dashboard/ai/ai-suggest-card', () => ({
   AiSuggestCard: () => <section>suggestions</section>,
 }))
 

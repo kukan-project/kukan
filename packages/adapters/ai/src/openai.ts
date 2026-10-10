@@ -77,9 +77,13 @@ export class OpenAIAdapter implements AIAdapter {
       },
       options?.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}
     )
+    // prompt_tokens counts the cached part too; reported apart, as Bedrock does
+    const cached = response.usage?.prompt_tokens_details?.cached_tokens
+    const promptTokens = response.usage?.prompt_tokens
     options?.onUsage?.({
-      inputTokens: response.usage?.prompt_tokens,
+      inputTokens: promptTokens === undefined ? undefined : promptTokens - (cached ?? 0),
       outputTokens: response.usage?.completion_tokens,
+      cacheReadTokens: cached,
     })
     return response.choices[0]?.message?.content?.trim() ?? ''
   }
@@ -111,6 +115,7 @@ export class OpenAIAdapter implements AIAdapter {
       .catch((err: unknown) => {
         throw classifyEmbedRejection(err) ?? err
       })
+    options?.onUsage?.({ inputTokens: response.usage?.prompt_tokens })
     return response.data.map((item) => item.embedding)
   }
 

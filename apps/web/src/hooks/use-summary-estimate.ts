@@ -1,4 +1,4 @@
-import { useFetch } from './use-fetch'
+import { useLatestJson } from './use-latest-json'
 
 /** What one of the two generations would cover, and roughly cost (ADR-053 §11.2) */
 export interface SummaryEstimateOperation {
@@ -25,12 +25,12 @@ export interface SummaryEstimate {
  * What a generation would cover, asked before it is started.
  *
  * This is the one control in the catalog that spends money per resource, so
- * the numbers come before the button rather than after it.
+ * the numbers come before the button rather than after it. `reload` asks
+ * again — after the language changes, and while a generation runs.
  */
-export function useSummaryEstimate(enabled: boolean, version = 0) {
-  const { data, loading, error } = useFetch<SummaryEstimate>(
-    enabled ? '/api/v1/admin/summary-estimate' : null,
-    version
+export function useSummaryEstimate(enabled: boolean) {
+  const { data, error, fetch } = useLatestJson<SummaryEstimate>(
+    enabled ? '/api/v1/admin/summary-estimate' : null
   )
-  return { estimate: data ?? null, loading, error }
+  return { estimate: data, loading: enabled && data === null && !error, error, reload: fetch }
 }

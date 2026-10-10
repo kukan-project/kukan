@@ -490,6 +490,44 @@ Each resource's embedding is rebuilt as its description is written. Running it
 twice over the same content costs nothing the second time, because it compares
 rather than regenerates.
 
+### AI usage and cost
+
+The "Usage and cost" card at the top of AI Management shows the tokens AI calls consumed and what they cost. There is nothing to set up: when AI is on (`AI_TYPE` other than `none`), every call is recorded.
+
+| Purpose                 | Calls                                                      |
+| ----------------------- | ---------------------------------------------------------- |
+| Writing AI descriptions | Writing a description for each resource                    |
+| Metadata suggestions    | AI metadata suggestions                                    |
+| Connection test         | The connection test on the AI metadata suggestions card    |
+| Resource embeddings     | Generating embedding vectors for semantic search           |
+| Search query embeddings | Searches that use semantic search (including MCP searches) |
+
+The card shows:
+
+- **Cost this month** and **Projected for the month**. The projection carries this month's cost so far to the month's end at the same rate. It is held back until a day of the month has passed, since one call stretched over thirty days reads as a bill nobody will get.
+- **A chart over time**, by hour (the last 48 hours), day (this month and the last) or month (the last 12 months), coloured by purpose, model or provider, in cost or tokens. Days and months are cut in the `TIME_ZONE` environment variable (`Asia/Tokyo` by default).
+- **A table** of calls, input, output and cache tokens, and cost.
+
+#### How the cost is worked out
+
+The cost is **an estimate at list price, in USD, when the call was made**, before tax and discounts. It is stored with the record, so a rate changed later does not move a month already closed.
+
+| Provider          | Cost                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| Bedrock           | From the rate table bundled with KUKAN, including the 1.1× for `jp.*` inference profiles |
+| Ollama            | Zero (a local model). Tokens are recorded                                                |
+| OpenAI-compatible | Not priced (most compatible servers do not bill per token). Tokens are recorded          |
+
+A call to a model the rate table does not list is not counted as free: it is shown apart, as calls with no known rate that are not in the cost. The rate table comes with KUKAN releases; if calls with no known rate grow after you start using a new model, update KUKAN.
+
+To check against the actual bill, use AWS Cost Explorer. Bedrock bills each Claude model under its own service name (for example `Claude Haiku 5.5 (Amazon Bedrock Edition)`).
+
+:::note
+Search query embeddings, made once per search, are summed per quarter hour and written every few seconds rather than one by one. The web and the worker write what is left when they stop; a process that dies without stopping loses the last few seconds.
+:::
+
+The same report is available from the API: `GET /api/v1/admin/ai-usage?granularity=hour|day|month` (system administrators only, `day` by default).
+
 ## Reprocessing the search index
 
 Indexes and derived data are rebuilt from the admin page for what each one covers: Rebuild

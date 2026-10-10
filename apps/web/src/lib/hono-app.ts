@@ -27,7 +27,8 @@ export function getApp(): Promise<App> {
 const globalForShutdown = globalThis as unknown as { __kukanShutdownRegistered?: boolean }
 if (!globalForShutdown.__kukanShutdownRegistered) {
   const shutdown = async () => {
-    const { closePool } = await import('@kukan/api')
+    const { closePool, flushAiUsage } = await import('@kukan/api')
+    await flushAiUsage()
     await closePool()
   }
   process.on('SIGTERM', shutdown)

@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream'
 import { describe, it, expect, vi } from 'vitest'
 import { PDFDocument, PDFString } from '@cantoo/pdf-lib'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { createLogger } from '@kukan/shared'
 import type { MaterialArtifacts } from '@kukan/api/services/suggest/materials'
@@ -76,7 +76,7 @@ function deps(opts: {
             imageFormats: ['jpeg', 'png'],
             maxImageBytes: 5 * 1024 * 1024,
           },
-  } as unknown as AIAdapter
+  } as unknown as MeteredAI
   return {
     db: {} as SummaryDeps['db'],
     storage,

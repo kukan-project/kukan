@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { packageTable, packageTag, resource, tag } from '@kukan/db'
-import { AiInputRejectedError, type AIAdapter } from '@kukan/ai-adapter'
+import { AiInputRejectedError, type MeteredAI } from '@kukan/ai-adapter'
 import { RESOURCE_EMBED_LOCK, tryLockInTransaction } from '@kukan/api/services/advisory-lock'
 import { embedDueResources } from '../../embed/embed-resources'
 import { EMBED_BATCH_SIZE } from '../../config'
@@ -20,7 +20,7 @@ function makeAi(embedBatch = vi.fn(async (texts: string[]) => texts.map(() => [1
   const ai = {
     getEmbeddingInfo: () => ({ model: 'test-model', dimensions: 3 }),
     embedBatch,
-  } as unknown as AIAdapter
+  } as unknown as MeteredAI
   return { ai, embedBatch }
 }
 
@@ -354,7 +354,7 @@ describe('embedDueResources', () => {
   it('leaves the marks where embedding is unavailable', async () => {
     const pkg = await seedPackage()
     const id = await seedResource(pkg)
-    const ai = { getEmbeddingInfo: () => null } as unknown as AIAdapter
+    const ai = { getEmbeddingInfo: () => null } as unknown as MeteredAI
 
     expect(await embedDueResources(db, ai)).toMatchObject({ embedded: 0, settled: 0 })
     expect((await state(id)).due).not.toBeNull()

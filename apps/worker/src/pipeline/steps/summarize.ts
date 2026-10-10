@@ -29,7 +29,7 @@ import {
   tag,
 } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { AIAdapter, CompletionAttachment } from '@kukan/ai-adapter'
+import type { CompletionAttachment, MeteredAI } from '@kukan/ai-adapter'
 import { AiInputRejectedError } from '@kukan/ai-adapter'
 import {
   isImageFormat,
@@ -80,7 +80,7 @@ import { SUMMARY_MAX_TOKENS, SUMMARY_TIMEOUT_MS } from '@/config'
 export interface SummaryDeps {
   db: Database
   storage: StorageAdapter
-  ai: AIAdapter
+  ai: MeteredAI
   log: Logger
   /** The generation language, read per call so a change takes effect (ADR-053) */
   locale: () => Promise<SummaryLocale>
@@ -173,7 +173,10 @@ export async function executeSummarize(
   // here even without a refresh**: a refusal is a fact about the input and the
   // model that read it, so a deployment that moves to a longer context has a
   // file worth trying again.
-  if (row.meta.skipReason === 'rejected' && sameVersion && sameGeneration) {
+  const refusedHere =
+    (row.meta.skipVersion ?? row.meta.version) === input.version &&
+    (row.meta.skipGenKey ?? row.meta.genKey) === genKey
+  if (row.meta.skipReason === 'rejected' && refusedHere) {
     return { status: 'unchanged' }
   }
 
@@ -181,7 +184,16 @@ export async function executeSummarize(
   // is read from storage, and a catalogue that has its abstracts would
   // otherwise read every file to be told so.
   const plan = await planMaterial(input, row.artifacts, row.interpreted, deps)
-  if ('reason' in plan) return { status: 'skipped', reason: plan.reason }
+  if ('reason' in plan) {
+    // A mismatch is a fact about these bytes read by this generation, as a
+    // refusal is: stamped the same way, so the estimate stops quoting for it
+    // until the file or the generation moves. The other reasons turn on what
+    // the pipeline may yet write, and the estimate asks again by design.
+    if (plan.reason === 'format-mismatch') {
+      return { status: 'skipped', reason: plan.reason, genKey, version: input.version }
+    }
+    return { status: 'skipped', reason: plan.reason }
+  }
 
   const material: ResourceMaterial = {
     id: input.resourceId,
@@ -385,7 +397,7 @@ const MATERIAL_OF = {
 async function planPdf(
   input: SummaryInput,
   artifacts: MaterialArtifacts,
-  documentInfo: ReturnType<AIAdapter['getDocumentInfo']>,
+  documentInfo: ReturnType<MeteredAI['getDocumentInfo']>,
   deps: SummaryDeps,
   artifactsUsable: boolean
 ): Promise<MaterialPlan | { reason: SummarySkipReason }> {
@@ -555,6 +567,7 @@ async function generate(
   deps: SummaryDeps
 ) {
   const raw = await deps.ai.complete(buildSummaryUserContent(material, context), {
+    usage: { purpose: 'summarize', resourceId: input.resourceId },
     system: buildSummarySystemPrompt(locale),
     model: deps.model,
     maxTokens: SUMMARY_MAX_TOKENS,
@@ -713,9 +726,10 @@ export async function recordSkip(
     skipReason: reason,
     ...(extra?.rejectedTokens && { rejectedTokens: extra.rejectedTokens }),
     // What was refused, so the next run recognises it before paying for the
-    // same refusal again (§3.4)
-    ...(extra?.genKey && { genKey: extra.genKey }),
-    ...(extra?.version && { version: extra.version }),
+    // same refusal again (§3.4) — beside, not over, what a kept abstract was
+    // written from
+    ...(extra?.genKey && { skipGenKey: extra.genKey }),
+    ...(extra?.version && { skipVersion: extra.version }),
   })
 }
 

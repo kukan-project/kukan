@@ -5,7 +5,7 @@ describe('tokenRate (ADR-053)', () => {
   it('charges a geography-limited profile the premium the base rate does not carry', () => {
     // Measured against the Price List API for ap-northeast-1: every Claude
     // model quotes the geo profile at exactly 1.1× its global one
-    expect(tokenRate('global.anthropic.claude-sonnet-4-6')).toEqual({
+    expect(tokenRate('global.anthropic.claude-sonnet-4-6')).toMatchObject({
       inputPerMillion: 3,
       outputPerMillion: 15,
     })
@@ -15,7 +15,7 @@ describe('tokenRate (ADR-053)', () => {
   })
 
   it('prices the top tier both ways', () => {
-    expect(tokenRate('global.anthropic.claude-opus-4-8')).toEqual({
+    expect(tokenRate('global.anthropic.claude-opus-4-8')).toMatchObject({
       inputPerMillion: 5,
       outputPerMillion: 25,
     })
@@ -29,11 +29,11 @@ describe('tokenRate (ADR-053)', () => {
   })
 
   it('does not price Opus 5.5 as the Opus 5 its id contains', () => {
-    expect(tokenRate('global.anthropic.claude-opus-5-5')).toEqual({
+    expect(tokenRate('global.anthropic.claude-opus-5-5')).toMatchObject({
       inputPerMillion: 4,
       outputPerMillion: 20,
     })
-    expect(tokenRate('global.anthropic.claude-opus-5')).toEqual({
+    expect(tokenRate('global.anthropic.claude-opus-5')).toMatchObject({
       inputPerMillion: 5,
       outputPerMillion: 25,
     })
@@ -71,5 +71,39 @@ describe('tokenRate (ADR-053)', () => {
   it('leaves a model without a second band on its one rate however long the prompt', () => {
     const rate = tokenRate('jp.anthropic.claude-sonnet-4-6')!
     expect(requestUsd(rate, 125_000, 300)).toBeCloseTo((125_000 * 3.3 + 300 * 16.5) / 1e6, 8)
+  })
+})
+
+describe('requestUsd with cached input', () => {
+  it('charges cache reads a tenth and cache writes a quarter more of the input rate', () => {
+    // Haiku 4.5 on jp.*: input 1.10, read 0.11, write 1.375 — the Price List API figures
+    const rate = tokenRate('jp.anthropic.claude-haiku-4-5-20251001-v1:0')!
+    const usd = requestUsd(rate, 1_000_000, 0, { read: 1_000_000, write: 1_000_000 })
+    expect(usd).toBeCloseTo(1.1 + 0.11 + 1.375, 8)
+  })
+
+  it('charges cached input the full input rate for a model whose share is not recorded', () => {
+    // Nova's own cache rates are not in the table: overstated rather than hidden
+    const rate = tokenRate('jp.amazon.nova-2-lite-v1:0')!
+    expect(requestUsd(rate, 0, 0, { read: 1_000_000 })).toBeCloseTo(0.36, 8)
+  })
+
+  it('counts cached input toward the long-prompt band', () => {
+    const rate = tokenRate('jp.anthropic.claude-haiku-5-5')!
+    // 10k fresh + 95k read is over the 100k line: both take the upper band
+    expect(requestUsd(rate, 10_000, 0, { read: 95_000 })).toBeCloseTo(
+      (10_000 * 0.55 + 95_000 * 0.055) / 1e6,
+      8
+    )
+  })
+})
+
+describe('embedding rates', () => {
+  it('prices the embedding models at their Region rate, without the premium', () => {
+    expect(tokenRate('amazon.titan-embed-text-v2:0')).toEqual({
+      inputPerMillion: 0.029,
+      outputPerMillion: 0,
+    })
+    expect(tokenRate('cohere.embed-v4:0')).toEqual({ inputPerMillion: 0.12, outputPerMillion: 0 })
   })
 })

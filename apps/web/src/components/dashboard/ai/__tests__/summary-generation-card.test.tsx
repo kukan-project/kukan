@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { SummaryGenerationCard } from '../summary-generation-card'
 
@@ -145,5 +145,110 @@ describe('SummaryGenerationCard', () => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
     expect(screen.getByRole('button', { name: /Write the missing ones/ })).toBeDisabled()
+  })
+})
+
+describe('SummaryGenerationCard once a generation is queued', () => {
+  beforeEach(() => {
+    vi.mocked(clientFetch).mockReset()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  /**
+   * The estimate and the job queue as the generation works through it: one
+   * entry per read of each, the last repeating
+   */
+  function mockProgress(counts: number[], jobs: number[] = [1]) {
+    let reads = 0
+    let jobReads = 0
+    vi.mocked(clientFetch).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes('/site/settings'))
+        return mockFetchResponse({ resourceSummaryEnabled: true })
+      if (init?.method === 'POST') return mockFetchResponse({})
+      if (path.includes('/summary-estimate')) {
+        const resources = counts[Math.min(reads++, counts.length - 1)]
+        return mockFetchResponse({ ...estimate, fill: { ...estimate.fill, resources } })
+      }
+      if (path.includes('/queue/counts')) {
+        const count = jobs[Math.min(jobReads++, jobs.length - 1)]
+        return mockFetchResponse({
+          items: [
+            { type: 'summarize-package', status: 'running', count },
+            // A job that gave up is not one still running
+            { type: 'summarize-package', status: 'dead', count: 3 },
+            { type: 'embed-resources', status: 'waiting', count: 7 },
+          ],
+        })
+      }
+      return mockFetchResponse({})
+    })
+  }
+  const estimateReads = () =>
+    vi.mocked(clientFetch).mock.calls.filter(([path]) => String(path).includes('/summary-estimate'))
+      .length
+  /** A second at a time until `check` passes, for at most `ms` */
+  async function elapseUntil(ms: number, check: () => void) {
+    for (let t = 0; ; t += 1_000) {
+      try {
+        return check()
+      } catch (err) {
+        if (t >= ms) throw err
+      }
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+    }
+  }
+
+  it('reads nothing again before a button is pressed', async () => {
+    mockProgress([12])
+    render(<SummaryGenerationCard />)
+    await screen.findByText(/12 resources/)
+
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(estimateReads()).toBe(1)
+  })
+
+  it('follows the count down, holding the buttons back, and says when the jobs are done', async () => {
+    mockProgress([12, 12, 5, 0], [1, 1, 1, 0])
+    render(<SummaryGenerationCard />)
+    const button = await screen.findByRole('button', { name: /Write the missing ones/ })
+    // Pressable once the estimate is in
+    await screen.findByText(/^12 resources/)
+
+    fireEvent.click(button)
+    await screen.findByText('Description generation queued. It runs in the background.')
+    expect(button).toBeDisabled()
+
+    await elapseUntil(20_000, () => expect(screen.getByText(/^5 resources/)).toBeInTheDocument())
+    expect(button).toBeDisabled()
+
+    await elapseUntil(40_000, () =>
+      expect(screen.getByText('Description generation is done.')).toBeInTheDocument()
+    )
+    const reads = estimateReads()
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(estimateReads()).toBe(reads)
+  })
+
+  it('lets go when the jobs are done, though skipped resources stay in the estimate', async () => {
+    // A short text with nothing to write from is skipped, and still counted.
+    // The jobs are gone at the first read after the press; the estimate is
+    // read once more then, and shows what is left
+    mockProgress([12, 12, 3], [0])
+    render(<SummaryGenerationCard />)
+    const button = await screen.findByRole('button', { name: /Write the missing ones/ })
+    // Pressable once the estimate is in
+    await screen.findByText(/^12 resources/)
+
+    fireEvent.click(button)
+    await elapseUntil(20_000, () =>
+      expect(screen.getByText('Description generation is done.')).toBeInTheDocument()
+    )
+    await elapseUntil(20_000, () => expect(screen.getByText(/^3 resources/)).toBeInTheDocument())
+    expect(button).toBeEnabled()
   })
 })

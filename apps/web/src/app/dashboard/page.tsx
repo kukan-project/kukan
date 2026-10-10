@@ -8,10 +8,10 @@ import { clientFetch } from '@/lib/client-api'
 import { useUser } from '@/components/dashboard/user-provider'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { FormatBadges } from '@/components/format-badges'
-import { VersionBackfillNotice } from '@/components/dashboard/version-backfill-notice'
-import { RowGroupBackfillNotice } from '@/components/dashboard/row-group-backfill-notice'
-import { SearchAnalysisNotice } from '@/components/dashboard/search-analysis-notice'
-import { EmbeddingBackfillNotice } from '@/components/dashboard/embedding-backfill-notice'
+import { VersionBackfillNotice } from '@/components/dashboard/maintenance/version-backfill-notice'
+import { RowGroupBackfillNotice } from '@/components/dashboard/maintenance/row-group-backfill-notice'
+import { SearchAnalysisNotice } from '@/components/dashboard/maintenance/search-analysis-notice'
+import { EmbeddingBackfillNotice } from '@/components/dashboard/maintenance/embedding-backfill-notice'
 
 interface PkgItem {
   id: string

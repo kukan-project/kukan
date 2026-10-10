@@ -14,7 +14,7 @@ import {
   type SystemSettingService,
 } from '../../services/system-setting'
 import type { SearchAdapter, SearchResult, SearchFacets, DatasetDoc } from '@kukan/search-adapter'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 
@@ -46,7 +46,7 @@ function makeAI(opts?: { available?: boolean; failEmbed?: boolean; dimensions?: 
     embed: opts?.failEmbed
       ? vi.fn().mockRejectedValue(new Error('embed down'))
       : vi.fn().mockResolvedValue([1, 0, 0]),
-  } as unknown as AIAdapter
+  } as unknown as MeteredAI
 }
 
 function makeSettings(over?: { notches?: number; semanticEnabled?: boolean }) {

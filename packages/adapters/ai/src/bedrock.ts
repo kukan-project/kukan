@@ -48,6 +48,8 @@ const DOCUMENT_FORMATS: string[] = Object.values(DocumentFormat)
 const IMAGE_FORMATS: string[] = Object.values(ImageFormat)
 /** Bedrock caps the document name; ours is decorative, so it is cut short */
 const MAX_DOCUMENT_NAME_CHARS = 60
+/** InvokeModel reports the billed input here, for every embedding model */
+const INPUT_TOKEN_COUNT_HEADER = 'x-amzn-bedrock-input-token-count'
 /** Cohere embeds up to 96 texts per InvokeModel call */
 const COHERE_BATCH_SIZE = 96
 /** Golden-set-measured similarity floors (demo, 2026-07-07). Keyed on the measured
@@ -128,6 +130,8 @@ export class BedrockAIAdapter implements AIAdapter {
     options?.onUsage?.({
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      cacheReadTokens: response.usage?.cacheReadInputTokens,
+      cacheWriteTokens: response.usage?.cacheWriteInputTokens,
     })
     const blocks = response.output?.message?.content ?? []
     if (options?.jsonSchema) {
@@ -172,26 +176,54 @@ export class BedrockAIAdapter implements AIAdapter {
     return this.embeddingModel.startsWith('cohere.embed')
   }
 
-  private async invokeJson<T>(body: unknown, timeoutMs?: number): Promise<T> {
+  /**
+   * One InvokeModel call, with the input tokens it was billed for.
+   *
+   * The count is read off the response header rather than the body: Titan
+   * puts it in both, Cohere only in the header. The SDK does not model the
+   * header, so a middleware on this one command reads it.
+   */
+  private async invokeJson<T>(
+    body: unknown,
+    timeoutMs?: number
+  ): Promise<{ payload: T; inputTokens?: number }> {
+    const command = new InvokeModelCommand({
+      modelId: this.embeddingModel,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify(body),
+    })
+    let inputTokens: number | undefined
+    command.middlewareStack.add(
+      (next) => async (args) => {
+        const result = await next(args)
+        const header = (result.response as { headers?: Record<string, string> }).headers?.[
+          INPUT_TOKEN_COUNT_HEADER
+        ]
+        if (header !== undefined && Number.isFinite(Number(header))) inputTokens = Number(header)
+        return result
+      },
+      { step: 'deserialize', name: 'readInputTokenCount' }
+    )
     const response = await this.client
-      .send(
-        new InvokeModelCommand({
-          modelId: this.embeddingModel,
-          contentType: 'application/json',
-          accept: 'application/json',
-          body: JSON.stringify(body),
-        }),
-        timeoutMs ? { abortSignal: AbortSignal.timeout(timeoutMs) } : {}
-      )
+      .send(command, timeoutMs ? { abortSignal: AbortSignal.timeout(timeoutMs) } : {})
       .catch((err: unknown) => {
         throw classifyEmbedRejection(err) ?? err
       })
-    return JSON.parse(new TextDecoder().decode(response.body)) as T
+    return {
+      payload: JSON.parse(new TextDecoder().decode(response.body)) as T,
+      inputTokens,
+    }
   }
 
   /** Cohere embed request (e.g. cohere.embed-v4) — real batch API, asymmetric input_type */
-  private async invokeCohere(texts: string[], options?: EmbedOptions): Promise<number[][]> {
-    const payload = await this.invokeJson<{ embeddings: number[][] | { float?: number[][] } }>(
+  private async invokeCohere(
+    texts: string[],
+    options?: EmbedOptions
+  ): Promise<{ vectors: number[][]; inputTokens?: number }> {
+    const { payload, inputTokens } = await this.invokeJson<{
+      embeddings: number[][] | { float?: number[][] }
+    }>(
       {
         texts,
         input_type: options?.type === 'query' ? 'search_query' : 'search_document',
@@ -209,38 +241,76 @@ export class BedrockAIAdapter implements AIAdapter {
     if (!embeddings) {
       throw new Error(`Unexpected Cohere embed response shape: ${Object.keys(payload).join(', ')}`)
     }
-    return embeddings
+    return { vectors: embeddings, inputTokens }
   }
 
-  async embed(text: string, options?: EmbedOptions): Promise<number[]> {
-    if (this.isCohere) {
-      const [embedding] = await this.invokeCohere([text], options)
-      return embedding
-    }
-    const payload = await this.invokeJson<{ embedding: number[] }>(
+  /** Titan embed request — one text per call */
+  private async invokeTitan(
+    text: string,
+    options?: EmbedOptions
+  ): Promise<{ vector: number[]; inputTokens?: number }> {
+    const { payload, inputTokens } = await this.invokeJson<{ embedding: number[] }>(
       { inputText: text, dimensions: this.embeddingDimensions, normalize: true },
       options?.timeoutMs
     )
-    return payload.embedding
+    return { vector: payload.embedding, inputTokens }
   }
 
+  async embed(text: string, options?: EmbedOptions): Promise<number[]> {
+    const [embedding] = await this.embedBatch([text], options)
+    return embedding
+  }
+
+  /**
+   * Usage is reported even when a later request fails: the ones before it were
+   * billed, and a caller that falls back to one text at a time would otherwise
+   * record only the retries.
+   */
   async embedBatch(texts: string[], options?: EmbedOptions): Promise<number[][]> {
-    if (this.isCohere) {
-      const results: number[][] = []
-      for (let i = 0; i < texts.length; i += COHERE_BATCH_SIZE) {
-        results.push(...(await this.invokeCohere(texts.slice(i, i + COHERE_BATCH_SIZE), options)))
-      }
-      return results
-    }
     const results: number[][] = new Array(texts.length)
-    for (let i = 0; i < texts.length; i += EMBED_CONCURRENCY) {
-      const chunk = texts.slice(i, i + EMBED_CONCURRENCY)
-      const embedded = await Promise.all(chunk.map((text) => this.embed(text, options)))
-      for (let j = 0; j < embedded.length; j++) {
-        results[i + j] = embedded[j]
-      }
+    // A request that reported nothing leaves the total unknown rather than short.
+    // Successes are counted apart from the sum: one that reported no count was
+    // still billed, and must still be reported if a later request fails.
+    let sum = 0
+    let known = true
+    let succeeded = 0
+    const add = (tokens: number | undefined) => {
+      succeeded++
+      if (tokens === undefined) known = false
+      else sum += tokens
     }
-    return results
+    let ok = false
+    try {
+      if (this.isCohere) {
+        for (let i = 0; i < texts.length; i += COHERE_BATCH_SIZE) {
+          const { vectors, inputTokens } = await this.invokeCohere(
+            texts.slice(i, i + COHERE_BATCH_SIZE),
+            options
+          )
+          vectors.forEach((vector, j) => (results[i + j] = vector))
+          add(inputTokens)
+        }
+      } else {
+        for (let i = 0; i < texts.length; i += EMBED_CONCURRENCY) {
+          const chunk = texts.slice(i, i + EMBED_CONCURRENCY)
+          // Settled rather than all: a sibling that succeeds after one fails is billed too
+          const settled = await Promise.allSettled(
+            chunk.map((text) => this.invokeTitan(text, options))
+          )
+          settled.forEach((outcome, j) => {
+            if (outcome.status !== 'fulfilled') return
+            results[i + j] = outcome.value.vector
+            add(outcome.value.inputTokens)
+          })
+          const failed = settled.find((outcome) => outcome.status === 'rejected')
+          if (failed) throw failed.reason
+        }
+      }
+      ok = true
+      return results
+    } finally {
+      if (ok || succeeded > 0) options?.onUsage?.({ inputTokens: known ? sum : undefined })
+    }
   }
 
   getEmbeddingInfo(): EmbeddingInfo {

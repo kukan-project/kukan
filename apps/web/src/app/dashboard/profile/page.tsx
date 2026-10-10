@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, Field, FieldTitle } from '@ku
 import { useTranslations } from 'next-intl'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { PasswordChangeCard } from '@/components/dashboard/password-change-card'
+import { PasswordChangeCard } from '@/components/dashboard/profile/password-change-card'
 
 export default function ProfilePage() {
   const user = useUser()

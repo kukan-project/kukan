@@ -15,6 +15,8 @@ import { keepIfEqual } from '@/lib/keep-if-equal'
  */
 export function useLatestJson<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null)
+  // Whether the latest answer failed — what is shown stays either way
+  const [error, setError] = useState(false)
   const request = useRef(0)
 
   const fetch = useCallback(async () => {
@@ -22,11 +24,14 @@ export function useLatestJson<T>(url: string | null) {
     const id = ++request.current
     try {
       const res = await clientFetch(url)
-      if (!res.ok) return
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const next: T = await res.json()
-      if (id === request.current) setData((prev) => keepIfEqual(prev, next))
+      if (id !== request.current) return
+      setData((prev) => keepIfEqual(prev, next))
+      setError(false)
     } catch {
       // What is shown stays; the next fetch tries again
+      if (id === request.current) setError(true)
     }
   }, [url])
 
@@ -34,5 +39,5 @@ export function useLatestJson<T>(url: string | null) {
     fetch()
   }, [fetch])
 
-  return { data, fetch }
+  return { data, error, fetch }
 }

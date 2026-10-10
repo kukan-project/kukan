@@ -229,6 +229,9 @@ export const scrubbedExtras = sql<
  */
 export const PRIVATE_SUMMARY_META_KEYS = [
   'genKey',
+  // The stamp a standing refusal carries — a generation key like the one above
+  'skipGenKey',
+  'skipVersion',
   'rejectedTokens',
   'model',
   'grounded',

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { Readable } from 'stream'
 import { randomUUID } from 'node:crypto'
 import { zstdCompressSync } from 'node:zlib'
@@ -2883,6 +2883,26 @@ describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
 
     const after = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
     expect(after.summary).toBeNull()
+  })
+
+  it('serves the reason a refusal gave, and not the stamp it was recorded under', async () => {
+    const { resource } = await withAbstract('summary-refusal-stamp')
+    await db
+      .update(resourceTable)
+      .set({
+        summaryMeta: sql`${resourceTable.summaryMeta} || ${JSON.stringify({
+          skipReason: 'format-mismatch',
+          skipGenKey: 'm|1|ja',
+          skipVersion: 2,
+        })}::jsonb`,
+      })
+      .where(eq(resourceTable.id, resource.id))
+
+    const body = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+
+    expect(body.summaryMeta.skipReason).toBe('format-mismatch')
+    expect(body.summaryMeta.skipGenKey).toBeUndefined()
+    expect(body.summaryMeta.skipVersion).toBeUndefined()
   })
 
   it('puts a hidden abstract back on the page when it is unhidden', async () => {

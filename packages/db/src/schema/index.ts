@@ -42,3 +42,6 @@ export * from './announcement'
 
 // Runtime-adjustable settings
 export * from './system-setting'
+
+// AI usage (what calls consumed and cost)
+export * from './ai-usage'

@@ -10,9 +10,9 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { eq } from 'drizzle-orm'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { AiInputRejectedError, type AIAdapter } from '@kukan/ai-adapter'
+import { AiInputRejectedError, type AIAdapter, type MeteredAI } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import { createLogger } from '@kukan/shared'
+import { createLogger, generationKey } from '@kukan/shared'
 import { setResourceSummary } from '@kukan/api/services/resource-summary-service'
 import {
   executeSummarize,
@@ -56,12 +56,12 @@ function aiThat(complete: AIAdapter['complete']) {
     getCompletionInfo: () => ({ provider: 'bedrock', defaultModel: MODEL, allowlist: [MODEL] }),
     getDocumentInfo: () => ({ documentFormats: ['pdf'], imageFormats: [], maxImageBytes: 1 }),
     getEmbeddingInfo: () => null,
-  } as unknown as AIAdapter
+  } as unknown as MeteredAI
 }
 
 const abstract = JSON.stringify({ summary: 'AI が書いた抄録。', groundedInMaterial: true })
 
-function depsWith(ai: AIAdapter): SummaryDeps {
+function depsWith(ai: MeteredAI): SummaryDeps {
   return {
     db,
     storage,
@@ -319,6 +319,60 @@ describe('the Summarize step', () => {
     expect(stored.meta.rejectedTokens).toBe(919286)
   })
 
+  it('stamps a declared format the bytes contradict with the generation that read it', async () => {
+    // Declared a PDF, the bytes are a JSON manifest. The estimate leaves out a
+    // mismatch this generation recorded for this version — so it has to be
+    // recorded as this generation's, or the estimate quotes for it forever
+    const input = await seed('complete', { format: 'PDF' })
+    const complete = vi.fn()
+    const deps = depsWith(aiThat(complete as unknown as AIAdapter['complete']))
+
+    const result = await executeSummarize(input, deps)
+    expect(result).toEqual({
+      status: 'skipped',
+      reason: 'format-mismatch',
+      genKey: generationKey(MODEL, 'ja'),
+      version: 1,
+    })
+    if (result.status === 'skipped') await recordSkip(input, deps, result.reason, result)
+
+    const stored = await storedSummary(input.resourceId)
+    expect(stored.meta).toMatchObject({
+      skipReason: 'format-mismatch',
+      skipGenKey: generationKey(MODEL, 'ja'),
+      skipVersion: 1,
+    })
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it("keeps a kept abstract's own version and generation when a later version is refused", async () => {
+    // Version 1 has an abstract; version 2 declares a PDF its bytes are not.
+    // The abstract stays, and must still read as written from version 1
+    const input = await seed('complete', { format: 'PDF' })
+    await db
+      .update(resource)
+      .set({
+        summary: '版 1 の抄録。',
+        summaryMeta: { source: 'ai', version: 1, genKey: 'some.older-model|1|ja' },
+      })
+      .where(eq(resource.id, input.resourceId))
+    const v2 = { ...input, version: 2 }
+    const deps = depsWith(aiThat(vi.fn() as unknown as AIAdapter['complete']))
+
+    const result = await executeSummarize(v2, deps)
+    if (result.status === 'skipped') await recordSkip(v2, deps, result.reason, result)
+
+    const stored = await storedSummary(input.resourceId)
+    expect(stored.summary).toBe('版 1 の抄録。')
+    expect(stored.meta).toMatchObject({
+      version: 1,
+      genKey: 'some.older-model|1|ja',
+      skipReason: 'format-mismatch',
+      skipVersion: 2,
+      skipGenKey: generationKey(MODEL, 'ja'),
+    })
+  })
+
   it('tries a refused input again once the version moved', async () => {
     // A refusal is about one version. The next version is a different file,
     // or the same bytes settled under a format of their own (migration 0029) —
@@ -330,7 +384,7 @@ describe('the Summarize step', () => {
     const deps = depsWith(aiThat(refusing as unknown as AIAdapter['complete']))
     const first = await executeSummarize(input, deps)
     if (first.status === 'skipped') await recordSkip(input, deps, first.reason, first)
-    expect((await storedSummary(input.resourceId)).meta.version).toBe(1)
+    expect((await storedSummary(input.resourceId)).meta.skipVersion).toBe(1)
 
     const next = await executeSummarize({ ...input, version: 2 }, deps)
 

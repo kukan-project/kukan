@@ -17,8 +17,8 @@ import {
   Input,
 } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { RegistrationCard } from '@/components/dashboard/registration-card'
-import { SearchExamplesCard } from '@/components/dashboard/search-examples-card'
+import { RegistrationCard } from '@/components/dashboard/site/registration-card'
+import { SearchExamplesCard } from '@/components/dashboard/site/search-examples-card'
 import { clientFetch } from '@/lib/client-api'
 
 interface ResetResult {

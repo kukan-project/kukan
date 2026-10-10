@@ -42,6 +42,7 @@ export * from './column-settings'
 
 // AI-generated resource abstracts (ADR-053)
 export * from './summary'
+export * from './ai-usage'
 
 // Licenses
 export * from './licenses'

@@ -46,6 +46,33 @@ describe('OpenAIAdapter', () => {
     )
   })
 
+  it('reports what an embed request consumed', async () => {
+    mockCreate.mockResolvedValueOnce({ data: [{ embedding: [1] }], usage: { prompt_tokens: 7 } })
+    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+    const seen: unknown[] = []
+
+    await adapter.embedBatch(['a'], { onUsage: (u) => seen.push(u) })
+
+    expect(seen).toEqual([{ inputTokens: 7 }])
+  })
+
+  it('reports cached prompt tokens apart from the rest of the input', async () => {
+    mockChatCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: 'ok' } }],
+      usage: {
+        prompt_tokens: 1000,
+        completion_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 800 },
+      },
+    })
+    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+    const seen: unknown[] = []
+
+    await adapter.complete('x', { onUsage: (u) => seen.push(u) })
+
+    expect(seen).toEqual([{ inputTokens: 200, outputTokens: 20, cacheReadTokens: 800 }])
+  })
+
   it('gives up on an embed request after the timeout it is given', async () => {
     mockCreate.mockResolvedValueOnce({ data: [{ embedding: [1] }] })
     const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })

@@ -3,6 +3,8 @@
  * Pluggable AI service backend (Bedrock, OpenAI, Ollama, or NoOp)
  */
 
+import type { AiProvider, AiUsageTokens } from '@kukan/shared/ai-usage'
+
 export interface AIAdapter {
   /**
    * Generate text completion from a prompt
@@ -121,13 +123,10 @@ export interface CompleteOptions {
 }
 
 /** Tokens a completion consumed, as the provider reported them */
-export interface CompletionUsage {
-  inputTokens?: number
-  outputTokens?: number
-}
+export type CompletionUsage = AiUsageTokens
 
 export interface CompletionInfo {
-  provider: 'bedrock' | 'openai' | 'ollama'
+  provider: AiProvider
   /** Used when the caller does not pass options.model */
   defaultModel: string
   /** Deployment-approved models (AI_COMPLETION_MODELS; on Bedrock = the IAM
@@ -149,7 +148,14 @@ export interface EmbedOptions {
   type?: 'query' | 'document'
   /** Give up on the request after this long, as `CompleteOptions.timeoutMs` */
   timeoutMs?: number
+  /** As `CompleteOptions.onUsage`: once per embed / embedBatch call, summed
+   *  over however many requests the adapter split it into — and also when a
+   *  later request failed, for those before it that were billed */
+  onUsage?: (usage: EmbeddingUsage) => void
 }
+
+/** Tokens an embedding call consumed, as the provider reported them */
+export type EmbeddingUsage = Pick<AiUsageTokens, 'inputTokens'>
 
 export interface EmbeddingInfo {
   /** Model identifier stored alongside vectors to detect mismatches (ADR-034) */

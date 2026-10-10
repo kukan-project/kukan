@@ -7,7 +7,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import type { Env, Logger } from '@kukan/shared'
 import { registerDatasetTools } from './tools/datasets'
 import { registerResourceTools } from './tools/resources'
@@ -21,7 +21,7 @@ interface McpContext {
   /** PostgreSQL adapter carrying the vectors (hybrid search, ADR-034) */
   dbSearch: SearchAdapter
   storage: StorageAdapter
-  ai: AIAdapter
+  ai: MeteredAI
   env: Env
   logger: Logger
   user?: { id: string; sysadmin: boolean }

@@ -2,14 +2,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { BedrockAIAdapter } from '../bedrock'
 import { AiInputRejectedError } from '../adapter'
 
-// Mock @aws-sdk/client-bedrock-runtime
+type Handler = (args?: unknown) => Promise<{ response: unknown; output: unknown }>
+type Middleware = (next: Handler) => Handler
+
+// Mock @aws-sdk/client-bedrock-runtime. A response may carry `$headers`, which
+// the command's own middleware sees on the raw response, as it would the HTTP one.
 const mockSend = vi.fn()
 vi.mock('@aws-sdk/client-bedrock-runtime', () => ({
   BedrockRuntimeClient: vi.fn().mockImplementation(function () {
-    return { send: mockSend }
+    return {
+      send: async (command: { middleware?: Middleware[] }, options: unknown) => {
+        const raw: Handler = async () => {
+          const output = (await mockSend(command, options)) as { $headers?: unknown }
+          return { response: { headers: output?.$headers ?? {} }, output }
+        }
+        const handler = (command.middleware ?? []).reduceRight<Handler>(
+          (next, middleware) => middleware(next),
+          raw
+        )
+        return (await handler()).output
+      },
+    }
   }),
   InvokeModelCommand: vi.fn().mockImplementation(function (input: unknown) {
-    return { input, _type: 'InvokeModel' }
+    const middleware: Middleware[] = []
+    return {
+      input,
+      _type: 'InvokeModel',
+      middleware,
+      middlewareStack: { add: (m: Middleware) => middleware.push(m) },
+    }
   }),
   ConverseCommand: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'Converse' }
@@ -43,17 +65,28 @@ function apiError(name: string, message: string) {
   return err
 }
 
-function invokeResponse(embedding: number[]) {
-  return { body: new TextEncoder().encode(JSON.stringify({ embedding })) }
+function invokeResponse(embedding: number[], inputTokens?: number) {
+  return {
+    body: new TextEncoder().encode(JSON.stringify({ embedding })),
+    ...tokenHeader(inputTokens),
+  }
 }
 
 /** Bedrock's Cohere v4 returns embeddings_by_type even without embedding_types (measured) */
-function cohereResponse(embeddings: number[][]) {
+function cohereResponse(embeddings: number[][], inputTokens?: number) {
   return {
     body: new TextEncoder().encode(
       JSON.stringify({ embeddings: { float: embeddings }, response_type: 'embeddings_by_type' })
     ),
+    ...tokenHeader(inputTokens),
   }
+}
+
+/** The header InvokeModel bills by — Cohere's body carries no count (measured) */
+function tokenHeader(inputTokens?: number) {
+  return inputTokens === undefined
+    ? {}
+    : { $headers: { 'x-amzn-bedrock-input-token-count': String(inputTokens) } }
 }
 
 describe('BedrockAIAdapter', () => {
@@ -411,6 +444,112 @@ describe('BedrockAIAdapter', () => {
     await adapter.complete('x', { onUsage: (u) => seen.push(u) })
 
     expect(seen).toEqual([{ inputTokens: 2048, outputTokens: 240 }])
+  })
+
+  it('reports the cached input apart from the rest', async () => {
+    mockSend.mockResolvedValueOnce({
+      ...converseResponse('ok'),
+      usage: {
+        inputTokens: 9,
+        outputTokens: 4,
+        cacheReadInputTokens: 300,
+        cacheWriteInputTokens: 50,
+      },
+    })
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    const seen: unknown[] = []
+
+    await adapter.complete('x', { onUsage: (u) => seen.push(u) })
+
+    expect(seen).toEqual([
+      { inputTokens: 9, outputTokens: 4, cacheReadTokens: 300, cacheWriteTokens: 50 },
+    ])
+  })
+
+  it('reports one embedBatch as one usage, summed over the Titan calls it made', async () => {
+    mockSend.mockImplementation((command: { input: { body: string } }) => {
+      const { inputText } = JSON.parse(command.input.body) as { inputText: string }
+      return Promise.resolve(invokeResponse([0], inputText.length))
+    })
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    const seen: unknown[] = []
+
+    await adapter.embedBatch(['a', 'bb', 'ccc'], { onUsage: (u) => seen.push(u) })
+
+    expect(seen).toEqual([{ inputTokens: 6 }])
+  })
+
+  it('reads Cohere usage off the header, its body having no count', async () => {
+    mockSend.mockImplementation((command: { input: { body: string } }) => {
+      const { texts } = JSON.parse(command.input.body) as { texts: string[] }
+      return Promise.resolve(
+        cohereResponse(
+          texts.map(() => [0]),
+          texts.length * 10
+        )
+      )
+    })
+    const adapter = new BedrockAIAdapter({
+      region: 'ap-northeast-1',
+      embeddingModel: 'cohere.embed-v4:0',
+    })
+    const seen: unknown[] = []
+
+    // 100 texts: two calls of 96 and 4
+    await adapter.embedBatch(
+      Array.from({ length: 100 }, () => 'x'),
+      { onUsage: (u) => seen.push(u) }
+    )
+
+    expect(seen).toEqual([{ inputTokens: 1000 }])
+  })
+
+  it('still reports what the calls before a failure were billed for', async () => {
+    const refused = Object.assign(new Error('Too many input tokens'), {
+      name: 'ValidationException',
+    })
+    mockSend.mockImplementation((command: { input: { body: string } }) => {
+      const { inputText } = JSON.parse(command.input.body) as { inputText: string }
+      return inputText === 'bad' ? Promise.reject(refused) : Promise.resolve(invokeResponse([0], 4))
+    })
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    const seen: unknown[] = []
+
+    // Nine texts: the first chunk of eight succeeds, and its sibling of the
+    // bad one in the next chunk is billed too
+    const texts = [...Array.from({ length: 8 }, () => 'ok'), 'bad', 'ok']
+    await expect(adapter.embedBatch(texts, { onUsage: (u) => seen.push(u) })).rejects.toThrow()
+
+    expect(seen).toEqual([{ inputTokens: 36 }])
+  })
+
+  it('reports a billed call before a failure even when it gave no count', async () => {
+    const refused = Object.assign(new Error('Too many input tokens'), {
+      name: 'ValidationException',
+    })
+    mockSend.mockResolvedValueOnce(invokeResponse([0])).mockRejectedValueOnce(refused)
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    const seen: unknown[] = []
+
+    await expect(
+      adapter.embedBatch(['ok', 'bad'], { onUsage: (u) => seen.push(u) })
+    ).rejects.toThrow()
+
+    // Reported, and unknown — recorded as unpriced rather than not at all
+    expect(seen).toEqual([{ inputTokens: undefined }])
+    expect(seen).toHaveLength(1)
+  })
+
+  it('leaves the embedding total unknown when one call reported nothing', async () => {
+    mockSend
+      .mockResolvedValueOnce(invokeResponse([0], 5))
+      .mockResolvedValueOnce(invokeResponse([0]))
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    const seen: unknown[] = []
+
+    await adapter.embedBatch(['a', 'b'], { onUsage: (u) => seen.push(u) })
+
+    expect(seen).toEqual([{ inputTokens: undefined }])
   })
 
   it('still reports when the provider says nothing, so a silent provider is visible', async () => {

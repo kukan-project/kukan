@@ -4,4 +4,5 @@
  */
 export { createApp } from './app'
 export { closePool } from '@kukan/db'
+export { flushAiUsage } from './adapters'
 export type { AppContext } from './context'

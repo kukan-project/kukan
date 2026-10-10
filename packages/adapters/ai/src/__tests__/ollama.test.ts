@@ -35,6 +35,19 @@ describe('OllamaAdapter', () => {
     expect(body).toEqual({ model: 'bge-m3', input: ['こんにちは'] })
   })
 
+  it('reports what an embed request consumed', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ embeddings: [[1], [2]], prompt_eval_count: 12 }),
+    })
+    const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+    const seen: unknown[] = []
+
+    await adapter.embedBatch(['a', 'b'], { onUsage: (u) => seen.push(u) })
+
+    expect(seen).toEqual([{ inputTokens: 12 }])
+  })
+
   it('lists only the approved models — pulled models are never enumerated', async () => {
     const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
 

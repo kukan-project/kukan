@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { SemanticSearchCard } from '../semantic-search-card'
 
@@ -114,5 +114,62 @@ describe('SemanticSearchCard', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeEnabled()
+  })
+})
+
+describe('SemanticSearchCard once regeneration is queued', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  /** A second at a time until `check` passes, for at most `ms` */
+  async function elapseUntil(ms: number, check: () => void) {
+    for (let t = 0; ; t += 1_000) {
+      try {
+        return check()
+      } catch (err) {
+        if (t >= ms) throw err
+      }
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+    }
+  }
+
+  it('follows what is left, holding the button back, and says when it is done', async () => {
+    const left = [40, 12, 0]
+    let reads = 0
+    mockClientFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/admin/settings/vector-search') return ok(vector)
+      if (path === '/api/v1/admin/embedding-status') {
+        const outstanding = left[Math.min(reads++, left.length - 1)]
+        // `missing` leaves out what regeneration just marked: it is not what is followed
+        return ok({ missing: 0, outstanding })
+      }
+      return ok({})
+    })
+    render(<SemanticSearchCard />)
+    const button = await screen.findByRole('button', { name: 'Regenerate' })
+    // Nothing about the embeddings is read before the press
+    expect(mockClientFetch).not.toHaveBeenCalledWith('/api/v1/admin/embedding-status')
+
+    fireEvent.click(button)
+    expect(await screen.findByText('Regenerating embeddings: 40 left')).toBeInTheDocument()
+    expect(button).toBeDisabled()
+
+    await elapseUntil(20_000, () =>
+      expect(screen.getByText('Regenerating embeddings: 12 left')).toBeInTheDocument()
+    )
+    await elapseUntil(20_000, () =>
+      expect(screen.getByText('Embedding regeneration is done.')).toBeInTheDocument()
+    )
+    expect(button).toBeEnabled()
+    const after = reads
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(reads).toBe(after)
   })
 })

@@ -181,9 +181,13 @@ export async function summaryEstimate(
   // `no-material`, `unsupported-format`, `too-large` — are deliberately *not*
   // here; those are re-asked below, because understating a bill is the worse
   // error to make.
+  // The stamp is its own pair of fields; rows from before them carry it in the
+  // abstract's (see ResourceSummaryMeta.skipVersion).
   const standingRefusal = sql`(${resource.summaryMeta}->>'skipReason' IN ('rejected', 'format-mismatch')
-    AND ${resource.summaryMeta}->>'genKey' IS NOT DISTINCT FROM ${genKey}
-    AND ${describesLive})`
+    AND COALESCE(${resource.summaryMeta}->>'skipGenKey', ${resource.summaryMeta}->>'genKey')
+      IS NOT DISTINCT FROM ${genKey}
+    AND COALESCE(${resource.summaryMeta}->>'skipVersion', ${resource.summaryMeta}->>'version')::int
+      IS NOT DISTINCT FROM ${versionAgg.liveVersion})`
   // What each count is taken over. Spelled once and combined, because the
   // difference between them is one predicate and hand-writing every pairing
   // is how two of them come to disagree.
@@ -192,9 +196,12 @@ export async function summaryEstimate(
   // Only a refresh reaches these: the abstract describes the live version, and
   // the deployment has since changed how it writes them. Disjoint from
   // `fillWrites` by the version test both sides share, so the refresh total
-  // adds the two without counting a resource twice.
+  // adds the two without counting a resource twice. Not one the current
+  // generation has refused for this version, either: the old abstract stays,
+  // and the run leaves it, as it does on the fill side.
   const refreshAdds = sql`${resource.summary} IS NOT NULL AND ${describesLive}
-    AND ${resource.summaryMeta}->>'genKey' IS DISTINCT FROM ${genKey}`
+    AND ${resource.summaryMeta}->>'genKey' IS DISTINCT FROM ${genKey}
+    AND NOT ${standingRefusal}`
   // The version's bytes, as the walk measures them
   const withinDoc = sql`${versionAgg.size} <= ${SUMMARY_MAX_DOC_BYTES}`
   const withinOffice = sql`${versionAgg.size} <= ${SUMMARY_MAX_OFFICE_BYTES}`

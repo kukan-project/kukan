@@ -10,18 +10,30 @@ import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import {
   type AIAdapter,
+  type MeteredAI,
   NoOpAIAdapter,
   BedrockAIAdapter,
   OpenAIAdapter,
   OllamaAdapter,
+  meterAI,
 } from '@kukan/ai-adapter'
+import { createAiUsageRecorder, type AiUsageRecorder } from './services/ai-usage-recorder'
 
 const globalForSearch = globalThis as unknown as {
   __kukanOpenSearchAdapter?: OpenSearchAdapter
 }
 
-/** Create the AI adapter from env (also used standalone by the worker) */
-export function createAIAdapter(env: Env): AIAdapter {
+// One recorder per process: in development the app is rebuilt per request,
+// and a recorder each would leave a timer each, and split one quarter's sums
+const globalForUsage = globalThis as unknown as { __kukanAiUsage?: AiUsageRecorder }
+
+/** Write the usage held in memory; for the process's shutdown, before the pool closes */
+export async function flushAiUsage(): Promise<void> {
+  await globalForUsage.__kukanAiUsage?.stop()
+}
+
+/** The provider adapter from env — never handed out bare, only metered (below) */
+function createAIAdapter(env: Env): AIAdapter {
   if (env.AI_TYPE === 'none') {
     return new NoOpAIAdapter()
   }
@@ -54,6 +66,22 @@ export function createAIAdapter(env: Env): AIAdapter {
   })
 }
 
+/**
+ * The AI adapter from env, with every call it completes recorded to
+ * `ai_usage` — the one the application is given (also used by the worker).
+ */
+export function createMeteredAI(
+  env: Env,
+  db: Database,
+  logger: Logger
+): { ai: MeteredAI; usage: AiUsageRecorder } {
+  const usage = (globalForUsage.__kukanAiUsage ??= createAiUsageRecorder(
+    db,
+    logger.child({ component: 'ai-usage' })
+  ))
+  return { ai: meterAI(createAIAdapter(env), usage.sink), usage }
+}
+
 export async function createAdapters(env: Env, db: Database, logger: Logger) {
   // Storage adapter (S3: AWS S3 or MinIO, determined by S3_ENDPOINT)
   const storage = new S3StorageAdapter({
@@ -65,7 +93,7 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   })
 
   // AI adapter (created before search — its model knows the similarity floor)
-  const ai = createAIAdapter(env)
+  const { ai } = createMeteredAI(env, db, logger)
 
   // Search adapter
   // dbSearch: always PostgreSQL for dashboard (consistent with DB) and vectors (ADR-034).

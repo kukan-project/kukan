@@ -6,7 +6,20 @@
 import { Hono, type Context } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
-import { eq, ne, and, count, exists, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
+import {
+  eq,
+  ne,
+  and,
+  count,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  ilike,
+  or,
+  sql,
+  desc,
+} from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -52,6 +65,8 @@ import {
 import { PipelineService, reprocessAllPending } from '../services/pipeline-service'
 import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
 import { summaryEstimate } from '../services/summary-estimate'
+import { AI_USAGE_GRANULARITIES } from '@kukan/shared'
+import { aiUsageReport } from '../services/ai-usage-report'
 import { getSummaryModel } from '../services/suggest/availability'
 
 import { AI_SUMMARY_LOCALE_KEY } from '../services/system-setting'
@@ -340,6 +355,7 @@ adminRouter.post('/settings/ai-suggest/test', async (c) => {
   const startedAt = Date.now()
   try {
     const raw = await c.get('ai').complete('Reply with {"ok": true}.', {
+      usage: { purpose: 'connection-test' },
       model: context.effectiveModel,
       maxTokens: 100,
       timeoutMs: AI_SUGGEST_TEST_TIMEOUT_MS,
@@ -506,6 +522,14 @@ adminRouter.get('/summary-estimate', async (c) => {
   return c.json(estimate)
 })
 
+// GET /api/v1/admin/ai-usage — What AI calls consumed and cost, per hour, day
+// or month in the site's time zone, with this month's projection
+const aiUsageQuery = z.object({ granularity: z.enum(AI_USAGE_GRANULARITIES).default('day') })
+adminRouter.get('/ai-usage', zValidator('query', aiUsageQuery), async (c) => {
+  const { granularity } = c.req.valid('query')
+  return c.json(await aiUsageReport(c.get('db'), { granularity, timeZone: c.get('env').TIME_ZONE }))
+})
+
 // POST /api/v1/admin/generate-summaries — Write every abstract the catalog is
 // missing, and rebuild the embeddings that depend on them (ADR-053 §11).
 //
@@ -562,19 +586,22 @@ adminRouter.post('/reindex-embeddings', async (c) => {
 // vectors are gone, nothing rebuilds them on its own, and a search that finds
 // nothing looks exactly like a search that found nothing.
 //
-// `missing` leaves out resources marked within the grace period, so the
-// ordinary gap between an edit and its delayed job is not reported as work an
-// administrator has to do. `outstanding` keeps them: regenerating marks every
-// resource it queues, so that is the figure that follows the work once it is
-// asked for. A model switch is counted too — that also leaves the catalogue
-// half-reachable, and the same button fixes it.
+// `missing` counts resources without a vector of the current model, leaving
+// out those marked within the grace period, so the ordinary gap between an
+// edit and its delayed job is not reported as work an administrator has to do.
+// A model switch is counted too — that also leaves the catalogue
+// half-reachable, and the same button fixes it. `outstanding` is the work left
+// once regeneration is asked for: those, the marked ones among them, and every
+// resource still marked whatever its model — regenerating marks every
+// resource, and one whose vector is current is still waiting on its job.
 adminRouter.get('/embedding-status', async (c) => {
   const info = c.get('ai').getEmbeddingInfo()
   if (!info) return c.json({ missing: 0, outstanding: 0 })
   const db = c.get('db')
+  const stale = or(isNull(resource.embeddingModel), ne(resource.embeddingModel, embeddingKey(info)))
   const [counts] = await db
     .select({
-      missing: sql<number>`count(*) filter (where ${leasePassed(
+      missing: sql<number>`count(*) filter (where ${stale} and ${leasePassed(
         resource.embeddingDueAt,
         EMBED_NOTICE_GRACE_MS
       )})`.mapWith(Number),
@@ -584,7 +611,7 @@ adminRouter.get('/embedding-status', async (c) => {
     .where(
       and(
         eq(resource.state, 'active'),
-        or(isNull(resource.embeddingModel), ne(resource.embeddingModel, embeddingKey(info))),
+        or(stale, isNotNull(resource.embeddingDueAt)),
         // Mirrors the emptiness test in buildResourceEmbeddingText: the worker
         // embeds the package's title and tags together with the resource's own
         // words, and a resource with none of either produces no text to embed.

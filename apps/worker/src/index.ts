@@ -57,7 +57,7 @@ import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-back
 import { OrganizationService } from '@kukan/api/services/organization-service'
 import { dropPurgedLakeTables, queueStrandedLakeTables } from '@kukan/api/services/lake-reclaim'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
-import { createAIAdapter } from '@kukan/api/adapters'
+import { createMeteredAI } from '@kukan/api/adapters'
 import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
 import { reanalyseSearchIndex } from './search/reanalyse-index'
 import type { SummaryDeps } from './pipeline/steps/summarize'
@@ -305,8 +305,8 @@ const resourceDocSweepJob = startCronJob({
   },
 })
 
-// --- AI adapter (embedding; NoOp when AI_TYPE=none) ---
-const ai = createAIAdapter(env)
+// --- AI adapter (embedding; NoOp when AI_TYPE=none), every call recorded ---
+const { ai, usage: aiUsage } = createMeteredAI(env, db, log)
 
 // --- Stale vectors (ADR-054) ---
 // As for the documents above: the queue owns the retry, this the job it never
@@ -694,6 +694,7 @@ const shutdown = async () => {
   // Before the pool: each holds a libpq connection of its own, opened by the
   // catalog ATTACH and invisible to Drizzle's accounting (ADR-043).
   await closeLakeInstances()
+  await aiUsage.stop()
   await db.$client.end()
   process.exit(0)
 }

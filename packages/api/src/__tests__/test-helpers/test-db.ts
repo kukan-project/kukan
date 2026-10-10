@@ -92,6 +92,7 @@ export async function cleanDatabase() {
     'activity',
     'announcement',
     'system_setting',
+    'ai_usage',
     'group',
     'organization',
   ])

@@ -11,7 +11,7 @@ import { Hono } from 'hono'
 import { Request as NextLikeRequest } from 'undici'
 import type { Readable } from 'node:stream'
 import type { Database } from '@kukan/db'
-import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
+import { NoOpAIAdapter, meterAI, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import type { JobQueue } from '@kukan/queue'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -133,7 +133,6 @@ export const mockQueue: JobQueue = {
   process: vi.fn().mockResolvedValue(undefined),
   stop: vi.fn().mockResolvedValue(undefined),
 }
-const mockAi = new NoOpAIAdapter()
 
 /** Completion-capable AI stub for AI-suggest tests (ADR-040) */
 export function mockCompletionAi(complete: AIAdapter['complete'] = async () => '{}') {
@@ -171,6 +170,7 @@ export const testEnv = {
   SEARCH_TYPE: 'postgres',
   OPENSEARCH_URL: 'http://localhost:9200',
   AI_TYPE: 'none',
+  TIME_ZONE: 'Asia/Tokyo',
   BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long!',
   BETTER_AUTH_URL: 'http://localhost:3000',
 } as unknown as Env
@@ -186,7 +186,8 @@ const defaultTestUser = {
 
 interface TestAppOverrides {
   search?: SearchAdapter
-  /** Override the AI adapter (e.g. an embedding-capable stub for hybrid-search tests). */
+  /** Override the AI adapter (e.g. an embedding-capable stub for hybrid-search tests).
+   *  Metered to nowhere, so the stub sees the calls as a provider would. */
   ai?: AIAdapter
   /** Override the storage adapter (e.g. to return actual file content in preview tests). */
   storage?: StorageAdapter
@@ -245,7 +246,10 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('dbSearch', new PostgresSearchAdapter(db))
     c.set('storage', overrides?.storage ?? mockStorage)
     c.set('queue', overrides?.queue ?? mockQueue)
-    c.set('ai', overrides?.ai ?? mockAi)
+    c.set(
+      'ai',
+      meterAI(overrides?.ai ?? new NoOpAIAdapter(), () => {})
+    )
     c.set('auth', overrides?.auth ?? mockAuth)
     c.set('env', overrides?.env ? { ...testEnv, ...overrides.env } : testEnv)
     c.set('logger', testLogger)

@@ -22,6 +22,26 @@ describe('useLatestJson', () => {
     expect(clientFetch).toHaveBeenCalledWith('/api/x')
   })
 
+  it('says the latest answer failed, keeping what it showed, until one succeeds', async () => {
+    vi.mocked(clientFetch)
+      .mockResolvedValueOnce(ok({ n: 1 }))
+      .mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+      .mockResolvedValueOnce(ok({ n: 2 }))
+    const { result } = renderHook(() => useLatestJson<{ n: number }>('/api/x'))
+    await waitFor(() => expect(result.current.data).toEqual({ n: 1 }))
+    expect(result.current.error).toBe(false)
+
+    await act(async () => {
+      await result.current.fetch()
+    })
+    expect(result.current).toMatchObject({ data: { n: 1 }, error: true })
+
+    await act(async () => {
+      await result.current.fetch()
+    })
+    expect(result.current).toMatchObject({ data: { n: 2 }, error: false })
+  })
+
   it('keeps the same value when the answer has not changed', async () => {
     vi.mocked(clientFetch).mockImplementation(async () => ok({ n: 1 }))
     const { result } = renderHook(() => useLatestJson<{ n: number }>('/api/x'))

@@ -70,6 +70,8 @@ export async function setResourceSummary(
       // A person's text answers whatever the last run could not do, so the
       // reason it gave stops being the page's explanation.
       delete meta.skipReason
+      delete meta.skipVersion
+      delete meta.skipGenKey
       // And it was not written by any generation
       delete meta.genKey
       delete meta.grounded

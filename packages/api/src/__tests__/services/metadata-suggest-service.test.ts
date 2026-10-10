@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Readable } from 'node:stream'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import { createMockDb } from '../test-helpers/mock-db'
 import {
   MetadataSuggestService,
@@ -25,7 +25,7 @@ function makeAi(...responses: Array<string | Error>) {
     if (response instanceof Error) complete.mockRejectedValueOnce(response)
     else complete.mockResolvedValueOnce(response)
   }
-  return { ai: { complete } as unknown as AIAdapter, complete }
+  return { ai: { complete } as unknown as MeteredAI, complete }
 }
 
 function makeStorage(content = 'こんにちは、テストです') {

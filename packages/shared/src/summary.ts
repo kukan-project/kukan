@@ -114,6 +114,16 @@ export interface ResourceSummaryMeta {
   grounded?: boolean
   /** What an over-limit refusal said the request came to, so the next run refuses it first */
   rejectedTokens?: number
+  /**
+   * The version and generation a standing refusal (`rejected`,
+   * `format-mismatch`) was found under, so the next run and the estimate
+   * recognise it. Apart from `version` and `genKey`, which describe the
+   * abstract kept beside the reason: a refusal of version 2 must not relabel
+   * version 1's abstract as written from it. Rows recorded before these
+   * existed carry the stamp in those two instead, and are read that way.
+   */
+  skipVersion?: number
+  skipGenKey?: string
 }
 
 /** The abstract as the public API returns it (ADR-053 §10.1) */
@@ -236,8 +246,8 @@ export function generationKey(model: string, locale: SummaryLocale): string {
  * pays 5× both rates — the fourth column. An original PDF crosses it at about
  * 40 pages, so it has to be decided per request (see requestUsd). No call
  * caches its prompt (ADR-053, cost), so every input token is billed at these
- * rates; one that did would pay other rates, and its cache reads would still
- * count toward Haiku 5.5's line.
+ * rates; one that did would pay its share of them (see requestUsd), and its
+ * cache reads would still count toward Haiku 5.5's line.
  *
  * **A model that is not listed has no rate, and the screen shows tokens only.**
  * Rates move, and a figure nobody checked is worse than none when the subject
@@ -276,13 +286,16 @@ const BASE_RATES_USD: ReadonlyArray<
 const GEO_PROFILE_PREMIUM = 1.1
 
 /**
- * Amazon's own models are priced per Region rather than per profile, so they
- * carry their Region rate and take no premium. Nova 2.0 Lite is here because it
- * is invokable, not because it should be used — Phase C measured what it does
- * to a scanned page (appendix 18).
+ * Models invoked in one Region rather than through a profile carry that
+ * Region's rate (ap-northeast-1) and take no premium. Nova 2.0 Lite is here
+ * because it is invokable, not because it should be used — Phase C measured
+ * what it does to a scanned page (appendix 18). The embedding models are from
+ * the AWS Price List API (2026-10) and have no output.
  */
 const REGION_RATES_USD: ReadonlyArray<[match: string, input: number, output: number]> = [
   ['nova-2-lite', 0.36, 3.01],
+  ['titan-embed-text-v2', 0.029, 0],
+  ['cohere.embed-v4', 0.12, 0],
 ]
 
 /** The band a model priced by prompt length charges a long request, on both counts */
@@ -296,6 +309,8 @@ export interface TokenRate {
   inputPerMillion: number
   outputPerMillion: number
   longPrompt?: LongPromptRate
+  /** Cached input as a share of the input rate, where the model has its own */
+  cache?: { read: number; write: number }
 }
 
 /**
@@ -316,6 +331,7 @@ export function tokenRate(model: string | null): TokenRate | null {
   return {
     inputPerMillion: base[1] * factor,
     outputPerMillion: base[2] * factor,
+    cache: ANTHROPIC_CACHE,
     ...(long && {
       longPrompt: {
         aboveInputTokens: long.aboveInputTokens,
@@ -326,16 +342,30 @@ export function tokenRate(model: string | null): TokenRate | null {
   }
 }
 
+/** Cached input, as a share of the input rate (Anthropic's on Bedrock, both profiles) */
+const ANTHROPIC_CACHE = { read: 0.1, write: 1.25 }
+
 /**
  * USD for one request, unrounded.
  *
  * Per request rather than for a total, because the band is chosen by each
  * request's own input: a hundred 125k-token PDFs on Haiku 5.5 cost five times
- * what their sum priced at the lower band says.
+ * what their sum priced at the lower band says. Cached input counts toward the
+ * band and pays its share of the band's input rate — the full rate for a model
+ * whose share is not recorded, which overstates rather than hides it.
  */
-export function requestUsd(rate: TokenRate, input: number, output: number): number {
-  const band = rate.longPrompt && input > rate.longPrompt.aboveInputTokens ? rate.longPrompt : rate
-  return (input * band.inputPerMillion + output * band.outputPerMillion) / 1_000_000
+export function requestUsd(
+  rate: TokenRate,
+  input: number,
+  output: number,
+  cache: { read?: number; write?: number } = {}
+): number {
+  const read = cache.read ?? 0
+  const write = cache.write ?? 0
+  const prompt = input + read + write
+  const band = rate.longPrompt && prompt > rate.longPrompt.aboveInputTokens ? rate.longPrompt : rate
+  const inputUnits = input + read * (rate.cache?.read ?? 1) + write * (rate.cache?.write ?? 1)
+  return (inputUnits * band.inputPerMillion + output * band.outputPerMillion) / 1_000_000
 }
 
 /** USD to the cent, for showing */

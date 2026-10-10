@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { MatchedResource, MatchedResourcesCount, SearchAdapter } from '@kukan/search-adapter'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import { PackageService } from '../../services/package-service'
 import { hybridSearch } from '../../services/hybrid-search'
@@ -18,7 +18,7 @@ interface DatasetToolsContext {
   search: SearchAdapter
   /** PostgreSQL adapter carrying the vectors (hybrid search, ADR-034) */
   dbSearch: SearchAdapter
-  ai: AIAdapter
+  ai: MeteredAI
   logger: Logger
   user?: AuthUser
 }

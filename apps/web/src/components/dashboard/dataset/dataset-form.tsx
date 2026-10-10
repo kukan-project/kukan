@@ -43,7 +43,7 @@ import {
 } from './metadata-suggest-dialog'
 import { useZodResolver } from '@/hooks/use-zod-resolver'
 import { useProblemMessage } from '@/hooks/use-problem-message'
-import { ExtrasFields, snapshotExtras, useExtrasRows } from '../extras-fields'
+import { ExtrasFields, snapshotExtras, useExtrasRows } from './extras-fields'
 
 /** Form-level schema: licenseId is required in the UI */
 const datasetFormSchema = createPackageSchema.extend({

@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { useLatestJson } from '@/hooks/use-latest-json'
 import { useUser } from '@/components/dashboard/user-provider'
-import { MaintenanceNotice } from '@/components/dashboard/maintenance-notice'
+import { MaintenanceNotice } from '@/components/dashboard/maintenance/maintenance-notice'
 
 /**
  * Prompt to rebuild the embeddings semantic search reads (ADR-054).

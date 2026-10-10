@@ -20,7 +20,7 @@ import type {
 } from '@kukan/search-adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from '@kukan/search-adapter'
 import { resourceDocColumns } from './resource-service'
-import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
+import { type MeteredAI, embeddingKey } from '@kukan/ai-adapter'
 import { createCache, type Logger, type SemanticState } from '@kukan/shared'
 import {
   FUSION_WINDOW,
@@ -44,7 +44,7 @@ export interface HybridSearchDeps {
   search: SearchAdapter
   /** PostgreSQL adapter — always carries the vectors (ADR-034 Option P) */
   dbSearch: SearchAdapter
-  ai: AIAdapter
+  ai: MeteredAI
   logger: Logger
   /** Runtime similarity-floor adjustment (ADR-036); absent means no adjustment */
   settings?: SystemSettingService
@@ -64,7 +64,7 @@ const queryEmbedCache = createCache({
 /** Embed the query text, bounded by a short timeout. Returns null on any
  *  failure so the caller degrades to keyword-only search. */
 async function embedQuery(
-  ai: AIAdapter,
+  ai: MeteredAI,
   modelKey: string,
   text: string,
   logger: Logger
@@ -75,7 +75,11 @@ async function embedQuery(
 
   try {
     // Aborted rather than raced: the request stops with the wait
-    const vector = await ai.embed(text, { type: 'query', timeoutMs: QUERY_EMBED_TIMEOUT_MS })
+    const vector = await ai.embed(text, {
+      type: 'query',
+      timeoutMs: QUERY_EMBED_TIMEOUT_MS,
+      usage: { purpose: 'embed-query' },
+    })
     queryEmbedCache.set(key, vector)
     return vector
   } catch (err) {

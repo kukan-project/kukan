@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { eq } from 'drizzle-orm'
 import { packageTable, resource, resourcePipeline, resourceVersion } from '@kukan/db'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { MeteredAI } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { JobQueue } from '@kukan/queue'
 import {
@@ -44,7 +44,7 @@ const ai = {
   // Available, so the embed a written abstract asks for is actually enqueued
   getEmbeddingInfo: () => ({ model: 'test-embed', dimensions: 4 }),
   embed: async () => [0, 0, 0, 0],
-} as unknown as AIAdapter
+} as unknown as MeteredAI
 
 const deps: SummaryDeps = {
   db,

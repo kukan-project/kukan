@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto'
 import { asc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, publicSummary, resource, packageTag, tag } from '@kukan/db'
-import { type AIAdapter, AiInputRejectedError, embeddingKey } from '@kukan/ai-adapter'
+import { type MeteredAI, AiInputRejectedError, embeddingKey } from '@kukan/ai-adapter'
 import { RESOURCE_EMBED_LOCK, tryLockInTransaction } from '@kukan/api/services/advisory-lock'
 import {
   EMBED_BATCH_SIZE,
@@ -145,7 +145,7 @@ type Planned = { id: string; dueAt: string } & (
  */
 export async function embedDueResources(
   db: Database,
-  ai: AIAdapter,
+  ai: MeteredAI,
   { maxBatches = EMBED_JOB_MAX_BATCHES }: { maxBatches?: number } = {}
 ): Promise<EmbedDueResult> {
   const result: EmbedDueResult = { embedded: 0, settled: 0, rejected: [], more: false, busy: false }
@@ -271,13 +271,17 @@ async function plan(
  * returned, the rest embedded. Any other failure is thrown.
  */
 async function embedAll(
-  ai: AIAdapter,
+  ai: MeteredAI,
   writes: { id: string; text: string }[]
 ): Promise<{ vectors: Map<string, number[]>; rejected: string[] }> {
   const vectors = new Map<string, number[]>()
   const rejected: string[] = []
-  const embed = (texts: string[]) =>
-    ai.embedBatch(texts, { type: 'document', timeoutMs: EMBED_TIMEOUT_MS })
+  const embed = (texts: string[], resourceId?: string) =>
+    ai.embedBatch(texts, {
+      type: 'document',
+      timeoutMs: EMBED_TIMEOUT_MS,
+      usage: { purpose: 'embed-resource', resourceId },
+    })
   if (writes.length === 0) return { vectors, rejected }
   try {
     const all = await embed(writes.map((w) => w.text))
@@ -288,7 +292,7 @@ async function embedAll(
   }
   for (const w of writes) {
     try {
-      vectors.set(w.id, (await embed([w.text]))[0])
+      vectors.set(w.id, (await embed([w.text], w.id))[0])
     } catch (err) {
       if (!(err instanceof AiInputRejectedError)) throw err
       rejected.push(w.id)

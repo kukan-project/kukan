@@ -296,6 +296,26 @@ describe('Admin API Routes', () => {
       expect(await res.json()).toEqual({ missing: 0, outstanding: 0 })
     })
 
+    it('counts a resource with a current vector as outstanding while it is marked', async () => {
+      // What regeneration leaves behind: every resource marked, most of them
+      // embedded under the current model already. Each is still waiting on its
+      // job — the text may have changed — so the work is not done while any is
+      const packageId = await seedPackage('embed-status-current-marked')
+      await db.insert(resource).values({
+        packageId,
+        name: 'r',
+        format: 'CSV',
+        state: 'active',
+        embeddingModel: KEY,
+        embeddingHash: 'h',
+        embeddingDueAt: sql`now() - interval '1 hour'`,
+      })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0, outstanding: 1 })
+    })
+
     it('leaves a resource marked moments ago out of what is missing, not out of what is outstanding', async () => {
       // The ordinary gap between an edit and its delayed job. Reporting it as
       // missing would put a prompt in front of an administrator for work
@@ -1222,6 +1242,106 @@ describe('Admin API Routes', () => {
 
       // a (never tried), c (another model) and d (the file changed) — not b
       expect(body.fill.resources).toBe(3)
+    })
+
+    it("leaves out a refusal of the live version stamped beside an older version's abstract", async () => {
+      // Version 1's abstract is kept; version 2 was refused by this generation.
+      // The stamp sits apart from the abstract's own version and generation
+      const thisGeneration = generationKey('gemma4:e4b', 'ja')
+      const orgId = await ensureOrg('estimate-kept-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-kept-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const [row] = await db
+        .insert(resource)
+        .values({
+          packageId: pkg.id,
+          name: 'kept',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          hash: 'h2',
+          summary: '版 1 の抄録。',
+          summaryMeta: {
+            source: 'ai',
+            version: 1,
+            genKey: 'some.older-model|1|ja',
+            skipReason: 'format-mismatch',
+            skipVersion: 2,
+            skipGenKey: thisGeneration,
+          },
+        })
+        .returning({ id: resource.id })
+      await db.insert(resourcePipeline).values({
+        resourceId: row.id,
+        status: 'complete',
+        previewKey: `previews/${row.id}.parquet`,
+        metadata: { schema: { columns: [], rowCount: 0 } },
+      })
+      await db.insert(resourceVersion).values({
+        resourceId: row.id,
+        version: 2,
+        storageKey: 'k2',
+        hash: 'h2',
+        origin: 'upload',
+        state: 'active',
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.resources).toBe(0)
+    })
+
+    it('leaves out of a refresh an old abstract the current generation has refused to rewrite', async () => {
+      // The live version has an abstract an older model wrote; the current
+      // model refused the same version. The run keeps the old abstract, so the
+      // refresh must not quote for it
+      const thisGeneration = generationKey('gemma4:e4b', 'ja')
+      const orgId = await ensureOrg('estimate-refresh-refused-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-refresh-refused-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const [row] = await db
+        .insert(resource)
+        .values({
+          packageId: pkg.id,
+          name: 'refused',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          hash: 'h1',
+          summary: '旧モデルの抄録。',
+          summaryMeta: {
+            source: 'ai',
+            version: 1,
+            genKey: 'some.older-model|1|ja',
+            skipReason: 'rejected',
+            skipVersion: 1,
+            skipGenKey: thisGeneration,
+          },
+        })
+        .returning({ id: resource.id })
+      await db.insert(resourcePipeline).values({
+        resourceId: row.id,
+        status: 'complete',
+        previewKey: `previews/${row.id}.parquet`,
+        metadata: { schema: { columns: [], rowCount: 0 } },
+      })
+      await db.insert(resourceVersion).values({
+        resourceId: row.id,
+        version: 1,
+        storageKey: 'k1',
+        hash: 'h1',
+        origin: 'upload',
+        state: 'active',
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.refresh.resources).toBe(0)
+      expect(body.fill.resources).toBe(0)
     })
 
     it('quotes for an abstract whose version has been replaced', async () => {

@@ -5,6 +5,7 @@
 
 import { z } from 'zod'
 import { passwordMinScoreSchema } from './password-strength'
+import { AI_PROVIDERS } from './ai-usage'
 
 const booleanString = z.preprocess(
   (v) => (typeof v === 'string' ? v : String(v)),
@@ -106,7 +107,7 @@ export const envSchema = z.object({
   HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS: z.coerce.number().default(168),
 
   // AI
-  AI_TYPE: z.enum(['bedrock', 'openai', 'ollama', 'none']).default('none'),
+  AI_TYPE: z.enum([...AI_PROVIDERS, 'none']).default('none'),
   AI_EMBEDDING_MODEL: z.preprocess(emptyAsUndefined, z.string().optional()), // adapter defaults: Titan v2 / bge-m3 / text-embedding-3-small
   AI_EMBEDDING_DIMENSIONS: z.preprocess(
     emptyAsUndefined,

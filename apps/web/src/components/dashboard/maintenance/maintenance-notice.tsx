@@ -3,14 +3,7 @@
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
-import { useVisibleInterval } from '@/hooks/use-visible-interval'
-
-/**
- * How often a queued notice reads its status again. Slower than a page's own
- * refresh: behind each read are counts over the whole catalogue, and the work
- * they follow takes minutes at the least.
- */
-const STATUS_POLL_MS = 15_000
+import { useQueuedWorkPoll } from '@/hooks/use-queued-work-poll'
 
 interface MaintenanceNoticeProps {
   title: string
@@ -47,7 +40,7 @@ export function MaintenanceNotice({
   const tc = useTranslations('common')
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<'queued' | 'failed' | null>(null)
-  useVisibleInterval(reload, STATUS_POLL_MS, outcome === 'queued')
+  useQueuedWorkPoll(reload, outcome === 'queued')
 
   async function handleRun() {
     setBusy(true)

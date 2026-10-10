@@ -6,6 +6,8 @@ import { Sparkles } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
+import { useLatestJson } from '@/hooks/use-latest-json'
+import { useQueuedWorkPoll } from '@/hooks/use-queued-work-poll'
 import { useVectorSearchSettings } from '@/hooks/use-vector-search-settings'
 
 /**
@@ -15,7 +17,12 @@ import { useVectorSearchSettings } from '@/hooks/use-vector-search-settings'
  * rest to the embed job, which skips a resource whose text and model have not
  * changed.
  */
-export function SemanticSearchCard() {
+export function SemanticSearchCard({
+  onRunningChange,
+}: {
+  /** Told whether queued regeneration is still running, for what else follows it */
+  onRunningChange?: (running: boolean) => void
+} = {}) {
   const t = useTranslations('dashboard.adminAi')
   const tc = useTranslations('common')
 
@@ -30,6 +37,15 @@ export function SemanticSearchCard() {
   const [saved, setSaved] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [regenerated, setRegenerated] = useState<boolean | null>(null)
+  // Once regeneration is queued, what is left of it: `outstanding` rather than
+  // `missing`, which leaves out the resources it has just marked
+  const status = useLatestJson<{ outstanding: number }>(
+    regenerated ? '/api/v1/admin/embedding-status' : null
+  )
+  const left = regenerated ? (status.data?.outstanding ?? null) : null
+  const following = regenerated === true && left !== 0
+  useQueuedWorkPoll(status.fetch, following)
+  useEffect(() => onRunningChange?.(following), [following, onRunningChange])
 
   useEffect(() => {
     if (!settings) return
@@ -127,13 +143,21 @@ export function SemanticSearchCard() {
             <p className="text-sm text-muted-foreground">{t('regenerateDescription')}</p>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={regenerate} disabled={!available || regenerating}>
+            <Button
+              variant="outline"
+              onClick={regenerate}
+              disabled={!available || regenerating || following}
+            >
               <Sparkles className={`mr-2 h-4 w-4 ${regenerating ? 'animate-spin' : ''}`} />
               {regenerating ? tc('queueing') : t('regenerateButton')}
             </Button>
             {regenerated === true && (
               <p role="status" className="text-sm text-muted-foreground">
-                {t('regenerateQueued')}
+                {left === null
+                  ? t('regenerateQueued')
+                  : left > 0
+                    ? t('regenerateRemaining', { count: left })
+                    : t('regenerateDone')}
               </p>
             )}
             {regenerated === false && (
