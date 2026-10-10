@@ -274,6 +274,7 @@ pnpm format        # Prettier フォーマット
 - CKAN 互換 API を CKAN 2.12 の読み取りに合わせる（POST・`/api/action`・`fq`/`sort`・extras の形、読めない指定は断る、書き込みは範囲外） → `docs/adr/jp/060-ckan-compat-read-parity.md`
 - 検索を PostgreSQL に寄せる（アプリ側の形態素解析 + 標準 tsvector + SQL の BM25、パッセージ索引から段階移行、合格したら OpenSearch 退役、提案） → `docs/adr/jp/061-search-on-postgresql.md`
 - 表形式のファイルは中身でなく「表のプロファイル」で索引（列名・カテゴリの値・範囲・自由記述の列は行の文脈付き、今の OpenSearch に先に入れる、ADR-032 拡張、提案） → `docs/adr/jp/063-table-profile-indexing.md`
+- サイト全体のカスタムメタデータ（値だけのフラットな key-value をランタイム設定に、数値・文字列・日付、意味は読む側が決める、本体とブランドで共用、提案） → `docs/adr/jp/064-site-metadata.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
