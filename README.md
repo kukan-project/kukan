@@ -23,11 +23,14 @@
 > マッピングやスキーマの変更により検索インデックスの再構築（`POST /api/v1/admin/reindex-metadata`）が
 > 必要になる場合があります。
 
-A modern, full-stack TypeScript alternative to CKAN.
-みんなが使えるデータカタログ — CKANモダンクローン。
+Read, query, connect. A full-stack TypeScript data platform for people and AI.
+読めて、問えて、つながる。人と AI のためのデータ基盤。
 
 Cloud-native, yet deployable on-premises and in air-gapped networks (e.g. LGWAN).
 クラウドからオンプレミス・閉域網（LGWAN等）まで対応するハイブリッドデプロイ設計。
+
+CKAN-compatible read API, so existing CKAN clients keep working and migrating from CKAN is straightforward.
+CKAN 互換の読み取り API を備え、既存の CKAN クライアントをそのまま使え、CKAN からの移行も容易です。
 
 ## Prerequisites / 必要環境
 
