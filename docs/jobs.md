@@ -54,10 +54,9 @@
 4. Interpret。プレビュー（Parquet など）と schema を作る。表があればその場で Lake に取り込み、失敗したら
    `lake-ingest-version` を積む。版を作らず、派生物がこのバイト列から作られていれば、Interpret と Index を
    飛ばす（`derivativesReused`。`rebuildOnly`・`indexOnly` はこの判定を通らない）。`indexOnly` は、
-   版を作らず、行に残る前回の解釈（`sourceHash` がこのバイト列で、プレビュー・文書のテキスト・文字コードの
-   どれかがある。表ならプロファイルもある。今の形式の索引に使う種類で、`sourceFormat` があればそれが今の
-   形式と一致する）があれば Interpret と Lake を
-   飛ばし、それを Index に渡す。無ければ
+   版を作らず、行に残る今の版の解釈（`sourceHash` がこのバイト列で、記録した版 `sourceVersion` が今の版で、
+   プレビュー・文書のテキスト・文字コードのどれかがある。表ならプロファイルもある）があれば Interpret と
+   Lake を飛ばし、それを Index に渡す。無ければ
    `rebuildOnly` と同じく解釈する。
 5. Index。テキストを抽出し、64 KB のチャンクに分けて 1 件ずつ OpenSearch に書く。索引の再読み込みを
    待つ（`wait_for`）のは最後のチャンクだけ。再読み込み前のチャンクは、次の実行で本文を消す

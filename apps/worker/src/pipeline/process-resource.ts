@@ -176,7 +176,7 @@ async function runPipeline(
       // What a reindex can index from in place of interpreting these bytes again
       const stored =
         indexOnly && version && !versionCreated
-          ? await ctx.storedInterpretation(resourceId, fetchResult.hash, fetchResult.format)
+          ? await ctx.storedInterpretation(resourceId, fetchResult.hash, version.version)
           : null
       if (version === null) {
         // Nothing holds this run's content: the creation failed, or the pointer
@@ -256,9 +256,10 @@ async function runPipeline(
               // (ADR-043 layer 2). The version this read was found by that same
               // measurement, so it is not a second pass over the file.
               sourceHash: fetchResult.hash,
-              // And the format they were read as: a reindex takes them only for
-              // the same format, as the same bytes relabelled read otherwise
-              ...(version.format && { sourceFormat: version.format }),
+              // And the version: the same bytes can be another version, read
+              // as another format or keyed another way, and what was made for
+              // one is not the other's (ADR-046)
+              sourceVersion: version.version,
             },
             // The table profile (ADR-063), which only the live version has
             interpretResult.profile ?? null

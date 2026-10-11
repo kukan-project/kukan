@@ -161,22 +161,20 @@ export interface PipelineContext {
    */
   derivativesDescribe(resourceId: string, contentHash: string, version: number): Promise<boolean>
   /**
-   * What the last interpretation of these bytes left, as Index reads it: the
+   * What the last interpretation of `version` left, as Index reads it: the
    * preview key, a document's text, a table's profile and the text encoding —
-   * or null where the row does not describe these bytes, and only interpreting
-   * them again can say. For a run that indexes the content again without
+   * or null where the row does not describe it, and only interpreting the
+   * bytes again can say. For a run that indexes the content again without
    * interpreting it (`indexOnly`).
    *
    * Asks less than {@link derivativesDescribe}: whether the content is indexed
    * is the question the run is there to answer, and a lake ingest still owed
-   * is the hourly sweep's to finish. It asks one thing more: that what the row
-   * holds is of the kind `format` is indexed from. The same bytes relabelled,
-   * with an interpretation that then failed, leave the old format's on the row.
+   * is the hourly sweep's to finish.
    */
   storedInterpretation(
     resourceId: string,
     contentHash: string,
-    format: string | null
+    version: number
   ): Promise<Pick<InterpretResult, 'previewKey' | 'encoding' | 'profile' | 'documentText'> | null>
   /**
    * Record what Interpret made of a version (ADR-046).

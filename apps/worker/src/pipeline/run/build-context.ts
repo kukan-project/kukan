@@ -30,7 +30,7 @@ import {
   reserveObject,
 } from '@kukan/api/services/pipeline/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
-import { contentTypeOf, getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
+import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
@@ -321,6 +321,7 @@ export function buildPipelineContext(
       // A preview, or a document's text, made from these bytes
       if (!row?.previewKey && !parseDocumentTextKey(metadata)) return false
       if (metadata.sourceHash !== contentHash) return false
+      if (madeForAnotherVersion(metadata, version)) return false
       if (metadata.contentIndexed !== true) return false
 
       // A table interpretation whose ingest never landed is asking for the run
@@ -333,7 +334,7 @@ export function buildPipelineContext(
       return (await pendingLakeVersionSource(db, { resourceId, version })) === null
     },
 
-    async storedInterpretation(resourceId: string, contentHash: string, format: string | null) {
+    async storedInterpretation(resourceId: string, contentHash: string, version: number) {
       const [row] = await db
         .select({
           previewKey: resourcePipeline.previewKey,
@@ -345,6 +346,7 @@ export function buildPipelineContext(
         .limit(1)
       const metadata = (row?.metadata ?? {}) as Record<string, unknown>
       if (!row || metadata.sourceHash !== contentHash) return null
+      if (madeForAnotherVersion(metadata, version)) return null
       // A text head from before `documentTextBytes` is not a text artifact
       const textKey = parseDocumentTextKey(metadata)
       const textBytes = metadata.documentTextBytes
@@ -358,23 +360,12 @@ export function buildPipelineContext(
       // empty schema, which says it was read, and has no profile to wait for
       const profile = parseTableProfile(row.profile)
       if (parseResourceSchema(metadata)?.columns.length && !profile) return null
-      const stored = {
+      return {
         previewKey: row.previewKey,
         ...(encoding && { encoding }),
         ...(profile && { profile }),
         ...(documentText && { documentText }),
       }
-      // Read as another format: the same bytes relabelled, interpreted again
-      // and failed. A row from before the format was recorded is asked only
-      // whether it holds what Index reads for this one
-      const sourceFormat = metadata.sourceFormat
-      if (
-        typeof sourceFormat === 'string' &&
-        sourceFormat.toLowerCase() !== format?.toLowerCase()
-      ) {
-        return null
-      }
-      return indexableAs(stored, format) ? stored : null
     },
 
     async recordVersionSchema({ claim, noTableReason, ...v }) {
@@ -423,33 +414,11 @@ export function buildPipelineContext(
 }
 
 /**
- * Whether what an interpretation left is what Index reads for `format`: a
- * document's text, a table's profile or how it was read, a ZIP's file list, a
- * text file's encoding. A format the index takes nothing from takes anything —
- * Index only clears its content.
+ * Whether the row's interpretation was made for another version than
+ * `version` (ADR-046): the same bytes can be several versions, read as another
+ * format or keyed another way. A row from before the version was recorded is
+ * not taken to be another's.
  */
-function indexableAs(
-  stored: {
-    previewKey: string | null
-    encoding?: string
-    profile?: unknown
-    documentText?: unknown
-  },
-  format: string | null
-): boolean {
-  const other = stored.documentText !== undefined || stored.profile !== undefined
-  switch (contentTypeOf(format)) {
-    case 'document':
-      return stored.documentText !== undefined
-    case 'tabular':
-      return (
-        stored.documentText === undefined && (stored.profile !== undefined || !!stored.encoding)
-      )
-    case 'manifest':
-      return !!stored.previewKey && !other
-    case 'text':
-      return !!stored.encoding && !other
-    default:
-      return true
-  }
+function madeForAnotherVersion(metadata: Record<string, unknown>, version: number): boolean {
+  return typeof metadata.sourceVersion === 'number' && metadata.sourceVersion !== version
 }

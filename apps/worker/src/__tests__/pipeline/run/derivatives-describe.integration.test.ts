@@ -126,6 +126,15 @@ describe('derivativesDescribe', () => {
     expect(await ask()).toBe(false)
   })
 
+  it('does not, when the interpretation was made for another version of the bytes', async () => {
+    // A label corrected over the same bytes, its run cut short: the retry must
+    // read them as the new version rather than take the old one's as its own
+    await versionExists()
+    await rowSays({ sourceHash: HASH, contentIndexed: true, sourceVersion: 0 })
+
+    expect(await ask()).toBe(false)
+  })
+
   it('does not, when the content was never indexed', async () => {
     // What a run under a draft package leaves behind (ADR-039): the publish
     // that follows is the one that indexes, and it must not be skipped
@@ -160,11 +169,11 @@ describe('derivativesDescribe', () => {
 })
 
 describe('storedInterpretation', () => {
-  const stored = (format: string | null = 'CSV') =>
+  const stored = (version = 1) =>
     buildPipelineContext(db, storage, undefined, undefined).storedInterpretation(
       resourceId,
       HASH,
-      format
+      version
     )
 
   it('gives back what interpreting these bytes left, whether or not it was indexed', async () => {
@@ -184,7 +193,7 @@ describe('storedInterpretation', () => {
       null
     )
 
-    expect(await stored('PDF')).toEqual({
+    expect(await stored()).toEqual({
       previewKey: null,
       documentText: { key: 'previews/pkg/text.ndjson.zst', bytes: 0 },
     })
@@ -193,7 +202,7 @@ describe('storedInterpretation', () => {
   it('gives back how a text file was read, which leaves nothing else', async () => {
     await rowSays({ sourceHash: HASH, encoding: 'EUC-JP' }, null)
 
-    expect(await stored('TXT')).toEqual({ previewKey: null, encoding: 'EUC-JP' })
+    expect(await stored()).toEqual({ previewKey: null, encoding: 'EUC-JP' })
   })
 
   it('gives nothing back for a table read before its profile was kept', async () => {
@@ -218,45 +227,13 @@ describe('storedInterpretation', () => {
     expect(await stored()).toEqual({ previewKey: null, encoding: 'UTF8' })
   })
 
-  describe('the same bytes relabelled, their interpretation failing', () => {
-    // The row keeps what the old format left, under the same hash
+  it('gives back an interpretation made for this version, and nothing for another', async () => {
+    // The same bytes can be another version: read as another format, or keyed
+    // another way
+    await rowSays({ sourceHash: HASH, encoding: 'UTF8', sourceVersion: 1 }, null)
 
-    it('gives nothing back for a format other than the one it was read as', async () => {
-      await rowSays({ sourceHash: HASH, encoding: 'UTF8', sourceFormat: 'CSV' }, null)
-
-      // A TSV's index is of the same kind, and still not this one's
-      expect(await stored('TSV')).toBeNull()
-      expect(await stored('csv')).toEqual({ previewKey: null, encoding: 'UTF8' })
-    })
-
-    it("gives nothing back for a document from a table's interpretation", async () => {
-      await rowSays({ sourceHash: HASH, encoding: 'UTF8' })
-      await db
-        .update(resourcePipeline)
-        .set({ profile: { columns: [], key: 'previews/pkg/p.ndjson.zst' } as never })
-        .where(sql`${resourcePipeline.resourceId} = ${resourceId}`)
-
-      expect(await stored('PDF')).toBeNull()
-    })
-
-    it("gives nothing back for a table from a document's text", async () => {
-      await rowSays(
-        { sourceHash: HASH, documentTextKey: 'previews/pkg/t.ndjson.zst', documentTextBytes: 10 },
-        null
-      )
-
-      expect(await stored('CSV')).toBeNull()
-    })
-
-    it("gives nothing back for a ZIP from a table's preview", async () => {
-      await rowSays({ sourceHash: HASH, encoding: 'UTF8' })
-      await db
-        .update(resourcePipeline)
-        .set({ profile: { columns: [], key: 'previews/pkg/p.ndjson.zst' } as never })
-        .where(sql`${resourcePipeline.resourceId} = ${resourceId}`)
-
-      expect(await stored('ZIP')).toBeNull()
-    })
+    expect(await stored(1)).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(await stored(2)).toBeNull()
   })
 
   it('gives nothing back for other bytes', async () => {

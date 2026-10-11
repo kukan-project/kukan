@@ -202,9 +202,9 @@ describe('processResource', () => {
       {
         encoding: 'UTF8',
         // Ties the preview to the bytes Fetch measured (ADR-043 layer 2),
-        // and to the format the version read them as
+        // and to the version it read them as
         sourceHash: 'sha256:abc',
-        sourceFormat: 'CSV',
+        sourceVersion: 1,
       },
       null
     )
@@ -278,7 +278,7 @@ describe('processResource', () => {
 
     expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(
       'previews/pkg-1/res-1.parquet',
-      { encoding: 'UTF8', schema, sourceHash: 'sha256:abc', sourceFormat: 'CSV' },
+      { encoding: 'UTF8', schema, sourceHash: 'sha256:abc', sourceVersion: 1 },
       null
     )
     // And onto the version it was read from, which is where the interpretation
@@ -317,7 +317,7 @@ describe('processResource', () => {
         documentTextKey: documentText.key,
         documentTextBytes: 120,
         sourceHash: 'sha256:abc',
-        sourceFormat: 'CSV',
+        sourceVersion: 1,
       },
       null
     )
@@ -438,7 +438,7 @@ describe('processResource', () => {
         await processResource({ resourceId: 'res-1', indexOnly: true }, ctx, db, queue)
 
         expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true)
-        expect(ctx.storedInterpretation).toHaveBeenCalledWith('res-1', 'sha256:abc', 'CSV')
+        expect(ctx.storedInterpretation).toHaveBeenCalledWith('res-1', 'sha256:abc', 1)
         expect(executeInterpret).not.toHaveBeenCalled()
         expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
         expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
