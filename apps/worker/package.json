@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@kukan/db-testing": "workspace:*",
-    "@types/node": "^24.12.2",
+    "@types/node": "^24.19.2",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.23.1",
     "@types/yauzl": "^3.4.0",

@@ -68,7 +68,7 @@ export class DeployNotificationConstruct extends Construct {
     const handler = new lambdaNodejs.NodejsFunction(this, 'Handler', {
       entry: fileURLToPath(new URL('../lambda/deploy-notification/index.ts', import.meta.url)),
       handler: 'handler',
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       timeout: cdk.Duration.seconds(30),
       environment: {
         WEBHOOK_SECRET_ARN: secret.secretArn,

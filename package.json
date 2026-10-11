@@ -37,7 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
-    "@types/node": "^24.12.2",
+    "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "^6.1.2",
     "esbuild": "^0.28.2",
@@ -67,6 +67,7 @@
     },
     "overrides": {
       "@hono/node-server@<2.0.5": ">=2.0.5 <3",
+      "@types/node": "$@types/node",
       "@xmldom/xmldom@<0.9.12": ">=0.9.12 <0.10",
       "body-parser@>=2.0.0 <2.3.0": ">=2.3.0 <3",
       "brace-expansion@>=2.0.0 <2.1.4": ">=2.1.4 <3",

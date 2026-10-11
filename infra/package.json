@@ -22,7 +22,7 @@
   "devDependencies": {
     "@aws-sdk/client-codepipeline": "^3.1144.0",
     "@aws-sdk/client-secrets-manager": "^3.1144.0",
-    "@types/node": "^24.12.2",
+    "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "aws-cdk": "^2.1143.0",
     "esbuild": "^0.28.2",

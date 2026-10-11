@@ -10,20 +10,24 @@
 # tag moves, but has not once for this registry: compare `node -v` here with
 # the tag's by hand until it does. `apk upgrade` covers the OS packages
 # meanwhile; nothing covers node itself, which a scan of the image does not see.
+# The other places that name the Node version are listed in docs/node-version.md.
 FROM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS base
 RUN apk upgrade --no-cache
 WORKDIR /app
 
 # ---- Dependencies ----
-# pnpm is prepared here rather than in `base`, which every stage derives from.
-# `corepack prepare` unpacks ~21 MB that only the build stages use, and a
-# runtime stage built on `base` carried it to production — with the
-# node_modules pnpm brings (tar, brace-expansion, ip-address), which scanners
-# then report against an image that never runs pnpm. A later `rm` would not
-# have helped: the bytes stay in the layer that wrote them.
+# pnpm is installed here rather than in `base`, which every stage derives from.
+# It unpacks ~21 MB that only the build stages use, and a runtime stage built
+# on `base` carried it to production — with the node_modules pnpm brings (tar,
+# brace-expansion, ip-address), which scanners then report against an image
+# that never runs pnpm. A later `rm` would not have helped: the bytes stay in
+# the layer that wrote them. The script installs the version and hash that
+# `packageManager` names, without corepack (gone from Node 25 on).
 FROM base AS deps
-RUN corepack enable && corepack prepare pnpm@10 --activate
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY package.json ./
+COPY scripts/install-pnpm.sh scripts/
+RUN sh scripts/install-pnpm.sh
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches/ patches/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/

@@ -21,6 +21,11 @@ updates:
       # release restores them.
       - dependency-name: '@opensearch-project/opensearch'
         versions: ['3.9.x']
+      # The types follow the runtime's major, which moves with the base image
+      # and .node-version in one change (docs/node-version.md). A lone bump
+      # leaves two majors in the lock; vitest then loaded both and broke.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       # One PR per week for the low-risk bumps; majors stay separate for review.
       minor-and-patch:

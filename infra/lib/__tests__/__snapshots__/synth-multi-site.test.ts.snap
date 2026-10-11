@@ -2429,7 +2429,7 @@ function expandV6(addr) {
             "Arn",
           ],
         },
-        "Runtime": "nodejs22.x",
+        "Runtime": "nodejs24.x",
         "Timeout": 120,
         "VpcConfig": {
           "SecurityGroupIds": [
@@ -5108,7 +5108,7 @@ function expandV6(addr) {
             "Arn",
           ],
         },
-        "Runtime": "nodejs22.x",
+        "Runtime": "nodejs24.x",
         "Timeout": 120,
         "VpcConfig": {
           "SecurityGroupIds": [

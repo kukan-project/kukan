@@ -14,6 +14,9 @@ import { pascal } from './naming.js'
 import { KukanStage, MAIN_STACK_ID, siteStackId } from './kukan-stage.js'
 import { DeployNotificationConstruct } from './constructs/deploy-notification.js'
 
+/** The Node major the synth step runs on; keep it with the Dockerfile's (see docs/node-version.md). */
+const NODE_MAJOR = 24
+
 /** One row of the notification's site table. */
 const entry = (label: string, domainName?: string) => ({
   label,
@@ -72,7 +75,7 @@ export class KukanPipelineStack extends cdk.Stack {
             connectionArn: props.connectionArn,
           }),
           commands: [
-            'corepack enable',
+            'sh scripts/install-pnpm.sh',
             'pnpm install --frozen-lockfile',
             'cd infra && npx cdk synth',
           ],
@@ -85,6 +88,11 @@ export class KukanPipelineStack extends cdk.Stack {
           buildEnvironment: { computeType: codebuild.ComputeType.MEDIUM },
         },
         synthCodeBuildDefaults: {
+          // Name the Node major instead of taking the image's default, which
+          // CodeBuild moves as versions reach end of life.
+          partialBuildSpec: codebuild.BuildSpec.fromObject({
+            phases: { install: { 'runtime-versions': { nodejs: NODE_MAJOR } } },
+          }),
           rolePolicy: [
             // Allow CDK context lookups (AZs, CloudFront prefix list via
             // PrefixList.fromLookup) during synth by assuming the bootstrap lookup

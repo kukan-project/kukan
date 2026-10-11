@@ -310,7 +310,13 @@ export function ssrfSafeLookup(
 }
 
 function createSsrfSafeAgent(): Agent {
-  return new Agent({ connect: { lookup: ssrfSafeLookup } })
+  // HTTP/1.1 only. undici 8 negotiates HTTP/2 by default, and its fixed flow
+  // control window throttles one large body: a 91 MB file took 50 s from
+  // Hugging Face's CDN against 2 s over HTTP/1.1, 78 MB from GitHub 2.3 s
+  // against 0.4 s. A fetch here is one file, so multiplexing buys nothing.
+  // It also keeps clear of the HTTP/2 idle reaper's unhandled
+  // 'socket idle timeout' error, which kills the process (nodejs/undici#5936).
+  return new Agent({ allowH2: false, connect: { lookup: ssrfSafeLookup } })
 }
 
 // Module-level singleton — reuses connections across requests

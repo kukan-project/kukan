@@ -69,7 +69,7 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
     const handler = new lambdaNodejs.NodejsFunction(this, 'Handler', {
       entry: fileURLToPath(new URL('../lambda/site-db-handler/index.ts', import.meta.url)),
       handler: 'handler',
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       timeout: cdk.Duration.minutes(2),
       logGroup: new logs.LogGroup(this, 'HandlerLogs', {
         retention: logs.RetentionDays.ONE_MONTH,
