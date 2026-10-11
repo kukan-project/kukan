@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** — 2026-10-05
+**Accepted** — 2026-10-11 (proposed 2026-10-05)
 
 Put dataset `extras` and resource `extras` into the search index so datasets can be filtered by a
 key–value pair. The native API takes `extras_<key>=<value>` and `res_extras_<key>=<value>` as
@@ -60,7 +60,7 @@ Unambiguous, but unreadable as a URL and awkward to write by hand. No CKAN count
 A convention of some frameworks; Hono does not parse it. A key containing `]` is ambiguous. No
 CKAN counterpart.
 
-#### D) `extras_<key>=<value>` / `res_extras_<key>=<value>` — adopted (proposed)
+#### D) `extras_<key>=<value>` / `res_extras_<key>=<value>` — adopted
 
 The key goes into the parameter name, so URL encoding alone can express any key. The native API's
 filters already use CKAN's index field names (`res_format`, `license_id`), and these sit beside
@@ -77,13 +77,13 @@ Every new key adds a mapping; a site's input alone can hit the field limit.
 No mapping growth, but keys are treated as dotted paths, so a key containing `.` cannot be told
 apart from a nested path.
 
-#### c) A multi-valued keyword field of pairs encoded as one string — adopted (proposed)
+#### c) A multi-valued keyword field of pairs encoded as one string — adopted
 
 Encode each pair as `JSON.stringify([key, value])` and store it in a multi-valued keyword field.
 A `term` query matches exactly. Being a JSON array, the encoding stays unambiguous whatever
 characters the key or value contain. The mapping is one fixed field.
 
-## Decision (proposed)
+## Decision
 
 ### 1. Query parameters
 
@@ -100,8 +100,8 @@ Add to `GET /api/v1/packages`:
 - Each `res_extras_*` condition means "some resource satisfies it"; two conditions need not be met
   by the same resource. This matches CKAN's flattened field and KUKAN's `res_format`
 - An empty key (`extras_=`) is refused with 400
-- The number of extras conditions per request is capped; the value is settled during
-  implementation
+- At most 20 extras conditions per request, dataset and resource together; more are refused
+  with 400
 - The direct-DB `state=draft` path refuses them, as it does the other index-backed filters
 
 ### 2. Comparing values
@@ -110,15 +110,18 @@ Values match exactly: no case folding, no trimming, no Unicode normalisation.
 
 What goes into the index:
 
-| Extras value    | Indexed as                                 |
-| --------------- | ------------------------------------------ |
-| String          | As is                                      |
-| Number, boolean | Its JSON text (`5`, `true`)                |
-| Array           | Each scalar element (one pair per element) |
-| Object, `null`  | Not indexed                                |
+| Extras value   | Indexed as                                     |
+| -------------- | ---------------------------------------------- |
+| String         | As is                                          |
+| Number         | Decimal without an exponent (`5`, `0.0000001`) |
+| Boolean        | `true` / `false`                               |
+| Array          | Each scalar element (one pair per element)     |
+| Object, `null` | Not indexed                                    |
 
 `extras_n=5` matches both the number `5` and the string `"5"`. Query parameters carry no type, so
-the index side aligns them.
+the index side aligns them. Numbers are written without an exponent because that is how PostgreSQL
+prints a jsonb number; the spelling it was written in (`1e-7`) does not survive in jsonb. The
+OpenSearch side follows it so the two backends spell numbers alike.
 
 ### 3. Index
 
@@ -126,6 +129,10 @@ the index side aligns them.
   (ADR-025) as multi-valued keyword fields, holding the pairs built by the rule in §2
   (`JSON.stringify([key, value])`). An `extras_<key>` condition is a `term`; each
   `res_extras_<key>` condition is its own `has_child`
+- A pair longer than 256 bytes is stored as its SHA-256 (`sha256:<hex>`), and queries build pairs
+  by the same rule. A keyword term is capped at 32,766 bytes; past it the whole document is
+  refused, and even a rename stops reaching the search. Extras values have no length limit (a
+  harvested GeoJSON footprint, say). A pair starts with `[`, so it cannot be taken for a hash
 - **PostgreSQL fallback**: no index; compare `package.extras` and `resource.extras` with jsonb
   operators directly. One predicate implementing the §2 rule (numbers equal to their string form,
   array elements) serves both conditions. Whether to keep an array of pair strings under a GIN
@@ -146,6 +153,11 @@ Read `extras_<key>` and `res_extras_<key>` as `fq` fields and pass them to the �
   compatible API's documentation
 - `fq` splits field from value at `:`, so a key containing `:` or whitespace cannot be written in
   `fq`; use the native API
+- Syntax Solr would not read literally is refused with 409. Outside quotes: wildcards (`*`, `?`),
+  ranges (`[`, `{`), boosts (`^`), fuzziness (`~`), `:`, parentheses, `"`, and a leading `!`, `/`,
+  `+` or `-`. Backslash escapes inside or outside quotes. To look for such a value, quote it.
+  Compared as written, they would answer a different question without a word (asking whether a key
+  exists, `extras_<key>:*`, is open question 3)
 - Two different values ANDed on the same `extras_<key>` are not short-circuited to zero hits the
   way `organization` and the like are: an array value can match both
 - Resource extras are indexed for **every key**, unlike CKAN's default, where only the keys in

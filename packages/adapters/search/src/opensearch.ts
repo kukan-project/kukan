@@ -12,6 +12,7 @@
 import { randomBytes } from 'node:crypto'
 import { Client, errors as osErrors } from '@opensearch-project/opensearch'
 import { createLogger, ServiceUnavailableError, type Logger } from '@kukan/shared'
+import { hashBuffer } from '@kukan/shared/hash-node'
 import type {
   ContentResourceFilter,
   SearchAdapter,
@@ -39,8 +40,32 @@ import {
   MAX_MATCHED_RESOURCES_PER_PACKAGE,
   MATCHED_FIELDS,
   PASSAGE_MARK,
+  extrasMatchValues,
   queryTerms,
 } from './adapter'
+
+/** Past this many bytes a pair is held as its hash: an index term has a ceiling */
+const EXTRAS_PAIR_MAX_BYTES = 256
+
+/**
+ * A key and a value as one string, as the index holds and a filter looks them
+ * up (ADR-062): a JSON pair, so no character in either can blur where one ends.
+ * A long one is its SHA-256 instead — a term past Lucene's 32766 bytes refuses
+ * the whole document — and cannot be taken for a pair, which starts with `[`.
+ */
+export function extrasPair(key: string, value: string): string {
+  const pair = JSON.stringify([key, value])
+  return Buffer.byteLength(pair) > EXTRAS_PAIR_MAX_BYTES ? hashBuffer(Buffer.from(pair)) : pair
+}
+
+/** Every pair an `extras` object is matched by, each once. */
+function extrasPairs(extras: Record<string, unknown> | null | undefined): string[] {
+  if (!extras) return []
+  const pairs = Object.entries(extras).flatMap(([key, value]) =>
+    extrasMatchValues(value).map((v) => extrasPair(key, v))
+  )
+  return [...new Set(pairs)]
+}
 
 /** The one shape of the search index: the create body, and what an index
  *  created under an older shape is brought up to (see ensureWritableIndex). */
@@ -82,6 +107,9 @@ const SEARCH_PROPERTIES: MappingProperties = {
   creator_user_id: { type: 'keyword' },
   created: { type: 'date' },
   updated: { type: 'date' },
+  // A dataset's or resource's `extras` as key-value pairs (extrasPair), for
+  // exact filters (ADR-062): one field however many keys a site invents
+  extras_pairs: { type: 'keyword' },
   // --- Resource fields ---
   packageId: { type: 'keyword' },
   description: {
@@ -969,9 +997,9 @@ export class OpenSearchAdapter implements SearchAdapter {
     if (docs.length === 0) return
     await this.ensureWritableIndex()
 
-    const body = docs.flatMap((doc) => [
+    const body = docs.flatMap(({ extras, ...doc }) => [
       { index: { _index: this.searchIndex, _id: doc.id } },
-      { ...doc, join_field: 'package' },
+      { ...doc, extras_pairs: extrasPairs(extras), join_field: 'package' },
     ])
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {
@@ -1011,9 +1039,13 @@ export class OpenSearchAdapter implements SearchAdapter {
     if (docs.length === 0) return
     await this.ensureWritableIndex()
 
-    const body = docs.flatMap((doc) => [
+    const body = docs.flatMap(({ extras, ...doc }) => [
       { index: { _index: this.searchIndex, _id: doc.id, routing: doc.packageId } },
-      { ...doc, join_field: { name: 'resource', parent: doc.packageId } },
+      {
+        ...doc,
+        extras_pairs: extrasPairs(extras),
+        join_field: { name: 'resource', parent: doc.packageId },
+      },
     ])
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {
@@ -1183,6 +1215,16 @@ export class OpenSearchAdapter implements SearchAdapter {
     if (filters?.licenses?.length) {
       clauses.push({ terms: { license_id: filters.licenses } })
     }
+    for (const { key, value } of filters?.extras ?? []) {
+      clauses.push({ term: { extras_pairs: extrasPair(key, value) } })
+    }
+    // One has_child each, as formats: each condition is met by some resource,
+    // not necessarily the one that meets another
+    for (const { key, value } of filters?.resourceExtras ?? []) {
+      clauses.push({
+        has_child: { type: 'resource', query: { term: { extras_pairs: extrasPair(key, value) } } },
+      })
+    }
     if (filters?.groups?.length) {
       for (const g of filters.groups) {
         clauses.push({ term: { groups: g } })
@@ -1301,6 +1343,7 @@ export class OpenSearchAdapter implements SearchAdapter {
                 boost: RESOURCE_LEG_WEIGHT,
                 inner_hits: {
                   size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
+                  _source: { excludes: ['extras_pairs'] },
                   highlight: {
                     fields: {
                       name: WHOLE_FIELD_HIGHLIGHT,
@@ -1394,6 +1437,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     const body = {
       from: offset,
       size: limit,
+      // Filtered on, never shown: a site's pairs would ride along on every hit
+      _source: { excludes: ['extras_pairs'] },
       query: { bool: { must, filter } },
       sort: this.buildSort(query),
       ...(aggs && { aggs }),

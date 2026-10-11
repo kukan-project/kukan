@@ -178,6 +178,20 @@ describe('syncDueSearchDocs', () => {
     expect(docs[file]).not.toHaveProperty('columns')
   })
 
+  it('carries extras onto the document as a reader sees them (ADR-062)', async () => {
+    const id = await seed()
+    await db
+      .update(resource)
+      .set({ extras: { lang: 'ja', healthEtag: '"v1"' } })
+      .where(eq(resource.id, id))
+    const { search, bulkIndexResources } = fakeSearch()
+
+    await syncDueSearchDocs(db, search)
+
+    // A key the old health checker left behind is not the publisher's to filter on
+    expect(bulkIndexResources.mock.calls[0][0][0].extras).toEqual({ lang: 'ja' })
+  })
+
   it('writes nothing for a resource with no mark', async () => {
     await seed({ due: false })
     const { search, bulkIndexResources } = fakeSearch()

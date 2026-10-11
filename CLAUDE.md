@@ -273,7 +273,7 @@ pnpm format        # Prettier フォーマット
 - worker の重い処理を使い回す 1 つの子プロセスで行う（テキスト抽出・CSV の解釈、ADR-032 の子プロセスを worker へ） → `docs/adr/jp/059-worker-heavy-child-process.md`
 - CKAN 互換 API を CKAN 2.12 の読み取りに合わせる（POST・`/api/action`・`fq`/`sort`・extras の形、読めない指定は断る、書き込みは範囲外） → `docs/adr/jp/060-ckan-compat-read-parity.md`
 - 検索を PostgreSQL に寄せる（アプリ側の形態素解析 + 標準 tsvector + SQL の BM25、パッセージ索引から段階移行、合格したら OpenSearch 退役、提案） → `docs/adr/jp/061-search-on-postgresql.md`
-- extras のキーと値で絞り込む（`extras_<key>` / `res_extras_<key>`、完全一致、`fq` も同名、ADR-060 拡張、提案） → `docs/adr/jp/062-extras-search-filter.md`
+- extras のキーと値で絞り込む（`extras_<key>` / `res_extras_<key>`、完全一致、`fq` も同名、ADR-060 拡張） → `docs/adr/jp/062-extras-search-filter.md`
 - 表形式のファイルは中身でなく「表のプロファイル」で索引（列名・カテゴリの値・範囲・自由記述の列は行の文脈付き、今の OpenSearch に先に入れる、ADR-032 拡張、提案） → `docs/adr/jp/063-table-profile-indexing.md`
 - サイト全体のカスタムメタデータ（値だけのフラットな key-value をランタイム設定に、数値・文字列・日付、意味は読む側が決める、本体とブランドで共用、提案） → `docs/adr/jp/064-site-metadata.md`
 

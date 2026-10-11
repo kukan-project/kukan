@@ -116,9 +116,9 @@ export function resourceDownloadPath(id: string): string {
   return `/api/v1/resources/${id}/download`
 }
 
-/** What a resource's search document is built from (see search-index.ts) — one
- *  list, so a field added to the index reaches every select that feeds it. */
-export const resourceDocColumns = {
+/** What a matched resource shows on a search card — and the part of its search
+ *  document a card reads back. */
+export const resourceCardColumns = {
   id: resource.id,
   packageId: resource.packageId,
   name: resource.name,
@@ -128,6 +128,14 @@ export const resourceDocColumns = {
   // Null where an editor hid it, by the same projection the page reads: hidden
   // is one decision with three effects, and the index is the third (ADR-053)
   summary: publicSummary,
+}
+
+/** What a resource's search document is built from (see search-index.ts) — one
+ *  list, so a field added to the index reaches every select that feeds it. */
+export const resourceDocColumns = {
+  ...resourceCardColumns,
+  // As the public read has them, so a filter matches what a reader sees (ADR-062)
+  extras: scrubbedExtras,
 }
 
 /**

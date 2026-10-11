@@ -56,6 +56,8 @@ As an exception, **PUT on a dataset in draft state is a partial update** (see "D
 | `tags[]`           | Filter by tag                                                                                                                                                           |
 | `res_format[]`     | Filter by resource format (e.g., `CSV`)                                                                                                                                 |
 | `license_id[]`     | Filter by license                                                                                                                                                       |
+| `extras_<key>`     | Datasets whose extras hold the value under `<key>` (see below)                                                                                                          |
+| `res_extras_<key>` | Datasets with a resource whose extras hold the value under `<key>` (see below)                                                                                          |
 | `creator_user_id`  | Filter by creator user ID                                                                                                                                               |
 | `state`            | `active` / `deleted` / `draft` (`draft` requires auth; see below. `deleted` applies only with `my_org=true` and a signed-in user, and falls back to `active` otherwise) |
 | `my_org`           | Limit to organizations where the user is `editor` or above                                                                                                              |
@@ -63,6 +65,30 @@ As an exception, **PUT on a dataset in draft state is a partial update** (see "D
 | `sort_by`          | `updated` / `created` / `name`                                                                                                                                          |
 | `sort_order`       | `asc` / `desc`                                                                                                                                                          |
 | `include_facets`   | Include facet information                                                                                                                                               |
+
+### Filtering on extras
+
+`extras_<key>=<value>` filters on a dataset's extras, and `res_extras_<key>=<value>` on its resources'.
+The key goes in the parameter name, URL-encoded, so a key with Japanese, `.` or `:` in it is written
+as it is.
+
+```bash
+curl -G "https://your-kukan-site/api/v1/packages" \
+  --data-urlencode "extras_spatial_unit=municipality" \
+  --data-urlencode "res_extras_lang=ja"
+```
+
+`--data-urlencode` encodes only what follows the `=`. Percent-encode a key with non-ASCII characters
+yourself: `extras_%E6%95%B4%E5%82%99%E5%8D%98%E4%BD%8D=...` for `extras_整備単位`.
+
+- Values are compared **whole**: no case folding, no trimming, no width or Unicode normalization
+- Numbers are compared in decimal without an exponent, booleans as `true` / `false` (`extras_n=5`
+  matches the number `5` and the string `"5"`; the number `1e-7` is `extras_n=0.0000001`). An array
+  matches when any of its elements does. Object and `null` values match nothing
+- Every condition is ANDed, a repeated parameter included
+- Each `res_extras_*` condition is met by some resource; two conditions need not be met by the same
+  one (as with `res_format[]`)
+- An empty key (`extras_=`) and more than 20 conditions in one request answer `400`
 
 ### Relaxing the word match (match=relaxed)
 
@@ -114,8 +140,8 @@ failed sync).
 Returns only drafts created by the caller plus drafts of organizations where the caller is
 editor or above. Supported filters: `q` / `name` / `organization[]` / `private` /
 `sort_by` / `sort_order` / `offset` / `limit`. Specifying `tags[]` / `groups[]` /
-`res_format[]` / `license_id[]` / `creator_user_id` / `my_org` / `include_facets`
-returns `400`. Rows whose deletion failed partway (deletion incomplete) are included in
+`res_format[]` / `license_id[]` / `extras_<key>` / `res_extras_<key>` / `creator_user_id` /
+`my_org` / `include_facets` returns `400`. Rows whose deletion failed partway (deletion incomplete) are included in
 the listing.
 
 **Get, update, delete**:

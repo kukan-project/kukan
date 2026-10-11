@@ -44,6 +44,7 @@ import { enqueueResourceEmbedsIfDue } from '../services/search/resource-embeddin
 import { MetadataSuggestService } from '../services/suggest/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
 import { getSuggestAvailability } from '../services/suggest/availability'
+import { addExtrasCondition, extrasField, type ExtrasFilters } from './extras-filter'
 import type { AppContext } from '../context'
 import type { Database } from '@kukan/db'
 import type { PackageAuthorize } from '../services/package-service'
@@ -66,6 +67,22 @@ function makePublishAuthorize(db: Database, user: AuthUser): PackageAuthorize {
 }
 
 const stateParam = z.enum(PACKAGE_STATES).optional()
+
+/**
+ * The `extras_<key>` and `res_extras_<key>` parameters (ADR-062). The key is in
+ * the parameter's name, so they are read off the query whole rather than
+ * declared to the validator.
+ */
+function extrasFilters(queries: Record<string, string[]>): ExtrasFilters {
+  const filters: ExtrasFilters = {}
+  for (const [name, values] of Object.entries(queries)) {
+    const field = extrasField(name)
+    if (!field) continue
+    const refuse = (why: string) => new ValidationError(`${why}: ${name}`)
+    for (const value of values) addExtrasCondition(filters, field, value, refuse)
+  }
+  return filters
+}
 
 // GET /api/v1/packages - List packages with pagination and search
 packagesRouter.get(
@@ -110,6 +127,7 @@ packagesRouter.get(
   async (c) => {
     const { my_org, tags, res_format, include_facets, state, sort_by, sort_order, ...rest } =
       c.req.valid('query')
+    const extras = extrasFilters(c.req.queries())
     const db = c.get('db')
     const service = new PackageService(db)
     const user = c.get('user')
@@ -125,6 +143,8 @@ packagesRouter.get(
         groups: rest.groups?.length,
         res_format: res_format?.length,
         license_id: rest.license_id?.length,
+        'extras_*': extras.extras?.length,
+        'res_extras_*': extras.resourceExtras?.length,
         creator_user_id: rest.creator_user_id,
         my_org,
         include_facets,
@@ -180,6 +200,7 @@ packagesRouter.get(
       formats: res_format,
       licenses: rest.license_id,
       groups: rest.groups,
+      ...extras,
       ...buildVisibilityFilters(user, userOrgIds),
       // my_org filter
       ...(manageOrgIds?.length && { ownerOrgIds: manageOrgIds }),

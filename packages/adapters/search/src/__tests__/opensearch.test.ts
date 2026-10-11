@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { errors as osErrors } from '@opensearch-project/opensearch'
-import { OpenSearchAdapter } from '../opensearch'
-import { BulkIndexError } from '../adapter'
+import { OpenSearchAdapter, extrasPair } from '../opensearch'
+import { BulkIndexError, extrasMatchValues } from '../adapter'
 
 // Mock only the OpenSearch client; keep the real `errors` export so error-type
 // classification (instanceof checks) behaves identically to production.
@@ -263,6 +263,32 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
+  describe('extras pairs (ADR-062)', () => {
+    it('spells a number as PostgreSQL prints a jsonb one, never with an exponent', () => {
+      // What `#>> '{}'` printed for these on PostgreSQL 16
+      const numbers = [1e-7, 1.5e-7, 1e21, 1.2345e25, -2.5e-10, 123.456, 5, -0, 0.1]
+      expect(numbers.flatMap(extrasMatchValues)).toEqual([
+        '0.0000001',
+        '0.00000015',
+        '1000000000000000000000',
+        '12345000000000000000000000',
+        '-0.00000000025',
+        '123.456',
+        '5',
+        '0',
+        '0.1',
+      ])
+    })
+
+    it('holds a long pair as its hash, which no pair can be taken for', () => {
+      const long = 'x'.repeat(40_000)
+      const hashed = extrasPair('spatial', long)
+      expect(hashed).toMatch(/^sha256:[0-9a-f]{64}$/)
+      expect(extrasPair('spatial', long)).toBe(hashed)
+      expect(extrasPair('spatial', 'x')).toBe('["spatial","x"]')
+    })
+  })
+
   describe('bulkIndexPackages', () => {
     it('names the dataset documents the index refused, so the rest can settle', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
@@ -284,6 +310,43 @@ describe('OpenSearchAdapter', () => {
       await expect(writing).rejects.toBeInstanceOf(BulkIndexError)
       await expect(writing).rejects.toMatchObject({ failedIds: ['pkg-2'] })
       expect(mockClient.bulk.mock.calls[0][0].body[1]).toMatchObject({ join_field: 'package' })
+    })
+
+    it('writes extras as key-value pairs, by the rule a filter reads them (ADR-062)', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
+
+      await adapter.bulkIndexPackages([
+        {
+          id: 'pkg-1',
+          name: 'one',
+          extras: {
+            unit: '市町村',
+            n: 5,
+            flag: false,
+            area: ['a', 1, ['b'], { c: 1 }],
+            o: {},
+            z: null,
+          },
+        },
+      ])
+      await adapter.bulkIndexResources([
+        { id: 'res-1', packageId: 'pkg-1', extras: { lang: 'ja', dup: ['x', 'x'] } },
+        { id: 'res-2', packageId: 'pkg-1' },
+      ])
+
+      const doc = mockClient.bulk.mock.calls[0][0].body[1]
+      expect(doc).not.toHaveProperty('extras')
+      expect(doc.extras_pairs).toEqual([
+        '["unit","市町村"]',
+        '["n","5"]',
+        '["flag","false"]',
+        '["area","a"]',
+        '["area","1"]',
+      ])
+      const resources = mockClient.bulk.mock.calls[1][0].body
+      expect(resources[1].extras_pairs).toEqual(['["lang","ja"]', '["dup","x"]'])
+      expect(resources[3].extras_pairs).toEqual([])
     })
   })
 
@@ -361,6 +424,16 @@ describe('OpenSearchAdapter', () => {
       const result = await adapter.search({ q: '' })
 
       expect(result.items[0]).not.toHaveProperty('formats')
+    })
+
+    it('asks for the extras pairs on no hit, dataset or resource', async () => {
+      mockClient.search.mockResolvedValue({ body: { hits: { total: { value: 0 }, hits: [] } } })
+
+      await adapter.search({ q: 'x' })
+
+      const body = mockClient.search.mock.calls[0][0].body
+      expect(body._source).toEqual({ excludes: ['extras_pairs'] })
+      expect(JSON.stringify(body.query)).toContain('"_source":{"excludes":["extras_pairs"]}')
     })
 
     it('should use single search with has_child for keyword queries', async () => {
@@ -697,6 +770,39 @@ describe('OpenSearchAdapter', () => {
             },
           }))
         )
+      )
+    })
+
+    it('filters extras by pair: the dataset its own, each resource condition on some resource', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.search({
+        q: '',
+        filters: {
+          extras: [{ key: 'a:b', value: 'x' }],
+          resourceExtras: [
+            { key: 'lang', value: 'ja' },
+            { key: 'unit', value: 'city' },
+          ],
+        },
+      })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.query.bool.filter).toEqual(
+        expect.arrayContaining([
+          { term: { extras_pairs: '["a:b","x"]' } },
+          ...[
+            ['lang', 'ja'],
+            ['unit', 'city'],
+          ].map((pair) => ({
+            has_child: {
+              type: 'resource',
+              query: { term: { extras_pairs: JSON.stringify(pair) } },
+            },
+          })),
+        ])
       )
     })
 

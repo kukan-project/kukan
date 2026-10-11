@@ -18,7 +18,12 @@ import type {
   IndexContentOptions,
   VectorHit,
 } from './adapter'
-import { MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS, type SearchFilters } from './adapter'
+import {
+  MAX_MATCHED_RESOURCES_PER_PACKAGE,
+  MATCHED_FIELDS,
+  type ExtrasCondition,
+  type SearchFilters,
+} from './adapter'
 import { escapeLike } from '@kukan/shared'
 import {
   type Database,
@@ -30,6 +35,7 @@ import {
   group,
   packageGroup,
   publicSummary,
+  scrubbedExtras,
 } from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, asc, desc, gte, lte } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
@@ -48,6 +54,23 @@ const MATCH_COLUMNS = {
 /** One predicate for the package count and the matched-resource list, so the two cannot disagree. */
 function resourceMatches(pattern: string): SQL {
   return or(...MATCHED_FIELDS.map((f) => ilike(MATCH_COLUMNS[f], pattern)))!
+}
+
+/**
+ * Whether `extras` holds the condition's value under its key, by the rule the
+ * index is written by (`extrasMatchValues`, ADR-062 §2): the value itself or a
+ * scalar element of an array, as `#>> '{}'` prints it — a string unquoted, a
+ * number in decimal without an exponent, a boolean as `true` or `false`. A
+ * missing key is a JSON null, and fails.
+ */
+function extrasHold(extras: SQL, { key, value }: ExtrasCondition): SQL {
+  return sql`EXISTS (
+    SELECT FROM (SELECT ${extras} -> ${key}::text AS h) AS held,
+      jsonb_array_elements(
+        CASE jsonb_typeof(held.h) WHEN 'array' THEN held.h ELSE jsonb_build_array(held.h) END
+      ) AS e(v)
+    WHERE jsonb_typeof(e.v) IN ('string', 'number', 'boolean') AND e.v #>> '{}' = ${value}::text
+  )`
 }
 
 /** Last-resort similarity floor for models without a measured recommendation.
@@ -136,6 +159,23 @@ export class PostgresSearchAdapter implements SearchAdapter {
           AND ${resource.state} = 'active'
           AND UPPER(${resource.format}) IN ${fmts}
           HAVING COUNT(DISTINCT UPPER(${resource.format})) = ${count}
+        )`
+      )
+    }
+
+    for (const condition of query.filters?.extras ?? []) {
+      conditions.push(extrasHold(sql`${packageTable.extras}`, condition))
+    }
+    // Each on its own EXISTS: some resource meets each, not necessarily one all.
+    // Scrubbed by the projection the public read and the index use: a key the
+    // health checker left behind is nobody's to match on
+    for (const condition of query.filters?.resourceExtras ?? []) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT FROM ${resource}
+          WHERE ${resource.packageId} = ${packageTable.id}
+          AND ${resource.state} = 'active'
+          AND ${extrasHold(scrubbedExtras, condition)}
         )`
       )
     }

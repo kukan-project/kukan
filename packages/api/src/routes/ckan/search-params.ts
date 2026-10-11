@@ -8,6 +8,7 @@
  */
 
 import type { SearchFilters, SearchQuery } from '@kukan/search-adapter'
+import { addExtrasCondition, extrasField } from '../extras-filter'
 
 /** A refusal in CKAN's validation shape: the parameter, and what is wrong with it. */
 export class CkanValidationError extends Error {
@@ -30,6 +31,8 @@ export interface ParsedFq {
     | 'isPrivate'
     | 'updatedFrom'
     | 'updatedTo'
+    | 'extras'
+    | 'resourceExtras'
   >
   empty: boolean
 }
@@ -101,13 +104,25 @@ const LIST_FIELDS = { ...FACET_FIELDS, owner_org: 'ownerOrgIds' } as const
 const SINGLE_VALUED = new Set(['organization', 'owner_org', 'license_id'])
 
 /**
+ * What the Lucene query parser reads as syntax in an unquoted value: patterns,
+ * ranges, boosts, fuzziness, escapes, groups, a field separator — and, leading,
+ * negation, a regex, a required clause
+ */
+const SOLR_SYNTAX = /[\\^~*?:(){}[\]"]|^[!/+-]/
+
+/**
  * Parse `fq` and `fq_list` into search filters.
  *
  * Terms are joined by AND, as CKAN's are, with an optional leading `+`.
  * Supported: `organization`, `owner_org`, `groups`, `tags`, `res_format`,
- * `license_id`, `capacity`, `dataset_type`/`type`, `state` and
- * `metadata_modified:[a TO b]`. OR, negation and grouping are refused — and so
- * is `site_id`: KUKAN has no site identifier to compare one against.
+ * `license_id`, `capacity`, `dataset_type`/`type`, `state`,
+ * `metadata_modified:[a TO b]`, and `extras_<key>` and `res_extras_<key>`
+ * (ADR-062). OR, negation and grouping are refused — and so is `site_id`:
+ * KUKAN has no site identifier to compare one against.
+ *
+ * An extras value is compared whole, where CKAN's `text` field matches words
+ * of it. Two values for one key are not short-circuited to empty: an array
+ * value can hold both.
  */
 export function parseFq(fq: string | undefined, fqList: string[] = []): ParsedFq {
   const filters: ParsedFq['filters'] = {}
@@ -140,10 +155,17 @@ export function parseFq(fq: string | undefined, fqList: string[] = []): ParsedFq
         continue
       }
 
-      if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
-        value = value.slice(1, -1)
-      }
-      if (field in LIST_FIELDS) {
+      const quoted = value.startsWith('"') && value.endsWith('"') && value.length >= 2
+      if (quoted) value = value.slice(1, -1)
+      const extras = extrasField(field)
+      if (extras) {
+        // Compared as written, Solr syntax would answer a different question
+        // without a word. Inside quotes only an escape is still syntax
+        if (value.includes('\\') || (!quoted && SOLR_SYNTAX.test(value))) {
+          throw refuse('Solr syntax is not supported in an extras value; quote it')
+        }
+        addExtrasCondition(filters, extras, value, refuse)
+      } else if (field in LIST_FIELDS) {
         const key = LIST_FIELDS[field as keyof typeof LIST_FIELDS]
         const list = filters[key] ?? []
         if (!list.includes(value)) {

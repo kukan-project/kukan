@@ -144,6 +144,8 @@ AND. A leading `+` and quoted values (`"..."`) are accepted.
 | `tags:<name>`                          | Tag                                                        |
 | `res_format:<format>`                  | Resource format (case-insensitive)                         |
 | `license_id:<ID>`                      | License                                                    |
+| `extras_<key>:<value>`                 | A dataset's extras (see below)                             |
+| `res_extras_<key>:<value>`             | Some resource's extras (see below)                         |
 | `metadata_modified:[<from> TO <to>]`   | Modified within the range: UTC ending in `Z`, `*` or `NOW` |
 | `capacity:public` / `capacity:private` | Public / private                                           |
 | `dataset_type:dataset`, `state:active` | Always true (any other value matches nothing)              |
@@ -152,6 +154,19 @@ AND. A leading `+` and quoted values (`"..."`) are accepted.
 parentheses, fields not in the table, date math). Times are kept to the millisecond; a finer end is rounded outward (down for the start, up for the end), so nothing in the range is lost. So is `site_id`: KUKAN has no site identifier to
 compare it with. Ignoring it would return more than was asked for,
 with no way for the caller to notice.
+
+**Extras are compared differently from CKAN.**
+
+- Values are compared whole. CKAN's `extras_*` fields are of type `text` and match words, so KUKAN
+  may return fewer results. Numbers and arrays are handled as in the [REST API](./rest#filtering-on-extras)
+- `fq` splits field from value at `:`, so a key containing `:` or whitespace cannot be written there.
+  Use the REST API's `extras_<key>` parameter
+- Every key of a resource's extras can be filtered on. CKAN reads only the keys listed in
+  `ckan.extra_resource_fields` (none by default)
+- The bare-key fields CKAN also indexes (`spatial_unit:...`) are not read, and answer `409`
+- Solr syntax in a value answers `409` rather than being looked for as written: outside quotes,
+  `* ? ^ ~ : ( ) [ ] { } "` and a leading `! / + -`; a backslash inside or outside them. To look for
+  a value holding one, quote it: `extras_k:"-5"`
 
 ### sort
 

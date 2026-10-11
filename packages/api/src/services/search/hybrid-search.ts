@@ -19,7 +19,7 @@ import type {
   MatchedResource,
 } from '@kukan/search-adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE, queryTerms } from '@kukan/search-adapter'
-import { resourceDocColumns } from '../resource-service'
+import { resourceCardColumns } from '../resource-service'
 import { type MeteredAI, embeddingKey } from '@kukan/ai-adapter'
 import { createCache, type Logger, type SemanticState } from '@kukan/shared'
 import {
@@ -129,7 +129,7 @@ async function fetchNamedResources(
 ): Promise<Map<string, MatchedResource>> {
   // The search document's own columns, so a hidden abstract is null here by
   // the same projection the page and the index read (ADR-053)
-  const rows = await db.select(resourceDocColumns).from(resource).where(inArray(resource.id, ids))
+  const rows = await db.select(resourceCardColumns).from(resource).where(inArray(resource.id, ids))
 
   return new Map(
     rows.map((row) => [

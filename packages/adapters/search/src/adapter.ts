@@ -67,6 +67,8 @@ export interface ResourceDoc {
   summary?: string
   /** A table's column names, the most telling thing about it to search (ADR-063) */
   columns?: string[]
+  /** Filtered on by key and value, not searched (ADR-062) */
+  extras?: Record<string, unknown>
 }
 
 /** Document stored in the kukan-contents index (extracted text for full-text search) */
@@ -123,6 +125,8 @@ export interface DatasetDoc {
   organization?: string
   license_id?: string
   groups?: string[]
+  /** Filtered on by key and value, not searched (ADR-062). Written, never read back */
+  extras?: Record<string, unknown>
   matchedResources?: MatchedResource[]
   /** How many resources matched in all — `atLeast` when the adapter could not
    *  settle it: it carried fewer than matched, or content hits past its cap are
@@ -156,6 +160,46 @@ export interface VectorHit {
   similarity: number
 }
 
+/** One `extras_<key>=<value>` condition: the key holds the value, compared whole (ADR-062) */
+export interface ExtrasCondition {
+  key: string
+  value: string
+}
+
+/**
+ * A number in decimal without an exponent — `1e-7` as `0.0000001` — which is
+ * how PostgreSQL prints a jsonb number. The two adapters must spell a number
+ * alike, and jsonb has lost the spelling it was written in.
+ */
+function plainDecimal(n: number): string {
+  const spelled = String(n)
+  const m = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(spelled)
+  if (!m) return spelled
+  const [, sign, lead, rest = '', exponent] = m
+  const digits = lead + rest
+  // Where the point falls among the digits
+  const point = 1 + Number(exponent)
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`
+  if (point >= digits.length) return sign + digits + '0'.repeat(point - digits.length)
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`
+}
+
+/**
+ * The values an `extras` value is matched as (ADR-062 §2): a string as it is, a
+ * number in decimal without an exponent, a boolean as `true` or `false`, and
+ * each scalar of an array; an object or null as nothing. A query parameter has
+ * no type, so `5` and `"5"` are one. The PostgreSQL adapter states the same
+ * rule in SQL (`extrasHold`).
+ */
+export function extrasMatchValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (typeof value === 'number') return [plainDecimal(value)]
+  if (typeof value === 'boolean') return [String(value)]
+  if (Array.isArray(value))
+    return value.flatMap((v) => (Array.isArray(v) ? [] : extrasMatchValues(v)))
+  return []
+}
+
 export interface SearchFilters {
   // Content filters
   name?: string
@@ -164,6 +208,10 @@ export interface SearchFilters {
   formats?: string[]
   licenses?: string[]
   groups?: string[]
+  /** All must hold on the dataset's own `extras` (ADR-062) */
+  extras?: ExtrasCondition[]
+  /** Each must hold on some resource's `extras` — not necessarily the same one (ADR-062) */
+  resourceExtras?: ExtrasCondition[]
   /** `updated` within this range, either end open — CKAN's `metadata_modified:[a TO b]` */
   updatedFrom?: Date
   updatedTo?: Date

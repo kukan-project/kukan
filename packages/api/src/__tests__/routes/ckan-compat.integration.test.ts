@@ -955,6 +955,29 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       expect(otherOrg.count).toBe(0)
     })
 
+    it('filters on extras_<key> and res_extras_<key> in fq (ADR-062)', async () => {
+      await createPackage('fq-city', { extras: { spatial_unit: '市町村', 整備単位: '市町村' } })
+      const pkg = await createPackage('fq-pref', { extras: { spatial_unit: '都道府県' } })
+      await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'r',
+          url: 'https://example.com/r.csv',
+          extras: { lang: 'ja' },
+        }),
+      })
+      const names = async (fq: string) =>
+        (await search(`fq=${encodeURIComponent(fq)}`)).results.map((r: { name: string }) => r.name)
+
+      expect(await names('extras_spatial_unit:市町村')).toEqual(['fq-city'])
+      // CKAN strips such a key to nothing; KUKAN reads it as written
+      expect(await names('extras_整備単位:市町村')).toEqual(['fq-city'])
+      expect(await names('+res_extras_lang:"ja"')).toEqual(['fq-pref'])
+      // Compared whole, where CKAN's text field would match a word of it
+      expect(await names('extras_spatial_unit:市')).toEqual([])
+    })
+
     it('refuses what it cannot answer rather than returning more', async () => {
       for (const query of [
         `fq=${encodeURIComponent('tags:a OR tags:b')}`,

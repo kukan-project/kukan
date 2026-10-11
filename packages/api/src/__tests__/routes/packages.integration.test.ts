@@ -765,6 +765,77 @@ describe('Packages API Routes', () => {
       expect(body.items[0].name).toBe('pkg-csv-json')
     })
 
+    describe('extras filters (ADR-062)', () => {
+      const names = async (query: string) => {
+        const res = await app.request(`/api/v1/packages?${query}`)
+        expect(res.status).toBe(200)
+        const body = await res.json()
+        return body.items.map((i: { name: string }) => i.name).sort()
+      }
+
+      it('matches a dataset extras value whole, numbers and booleans as JSON spells them', async () => {
+        await createPackage({ name: 'monthly', extras: { frequency: 'monthly', n: 5, open: true } })
+        await createPackage({ name: 'monthly-text', extras: { frequency: 'Monthly ', n: '5' } })
+        await createPackage({ name: 'nested', extras: { frequency: { every: 'monthly' } } })
+
+        expect(await names('extras_frequency=monthly')).toEqual(['monthly'])
+        expect(await names('extras_n=5')).toEqual(['monthly', 'monthly-text'])
+        expect(await names('extras_open=true')).toEqual(['monthly'])
+        expect(await names('extras_frequency=month')).toEqual([])
+      })
+
+      it('spells a number without an exponent, as the index does', async () => {
+        await createPackage({ name: 'tiny', extras: { n: 1e-7 } })
+
+        expect(await names('extras_n=0.0000001')).toEqual(['tiny'])
+        expect(await names('extras_n=1e-7')).toEqual([])
+      })
+
+      it('matches each scalar of an array, and ANDs every condition', async () => {
+        await createPackage({ name: 'both', extras: { area: ['north', 'south', 3], unit: 'city' } })
+        await createPackage({ name: 'north', extras: { area: ['north'], unit: 'prefecture' } })
+
+        expect(await names('extras_area=north')).toEqual(['both', 'north'])
+        expect(await names('extras_area=3')).toEqual(['both'])
+        expect(await names('extras_area=north&extras_area=south')).toEqual(['both'])
+        expect(await names('extras_area=north&extras_unit=prefecture')).toEqual(['north'])
+      })
+
+      it('reads a key with any characters, URL-encoded into the parameter name', async () => {
+        await createPackage({ name: 'odd-key', extras: { '整備単位.v2: x': '市町村' } })
+
+        const key = encodeURIComponent('整備単位.v2: x')
+        expect(await names(`extras_${key}=${encodeURIComponent('市町村')}`)).toEqual(['odd-key'])
+      })
+
+      it('matches each resource condition on some resource, not necessarily one', async () => {
+        const split = await (await createPackage({ name: 'split' })).json()
+        await createResource(split.id, { name: 'a', extras: { lang: 'ja' } })
+        await createResource(split.id, { name: 'b', extras: { unit: 'city' } })
+        const one = await (await createPackage({ name: 'one' })).json()
+        await createResource(one.id, { name: 'c', extras: { lang: 'en', unit: 'city' } })
+
+        expect(await names('res_extras_unit=city')).toEqual(['one', 'split'])
+        expect(await names('res_extras_lang=ja&res_extras_unit=city')).toEqual(['split'])
+        // A dataset's own extras are not its resources'
+        expect(await names('extras_unit=city')).toEqual([])
+        // A key the old health checker wrote is scrubbed from reads, and from filters
+        await db.execute(
+          sql`UPDATE resource SET extras = extras || '{"healthEtag": "v1"}' WHERE name = 'c'`
+        )
+        expect(await names('res_extras_healthEtag=v1')).toEqual([])
+      })
+
+      it('refuses an empty key, too many conditions, and state=draft', async () => {
+        expect((await app.request('/api/v1/packages?extras_=x')).status).toBe(400)
+        const many = Array.from({ length: 21 }, (_, i) => `extras_k${i}=v`).join('&')
+        expect((await app.request(`/api/v1/packages?${many}`)).status).toBe(400)
+        const draft = await app.request('/api/v1/packages?state=draft&res_extras_k=v')
+        expect(draft.status).toBe(400)
+        expect((await draft.json()).detail).toContain('res_extras_*')
+      })
+    })
+
     it('should OR filter licenses — packages with ANY selected license', async () => {
       await createPackage({ name: 'pkg-cc', licenseId: 'cc-by' })
       await createPackage({ name: 'pkg-mit', licenseId: 'mit' })

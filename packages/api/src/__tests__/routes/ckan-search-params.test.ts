@@ -47,6 +47,61 @@ describe('parseFq', () => {
     })
   })
 
+  it('reads extras_<key> and res_extras_<key> as extras conditions (ADR-062)', () => {
+    const { filters, empty } = parseFq(
+      '+extras_spatial_unit:市町村 extras_spatial_unit:"都道府県 全体" res_extras_lang:ja',
+      ['res_extras_lang:en']
+    )
+    // Two values for one key can both hold, of an array
+    expect(empty).toBe(false)
+    expect(filters).toEqual({
+      extras: [
+        { key: 'spatial_unit', value: '市町村' },
+        { key: 'spatial_unit', value: '都道府県 全体' },
+      ],
+      resourceExtras: [
+        { key: 'lang', value: 'ja' },
+        { key: 'lang', value: 'en' },
+      ],
+    })
+  })
+
+  it('refuses an extras field without a key, past the limit, or by the key alone', () => {
+    expect(() => parseFq('extras_:x')).toThrow(CkanValidationError)
+    expect(() =>
+      parseFq(Array.from({ length: 21 }, (_, i) => `res_extras_k${i}:v`).join(' '))
+    ).toThrow(CkanValidationError)
+    // CKAN also indexes a dataset extra under its bare key; KUKAN does not read it
+    expect(() => parseFq('spatial_unit:市町村')).toThrow(CkanValidationError)
+  })
+
+  it('refuses Solr syntax in an extras value rather than matching it as written', () => {
+    for (const fq of [
+      'extras_k:*',
+      'extras_k:a?c',
+      'res_extras_k:[2020 TO 2024]',
+      'extras_k:a\\:b',
+      'extras_k:monthly^2',
+      'extras_k:monthly~1',
+      'extras_k:a:b',
+      'extras_k:-5',
+      'extras_k:/mon.*/',
+      'extras_k:"x"~2',
+    ]) {
+      expect(() => parseFq(fq), fq).toThrow(CkanValidationError)
+    }
+    // Solr unescapes inside quotes too
+    expect(() => parseFq('extras_k:"a\\:b"')).toThrow(CkanValidationError)
+    // Quoted, a pattern is the value itself; a hyphen inside a word is no syntax
+    expect(parseFq('extras_k:"*" extras_k:"-5" extras_k:2024-01').filters).toEqual({
+      extras: [
+        { key: 'k', value: '*' },
+        { key: 'k', value: '-5' },
+        { key: 'k', value: '2024-01' },
+      ],
+    })
+  })
+
   it('matches nothing when a dataset would need two of what it has one of', () => {
     expect(parseFq('organization:a organization:b').empty).toBe(true)
     expect(parseFq('organization:a organization:a').empty).toBe(false)

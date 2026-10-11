@@ -56,6 +56,8 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 | `tags[]`           | タグで絞り込み                                                                                                                 |
 | `res_format[]`     | リソース形式で絞り込み（例: `CSV`）                                                                                            |
 | `license_id[]`     | ライセンスで絞り込み                                                                                                           |
+| `extras_<key>`     | データセットの extras で、キー `<key>` の値が一致するもの（後述）                                                              |
+| `res_extras_<key>` | いずれかのリソースの extras で、キー `<key>` の値が一致するもの（後述）                                                        |
 | `creator_user_id`  | 作成者のユーザー ID で絞り込み                                                                                                 |
 | `state`            | `active` / `deleted` / `draft`（`draft` は要認証・後述。`deleted` は `my_org=true` かつ認証時のみ有効で、それ以外は `active`） |
 | `my_org`           | 自分が `editor` 以上の組織に限定                                                                                               |
@@ -63,6 +65,30 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 | `sort_by`          | `updated` / `created` / `name`                                                                                                 |
 | `sort_order`       | `asc` / `desc`                                                                                                                 |
 | `include_facets`   | ファセット情報を含める                                                                                                         |
+
+### extras で絞り込む
+
+`extras_<key>=<value>` はデータセットの extras、`res_extras_<key>=<value>` はリソースの extras で
+絞り込みます。キーはパラメータ名の側に URL エンコードして書くので、日本語や `.`・`:` を含むキーも
+そのまま指定できます。
+
+```bash
+curl -G "https://your-kukan-site/api/v1/packages" \
+  --data-urlencode "extras_%E6%95%B4%E5%82%99%E5%8D%98%E4%BD%8D=市町村" \
+  --data-urlencode "res_extras_lang=ja"
+```
+
+`--data-urlencode` が符号化するのは `=` の右側だけです。日本語などを含むキーは、上の
+`extras_%E6%95%B4%E5%82%99%E5%8D%98%E4%BD%8D`（`extras_整備単位`）のように自分でパーセントエンコードしてください。
+
+- 値は**完全一致**で比べます。大文字小文字の同一視、前後の空白の除去、全角・半角の正規化はしません
+- 数値は指数を使わない十進表記、真偽値は `true` / `false` で比べます（`extras_n=5` は数値の `5` にも
+  文字列の `"5"` にも一致。数値の `1e-7` は `extras_n=0.0000001` で引きます）。
+  値が配列なら、要素のどれかが一致すれば当たります。オブジェクトと `null` の値には一致しません
+- 条件はすべて AND です。同じパラメータを繰り返しても AND になります
+- `res_extras_*` は、条件ごとに「どれか 1 つのリソースが満たす」ものです。複数の条件を同じリソースが
+  満たす必要はありません（`res_format[]` と同じ）
+- キーが空（`extras_=`）のものと、1 リクエストで 20 を超える条件は `400` です
 
 ### 語の一致を緩める（match=relaxed）
 
@@ -113,7 +139,8 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 自分が作成した下書きと、所属組織（editor 以上）の下書きのみが返ります。
 対応フィルタは `q` / `name` / `organization[]` / `private` / `sort_by` / `sort_order` /
 `offset` / `limit`。`tags[]` / `groups[]` / `res_format[]` / `license_id[]` /
-`creator_user_id` / `my_org` / `include_facets` を指定すると `400` になります。
+`extras_<key>` / `res_extras_<key>` / `creator_user_id` / `my_org` / `include_facets` を
+指定すると `400` になります。
 削除が途中で失敗した行（削除未完了）も一覧に含まれます。
 
 **取得・更新・削除**:

@@ -560,6 +560,7 @@ async function buildDatasetDocs(q: Database | Transaction, ids: string[]): Promi
         private: packageTable.private,
         creatorUserId: packageTable.creatorUserId,
         licenseId: packageTable.licenseId,
+        extras: packageTable.extras,
         created: packageTable.created,
         updated: packageTable.updated,
       })
@@ -589,6 +590,7 @@ async function buildDatasetDocs(q: Database | Transaction, ids: string[]): Promi
     license_id: d.licenseId ?? undefined,
     groups: groupsByPkg.get(d.id) ?? [],
     tags: tagsByPkg.get(d.id) ?? [],
+    extras: d.extras ?? undefined,
     private: d.private,
     owner_org_id: d.ownerOrg ?? undefined,
     creator_user_id: d.creatorUserId ?? undefined,
@@ -620,6 +622,7 @@ function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
     section: row.section ?? undefined,
     summary: row.summary ?? undefined,
     ...(row.columns?.length && { columns: row.columns }),
+    extras: row.extras,
   }
 }
 
