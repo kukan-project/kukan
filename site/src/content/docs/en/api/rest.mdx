@@ -178,6 +178,7 @@ the listing.
 | GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over                         | Org editor |
 | POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                                         | Org editor |
 | PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                                            | Org editor |
+| GET    | `/resources/{id}/column-roles`          | The columns' roles, and why the rules decided them                                                | Org editor |
 | PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                                          | Org editor |
 | PUT    | `/resources/{id}`                       | Update resource (full replacement; only `section` is kept when omitted)                           | Org editor |
 | DELETE | `/resources/{id}`                       | Delete resource                                                                                   | Org editor |
@@ -283,7 +284,8 @@ tools offer the same capability for AI agents.
         "stats": { "min": "600", "max": "1350" }
       }
     ]
-  }
+  },
+  "columnRoles": [{ "role": "category" }, { "role": "measure" }]
 }
 ```
 
@@ -302,7 +304,9 @@ returned with `queryable: false`. `primaryKey` lists the column names of the
 resource's settled primary key (composite keys in their chosen order), or is
 `null` when none is set. `type` is one of `integer` / `float` / `boolean` / `string` /
 `date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are
-decimal strings.
+decimal strings. `columnRoles` is each column's role (`measure` / `numeric-text` / `identifier` /
+`free-text` / `name` / `category` / `empty`), at the same position as the column in `schema`, or
+`null` for a table interpreted before roles. Why the rules decided a role is not returned here — `GET /resources/{id}/column-roles` (editors only) reads it.
 
 `droppedRows` counts lines of the file that are not rows of this table — the reader refuses one
 written short, and a note padded out to the table's width is trimmed from the table itself — a version line at the bottom, a stray comma in the middle. Refusing them is what stops
@@ -611,6 +615,36 @@ data.
   version disagree, so a caller that ignores `false` leaves a key no version is ever read under
 - Versions already in layer 2 are not re-read under the new key. The boundary is the version
   itself, and diffs across it fall back to comparing whole rows
+
+### Column roles
+
+A column's role decides how search treats its values and what the field list on the public page
+shows. Name and category columns are indexed as lists of their values, free-text columns as
+sentences with the row's context, and the rest are not used for search. Roles are decided
+automatically from the values and the field name.
+
+`GET /resources/{id}/column-roles` (requires **editor permission**) returns each column's role and
+why it was decided:
+
+```json
+{
+  "columns": [
+    {
+      "name": "capacity",
+      "type": "string",
+      "role": "numeric-text",
+      "roleBasis": { "rule": "number-shape", "share": 0.92, "examples": ["-", "1,000"] }
+    },
+    { "name": "category", "type": "string", "role": "category", "roleBasis": { "rule": "other" } }
+  ]
+}
+```
+
+- `roleBasis.rule` is the rule that decided the role, and `share` the share of values it measured
+- The `examples` of a `numeric-text` column are values that do not read as numbers — what the
+  publisher has to fix
+- `columns` is `null` for a table whose roles have not been worked out yet
+- Read-only in this version; overriding a role is planned for a future version
 
 ### Hiding an AI-written description
 

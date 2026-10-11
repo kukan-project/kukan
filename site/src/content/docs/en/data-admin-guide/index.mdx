@@ -112,6 +112,23 @@ served in the cases below, and the **OData** button on the resource page says wh
 With a primary key declared, that column identifies the rows and no `RowId` column is added
 ([Declaring a primary key](#declaring-a-primary-key)).
 
+### Column roles
+
+For a tabular resource, each column is given a role — name, category, free text, identifier,
+number or date, or number written as text — decided automatically from its values and its field
+name. The role decides how search uses the column: name and category columns are searched by
+their values, free-text columns as sentences, and the rest are not used for search.
+
+The field list on the public page shows the role alone. The resource editing screen in the
+dashboard shows it with the reason it was decided ("92% of values are number-shaped" and the like).
+For a column of numbers written as text, it also lists the values that do not read as numbers —
+what to fix in the data.
+
+:::note
+**Roles cannot be edited in this version.** Overriding a role the automatic decision got wrong,
+from the dashboard, is planned for a future version.
+:::
+
 ## Version history
 
 Every time a resource's file is replaced, the content it replaced is kept as a **version**.

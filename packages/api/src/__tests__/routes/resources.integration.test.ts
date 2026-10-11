@@ -2963,3 +2963,93 @@ describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
     expect(res.status).toBe(403)
   })
 })
+
+describe('GET /api/v1/resources/:id/column-roles', () => {
+  const COLUMNS = ['区分', '番号']
+
+  /** A table the pipeline has profiled: 区分 a category, 番号 an identifier. */
+  async function profiled(name: string) {
+    const pkg = await createPackage(name)
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ hash: 'sha256:live' })
+      .where(eq(resourceTable.id, resource.id))
+    const values = {
+      status: 'complete' as const,
+      metadata: {
+        // Read from the bytes the resource serves
+        sourceHash: 'sha256:live',
+        schema: {
+          rowCount: 2,
+          columns: COLUMNS.map((column) => ({
+            name: column,
+            type: 'string' as const,
+            nullable: false,
+            nullCount: 0,
+          })),
+        },
+      },
+      profile: {
+        columns: [
+          { role: 'category' as const, roleBasis: { rule: 'other' as const } },
+          { role: 'identifier' as const, roleBasis: { rule: 'name-hint' as const, hint: '番号' } },
+        ],
+      },
+    }
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId: resource.id, ...values })
+      .onConflictDoUpdate({ target: resourcePipeline.resourceId, set: values })
+    return resource
+  }
+
+  it('reads each column with the rule behind its role', async () => {
+    const resource = await profiled('roles-read-pkg')
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-roles`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      columns: [
+        { name: '区分', type: 'string', role: 'category', roleBasis: { rule: 'other' } },
+        {
+          name: '番号',
+          type: 'string',
+          role: 'identifier',
+          roleBasis: { rule: 'name-hint', hint: '番号' },
+        },
+      ],
+    })
+  })
+
+  it('has no columns where the profile is of content the resource no longer serves', async () => {
+    // An interpretation that failed on new bytes leaves the previous one in place
+    const resource = await profiled('roles-stale-pkg')
+    await db
+      .update(resourceTable)
+      .set({ hash: 'sha256:new' })
+      .where(eq(resourceTable.id, resource.id))
+
+    const view = await (await app.request(`/api/v1/resources/${resource.id}/column-roles`)).json()
+
+    expect(view.columns).toBeNull()
+  })
+
+  it('has no columns for a table with no profile', async () => {
+    const pkg = await createPackage('roles-unprofiled-pkg')
+    const resource = await createResource(pkg.id)
+
+    const view = await (await app.request(`/api/v1/resources/${resource.id}/column-roles`)).json()
+
+    expect(view).toEqual({ columns: null })
+  })
+
+  it('is for editors only', async () => {
+    const resource = await profiled('roles-outsider-pkg')
+
+    expect(
+      (await outsiderApp.request(`/api/v1/resources/${resource.id}/column-roles`)).status
+    ).toBe(403)
+  })
+})

@@ -78,6 +78,7 @@ import { FileUploadZone } from './file-upload-zone'
 import { ResourceFormFields } from './resource-form-fields'
 import { ExtrasFields, useExtrasRows } from './extras-fields'
 import { PrimaryKeyPicker } from './primary-key-picker'
+import { ColumnRoles } from './column-roles'
 import { ResourceVersionHistory } from './resource-version-history'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
 
@@ -1257,6 +1258,10 @@ export function ResourceList({
                     }}
                   />
                 </div>
+              )}
+              {/* Draws its own separator: it renders nothing for a table with no roles */}
+              {isTableSourceFormat(edited?.format) && (
+                <ColumnRoles resourceId={editId} reloadKey={panelKey} />
               )}
               <div className="mt-2 border-t pt-4">
                 {/* Moves when a run changed what is listed here, and not on

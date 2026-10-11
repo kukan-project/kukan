@@ -32,7 +32,13 @@ import {
   resourceSchemaSchema,
   tableProfileSchema,
 } from '@kukan/shared'
-import type { PipelineStatus, ResourceSchema, TableProfile } from '@kukan/shared'
+import type {
+  ColumnRoleRow,
+  ColumnSettings,
+  PipelineStatus,
+  ResourceSchema,
+  TableProfile,
+} from '@kukan/shared'
 import { readyJobsMatching, type EnqueueOptions, type JobQueue } from '@kukan/queue'
 
 /**
@@ -290,16 +296,6 @@ export class PipelineService {
    * the resource has no pipeline row; each field is null when absent. Whether
    * the whole is queryable is `isQueryable`'s call.
    */
-  /** The live version's table profile (ADR-063), where it has one. */
-  async getProfile(resourceId: string): Promise<TableProfile | null> {
-    const [row] = await this.db
-      .select({ profile: resourcePipeline.profile })
-      .from(resourcePipeline)
-      .where(eq(resourcePipeline.resourceId, resourceId))
-      .limit(1)
-    return parseTableProfile(row?.profile)
-  }
-
   /**
    * The document text artifact the last run wrote, and whether that run read
    * the bytes the resource holds now — a failed Interpret keeps the previous
@@ -355,27 +351,78 @@ export class PipelineService {
 
   async getQueryTarget(resourceId: string): Promise<QueryTarget | null> {
     const [row] = await this.db
-      .select({
-        previewKey: resourcePipeline.previewKey,
-        metadata: resourcePipeline.metadata,
-        describesLiveContent: schemaDescribesLiveContent(this.db),
-        columnSettings: resource.columnSettings,
-      })
+      .select(this.targetFields())
       .from(resourcePipeline)
       .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
+    return row ? toQueryTarget(row) : null
+  }
 
+  /**
+   * {@link getQueryTarget} with the table profile (ADR-063), for the readers
+   * that show columns' roles. One read: the worker rewrites the two together,
+   * and a schema and a profile read apart can be from two interpretations.
+   * The profile is null where its columns do not line up with the schema's.
+   *
+   * Apart from {@link getQueryTarget} because that one is read per query and
+   * per feed page, and a profile carries every listed column's values.
+   */
+  async getProfiledTarget(
+    resourceId: string
+  ): Promise<{ target: QueryTarget; profile: TableProfile | null } | null> {
+    const [row] = await this.db
+      .select({ ...this.targetFields(), profile: resourcePipeline.profile })
+      .from(resourcePipeline)
+      .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
+      .where(eq(resourcePipeline.resourceId, resourceId))
+      .limit(1)
     if (!row) return null
+    const target = toQueryTarget(row)
+    const profile = parseTableProfile(row.profile)
+    const aligned = profile?.columns.length === target.schema?.columns.length
+    return { target, profile: aligned ? profile : null }
+  }
+
+  private targetFields() {
     return {
-      previewKey: row.previewKey,
-      schema: parseResourceSchema(row.metadata),
-      encoding: parseSourceEncoding(row.metadata),
-      rowGroupRows: parseRowGroupRows(row.metadata),
-      describesLiveContent: row.describesLiveContent,
-      primaryKey: primaryKeyOf(row.columnSettings),
+      previewKey: resourcePipeline.previewKey,
+      metadata: resourcePipeline.metadata,
+      describesLiveContent: schemaDescribesLiveContent(this.db),
+      columnSettings: resource.columnSettings,
     }
   }
+}
+
+function toQueryTarget(row: {
+  previewKey: string | null
+  metadata: unknown
+  describesLiveContent: boolean
+  columnSettings: ColumnSettings
+}): QueryTarget {
+  return {
+    previewKey: row.previewKey,
+    schema: parseResourceSchema(row.metadata),
+    encoding: parseSourceEncoding(row.metadata),
+    rowGroupRows: parseRowGroupRows(row.metadata),
+    describesLiveContent: row.describesLiveContent,
+    primaryKey: primaryKeyOf(row.columnSettings),
+  }
+}
+
+/**
+ * Each profiled column named by the schema it was built with (ADR-063), or
+ * null where there is no profile to name.
+ */
+export function profiledColumns(
+  schema: ResourceSchema | null,
+  profile: TableProfile | null
+): ColumnRoleRow[] | null {
+  if (!schema || !profile?.columns.length) return null
+  return schema.columns.map((column, i) => {
+    const { role, roleBasis } = profile.columns[i]
+    return { name: column.name, type: column.type, role, roleBasis }
+  })
 }
 
 /**

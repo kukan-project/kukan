@@ -6,8 +6,11 @@ import type { ColumnProfile, ResourceSchema } from '@kukan/shared'
 import { useParquetSchema } from '@/hooks/use-parquet-schema'
 import { columnTypeKey, formatBytes } from '@/lib/format-utils'
 
-/** A column's role as `/schema` serves it (ADR-063): without the values. */
-export type ColumnRoleView = Pick<ColumnProfile, 'role' | 'roleBasis'>
+/**
+ * A column's role as `/schema` serves it (ADR-063): the role alone. Why the
+ * rules decided it is for the resource's editors, on the column-role settings.
+ */
+export type ColumnRoleView = Pick<ColumnProfile, 'role'>
 
 interface ResourceFieldsProps {
   resourceId: string
@@ -111,7 +114,9 @@ export function ResourceFields({
                     <Badge variant="secondary">{t(columnTypeKey(field.type))}</Badge>
                   </td>
                   {hasRoles && (
-                    <td className="px-4 py-2">{role && <ColumnRoleCell role={role} />}</td>
+                    <td className="px-4 py-2">
+                      {role && <Badge variant="outline">{t(`fieldRoles.${role.role}`)}</Badge>}
+                    </td>
                   )}
                   <td className="px-4 py-2 font-mono text-xs">{field.physicalType ?? '—'}</td>
                   <td className="px-4 py-2 font-mono text-xs">{field.logicalType ?? '—'}</td>
@@ -130,27 +135,5 @@ export function ResourceFields({
         </table>
       </div>
     </details>
-  )
-}
-
-/**
- * A column's role, with the rule that decided it. A `numeric-text` column also
- * shows the values that keep it from being a number — the thing to fix for
- * whoever publishes it (ADR-063 §決定 5).
- */
-function ColumnRoleCell({ role }: { role: ColumnRoleView }) {
-  const t = useTranslations('resource')
-  const basis = role.roleBasis
-  const percent = basis.share !== undefined ? Math.round(basis.share * 100) : 0
-  return (
-    <div className="flex flex-col items-start gap-1">
-      <Badge variant="outline">{t(`fieldRoles.${role.role}`)}</Badge>
-      <span className="text-xs text-muted-foreground">
-        {t(`fieldRoleBasis.${basis.rule}`, { percent, hint: basis.hint ?? '' })}
-        {basis.examples && basis.examples.length > 0 && (
-          <> {t('fieldRoleNotNumbers', { values: basis.examples.join(t('fieldRoleSeparator')) })}</>
-        )}
-      </span>
-    </div>
   )
 }

@@ -11,7 +11,11 @@ import { webLakeConfig } from '../services/query/lake-scan'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
-import { PipelineService, isQueryable } from '../services/pipeline/pipeline-service'
+import {
+  PipelineService,
+  isQueryable,
+  profiledColumns,
+} from '../services/pipeline/pipeline-service'
 import { readDocumentText } from '../services/document-text'
 import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline/pipeline-claim'
@@ -48,6 +52,7 @@ import {
   JSON_PREVIEW_LIMIT,
   TEXT_PREVIEW_LIMIT,
 } from '@kukan/shared'
+import type { ColumnRolesView } from '@kukan/shared'
 import { QUERY_MAX_SQL_LENGTH } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
@@ -585,11 +590,9 @@ resourcesRouter.get('/:id/schema', async (c) => {
   const user = c.get('user')
   // Same visibility check as preview/download — the schema reveals the data's shape.
   const { resource: res, pkg } = await new ResourceService(db).getByIdWithOwnership(id, user)
-  const pipeline = new PipelineService(db)
-  const [target, profile] = await Promise.all([
-    pipeline.getQueryTarget(id),
-    pipeline.getProfile(id),
-  ])
+  const read = await new PipelineService(db).getProfiledTarget(id)
+  const target = read?.target ?? null
+  const profile = read?.profile ?? null
   // Whether `/odata/v1/resources/:id` serves this table, why not when it does
   // not, what identifies its rows and whether a page of it may fail to read —
   // one answer, shared with the MCP tool that reports the same four things
@@ -610,8 +613,9 @@ resourcesRouter.get('/:id/schema', async (c) => {
     primaryKey: primaryKeyOf(res.columnSettings),
     schema: target?.schema ?? null,
     // Each column's role (ADR-063), at its position in `schema`. Without the
-    // values: get_resource_schema is where an agent reads those.
-    columnRoles: profile?.columns.map(({ role, roleBasis }) => ({ role, roleBasis })) ?? null,
+    // values — get_resource_schema is where an agent reads those — and without
+    // the rule behind it, which the dashboard shows its editors.
+    columnRoles: profile?.columns.map(({ role }) => ({ role })) ?? null,
   })
 })
 
@@ -1035,6 +1039,27 @@ resourcesRouter.put(
     return c.json({ id, ...result })
   }
 )
+
+// GET /api/v1/resources/:id/column-roles - Each column's role with the rule
+// behind it (ADR-063 §決定 5). Editor+: the reasons are for whoever checks the
+// rules; the public pages show the role alone.
+resourcesRouter.get('/:id/column-roles', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+  const id = c.req.param('id')
+  await checkResourcePermission(db, user, new ResourceService(db), id)
+
+  // Not for content the resource no longer serves: an interpretation that
+  // failed on new bytes leaves the previous one, and its reasons point at
+  // values that are gone
+  const read = await new PipelineService(db).getProfiledTarget(id)
+  const columns = read?.target.describesLiveContent
+    ? profiledColumns(read.target.schema, read.profile)
+    : null
+  return c.json({ columns } satisfies ColumnRolesView)
+})
 
 // PUT /api/v1/resources/:id/summary - Take an abstract off the page (org editor+)
 //

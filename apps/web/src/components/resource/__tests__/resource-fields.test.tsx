@@ -139,30 +139,20 @@ describe('ResourceFields', () => {
       columns: names.map((name) => ({ name, type: 'string', nullable: false, nullCount: 0 })),
     })
 
-    it('shows each role with the rule that decided it', () => {
+    it('shows each role, and not the rule that decided it', () => {
       setHook({ fields: [field('定員'), field('施設コード')] })
       render(
         <ResourceFields
           resourceId="r1"
           schema={schemaOf('定員', '施設コード')}
-          columnRoles={[
-            {
-              role: 'numeric-text',
-              roleBasis: { rule: 'number-shape', share: 0.92, examples: ['-', '1,000'] },
-            },
-            { role: 'identifier', roleBasis: { rule: 'name-hint', hint: 'コード' } },
-          ]}
+          columnRoles={[{ role: 'numeric-text' }, { role: 'identifier' }]}
         />
       )
       expect(screen.getByText('Role')).toBeInTheDocument()
       expect(screen.getByText('Number (written as text)')).toBeInTheDocument()
-      // What keeps it from being a number, for whoever publishes it
-      expect(
-        screen.getByText(
-          '92% of values are number-shaped (values that do not read as numbers: -, 1,000)'
-        )
-      ).toBeInTheDocument()
-      expect(screen.getByText('The field name contains “コード”')).toBeInTheDocument()
+      expect(screen.getByText('Identifier')).toBeInTheDocument()
+      // The reasons are on the editors' settings, not the public page
+      expect(screen.queryByText(/number-shaped/)).not.toBeInTheDocument()
     })
 
     it('leaves the role out where the table has none', () => {
@@ -179,7 +169,7 @@ describe('ResourceFields', () => {
         <ResourceFields
           resourceId="r1"
           schema={schemaOf('old')}
-          columnRoles={[{ role: 'category', roleBasis: { rule: 'other' } }]}
+          columnRoles={[{ role: 'category' }]}
         />
       )
       expect(screen.getByText('Role')).toBeInTheDocument()

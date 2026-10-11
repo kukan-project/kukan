@@ -838,17 +838,35 @@ describe('GET /api/v1/resources/:id/schema', () => {
     ).toBe(null)
   })
 
-  it("serves each column's role beside the schema, without the values (ADR-063)", async () => {
+  it("serves each column's role beside the schema, without the values or the rule (ADR-063)", async () => {
     const id = await createResource()
     const profile = {
-      columns: [{ role: 'category', roleBasis: { rule: 'other' }, values: ['a', 'b'] }],
+      columns: [
+        { role: 'identifier', roleBasis: { rule: 'typed' } },
+        { role: 'category', roleBasis: { rule: 'other' }, values: ['a', 'b'] },
+        { role: 'measure', roleBasis: { rule: 'typed' } },
+        { role: 'measure', roleBasis: { rule: 'typed' } },
+      ],
     }
     await db.execute(sql`
       UPDATE resource_pipeline SET profile = ${JSON.stringify(profile)}::jsonb
       WHERE resource_id = ${id}::uuid
     `)
     const body = await (await app.request(`/api/v1/resources/${id}/schema`)).json()
-    expect(body.columnRoles).toEqual([{ role: 'category', roleBasis: { rule: 'other' } }])
+    // The role alone: the rule behind it is on the editors' column-role settings
+    expect(body.columnRoles).toEqual([
+      { role: 'identifier' },
+      { role: 'category' },
+      { role: 'measure' },
+      { role: 'measure' },
+    ])
+    // One out of step with the schema cannot say which column is which
+    await db.execute(sql`
+      UPDATE resource_pipeline SET profile = ${JSON.stringify({ columns: profile.columns.slice(1) })}::jsonb
+      WHERE resource_id = ${id}::uuid
+    `)
+    const skewed = await (await app.request(`/api/v1/resources/${id}/schema`)).json()
+    expect(skewed.columnRoles).toBeNull()
     // A profile this reader cannot read is no profile, not a broken schema
     await db.execute(sql`
       UPDATE resource_pipeline SET profile = '{"columns": [{"role": "future"}]}'::jsonb

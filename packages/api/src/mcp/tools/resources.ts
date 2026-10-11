@@ -175,11 +175,9 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
       // turns on it (ADR-055 §5) and the visibility check has read it already.
       const { resource: res, pkg } = await service.getByIdWithOwnership(id, user)
 
-      const pipeline = new PipelineService(db)
-      const [target, profile] = await Promise.all([
-        pipeline.getQueryTarget(id),
-        pipeline.getProfile(id),
-      ])
+      const read = await new PipelineService(db).getProfiledTarget(id)
+      const target = read?.target ?? null
+      const profile = read?.profile ?? null
       if (!target?.schema || target.schema.columns.length === 0) {
         return {
           content: [

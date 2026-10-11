@@ -14,7 +14,7 @@ interface UseFetchResult<T> {
  * A change of `version` fetches the same path again — after a write it depends on
  * — and keeps what is shown until the new answer lands.
  */
-export function useFetch<T>(path: string | null, version = 0): UseFetchResult<T> {
+export function useFetch<T>(path: string | null, version: number | string = 0): UseFetchResult<T> {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)

@@ -176,6 +176,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | GET    | `/resources/{id}/column-settings`       | 確定済みの列情報と、確定に使える列                                           | 組織 editor |
 | POST   | `/resources/{id}/column-settings/check` | この主キーで行を同定できるか                                                 | 組織 editor |
 | PUT    | `/resources/{id}/column-settings`       | 主キーを確定する                                                             | 組織 editor |
+| GET    | `/resources/{id}/column-roles`          | 列の役割と、規則がそう判定した根拠                                           | 組織 editor |
 | PUT    | `/resources/{id}/summary`               | AI による説明を非表示にする / 戻す（`{ hidden }`）                           | 組織 editor |
 | PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換。`section` だけは省略で保持）                 | 組織 editor |
 | DELETE | `/resources/{id}`                       | リソース削除                                                                 | 組織 editor |
@@ -272,7 +273,8 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
         "stats": { "min": "600", "max": "1350" }
       }
     ]
-  }
+  },
+  "columnRoles": [{ "role": "category" }, { "role": "measure" }]
 }
 ```
 
@@ -288,6 +290,10 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
 `primaryKey` はリソースに確定された主キーの列名リスト（複合キーは指定順)で、未設定なら `null` です。
 `type` は `integer` / `float` / `boolean` / `string` / `date` / `timestamp`。`stats` は数値列のみで、
 整数の min/max は十進文字列です。
+`columnRoles` は `schema` の列と同じ位置に並ぶ各列の役割（`measure` / `numeric-text` / `identifier` /
+`free-text` / `name` / `category` / `empty`）で、役割を判定する前に解釈された表では `null` です。
+規則がそう判定した根拠は返しません — 根拠は
+`GET /resources/{id}/column-roles`（editor 限定）で読めます。
 
 `droppedRows` は、この表の行ではないファイル内の行数です — 短く書かれた注記はリーダーが
 受け付けず、列数まで空セルで埋められた注記は表の側で取り除かれます。どちらも数えます。受け付けないことが、そうした 1 行のためにファイル全体の
@@ -583,6 +589,33 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
   無視すると、どの版もその主キーで読まれないまま残ります
 - **既に層 2 に入っている版を新しい主キーで読み直すことはしません。** 境界は版そのものであり、
   それをまたぐ差分は行全体の比較に縮退します
+
+### 列の役割
+
+列の役割は、その列の値を検索でどう扱うかと、公開ページのフィールド一覧の表示を決めます。名称と
+カテゴリの列は値の一覧として、自由記述の列は行の文脈を添えた文として索引され、それ以外は検索に使われません。
+役割は列の値と項目名から自動で判定されます。
+
+`GET /resources/{id}/column-roles`（**editor 権限**が必要）は、各列の役割と、そう判定した根拠を返します:
+
+```json
+{
+  "columns": [
+    {
+      "name": "定員",
+      "type": "string",
+      "role": "numeric-text",
+      "roleBasis": { "rule": "number-shape", "share": 0.92, "examples": ["-", "1,000"] }
+    },
+    { "name": "区分", "type": "string", "role": "category", "roleBasis": { "rule": "other" } }
+  ]
+}
+```
+
+- `roleBasis.rule` は判定した規則、`share` はその規則が数えた値の割合です
+- `numeric-text` の `examples` は、数値として読めない値（公開する人が直す対象）です
+- 役割がまだ判定されていない表では `columns` が `null` です
+- 今のバージョンでは読み取りのみです。役割の上書きは将来のバージョンで対応する予定です
 
 ### AI による説明の非表示
 

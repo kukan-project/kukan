@@ -158,10 +158,13 @@ This is for natural-language text inside a table, such as a remarks column.
 
 ### 5. Show roles and let people override them
 
-- The field list shows the role next to the type, with the reason as an explanation. The field list reads
-  the Parquet footer today, so roles come from the profile in the database
-- "Numeric (as text)" doubles as a data-quality note: it tells publishers why the column cannot be used as
-  numbers (the symbols mixed in)
+- The public field list shows the role next to the type. The field list reads the Parquet footer today, so
+  roles come from the profile in the database
+- The reason for a role ("92% of values are number-shaped" and the like) is shown in the dashboard, not on
+  the public pages. A reader wants to know what a column is, not how the rules decided it; the reason is
+  material for the person who checks the rules and decides whether to override them
+- "Numeric (as text)" doubles as a data-quality note: the dashboard tells publishers why the column cannot
+  be used as numbers (the values mixed in)
 - Dataset editors can override a column's role in the dashboard. Overrides live in the confirmed layer
   with the primary key and confirmed types (`resource.column_settings`, Versioning-ii spec §6.1–6.2) and
   take precedence over the inferred role. Recomputing the inference does not touch them, and they apply to
@@ -308,7 +311,10 @@ nothing in DuckDB reads them) are separate issues.
      shows. This applies to all content, not only tables
    - Outcome: passed ("Stage 2 measurements" below). The golden set had no queries that find a table by a
      value, so 13 values that appear nowhere in the metadata were added as type `value`
-   - Moved on: overriding a role by hand (Decision §5), showing "matched a column name" (Decision §9)
+   - Moved on: overriding a role by hand (Decision §5), showing "matched a column name" (Decision §9).
+     Afterwards the reasons moved from the public pages to the dashboard
+     (`GET /resources/:id/column-roles`), and `columnRoles` in `GET /resources/:id/schema` now returns the
+     role alone
 3. **Hand it over to ADR-061's PostgreSQL path** (Decision §8)
 
 ## Trial

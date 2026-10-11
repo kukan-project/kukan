@@ -18,9 +18,11 @@
  */
 import type { VersionOrigin } from './formats'
 import type {
+  ColumnProfile,
   DiffUnavailableReason,
   KeyCheckFault,
   NoTableReason,
+  ResourceColumnType,
   ResourceSchema,
 } from './pipeline-types'
 
@@ -193,6 +195,20 @@ export interface ColumnSettingsView {
    */
   preview: 'ready' | PreviewUnusable
 }
+
+/**
+ * Each column of the live profile with its role and why the rules decided it
+ * (ADR-063 §決定 5) — the editors' half of what the public field list shows.
+ * Null before a profile exists: a table not yet interpreted, or one read
+ * before roles.
+ */
+export type ColumnRolesView = { columns: ColumnRoleRow[] | null }
+
+/** One column, named by the interpretation the profile was built with. */
+export type ColumnRoleRow = { name: string; type: ResourceColumnType } & Pick<
+  ColumnProfile,
+  'role' | 'roleBasis'
+>
 
 /** Why the interpretation's Parquet cannot be read for this resource. */
 export type PreviewUnusable = 'no-preview' | 'preview-stale'

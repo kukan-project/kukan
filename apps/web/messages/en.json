@@ -1123,6 +1123,16 @@
       "floatNotKeyable": "A column of type Number cannot be used in a primary key: it holds a floating-point value, and 1.0 and 1 are the same value there, so two spellings the file keeps apart become one key — and a value written out is not guaranteed to read back as itself. Choose an Integer or String column, or leave the key unset. A key set before the column was read this way keeps working, but it does not identify a row either.",
       "stability": "One more that cannot be checked in advance: choose columns where the same row always has the same value, and the same value is always the same row. A sequence reassigned on every publication makes unchanged rows show as one removed and one added; a retired code handed to something else makes two unrelated things line up as one changed row. Either way the ingest succeeds, so nothing records why. If those are the only candidates, leaving the key unset is the safer answer — without one an edit shows as a row removed and a row added, but two different things are never reported as the same row.",
       "sampleEmpty": "This content has no data rows — the columns are all there is."
+    },
+    "columnRoles": {
+      "title": "Column roles",
+      "help": "A role decides how search treats a column’s values and what the field list on the public page shows. Roles are decided automatically from the values and the field name; why each was decided is shown here. Overriding a role is planned for a future version.",
+      "effects": "{listed}: values listed and searched / {free}: searched as sentences, with the row’s context / {unsearched}: not used for search",
+      "loadError": "Could not load the column roles",
+      "column": "Column",
+      "type": "Type (inferred)",
+      "role": "Role",
+      "basis": "Why"
     }
   },
   "apiToken": {
