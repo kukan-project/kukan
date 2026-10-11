@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "^6.1.2",
