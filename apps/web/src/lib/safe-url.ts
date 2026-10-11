@@ -37,6 +37,23 @@ export function safeExternalHref(url: string | null | undefined): string | undef
 }
 
 /**
+ * {@link safeExternalHref}, for an absolute URL only: a relative one, or a
+ * fragment, is `undefined`. What a link in content published from elsewhere
+ * needs, whose relative paths point into its own site, not this one.
+ */
+export function absoluteSafeHref(url: string | null | undefined): string | undefined {
+  if (typeof url !== 'string') return undefined
+  let protocol: string
+  try {
+    // No base: a relative URL throws here rather than inheriting a scheme.
+    protocol = new URL(url).protocol
+  } catch {
+    return undefined
+  }
+  return ALLOWED_PROTOCOLS.has(protocol) ? url : undefined
+}
+
+/**
  * The parsed URL when it is an absolute http(s) one, otherwise `undefined`.
  *
  * What a link claiming to point at another site needs, and narrower than

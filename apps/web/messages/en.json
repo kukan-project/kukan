@@ -952,6 +952,8 @@
     "saveOrder": "Save order",
     "previewSourceTable": "Table",
     "previewSourceText": "Text",
+    "previewSourceFormatted": "Formatted",
+    "previewSourceMarkdownSource": "Source",
     "previewSourceMap": "Map",
     "previewSourceAttributes": "Attributes",
     "previewSourceFileList": "File List",

@@ -13,7 +13,9 @@ const FORMAT_COLORS: Record<string, string> = {
 
   // Plain text — slate
   txt: 'bg-slate-500 text-white',
-  md: 'bg-slate-500 text-white',
+
+  // Markdown — the deep blue GitHub colours the language, apart from Word's
+  md: 'bg-blue-900 text-white',
 
   // Web markup — orange
   html: 'bg-orange-500 text-white',

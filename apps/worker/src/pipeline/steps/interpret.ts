@@ -27,6 +27,7 @@ import {
   getPreviewKey,
   isTableSourceFormat,
   isDocumentFormat,
+  isMarkdownFormat,
   isTextFormat,
   isZipFormat,
 } from '@kukan/shared'
@@ -57,7 +58,7 @@ export interface InterpretResult {
   documentText?: InterpretedDocument
 }
 
-/** What interpreting a document (PDF, Office) wrote: see `DocumentTextBlock`. */
+/** What interpreting a document (PDF, Office, Markdown) wrote: see `DocumentTextBlock`. */
 export interface InterpretedDocument extends ExtractedText {
   key: string
 }
@@ -145,17 +146,16 @@ export async function executeInterpret(
   }
 
   if (isDocumentFormat(format)) {
-    return {
-      previewKey: null,
-      documentText: await interpretDocument(
-        resourceId,
-        packageId,
-        storageKey,
-        format!,
-        writeToken,
-        ctx
-      ),
-    }
+    const documentText = await interpretDocument(
+      resourceId,
+      packageId,
+      storageKey,
+      format!,
+      writeToken,
+      ctx
+    )
+    // Markdown is text as well, of a fixed encoding (UTF-8 by convention)
+    return { previewKey: null, ...(isMarkdownFormat(format) && { encoding: 'UTF8' }), documentText }
   }
 
   if (!isTextFormat(format)) {
@@ -163,11 +163,6 @@ export async function executeInterpret(
   }
 
   const fmt = format!.toLowerCase()
-
-  // Fixed encoding (UTF-8 by convention), and nothing to make of it: skip download
-  if (fmt === 'md') {
-    return { previewKey: null, encoding: 'UTF8' }
-  }
 
   // XML: only need first 200 bytes for encoding declaration
   if (fmt === 'xml') {

@@ -47,6 +47,13 @@ describe('materialKind', () => {
     expect(materialKind({ id: 'r', format: 'RDF' }, settled)).toBeNull()
   })
 
+  it('reads a Markdown from its text artifact where a run extracted one, as text before that', () => {
+    const md = { id: 'r', format: 'MD' }
+    const artifact = { documentTextKey: 'previews/r.text.ndjson.zst', documentTextBytes: 10 }
+    expect(materialKind(md, { ...settled, pipelineMetadata: artifact })).toBe('document')
+    expect(materialKind(md, { ...settled, pipelineMetadata: {} })).toBe('text')
+  })
+
   it('reads a document from its text artifact, where it has any text', () => {
     const pdf = { id: 'r', format: 'PDF' }
     const artifact = { documentTextKey: 'previews/r.text.ndjson.zst' }

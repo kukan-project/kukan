@@ -952,6 +952,8 @@
     "saveOrder": "並び順を保存",
     "previewSourceTable": "テーブル表示",
     "previewSourceText": "テキスト表示",
+    "previewSourceFormatted": "整形表示",
+    "previewSourceMarkdownSource": "ソース",
     "previewSourceMap": "地図",
     "previewSourceAttributes": "属性テーブル",
     "previewSourceFileList": "ファイル一覧",

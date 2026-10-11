@@ -154,7 +154,19 @@ export function isTableSourceFormat(format?: string | null, mimetype?: string | 
   return isCsvFormat(format, mimetype) || isJsonFormat(format ?? null)
 }
 
-const TEXT_FORMATS = new Set(['txt', 'text', 'json', 'geojson', 'xml', 'html', 'htm', 'md'])
+/** Text, and a document too: read for its headings ({@link isDocumentFormat}). */
+const MARKDOWN_FORMATS = ['md', 'markdown']
+
+const TEXT_FORMATS = new Set([
+  'txt',
+  'text',
+  'json',
+  'geojson',
+  'xml',
+  'html',
+  'htm',
+  ...MARKDOWN_FORMATS,
+])
 
 /** Check if a format is text-based (CSV/TSV or plain text variants) */
 export function isTextFormat(format: string | null): boolean {
@@ -390,6 +402,7 @@ const DOCUMENT_FORMATS = new Set([
   'odp',
   'ods',
   'rtf',
+  ...MARKDOWN_FORMATS,
 ])
 
 /** Check if a format is a document Interpret extracts text from */
@@ -417,6 +430,12 @@ export function isGeoJsonFormat(format: string | null): boolean {
   return format.toLowerCase() === 'geojson'
 }
 
+/** Check if a format is Markdown (drawn as a document on the resource page) */
+export function isMarkdownFormat(format: string | null): boolean {
+  if (!format) return false
+  return MARKDOWN_FORMATS.includes(format.toLowerCase())
+}
+
 const IMAGE_FORMATS = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff'])
 
 /** Check if a format is an image */
@@ -435,8 +454,9 @@ export function isZipFormat(format: string | null): boolean {
 export function contentTypeOf(format: string | null): ContentType | null {
   if (isCsvFormat(format)) return 'tabular'
   if (isZipFormat(format)) return 'manifest'
-  if (isTextFormat(format)) return 'text'
+  // Before text: Markdown is both, and is indexed from its text artifact
   if (isDocumentFormat(format)) return 'document'
+  if (isTextFormat(format)) return 'text'
   return null
 }
 

@@ -100,6 +100,18 @@ describe('interpreting a document', () => {
     expect(result!.documentText!.bytes).toBe(Buffer.byteLength('地域\t人口\n東京\t14000000'))
   })
 
+  it('reads a Markdown file under its headings, and says its encoding as text would', async () => {
+    const result = await interpret(Buffer.from('# 利用規約\n\n- **第 1 条** 本文\n'), 'MD')
+
+    expect(await written()).toEqual([
+      { loc: {}, headings: ['利用規約'], text: '# 利用規約\n\n- **第 1 条** 本文' },
+    ])
+    expect(result!.documentText!.bytes).toBe(Buffer.byteLength('# 利用規約\n\n- **第 1 条** 本文'))
+    // The raw text preview still decodes it, by convention UTF-8
+    expect(result!.encoding).toBe('UTF8')
+    expect(result!.previewKey).toBeNull()
+  })
+
   it('reads a workbook of the format before 2007 as a workbook of the one after', async () => {
     const workbook = xlsBuffer({
       sheets: [{ name: '人口', cells: [cell.label(0, 0, '東京'), cell.number(0, 1, 14000000)] }],

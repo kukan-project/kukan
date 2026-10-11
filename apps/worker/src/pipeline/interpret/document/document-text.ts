@@ -4,7 +4,8 @@
  * which took gigabytes for megabytes of text (see PDF_RANGE_BYTES). PDFs go
  * through officeparser a range of pages at a time; XLSX sheets are read as a
  * stream of XML; the legacy Office formats — XLS, DOC, PPT — and Ichitaro by
- * readers of our own, as officeparser does not read them; other formats whole.
+ * readers of our own, as officeparser does not read them; Markdown a line at a
+ * time, under its own headings (`markdown.ts`); other formats whole.
  *
  * Each block says where in the file its text is: the page, the slide, the
  * sheet and row, and the headings the file itself marks over it. A heading is
@@ -44,6 +45,7 @@ import {
 } from 'officeparser'
 import {
   DOCUMENT_TEXT_SCHEMA,
+  isMarkdownFormat,
   type DocumentTextBlock,
   type DocumentTextFigure,
   type DocumentTextHeader,
@@ -58,6 +60,15 @@ import {
   XLSX_MAX_PART_BYTES,
 } from '@/config'
 import { docText } from './legacy/doc'
+import {
+  BLOCK_MAX_CHARS,
+  headingsOf,
+  headingsOver,
+  oneHeading,
+  pushHeading,
+  type HeadingPath,
+} from './blocks'
+import { markdownBlocks } from './markdown'
 import { jtdSheets } from './legacy/jtd'
 import { pptSlides } from './legacy/ppt'
 import { xlsSheets, type XlsRow } from './legacy/xls'
@@ -79,12 +90,6 @@ const PDF_TEXT_ONLY: OfficeParserConfig = {
   ignorePageGeometry: true,
   pdfParserConfig: { extractTextColor: false, headingDetection: 'tags' },
 }
-
-/** Characters of a heading kept; a "heading" longer than this is a paragraph styled as one. */
-const HEADING_MAX_CHARS = 200
-
-/** Characters of text a block holds at most; a longer run is written as several. */
-const BLOCK_MAX_CHARS = 32_000
 
 /** Pixels below which an image on either side is a bullet, a rule or an icon, not a figure. */
 const FIGURE_MIN_PIXELS = 48
@@ -216,6 +221,7 @@ export async function* documentBlocks(
   else if (format === 'doc') yield* docBlocks(filePath)
   else if (format === 'ppt') yield* pptBlocks(filePath)
   else if (format === 'jtd' || format === 'jtt') yield* jtdBlocks(filePath)
+  else if (isMarkdownFormat(format)) yield* markdownBlocks(filePath)
   else yield* officeBlocks(filePath)
 }
 
@@ -256,10 +262,6 @@ function taggedHeadingText(node: OfficeContentNode): string {
   return runs.length > 0
     ? oneHeading(runs.map((run) => run.text ?? '').join(''))
     : headingText(node)
-}
-
-function oneHeading(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, HEADING_MAX_CHARS)
 }
 
 /**
@@ -387,28 +389,13 @@ function findNodes(
   ]
 }
 
-/** The headings over what is read next, outermost first. */
-type HeadingPath = { level: number; title: string }[]
-
 /** `path` with `heading` read: it closes the headings at its level and below. */
 function enterHeading(path: HeadingPath, heading: OfficeContentNode, title = headingText(heading)) {
-  const level = (heading.metadata as { level?: number } | undefined)?.level ?? 1
-  while (path.length > 0 && path[path.length - 1].level >= level) path.pop()
-  if (title) path.push({ level, title })
-}
-
-/** `{ headings }` of `path`, as {@link headingsOf} leaves them out where there are none. */
-function headingsOver(path: HeadingPath): { headings?: string[] } {
-  return headingsOf(path.map((h) => h.title))
+  pushHeading(path, (heading.metadata as { level?: number } | undefined)?.level ?? 1, title)
 }
 
 /** A page's text, or a run of it, under the headings it reads under. */
 type PagePart = { headings?: string[]; text: string }
-
-/** `{ headings }` where there are any: a block with none leaves the key out. */
-function headingsOf(headings: string[] | undefined): { headings?: string[] } {
-  return headings && headings.length > 0 ? { headings } : {}
-}
 
 /**
  * A range of pages at a time, sized by the file's bytes per page. The first

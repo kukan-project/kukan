@@ -747,22 +747,6 @@ describe('executeInterpret', () => {
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
-  it('should return UTF8 for MD without downloading', async () => {
-    const result = await executeInterpret(
-      'res-10b',
-      'pkg-1',
-      version('resources/pkg-1/res-10b'),
-      'MD',
-      ctx
-    )
-
-    expect(result).toEqual({
-      previewKey: null,
-      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
-    })
-    expect(ctx.storage.download).not.toHaveBeenCalled()
-  })
-
   it('should parse XML encoding declaration', async () => {
     mockStorageDownload('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
 

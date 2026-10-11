@@ -7,6 +7,8 @@ import {
   versionedFilename,
   isCsvFormat,
   isTextFormat,
+  isMarkdownFormat,
+  contentTypeOf,
   isOfficeFormat,
   isPdfFormat,
   isDocumentFormat,
@@ -178,6 +180,34 @@ describe('isCsvFormat', () => {
   })
 })
 
+describe('contentTypeOf', () => {
+  it('indexes each format from what its interpretation made of it', () => {
+    expect(contentTypeOf('csv')).toBe('tabular')
+    expect(contentTypeOf('zip')).toBe('manifest')
+    expect(contentTypeOf('txt')).toBe('text')
+    expect(contentTypeOf('pdf')).toBe('document')
+    expect(contentTypeOf('rdf')).toBeNull()
+  })
+
+  it('indexes Markdown as a document, from its text artifact, though it is text too', () => {
+    expect(contentTypeOf('md')).toBe('document')
+  })
+})
+
+describe('isMarkdownFormat', () => {
+  it('should return true for md and markdown, case-insensitively', () => {
+    expect(isMarkdownFormat('md')).toBe(true)
+    expect(isMarkdownFormat('MD')).toBe(true)
+    expect(isMarkdownFormat('markdown')).toBe(true)
+  })
+
+  it('should return false for other text formats and null', () => {
+    expect(isMarkdownFormat('txt')).toBe(false)
+    expect(isMarkdownFormat('html')).toBe(false)
+    expect(isMarkdownFormat(null)).toBe(false)
+  })
+})
+
 describe('isTextFormat', () => {
   it('should return true for CSV/TSV (via isCsvFormat)', () => {
     expect(isTextFormat('csv')).toBe(true)
@@ -308,6 +338,11 @@ describe('isDocumentFormat', () => {
     expect(isDocumentFormat('odp')).toBe(true)
     expect(isDocumentFormat('ods')).toBe(true)
     expect(isDocumentFormat('rtf')).toBe(true)
+  })
+
+  it('should return true for Markdown, which is read as a document for its headings', () => {
+    expect(isDocumentFormat('md')).toBe(true)
+    expect(isDocumentFormat('markdown')).toBe(true)
   })
 
   it('should be case-insensitive', () => {

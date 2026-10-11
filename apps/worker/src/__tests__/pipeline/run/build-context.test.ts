@@ -14,6 +14,12 @@ vi.mock('@kukan/db', () => ({
     description: 'description',
     state: 'state',
   },
+  resourcePipeline: {
+    resourceId: 'resource_id',
+    previewKey: 'preview_key',
+    metadata: 'metadata',
+    profile: 'profile',
+  },
 }))
 
 // Mock drizzle-orm
@@ -102,6 +108,33 @@ describe('buildPipelineContext', () => {
       format: 'CSV',
       hash: 'sha256:abc',
     })
+  })
+
+  it('storedInterpretation reads a document only from a run that kept its text', async () => {
+    // A Markdown read as text, before it was a document: interpreted again
+    const { db, addResult } = createMockDb()
+    addResult([
+      {
+        previewKey: null,
+        metadata: { sourceHash: 'h', encoding: 'UTF8' },
+        profile: null,
+        format: 'MD',
+      },
+    ])
+    expect(await buildPipelineContext(db, mockStorage).storedInterpretation('r', 'h', 1)).toBeNull()
+
+    const kept = createMockDb()
+    kept.addResult([
+      {
+        previewKey: null,
+        metadata: { sourceHash: 'h', encoding: 'UTF8', documentTextKey: 'k', documentTextBytes: 3 },
+        profile: null,
+        format: 'MD',
+      },
+    ])
+    expect(
+      await buildPipelineContext(kept.db, mockStorage).storedInterpretation('r', 'h', 1)
+    ).toEqual({ previewKey: null, encoding: 'UTF8', documentText: { key: 'k', bytes: 3 } })
   })
 
   it('getResource should return null when not found', async () => {

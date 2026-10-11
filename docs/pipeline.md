@@ -300,8 +300,8 @@ sweep の参照判定と、行を書き換えるときの回収予約（`StepTra
 `previews/{package}/{resource}.{token}.profile.ndjson.zst` に書き、プレビューと同じ文で参照する。
 版の取り消しとパージでは、プレビューと一緒に外して消す（`discardDerivedArtifacts`）。
 
-7 つ目は文書テキストの成果物。PDF・Office 系の本文を、ページ・スライド・シートと行、文書が持つ
-見出し（PDF のしおり、しおりが無ければ見出しのタグ、Word の見出しスタイル、スライドのタイトル）とともに 1 ブロック 1 行で持つ
+7 つ目は文書テキストの成果物。PDF・Office 系・Markdown の本文を、ページ・スライド・シートと行、文書が持つ
+見出し（PDF のしおり、しおりが無ければ見出しのタグ、Word の見出しスタイル、スライドのタイトル、Markdown の `#` と下線の見出し）とともに 1 ブロック 1 行で持つ
 zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、どちらも
 `packages/shared/src/pipeline-types.ts`）。図も 1 ブロックとして持つが、画像そのものは持たず、
 ファイルの中で指す名前（PDF のオブジェクト番号、パッケージ内のパス）と寸法だけを持つ。Index が
@@ -311,6 +311,11 @@ zstd NDJSON（型は `DocumentTextBlock`、読み手は `documentTextBlocks`、�
 `xls.ts`・`doc.ts`・`ppt.ts`・`jtd.ts`）。XLS は XLSX と同じシートと行、PPT はスライドとタイトル、DOC と一太郎は
 見出しを持たない本文になる。一太郎はシートごとに読み（2 枚目以降は `ObjectSheets/DocSheet/` の下のストレージ）、
 シートが 2 枚以上ならシートの番号だけを持つブロックをシートごとに作る。一太郎の圧縮形式（JTDC・JTTC）は形式名だけ登録し、読まない。
+Markdown はテキスト形式でもあるが（`isTextFormat`、テキスト表示と `/text` はそのまま）、索引と AI の材料は
+この成果物から取る（`contentTypeOf` は `document`）。1 行ずつ読み、見出しから次の見出しまでを見出しの経路の下の
+1 ブロックにする。行は書かれたまま持つ（記法も含めて生のまま。索引はファイルそのものを持ち、パッセージ検索は索引の断片を
+成果物の中でそのまま見つける）。足すのは見出しの位置だけで、見出しの題名はリンク・コード・強調の記法を外して持つ。
+フェンスで囲んだコードと front matter の中の `#` は見出しにしない（`markdown.ts`）。
 中身が ZIP なら名乗りによらず XLSX・DOCX・PPTX として読む（判定は Interpret が `contentFormat` で行い、
 抄録が原本を送るときも同じ判定に従う）。暗号化されたもの、Word 95 以前のもの、複合文書でも ZIP でもないもの
 （HTML を `.xls` と名乗らせたものなど）は読まず、Interpret が失敗する（パイプラインは続く）。

@@ -30,7 +30,7 @@ import {
   reserveObject,
 } from '@kukan/api/services/pipeline/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
-import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
+import { getStorageKey, isDocumentFormat, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
@@ -340,8 +340,10 @@ export function buildPipelineContext(
           previewKey: resourcePipeline.previewKey,
           metadata: resourcePipeline.metadata,
           profile: resourcePipeline.profile,
+          format: resource.format,
         })
         .from(resourcePipeline)
+        .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
         .where(eq(resourcePipeline.resourceId, resourceId))
         .limit(1)
       const metadata = (row?.metadata ?? {}) as Record<string, unknown>
@@ -352,6 +354,9 @@ export function buildPipelineContext(
       const textBytes = metadata.documentTextBytes
       const documentText =
         textKey && typeof textBytes === 'number' ? { key: textKey, bytes: textBytes } : undefined
+      // A document read before its text was kept — a Markdown, read as text
+      // then — is indexed only once it is interpreted again
+      if (isDocumentFormat(row.format) && !documentText) return null
       // A text file, or a CSV that made no table, leaves only how it was read
       const encoding = parseSourceEncoding(metadata)
       if (!row.previewKey && !documentText && !encoding) return null

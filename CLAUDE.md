@@ -316,7 +316,7 @@ pnpm format        # Prettier フォーマット
 
 パイプラインは Fetch → Version → Interpret → Lake → Index → Summarize の6ステップ
 （Summarize は `AI_SUMMARY_MODEL` を設定したサイトのみ、ADR-053）。
-Index ステップでリソースコンテンツの OpenSearch 投入を行う（ADR-021）。文書（PDF・Office）のテキスト抽出は Interpret が行い、ページ・見出し・図の位置付きの成果物（`text.ndjson.zst`）を Index が読む。
+Index ステップでリソースコンテンツの OpenSearch 投入を行う（ADR-021）。文書（PDF・Office・Markdown）のテキスト抽出は Interpret が行い、ページ・見出し・図の位置付きの成果物（`text.ndjson.zst`）を Index が読む。
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Interpret のみフォーマット別処理を行う。JSON/GeoJSON はレコードの一覧として読めるものだけ表になる
 （最上位の配列、1 キーの下の配列、FeatureCollection の properties。ADR-063 §決定 10）。
@@ -330,7 +330,7 @@ Interpret のみフォーマット別処理を行う。JSON/GeoJSON はレコー
 | XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |           -           |                 テキスト                  |
 | JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |    レコードの配列     |       テーブル+JSON 切替（表なら）        |
 | GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       | properties+Point 座標 |        地図+属性テーブル+JSON 切替        |
-| MD                             |     Yes      | UTF-8 固定                                   |           -           |                 テキスト                  |
+| MD                             |     Yes      | UTF-8 固定（見出し付き文書テキスト成果物も） |           -           |     整形表示+ソース+抽出テキスト切替      |
 | RDF                            |      No      | スキップ                                     |           -           |                  非対応                   |
 | PDF                            |      No      | スキップ                                     |           -           |      iframe（本体）+抽出テキスト切替      |
 | XLSX/XLS                       |      No      | スキップ                                     |           -           |   Office Online Viewer+抽出テキスト切替   |

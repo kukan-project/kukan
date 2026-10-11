@@ -92,11 +92,12 @@ export function materialKind(
   ) {
     return 'tabular'
   }
-  // Text is read from the live object; the others from pipeline artifacts.
-  if (isTextFormat(resource.format)) return artifacts.liveStorageKey ? 'text' : null
+  // A document is read from its text artifact; text from the live object. A
+  // Markdown is both, and read as a document where a run has extracted it.
   if (isDocumentFormat(resource.format) && documentTextOf(artifacts.pipelineMetadata)) {
     return 'document'
   }
+  if (isTextFormat(resource.format)) return artifacts.liveStorageKey ? 'text' : null
   if (isZipFormat(resource.format) && artifacts.previewKey) return 'zip'
   return null
 }

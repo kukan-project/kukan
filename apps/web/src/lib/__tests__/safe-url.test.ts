@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { safeExternalHref, externalHttpUrl } from '../safe-url'
+import { safeExternalHref, externalHttpUrl, absoluteSafeHref } from '../safe-url'
 
 describe('safeExternalHref', () => {
   it('allows http and https URLs', () => {
@@ -45,6 +45,21 @@ describe('safeExternalHref', () => {
     expect(safeExternalHref('   ')).toBeUndefined()
     expect(safeExternalHref(null)).toBeUndefined()
     expect(safeExternalHref(undefined)).toBeUndefined()
+  })
+})
+
+describe('absoluteSafeHref', () => {
+  it('keeps an absolute http(s) or mailto URL', () => {
+    expect(absoluteSafeHref('https://example.com/a')).toBe('https://example.com/a')
+    expect(absoluteSafeHref('mailto:a@example.com')).toBe('mailto:a@example.com')
+  })
+
+  it('refuses a relative URL, a fragment and an unsafe scheme', () => {
+    expect(absoluteSafeHref('./b.md')).toBeUndefined()
+    expect(absoluteSafeHref('#intro')).toBeUndefined()
+    expect(absoluteSafeHref('//example.com')).toBeUndefined()
+    expect(absoluteSafeHref('javascript:alert(1)')).toBeUndefined()
+    expect(absoluteSafeHref(null)).toBeUndefined()
   })
 })
 

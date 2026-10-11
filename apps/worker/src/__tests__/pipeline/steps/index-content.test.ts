@@ -98,7 +98,7 @@ describe('executeIndexContent', () => {
   })
 
   describe('format classification', () => {
-    it.each(['PDF', 'XLSX'])('should classify %s as document', async (format) => {
+    it.each(['PDF', 'XLSX', 'MD'])('should classify %s as document', async (format) => {
       const ctx = createMockCtx()
       const result = await executeIndexContent(
         'res-1',

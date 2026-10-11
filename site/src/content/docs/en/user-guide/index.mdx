@@ -60,16 +60,17 @@ The dataset page displays the following information:
 
 The resource page provides format-specific previews:
 
-| Format                                                       | Preview                                                             |
-| ------------------------------------------------------------ | ------------------------------------------------------------------- |
-| CSV / TSV                                                    | Table view + text view                                              |
-| JSON / XML / TXT / HTML / Markdown                           | Text view                                                           |
-| GeoJSON                                                      | Map view + text view                                                |
-| PDF                                                          | PDF viewer + extracted text                                         |
-| Excel / Word / PowerPoint (the formats before 2007 included) | Office Online Viewer + extracted text                               |
-| Ichitaro (JTD / JTT)                                         | Original (drawn in the browser, a sheet at a time) + extracted text |
-| PNG / JPEG / GIF / WebP / SVG / BMP / TIFF                   | Image viewer                                                        |
-| ZIP                                                          | File list                                                           |
+| Format                                                       | Preview                                                                                                |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| CSV / TSV                                                    | Table view + extracted text view                                                                       |
+| JSON / XML / TXT / HTML                                      | Text view                                                                                              |
+| Markdown                                                     | Formatted (headings, tables, links) + source + extracted text; its text is searched under its headings |
+| GeoJSON                                                      | Map view + extracted text view                                                                         |
+| PDF                                                          | PDF viewer + extracted text                                                                            |
+| Excel / Word / PowerPoint (the formats before 2007 included) | Office Online Viewer + extracted text                                                                  |
+| Ichitaro (JTD / JTT)                                         | Original (drawn in the browser, a sheet at a time) + extracted text                                    |
+| PNG / JPEG / GIF / WebP / SVG / BMP / TIFF                   | Image viewer                                                                                           |
+| ZIP                                                          | File list                                                                                              |
 
 A resource that gets a table view can also be opened straight from a BI tool such as Excel or
 Tableau ([Opening the table in a BI tool](#opening-the-table-in-a-bi-tool)).
@@ -90,7 +91,7 @@ Below the description, a line says **how much of the file it was written from**.
 A table is read as its column layout and first rows ("Read the column layout and
 the first 100 of 1,200 rows"), while a PDF that fit is simply "Read the whole
 file" and an image "Read the whole image" (a very long PDF stops partway). Text
-files are read from their opening, Office documents and the like from the start
+files are read from their opening, Office documents and Markdown from the start
 of their extracted text, and ZIP archives from their file names, each with a
 line saying how much was read. **Anything written from a part
 of a file always says so**, so the extent is never left to guesswork.

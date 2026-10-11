@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import type { CsvDialect, ResourceSchema } from '@kukan/shared'
@@ -17,6 +18,7 @@ import {
   isPdfFormat,
   isGeoJsonFormat,
   isImageFormat,
+  isMarkdownFormat,
   OFFICE_PREVIEW_LIMIT,
   OFFICE_PREVIEW_LIMIT_MB,
   TEXT_PREVIEW_LIMIT_MB,
@@ -29,6 +31,11 @@ import { ZipPreview } from './zip-preview'
 import { ImagePreview } from './image-preview'
 import { DocumentTextPreview } from './document-text-preview'
 import { IchitaroPreview } from './ichitaro-preview'
+
+const MarkdownDocument = dynamic(() => import('./markdown-document'), {
+  ssr: false,
+  loading: () => <PreviewSkeleton />,
+})
 
 interface ResourcePreviewProps {
   resourceId: string
@@ -118,42 +125,61 @@ export function ResourcePreview({
         }
       />
     )
+  if (isMarkdownFormat(f)) return <MarkdownPreview key={resourceId} resourceId={resourceId} />
   if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />
   if (isDocumentFormat(f)) return <DocumentTextPreview resourceId={resourceId} />
   return <PreviewNotAvailable />
 }
 
-type DocumentSource = 'original' | 'text'
-
 /**
  * A document as itself, where the browser can show it, or as the text
- * extracted from it — the second is what search and AI see of the file. Each
- * view stays mounted once shown, so switching back does not load it again.
+ * extracted from it — the second is what search and AI see of the file.
  */
 function DocumentPreview({ resourceId, original }: { resourceId: string; original: ReactNode }) {
   const t = useTranslations('resource')
-  const [source, setSource] = useState<DocumentSource>('original')
-  const [shown, setShown] = useState<Set<DocumentSource>>(() => new Set(['original']))
-  const show = (key: DocumentSource) => {
+  return (
+    <KeptViews
+      initial="original"
+      views={[
+        { key: 'original', label: t('previewSourceOriginal'), node: original },
+        {
+          key: 'text',
+          label: t('previewSourceExtractedText'),
+          node: <DocumentTextPreview resourceId={resourceId} />,
+        },
+      ]}
+    />
+  )
+}
+
+/**
+ * Views of one resource behind a row of badges. Each stays mounted once
+ * shown, so switching back neither loads nor draws it again.
+ */
+function KeptViews<K extends string>({
+  views,
+  initial,
+}: {
+  views: { key: K; label: string; node: ReactNode }[]
+  initial: K
+}) {
+  const [source, setSource] = useState<K>(initial)
+  const [shown, setShown] = useState<Set<K>>(() => new Set([initial]))
+  const show = (key: K) => {
     setSource(key)
     setShown((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
   }
 
   return (
     <div className="flex flex-col gap-2">
-      <SourceToggle
-        sources={[
-          { key: 'original', label: t('previewSourceOriginal') },
-          { key: 'text', label: t('previewSourceExtractedText') },
-        ]}
-        value={source}
-        onChange={show}
-      />
-      <div hidden={source !== 'original'}>{original}</div>
-      {shown.has('text') && (
-        <div hidden={source !== 'text'}>
-          <DocumentTextPreview resourceId={resourceId} />
-        </div>
+      <SourceToggle sources={views} value={source} onChange={show} />
+      {views.map(
+        (view) =>
+          shown.has(view.key) && (
+            <div key={view.key} hidden={source !== view.key}>
+              {view.node}
+            </div>
+          )
       )}
     </div>
   )
@@ -195,6 +221,49 @@ function TextOnlyPreview({ resourceId }: { resourceId: string }) {
       </div>
       <RawTextPreview resourceId={resourceId} />
     </div>
+  )
+}
+
+/**
+ * A Markdown file as the document it writes, as the text it is, or as the
+ * text extracted from it under its headings — what search and AI see of it.
+ * One read serves the first two: the file is the same, only the drawing
+ * differs; the third is its own artifact, loaded when first shown.
+ */
+function MarkdownPreview({ resourceId }: { resourceId: string }) {
+  const t = useTranslations('resource')
+  const loaded = useResourceText(resourceId)
+  const drawn = (draw: (text: string) => ReactNode) => <LoadedText loaded={loaded} draw={draw} />
+
+  return (
+    <KeptViews
+      initial="formatted"
+      views={[
+        {
+          key: 'formatted',
+          label: t('previewSourceFormatted'),
+          node: drawn((text) => (
+            <TextFrame encoding={loaded.encoding} truncated={loaded.truncated}>
+              <div className="max-h-[70vh] overflow-auto px-6 py-6 sm:px-10 sm:py-8">
+                <MarkdownDocument text={text} />
+              </div>
+            </TextFrame>
+          )),
+        },
+        {
+          key: 'raw',
+          label: t('previewSourceMarkdownSource'),
+          node: drawn((text) => (
+            <RawTextView text={text} encoding={loaded.encoding} truncated={loaded.truncated} />
+          )),
+        },
+        {
+          key: 'extracted',
+          label: t('previewSourceExtractedText'),
+          node: <DocumentTextPreview resourceId={resourceId} />,
+        },
+      ]}
+    />
   )
 }
 
@@ -271,29 +340,21 @@ function DroppedRowsNote({ schema }: { schema?: ResourceSchema | null }) {
 
 // --- Text Preview ---
 
-function RawTextPreview({
-  resourceId,
-  dialect,
-}: {
-  resourceId: string
-  dialect?: CsvDialect | null
-}) {
-  const t = useTranslations('resource')
+interface ResourceText {
+  text: string | null
+  encoding: string
+  truncated: boolean
+  loading: boolean
+  error: boolean
+}
+
+/** The first `TEXT_PREVIEW_LIMIT` bytes of the file, decoded as the server detected them. */
+function useResourceText(resourceId: string): ResourceText {
   const [text, setText] = useState<string | null>(null)
   const [encoding, setEncoding] = useState<string>('')
   const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-
-  // Memoized because the walk is over up to 1 MB of text, repeated on every
-  // parent toggle otherwise.
-  const gutter = useMemo(() => {
-    if (!text) return ''
-    const lines = text.split('\n')
-    // A trailing newline is the end of the last line, not a line of its own
-    if (lines[lines.length - 1] === '') lines.pop()
-    return csvRecordLabels(lines, dialect).join('\n')
-  }, [text, dialect])
 
   useEffect(() => {
     let cancelled = false
@@ -325,12 +386,62 @@ function RawTextPreview({
     }
   }, [resourceId])
 
-  if (loading) return <PreviewSkeleton />
-  if (error) return <PreviewError />
-  if (!text) return <PreviewEmpty />
+  return { text, encoding, truncated, loading, error }
+}
+
+function RawTextPreview({
+  resourceId,
+  dialect,
+}: {
+  resourceId: string
+  dialect?: CsvDialect | null
+}) {
+  const loaded = useResourceText(resourceId)
+  return (
+    <LoadedText
+      loaded={loaded}
+      draw={(text) => (
+        <RawTextView
+          text={text}
+          encoding={loaded.encoding}
+          truncated={loaded.truncated}
+          dialect={dialect}
+        />
+      )}
+    />
+  )
+}
+
+/** The file's text drawn by `draw`, once it has loaded with any. */
+function LoadedText({ loaded, draw }: { loaded: ResourceText; draw: (text: string) => ReactNode }) {
+  if (loaded.loading) return <PreviewSkeleton />
+  if (loaded.error) return <PreviewError />
+  if (!loaded.text) return <PreviewEmpty />
+  return draw(loaded.text)
+}
+
+function RawTextView({
+  text,
+  encoding,
+  truncated,
+  dialect,
+}: {
+  text: string
+  encoding: string
+  truncated: boolean
+  dialect?: CsvDialect | null
+}) {
+  // Memoized because the walk is over up to 1 MB of text, repeated on every
+  // parent toggle otherwise.
+  const gutter = useMemo(() => {
+    const lines = text.split('\n')
+    // A trailing newline is the end of the last line, not a line of its own
+    if (lines[lines.length - 1] === '') lines.pop()
+    return csvRecordLabels(lines, dialect).join('\n')
+  }, [text, dialect])
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <TextFrame encoding={encoding} truncated={truncated}>
       <div className="max-h-[600px] overflow-auto bg-muted/20">
         <div className="flex min-w-max">
           <pre
@@ -342,6 +453,24 @@ function RawTextPreview({
           <pre className="whitespace-pre p-4 text-xs">{text}</pre>
         </div>
       </div>
+    </TextFrame>
+  )
+}
+
+/** The bordered box a text view sits in, with the encoding and the cut below it. */
+function TextFrame({
+  encoding,
+  truncated,
+  children,
+}: {
+  encoding: string
+  truncated: boolean
+  children: ReactNode
+}) {
+  const t = useTranslations('resource')
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      {children}
       {(encoding || truncated) && (
         <div className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
           {encoding && <span>{t('previewEncoding', { encoding })}</span>}

@@ -23,7 +23,7 @@ describe('getFormatColorClass', () => {
 
   it('should return correct color for text and markup formats', () => {
     expect(getFormatColorClass('txt')).toBe('bg-slate-500 text-white')
-    expect(getFormatColorClass('md')).toBe('bg-slate-500 text-white')
+    expect(getFormatColorClass('md')).toBe('bg-blue-900 text-white')
     expect(getFormatColorClass('html')).toBe('bg-orange-500 text-white')
     expect(getFormatColorClass('htm')).toBe('bg-orange-500 text-white')
   })
