@@ -27,7 +27,12 @@ const t = {
     readDocs: 'ドキュメントを読む',
     viewOnGitHub: 'GitHub で見る',
     liveDemo: 'デモサイトを見る',
-    featuresTitle: '主な特長',
+    pillarsTitle: '読めて、問えて、つながる。',
+    pillarsLead: '公開して終わりにせず、データが使われるところまで面倒を見ます。',
+    recentTitle: '最近の更新',
+    foundationTitle: '運用の土台',
+    plannedNote: '今後の予定: SSO 連携（OIDC）、CSV の列型の確定と差分への反映。',
+    learnMore: '詳しく見る',
     techTitle: '技術スタック',
     ctaTitle: 'さっそく始めてみましょう',
     ctaDesc: '詳細なセットアップ手順はドキュメントをご覧ください。',
@@ -35,92 +40,96 @@ const t = {
     ctaNote: '開発の背景についてはこちら',
     releaseNotes: 'リリースノート',
     switchLang: 'English',
-    spotlight7: {
-      title: 'BI ツールから直接つなぐ',
-      desc: '表形式のリソースに OData の接続 URL が付きました。Excel・Tableau・Power BI などの OData コネクタに貼るだけで、ダウンロードなしにその表を開けます。大きな表は分割して配信し、BI ツール側が続きを取りに行きます。',
-      link: '詳しく見る',
-      hash: 'bi-ツールで開く',
-    },
-    spotlight5: {
-      title: 'ファイル内容の自動説明',
-      desc: 'リソースを登録すると、AI が中身を読んで短い説明を書きます。表は列の構成と先頭の行から、PDF は多くの場合ファイル全体から。文字の入っていない画像にも説明が付きます。採用の操作は要らず、検索の手掛かりにもなります。',
-      link: '詳しく見る',
-      hash: 'ai-による説明抄録',
-    },
-    spotlight6: {
-      title: 'リソース単位のハイブリッド検索',
-      desc: 'キーワードと意味の両方で探す検索を、データセットからファイル単位へ。結果は「どのファイルが該当したか」まで示し、一致の根拠（意味・AI による説明・本文）も添えます。ファイルの多いデータセットでも、求めていた 1 つに辿り着けます。',
-      link: '詳しく見る',
-      hash: 'どのリソースが一致したか',
-    },
-    spotlight: {
-      title: 'AI メタデータ提案',
-      desc: 'アップロードしたファイルの中身を素材に、タイトル・説明・タグを AI がドラフト。CSV の列構成から PDF・Office 文書の本文まで読み取り、提案はフィールド単位で確認してから採用。記入の負担を大きく減らします。',
-      link: '詳しく見る',
-      hash: 'ai-によるメタデータ提案',
-    },
-    spotlight4: {
-      title: 'リソースのセクション分け',
-      desc: 'リソースの多いデータセットを、見出しで区切って読みやすく。管理画面では見出しをドラッグで置くだけ。「/」区切りで 3 階層まで入れ子にでき、セクション名は検索にも MCP にも効きます。',
-      link: '詳しく見る',
-      hash: 'セクションで分ける',
-    },
-    spotlight3: {
-      title: 'バージョン管理と行レベル差分',
-      desc: 'リソースを差し替えるたびに、前の内容を版として保存。過去の版はダウンロードでき、CSV/TSV は増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認（v0.15.0 で強化）。個人情報の混入に備えた版単位の削除にも対応します。',
-      link: '詳しく見る',
-      hash: 'バージョン管理',
-    },
-    spotlight2: {
-      title: 'マルチサイトデプロイ',
-      desc: '1 つのインフラで複数のデータカタログサイトを運用。データベース・検索インデックス・ストレージはサイトごとに分離したまま、コストのかかる基盤を共有し、サイトを増やしても費用を最小限に抑えます。',
-      link: '詳しく見る',
-    },
-    features: [
+    recent: [
+      { title: 'BI ツールから直接つなぐ', doc: { guide: 'user-guide', hash: 'bi-ツールで開く' } },
+      { title: 'ファイル内容の自動説明', doc: { guide: 'data-admin-guide', hash: 'ai-による説明抄録' } },
+      { title: 'リソース単位のハイブリッド検索', doc: { guide: 'user-guide', hash: 'どのリソースが一致したか' } },
+    ],
+    pillars: [
       {
-        icon: '⚡',
-        title: '高速レスポンス',
-        desc: '大量データでも快適な応答速度を実現するイベント駆動設計。ファイル解析やインデックス更新はバックグラウンドで処理し、API からフロントエンドまで TypeScript で統一。',
+        word: '読める',
+        lead: '中身を解釈して、人にも AI にも分かる形で見せます。',
+        items: [
+          {
+            title: '中身を読んで、説明を書く',
+            desc: 'リソースを登録すると、AI が中身を読んで短い説明を書きます。表は列の構成と先頭の行から、PDF や Office 文書は本文から。タイトル・説明・タグの提案も同じ素材から起こし、フィールド単位で確認して採用します。',
+            doc: { guide: 'data-admin-guide', hash: 'ai-による説明抄録' },
+          },
+          {
+            title: 'ファイルの中まで探す',
+            desc: 'キーワードと意味を合わせたハイブリッド検索で、データセットではなくファイル単位に当たります。「どのファイルが、なぜ一致したか」まで示し、CSV の表も PDF の本文も対象。日本語の形態素解析も内蔵しています。',
+            doc: { guide: 'user-guide', hash: 'どのリソースが一致したか' },
+          },
+          {
+            title: 'ダウンロードせずに見る',
+            desc: 'CSV・JSON・GeoJSON・PDF・Office・一太郎をブラウザでそのままプレビュー。GeoJSON は地理院地図や OpenStreetMap の上に、表は並べ替えと絞り込みのできる形で。多いリソースは見出しで区切って整理できます。',
+            doc: { guide: 'user-guide', hash: 'リソースのプレビュー' },
+          },
+        ],
       },
       {
-        icon: '☁',
-        title: 'かんたんデプロイ',
-        desc: 'コンテナ構成で AWS にも Docker Compose にもすぐデプロイ。AWS CDK とデプロイパイプラインを同梱し、閉域網（LGWAN 等）にも対応するハイブリッド設計。',
+        word: '問える',
+        lead: 'ダウンロードして開く前に、その場で問い合わせられます。',
+        items: [
+          {
+            title: 'SQL で問う',
+            desc: '表形式のリソースには Data API が付き、ブラウザからも API からも SQL で問い合わせられます。必要な列と行だけを取り出し、集計もその場で。列の名前と型（スキーマ）も API で読め、AI エージェントも同じ口を使います。',
+            doc: { guide: 'api/rest', hash: 'スキーマとデータクエリ' },
+          },
+          {
+            title: '何が変わったかを問う',
+            desc: 'ファイルを差し替えるたびに、前の内容を版として残します。過去の版はダウンロードでき、CSV/TSV は増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認。混入した個人情報は版単位で削除します。',
+            doc: { guide: 'data-admin-guide', hash: 'バージョン管理' },
+          },
+          {
+            title: 'まだ届くか問う（ヘルスチェック）',
+            desc: '外部 URL のリソースは定期的に HEAD で死活を確かめ、中身が変わっていれば取り込み直します。結果とエラーになったリソースは管理画面で一覧。宣言されたフォーマットと中身の食い違いも、取得時に見つけます。',
+            doc: { guide: 'system-admin-guide', hash: 'ヘルスチェック' },
+          },
+        ],
       },
       {
-        icon: '🔍',
-        title: 'コンテンツまで検索',
-        desc: '自然文で探せるセマンティック検索とキーワード全文検索のハイブリッド対応。CSV やテキストファイルの中身まで検索でき、日本語形態素解析（kuromoji）もネイティブ対応。',
+        word: 'つながる',
+        lead: '人の画面だけでなく、AI エージェントや BI ツール、既存のツールからも使えます。',
+        items: [
+          {
+            title: 'AI エージェントから',
+            desc: 'MCP サーバーを内蔵。AI エージェントが自然文でデータセットを探し、文書の目次と本文を読み、表に SQL で問い合わせます。人が画面でできることを AI にも同じ入口から。Claude などの MCP 対応クライアントで使えます。',
+            doc: { guide: 'api/mcp' },
+          },
+          {
+            title: 'BI ツールから',
+            desc: '表形式のリソースには OData の接続 URL が付きます。Excel・Tableau・Power BI の OData コネクタに貼るだけで、ダウンロードなしにその表を開けます。大きな表は分割して配信し、ツール側が続きを取りに行きます。',
+            doc: { guide: 'user-guide', hash: 'bi-ツールで開く' },
+          },
+          {
+            title: '既存のツールから',
+            desc: 'CKAN 互換の読み取り API を備え、package_search や package_show をそのまま呼べます。CKAN 向けのクライアントや他カタログとの連携を保ったまま移行でき、REST API と API トークンも揃っています。',
+            doc: { guide: 'api/ckan' },
+          },
+        ],
+      },
+    ],
+    foundation: [
+      {
+        title: 'どこにでも置ける',
+        desc: 'コンテナ構成で、AWS には同梱の CDK とデプロイパイプラインで、オンプレミスには Docker Compose で配備できます。閉域網（LGWAN 等）でも動きます。',
+        doc: { guide: 'system-admin-guide', hash: 'デプロイ方法' },
       },
       {
-        icon: '📄',
-        title: 'ファイルプレビュー',
-        desc: 'CSV/JSON/GeoJSON/PDF/XLSX/一太郎 等のプレビューに対応。GeoJSON は地理院地図・OpenStreetMap に地図表示、CSV/TSV はソート・フィルター・検索できるテーブル表示に加え、Data API で SQL クエリも。',
+        title: '1 つの基盤で複数のサイト',
+        desc: '時間課金されるデータベースクラスタ・OpenSearch・ロードバランサーを複数のカタログサイトで共有。その中のデータベース・検索インデックス・バケットはサイトごとに分け、サイト追加の費用を小さく抑えます。',
+        doc: { guide: 'system-admin-guide/multi-site' },
       },
       {
-        icon: '🔒',
-        title: 'SSO 連携',
-        desc: 'OIDC / SAML 対応で自治体や企業の既存アカウント基盤と連携可能。組織・グループ単位の役割ベースアクセス制御で、データセットの公開・非公開や権限を柔軟に管理。',
+        title: '組織とグループで権限を分ける',
+        desc: '組織とカテゴリー（グループ）の単位でメンバーの役割を持ち、データセットの公開・非公開と編集権限を管理。API トークンも同じ権限です。',
+        doc: { guide: 'data-admin-guide', hash: '組織の管理' },
       },
       {
-        icon: '🗃',
-        title: 'CKAN 互換 API',
-        desc: '主要な Read 系 API で CKAN 互換性を確保。package_search / package_show などをそのまま呼び出せ、既存の CKAN クライアントツールや他カタログとのデータ連携が可能。',
-      },
-      {
-        icon: '✅',
-        title: '品質チェック内蔵',
-        desc: 'リンク切れ検出やメタデータの自動チェック機能をビルトインで搭載。カタログの品質を継続的に保ち、信頼性が求められる自治体や企業でのデータ公開の運用負荷を軽減。',
-      },
-      {
-        icon: '🧠',
-        title: 'AI エージェント連携',
-        desc: 'MCP サーバーを内蔵し、AI エージェントからカタログを直接検索・閲覧可能。セマンティック検索による自然文でのデータセット発見や、データの中身への SQL クエリにも対応。',
-      },
-      {
-        icon: '🌐',
-        title: 'オープンソース・多言語',
-        desc: 'AGPL-3.0 ライセンスでソースコードを公開。UI とドキュメントは日本語・英語の切替に対応し、ブランドカスタマイズで自組織向けの配色・ロゴ・文言にも変更可能。',
+        title: 'オープンソース、日英、ブランド',
+        desc: 'AGPL-3.0 でソースを公開。UI とドキュメントは日本語と英語を切り替えられ、配色・ロゴ・文言を自組織向けに上書きできます。',
+        doc: { guide: 'system-admin-guide/brand-customization' },
       },
     ],
   },
@@ -134,7 +143,12 @@ const t = {
     readDocs: 'Read the Docs',
     viewOnGitHub: 'View on GitHub',
     liveDemo: 'View the Live Demo',
-    featuresTitle: 'Key Features',
+    pillarsTitle: 'Read, query, connect.',
+    pillarsLead: 'Publishing is where it starts. KUKAN stays with the data until it is actually used.',
+    recentTitle: 'Recent Updates',
+    foundationTitle: 'Built to Run',
+    plannedNote: 'Coming up: SSO (OIDC) sign-in, and settled column types for CSV carried into diffs.',
+    learnMore: 'Learn more',
     techTitle: 'Tech Stack',
     ctaTitle: 'Get Started',
     ctaDesc: 'Check the documentation for detailed setup instructions.',
@@ -142,96 +156,117 @@ const t = {
     ctaNote: 'Read about the story behind this project',
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
-    spotlight7: {
-      title: 'Connect from a BI Tool',
-      desc: 'A tabular resource now carries an OData connection URL. Paste it into the OData connector in Excel, Tableau, Power BI and the like, and the table opens with nothing to download. Large tables are served in pages the tool follows on its own.',
-      link: 'Learn more',
-      hash: 'opening-the-table-in-a-bi-tool',
-    },
-    spotlight5: {
-      title: 'Automatic File Descriptions',
-      desc: 'Register a resource and an AI reads it and writes a short description — a table from its columns and first rows, a PDF usually from the whole file. Even an image with no text in it gets one. Nothing to adopt, and it feeds search too.',
-      link: 'Learn more',
-      hash: 'ai-written-descriptions',
-    },
-    spotlight6: {
-      title: 'Hybrid Search per Resource',
-      desc: 'Search by keyword and by meaning together, now file by file rather than dataset by dataset. Results say which file matched and why — by meaning, by its AI-written description, or by its contents — so a dataset of many files still leads you to the one you want.',
-      link: 'Learn more',
-      hash: 'which-resource-matched',
-    },
-    spotlight: {
-      title: 'AI Metadata Suggestions',
-      desc: 'AI drafts titles, descriptions, and tags from what is actually in your files — CSV columns and sample rows, even the text inside PDF and Office documents. Review and adopt field by field; nothing is overwritten automatically.',
-      link: 'Learn more',
-      hash: 'ai-metadata-suggestions',
-    },
-    spotlight4: {
-      title: 'Resource Sections',
-      desc: 'Group a long resource list under headings. In the dashboard a heading is a divider you drag into place. A "/" in the name nests headings up to three levels, and section names count in search and over MCP.',
-      link: 'Learn more',
-      hash: 'grouping-resources-into-sections',
-    },
-    spotlight3: {
-      title: 'Version History and Row-Level Diffs',
-      desc: 'Replacing a file keeps the old content as a version. Download any past version; for CSV/TSV, see added and removed rows — or, with a primary key, how each row changed (enhanced in v0.15.0). Individual versions can be deleted when content itself has to go.',
-      link: 'Learn more',
-      hash: 'version-history',
-    },
-    spotlight2: {
-      title: 'Multi-Site Deployment',
-      desc: 'Run multiple data catalog sites on one shared infrastructure. Databases, search indices, and storage stay isolated per site while the costly backbone is shared — keeping each additional site inexpensive.',
-      link: 'Learn more',
-    },
-    features: [
+    recent: [
+      { title: 'Connect from a BI Tool', doc: { guide: 'user-guide', hash: 'opening-the-table-in-a-bi-tool' } },
+      { title: 'Automatic File Descriptions', doc: { guide: 'data-admin-guide', hash: 'ai-written-descriptions' } },
+      { title: 'Hybrid Search per Resource', doc: { guide: 'user-guide', hash: 'which-resource-matched' } },
+    ],
+    pillars: [
       {
-        icon: '⚡',
-        title: 'Built for Speed',
-        desc: 'Event-driven architecture handles large datasets with ease — file processing and indexing run in the background. A unified TypeScript stack from API to frontend.',
+        word: 'Read',
+        lead: 'It interprets what it stores and shows it in a form people and AI both understand.',
+        items: [
+          {
+            title: 'Reads it, writes the description',
+            desc: 'Register a resource and an AI reads it and writes a short description: a table from its columns and first rows, a document from its text. Title, description and tag suggestions come from the same material, adopted field by field.',
+            doc: { guide: 'data-admin-guide', hash: 'ai-written-descriptions' },
+          },
+          {
+            title: 'Search inside the files',
+            desc: 'Hybrid search by keyword and by meaning lands on a file, not just a dataset, and says which file matched and why. CSV tables and PDF text are both searchable, and Japanese morphological analysis is built in.',
+            doc: { guide: 'user-guide', hash: 'which-resource-matched' },
+          },
+          {
+            title: 'See it without downloading',
+            desc: 'Preview CSV, JSON, GeoJSON, PDF, Office and Ichitaro files in the browser. GeoJSON renders on GSI or OpenStreetMap tiles, and tables sort and filter in place. Long resource lists fold under headings you drag into place.',
+            doc: { guide: 'user-guide', hash: 'resource-preview' },
+          },
+        ],
       },
       {
-        icon: '☁',
-        title: 'Easy to Deploy',
-        desc: 'Deploy on AWS or with Docker Compose in minutes, with AWS CDK IaC and an automated deploy pipeline included. Hybrid design supports on-prem and air-gapped networks.',
+        word: 'Query',
+        lead: 'Ask the data a question before you download and open it.',
+        items: [
+          {
+            title: 'Ask in SQL',
+            desc: 'A tabular resource carries a Data API: query it in SQL from the browser or over the API, pull just the columns and rows you need, and aggregate on the spot. Column names and types come from the same API, for people and agents alike.',
+            doc: { guide: 'api/rest', hash: 'schema-and-data-query' },
+          },
+          {
+            title: 'Ask what changed',
+            desc: 'Replacing a file keeps the old content as a version. Download any past version; for CSV/TSV see added and removed rows, or with a primary key how each row changed. A version that leaked personal data can be deleted on its own.',
+            doc: { guide: 'data-admin-guide', hash: 'version-history' },
+          },
+          {
+            title: 'Still reachable? Health checks',
+            desc: 'External-URL resources get a scheduled HEAD check and are re-ingested when their content changes. Results and failing resources are listed in the dashboard, and a file whose declared format disagrees with its bytes is caught on fetch.',
+            doc: { guide: 'system-admin-guide', hash: 'health-checks' },
+          },
+        ],
       },
       {
-        icon: '🔍',
-        title: 'Deep Search',
-        desc: 'Semantic search with natural-language queries, plus full-text search across metadata, CSV files, and text files. Native Japanese morphological analysis via kuromoji.',
+        word: 'Connect',
+        lead: 'Not only through the web UI: from AI agents, BI tools and the tools you already have.',
+        items: [
+          {
+            title: 'From AI agents',
+            desc: "A built-in MCP server lets an AI agent find datasets in natural language, read a document's outline and sections, and query a table in SQL. Whatever a person can do on screen, an agent can do through the same door, from Claude or any MCP client.",
+            doc: { guide: 'api/mcp' },
+          },
+          {
+            title: 'From BI tools',
+            desc: 'A tabular resource carries an OData connection URL. Paste it into the OData connector in Excel, Tableau or Power BI and the table opens with nothing to download. Large tables are served in pages the tool follows on its own.',
+            doc: { guide: 'user-guide', hash: 'opening-the-table-in-a-bi-tool' },
+          },
+          {
+            title: 'From the tools you have',
+            desc: 'A CKAN-compatible read API answers package_search, package_show and the rest as-is, so CKAN clients and catalog federations keep working through a migration. A REST API and API tokens round out the programmatic side.',
+            doc: { guide: 'api/ckan' },
+          },
+        ],
+      },
+    ],
+    foundation: [
+      {
+        title: 'Runs anywhere',
+        desc: 'Containers deploy to AWS with the bundled CDK and pipeline, or on-premises with Docker Compose. Air-gapped networks such as LGWAN work too.',
+        doc: { guide: 'system-admin-guide', hash: 'deployment' },
       },
       {
-        icon: '📄',
-        title: 'Rich File Previews',
-        desc: 'Preview CSV, JSON, GeoJSON, PDF, XLSX, Ichitaro, and more. GeoJSON is rendered on maps with GSI and OpenStreetMap; CSV/TSV tables sort, filter and search in place, with SQL queries via the Data API.',
+        title: 'Many sites, one backbone',
+        desc: 'Several catalog sites share the hourly-billed boxes: the database cluster, OpenSearch and the load balancer. Inside them each site keeps its own database, search index and bucket, so an added site costs little.',
+        doc: { guide: 'system-admin-guide/multi-site' },
       },
       {
-        icon: '🔒',
-        title: 'SSO Integration',
-        desc: 'OIDC / SAML integration with existing identity providers. Role-based access control across organizations and groups keeps public and private data under control.',
+        title: 'Permissions by organization and group',
+        desc: 'Members hold roles per organization and category (group), governing who sees and edits each dataset. API tokens carry the same permissions.',
+        doc: { guide: 'data-admin-guide', hash: 'organization-management' },
       },
       {
-        icon: '🗃',
-        title: 'CKAN Compatible',
-        desc: 'Drop-in compatibility with major CKAN read APIs — call package_search, package_show, and more as-is. Works with existing CKAN tools and connects catalogs together.',
-      },
-      {
-        icon: '✅',
-        title: 'Quality Checks',
-        desc: 'Broken-link detection and metadata validation built in to keep your catalog healthy over time. Reduces the operational burden of reliable data publishing.',
-      },
-      {
-        icon: '🧠',
-        title: 'AI-Ready',
-        desc: 'Built-in MCP server lets AI agents search and browse your catalog — semantic search finds datasets from natural language, and SQL queries reach the data itself.',
-      },
-      {
-        icon: '🌐',
-        title: 'Open Source',
-        desc: 'AGPL-3.0 licensed with the full source open. Japanese and English UI out of the box, and brand customization tailors colors, logo, and wording to your organization.',
+        title: 'Open source, bilingual, brandable',
+        desc: 'AGPL-3.0 with the full source open. UI and docs switch between Japanese and English; colors, logo and wording can be overridden per organization.',
+        doc: { guide: 'system-admin-guide/brand-customization' },
       },
     ],
   },
 } as const
+
+// Release and date read the same in both locales; icons too.
+const recentMeta = [
+  { icon: '🔌', version: 'v0.31.0', date: '2026-09-24' },
+  { icon: '📝', version: 'v0.30.0', date: '2026-09-18' },
+  { icon: '🔎', version: 'v0.30.0', date: '2026-09-18' },
+]
+const pillarMeta = [
+  { id: 'read', icon: '📖' },
+  { id: 'query', icon: '🧮' },
+  { id: 'connect', icon: '🔗' },
+]
+const foundationIcons = ['☁', '🏙', '🔒', '🌐']
+
+// A doc link for the English page; the locale script rewrites it for Japanese.
+const docHref = (doc: { guide: string; hash?: string }) =>
+  `${base}en/${doc.guide}/${doc.hash ? `#${doc.hash}` : ''}`
 
 const techStack = [
   'TypeScript',
@@ -365,143 +400,82 @@ const techStack = [
       </div>
     </section>
 
-    <section class="spotlight">
+    <section class="recent">
       <div class="container">
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">🔌</span>
-              <h2 class="spotlight-title" data-i18n="spotlight7.title">{t.en.spotlight7.title}</h2>
-              <span class="spotlight-badge">NEW</span>
-              <span class="spotlight-date">v0.31.0 · 2026-09-24</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight7.desc">{t.en.spotlight7.desc}</p>
-          </div>
-          <a
-            href={`${base}en/user-guide/#${t.en.spotlight7.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight7.link"
-            id="spotlight7-link">{t.en.spotlight7.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">📝</span>
-              <h2 class="spotlight-title" data-i18n="spotlight5.title">{t.en.spotlight5.title}</h2>
-              <span class="spotlight-badge">NEW</span>
-              <span class="spotlight-date">v0.30.0 · 2026-09-18</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight5.desc">{t.en.spotlight5.desc}</p>
-          </div>
-          <a
-            href={`${base}en/data-admin-guide/#${t.en.spotlight5.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight5.link"
-            id="spotlight5-link">{t.en.spotlight5.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">🔎</span>
-              <h2 class="spotlight-title" data-i18n="spotlight6.title">{t.en.spotlight6.title}</h2>
-              <span class="spotlight-badge">NEW</span>
-              <span class="spotlight-date">v0.30.0 · 2026-09-18</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight6.desc">{t.en.spotlight6.desc}</p>
-          </div>
-          <a
-            href={`${base}en/user-guide/#${t.en.spotlight6.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight6.link"
-            id="spotlight6-link">{t.en.spotlight6.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">📑</span>
-              <h2 class="spotlight-title" data-i18n="spotlight4.title">{t.en.spotlight4.title}</h2>
-              <span class="spotlight-badge">NEW</span>
-              <span class="spotlight-date">v0.27.0 · 2026-09-10</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight4.desc">{t.en.spotlight4.desc}</p>
-          </div>
-          <a
-            href={`${base}en/data-admin-guide/#${t.en.spotlight4.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight4.link"
-            id="spotlight4-link">{t.en.spotlight4.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">🕒</span>
-              <h2 class="spotlight-title" data-i18n="spotlight3.title">{t.en.spotlight3.title}</h2>
-              <span class="spotlight-date">v0.12.0 · 2026-08-10</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight3.desc">{t.en.spotlight3.desc}</p>
-          </div>
-          <a
-            href={`${base}en/data-admin-guide/#${t.en.spotlight3.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight3.link"
-            id="spotlight3-link">{t.en.spotlight3.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">🏙</span>
-              <h2 class="spotlight-title" data-i18n="spotlight2.title">{t.en.spotlight2.title}</h2>
-              <span class="spotlight-date">v0.10.0 · 2026-07-19</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight2.desc">{t.en.spotlight2.desc}</p>
-          </div>
-          <a
-            href={`${base}en/system-admin-guide/multi-site/`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight2.link"
-            id="spotlight2-link">{t.en.spotlight2.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
-              <span class="spotlight-icon">✨</span>
-              <h2 class="spotlight-title" data-i18n="spotlight.title">{t.en.spotlight.title}</h2>
-              <span class="spotlight-date">v0.8.0 · 2026-07-13</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight.desc">{t.en.spotlight.desc}</p>
-          </div>
-          <a
-            href={`${base}en/data-admin-guide/#${t.en.spotlight.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight.link"
-            id="spotlight-link">{t.en.spotlight.link}</a
-          >
+        <h2 class="recent-heading" data-i18n="recentTitle">{t.en.recentTitle}</h2>
+        <div class="recent-list">
+          {
+            t.en.recent.map((r, i) => (
+              <a href={docHref(r.doc)} class="recent-card" data-doc={`recent.${i}.doc`}>
+                <span class="recent-icon" aria-hidden="true">{recentMeta[i].icon}</span>
+                <span class="recent-body">
+                  <span class="recent-title" data-i18n={`recent.${i}.title`}>{r.title}</span>
+                  <span class="recent-date">{recentMeta[i].version} · {recentMeta[i].date}</span>
+                </span>
+              </a>
+            ))
+          }
         </div>
       </div>
     </section>
 
-    <section class="features">
+    <section class="pillars">
       <div class="container">
-        <h2 class="section-title" data-i18n="featuresTitle">{t.en.featuresTitle}</h2>
-        <div class="feature-grid">
+        <h2 class="section-title" data-i18n="pillarsTitle">{t.en.pillarsTitle}</h2>
+        <p class="section-lead" data-i18n="pillarsLead">{t.en.pillarsLead}</p>
+        <div class="pillar-grid">
           {
-            t.en.features.map((f, i) => (
-              <div class="feature-card">
-                <div class="feature-header">
-                  <span class="feature-icon">{f.icon}</span>
-                  <h3 class="feature-title" data-i18n={`features.${i}.title`}>{f.title}</h3>
+            t.en.pillars.map((pillar, pi) => (
+              <div class="pillar" id={pillarMeta[pi].id}>
+                <div class="pillar-header">
+                  <span class="pillar-icon" aria-hidden="true">{pillarMeta[pi].icon}</span>
+                  <h3 class="pillar-word" data-i18n={`pillars.${pi}.word`}>{pillar.word}</h3>
                 </div>
-                <p class="feature-desc" data-i18n={`features.${i}.desc`}>{f.desc}</p>
+                <p class="pillar-lead" data-i18n={`pillars.${pi}.lead`}>{pillar.lead}</p>
+                <div class="pillar-cards">
+                  {pillar.items.map((item, ii) => (
+                    <div class="feature-card">
+                      <h4 class="feature-title" data-i18n={`pillars.${pi}.items.${ii}.title`}>{item.title}</h4>
+                      <p class="feature-desc" data-i18n={`pillars.${pi}.items.${ii}.desc`}>{item.desc}</p>
+                      <a
+                        href={docHref(item.doc)}
+                        class="card-link"
+                        data-i18n="learnMore"
+                        data-doc={`pillars.${pi}.items.${ii}.doc`}>{t.en.learnMore}</a
+                      >
+                    </div>
+                  ))}
+                </div>
               </div>
             ))
           }
         </div>
+      </div>
+    </section>
+
+    <section class="foundation">
+      <div class="container">
+        <h2 class="section-title" data-i18n="foundationTitle">{t.en.foundationTitle}</h2>
+        <div class="foundation-grid">
+          {
+            t.en.foundation.map((f, i) => (
+              <div class="feature-card">
+                <div class="feature-header">
+                  <span class="feature-icon" aria-hidden="true">{foundationIcons[i]}</span>
+                  <h3 class="feature-title" data-i18n={`foundation.${i}.title`}>{f.title}</h3>
+                </div>
+                <p class="feature-desc" data-i18n={`foundation.${i}.desc`}>{f.desc}</p>
+                <a
+                  href={docHref(f.doc)}
+                  class="card-link"
+                  data-i18n="learnMore"
+                  data-doc={`foundation.${i}.doc`}>{t.en.learnMore}</a
+                >
+              </div>
+            ))
+          }
+        </div>
+        <p class="planned-note" data-i18n="plannedNote">{t.en.plannedNote}</p>
       </div>
     </section>
 
@@ -576,27 +550,10 @@ const techStack = [
           if (docsLink) docsLink.href = docsBase
           if (ctaLink) ctaLink.href = docsBase
           if (docsNav) docsNav.href = docsBase
-          var spotlight7Link = document.getElementById('spotlight7-link')
-          if (spotlight7Link)
-            spotlight7Link.href = docsBase + 'user-guide/#' + tr.spotlight7.hash
-          var spotlight5Link = document.getElementById('spotlight5-link')
-          if (spotlight5Link)
-            spotlight5Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight5.hash
-          var spotlight6Link = document.getElementById('spotlight6-link')
-          if (spotlight6Link)
-            spotlight6Link.href = docsBase + 'user-guide/#' + tr.spotlight6.hash
-          var spotlightLink = document.getElementById('spotlight-link')
-          if (spotlightLink)
-            spotlightLink.href = docsBase + 'data-admin-guide/#' + tr.spotlight.hash
-          var spotlight3Link = document.getElementById('spotlight3-link')
-          if (spotlight3Link)
-            spotlight3Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight3.hash
-          var spotlight4Link = document.getElementById('spotlight4-link')
-          if (spotlight4Link)
-            spotlight4Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight4.hash
-          var spotlight2Link = document.getElementById('spotlight2-link')
-          if (spotlight2Link)
-            spotlight2Link.href = docsBase + 'system-admin-guide/multi-site/'
+          document.querySelectorAll('[data-doc]').forEach(function (el) {
+            var doc = el.dataset.doc.split('.').reduce(function (obj, k) { return obj && obj[k] }, tr)
+            if (doc) el.href = docsBase + doc.guide + '/' + (doc.hash ? '#' + doc.hash : '')
+          })
         }
 
         // Apply on load (for ja, since head script already ran; reinforce with full DOM)
@@ -788,68 +745,63 @@ const techStack = [
         font-size: 1.125rem;
       }
 
-      /* Spotlight */
-      .spotlight {
+      /* Recent updates: a compact strip under the hero, one card per release item */
+      .recent {
         padding: 3rem 1rem 0;
       }
-      .spotlight-card {
+      .recent-heading {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.75rem;
+      }
+      .recent-list {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+      @media (min-width: 768px) {
+        .recent-list {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .recent-card {
         display: flex;
         align-items: center;
-        gap: 1.5rem;
-        padding: 1.5rem 1.75rem;
+        gap: 0.75rem;
+        padding: 0.875rem 1.125rem;
         border: 1px solid hsl(214 81% 84%);
         border-radius: 0.75rem;
         background: hsl(214 81% 97%);
+        color: inherit;
+        text-decoration: none;
+        transition: border-color 0.2s;
       }
-      .spotlight-card + .spotlight-card {
-        margin-top: 1rem;
+      .recent-card:hover {
+        border-color: var(--brand);
       }
-      .spotlight-body {
-        flex: 1;
-      }
-      .spotlight-header {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem;
-      }
-      .spotlight-icon {
-        font-size: 1.375rem;
-      }
-      .spotlight-title {
+      .recent-icon {
         font-size: 1.25rem;
-        font-weight: 700;
+        flex-shrink: 0;
+      }
+      .recent-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        min-width: 0;
+      }
+      .recent-title {
+        font-size: 0.9375rem;
+        font-weight: 600;
         color: var(--dark);
       }
-      .spotlight-badge {
-        font-size: 0.6875rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        color: #fff;
-        background: var(--brand);
-        border-radius: 9999px;
-        padding: 0.125rem 0.5rem;
-      }
       /* Version and date read the same in both locales, so no data-i18n */
-      .spotlight-date {
+      .recent-date {
         font-size: 0.75rem;
         color: #64748b;
         font-variant-numeric: tabular-nums;
-      }
-      .spotlight-desc {
-        font-size: 0.9375rem;
-        color: #475569;
-        line-height: 1.65;
-      }
-      .spotlight-link {
-        white-space: nowrap;
-      }
-      @media (max-width: 767px) {
-        .spotlight-card {
-          flex-direction: column;
-          align-items: flex-start;
-        }
       }
 
       /* Features */
@@ -936,8 +888,8 @@ const techStack = [
           margin-top: 2.5rem;
         }
       }
-      .features {
-        padding: 4.5rem 1rem 3rem;
+      .pillars {
+        padding: 4.5rem 1rem 1rem;
       }
       .section-title {
         font-size: 1.875rem;
@@ -946,22 +898,90 @@ const techStack = [
         color: var(--dark);
         margin-bottom: 2.5rem;
       }
-      .feature-grid {
+      @media (max-width: 480px) {
+        .section-title {
+          font-size: 1.5rem;
+        }
+      }
+      .section-lead {
+        max-width: 40rem;
+        margin: -1.75rem auto 2.5rem;
+        text-align: center;
+        font-size: 1.0625rem;
+        color: #475569;
+        line-height: 1.65;
+      }
+      .pillar-grid {
         display: grid;
-        grid-template-columns: repeat(1, 1fr);
+        grid-template-columns: 1fr;
+        gap: 2.5rem;
+      }
+      @media (min-width: 1024px) {
+        .pillar-grid {
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1.5rem;
+        }
+        /* Leads differ in length; reserve two lines so the card rows line up */
+        .pillar-lead {
+          min-height: 3.3em;
+        }
+      }
+      .pillar-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .pillar-icon {
+        font-size: 1.5rem;
+      }
+      .pillar-word {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--brand);
+      }
+      .pillar-lead {
+        font-size: 0.9375rem;
+        color: #475569;
+        line-height: 1.65;
+        margin-bottom: 1.25rem;
+      }
+      /* Three equal rows per column; the columns themselves stretch to the
+         tallest, so every card on the page ends up the same height */
+      .pillar {
+        display: flex;
+        flex-direction: column;
+        scroll-margin-top: 1.5rem;
+      }
+      .pillar-cards {
+        display: grid;
+        grid-template-rows: repeat(3, 1fr);
+        gap: 1rem;
+        flex: 1;
+      }
+      /* The three words read as emphasis, not as links, until hovered */
+      .foundation {
+        padding: 4.5rem 1rem 3rem;
+      }
+      .foundation-grid {
+        display: grid;
+        grid-template-columns: 1fr;
         gap: 1.25rem;
       }
       @media (min-width: 768px) {
-        .feature-grid {
+        .foundation-grid {
           grid-template-columns: repeat(2, 1fr);
         }
       }
-      @media (min-width: 1024px) {
-        .feature-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
+      .planned-note {
+        margin-top: 2rem;
+        text-align: center;
+        font-size: 0.875rem;
+        color: #64748b;
       }
       .feature-card {
+        display: flex;
+        flex-direction: column;
         padding: 1.25rem 1.5rem;
         border-radius: 0.75rem;
         border: 1px solid #e2e8f0;
@@ -990,6 +1010,18 @@ const techStack = [
         font-size: 0.9375rem;
         color: #64748b;
         line-height: 1.65;
+      }
+      .card-link {
+        align-self: flex-start;
+        margin-top: auto;
+        padding-top: 0.75rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--brand);
+        text-decoration: none;
+      }
+      .card-link:hover {
+        text-decoration: underline;
       }
 
       /* Tech Stack */
