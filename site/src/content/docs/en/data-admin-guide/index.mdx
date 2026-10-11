@@ -87,7 +87,7 @@ KUKAN supports many formats including CSV, TSV, JSON, GeoJSON, XML, PDF, Excel, 
 Uploaded files are automatically processed through the pipeline:
 
 - Text file encoding detection and conversion
-- CSV/TSV to Parquet conversion (for table preview)
+- Parquet conversion of CSV/TSV, and of JSON/GeoJSON whose records read as a table (for table preview)
 - ZIP file manifest generation
 - Recording a version ([Version history](#version-history))
 - Text extraction for search (so a file's contents can match a query)
@@ -132,7 +132,7 @@ from the dashboard, is planned for a future version.
 ## Version history
 
 Every time a resource's file is replaced, the content it replaced is kept as a **version**.
-You can download any past version, and for CSV/TSV you can see how many rows were added or
+You can download any past version, and for a table (CSV/TSV, or JSON/GeoJSON read as one) you can see how many rows were added or
 removed between two versions — and, with a primary key declared, how each row changed.
 
 A version is created only when the content **actually changed**. Re-fetching an external URL
@@ -185,7 +185,7 @@ computed when you open it, so simply listing the versions does not run anything.
 - When the **columns changed** (added, removed, retyped, or reordered), the rows cannot be
   lined up and the panel says so instead
 
-Diffs are available between **CSV/TSV versions of 100 MB or less**. When one is unavailable,
+Diffs are available between **versions of a table (CSV/TSV, or JSON/GeoJSON read as one) of 100 MB or less**. When one is unavailable,
 the reason is shown.
 
 | Message                                                                                         | Meaning                                                        |

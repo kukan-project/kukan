@@ -328,7 +328,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     ])
     if (!text) {
       return reply([
-        `Resource ${id} has no extracted document text. Text is extracted from PDF, Word, PowerPoint, Excel and Ichitaro files when they are processed.`,
+        `Resource ${id} has no extracted document text. Text is extracted from PDF, Word, PowerPoint, Excel, Ichitaro and Markdown files when they are processed.`,
       ])
     }
     // An outline is worth having without text: the pages, the bookmarks, which to read by OCR
@@ -353,8 +353,8 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     'get_document_outline',
     {
       description:
-        "List a document resource's headings (PDF bookmarks or heading tags, Word heading styles, slide titles) or a workbook's sheets, each with the pages, slides or rows it spans, and how many pages it has. " +
-        'For PDF, Word, PowerPoint and Excel files, the formats before 2007 (DOC, PPT, XLS) included, and Ichitaro (JTD, JTT); not for CSV (use get_resource_schema and query_resource for those tables). ' +
+        "List a document resource's headings (PDF bookmarks or heading tags, Word heading styles, slide titles, Markdown headings) or a workbook's sheets, each with the pages, slides or rows it spans, and how many pages it has. " +
+        'For PDF, Word, PowerPoint and Excel files, the formats before 2007 (DOC, PPT, XLS) included, Ichitaro (JTD, JTT) and Markdown; not for CSV (use get_resource_schema and query_resource for those tables). ' +
         "A DOC or an Ichitaro file marks no headings a reader of it can find: its text is one block, an Ichitaro file's a block a sheet where it has several. " +
         'Call it before get_document_section to choose what to read: give that tool a heading or the pages listed here. ' +
         'It also names the pages whose text cannot be read (scans): get_document_section returns nothing for them, as text is not read from images. ' +
@@ -383,8 +383,8 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     'get_document_section',
     {
       description:
-        "Read a document resource's text (PDF, Word, PowerPoint, Excel, Ichitaro) by where it is in the file: a range of pages (a PDF's pages, a presentation's slides, a workbook's sheets), a heading, or both. " +
-        'Call get_document_outline first to see the headings and the pages they span. A Word file has no pages: select it by heading. ' +
+        "Read a document resource's text (PDF, Word, PowerPoint, Excel, Ichitaro, Markdown) by where it is in the file: a range of pages (a PDF's pages, a presentation's slides, a workbook's sheets), a heading, or both. " +
+        'Call get_document_outline first to see the headings and the pages they span. A Word or Markdown file has no pages: select it by heading. ' +
         'A heading selects everything under it, its subheadings included; give the deepest heading, or a path (`Chapter 1 > Overview`), to narrow it. ' +
         "A workbook's text is its rows with tab-separated cells; to compute over a CSV's values, use query_resource instead. " +
         'Every block of text is labelled with its page, slide or sheet (and rows) and the headings it is under, and the response opens with the source to cite — resource and dataset name, URL and version. ' +
@@ -512,7 +512,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     'search_passages',
     {
       description:
-        'Search the text of documents in the catalog (PDF, Word, PowerPoint, Excel, Ichitaro) for the passages that match a query, best first. ' +
+        'Search the text of documents in the catalog (PDF, Word, PowerPoint, Excel, Ichitaro, Markdown) for the passages that match a query, best first. ' +
         'Datasets and resources are found first, as search_datasets finds them, and then the passages inside their documents; ' +
         'tables such as CSV are not searched here (use get_resource_schema and query_resource for those). ' +
         'Every passage opens with the source to cite — resource and dataset name, URL (a PDF opened at the page), version — then where it is (page, slide or sheet, and the headings it is under) and the words that matched. ' +

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** — 2026-10-10
+**Accepted** — 2026-10-10 (proposed 2026-10-10)
 
 Arbitrary values used across the site (population, households, reference dates, a tagline, ...) are
 kept as flat **key → value** pairs in `system_setting` (ADR-036) and edited by a sysadmin from the

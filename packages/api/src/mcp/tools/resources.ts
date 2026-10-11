@@ -163,7 +163,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
     'get_resource_schema',
     {
       description:
-        'Get the column schema (field names, inferred types and roles) of a tabular resource (CSV/TSV) so you can write a SQL query against its data. Each column has a role — measure, numeric-text, identifier, free-text, name, category or empty — and name and category columns list their most frequent values, so you can match their spelling. Returns whether the resource is queryable, and whether its rows are also readable over OData; only CSV/TSV resources within the size limit have a schema.',
+        'Get the column schema (field names, inferred types and roles) of a tabular resource (CSV/TSV, or JSON/GeoJSON records) so you can write a SQL query against its data. Each column has a role — measure, numeric-text, identifier, free-text, name, category or empty — and name and category columns list their most frequent values, so you can match their spelling. Returns whether the resource is queryable, and whether its rows are also readable over OData; only tables within the size limit have one.',
       inputSchema: {
         id: z.string().describe('Resource UUID'),
       },

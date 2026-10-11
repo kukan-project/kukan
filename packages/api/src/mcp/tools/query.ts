@@ -36,7 +36,7 @@ export function registerQueryTools(server: McpServer, ctx: QueryToolsContext) {
     'query_resource',
     {
       description:
-        'Run a read-only SQL query against a tabular resource (CSV/TSV). The data is exposed as ' +
+        'Run a read-only SQL query against a tabular resource (CSV/TSV, or JSON/GeoJSON records). The data is exposed as ' +
         'a table named `data`. Call get_resource_schema first to learn the column names/types. ' +
         'Dialect is DuckDB SQL; only a single SELECT or WITH statement is allowed. Double-quote ' +
         'column names containing spaces or non-ASCII characters (e.g. "Prefecture Name"). Prefer ' +

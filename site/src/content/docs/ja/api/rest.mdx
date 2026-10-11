@@ -165,8 +165,8 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | GET    | `/resources/{id}/download`              | ファイルダウンロード（外部 URL は 302 リダイレクト）                         | 公開        |
 | GET    | `/resources/{id}/preview`               | サーバー経由プレビュー（Range 対応）                                         | 公開        |
 | GET    | `/resources/{id}/pipeline-status`       | パイプライン処理状態                                                         | 公開        |
-| GET    | `/resources/{id}/schema`                | 列スキーマ（列名・型・行数・数値統計）。CSV/TSV のみ                         | 公開        |
-| POST   | `/resources/{id}/query`                 | サーバーサイド DuckDB クエリ（SELECT 限定）。CSV/TSV のみ                    | 公開        |
+| GET    | `/resources/{id}/schema`                | 列スキーマ（列名・型・行数・数値統計）。表形式のみ                           | 公開        |
+| POST   | `/resources/{id}/query`                 | サーバーサイド DuckDB クエリ（SELECT 限定）。表形式のみ                      | 公開        |
 | POST   | `/resources/{id}/upload-url`            | プリサインドアップロード URL 発行                                            | 組織 editor |
 | POST   | `/resources/{id}/upload`                | サーバー経由アップロード（multipart `file`、ストリーム処理、上限超過は 413） | 組織 editor |
 | POST   | `/resources/{id}/upload-complete`       | アップロード完了通知・パイプライン投入                                       | 組織 editor |
@@ -238,7 +238,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | ------ | --------------------------------------- | ---------------------------------------------- | ----------- |
 | GET    | `/resources/{id}/versions`              | 版の一覧（新しい順。削除済みも記録として残る） | 公開        |
 | GET    | `/resources/{id}/versions/{v}`          | 版の詳細                                       | 公開        |
-| GET    | `/resources/{id}/versions/{v}/diff`     | 直前の版との行差分。CSV/TSV のみ               | 組織 editor |
+| GET    | `/resources/{id}/versions/{v}/diff`     | 直前の版との行差分。表形式のみ                 | 組織 editor |
 | GET    | `/resources/{id}/versions/{v}/download` | その版のファイルをダウンロード                 | 公開        |
 | POST   | `/resources/{id}/versions/{v}/purge`    | 版の内容を完全削除（法的削除）                 | sysadmin    |
 
@@ -247,7 +247,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 
 ### スキーマとデータクエリ
 
-CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済み・≤100MB）は、**列スキーマの取得**と
+表形式のリソース（CSV/TSV と、レコードの一覧として読める JSON/GeoJSON。パイプラインでプレビュー Parquet を生成済み・≤100MB）は、**列スキーマの取得**と
 **読み取り専用 SQL クエリ**ができます。AI エージェント向けには MCP の `get_resource_schema` /
 `query_resource` ツールも同等の機能を提供します。
 
@@ -760,7 +760,7 @@ MCP の `search_passages` と同じ検索です。パラメータは `q`（必�
 
 ## その他
 
-| Method | Path                    | 説明                     | 認証 |
-| ------ | ----------------------- | ------------------------ | ---- |
-| GET    | `/api/health`           | ヘルスチェック           | 公開 |
-| GET    | `/api/v1/site/settings` | サイト設定（登録可否等） | 公開 |
+| Method | Path                    | 説明                                         | 認証 |
+| ------ | ----------------------- | -------------------------------------------- | ---- |
+| GET    | `/api/health`           | ヘルスチェック                               | 公開 |
+| GET    | `/api/v1/site/settings` | サイト設定（登録可否・サイトのメタデータ等） | 公開 |

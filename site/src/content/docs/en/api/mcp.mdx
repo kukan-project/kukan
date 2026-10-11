@@ -78,19 +78,19 @@ The `instructions` of the `initialize` result tell the client how the tools go t
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
 
-| Tool                   | Description                                                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                                      |
-| `get_dataset`          | Get detailed dataset information including resource list                                                                          |
-| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                                 |
-| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only                         |
-| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. CSV/TSV only                                                 |
-| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel/Ichitaro      |
-| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel/Ichitaro                |
-| `search_passages`      | Find the passages of documents' text that match a query, with where each is from and its page. PDF/Word/PowerPoint/Excel/Ichitaro |
-| `list_organizations`   | List organizations                                                                                                                |
-| `list_groups`          | List groups (categories)                                                                                                          |
-| `list_tags`            | List tags                                                                                                                         |
+| Tool                   | Description                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `search_datasets`      | Search datasets by keyword or natural language (hybrid search). Also says which file matched                                               |
+| `get_dataset`          | Get detailed dataset information including resource list                                                                                   |
+| `get_resource`         | Get resource (file) metadata, URL, and its AI-written description                                                                          |
+| `get_resource_schema`  | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. Tables only                                   |
+| `query_resource`       | Run a read-only SQL query (SELECT/WITH only) over a resource's data. Tables only                                                           |
+| `get_document_outline` | Get a document's outline: its headings with their pages, or a workbook's sheets and rows. PDF/Word/PowerPoint/Excel/Ichitaro/Markdown      |
+| `get_document_section` | Read a document's text by page, slide, sheet or heading, with where it is from. PDF/Word/PowerPoint/Excel/Ichitaro/Markdown                |
+| `search_passages`      | Find the passages of documents' text that match a query, with where each is from and its page. PDF/Word/PowerPoint/Excel/Ichitaro/Markdown |
+| `list_organizations`   | List organizations                                                                                                                         |
+| `list_groups`          | List groups (categories)                                                                                                                   |
+| `list_tags`            | List tags                                                                                                                                  |
 
 ## Tool Details
 
@@ -154,7 +154,11 @@ current one. Where none was written, the reason is given instead.
 
 Get a resource's column schema (names, types, nullability, row count, and min/max for
 numeric columns). When the resource has a settled primary key it is reported on a
-`Primary key:` line. Only CSV/TSV resources with a generated preview are queryable. When the
+`Primary key:` line. Each column carries its role (name, category, free text, identifier,
+number or date, number written as text), with the most frequent values of a name or category
+column and the values that do not read as numbers in a column of numbers written as text. Only
+tables — CSV/TSV, and JSON/GeoJSON whose records read as one — with a generated preview are
+queryable. When the
 resource is queryable, the output names the query table `data` and includes an example query,
 so the agent can write SQL after inspecting the schema; when it is not (the preview is gone
 or does not reflect the current content), the columns are still listed for reference but the
