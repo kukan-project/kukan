@@ -24,7 +24,7 @@
 > 必要になる場合があります。
 
 Read, query, connect. A full-stack TypeScript data platform for people and AI.
-読めて、問えて、つながる。人と AI のためのデータ基盤。
+読めて、聞けて、つながる。人と AI のためのデータ基盤。
 
 Cloud-native, yet deployable on-premises and in air-gapped networks (e.g. LGWAN).
 クラウドからオンプレミス・閉域網（LGWAN等）まで対応するハイブリッドデプロイ設計。

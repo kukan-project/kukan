@@ -20,18 +20,18 @@ const t = {
   ja: {
     title: 'KUKAN — みんなが使えるデータカタログ',
     description:
-      'Knowledge Unified Katalog And Network — 読めて、問えて、つながる。人と AI のためのオープンソースのデータ基盤',
+      'Knowledge Unified Katalog And Network — 読めて、聞けて、つながる。人と AI のためのオープンソースのデータ基盤',
     tagline: 'みんなが使えるデータカタログ',
-    heroDesc: '読めて、問えて、つながる。人と AI のためのデータ基盤',
+    heroDesc: '読めて、聞けて、つながる。人と AI のためのデータ基盤',
     docs: 'ドキュメント',
     readDocs: 'ドキュメントを読む',
     viewOnGitHub: 'GitHub で見る',
     liveDemo: 'デモサイトを見る',
-    pillarsTitle: '読めて、問えて、つながる。',
+    pillarsTitle: '読めて、聞けて、つながる。',
     pillarsLead: '公開して終わりにせず、データが使われるところまで面倒を見ます。',
     recentTitle: '最近の更新',
     foundationTitle: '運用の土台',
-    plannedNote: '今後の予定: SSO 連携（OIDC）、CSV の列型の確定と差分への反映。',
+    plannedNote: '今後の予定: SSO 連携（OIDC）、CSV の列型の確定と差分への反映、列の役割の上書き。',
     learnMore: '詳しく見る',
     techTitle: '技術スタック',
     ctaTitle: 'さっそく始めてみましょう',
@@ -41,9 +41,12 @@ const t = {
     releaseNotes: 'リリースノート',
     switchLang: 'English',
     recent: [
-      { title: 'BI ツールから直接つなぐ', doc: { guide: 'user-guide', hash: 'bi-ツールで開く' } },
-      { title: 'ファイル内容の自動説明', doc: { guide: 'data-admin-guide', hash: 'ai-による説明抄録' } },
-      { title: 'リソース単位のハイブリッド検索', doc: { guide: 'user-guide', hash: 'どのリソースが一致したか' } },
+      { title: 'MCP 経由の RAG で、文書の章・節・ページまで特定して引き出せる', doc: { guide: 'api/mcp', hash: 'search_passages' } },
+      { title: '生成 AI の利用料がわかる、用途別や月末の見込みもわかる', doc: { guide: 'system-admin-guide', hash: 'ai-の使用量と費用' } },
+      { title: '一太郎・Markdown をプレビュー・全文検索、JSON も表で聞ける', doc: { guide: 'user-guide', hash: 'リソースのプレビュー' } },
+      { title: 'Excel・Power BI・Tableau から直接つないで、集計・可視化できる', doc: { guide: 'user-guide', hash: 'bi-ツールで開く' } },
+      { title: 'ファイルをアップロードするだけで、AI の説明が自動でできる', doc: { guide: 'data-admin-guide', hash: 'ai-による説明抄録' } },
+      { title: 'ハイブリッド検索でリソース単位に探せる、一致した理由まで分かる', doc: { guide: 'user-guide', hash: 'どのリソースが一致したか' } },
     ],
     pillars: [
       {
@@ -62,27 +65,27 @@ const t = {
           },
           {
             title: 'ダウンロードせずに見る',
-            desc: 'CSV・JSON・GeoJSON・PDF・Office・一太郎をブラウザでそのままプレビュー。GeoJSON は地理院地図や OpenStreetMap の上に、表は並べ替えと絞り込みのできる形で。多いリソースは見出しで区切って整理できます。',
+            desc: 'CSV・JSON・GeoJSON・PDF・Office・一太郎・Markdown をブラウザでそのままプレビュー。GeoJSON は地理院地図や OpenStreetMap の上に、表は並べ替えと絞り込みのできる形で。データが一覧の形になっている JSON と GeoJSON も、表で見られます。多いリソースは見出しで区切って整理できます。',
             doc: { guide: 'user-guide', hash: 'リソースのプレビュー' },
           },
         ],
       },
       {
-        word: '問える',
+        word: '聞ける',
         lead: 'ダウンロードして開く前に、その場で問い合わせられます。',
         items: [
           {
-            title: 'SQL で問う',
-            desc: '表形式のリソースには Data API が付き、ブラウザからも API からも SQL で問い合わせられます。必要な列と行だけを取り出し、集計もその場で。列の名前と型（スキーマ）も API で読め、AI エージェントも同じ口を使います。',
+            title: 'SQL で聞く',
+            desc: '表形式のリソースには Data API が付き、ブラウザからも API からも SQL で問い合わせられます。CSV だけでなく、一覧の形の JSON と GeoJSON も対象です。必要な列と行だけを取り出し、集計もその場で。列の名前と型（スキーマ）も API で読め、AI エージェントも同じ口を使います。',
             doc: { guide: 'api/rest', hash: 'スキーマとデータクエリ' },
           },
           {
-            title: '何が変わったかを問う',
-            desc: 'ファイルを差し替えるたびに、前の内容を版として残します。過去の版はダウンロードでき、CSV/TSV は増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認。混入した個人情報は版単位で削除します。',
+            title: '何が変わったかを聞く',
+            desc: 'ファイルを差し替えるたびに、前の内容を版として残します。過去の版はダウンロードでき、表形式のリソースは増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認。混入した個人情報は版単位で削除します。',
             doc: { guide: 'data-admin-guide', hash: 'バージョン管理' },
           },
           {
-            title: 'まだ届くか問う（ヘルスチェック）',
+            title: 'まだ届くか聞く（ヘルスチェック）',
             desc: '外部 URL のリソースは定期的に HEAD で死活を確かめ、中身が変わっていれば取り込み直します。結果とエラーになったリソースは管理画面で一覧。宣言されたフォーマットと中身の食い違いも、取得時に見つけます。',
             doc: { guide: 'system-admin-guide', hash: 'ヘルスチェック' },
           },
@@ -94,7 +97,7 @@ const t = {
         items: [
           {
             title: 'AI エージェントから',
-            desc: 'MCP サーバーを内蔵。AI エージェントが自然文でデータセットを探し、文書の目次と本文を読み、表に SQL で問い合わせます。人が画面でできることを AI にも同じ入口から。Claude などの MCP 対応クライアントで使えます。',
+            desc: 'MCP サーバーを内蔵。AI エージェントが自然文でデータセットを探し、文書の該当箇所を、章・節・ページまで特定して引き、表に SQL で問い合わせます。人が画面でできることを AI にも同じ入口から。Claude などの MCP 対応クライアントで使えます。',
             doc: { guide: 'api/mcp' },
           },
           {
@@ -147,7 +150,7 @@ const t = {
     pillarsLead: 'Publishing is where it starts. KUKAN stays with the data until it is actually used.',
     recentTitle: 'Recent Updates',
     foundationTitle: 'Built to Run',
-    plannedNote: 'Coming up: SSO (OIDC) sign-in, and settled column types for CSV carried into diffs.',
+    plannedNote: 'Coming up: SSO (OIDC) sign-in, settled column types for CSV carried into diffs, and overriding column roles.',
     learnMore: 'Learn more',
     techTitle: 'Tech Stack',
     ctaTitle: 'Get Started',
@@ -157,9 +160,12 @@ const t = {
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
     recent: [
-      { title: 'Connect from a BI Tool', doc: { guide: 'user-guide', hash: 'opening-the-table-in-a-bi-tool' } },
-      { title: 'Automatic File Descriptions', doc: { guide: 'data-admin-guide', hash: 'ai-written-descriptions' } },
-      { title: 'Hybrid Search per Resource', doc: { guide: 'user-guide', hash: 'which-resource-matched' } },
+      { title: 'Find Passages for RAG over MCP, Down to the Section and Page', doc: { guide: 'api/mcp', hash: 'search_passages' } },
+      { title: 'See AI Usage and Cost by Purpose, with a Month-End Projection', doc: { guide: 'system-admin-guide', hash: 'ai-usage-and-cost' } },
+      { title: 'Query JSON as Tables; Full-Text Search Ichitaro and Markdown', doc: { guide: 'user-guide', hash: 'resource-preview' } },
+      { title: 'Connect Excel, Power BI or Tableau Directly and Analyze', doc: { guide: 'user-guide', hash: 'opening-the-table-in-a-bi-tool' } },
+      { title: 'Upload a File and Get an AI Description Automatically', doc: { guide: 'data-admin-guide', hash: 'ai-written-descriptions' } },
+      { title: 'Search per Resource and See Why It Matched', doc: { guide: 'user-guide', hash: 'which-resource-matched' } },
     ],
     pillars: [
       {
@@ -178,7 +184,7 @@ const t = {
           },
           {
             title: 'See it without downloading',
-            desc: 'Preview CSV, JSON, GeoJSON, PDF, Office and Ichitaro files in the browser. GeoJSON renders on GSI or OpenStreetMap tiles, and tables sort and filter in place. Long resource lists fold under headings you drag into place.',
+            desc: 'Preview CSV, JSON, GeoJSON, PDF, Office, Ichitaro and Markdown files in the browser. GeoJSON renders on GSI or OpenStreetMap tiles, and tables sort and filter in place; JSON and GeoJSON that hold a list of items show as tables too. Long resource lists fold under headings you drag into place.',
             doc: { guide: 'user-guide', hash: 'resource-preview' },
           },
         ],
@@ -189,12 +195,12 @@ const t = {
         items: [
           {
             title: 'Ask in SQL',
-            desc: 'A tabular resource carries a Data API: query it in SQL from the browser or over the API, pull just the columns and rows you need, and aggregate on the spot. Column names and types come from the same API, for people and agents alike.',
+            desc: 'A tabular resource — a CSV, or JSON and GeoJSON holding a list of items — carries a Data API: query it in SQL from the browser or over the API, pull just the columns and rows you need, and aggregate on the spot. Column names and types come from the same API, for people and agents alike.',
             doc: { guide: 'api/rest', hash: 'schema-and-data-query' },
           },
           {
             title: 'Ask what changed',
-            desc: 'Replacing a file keeps the old content as a version. Download any past version; for CSV/TSV see added and removed rows, or with a primary key how each row changed. A version that leaked personal data can be deleted on its own.',
+            desc: 'Replacing a file keeps the old content as a version. Download any past version; for a table see added and removed rows, or with a primary key how each row changed. A version that leaked personal data can be deleted on its own.',
             doc: { guide: 'data-admin-guide', hash: 'version-history' },
           },
           {
@@ -210,7 +216,7 @@ const t = {
         items: [
           {
             title: 'From AI agents',
-            desc: "A built-in MCP server lets an AI agent find datasets in natural language, read a document's outline and sections, and query a table in SQL. Whatever a person can do on screen, an agent can do through the same door, from Claude or any MCP client.",
+            desc: "A built-in MCP server lets an AI agent find datasets in natural language, cite the passages of documents down to the chapter, section and page, and query a table in SQL. Whatever a person can do on screen, an agent can do through the same door, from Claude or any MCP client.",
             doc: { guide: 'api/mcp' },
           },
           {
@@ -253,10 +259,15 @@ const t = {
 
 // Release and date read the same in both locales; icons too.
 const recentMeta = [
+  { icon: '📑', version: 'v0.34.0', date: '2026-10-11' },
+  { icon: '📊', version: 'v0.34.0', date: '2026-10-11' },
+  { icon: '📄', version: 'v0.34.0', date: '2026-10-11' },
   { icon: '🔌', version: 'v0.31.0', date: '2026-09-24' },
   { icon: '📝', version: 'v0.30.0', date: '2026-09-18' },
   { icon: '🔎', version: 'v0.30.0', date: '2026-09-18' },
 ]
+// The newest release's cards, newest first in the list, are marked NEW
+const newestRecent = recentMeta[0].version
 const pillarMeta = [
   { id: 'read', icon: '📖' },
   { id: 'query', icon: '🧮' },
@@ -410,7 +421,10 @@ const techStack = [
                 <span class="recent-icon" aria-hidden="true">{recentMeta[i].icon}</span>
                 <span class="recent-body">
                   <span class="recent-title" data-i18n={`recent.${i}.title`}>{r.title}</span>
-                  <span class="recent-date">{recentMeta[i].version} · {recentMeta[i].date}</span>
+                  <span class="recent-date">
+                    {recentMeta[i].version === newestRecent && <span class="recent-new">NEW</span>}
+                    {recentMeta[i].version} · {recentMeta[i].date}
+                  </span>
                 </span>
               </a>
             ))
@@ -764,7 +778,17 @@ const techStack = [
       }
       @media (min-width: 768px) {
         .recent-list {
+          grid-template-columns: repeat(2, 1fr);
+          grid-auto-rows: 1fr;
+        }
+      }
+      /* Three across only where a title of two lines still fits in a card */
+      @media (min-width: 1024px) {
+        .recent-list {
           grid-template-columns: repeat(3, 1fr);
+          /* Every row as tall as the tallest card, so the NEW row and the
+             older one line up whatever their titles wrap to */
+          grid-auto-rows: 1fr;
         }
       }
       .recent-card {
@@ -793,9 +817,24 @@ const techStack = [
         min-width: 0;
       }
       .recent-title {
+        /* Japanese breaks between phrases rather than inside a word, where supported */
+        word-break: auto-phrase;
         font-size: 0.9375rem;
         font-weight: 600;
         color: var(--dark);
+      }
+      .recent-new {
+        margin-right: 0.375rem;
+        padding: 0 0.375rem;
+        border-radius: 9999px;
+        background: var(--brand);
+        color: #fff;
+        font-size: 0.625rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        /* Kept to the date's line, so a marked card is no taller */
+        line-height: inherit;
+        vertical-align: top;
       }
       /* Version and date read the same in both locales, so no data-i18n */
       .recent-date {
