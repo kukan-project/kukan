@@ -79,8 +79,23 @@ export function ResourcePreview({
         primaryKey={primaryKey}
       />
     )
-  if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
-  if (isJsonFormat(f)) return <JsonPreview resourceId={resourceId} />
+  if (isGeoJsonFormat(f))
+    return <GeoJsonPreview resourceId={resourceId} schema={schema} primaryKey={primaryKey} />
+  // A JSON whose records the interpretation read as a table (ADR-063
+  // extension) is shown as one, the file itself a toggle away; any other JSON
+  // is the file
+  if (isJsonFormat(f))
+    return schema?.columns.length ? (
+      <TablePreview
+        key={resourceId}
+        resourceId={resourceId}
+        schema={schema}
+        primaryKey={primaryKey}
+        raw={{ label: 'JSON', node: <JsonPreview resourceId={resourceId} /> }}
+      />
+    ) : (
+      <JsonPreview resourceId={resourceId} />
+    )
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (isOfficeFormat(f))
     return (
@@ -145,7 +160,7 @@ function DocumentPreview({ resourceId, original }: { resourceId: string; origina
 }
 
 /** The row of badges a preview switches its views with. */
-function SourceToggle<K extends string>({
+export function SourceToggle<K extends string>({
   sources,
   value,
   onChange,
@@ -187,17 +202,20 @@ function TablePreview({
   resourceId,
   schema,
   primaryKey,
+  raw,
 }: {
   resourceId: string
   schema?: ResourceSchema | null
   primaryKey?: string[] | null
+  /** The file behind the table, where it is not the text a CSV is */
+  raw?: { label: string; node: ReactNode }
 }) {
   const t = useTranslations('resource')
   const [source, setSource] = useState<PreviewSource>('parquet')
 
   const sources: { key: PreviewSource; label: string }[] = [
     { key: 'parquet', label: t('previewSourceTable') },
-    { key: 'raw', label: t('previewSourceText') },
+    { key: 'raw', label: raw?.label ?? t('previewSourceText') },
   ]
 
   return (
@@ -211,7 +229,8 @@ function TablePreview({
           schemaColumns={schema?.columns ?? null}
         />
       )}
-      {source === 'raw' && <RawTextPreview resourceId={resourceId} dialect={dialectOf(schema)} />}
+      {source === 'raw' &&
+        (raw?.node ?? <RawTextPreview resourceId={resourceId} dialect={dialectOf(schema)} />)}
     </div>
   )
 }

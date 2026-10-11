@@ -5,7 +5,7 @@ import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeInterpret } from '../../../pipeline/steps/interpret'
 import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
-import { ENCODING_SCAN_LIMIT, MAX_CSV_COLUMNS } from '@/config'
+import { ENCODING_SCAN_LIMIT, MAX_TABLE_COLUMNS, MAX_JSON_OBJECT_SIZE } from '@/config'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -452,7 +452,7 @@ describe('executeInterpret', () => {
     expect(onEncoding).toHaveBeenCalledWith('Shift_JIS')
   })
 
-  // Real DuckDB statistics over MAX_CSV_COLUMNS columns, batched: the work is
+  // Real DuckDB statistics over MAX_TABLE_COLUMNS columns, batched: the work is
   // proportional to the declared ceiling, and it lands near 5s once the runner's
   // cores are shared rather than held one to a worker — the default then turns a
   // slow machine into a failure that passes on rerun. Raised for this case alone;
@@ -461,8 +461,8 @@ describe('executeInterpret', () => {
   it('describes a CSV as wide as the limit allows', async () => {
     // Width alone used to exhaust the memory limit, so the declared ceiling was
     // never reachable — see STATS_COLUMNS_PER_QUERY for why.
-    const header = Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => `c${i}`).join(',')
-    const row = Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i)).join(',')
+    const header = Array.from({ length: MAX_TABLE_COLUMNS }, (_, i) => `c${i}`).join(',')
+    const row = Array.from({ length: MAX_TABLE_COLUMNS }, (_, i) => String(i)).join(',')
     mockStorageDownload(`${header}\n${row}\n${row}\n`)
 
     const result = await executeInterpret(
@@ -473,14 +473,14 @@ describe('executeInterpret', () => {
       ctx
     )
 
-    expect(result?.schema?.columns).toHaveLength(MAX_CSV_COLUMNS)
+    expect(result?.schema?.columns).toHaveLength(MAX_TABLE_COLUMNS)
     expect(result?.schema?.rowCount).toBe(2)
     // Every column holds its own index, so the statistics are asserted against
     // it rather than against a shape they all share: batches merge into one row
     // by alias, and a fixture whose columns are indistinguishable cannot tell a
     // correct merge from one that shifted every value by a batch.
     expect(result?.schema?.columns.map((c) => c.stats?.min)).toEqual(
-      Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i))
+      Array.from({ length: MAX_TABLE_COLUMNS }, (_, i) => String(i))
     )
   }, 30_000)
 
@@ -490,7 +490,7 @@ describe('executeInterpret', () => {
     // file back every hour, forever, and every task read up to 100MB of it to
     // reach the same exception. The width is a property of the file, so
     // no retry can reach a different answer.
-    const wide = `${Array.from({ length: MAX_CSV_COLUMNS + 1 }, (_, i) => `c${i}`).join(',')}\n`
+    const wide = `${Array.from({ length: MAX_TABLE_COLUMNS + 1 }, (_, i) => `c${i}`).join(',')}\n`
     mockStorageDownload(wide + wide.replace(/c/g, 'v'))
 
     const result = await executeInterpret(
@@ -599,7 +599,25 @@ describe('executeInterpret', () => {
     expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
-  it('should return UTF8 for GeoJSON without downloading', async () => {
+  it('reads a GeoJSON FeatureCollection as a table of its properties, the shapes left out', async () => {
+    mockStorageDownload(
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { name: '区役所', ward: '港区' },
+            geometry: { type: 'Point', coordinates: [139.75, 35.65] },
+          },
+          {
+            type: 'Feature',
+            properties: { name: '公園', ward: '港区' },
+            geometry: { type: 'Point', coordinates: [139.76, 35.66] },
+          },
+        ],
+      })
+    )
+
     const result = await executeInterpret(
       'res-9',
       'pkg-1',
@@ -608,15 +626,31 @@ describe('executeInterpret', () => {
       ctx
     )
 
-    expect(result).toEqual({
-      previewKey: null,
-      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+    expect(result).toMatchObject({
+      previewKey: previewKeyMatching('pkg-1', 'res-9', 'parquet'),
+      encoding: 'UTF8',
+      schema: {
+        rowCount: 2,
+        columns: [
+          expect.objectContaining({ name: 'name' }),
+          expect.objectContaining({ name: 'ward' }),
+          expect.objectContaining({ name: 'geometry_lon', type: 'float' }),
+          expect.objectContaining({ name: 'geometry_lat', type: 'float' }),
+        ],
+        geometryTypes: ['Point'],
+      },
     })
-    expect(ctx.storage.download).not.toHaveBeenCalled()
-    expect(ctx.putObject).not.toHaveBeenCalled()
+    expect(previewUploads()).toHaveLength(1)
   })
 
-  it('should return UTF8 for JSON without downloading', async () => {
+  it('reads a JSON array of records as a table, UTF-8 by specification', async () => {
+    mockStorageDownload(
+      JSON.stringify([
+        { id: 'A1', name: 'Alice', contact: { phone: '03-0000-0001' } },
+        { id: 'A2', name: 'Bob', contact: { phone: '03-0000-0002' } },
+      ])
+    )
+
     const result = await executeInterpret(
       'res-10',
       'pkg-1',
@@ -625,12 +659,92 @@ describe('executeInterpret', () => {
       ctx
     )
 
+    expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-10')
+    expect(result).toMatchObject({
+      previewKey: previewKeyMatching('pkg-1', 'res-10', 'parquet'),
+      encoding: 'UTF8',
+      profile: { key: previewKeyMatching('pkg-1', 'res-10', 'profile\\.ndjson\\.zst') },
+      schema: {
+        rowCount: 2,
+        columns: [
+          expect.objectContaining({ name: 'id' }),
+          expect.objectContaining({ name: 'name' }),
+          expect.objectContaining({ name: 'contact_phone' }),
+        ],
+      },
+    })
+    expect(result?.schema?.geometryTypes).toBeUndefined()
+  })
+
+  it('records a JSON that is not a list of records as interpreted to nothing, and keeps no preview', async () => {
+    mockStorageDownload(JSON.stringify({ title: 'settings', options: { a: 1, b: [1, 2] } }))
+
+    const result = await executeInterpret(
+      'res-10a',
+      'pkg-1',
+      version('resources/pkg-1/res-10a'),
+      'JSON',
+      ctx
+    )
+
     expect(result).toEqual({
       previewKey: null,
-      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+      encoding: 'UTF8',
+      schema: { rowCount: 0, columns: [] },
+      reason: 'not-records',
     })
-    expect(ctx.storage.download).not.toHaveBeenCalled()
     expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('refuses a JSON that is one object past its own cap from its head, settled so the sweep passes it over', async () => {
+    mockStorageDownload('{"type":"FeatureCollection","features":[]}')
+
+    const result = await executeInterpret(
+      'res-10c',
+      'pkg-1',
+      { storageKey: 'resources/pkg-1/res-10c', size: MAX_JSON_OBJECT_SIZE + 1 },
+      'GeoJSON',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: 'UTF8',
+      schema: { rowCount: 0, columns: [] },
+      reason: 'too-large',
+    })
+    expect(runHeavy).not.toHaveBeenCalled()
+    expect(ctx.storage.download).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads a JSON array past the object cap as records all the same', async () => {
+    // Downloaded twice — the head, then the file — so each read gets its own stream
+    ctx.storage.download.mockImplementation(async () =>
+      Readable.from(Buffer.from('[{"id": 1}, {"id": 2}]'))
+    )
+
+    const result = await executeInterpret(
+      'res-10d',
+      'pkg-1',
+      { storageKey: 'resources/pkg-1/res-10d', size: MAX_JSON_OBJECT_SIZE + 1 },
+      'JSON',
+      ctx
+    )
+
+    expect(result).toMatchObject({ encoding: 'UTF8', schema: { rowCount: 2 } })
+  })
+
+  it('refuses an oversized JSON without downloading it, in the one spelling of its encoding', async () => {
+    const result = await executeInterpret(
+      'res-10e',
+      'pkg-1',
+      { storageKey: 'resources/pkg-1/res-10e', size: MAX_PARQUET_SOURCE_SIZE + 1 },
+      'JSON',
+      ctx
+    )
+
+    expect(result).toEqual({ previewKey: null, encoding: 'UTF8', reason: 'too-large' })
+    expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
   it('should return UTF8 for MD without downloading', async () => {

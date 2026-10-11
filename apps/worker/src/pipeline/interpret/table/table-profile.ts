@@ -1,5 +1,5 @@
 /**
- * KUKAN Pipeline — the table profile (ADR-063 §決定 3・4)
+ * KUKAN Pipeline — the table profile (ADR-063 §決定 3・4), of a CSV or JSON table alike
  *
  * Counts, over the interpreted table, what the role rules read; keeps the most
  * frequent values of the columns a search finds a table by; and writes the

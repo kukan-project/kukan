@@ -59,7 +59,11 @@ export async function executeIndexContent(
   const pkgState = await ctx.getPackageState(packageId)
   if (pkgState !== 'active') return null
 
-  const contentType = contentTypeOf(normalizedFormat)
+  // A JSON whose records the interpretation read as a table is indexed as one
+  // (ADR-063 §決定 10); its format alone says text
+  const contentType = interpretResult?.schema?.columns.length
+    ? 'tabular'
+    : contentTypeOf(normalizedFormat)
 
   if (!contentType) {
     // Clean up any previously indexed content (e.g. format changed to non-indexable)

@@ -347,6 +347,76 @@ describe('executeIndexContent', () => {
       expect(result).toMatchObject({ contentIndexed: true, contentChunks: 0 })
     })
 
+    it('indexes a JSON by its profile where its records made a table, as tabular', async () => {
+      const ctx = createMockCtx()
+      ctx.storage.download.mockResolvedValue(
+        artifact([{ kind: 'value', column: 'ward', text: '港区', count: 2, row: 1 }])
+      )
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'JSON',
+        {
+          ...profiled({ columns: [], key: 'previews/pkg-1/res-1.t.profile.ndjson.zst' }),
+          schema: {
+            rowCount: 2,
+            columns: [{ name: 'ward', type: 'string', nullable: false, nullCount: 0 }],
+          },
+        },
+        ctx
+      )
+
+      expect(texts(ctx)).toEqual(['ward: 港区'])
+      expect(result).toMatchObject({ contentIndexed: true, contentType: 'tabular' })
+    })
+
+    it('indexes a JSON whose records made a table but no profile by the head of its contents', async () => {
+      const ctx = createMockCtx()
+      const file = JSON.stringify([{ a: 1 }]) + '\n'.repeat(UNPROFILED_TABLE_HEAD_SIZE)
+      ctx.storage.download.mockResolvedValue(bufferToStream(Buffer.from(file)))
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'JSON',
+        {
+          ...profiled({ columns: [], error: 'Out of Memory' }),
+          schema: {
+            rowCount: 1,
+            columns: [{ name: 'a', type: 'integer', nullable: false, nullCount: 0 }],
+          },
+        },
+        ctx
+      )
+
+      expect(result).toMatchObject({ contentType: 'tabular', contentTruncated: true })
+    })
+
+    it('indexes a JSON that made no table as the text it is', async () => {
+      const ctx = createMockCtx()
+      ctx.storage.download.mockResolvedValue(bufferToStream(Buffer.from('{"title": "settings"}')))
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'resources/pkg-1/res-1',
+        'JSON',
+        {
+          previewKey: null,
+          encoding: 'UTF8',
+          schema: { rowCount: 0, columns: [] },
+          reason: 'not-records',
+        },
+        ctx
+      )
+
+      expect(texts(ctx)).toEqual(['{"title": "settings"}'])
+      expect(result).toMatchObject({ contentType: 'text', contentTruncated: false })
+    })
+
     it('falls back to the contents where the profile could not be made', async () => {
       const ctx = createMockCtx()
       ctx.storage.download.mockResolvedValue(bufferToStream(Buffer.from('a,b\n1,2\n')))

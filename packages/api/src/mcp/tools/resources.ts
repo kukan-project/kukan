@@ -185,7 +185,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
           content: [
             {
               type: 'text' as const,
-              text: `Resource ${id} is not queryable: no tabular schema is available (only processed CSV/TSV resources within the size limit have one).`,
+              text: `Resource ${id} is not queryable: no table schema is available (only resources interpreted as a table — CSV/TSV, or JSON/GeoJSON records, within the size limit — have one).`,
             },
           ],
         }

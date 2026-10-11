@@ -318,26 +318,27 @@ pnpm format        # Prettier フォーマット
 （Summarize は `AI_SUMMARY_MODEL` を設定したサイトのみ、ADR-053）。
 Index ステップでリソースコンテンツの OpenSearch 投入を行う（ADR-021）。文書（PDF・Office）のテキスト抽出は Interpret が行い、ページ・見出し・図の位置付きの成果物（`text.ndjson.zst`）を Index が読む。
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
-Interpret のみフォーマット別処理を行う。
+Interpret のみフォーマット別処理を行う。JSON/GeoJSON はレコードの一覧として読めるものだけ表になる
+（最上位の配列、1 キーの下の配列、FeatureCollection の properties。ADR-063 §決定 10）。
 
-| フォーマット                   | isTextFormat | エンコーディング検出                         | Parquet 生成 |              プレビュー表示               |
-| ------------------------------ | :----------: | -------------------------------------------- | :----------: | :---------------------------------------: |
-| CSV                            |     Yes      | chardet（+ 日本語再検証）                    |     Yes      |           テーブル+テキスト切替           |
-| TSV                            |     Yes      | chardet（+ 日本語再検証）                    |     Yes      |           テーブル+テキスト切替           |
-| TXT                            |     Yes      | chardet（+ 日本語再検証）                    |      -       |                 テキスト                  |
-| HTML/HTM                       |     Yes      | chardet（+ 日本語再検証）                    |      -       |                 テキスト                  |
-| XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |                 テキスト                  |
-| JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |                 テキスト                  |
-| GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |             地図+テキスト切替             |
-| MD                             |     Yes      | UTF-8 固定                                   |      -       |                 テキスト                  |
-| RDF                            |      No      | スキップ                                     |      -       |                  非対応                   |
-| PDF                            |      No      | スキップ                                     |      -       |      iframe（本体）+抽出テキスト切替      |
-| XLSX/XLS                       |      No      | スキップ                                     |      -       |   Office Online Viewer+抽出テキスト切替   |
-| DOC/DOCX                       |      No      | スキップ                                     |      -       |   Office Online Viewer+抽出テキスト切替   |
-| PPT/PPTX                       |      No      | スキップ                                     |      -       |   Office Online Viewer+抽出テキスト切替   |
-| JTD/JTT（一太郎）              |      No      | スキップ                                     |      -       | 原本（EZPZ、シート一覧）+抽出テキスト切替 |
-| ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |      -       |               ファイル一覧                |
-| PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |      -       |                img（本体）                |
+| フォーマット                   | isTextFormat | エンコーディング検出                         |     Parquet 生成      |              プレビュー表示               |
+| ------------------------------ | :----------: | -------------------------------------------- | :-------------------: | :---------------------------------------: |
+| CSV                            |     Yes      | chardet（+ 日本語再検証）                    |          Yes          |           テーブル+テキスト切替           |
+| TSV                            |     Yes      | chardet（+ 日本語再検証）                    |          Yes          |           テーブル+テキスト切替           |
+| TXT                            |     Yes      | chardet（+ 日本語再検証）                    |           -           |                 テキスト                  |
+| HTML/HTM                       |     Yes      | chardet（+ 日本語再検証）                    |           -           |                 テキスト                  |
+| XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |           -           |                 テキスト                  |
+| JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |    レコードの配列     |       テーブル+JSON 切替（表なら）        |
+| GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       | properties+Point 座標 |        地図+属性テーブル+JSON 切替        |
+| MD                             |     Yes      | UTF-8 固定                                   |           -           |                 テキスト                  |
+| RDF                            |      No      | スキップ                                     |           -           |                  非対応                   |
+| PDF                            |      No      | スキップ                                     |           -           |      iframe（本体）+抽出テキスト切替      |
+| XLSX/XLS                       |      No      | スキップ                                     |           -           |   Office Online Viewer+抽出テキスト切替   |
+| DOC/DOCX                       |      No      | スキップ                                     |           -           |   Office Online Viewer+抽出テキスト切替   |
+| PPT/PPTX                       |      No      | スキップ                                     |           -           |   Office Online Viewer+抽出テキスト切替   |
+| JTD/JTT（一太郎）              |      No      | スキップ                                     |           -           | 原本（EZPZ、シート一覧）+抽出テキスト切替 |
+| ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |           -           |               ファイル一覧                |
+| PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |           -           |                img（本体）                |
 
 **サイズ制限:**
 
@@ -346,6 +347,7 @@ Interpret のみフォーマット別処理を行う。
 | ブラウザアップロード     | 100 MB | `packages/shared/src/formats.ts` |
 | 外部 URL 取得（Fetch）   | 100 MB | `apps/worker/src/config.ts`      |
 | CSV/TSV Parquet 生成対象 | 100 MB | `packages/shared/src/formats.ts` |
+| JSON（1 オブジェクト）   | 32 MB  | `apps/worker/src/config.ts`      |
 
 **関連ファイル:**
 

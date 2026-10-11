@@ -12,15 +12,7 @@
  */
 
 import type { DuckDBConnection } from '@duckdb/node-api'
-import { openDuckdb, readRowGroupRows, sqlIdentifier, sqlLiteral } from '@kukan/lake'
-import { PARQUET_PREVIEW_ROW_GROUP_ROWS } from '@kukan/shared'
-import type {
-  ColumnStats,
-  NoTableReason,
-  ResourceColumn,
-  ResourceColumnType,
-  ResourceSchema,
-} from '@kukan/shared'
+import { openDuckdb, sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import {
   CSV_FOOTER_SCAN_ROWS,
   DROPPED_LINE_SAMPLE,
@@ -30,21 +22,13 @@ import {
   INTERPRET_THREADS,
 } from '@/config'
 import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
-import { aggregateByColumn } from './column-batches'
-import { profileTable, type InterpretedProfile } from './csv-profile'
-
-/** A DuckDB type name, folded to the semantic type persisted on the schema. */
-function semanticType(duckType: string): ResourceColumnType {
-  const t = duckType.toUpperCase()
-  if (/^(BIGINT|INTEGER|SMALLINT|TINYINT|UBIGINT|UINTEGER|USMALLINT|UTINYINT|HUGEINT)$/.test(t)) {
-    return 'integer'
-  }
-  if (/^(DOUBLE|FLOAT|REAL|DECIMAL)/.test(t)) return 'float'
-  if (t === 'BOOLEAN') return 'boolean'
-  if (t === 'DATE') return 'date'
-  if (t.startsWith('TIMESTAMP')) return 'timestamp'
-  return 'string'
-}
+import {
+  describe,
+  semanticType,
+  writeTable,
+  type Column,
+  type InterpretedTableFile,
+} from './write-table'
 
 /**
  * A DOUBLE column whose values are whole numbers this large came from integer
@@ -111,35 +95,6 @@ function readOptions(
   return parts.join(', ')
 }
 
-interface Column {
-  name: string
-  duckType: string
-}
-
-/** What one pass over a CSV produced, or why it produced nothing. */
-export interface InterpretedCsv {
-  schema: ResourceSchema
-  /**
-   * Rows in a row group of the Parquet that was written, read back from the file
-   * rather than taken from {@link PARQUET_PREVIEW_ROW_GROUP_ROWS} (why:
-   * `readRowGroupRows`). Absent where no Parquet was written, and on every
-   * preview from before this was recorded, which is why the feed treats a
-   * missing figure as unknown rather than guessing.
-   *
-   * What reads it: the OData feed, which decodes a whole group to serve any row
-   * of it and so keeps a page inside as few as the memory affords (ADR-055).
-   */
-  rowGroupRows?: number
-  /**
-   * Set where the file was refused rather than read, and then **no Parquet was
-   * written** — the caller has nothing to hand on. The schema still carries
-   * which lines were refused, because that is what there is to act on.
-   */
-  reason?: NoTableReason
-  /** The table profile (ADR-063), where one was asked for. */
-  profile?: InterpretedProfile
-}
-
 /**
  * Interpret `csvPath` (UTF-8) and write its Parquet preview to `parquetPath`.
  *
@@ -154,7 +109,7 @@ export async function interpretCsv(
   parquetPath: string,
   skipRows: number,
   profilePath?: string
-): Promise<InterpretedCsv> {
+): Promise<InterpretedTableFile> {
   // Somewhere of its own to spill, because the load below is meant to: a
   // spill file shared with the lake instance this process also holds fails
   // both (see `useOwnTempDirectory`).
@@ -215,44 +170,21 @@ export async function interpretCsv(
     }
 
     const { rowCount, trimmed } = await trimFooter(conn, columns)
-    // ZSTD rather than DuckDB's default: measured at 3.25 MB against Snappy's
-    // 8.40 MB on the same input, and a preview page costs a third of the bytes
-    // to fetch — the read is still two ranges, since compression is per page
-    // inside a column chunk, so nothing has to be pulled whole.
-    //
-    // The browser reader was taught ZSTD first (`lib/parquet-codecs.ts`); the
-    // other two readers, the DuckDB explorer (ADR-016) and the server sandbox,
-    // have always handled it. Files written before this stay Snappy and are
-    // never rewritten (ADR-029 §7), so the reader keeps both.
-    await conn.run(
-      `COPY t TO ${sqlLiteral(parquetPath)} ` +
-        `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_PREVIEW_ROW_GROUP_ROWS})`
-    )
-
-    // The number in the file, not the constant above (`readRowGroupRows`).
-    const rowGroupRows = await readRowGroupRows(conn, parquetPath)
-
     // Both paths, one number: which of them took a row is this file's business,
     // and a reader comparing the table against the download only wants to know
     // that something is not here. Only the reader's refusals can be located,
     // though — a row trimmed from the table cannot be traced back to a line of
     // the file, since blank lines and quoted newlines are gone by then.
     const droppedRows = dropped.count + trimmed
-    const described = await describeColumns(conn, columns, rowCount)
-    // The table profile (ADR-063), on the table the Parquet was written from:
-    // the same rows, and no second read of anything. Only for a caller that
-    // publishes it — a lake retry wants the table alone. Search material, so a
-    // failure here costs the profile and not the preview.
-    const profile = profilePath
-      ? await profileTable(conn, columns, described, rowCount, profilePath).catch(
-          (err: unknown): InterpretedProfile => ({
-            columns: [],
-            error: err instanceof Error ? err.message : String(err),
-          })
-        )
-      : undefined
+    const { described, rowGroupRows, profile } = await writeTable(
+      conn,
+      columns,
+      rowCount,
+      parquetPath,
+      profilePath
+    )
     return {
-      rowGroupRows: rowGroupRows ?? undefined,
+      rowGroupRows,
       ...(profile && { profile }),
       schema: {
         columns: described,
@@ -307,22 +239,6 @@ async function load(conn: DuckDBConnection, csvPath: string, skipRows: number): 
     `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, skipRows, [], true)})`
   )
   return true
-}
-
-/**
- * The table's columns, as the binding names them in a result rather than as
- * `DESCRIBE` reports them.
- *
- * The two differ: the binding decodes VARCHAR *values* through a decoder that
- * drops a leading U+FEFF, so a `DESCRIBE` row for a column whose name starts
- * with one comes back without it, and every identifier built from that name
- * binds to a column the table does not have. Result metadata comes through a
- * different path and keeps the name whole.
- */
-async function describe(conn: DuckDBConnection): Promise<Column[]> {
-  const reader = await conn.runAndReadAll('SELECT * FROM t LIMIT 0')
-  const types = reader.columnTypes()
-  return reader.columnNames().map((name, i) => ({ name, duckType: String(types[i]) }))
 }
 
 const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())
@@ -626,58 +542,4 @@ async function trimFooter(
   await conn.run(`CREATE OR REPLACE TABLE t AS
     SELECT * EXCLUDE (rn) FROM (SELECT *, row_number() OVER () AS rn FROM t) WHERE rn <= ${keep}`)
   return { rowCount: keep, trimmed: total - keep }
-}
-
-/**
- * Per-column facts, all of them exact and over every row: how many values are
- * missing, how many are distinct, and the bounds of the numeric ones. The
- * distinct counts are what the primary-key picker reads (ADR-046) — measured at
- * 49ms for five columns over 800,000 rows, once the table is materialized.
- */
-async function describeColumns(
-  conn: DuckDBConnection,
-  columns: Column[],
-  rowCount: number
-): Promise<ResourceColumn[]> {
-  const row = await aggregateByColumn(
-    conn,
-    columns.map((_, i) => i),
-    (i) => {
-      const c = columns[i]
-      const col = sqlIdentifier(c.name)
-      const numeric = ['integer', 'float'].includes(semanticType(c.duckType))
-      return [
-        `count(*) FILTER (WHERE ${col} IS NULL) AS c${i}_null`,
-        `count(DISTINCT ${col}) AS c${i}_distinct`,
-        ...(numeric
-          ? [`min(${col})::VARCHAR AS c${i}_min`, `max(${col})::VARCHAR AS c${i}_max`]
-          : []),
-      ]
-    }
-  )
-
-  return columns.map((c, i) => {
-    const type = semanticType(c.duckType)
-    const nullCount = Number(row[`c${i}_null`])
-    const distinctCount = Number(row[`c${i}_distinct`])
-    const min = row[`c${i}_min`]
-    const max = row[`c${i}_max`]
-    // Integer bounds stay decimal strings: INT64 runs past what a JS number
-    // holds exactly, and the point of typing the column was to keep its digits.
-    const stats: ColumnStats | undefined =
-      min == null || max == null
-        ? undefined
-        : type === 'integer'
-          ? { min: String(min), max: String(max) }
-          : { min: Number(min), max: Number(max) }
-    return {
-      name: c.name,
-      type,
-      nullable: nullCount > 0,
-      nullCount,
-      distinctCount,
-      unique: rowCount > 0 && nullCount === 0 && distinctCount === rowCount,
-      ...(stats && { stats }),
-    }
-  })
 }

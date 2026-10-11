@@ -25,7 +25,7 @@ import {
   contentFormat,
   FORMAT_SIGNATURE_BYTES,
   getPreviewKey,
-  isCsvFormat,
+  isTableSourceFormat,
   isDocumentFormat,
   isTextFormat,
   isZipFormat,
@@ -38,7 +38,6 @@ import type { ExtractedText } from '../interpret/document/document-text'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../run/types'
 import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline/pipeline-service'
-const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface InterpretResult {
   previewKey: string | null
@@ -48,7 +47,7 @@ export interface InterpretResult {
   schema?: ResourceSchema
   /** Rows in a row group of the preview, as the written file reports them —
    *  `NO_ROW_GROUP_FIGURE` where it wrote one with no single size to give.
-   *  @see InterpretedCsv.rowGroupRows */
+   *  @see InterpretedTableFile.rowGroupRows */
   rowGroupRows?: number
   /** Why no table came out, when none did. Persisted for the operator. */
   reason?: NoTableReason
@@ -110,7 +109,8 @@ export interface InterpretHooks {
 
 /**
  * Interpret the version's bytes by their format: a text format's encoding, a
- * CSV/TSV's Parquet preview and profile, a ZIP's manifest, a document's text.
+ * CSV/TSV's or JSON's Parquet preview and profile, a ZIP's manifest, a
+ * document's text.
  * Null for a format there is nothing to read from (an image).
  */
 export async function executeInterpret(
@@ -164,8 +164,8 @@ export async function executeInterpret(
 
   const fmt = format!.toLowerCase()
 
-  // Formats with fixed encoding (JSON/GeoJSON/MD = UTF-8 by spec): skip download
-  if (FIXED_UTF8_FORMATS.has(fmt)) {
+  // Fixed encoding (UTF-8 by convention), and nothing to make of it: skip download
+  if (fmt === 'md') {
     return { previewKey: null, encoding: 'UTF8' }
   }
 
@@ -177,17 +177,17 @@ export async function executeInterpret(
     return { previewKey: null, encoding }
   }
 
-  // Non-CSV text (TXT/HTML): labelled from a sample, with no table to produce.
+  // Non-table text (TXT/HTML): labelled from a sample, with no table to produce.
   // No reason to record — the sweep never offers a format an interpretation
   // makes no table from, so there is nothing here to take out of it.
-  if (!isCsvFormat(format)) {
+  if (!isTableSourceFormat(format)) {
     const sample = await readEncodingSample(await ctx.storage.download(storageKey))
     return { previewKey: null, encoding: detectEncoding(fmt, sample) }
   }
 
-  // CSV/TSV: publish what the interpretation produced. The interpretation
-  // itself is shared with the lake retry, which wants the table and nothing
-  // else (ADR-046).
+  // CSV/TSV and JSON/GeoJSON: publish what the interpretation produced. The
+  // interpretation itself is shared with the lake retry, which wants the table
+  // and nothing else (ADR-046).
   const { encoding, schema, used, reason, rowGroupRows } = await withInterpretedVersion(
     source,
     fmt,

@@ -79,8 +79,18 @@ export const RESOLUTION_CACHE_MAX = 256
  */
 export const MAX_ADDRESSES_PER_NAME = 16
 
-/** Maximum number of columns allowed in CSV/TSV preview */
-export const MAX_CSV_COLUMNS = 500
+/** Maximum number of columns a table preview may have, whatever read it (CSV/TSV, JSON records) */
+export const MAX_TABLE_COLUMNS = 500
+
+/**
+ * Largest JSON file that is one object an interpretation reads (ADR-063
+ * extension): a GeoJSON FeatureCollection, or records under a single key. The
+ * reader holds such a file whole while it reads it, where a top-level array is
+ * read a record at a time under `MAX_PARQUET_SOURCE_SIZE`. Measured: a 26MB
+ * FeatureCollection of 13,000 features read under the 512MB cap, a 76MB one of
+ * 79,000 needed 1GB. Also the bound on one record of an array.
+ */
+export const MAX_JSON_OBJECT_SIZE = 32 * 1024 * 1024
 
 /**
  * Rows examined at the end of a CSV when looking for footer rows (合計, 注 …).

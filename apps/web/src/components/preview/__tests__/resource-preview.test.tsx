@@ -116,6 +116,18 @@ describe('ResourcePreview', () => {
   })
 
   describe('Text format preview', () => {
+    it('shows a JSON whose records made a table as the table, the file a toggle away', () => {
+      const schema = {
+        columns: [{ name: 'id', type: 'string' as const, nullable: false, nullCount: 0 }],
+        rowCount: 2,
+      }
+      render(<ResourcePreview resourceId="r-json" format="JSON" schema={schema} />)
+
+      expect(screen.getByTestId('data-explorer')).toBeInTheDocument()
+      expect(screen.getByText('JSON')).toBeInTheDocument()
+      expect(screen.queryByTestId('json-preview')).not.toBeInTheDocument()
+    })
+
     it('should route JSON to JsonPreview component', () => {
       render(<ResourcePreview resourceId="r1" format="JSON" />)
       expect(screen.getByTestId('json-preview')).toBeInTheDocument()

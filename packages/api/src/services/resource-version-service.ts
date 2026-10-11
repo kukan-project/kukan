@@ -44,6 +44,7 @@ import {
   NotFoundError,
   ValidationError,
   MAX_PARQUET_SOURCE_SIZE,
+  TABLE_SOURCE_FORMATS,
   versionOrigin,
 } from '@kukan/shared'
 import type {
@@ -410,6 +411,9 @@ function setAside() {
 // The check itself lives with the pipeline reads: `schemaDescribesLiveContent`
 // (pipeline-service), shared with the queryable predicate (ADR-032).
 
+/** {@link TABLE_SOURCE_FORMATS} as SQL literals: constants, so the statement this pins stays one text. */
+const TABLE_SOURCE_LIST = sql.raw(TABLE_SOURCE_FORMATS.map((f) => `'${f}'`).join(', '))
+
 /**
  * Versions that layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
  *
@@ -478,7 +482,7 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
     AND rv.lake_ingest_reason IS NULL
-    AND lower(rv.format) IN ('csv', 'tsv')
+    AND lower(rv.format) IN (${TABLE_SOURCE_LIST})
     AND rv.size IS NOT NULL
     AND rv.size <= ${MAX_PARQUET_SOURCE_SIZE}
     AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)

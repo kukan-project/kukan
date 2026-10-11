@@ -26,7 +26,7 @@ import { Upload, X, Plus, GripVertical, Pencil } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import {
   detectFormat,
-  isCsvFormat,
+  isTableSourceFormat,
   normalizeSection,
   splitSection,
   MAX_UPLOAD_SIZE,
@@ -1238,7 +1238,7 @@ export function ResourceList({
                   The stored format, not the form's: everything below acts on
                   the resource as the server holds it, so a format being typed
                   and not yet saved must not make the section come and go. */}
-              {isCsvFormat(edited?.format) && (
+              {isTableSourceFormat(edited?.format) && (
                 <div className="mt-2 border-t pt-4">
                   {/* Above the history because settling a key creates a version:
                       what it does shows up in the list below it. */}

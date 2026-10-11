@@ -4,7 +4,7 @@
  * DuckDB and the document parsers.
  */
 
-import type { InterpretedCsv } from '../pipeline/interpret/table/csv'
+import type { InterpretedTableFile } from '../pipeline/interpret/table/write-table'
 import type { ExtractedText } from '../pipeline/interpret/document/document-text'
 
 /** Files in, files and JSON out: the process holds no connection of any kind. */
@@ -16,10 +16,12 @@ export type HeavyRequest =
       skipRows: number
       profilePath?: string
     }
+  | { kind: 'interpret-json'; jsonPath: string; parquetPath: string; profilePath?: string }
   | { kind: 'extract-text'; documentPath: string; format: string; artifactPath: string }
 
 interface HeavyResults {
-  'interpret-csv': InterpretedCsv
+  'interpret-csv': InterpretedTableFile
+  'interpret-json': InterpretedTableFile
   'extract-text': ExtractedText
 }
 

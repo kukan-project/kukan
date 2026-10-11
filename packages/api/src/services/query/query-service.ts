@@ -72,7 +72,7 @@ export class QueryService {
     const target = await new PipelineService(this.db).getQueryTarget(resourceId)
     if (!isQueryable(target)) {
       throw new ValidationError(
-        'Resource is not queryable: no tabular preview is available (only processed CSV/TSV resources can be queried)'
+        'Resource is not queryable: no table preview is available (only resources interpreted as a table — CSV/TSV, or JSON/GeoJSON records — can be queried)'
       )
     }
 

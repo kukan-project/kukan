@@ -423,6 +423,15 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
+  it('covers JSON and GeoJSON, whose records an interpretation reads as a table (ADR-063 §決定 10)', async () => {
+    // The same set the interpretation reads, or a JSON table loaded by its run
+    // and failed there would never be offered again
+    await addTabularResource('json', [{ version: 1, format: 'JSON' }], { format: 'JSON' })
+    await addTabularResource('geojson', [{ version: 1, format: 'GeoJSON' }], { format: 'GeoJSON' })
+
+    expect(await service.countPendingLakeIngest()).toBe(2)
+  })
+
   it('reads the format off the version, not the label the resource carries now', async () => {
     // Relabelling a resource must not decide what settled bytes are (ADR-046).
     // Both directions in one count: a version created as a PDF stays out under

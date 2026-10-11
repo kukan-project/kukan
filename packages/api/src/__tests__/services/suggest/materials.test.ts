@@ -64,6 +64,23 @@ describe('materialKind', () => {
     expect(materialKind(pdf, withMetadata({ ...artifact, textHeadKey: 'h.txt' }))).toBe('document')
   })
 
+  it('reads a JSON as a table where its records made one, as text otherwise (ADR-063 §決定 10)', () => {
+    const json = { id: 'r', format: 'JSON' }
+    const schema = {
+      rowCount: 2,
+      columns: [{ name: 'id', type: 'string', nullable: false, nullCount: 0 }],
+    }
+    expect(materialKind(json, { ...settled, pipelineMetadata: { schema } })).toBe('tabular')
+    expect(
+      materialKind({ ...json, format: 'GeoJSON' }, { ...settled, pipelineMetadata: { schema } })
+    ).toBe('tabular')
+    // A configuration object: no table, so the live text as before
+    expect(
+      materialKind(json, { ...settled, pipelineMetadata: { schema: { rowCount: 0, columns: [] } } })
+    ).toBe('text')
+    expect(materialKind(json, settled)).toBe('text')
+  })
+
   it('needs the artifact, not just the format', () => {
     expect(
       materialKind({ id: 'r', format: 'PDF' }, { ...settled, pipelineMetadata: {} })

@@ -20,6 +20,14 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
         request.profilePath
       )) as HeavyResult<R>
     }
+    case 'interpret-json': {
+      const { interpretJson } = await import('../pipeline/interpret/table/json')
+      return (await interpretJson(
+        request.jsonPath,
+        request.parquetPath,
+        request.profilePath
+      )) as HeavyResult<R>
+    }
     case 'extract-text': {
       const { extractDocumentText } = await import('../pipeline/interpret/document/document-text')
       return (await extractDocumentText(

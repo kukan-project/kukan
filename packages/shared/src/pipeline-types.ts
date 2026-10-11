@@ -154,6 +154,13 @@ export const resourceSchemaSchema = z.object({
    * schema carrying this, the counts are a floor rather than the number.
    */
   lenient: z.literal(true).optional(),
+  /**
+   * The geometry types of a GeoJSON FeatureCollection read as a table of its
+   * features' `properties` (ADR-063 extension), distinct and sorted. The
+   * coordinates themselves are not in the table: they are numbers, which
+   * neither search nor a column has a use for. Absent on every other table.
+   */
+  geometryTypes: z.array(z.string()).optional(),
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 
@@ -480,9 +487,15 @@ export interface OdataKey {
  * the memory the worker's heavy process had (ADR-059) — a fact about the task
  * it ran on, where `too-large` is one about the size cap. Kept apart so that a
  * site that moves to larger tasks can find the versions worth reading again.
+ *
+ * `not-records` is a JSON file in none of the shapes that read as a table — a
+ * top-level array of objects, one array under a single key, a GeoJSON
+ * FeatureCollection (ADR-063 extension) — or one that does not parse. A
+ * configuration object or a deeply nested document, read again, is the same
+ * file; the content index takes it as text.
  */
 export type NoTableReason =
-  'no-columns' | 'too-many-columns' | 'too-large' | 'out-of-memory' | 'ragged-rows'
+  'no-columns' | 'too-many-columns' | 'too-large' | 'out-of-memory' | 'ragged-rows' | 'not-records'
 
 /**
  * Why a version was not loaded into layer 2, when the key is what stopped it

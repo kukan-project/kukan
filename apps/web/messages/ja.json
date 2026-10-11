@@ -953,6 +953,7 @@
     "previewSourceTable": "テーブル表示",
     "previewSourceText": "テキスト表示",
     "previewSourceMap": "地図",
+    "previewSourceAttributes": "属性テーブル",
     "previewSourceFileList": "ファイル一覧",
     "previewSourceOriginal": "原本",
     "previewSourceExtractedText": "抽出テキスト",
@@ -1064,7 +1065,8 @@
         "too-many-columns": "列が多すぎます（プレビュー対象外）",
         "too-large": "サイズが大きすぎます（プレビュー対象外）",
         "out-of-memory": "メモリが足りず解釈できません（プレビュー対象外）",
-        "ragged-rows": "行ごとに列数が揃っていません"
+        "ragged-rows": "行ごとに列数が揃っていません",
+        "not-records": "レコードの一覧の形ではありません（表にできません）"
       },
       "keyColumnsHeader": "主キー"
     },

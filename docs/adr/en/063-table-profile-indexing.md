@@ -9,6 +9,8 @@ Stage 1 (build and store the profile; the index does not change) is implemented 
 Stage 2 (put it into today's OpenSearch) is implemented. Overriding roles by hand and showing "matched a
 column name" come later — 2026-10-06
 
+JSON and GeoJSON ride the same mechanism, as tables of records (§Decision 10) — 2026-10-11
+
 The text index for CSV/TSV moves from chunks of the file's contents to a **table profile**. The profile
 consists of the column names, the values of name and categorical columns, the ranges of numeric and date
 columns, the row and column counts, and the text of free-text columns (with context from the same row).
@@ -218,6 +220,55 @@ weight the word set.
 
 The reason for a match is shown as "matched a column name" or "matched a value" (extending ADR-034's
 `matchSource`). Opening the table preview (ADR-048) filtered to the matched value comes later.
+
+### 10. JSON and GeoJSON ride the same mechanism, as tables of records
+
+Among the text formats, JSON and GeoJSON are mostly repeated key names, coordinates and code values, and
+swelled the index the way CSV contents did (locally, one registry JSON held a third of the content index).
+Yet some JSON carries a description per record, and that text should be searchable. So **a JSON that reads
+as a list of records is made a table in Interpret, by DuckDB's `read_json`, and goes out the same way a CSV
+does (Parquet, column schema, profile).** What is indexed is decided by the column roles — there is no
+exception for being JSON.
+
+- **Three shapes read as a table.** A top-level array, one array under a single key (`{"dataset": [...]}`,
+  which is nearly every JSON on public CKAN portals), and a GeoJSON FeatureCollection (a feature's
+  `properties` is a row). Anything else — a configuration object, a nested document, an array of strings,
+  a file that is not JSON — is recorded as `not-records`, and the content index is built from the text of
+  the contents as before
+- **A nested object's keys become columns named by their path joined with `_`** (`contact_phone`); a
+  `.` is not allowed in an OData identifier (ADR-055). Arrays, and values of
+  no one type, are kept as JSON text in one column. `unnest(recursive)` is not used: it collides on
+  names such as `description` and `updateDate`
+- **A Point's coordinates become two columns, `geometry_lon` and `geometry_lat`.** A place is something a
+  query filters on. A line's or a polygon's coordinates stay out — they are most of the file's bytes, and
+  a preview page or a feed page read by row group could not carry them. What is kept is the list of
+  geometry types (`ResourceSchema.geometryTypes`); the count is the row count. Parquet itself holds
+  arrays and nesting, but the column schema's six types, OData, the fields list and the profile know only
+  scalars. A bbox or a representative point for lines and polygons comes later
+- **A JSON that is one object has a cap of its own** (`MAX_JSON_OBJECT_SIZE`, 32MB). A FeatureCollection,
+  or records under a key, is read whole by DuckDB before the array inside is taken out; a top-level array
+  is read an element at a time, so the CSV's 100MB serves. Measured: a 26MB FeatureCollection of 13,000
+  features read under the 512MB cap, a 76MB one of 79,000 failed at 768MB and read at 1GB. Past the cap,
+  `too-large` is recorded and the index falls back to the text of the contents. The refusal is settled
+  with an empty schema — the sweep checks only the 100MB cap, and would otherwise hand the version out
+  every hour — so a raised cap is reached by reprocessing. Reading the properties without the
+  coordinates comes later
+- **Layer 2 and the primary key as for a CSV.** A version that made a table is loaded into layer 2
+  (ADR-043) whatever its format, and a primary key can be chosen. The sweep's formats share
+  `TABLE_SOURCE_FORMATS`, so they cannot drift from what the interpretation reads. A JSON array tends to
+  be written out in a different order each time, so tracking changed rows by a key says more than
+  replacing every row. A GeoJSON Feature's own `id` (RFC 7946 §3.2; optional, and few files carry it)
+  becomes a column `id` only where present, suffixed where `properties` has one of the same name
+- **The preview shows the table as one mode.** JSON toggles between "Table" and "JSON", GeoJSON between
+  "Map", "Attributes" and "JSON"; the table is read from the Parquet. The fields list, `query_resource`
+  (ADR-032) and OData (ADR-055) go by whether there is a schema, so a JSON table rides them as it is
+- **The sentence cap stays** (§Decision 3, 500KB). A JSON with a long description per record loses most
+  of its sentences to it (the local registry: 7,679 of 7,812 rows), but that is the treatment a CSV with a
+  large remarks column gets. Moving the cap is §Decision 3's to do, for every format
+
+TXT and MD are prose and keep the full-text index (19 of 20 TXT files on public CKAN portals were text
+editions of municipal newsletters). HTML (script and style contents reach the index) and XML (records, but
+nothing in DuckDB reads them) are separate issues.
 
 ## Stages
 

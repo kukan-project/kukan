@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat, type OdataKey, type ResourceSchema } from '@kukan/shared'
+import { isTableSourceFormat, type OdataKey, type ResourceSchema } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from '@/components/preview/resource-preview'
 import { ResourceFields, type ColumnRoleView } from './resource-fields'
@@ -60,7 +60,8 @@ export function ResourcePipelinePreview({
 
   // One read for everything on this page that describes the table: the
   // dropped-rows note, the key marking in both preview modes, and the fields
-  // list. Only tabular formats have any of that to say.
+  // list. Only formats an interpretation may make a table from have any of
+  // that to say; whether this one did is the schema's answer.
   const { data: schemaData } = useFetch<{
     queryable: boolean
     odataRefusal: ReportedRefusal | null
@@ -70,7 +71,7 @@ export function ResourcePipelinePreview({
     columnRoles: ColumnRoleView[] | null
     primaryKey: string[] | null
   }>(
-    isCsvFormat(format)
+    isTableSourceFormat(format)
       ? `/api/v1/resources/${encodeURIComponent(resourceId)}/schema?_k=${previewKey}`
       : null
   )
@@ -153,7 +154,7 @@ export function ResourcePipelinePreview({
       />
       {/* Field (column) list shares the preview's remount key so it refreshes
           in lockstep when the pipeline (re)generates the Parquet preview. */}
-      {isCsvFormat(format) && (
+      {isTableSourceFormat(format) && (
         <div className="mt-6">
           <ResourceFields
             key={`fields-${resourceId}-${previewKey}`}

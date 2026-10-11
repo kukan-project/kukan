@@ -141,6 +141,19 @@ export function isJsonFormat(format: string | null): boolean {
   return JSON_FORMATS.has(format.toLowerCase())
 }
 
+/**
+ * The formats an interpretation may read as a table: CSV/TSV always, JSON and
+ * GeoJSON when the file is a list of records (ADR-063 §決定 10). Whether a
+ * given version did make one is that version's schema, not its format. The
+ * layer-2 sweep names the same set in SQL, so the two cannot drift apart.
+ */
+export const TABLE_SOURCE_FORMATS = ['csv', 'tsv', 'json', 'geojson'] as const
+
+/** {@link TABLE_SOURCE_FORMATS}, or a CSV/TSV MIME type. */
+export function isTableSourceFormat(format?: string | null, mimetype?: string | null): boolean {
+  return isCsvFormat(format, mimetype) || isJsonFormat(format ?? null)
+}
+
 const TEXT_FORMATS = new Set(['txt', 'text', 'json', 'geojson', 'xml', 'html', 'htm', 'md'])
 
 /** Check if a format is text-based (CSV/TSV or plain text variants) */

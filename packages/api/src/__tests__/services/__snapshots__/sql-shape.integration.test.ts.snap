@@ -139,7 +139,7 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
     AND rv.lake_ingest_reason IS NULL
-    AND lower(rv.format) IN ('csv', 'tsv')
+    AND lower(rv.format) IN ('csv', 'tsv', 'json', 'geojson')
     AND rv.size IS NOT NULL
     AND rv.size <= $1
     AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
@@ -200,7 +200,7 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
     AND rv.lake_ingest_reason IS NULL
-    AND lower(rv.format) IN ('csv', 'tsv')
+    AND lower(rv.format) IN ('csv', 'tsv', 'json', 'geojson')
     AND rv.size IS NOT NULL
     AND rv.size <= $1
     AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)

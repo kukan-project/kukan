@@ -14,7 +14,7 @@
 import { createReadStream } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { detectEncoding } from '@kukan/shared/encoding-node'
-import { MAX_PARQUET_SOURCE_SIZE, toCharset } from '@kukan/shared'
+import { isJsonFormat, MAX_PARQUET_SOURCE_SIZE, toCharset } from '@kukan/shared'
 import type { NoTableReason, ResourceSchema } from '@kukan/shared'
 import {
   cleanupTempFile,
@@ -23,10 +23,13 @@ import {
   transcodeToUtf8,
 } from '../node-utils'
 import { HeavyTooLargeError, runHeavy } from '@/heavy'
+import type { HeavyRequest } from '@/heavy/protocol'
 import { countTitleRows } from './table/csv-title-rows'
+import { jsonStartsWithObject } from './table/json'
 import type { PipelineContext } from '../run/types'
-import type { InterpretedProfile } from './table/csv-profile'
-import { MAX_CSV_COLUMNS } from '@/config'
+import type { InterpretedProfile } from './table/table-profile'
+import type { InterpretedTableFile } from './table/write-table'
+import { MAX_JSON_OBJECT_SIZE, MAX_TABLE_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
 export interface InterpretedTable {
@@ -60,7 +63,7 @@ export interface InterpretOutcome<T> {
   /** What the callback returned, absent when there was no table to give it. */
   used?: T
   /** Rows in a row group of the Parquet that was written.
-   *  @see InterpretedCsv.rowGroupRows */
+   *  @see InterpretedTableFile.rowGroupRows */
   rowGroupRows?: number
   /**
    * Why no table came out, when none did.
@@ -76,11 +79,12 @@ export interface InterpretOutcome<T> {
 const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
 
 /**
- * Interpret a CSV/TSV version file and hand the table to `use`.
+ * Interpret a CSV/TSV or JSON/GeoJSON version file and hand the table to `use`.
  *
  * @param fmt - lowercased format; the caller has already established that this
- *   is one of the tabular ones. Whether it is within the interpret cap is this
- *   function's to answer, so both callers give one answer.
+ *   is one an interpretation may make a table from (`isTableSourceFormat`).
+ *   Whether it is within the interpret cap is this function's to answer, so
+ *   both callers give one answer.
  * @param opts.profile - write the profile artifact too (ADR-063), for a caller
  *   that publishes one.
  */
@@ -101,6 +105,7 @@ export async function withInterpretedVersion<T>(
   // Sampled rather than transferred: the version row was measured at create and
   // the file behind it never changes, so the size decides this before the
   // download, and the encoding still comes back.
+  if (isJsonFormat(fmt)) return interpretJsonVersion(source, ctx, use, onEncoding, opts)
   if (source.size > MAX_PARQUET_SOURCE_SIZE) {
     const sample = await readEncodingSample(await ctx.storage.download(source.storageKey))
     const encoding = detectEncoding(fmt, sample)
@@ -138,45 +143,131 @@ export async function withInterpretedVersion<T>(
     // is one nothing has interpreted yet, which the hourly sweep hands out
     // every hour for good. The reason is recorded so "no table here" and "too
     // wide for one" stay distinguishable.
-    if (columnCount > MAX_CSV_COLUMNS) {
+    if (columnCount > MAX_TABLE_COLUMNS) {
       return { encoding, schema: NO_TABLE, reason: 'too-many-columns' }
     }
 
-    const parquetPath = `${csvPath}.parquet`
-    const profilePath = opts.profile ? `${csvPath}.profile.ndjson.zst` : undefined
-    // In the heavy process, where a file that outgrows the memory takes that
-    // process and not the worker (ADR-059). Recorded like the bounds above:
-    // interpreting it again on the same task would end the same way, and the
-    // hourly sweep would hand it out every hour to find that out.
-    let interpreted
-    try {
-      interpreted = await runHeavy(
-        { kind: 'interpret-csv', csvPath, parquetPath, skipRows: titleRows, profilePath },
-        ctx.assertHeld
-      )
-    } catch (err) {
-      if (!(err instanceof HeavyTooLargeError)) throw err
-      return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
-    }
-    const { schema, reason, rowGroupRows, profile } = interpreted
-    // And the source is dead once it has been interpreted. What the callback
-    // does next — an upload, a wait on the catalog-wide lock — would hold it
-    // for nothing.
-    await rm(csvPath, { force: true })
-
-    // Refused rather than read: there is no Parquet to hand on, and the reason
-    // is what stops "no preview" reading as "not interpreted yet".
-    if (reason) return { encoding, schema, reason }
-
-    return {
+    // Awaited here, or the `finally` below removes the file under it
+    return await interpretOnDisk(
+      csvPath,
       encoding,
-      schema,
-      rowGroupRows,
-      used: await use({ parquetPath, schema, ...(profile && { profile }) }),
-    }
+      (parquetPath, profilePath) => ({
+        kind: 'interpret-csv',
+        csvPath,
+        parquetPath,
+        skipRows: titleRows,
+        profilePath,
+      }),
+      ctx,
+      use,
+      opts
+    )
   } finally {
     // Every file this made lives in the directory this made, so one removal
     // covers whatever a given path left behind.
     await cleanupTempFile(rawPath)
+  }
+}
+
+/** JSON is UTF-8 by specification (RFC 8259): nothing to detect, in the spelling Interpret has always recorded for it. */
+const JSON_ENCODING = 'UTF8'
+
+/**
+ * The JSON half of `withInterpretedVersion` (ADR-063 extension). No encoding
+ * to detect and no title rows; what is the file's own is whether it is one
+ * object, which the reader holds whole and so takes only up to
+ * {@link MAX_JSON_OBJECT_SIZE}.
+ */
+async function interpretJsonVersion<T>(
+  source: { storageKey: string; size: number },
+  ctx: PipelineContext,
+  use: (table: InterpretedTable) => Promise<T>,
+  onEncoding?: (encoding: string) => Promise<void>,
+  opts: { profile?: boolean } = {}
+): Promise<InterpretOutcome<T>> {
+  const encoding = JSON_ENCODING
+  await onEncoding?.(encoding)
+  // The cap every table file has, answered as `withInterpretedVersion` does
+  if (source.size > MAX_PARQUET_SOURCE_SIZE) return { encoding, schema: null, reason: 'too-large' }
+
+  // Decided from the head of the object, before anything is transferred.
+  // Settled with an empty schema, as a width is: the layer-2 sweep goes by the
+  // 100MB cap alone, and would hand an unsettled version out every hour. A
+  // raised cap reaches these by reprocessing them.
+  if (source.size > MAX_JSON_OBJECT_SIZE) {
+    if (await jsonStartsWithObject(await ctx.storage.download(source.storageKey))) {
+      return { encoding, schema: NO_TABLE, reason: 'too-large' }
+    }
+  }
+
+  const jsonPath = await streamToTempFile(await ctx.storage.download(source.storageKey), 'json')
+  try {
+    return await interpretOnDisk(
+      jsonPath,
+      encoding,
+      (parquetPath, profilePath) => ({
+        kind: 'interpret-json',
+        jsonPath,
+        parquetPath,
+        profilePath,
+      }),
+      ctx,
+      use,
+      opts
+    )
+  } finally {
+    await cleanupTempFile(jsonPath)
+  }
+}
+
+/**
+ * What every table file ends with once it is on disk and read as far as its
+ * format alone can take it: the heavy process reads it, the source goes, and
+ * the table is handed to `use` while the Parquet still exists.
+ *
+ * @param request - the heavy request for the file, given where its outputs go.
+ */
+async function interpretOnDisk<T>(
+  sourcePath: string,
+  encoding: string,
+  request: (
+    parquetPath: string,
+    profilePath: string | undefined
+  ) => Extract<HeavyRequest, { kind: 'interpret-csv' | 'interpret-json' }>,
+  ctx: PipelineContext,
+  use: (table: InterpretedTable) => Promise<T>,
+  opts: { profile?: boolean }
+): Promise<InterpretOutcome<T>> {
+  const parquetPath = `${sourcePath}.parquet`
+  const profilePath = opts.profile ? `${sourcePath}.profile.ndjson.zst` : undefined
+  // In the heavy process, where a file that outgrows the memory takes that
+  // process and not the worker (ADR-059). Recorded like the bounds above:
+  // interpreting it again on the same task would end the same way, and the
+  // hourly sweep would hand it out every hour to find that out.
+  let interpreted: InterpretedTableFile
+  try {
+    interpreted = (await runHeavy(
+      request(parquetPath, profilePath),
+      ctx.assertHeld
+    )) as InterpretedTableFile
+  } catch (err) {
+    if (!(err instanceof HeavyTooLargeError)) throw err
+    return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
+  }
+  const { schema, reason, rowGroupRows, profile } = interpreted
+  // And the source is dead once it has been interpreted. What the callback
+  // does next — an upload, a wait on the catalog-wide lock — would hold it
+  // for nothing.
+  await rm(sourcePath, { force: true })
+
+  // Refused rather than read: there is no Parquet to hand on, and the reason
+  // is what stops "no preview" reading as "not interpreted yet".
+  if (reason) return { encoding, schema, reason }
+
+  return {
+    encoding,
+    schema,
+    rowGroupRows,
+    used: await use({ parquetPath, schema, ...(profile && { profile }) }),
   }
 }

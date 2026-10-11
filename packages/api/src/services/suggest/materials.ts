@@ -15,6 +15,7 @@ import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import {
   isCsvFormat,
+  isJsonFormat,
   isTextFormat,
   isDocumentFormat,
   isZipFormat,
@@ -84,6 +85,13 @@ export function materialKind(
   artifacts: MaterialArtifacts
 ): MaterialKind | null {
   if (isCsvFormat(resource.format, resource.mimetype ?? null)) return 'tabular'
+  // A JSON is a table where its records made one (ADR-063 §決定 10), text otherwise
+  if (
+    isJsonFormat(resource.format) &&
+    parseResourceSchema(artifacts.pipelineMetadata)?.columns.length
+  ) {
+    return 'tabular'
+  }
   // Text is read from the live object; the others from pipeline artifacts.
   if (isTextFormat(resource.format)) return artifacts.liveStorageKey ? 'text' : null
   if (isDocumentFormat(resource.format) && documentTextOf(artifacts.pipelineMetadata)) {
