@@ -18,7 +18,6 @@ import {
   eq,
   gt,
   gte,
-  inArray,
   isNull,
   lt,
   lte,
@@ -183,33 +182,6 @@ export function readyJobsMatching(db: Database | Transaction, type: string, matc
     .select({})
     .from(jobTable)
     .where(and(eq(jobTable.type, type), ready(), sql`${jobTable.payload} @> ${match}`))
-}
-
-/**
- * Of these resources, those with a ready job of `type` — waiting or running —
- * whose payload contains one of `matches`. The index `idx_job_ready_resource`
- * serves it.
- */
-export async function resourcesWithReadyJobs(
-  db: Database | Transaction,
-  type: string,
-  resourceIds: string[],
-  matches: Record<string, unknown>[]
-): Promise<Set<string>> {
-  if (resourceIds.length === 0 || matches.length === 0) return new Set()
-  const resourceId = sql<string>`${jobTable.payload} ->> 'resourceId'`
-  const rows = await db
-    .select({ resourceId })
-    .from(jobTable)
-    .where(
-      and(
-        eq(jobTable.type, type),
-        ready(),
-        inArray(resourceId, resourceIds),
-        or(...matches.map((m) => sql`${jobTable.payload} @> ${JSON.stringify(m)}::jsonb`))
-      )
-    )
-  return new Set(rows.map((r) => r.resourceId))
 }
 
 /**

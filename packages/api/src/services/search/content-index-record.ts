@@ -7,7 +7,7 @@
  */
 
 import { sql } from 'drizzle-orm'
-import type { Database, Transaction } from '@kukan/db'
+import type { Database } from '@kukan/db'
 import { resource } from '@kukan/db'
 
 /** Whose record is being retracted. Spelled out because 'all' has to be asked
@@ -28,10 +28,7 @@ export type ContentIndexScope = 'all' | { packageId: string } | { resourceId: st
  * that is false costs an index nobody notices is missing. So this is written
  * whenever the documents go, without asking whether a run is coming.
  */
-export async function markContentUnindexed(
-  db: Database | Transaction,
-  scope: ContentIndexScope
-): Promise<void> {
+export async function markContentUnindexed(db: Database, scope: ContentIndexScope): Promise<void> {
   const where =
     scope === 'all'
       ? sql``

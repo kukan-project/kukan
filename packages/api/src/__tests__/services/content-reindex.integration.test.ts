@@ -1,18 +1,16 @@
 /**
- * Every resource's content is indexed again from its interpretation, never
- * twice for one resource, and content no run would replace is dropped.
+ * Every resource's content is indexed again from its interpretation, and
+ * content no run would replace is dropped.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/node-postgres'
-import { createTestPool } from '@kukan/db-testing'
-import * as schema from '@kukan/db/schema'
+import { eq } from 'drizzle-orm'
 import { job, packageTable, resource, resourcePipeline } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { PostgresJobQueue } from '@kukan/queue'
 import { PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { requestContentReindex } from '../../services/search/content-reindex'
-import { getTestDb, getTestDatabaseUrl, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { PipelineService } from '../../services/pipeline/pipeline-service'
+import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const queue = new PostgresJobQueue({ db })
@@ -120,65 +118,16 @@ describe('requestContentReindex', () => {
     expect(row.metadata).toMatchObject({ contentIndexed: false })
   })
 
-  it('leaves a resource to a reindex or rebuild on its way, waiting or running, and to nothing else', async () => {
-    const waiting = await seed()
-    const running = await seed()
-    const ordinary = await seed()
-    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: waiting, indexOnly: true })
-    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: running, rebuildOnly: true })
-    await db
-      .update(job)
-      .set({ lockedUntil: sql`now() + interval '1 minute'` })
-      .where(sql`${job.payload} ->> 'resourceId' = ${running}`)
-    // An ordinary run may find its derivatives current and skip Index
-    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: ordinary })
-
-    expect(await requestContentReindex(db, contentIndex(), queue)).toEqual({
-      enqueued: 1,
-      dropped: 0,
-    })
-    expect(await queuedRuns()).toContainEqual(
-      expect.objectContaining({ resourceId: ordinary, indexOnly: true })
-    )
-  })
-
-  it('gets through on a pool of one connection', async () => {
-    const id = await seed()
-    // A pass that held one connection and asked for another would wait out the timeout
-    const pool = createTestPool(getTestDatabaseUrl(), { max: 1, connectionTimeoutMillis: 2_000 })
-    const single = drizzle(pool, { schema })
-    try {
-      const result = await requestContentReindex(
-        single,
-        contentIndex([id, crypto.randomUUID()]),
-        new PostgresJobQueue({ db: single })
-      )
-      expect(result).toEqual({ enqueued: 1, dropped: 1 })
-    } finally {
-      await pool.end()
-    }
-  })
-
-  it('queues each resource once when two passes run at the same time', async () => {
-    await Promise.all([seed(), seed(), seed()])
-
-    const results = await Promise.all([
-      requestContentReindex(db, contentIndex(), queue),
-      requestContentReindex(db, contentIndex(), queue),
-    ])
-
-    expect(results.reduce((n, r) => n + r.enqueued, 0)).toBe(3)
-    expect(await queuedRuns()).toHaveLength(3)
-  })
-
-  it('adds nothing on a second press while the first one’s runs wait', async () => {
+  it('fails, for the job to run again, when a batch could not be queued', async () => {
     await seed()
-
-    await requestContentReindex(db, contentIndex(), queue)
-    expect(await requestContentReindex(db, contentIndex(), queue)).toEqual({
+    await seed()
+    vi.spyOn(PipelineService.prototype, 'enqueueMany').mockResolvedValueOnce({
       enqueued: 0,
-      dropped: 0,
+      failed: [{ id: 'x', reason: new Error('connection reset') }],
     })
-    expect(await queuedRuns()).toHaveLength(1)
+
+    await expect(requestContentReindex(db, contentIndex(), queue)).rejects.toThrow(
+      'Could not queue 1 resources to index again'
+    )
   })
 })

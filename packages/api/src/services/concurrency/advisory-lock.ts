@@ -50,13 +50,6 @@ export const RESOURCE_EMBED_LOCK = 'resource_embed'
 export const STRANDED_LAKE_TABLES_LOCK = 'stranded_lake_tables'
 
 /**
- * One content reindex page at a time. A page reads which resources have a
- * reindex on its way and then queues the rest; two at once would both read
- * none and queue each resource twice.
- */
-export const CONTENT_REINDEX_LOCK = 'content_reindex'
-
-/**
  * Hold `<namespace>:<id>` for the rest of the transaction.
  *
  * Every query inside must run on `tx`: the lock *is* a pooled connection, and
