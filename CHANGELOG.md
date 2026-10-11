@@ -6,6 +6,114 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.34.0] - 2026-10-11
+
+**Upgrade Notes**
+
+- AI: on Bedrock, the default generation model changes from Amazon Nova 2.0 Lite to Claude Haiku 5.5 (`jp.anthropic.claude-haiku-5-5`) (#856), for an AWS environment that omits `bedrock.completionModels` and for `AI_TYPE=bedrock` without a model. Haiku 5.5 is an Anthropic model: **before deploying, submit the Anthropic use-case form in the Bedrock console and subscribe through Marketplace, once per AWS account** (System Admin Guide, "When AI suggestions don't work (Bedrock)"); until then AI metadata suggestions fail. For AI-written resource descriptions (`summaryModel` / `AI_SUMMARY_MODEL`, ADR-053), `jp.anthropic.claude-haiku-5-5` is now the recommended model — it wrote fewer unsupported claims than Sonnet 4.6 at about a thirtieth of the cost (ADR-053, appendix 20) — and it must also be listed in `completionModels`. The description prompt changed; existing descriptions are rewritten only when you press **Rewrite all** on AI Management.
+- Reprocessing: table profiles (#822, #826), document text with pages and headings (#831, #839, #844, #852), legacy Office and Ichitaro text (#845, #850) and Markdown text (#887) reach a resource when its file is interpreted again. Content is now indexed in 64KB chunks (#875), and the dashboard's **Rebuild the content search index** notice rebuilds the metadata and content indexes from the stored interpretations (#876), reinterpreting any document or table that lacks the new artifacts — this one action covers all of the above, without fetching external URLs or writing descriptions. The exception is JSON and GeoJSON read as tables (#885): press **Reprocess all** on Resource Processing (or reprocess those resources).
+- Search: on OpenSearch, existing datasets match the new extras filters (#893) only after the metadata index is rebuilt, which the notice above includes; no re-analysis is needed.
+- The migrations only add (a `resource_pipeline.profile` column, two indexes, the `ai_usage` table), so a v0.33.0 image still runs against the upgraded database if you roll back.
+- AWS: the Lambda functions KUKAN deploys move to the `nodejs24.x` runtime, and the pipeline's synth step names Node 24 (#890). The Docker images install pnpm without corepack.
+
+**Highlights**
+
+- feat(mcp): find the passages of documents that match a query, with the page and headings to cite (#831, #843, #864, #867) — the retrieval side of RAG for AI agents, over MCP, leaving the answer to the client's AI. Documents' text is kept with its pages, slides or sheets and headings; `search_passages` finds the matching passages across the catalog with the resource, page and headings to cite, `get_document_outline` lists a document's headings, and `get_document_section` reads a page range or heading. The server's `instructions` tell clients how the tools go together and to search in the catalog's language. Also `GET /api/v1/passages`.
+- feat(search): index tables by their profile (ADR-063) (#822, #826, #885) — a CSV/TSV is indexed by its column names, the values of its name and category columns and its free text, rather than by its bytes; locally the index shrank by a third with search quality unchanged. JSON and GeoJSON whose records form a list become tables too, with a table preview, `query_resource`, OData, change tracking and the same profile.
+- feat: render Markdown resources and extract their text under headings (#887) — shown formatted, with its source and extracted text, and searched and read through MCP like other documents.
+- feat(search): filter datasets by extras keys and values (ADR-062) (#893) — `extras_<key>=<value>` and `res_extras_<key>=<value>` on `GET /api/v1/packages`, and as `fq` fields in the CKAN-compatible `package_search`. Values are compared exactly, and conditions are ANDed.
+- feat(admin): record AI usage and show it per hour, day or month in AI Management (#856, #857, #871) — every AI call is recorded with its tokens and an estimated cost, shown on the **Usage and cost** card with this month's projection (also `GET /api/v1/admin/ai-usage`). AI metadata suggestions now default to Claude Haiku 5.5, at well under half of Nova 2.0 Lite's cost with about the same recall.
+
+**Features**
+
+- feat(worker): keep a document's text with its pages, headings and figures (#831, #836, #839, #844) — PDF and Office previews gain an **Extracted text** view with headings, a page list and pages with no text; a workbook is read by sheet and row. Glyphs a PDF font cannot map are left out rather than garbled, and the page says how many were lost.
+- feat(worker): extract the text of legacy Office and Ichitaro documents (#845) — XLS, DOC and PPT before 2007, and uncompressed Ichitaro (JTD/JTT), are read with KUKAN's own compound-file reader.
+- feat(web): draw an Ichitaro document's original in the preview (EZPZ File JTD), and read every sheet (#850).
+- feat(worker): take a PDF's headings from its heading tags where it has no bookmarks (#852).
+- feat(web): show column-role reasons to editors only (ADR-063) (#822, #894) — each table column gets a role (name, category, free text, identifier, number or date, number written as text) from its values and field name. The public field list shows the role; the dashboard's resource editor shows why, and for numbers written as text the values that do not read as numbers. Roles cannot be overridden yet.
+- feat(search): retry a keyword search that found nothing with fewer of its words (#873) — MCP search does this and says so; `GET /api/v1/packages` takes `match=relaxed`.
+- feat: keep site-wide custom metadata as key-value runtime settings (ADR-064) (#862) — values such as a population and its date are edited on Site Management, read by brands with `SiteNumber`, `SiteDate` and `SiteText`, and returned by `GET /api/v1/site/settings`.
+- feat(web): edit example search queries one row at a time (#872).
+- feat(api): accept the API token in X-KUKAN-API-Key (#830) — for sites behind basic auth, on the REST API, MCP and the CKAN-compatible API.
+
+**Bug Fixes**
+
+- fix(worker): read CSV columns a cast refuses as text instead of dropping rows (#827) — a value such as `- ` among decimals no longer drops rows or makes the file refused as a table.
+- fix(worker): tie a row's interpretation to the version it read, not the bytes alone (#878) — after a format label was corrected, a retried run could skip reading the file in the new format.
+- fix(web): send the edit page's requests to the package id, so a draft renamed there still saves and publishes (#854).
+- chore: prepare for Node 26 while on Node 24 (#890) — the worker fetches external URLs over HTTP/1.1, which HTTP/2 made up to 25 times slower for large files and could crash with an idle-timeout error.
+
+**Performance**
+
+- perf(search): index content in 64KB chunks, and rebuild the larger ones from the dashboard (#875, #876) — locally, dataset search went from about 100 ms to 15 ms and passage search from 150–200 ms to 25 ms. See Upgrade Notes for rebuilding.
+
+**Dependencies**
+
+- build(deps): Next.js 16.4.0, the MCP SDK 1.32.1, Hono 4.13.13, drizzle-orm 0.45.4, the AWS SDK 3.1147, aws-cdk 2.1145 and other updates (#853, #891, #892); `react-markdown` and `remark-gfm` (#887), EZPZ File JTD (#850) and `@cantoo/pdf-lib` in place of `pdf-lib` (#836).
+
+**Documentation**
+
+- docs(adr): ADR-061 proposes moving search to PostgreSQL (#813, #814); ADR-062 and ADR-064 are accepted (#816, #860, #862, #893); ADR-063 proposes indexing tables by profile (#820).
+- docs: the tagline becomes "Read, query, connect. A data platform for people and AI.", with the documentation site's landing page regrouped around it (#879, #881); the guides cover the MCP instructions, legacy Office and Ichitaro, JSON tables and Markdown (#849, #870, #895).
+
+**For Developers**
+
+- Node 24.21.0 for development; the places that name the Node version are listed in `docs/node-version.md` (#890). `pnpm eval:passages` and `pnpm eval:mcp` evaluate passage search and MCP answers (#864, #867).
+
+---
+
+**アップグレード時の注意**
+
+- AI: Bedrock の既定の生成モデルが、Amazon Nova 2.0 Lite から Claude Haiku 5.5（`jp.anthropic.claude-haiku-5-5`）に変わりました（#856）。`bedrock.completionModels` を書いていない AWS 環境と、モデルを指定していない `AI_TYPE=bedrock` が対象です。Haiku 5.5 は Anthropic のモデルなので、**デプロイの前に、AWS アカウントごとに一度、Bedrock コンソールで Anthropic のユースケースフォームを提出し、Marketplace でサブスクライブしてください**（システム管理者ガイドの「AI 提案が動かないとき（Bedrock）」）。済ませるまで AI メタデータ提案は失敗します。AI によるリソースの説明（`summaryModel` / `AI_SUMMARY_MODEL`、ADR-053）は、`jp.anthropic.claude-haiku-5-5` を推奨します。Sonnet 4.6 より材料にないことを書く数が少なく、費用は約 30 分の 1 でした（ADR-053 付録 20）。`completionModels` にも載せてください。説明のプロンプトを変えましたが、既存の説明が書き直されるのは、生成AI管理で「すべて作り直す」を実行したときだけです。
+- 再処理: 表のプロファイル（#822、#826）、ページと見出し付きの文書のテキスト（#831、#839、#844、#852）、旧形式の Office と一太郎のテキスト（#845、#850）、Markdown のテキスト（#887）は、ファイルを解釈し直したときにリソースへ届きます。本文の索引は 64KB のチャンクで作るようになり（#875）、ダッシュボードの「本文の検索インデックスの作り直し」の案内から、保存済みの解釈をもとにメタデータと本文の索引を作り直せます（#876）。新しい成果物のない文書と表はその中で解釈し直すので、上のすべてにこの 1 つの操作で届きます。外部 URL の取得と説明の生成はしません。例外は、表として読むようになった JSON と GeoJSON（#885）で、「リソースの処理状況」の「すべて再処理」（または該当リソースの再処理）が必要です。
+- 検索: OpenSearch では、既存のデータセットが新しい extras の絞り込み（#893）に一致するのは、メタデータの索引を作り直してからです。上の案内の作り直しに含まれ、再解析は要りません。
+- マイグレーションは追加だけです（`resource_pipeline.profile` 列、索引 2 つ、`ai_usage` 表）。戻す必要があっても、適用後のデータベースで v0.33.0 のイメージは動きます。
+- AWS: KUKAN がデプロイする Lambda 関数のランタイムが `nodejs24.x` になり、パイプラインの synth は Node 24 を指定します（#890）。Docker イメージは corepack を使わずに pnpm を入れます。
+
+**ハイライト**
+
+- feat(mcp): 問いに合う文書の一節を、引用に使うページと見出し付きで探す（#831、#843、#864、#867）— AI エージェントが RAG（検索拡張生成）に使う検索を、MCP で担います。回答を作るのは利用者の AI です。文書のテキストをページ・スライド・シートと見出しとともに持ち、`search_passages` はカタログ全体から一致する一節を、引用に使うリソース・ページ・見出し付きで返します。`get_document_outline` は文書の見出しの一覧を、`get_document_section` はページの範囲や見出しを指定した本文を返します。サーバーの `instructions` で、ツールの組み合わせ方と、カタログの言語で検索することをクライアントに伝えます。`GET /api/v1/passages` でも使えます。
+- feat(search): 表を、プロファイルで索引する（ADR-063）（#822、#826、#885）— CSV/TSV を、バイト列ではなく、列名、名称とカテゴリの列の値、自由記述で索引します。ローカルでは検索の質を保ったまま索引が 3 分の 1 小さくなりました。レコードの一覧として読める JSON と GeoJSON も表になり、表のプレビュー、`query_resource`、OData、変更行の追跡、同じプロファイルが使えます。
+- feat: Markdown のリソースを整形して表示し、見出しの下にテキストを取り出す（#887）— 整形表示・ソース・抽出テキストを切り替えられ、ほかの文書と同じく検索され、MCP から読めます。
+- feat(search): extras のキーと値でデータセットを絞り込む（ADR-062）（#893）— `GET /api/v1/packages` の `extras_<key>=<value>` と `res_extras_<key>=<value>`、CKAN 互換の `package_search` の `fq` で使えます。値は完全一致で比べ、条件は AND です。
+- feat(admin): AI の利用を記録し、生成AI管理で時間・日・月ごとに表示する（#856、#857、#871）— すべての AI の呼び出しをトークン数と見積もり費用とともに記録し、「使用量と費用」のカードに今月の見込みとともに示します（`GET /api/v1/admin/ai-usage` でも取れます）。AI メタデータ提案の既定は Claude Haiku 5.5 になり、再現率はほぼそのままに、費用は Nova 2.0 Lite の半分以下です。
+
+**新機能**
+
+- feat(worker): 文書のテキストを、ページ・見出し・図とともに持つ（#831、#836、#839、#844）— PDF と Office のプレビューに「抽出テキスト」が加わり、見出し、ページの一覧、文字のないページを示します。ブックはシートと行で読みます。PDF のフォントで対応の取れない字形は、化けさせずに取り除き、読めなかった数を示します。
+- feat(worker): 旧形式の Office と一太郎の文書のテキストを取り出す（#845）— 2007 より前の XLS・DOC・PPT と、非圧縮の一太郎（JTD/JTT）を、KUKAN 自前の複合文書の読み取りで読みます。
+- feat(web): 一太郎の文書の原本をプレビューに描き（EZPZ File JTD）、すべてのシートを読む（#850）。
+- feat(worker): しおりのない PDF は、見出しのタグから見出しを取る（#852）。
+- feat(web): 列の役割の判定理由は、編集者にだけ示す（ADR-063）（#822、#894）— 表の各列に、値と項目名から役割（名称、カテゴリ、自由記述、識別子、数値・日付、文字列表記数値）を付けます。公開ページの項目の一覧には役割を、ダッシュボードのリソースの編集画面にはその理由と、文字列表記数値の列なら数値として読めない値を示します。役割の上書きは、まだできません。
+- feat(search): 何も見つからなかったキーワード検索を、語を減らしてやり直す（#873）— MCP の検索はそうしたことを伝え、`GET /api/v1/packages` では `match=relaxed` で使えます。
+- feat: サイト全体のカスタムメタデータを、キーと値のランタイム設定として持つ（ADR-064）（#862）— 人口とその時点のような値をサイト管理で編集でき、ブランドは `SiteNumber`・`SiteDate`・`SiteText` で読み、`GET /api/v1/site/settings` も返します。
+- feat(web): 検索例クエリを 1 件ずつ編集する（#872）。
+- feat(api): API トークンを X-KUKAN-API-Key でも受け付ける（#830）— Basic 認証のかかったサイトで、REST API・MCP・CKAN 互換 API に使えます。
+
+**バグ修正**
+
+- fix(worker): 型の変換に失敗した CSV の列は、行を捨てずにテキストとして読む（#827）— 小数に `- ` のような値が混じっても、行が捨てられたり、ファイルが表として受け付けられなかったりしなくなりました。
+- fix(worker): 行の解釈を、バイト列だけでなく、読んだ版に結びつける（#878）— 形式のラベルを訂正したあと、再試行された実行が新しい形式での読み取りを飛ばすことがありました。
+- fix(web): 編集画面のリクエストをパッケージの ID に送り、そこで名前を変えた下書きも保存・公開できるようにする（#854）。
+- chore: Node 24 のまま Node 26 に備える（#890）— worker の外部 URL の取得を HTTP/1.1 にしました。HTTP/2 では大きなファイルが最大 25 倍遅くなり、アイドルタイムアウトのエラーで落ちることがありました。
+
+**パフォーマンス**
+
+- perf(search): 本文を 64KB のチャンクで索引し、大きいままのものはダッシュボードから作り直す（#875、#876）— ローカルでは、データセット検索が約 100 ms から 15 ms に、一節の検索が 150〜200 ms から 25 ms になりました。作り直しはアップグレード時の注意を参照してください。
+
+**依存関係**
+
+- build(deps): Next.js 16.4.0、MCP SDK 1.32.1、Hono 4.13.13、drizzle-orm 0.45.4、AWS SDK 3.1147、aws-cdk 2.1145 ほかの更新（#853、#891、#892）。`react-markdown` と `remark-gfm`（#887）、EZPZ File JTD（#850）を追加し、`pdf-lib` を `@cantoo/pdf-lib` に置き換えました（#836）。
+
+**ドキュメント**
+
+- docs(adr): ADR-061 で検索を PostgreSQL に移すことを提案し（#813、#814）、ADR-062 と ADR-064 を採択し（#816、#860、#862、#893）、ADR-063 で表をプロファイルで索引することを提案しました（#820）。
+- docs: タグラインを「読めて、問えて、つながる。人と AI のためのデータ基盤。」にし、ドキュメントサイトのトップページを組み直しました（#879、#881）。ガイドに、MCP の instructions、旧形式の Office と一太郎、JSON の表と Markdown を書き加えました（#849、#870、#895）。
+
+**開発者向け**
+
+- 開発用の Node は 24.21.0 で、Node のバージョンを書いている箇所は `docs/node-version.md` にまとめました（#890）。`pnpm eval:passages` と `pnpm eval:mcp` で、一節の検索と MCP の答えを評価できます（#864、#867）。
+
 ## [0.33.0] - 2026-10-05
 
 **Breaking Changes**
