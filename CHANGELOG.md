@@ -6,6 +6,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.35.0] - 2026-10-12
+
+**Upgrade Notes**
+
+- Row-level diffs (which rows a new version added, removed or changed) run on DuckLake. DuckLake keeps the rows in data files and a record of which version holds which rows (DuckLake calls this record its "catalog"). Until now one DuckLake record, a schema in PostgreSQL, covered the whole site; from this release each resource has its own, a small SQLite file stored next to its data files (ADR-067). Diffs taken by earlier releases say the version has no row-level snapshot until the resource's record is rebuilt from its stored version files. v0.35.0 does not read the old record, and the DuckDB extension it used to reach PostgreSQL (`postgres`) is replaced by `sqlite` in the web and worker images, so closed-network deployments need nothing more. The rebuild is automatic, 200 resources per site each hour; **Backfill versions** on the dashboard starts it for all of them now, one by one. Deleting versions does not have to wait for it.
+- The old site-wide DuckLake record (the `ducklake` schema in PostgreSQL, and `lake/main/` in storage) is left untouched after the rebuild, and **until it is dropped, the rows of versions and datasets deleted after the upgrade remain in it.** Once the rebuild is done and you will not roll back, drop it inside a deployed container with `node apps/worker/dist/drop-shared-lake-catalog.js --commit` (without `--commit` it only reports); on a multi-site deployment, once per site. It refuses while resources are still to be rebuilt (System Admin Guide).
+- Rolling back: the migration only adds (`resource_pipeline.lake_catalog_key`, `resource_version.lake_snapshot_id` and two indexes), so a v0.34.0 image still runs and reads the old record. Diffs of resources whose versions were deleted under v0.35.0 may be wrong there, and after the old record is dropped a v0.34.0 image shows no diffs taken by earlier releases.
+- Next release: the `resource_version.ducklake_snapshot_id` column, which only the old record used, will be dropped. From then on an image of v0.35.x or earlier no longer runs against the upgraded database, so rolling back past that release is no longer possible. You can upgrade to it straight from v0.34.x or earlier, and resources not rebuilt yet are rebuilt by the same rule, but then there is no rolling back to v0.34.x either.
+- Database connections: row-level diffs no longer hold PostgreSQL connections of their own, and the database sizing tables in the multi-site guide are lighter.
+
+**Highlights**
+
+- feat(lake): give each resource its own DuckLake record for row-level diffs, and delete versions by rebuilding it (ADR-067) (#903, #905) — deleting a version now rebuilds the resource's row history from the versions that remain, so the deleted rows' bytes are gone from the diff data too, not just unreachable. Deleting a dataset or an organization removes its diff data with the rest of its files, and diff data that has gone missing (a restore of only the database or only storage, a manual delete) is rebuilt from the stored versions the next time it is needed.
+
+**Bug Fixes**
+
+- fix(api): take the AI abstract of a deleted version off the resource (#900) — it stayed on the resource and in search and embeddings when the deletion left the resource empty or nothing wrote a new abstract. Editors' own text, the hidden setting and recorded refusals are kept.
+
+**Performance**
+
+- perf(storage): run deletes behind listing when removing a storage prefix (#906) — locally, removing 20,000 objects went from 2.3 s to 0.7 s; deleting datasets and organizations and the full-data reset use it.
+
+**Documentation**
+
+- docs(adr): ADR-067 is accepted, with how it rolls out: a one-way migration, a separate snapshot column, and rebuilding what is missing (#898, #902).
+- docs(site): the landing page shows the 0.34 updates, and its cards are evened out in length and written from the reader's side (#897, #904). The Japanese tagline becomes 「読めて、聞けて、つながる。」.
+
+---
+
+**アップグレード時の注意**
+
+- 行の差分（新しい版で増えた・消えた・変わった行を示す機能）は、DuckLake で動いています。DuckLake は、行のデータを入れたファイルと、どの版にどの行があるかの記録でできています（DuckLake ではこの記録を「カタログ」と呼びます）。これまではサイト全体で 1 つの記録を PostgreSQL のスキーマに置いていましたが、このリリースからはリソースごとに持ち、データファイルの隣に小さな SQLite ファイルとして置きます（ADR-067）。以前のリリースで取り込んだ差分は、そのリソースの記録を保存済みの版のファイルから作り直すまで「行レベルのスナップショットが無い」と表示されます。v0.35.0 は以前の記録を読まず、PostgreSQL への接続に使っていた DuckDB の拡張（`postgres`）も、web と worker のイメージでは `sqlite` に置き換えました（閉域網の環境でも追加の作業は要りません）。作り直しは自動で、サイトごとに毎時 200 リソースずつ進みます。ダッシュボードの「バージョンの補完」を実行すると、待たずに全件を順に作り直します。版の削除は作り直しを待たずに行えます。
+- サイト全体の以前の DuckLake の記録（PostgreSQL の `ducklake` スキーマと、ストレージの `lake/main/`）は、作り直しの後も読み書きされずに残ります。**削除するまで、アップグレード後に削除した版やデータセットの行もそこに残ります。** 作り直しが終わり、以前のリリースへ戻さないと決めたら、デプロイ済みのコンテナ内で `node apps/worker/dist/drop-shared-lake-catalog.js --commit` を実行して削除してください（`--commit` なしは報告のみ）。マルチサイト構成ではサイトごとに実行します。作り直しが残っている間は失敗します（システム管理者ガイド）。
+- 戻す場合: マイグレーションは追加だけです（`resource_pipeline.lake_catalog_key`、`resource_version.lake_snapshot_id`、索引 2 つ）。適用後のデータベースでも v0.34.0 のイメージは動き、以前の記録を読みます。ただし、v0.35.0 で版を削除したリソースの差分は正しいとは限りません。以前の記録を削除した後に戻すと、以前のリリースで取り込んだ差分は表示されません。
+- 次のリリース: 以前の記録だけが使っていた `resource_version.ducklake_snapshot_id` 列を削除する予定です。それ以降は、アップグレード後のデータベースで v0.35.x 以前のイメージは動かず、そのリリースより前へは戻せなくなります。v0.34.x 以前からこのリリースを飛ばして上げることもでき、まだ作り直していないリソースは同じ規則で作り直されますが、その場合も v0.34.x へは戻せません。
+- DB の接続: 行の差分が PostgreSQL の接続を使わなくなり、マルチサイトガイドの DB サイズの目安の表が軽くなりました。
+
+**ハイライト**
+
+- feat(lake): 行の差分のための DuckLake の記録をリソースごとに持ち、版の削除を作り直しで行う（ADR-067）（#903、#905）— 版を削除すると、そのリソースの行の履歴を残る版から作り直すので、削除した行のバイト列が、たどれなくなるだけでなく差分のデータからも消えます。データセットや組織の完全削除では、ほかのファイルとともに差分のデータも消します。差分のデータが欠けていたら（データベースかストレージの片方だけを復元した、手で消した等）、次に必要になったときに保存済みの版から作り直します。
+
+**バグ修正**
+
+- fix(api): 削除した版から作った AI 抄録をリソースから外す（#900）— 削除でリソースが空になったときや、新しい抄録が作られないときに、抄録がリソースと検索・埋め込みに残っていました。人が書いた文、非表示の設定、記録済みの拒否は残します。
+
+**パフォーマンス**
+
+- perf(storage): ストレージのプレフィックスを消すとき、一覧の取得の後ろで削除を並行して進める（#906）— ローカルでは 2 万オブジェクトの削除が 2.3 秒から 0.7 秒になりました。データセットと組織の完全削除、全データ削除が使います。
+
+**ドキュメント**
+
+- docs(adr): ADR-067 を採択し、移行の方式（一方向の移行、別のスナップショット列、欠けていたら作り直す）を決めました（#898、#902）。
+- docs(site): ドキュメントサイトのトップページに 0.34 の更新を載せ、カードの長さと書きぶりを使う人の目線で揃えました（#897、#904）。日本語のタグラインを「読めて、聞けて、つながる。」にしました。
+
 ## [0.34.0] - 2026-10-11
 
 **Upgrade Notes**
