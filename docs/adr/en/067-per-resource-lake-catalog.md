@@ -120,7 +120,8 @@ target (ADR-043 §3-1). Moving the catalog out of PostgreSQL touches exactly the
   (`packages/db/src/schema/resource-version.ts`): `ducklake_snapshot_id`, `lake_key_columns`,
   `lake_ingest_reason`, `lake_ingest_queued_at` (the sweep's lease), `lake_ingest_failures`,
   `lake_ingest_failed_at` (ADR-043's `ingest-failed`), and `idx_resource_version_pending_lake`.
-  **Only `ducklake_snapshot_id` changes meaning in this ADR**; the rest are used as they are
+  **This ADR adds a new column in place of `ducklake_snapshot_id`** (decision 1); the rest are used
+  as they are
 - **`resource.column_settings`** (the primary-key setting, frozen into `lake_key_columns` when a
   version is created). Unchanged
 - **Job types** `lake-ingest-version` and `drop-lake-tables` (`pipeline-types.ts`)
@@ -260,8 +261,12 @@ issue 9). Layer 2 can be rebuilt, so this decision can be reversed later.
   the derivative pointers (`preview_key` etc.), and the claim lives there. It is not added to
   `pipelineObjectKeys` (the derivatives a live-version purge discards), though — layer 2 is rebuilt,
   not discarded
-- `resource_version.ducklake_snapshot_id` keeps its meaning as **a number within the resource**. The
-  other five columns and the partial index do not change
+- **Snapshot numbers go in a new column, `resource_version.lake_snapshot_id` (a number within the
+  resource).** `ducklake_snapshot_id` stays the shared catalog's number and is not touched.
+  Renumbering the same column would, after going back to an older version, point at a different
+  snapshot of the shared catalog, and keyed diffs would silently go wrong (decision 6). The
+  pending-ingest partial index is rebuilt on the new column, and the old column and index are dropped
+  in the cleanup of decision 6. The remaining four columns such as `lake_key_columns` do not change
 - **The PostgreSQL `ducklake` schema is no longer needed.** Being outside Drizzle, it is dropped
   after migration with `DROP SCHEMA ducklake CASCADE`, spelled out in the operating procedure
   (system administrator guide). `DROP SCHEMA` also leaves the admin "delete all data" (deleting the
@@ -285,13 +290,12 @@ issue 9). Layer 2 can be rebuilt, so this decision can be reversed later.
   extension no longer migrates it automatically (ATTACH's `AUTOMATIC_MIGRATION` defaults to
   `false`, <https://ducklake.select/docs/stable/duckdb/usage/connecting>). With a single catalog the
   migration happens once; per resource it is **tens of thousands of files**. Layer 2 can be rebuilt,
-  so a release that raises the catalog version would by default run the rebuild of decision 6.
-  Rolling back is then just a setting, provided the old catalogs are kept until confirmed (open
+  so a release that raises the catalog version would by default run the rebuild of decision 6 (open
   issue 6)
 - Non-tabular resources get no `lake/<resourceId>/` (context 5). Even within one resource, whether
   a version read as a table can change between versions (a broken CSV, a change in JSON structure, a
   corrected format label). Only versions that read as tables go into layer 2; the others keep a null
-  `ducklake_snapshot_id` and exist only in layer 1 — as today
+  `lake_snapshot_id` and exist only in layer 1 — as today
 
 ### 2. Ingest
 
@@ -305,15 +309,18 @@ The body of today's `ingestVersionIntoLake` (`ingestParquetVersion`, keyed `MERG
 3. DETACH so that the journal is folded into the main file, and PUT it to a new key. **The PUT goes
    through write-ahead recording** (ADR-045). A catalog from an attempt that died before its rows
    were written expires with zero references and the sweep deletes it
-4. In one transaction, write the version row's `ducklake_snapshot_id`, move `lake_catalog_key` to
+4. In one transaction, write the version row's `lake_snapshot_id`, move `lake_catalog_key` to
    the new key with a CAS (failing if the original key changed), and park the old catalog key for
    reclaim
 
 Ingest already runs under the claim (`run` / `job`), so **concurrent writes to the same resource do
-not happen. The global `LAKE_INGEST_LOCK` is no longer needed for layer 2.** What the lock guards
-today is "another run cutting in between reading the base and committing" (the note in
-`purgeFromLake`), and the only ones that can cut in are writers of the same catalog. Whether to
-remove it is decided during implementation, after checking that the lock guards no other invariant.
+not happen. The global `LAKE_INGEST_LOCK` is removed.** The lock guards three things — identifying
+one's own snapshot as the catalog-wide maximum, another run cutting in between reading the base and
+committing, and the reclaim's set computation — all of which exist because the catalog is shared.
+The four places that use it (`lake-ingest.ts`, `lake-reclaim.ts`, `purgeFromLake` in
+`resource-version-service.ts`, and the worker's `build-context.ts`) are all layer 2; the commit
+transaction checks the CAS on `lake_catalog_key` and that the claim is still held (`stillHeld`)
+instead.
 
 SQLite's journal mode stays the default rollback journal, so that the main file is consistent even
 if a write dies midway. **The local file of an attempt that died is discarded, never used.** Dying
@@ -356,16 +363,16 @@ Today's flow (`resource-version-service.ts`, the ADR-043 §5 / ADR-028 pattern):
 
 The new `purgeFromLake` (under the claim, after the layer 1 deletion):
 
-1. **Rebuild.** If the version being purged was not in layer 2 (`ducklake_snapshot_id` is null),
+1. **Rebuild.** If the version being purged was not in layer 2 (`lake_snapshot_id` is null),
    skip this step. If it was, re-ingest from layer 1, **in version order**, **the versions other
-   than `purged` / `purging` whose `ducklake_snapshot_id` is non-null**, into a catalog in a new
+   than `purged` / `purging` whose `lake_snapshot_id` is non-null**, into a catalog in a new
    generation. Interpretation goes through `withInterpretedVersion` (ADR-046) as ingest does, and
    each version MERGEs with its frozen `lake_key_columns`, so the ii-b history is reproduced too. The
    targets are "versions that were in layer 2" rather than "versions that interpret as tables" so as
    not to mix in versions left out for key faults (`lake_ingest_reason`), and to leave versions not
    yet ingested to the sweep as now. If no version remains, no catalog is created
 2. **Swap.** PUT the new catalog (write-ahead), and in one transaction renumber the remaining
-   versions' `ducklake_snapshot_id`, **null the purged row's `ducklake_snapshot_id`**, and move
+   versions' `lake_snapshot_id`, **null the purged row's `lake_snapshot_id`**, and move
    `lake_catalog_key` to the new key (null if no version remains). The purged row is nulled before
    the tombstone so that a retry does not repeat step 1 (renumbered IDs can collide with the old
    catalog's)
@@ -374,6 +381,9 @@ The new `purgeFromLake` (under the claim, after the layer 1 deletion):
    retry after dying right after step 2 completes here. The old catalog is deleted immediately
    rather than parked for reclaim (parking would leave its column statistics around for 1 hour plus
    the sweep interval)
+
+The tombstone nulls both `lake_snapshot_id` and `ducklake_snapshot_id` (the latter for going back
+to an older version, decision 6).
 
 Today's three branches (`stays` / `drop` / `onto`) and the reclaim (`reclaimInSession`) are no
 longer needed. In the rebuilt catalog, the table's current contents are the last version ingested
@@ -392,12 +402,13 @@ not be erased (ADR-043 open issue 7).
 **A rebuild is a re-interpretation.** If the interpretation rules (type inference, JSON flattening,
 etc.) changed since the version was created, the post-rebuild diff reflects today's rules. Layer 2
 is a derived index, so this is accepted. If a version no longer becomes a table under today's rules,
-or its frozen key is now invalid, record `lake_ingest_reason` as ordinary ingest does, skip it, and
-do not stop the purge.
+or its frozen key is now invalid, record the reason as ordinary ingest does (`lake_ingest_reason` for
+a key fault, `no_table_reason` for no table), skip it, and do not stop the purge.
 
 **Cost.** One purge re-interprets every version of that resource that was in layer 2 (worst case
 100 MB × number of versions). A purge is a rare operation a sysadmin performs with a reason, so this
-is accepted. The heavy interpretation runs in ADR-059's child process.
+is accepted. The heavy interpretation runs in ADR-059's child process. A claim reads as stale after
+15 minutes (`CLAIM_STALE_AFTER_MS`), so the claim's time is extended after each version ingested.
 
 **The role of expire / cleanup / `merge_adjacent_files`.** Ingest is 1 version = 1 snapshot, named
 by some version row, and there is no stand-down reload any more, so **ordinary operation produces no
@@ -425,29 +436,70 @@ Withdraw ADR-043 §5's "layer 2 does not guarantee erasure of bytes", and write 
 Whether to bring back the term "legal deletion" depends on how much of this residue, and of the
 human-written summaries a purge keeps (open issue 3), the guarantee covers (open issue 2).
 
-### 6. Migration
+### 6. Migration and going back
 
-Layer 2 can be rebuilt, so migration amounts to **running decision 4's rebuild (with nothing to
-purge) on every resource that has layer 2**. The targets are "resources with a version whose
-`ducklake_snapshot_id` is non-null", countable in advance with the same condition as
-`lakeResourceIds` in `listPurgeTargets`, which the package purge uses. Add one job that rebuilds
-each resource under the claim (`job`).
+**Migration is one-way, in one release.** There is no setting that switches between the shared
+catalog and per-resource catalogs (no dual mode). Layer 2 is a derivative that can be rebuilt from
+layer 1, so "going back does not break it, and coming back rebuilds it" is enough; being able to go
+back and forth is not needed. Users can skip versions in either direction, so nothing here relies on
+releases being applied in order — every measure in this section is contained in that one release.
 
-Version numbers, hashes and `lake_key_columns` are in `resource_version`; only
-`ducklake_snapshot_id` is reassigned. Versions with `state = purged` drop out of the targets
-naturally, so **the migration itself erases what past purges left in layer 2**.
+**The migration is decision 4's rebuild (with nothing to purge), run on every resource that has
+layer 2.**
 
-- No dual-write period. Switch by setting, run the rebuild, and after confirmation drop the old
-  `ducklake` schema (outside Drizzle) and the old catalog's data files. The old files sit directly
-  under `lake/` in DuckLake's default layout (schema name / table name hierarchy; checked by the
-  spike, decision 7-6) and do not overlap the new `lake/<resourceId>/` layout, so the migration
-  procedure deletes them explicitly. They are not made a target of `sweep-lake-orphans`
-- During the rebuild, the diff screen shows the existing `DiffUnavailableReason`
-  (`'no-previous-version'` / `'not-ingested'` / `'purged'` / `LakeIngestReason`). Whether that is
-  enough is open issue 1
-- Rolling back is just reverting the setting (keep the old catalog until confirmed)
-- If it goes in before the first production adoption goes public, no production history is ever
-  migrated
+- The targets are "resources with a version whose `ducklake_snapshot_id` is non-null and no
+  `lake_catalog_key` yet", countable in advance. Add one job that rebuilds a resource under the
+  claim (`job`), queued both by a job that queues them all (from the dashboard's one-time migration
+  operations) and by the hourly layer 2 ingest sweep with a cap per run. Even if nobody presses the
+  button, the migration finishes eventually
+- It reads only layer 1, never the old catalog. Version numbers, hashes and `lake_key_columns` are in
+  `resource_version`; the only thing written is the new column `lake_snapshot_id`. Versions with
+  `state = purged` drop out of the targets naturally
+- A resource not yet migrated shows the existing `'not-ingested'` for diffs (open issue 1)
+
+**Rebuild what is missing.** If the key in `lake_catalog_key` cannot be fetched (404), or data files
+the catalog names are missing, treat the resource as needing a rebuild and run the same rebuild.
+This one rule recovers three situations:
+
+- Upgrading, going back to an older version, and coming forward again more than 24 hours later (the
+  older version's orphan sweep has deleted the new layout; see "Going back" below)
+- Restoring only one of the DB and S3 to an earlier point ("Restoring from backup" below)
+- An operator deleting `lake/` by hand
+
+**Stop the old catalog's orphan sweep.** The shared catalog's `sweep-lake-orphans` deletes "files
+the shared catalog does not know" under `DATA_PATH = lake/`, and the new layout `lake/<resourceId>/`
+looks like that. The new version does not run the orphan sweep against the shared catalog. Shipping
+this in the same release is enough — the overlap with the old image during a rolling update lasts
+minutes, and only files older than 24 hours are deleted (`LAKE_ORPHAN_RETENTION_MS`).
+
+**Going back.** Going back to an older image is possible. The older version uses the shared catalog
+and `ducklake_snapshot_id`, and the new version writes to neither, so they remain as they were before
+the migration. Versions ingested by the new version have a null `ducklake_snapshot_id`, so the older
+version's hourly sweep picks them up again. With these limits:
+
+- **Resources purged on the new version get no guarantee for layer 2 diffs on the older version.**
+  The tombstone also nulls `ducklake_snapshot_id`, so diffs with the purged version as an end cannot
+  be opened. But the shared catalog's table may still hold the purged version as its current contents
+  (and the base of the next keyed ingest may be off). The new version does not connect to the shared
+  catalog, so this is not repaired; the remedy is to come back to the new version
+- If the older version's orphan sweep deletes the new layout while you are back, "rebuild what is
+  missing" kicks in when you come forward again. Meanwhile diffs show "not ingested"
+
+**Deleting the old catalog.** The shared catalog (the `ducklake` schema, outside Drizzle) and the
+old files (`lake/main/`, decision 7-6) are dropped once the migration has nothing left and you have
+decided not to go back. AWS has no procedure for running SQL directly against PostgreSQL, so add a
+worker CLI shaped like `reconcile-orphans`. By default it only reports; with `--commit` it runs
+`DROP SCHEMA ducklake CASCADE` and deletes `lake/main/`, and it refuses while the migration has
+anything left. On multi-site, run it per site database. **Until it runs, rows of versions purged in
+the past remain in the old catalog** (the guarantee of decision 5 holds after this deletion).
+
+**Restoring from backup.** If either the DB or S3 is restored to an earlier point, do not try to
+restore `lake/`; leave it to "rebuild what is missing". Do not restore noncurrent versions under
+`lake/` (purged rows would come back). Restoring the DB also loses the records of purges made after
+that point, so redo those purges (an existing property, not specific to layer 2).
+
+If it goes in before the first production adoption goes public, no production history is ever
+migrated.
 
 ### 7. What the spike checks
 
@@ -480,16 +532,17 @@ DuckDB 1.5.5 (DuckLake `d8a1881e`), MinIO in the development environment. The ta
 keyed by `id`, changing 20 rows and removing one per version (`spike/adr-067/README.md`). The same
 procedure was run against a DuckDB-file catalog for comparison. Raw results are not committed.
 
-| #   | What was checked                                                                        | SQLite                                                                                                                                                                  | DuckDB file                                     |
-| --- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| 1   | Full replace, keyed MERGE, `AT (VERSION => n)`, expire, cleanup, `merge_adjacent_files` | All work. 39 rows in the diff, 14 files cleaned up, 4 objects left                                                                                                      | Same values                                     |
-| 2   | Persistence of `data_inlining_row_limit = 0`                                            | Still `0` after re-ATTACH (scope `GLOBAL`). A one-row INSERT writes a file                                                                                              | Same                                            |
-| 3   | What remains after DETACH, and SIGKILL during a commit                                  | Only the main file after DETACH. Of 5 SIGKILLs, 3 left a `-journal`, but `PRAGMA integrity_check` was `ok` all 5 times and the latest snapshot matched the commits made | —                                               |
-| 4   | Size and ATTACH at 50 versions (97 files)                                               | **188 KB**, ATTACH 4–5 ms, ingest 16.1 s                                                                                                                                | 4.5 MB, 3–5 ms, 9.5 s                           |
-| 5   | Pinned extension distribution                                                           | `httpfs`, `aws`, `sqlite_scanner` and `ducklake` all loaded from the given directory with autoloading off                                                               | —                                               |
-| 6   | Reach of `delete_orphaned_files`, and the layout                                        | Deletes nothing outside `DATA_PATH` (does delete orphans inside). Layout is `<DATA_PATH>/main/<table>/ducklake-<uuid>.parquet`                                          | Same                                            |
-| 7   | Rebuild (49 versions, one left out)                                                     | 17.0 s                                                                                                                                                                  | 9.1 s                                           |
-| 8   | Large diffs (100,000 rows × 20 versions, 0.2% / 10% / 100% of rows changed)             | Ingest 320 / 321 / 393 ms per version, diff read 60 / 61 / 56 ms, catalog 147 KB                                                                                        | 148 / 188 / 246 ms, 61 / 56 / 58 ms, 4.2–4.5 MB |
+| #   | What was checked                                                                        | SQLite                                                                                                                                                                                                 | DuckDB file                                     |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| 1   | Full replace, keyed MERGE, `AT (VERSION => n)`, expire, cleanup, `merge_adjacent_files` | All work. 39 rows in the diff, 14 files cleaned up, 4 objects left                                                                                                                                     | Same values                                     |
+| 2   | Persistence of `data_inlining_row_limit = 0`                                            | Still `0` after re-ATTACH (scope `GLOBAL`). A one-row INSERT writes a file                                                                                                                             | Same                                            |
+| 3   | What remains after DETACH, and SIGKILL during a commit                                  | Only the main file after DETACH. Of 5 SIGKILLs, 3 left a `-journal`, but `PRAGMA integrity_check` was `ok` all 5 times and the latest snapshot matched the commits made                                | —                                               |
+| 4   | Size and ATTACH at 50 versions (97 files)                                               | **188 KB**, ATTACH 4–5 ms, ingest 16.1 s                                                                                                                                                               | 4.5 MB, 3–5 ms, 9.5 s                           |
+| 5   | Pinned extension distribution                                                           | `httpfs`, `aws`, `sqlite_scanner` and `ducklake` all loaded from the given directory with autoloading off                                                                                              | —                                               |
+| 6   | Reach of `delete_orphaned_files`, and the layout                                        | Deletes nothing outside `DATA_PATH` (does delete orphans inside). Layout is `<DATA_PATH>/main/<table>/ducklake-<uuid>.parquet`                                                                         | Same                                            |
+| 7   | Rebuild (49 versions, one left out)                                                     | 17.0 s                                                                                                                                                                                                 | 9.1 s                                           |
+| 8   | Large diffs (100,000 rows × 20 versions, 0.2% / 10% / 100% of rows changed)             | Ingest 320 / 321 / 393 ms per version, diff read 60 / 61 / 56 ms, catalog 147 KB                                                                                                                       | 148 / 188 / 246 ms, 61 / 56 / 58 ms, 4.2–4.5 MB |
+| 9   | Re-ATTACH with a different `DATA_PATH`                                                  | A mismatch with the recorded path stops ATTACH with an error. With `OVERRIDE_DATA_PATH true` it goes through, and existing files are read relative to the new `DATA_PATH` (404 if they were not moved) | —                                               |
 
 What this shows:
 
@@ -534,8 +587,26 @@ What this shows:
   §9 and §11-3; version purge and `drop-lake-tables` in `docs/pipeline.md` / `docs/jobs.md`; the
   `ducklake` schema and its deletion procedure in the system administrator guide (ja/en); connection
   counts in the multi-site guide
-- **DB**: the only Drizzle migration is adding `resource_pipeline.lake_catalog_key` (additive, so the
-  previous image still works). Dropping the `ducklake` schema is a procedure outside Drizzle
+- **DB**: Drizzle migrations add `resource_pipeline.lake_catalog_key`, `resource_version.lake_snapshot_id`
+  and its pending-ingest partial index (additive, so the previous image still works).
+  `ducklake_snapshot_id` and the old index go in a release after the old catalog is dropped. Dropping
+  the `ducklake` schema is outside Drizzle (the CLI of decision 6)
+- **CI**: the DuckDB extension cache key hashes `packages/lake/package.json`, which does not change
+  when `sqlite` is added. Without changing the key an old cache hits, and tests time out fetching the
+  extension
+- **Implementation order**: the rebuild is built for the migration anyway, so the purge uses it from
+  the start (no intermediate stage that runs the shared-catalog stand-down on the new catalogs).
+  1. Add the columns and index, and add `lake_catalog_key` to the orphan sweep's reference check
+  2. Give `@kukan/lake` sessions a catalog alias, and add a session without a catalog (move the
+     primary-key pre-check to it)
+  3. Add the basic operations to `@kukan/lake`: download, ATTACH, DETACH and PUT a catalog
+  4. Ingest, diffs, the rebuild-based purge and the migration job on the new layout, "rebuild what is
+     missing", stopping the old catalog's orphan sweep, the `sqlite` extension and the CI cache key
+     (up to here is one release)
+  5. Package / organisation purges by prefix deletion; remove the stand-down, the reclaim and
+     `LAKE_INGEST_LOCK`; docs and UI
+  6. The CLI that deletes the old catalog. After confirming the migration in production, remove the
+     `postgres` extension, the connection budget and `ducklake_snapshot_id`
 - **Operations**: each diff fetches one catalog file (188 KB at 50 versions, cacheable by key). The libpq share
   (web +1 / worker +2) leaves the PostgreSQL connection budget. Multi-site separation comes for free
   (ADR-043 open issue 3). A release that raises the DuckLake catalog version runs the rebuild
@@ -570,8 +641,14 @@ What this shows:
    weigh with the count. Lazy migration — opening with `AUTOMATIC_MIGRATION` and writing to a new key
    — is also possible, but rolling back to the previous image then cannot read migrated catalogs.
    Decide when the catalog version first goes up
-7. **Removing the global lock `LAKE_INGEST_LOCK`** (decision 2). Confirm during implementation that
-   the lock guards nothing besides layer 2
+7. ~~**Removing the global lock `LAKE_INGEST_LOCK`**~~ **Resolved (2026-10-12).** The four places
+   that use it are all layer 2, so it can go (decision 2)
+8. ~~**Which wins when an existing SQLite catalog is ATTACHed with a different `DATA_PATH`.**~~
+   **Resolved (2026-10-12, measurement 9 in decision 7).** The catalog records data files relative to
+   `DATA_PATH` and refuses a `DATA_PATH` that differs from the recorded one. ATTACH always builds
+   `DATA_PATH` from the current settings and passes `OVERRIDE_DATA_PATH`. If the whole bucket was
+   moved the relative layout holds and reads work; if not, reads 404 and decision 6's "rebuild what is
+   missing" recovers
 
 ## Related
 

@@ -37,5 +37,6 @@ DUCKDB_EXTENSION_DIRECTORY=/path/to/exts node spike/adr-067/check.mjs --only 5
 | 6   | `delete_orphaned_files` が `DATA_PATH` の外に触れないか。DuckLake が `DATA_PATH` に置く階層                | `checks[6]` |
 | 7   | パージ後の再構築（1 版を抜いて N−1 版を取り込み直す）の時間                                                | `checks[7]` |
 | 8   | 大きな差分: 版あたりの取り込み時間、差分の読み（遠い版・隣の版）、カタログの大きさ。`--rows` / `--changed` | `checks[8]` |
+| 9   | 別の `DATA_PATH` で ATTACH し直したときの扱い（拒否と `OVERRIDE_DATA_PATH`）                               | `checks[9]` |
 
 MinIO に書いた `spike-adr-067/` は消さない。終わったら手で消す。

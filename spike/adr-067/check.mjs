@@ -374,6 +374,51 @@ const checks = {
     }
   },
 
+  /** 9. A catalog re-ATTACHed with a different DATA_PATH: which path do reads and new writes use? */
+  async 9() {
+    const first = layout('r9', 'g1')
+    const conn = await session()
+    await build(conn, first, 2)
+    await conn.run('DETACH lake')
+    const moved = { ...first, dataPath: `${bucket}/elsewhere/r9/` }
+    const other = await session()
+    let refused = null
+    try {
+      await attach(other, moved)
+    } catch (e) {
+      refused = String(e.message ?? e).split('\n')[0]
+    }
+    // What the error offers: point the catalog at the new place explicitly.
+    const scheme = CATALOG === 'sqlite' ? 'ducklake:sqlite:' : 'ducklake:'
+    await other.run(
+      `ATTACH '${scheme}${moved.catalog}' AS lake (DATA_PATH '${moved.dataPath}', OVERRIDE_DATA_PATH true)`
+    )
+    const option = await rows(
+      other,
+      `SELECT option_name, value FROM ducklake_options('lake') WHERE option_name = 'data_path'`
+    )
+    let readError = null
+    let count = null
+    try {
+      count = (await rows(other, 'SELECT count(*) AS n FROM lake.t'))[0].n
+    } catch (e) {
+      readError = String(e.message ?? e)
+    }
+    await keyedIngest(other, await writeVersion(other, 3))
+    const files = await rows(other, `SELECT data_file FROM ducklake_list_files('lake', 't')`)
+    return {
+      refused,
+      option,
+      count,
+      readError,
+      newFilesUnder: [
+        ...new Set(
+          files.map((f) => (f.data_file.includes('/elsewhere/') ? 'elsewhere' : 'original'))
+        ),
+      ],
+    }
+  },
+
   async 7() {
     const conn = await session()
     const purged = Math.ceil(VERSIONS / 2)
