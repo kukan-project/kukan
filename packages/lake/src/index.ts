@@ -4,7 +4,7 @@
  * diff), not for statements.
  *
  * The exceptions are the DuckDB plumbing every reader of this bucket needs
- * whether or not it attaches the catalogue — the S3 secret, the extension
+ * whether or not it opens a catalog — the S3 secret, the extension
  * directory and loader, `sqlLiteral` — which live here because this is where
  * the knowledge of how to reach the bucket already was (ADR-055).
  */
@@ -27,13 +27,11 @@ export { sqlLiteral, sqlIdentifier } from './sql'
 export { readRowGroupRows } from './parquet'
 export {
   openBucketSession,
-  openLakeSession,
   withBucketSession,
-  withLakeSession,
   closeLakeInstances,
   releaseIdleLakeInstances,
 } from './connection'
-export type { BucketSession, LakeSession, LakeSessionOptions, LakeRow } from './connection'
+export type { BucketSession, LakeSession, LakeRow } from './connection'
 export {
   lakeResourcePrefix,
   lakeDataPrefix,

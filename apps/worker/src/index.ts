@@ -39,7 +39,6 @@ import {
   syncSearchDocsJobSchema,
   REANALYSE_INDEX_JOB_TYPE,
   reanalyseIndexJobSchema,
-  WORKER_LAKE_CATALOG_CONNECTIONS,
 } from '@kukan/shared'
 import { eq } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
@@ -212,11 +211,10 @@ if (env.HEALTH_CHECK_ENABLED) {
   })
 }
 
-// --- DuckLake (ADR-043 layer 2): catalog + bucket derived from the same env ---
+// --- DuckLake (ADR-043 layer 2): the bucket each resource's catalog is kept in ---
 const lake = lakeConfigFromEnv(env, {
   memoryLimitMb: LAKE_MEMORY_LIMIT_MB,
   threads: LAKE_THREADS,
-  catalogConnections: WORKER_LAKE_CATALOG_CONNECTIONS,
 })
 // Local catalog copies a killed worker left behind (ADR-067 §2): never reused,
 // so only disk until removed. Not awaited — nothing here depends on it.
@@ -617,8 +615,8 @@ await queue.process({
     })
   },
   // Rebuild one resource's layer 2 from layer 1 (ADR-067), or clear what a
-  // failed write left in it: queued by an ingest that finds the resource still
-  // in the shared catalog, and by a failed ingest or diff
+  // failed write left in it: queued by an ingest that finds a version left
+  // behind a later one, and by a failed ingest or diff
   [LAKE_REBUILD_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, lakeRebuildJobSchema)
     if (!data) return

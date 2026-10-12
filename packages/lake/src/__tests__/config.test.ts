@@ -27,17 +27,9 @@ describe('lakeTableName', () => {
   })
 })
 
-const limits = { memoryLimitMb: 256, threads: 1, catalogConnections: 1 }
+const limits = { memoryLimitMb: 256, threads: 1 }
 
 describe('lakeConfigFromEnv', () => {
-  it('builds a libpq keyword connection string for the catalog', () => {
-    const c = lakeConfigFromEnv(envWith({}), limits)
-    // connect_timeout bounds ATTACH, which cannot be interrupted from Node.
-    expect(c.pgConnString).toBe(
-      'host=localhost port=5432 dbname=kukan user=kukan password=pw sslmode=disable connect_timeout=10'
-    )
-  })
-
   it('splits a MinIO endpoint URL into host and ssl flag (path-style)', () => {
     const c = lakeConfigFromEnv(
       envWith({ S3_ENDPOINT: 'http://localhost:9000', S3_ACCESS_KEY: 'k', S3_SECRET_KEY: 's' }),

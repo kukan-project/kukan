@@ -68,8 +68,21 @@ resources in turn; without it they move by themselves, 200 an hour. Deleting ver
 operations do not wait for the move.
 
 The data in the previous format (the PostgreSQL `ducklake` schema and `lake/main/`) is left in
-place, neither read nor written. A procedure to delete it will come in a later release. **Until
-then, the rows of versions and datasets purged after the upgrade also remain in that data.**
+place, neither read nor written. **Until it is deleted, the rows of versions and datasets purged
+after the upgrade also remain in that data.** Once the move is finished and you have decided not to
+go back to an earlier release, delete it by running the following in the deployed container — once
+per site in a multi-site deployment:
+
+```bash
+node apps/worker/dist/drop-shared-lake-catalog.js            # report only
+node apps/worker/dist/drop-shared-lake-catalog.js --commit   # delete
+```
+
+- **By default it only reports**: how many resources are still to be moved, and what would be
+  deleted (whether the schema is there, and how many files)
+- **While any resource is still to be moved, `--commit` fails without deleting anything.** Let the
+  hourly move or **Backfill versions** on the dashboard bring it to 0 first
+- Going back to an earlier release after the deletion leaves the row diffs it loaded unavailable
 :::
 
 On-premises deployments use the following alternative services:

@@ -424,7 +424,7 @@ export async function clearLakeLeftovers(
       `Layer 2 catalog of resource ${resourceId} moved while its leftovers were listed; retry`
     )
   }
-  return deleteAll(storage, doomed, resourceId)
+  return deleteAllLakeKeys(storage, doomed, `resource ${resourceId}'s layer 2`)
 }
 
 /**
@@ -445,7 +445,11 @@ export async function deleteResourceLakes(
     const chunk = resourceIds.slice(i, i + RESOURCE_LAKE_DELETE_CONCURRENCY)
     const counts = await Promise.all(
       chunk.map(async (resourceId) =>
-        deleteAll(storage, await listLakeKeys(storage, lakeResourcePrefix(resourceId)), resourceId)
+        deleteAllLakeKeys(
+          storage,
+          await listLakeKeys(storage, lakeResourcePrefix(resourceId)),
+          `resource ${resourceId}'s layer 2`
+        )
       )
     )
     deleted += counts.reduce((a, b) => a + b, 0)
@@ -470,18 +474,16 @@ export async function listLakeKeys(
   return keys
 }
 
-/** Delete `keys` of a resource's layer 2, throwing unless every one went. */
-async function deleteAll(
+/** Delete `keys`, throwing unless every one went; `what` they are names them in the error. */
+export async function deleteAllLakeKeys(
   storage: Pick<StorageAdapter, 'deleteMany'>,
   keys: string[],
-  resourceId: string
+  what: string
 ): Promise<number> {
   if (keys.length === 0) return 0
   const deleted = await storage.deleteMany(keys)
   if (deleted.length < keys.length) {
-    throw new Error(
-      `Deleted ${deleted.length} of ${keys.length} objects of resource ${resourceId}'s layer 2`
-    )
+    throw new Error(`Deleted ${deleted.length} of ${keys.length} objects of ${what}`)
   }
   return deleted.length
 }

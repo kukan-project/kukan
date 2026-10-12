@@ -1,13 +1,16 @@
 /**
- * DuckLake configuration (ADR-043 layer 2 / Phase ii).
- * Catalog = the app's PostgreSQL (dedicated schema); data files = the app's
- * S3/MinIO bucket under a dedicated prefix. Derived from the existing DB and
- * storage env — no new required variables.
+ * DuckLake configuration (ADR-043 layer 2 / Phase ii). Each resource's catalog
+ * and data files live in the app's S3/MinIO bucket under a dedicated prefix
+ * (ADR-067). Derived from the existing storage env — no new required variables.
  */
 import type { Env } from '@kukan/shared'
 import { sqlLiteral } from './sql'
 
-/** PostgreSQL schema that DuckLake owns for its catalog tables (not Drizzle-managed). */
+/**
+ * The PostgreSQL schema the shared catalog kept its tables in before ADR-067
+ * (not Drizzle-managed). Nothing reads it; the command that drops the shared
+ * catalog does, and the full data wipe.
+ */
 export const LAKE_METADATA_SCHEMA = 'ducklake'
 /** Storage key prefix for DuckLake data files (Parquet). */
 export const LAKE_DATA_PREFIX = 'lake/'
@@ -22,13 +25,9 @@ export const LAKE_DATA_PREFIX = 'lake/'
 export interface LakeLimits {
   memoryLimitMb: number
   threads: number
-  /** The catalog connections the instance may hold (see `@kukan/shared/lake-limits`) */
-  catalogConnections: number
 }
 
 export interface LakeConfig {
-  /** libpq keyword connection string for the DuckLake catalog. */
-  pgConnString: string
   bucket: string
   region: string
   /** S3-compatible endpoint host:port (MinIO); undefined for AWS S3. */
@@ -58,23 +57,8 @@ export function lakeStorageUrl(config: LakeConfig, key: string): string {
   return `s3://${config.bucket}/${key}`
 }
 
-/**
- * Seconds libpq waits for the catalog connection during ATTACH.
- *
- * ATTACH runs inside DuckDB and cannot be interrupted from Node, so a caller
- * that gives up on a deadline abandons it rather than cancelling it. Without a
- * bound, an unreachable catalog would leave one such connection attempt behind
- * per request and they would accumulate.
- */
-const LAKE_PG_CONNECT_TIMEOUT_S = 10
-
 export function lakeConfigFromEnv(env: Env, limits: LakeLimits): LakeConfig {
-  // DuckLake's ATTACH takes a libpq keyword string, not a URL.
-  const pgConnString =
-    `host=${env.POSTGRES_HOST} port=${env.POSTGRES_PORT} dbname=${env.POSTGRES_DB} ` +
-    `user=${env.POSTGRES_USER} password=${env.POSTGRES_PASSWORD} ` +
-    `sslmode=${env.POSTGRES_SSLMODE} connect_timeout=${LAKE_PG_CONNECT_TIMEOUT_S}`
-  return { pgConnString, ...s3SettingsFromEnv(env), limits }
+  return { ...s3SettingsFromEnv(env), limits }
 }
 
 /**
@@ -91,17 +75,16 @@ export function duckdbInstanceOptions(): { extension_directory: string } | undef
 }
 
 /**
- * What DuckDB needs to reach the bucket — the S3 half of {@link LakeConfig},
- * which is all a caller that only reads Parquet has to hold. The feed (ADR-055)
- * is such a caller: it was assembling a whole lake config, PostgreSQL
- * connection string and all, to build one secret.
+ * What DuckDB needs to reach the bucket — {@link LakeConfig} without the
+ * limits, which is all a caller that only reads Parquet, such as the feed
+ * (ADR-055), has to hold.
  */
 export type S3Settings = Pick<
   LakeConfig,
   'bucket' | 'region' | 's3Endpoint' | 's3UseSsl' | 's3AccessKey' | 's3SecretKey'
 >
 
-/** The S3 half of the environment, without the catalog's. */
+/** What DuckDB needs to reach the bucket, from the environment. */
 export function s3SettingsFromEnv(env: Env): S3Settings {
   // MinIO endpoints are given as a URL (http://host:9000); DuckDB wants host:port + a ssl flag.
   let s3Endpoint: string | undefined

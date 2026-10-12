@@ -22,23 +22,18 @@ import type {
 } from '@kukan/lake'
 import { lakeConfigFromEnv, openBucketSession, openLakeCatalogReader } from '@kukan/lake'
 import type { Env } from '@kukan/shared'
-import {
-  RequestAbandonedError,
-  RequestTimeoutError,
-  WEB_LAKE_CATALOG_CONNECTIONS,
-} from '@kukan/shared'
+import { RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
 import { withDuckdbSlot } from './duckdb-slot'
 import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../../config'
 
 /**
  * The web's lake, bounded like the scans below — the only reason it opens
- * one. A dataset's purge queues its tables' drop for the worker instead.
+ * one. A dataset's purge queues its layer 2's deletion for the worker instead.
  */
 export function webLakeConfig(env: Env): LakeConfig {
   return lakeConfigFromEnv(env, {
     memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
     threads: QUERY_THREADS,
-    catalogConnections: WEB_LAKE_CATALOG_CONNECTIONS,
   })
 }
 

@@ -50,7 +50,8 @@ export async function retryLakeIngest(
 
   // Before the interpretation, which the ingest would only throw away: the
   // rebuild reads every version again, this one's turn included. What every
-  // resource the shared catalog held meets once, on its way off it (ADR-067 §6).
+  // resource with a version left behind a later one meets — each one the shared
+  // catalog held, on its way off it (ADR-067 §6).
   if (await lakeNeedsRebuild(deps.db, resourceId)) {
     await queueLakeRebuild(deps.queue, resourceId)
     log.info({ resourceId, version }, 'Lake ingest retry queued a rebuild of the resource')

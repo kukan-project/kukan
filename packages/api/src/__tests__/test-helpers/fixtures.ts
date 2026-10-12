@@ -110,11 +110,11 @@ export function createAnnouncementFixture(overrides?: Record<string, unknown>) {
  * through to the lake fails loudly instead of quietly depending on MinIO.
  */
 export const unreachableLake: LakeConfig = {
-  pgConnString: 'host=127.0.0.1 port=1 dbname=nope user=nope password=nope sslmode=disable',
   bucket: 'nope',
   region: 'us-east-1',
+  s3Endpoint: '127.0.0.1:1',
   s3UseSsl: false,
-  limits: { memoryLimitMb: 64, threads: 1, catalogConnections: 1 },
+  limits: { memoryLimitMb: 64, threads: 1 },
 }
 
 /**

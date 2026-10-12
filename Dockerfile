@@ -86,11 +86,11 @@ ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib \
   QUERY_CHILD_ENTRY=/app/node_modules/.pnpm/kukan-query-child.mjs
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
 # Fetch them at build time: a closed-network deployment (LGWAN and similar) has
-# no egress, and even with egress the first query would stall on ~99 MB.
+# no egress, and even with egress the first query would stall on the download.
 ENV DUCKDB_EXTENSION_DIRECTORY=/app/duckdb-extensions
 # Next.js standalone hoists packages under .pnpm, so resolve from there.
 WORKDIR /app/node_modules/.pnpm/node_modules
-RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','postgres','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
+RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
 WORKDIR /app
 EXPOSE 3000
 # Override HOSTNAME so Next.js standalone server binds to 0.0.0.0 (not the container IP).
@@ -141,9 +141,9 @@ COPY --chown=appuser:appgroup --from=build /app/packages/db/drizzle ./apps/worke
 USER appuser
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
 # Fetch them at build time: a closed-network deployment (LGWAN and similar) has
-# no egress, and even with egress the first ingest would stall on ~99 MB.
+# no egress, and even with egress the first ingest would stall on the download.
 ENV DUCKDB_EXTENSION_DIRECTORY=/app/duckdb-extensions
-RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','postgres','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
+RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
 ENV NODE_ENV=production HEALTH_PORT=8080
 EXPOSE 8080
 CMD ["node", "apps/worker/dist/index.js"]

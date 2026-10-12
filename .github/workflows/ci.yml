@@ -307,7 +307,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.duckdb/extensions
-          key: duckdb-ext-${{ runner.os }}-${{ hashFiles('packages/lake/package.json') }}-httpfs-aws-postgres-sqlite-ducklake
+          key: duckdb-ext-${{ runner.os }}-${{ hashFiles('packages/lake/package.json') }}-httpfs-aws-sqlite-ducklake
 
       - name: Warm DuckDB extensions
         if: steps.changes.outputs.code == 'true'
@@ -317,7 +317,7 @@ jobs:
           node --input-type=module -e "
             const { DuckDBInstance } = await import('@duckdb/node-api')
             const conn = await (await DuckDBInstance.create(':memory:')).connect()
-            for (const e of ['httpfs', 'aws', 'postgres', 'sqlite', 'ducklake']) await conn.run('INSTALL ' + e)
+            for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await conn.run('INSTALL ' + e)
           "
 
       - name: Test (unit only)

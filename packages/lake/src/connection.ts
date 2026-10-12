@@ -4,24 +4,14 @@
  * Opens an in-memory DuckDB session, loads the required extensions and points it
  * at the S3/MinIO bucket. That setup is instance-scoped, so it is done once per
  * process and every session after the first is a connection on it. A session
- * names the catalog it works on by alias (`LakeSession.catalog`); the shared
- * one, backed by PostgreSQL, is attached as `lake` on the first session that
- * asks for it. All DuckLake access is
- * confined to this module (ADR-005): the worker writes through it, the API
- * reads through it, nothing else touches DuckLake directly.
- *
- * Validated against dev PostgreSQL + MinIO in the Phase ii spike: extension
- * load, ATTACH, ingest, time travel, and `table_changes` all work.
+ * names the catalog it works on by alias (`LakeSession.catalog`): a resource's
+ * own, which `catalog.ts` attaches (ADR-067). All DuckLake access is confined
+ * to this package (ADR-005): the worker writes through it, the API reads
+ * through it, nothing else touches DuckLake directly.
  */
 import type { DiffRow } from '@kukan/shared'
 import type { LakeConfig } from './config'
-import {
-  LAKE_DATA_PREFIX,
-  LAKE_METADATA_SCHEMA,
-  lakeStorageUrl,
-  loadDuckdbExtensions,
-  s3SecretBody,
-} from './config'
+import { loadDuckdbExtensions, s3SecretBody } from './config'
 import { openDuckdb } from './duckdb'
 import { createSpillRegistry } from './spill'
 import { assertSafeIdentifier, sqlLiteral } from './sql'
@@ -52,40 +42,16 @@ export interface LakeSession extends BucketSession {
   readonly catalog: string
 }
 
-/** The alias the shared catalog is attached as. */
-const SHARED_CATALOG = 'lake'
-
-export interface LakeSessionOptions {
-  /**
-   * Run the work once more, on a rebuilt instance, when the session failed
-   * because its instance was lost ({@link isInstanceLost}). The work then has
-   * to be safe to run twice, **and its result is the second run's alone**:
-   * whatever the first run did before the loss is neither undone nor
-   * reported. The work is told which attempt it is on, so it can at least say
-   * so. Right for a sweep whose result is a count for the log; wrong for
-   * anything that acts on the value.
-   */
-  rerunIfLost?: boolean
-}
-
 /** The DuckDB instance type, without importing the module eagerly. */
 type DuckDBInstance = Awaited<
   ReturnType<(typeof import('@duckdb/node-api'))['DuckDBInstance']['create']>
 >
 
 /**
- * How long a session waits for a catalog connection before failing: as long as
- * another can hold one. An ingest holds its own through the statement that
- * writes the Parquet — minutes for a large file — and the default 30 s would
- * fail the sweep waiting beside it.
- */
-const LAKE_CATALOG_WAIT_TIMEOUT_MS = 10 * 60_000
-
-/**
  * Prepared instances, keyed by what makes them differ.
  *
  * Everything setup does is instance-scoped — loaded extensions, the S3 secret,
- * the attached catalog, and `memory_limit`/`threads`, which DuckDB treats as
+ * and `memory_limit`/`threads`, which DuckDB treats as
  * globals. So it is paid once and every later session is an `instance.connect()`
  * on top of it. A process builds one config, bounds and all
  * ({@link LakeConfig.limits}), so it keeps one instance.
@@ -108,24 +74,11 @@ function retire(instance: DuckDBInstance): Promise<void> {
 }
 
 /**
- * Errors a session threw *because* its instance was lost — what
- * {@link withLakeSession} reruns on. Not {@link isInstanceLost} over any error
- * out of the work, whose own failures (a Postgres transaction dropping its
- * connection, say) can read the same and mean nothing about the instance.
- */
-const lostWith = new WeakSet<object>()
-const markLost = (err: unknown) => {
-  if (typeof err === 'object' && err !== null) lostWith.add(err)
-}
-const wasLost = (err: unknown) => typeof err === 'object' && err !== null && lostWith.has(err)
-
-/**
- * Errors that mean the instance itself is finished — the catalog's libpq
- * connection went away, or the S3 secret's temporary credentials expired —
- * rather than the statement being wrong. The cached instance is dropped so the
- * next caller rebuilds; the current call still fails, and its caller retries
- * (the queue's retry for ingest, the user for a diff, or {@link withLakeSession}
- * itself where asked).
+ * Errors that mean the instance itself is finished — the bucket's connection
+ * went away, or the S3 secret's temporary credentials expired — rather than
+ * the statement being wrong. The cached instance is dropped so the next caller
+ * rebuilds; the current call still fails, and its caller retries (the queue's
+ * retry for ingest, the user for a diff).
  *
  * A connect refused because the instance is closed is the same thing seen
  * from the next caller: one session's loss closed it, and another had already
@@ -138,12 +91,7 @@ const wasLost = (err: unknown) => typeof err === 'object' && err !== null && los
  */
 function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  // Waited out the catalog pool: the instance is busy, not gone, and closing
-  // it would take the sessions holding the pool down with it
-  if (/connection pool timeout/i.test(message)) return false
-  return /connection|server closed|terminating|SSL|socket|ExpiredToken|token has expired|instance closed/i.test(
-    message
-  )
+  return /connection|socket|ExpiredToken|token has expired|instance closed/i.test(message)
 }
 
 /**
@@ -151,7 +99,7 @@ function isInstanceLost(err: unknown): boolean {
  * catalog instead of Parquet (ADR-043 §6-1).
  *
  * Inlined rows are never reclaimed: once every snapshot that could observe one
- * is expired, it is unreachable through DuckLake yet still sits in PostgreSQL,
+ * is expired, it is unreachable through DuckLake yet still sits in the catalog,
  * and neither `expire_snapshots` nor `cleanup_old_files` removes it. With
  * inlining off the rows are in Parquet, where reclamation can at least reach
  * them — under ii-a's whole-table writes it frees a version's files whole, and
@@ -179,7 +127,7 @@ export async function disableDataInlining(
 }
 
 async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
-  // Its own place to spill, before the ATTACH that can start writing there
+  // Its own place to spill, before any session that can start writing there
   // (see `useOwnTempDirectory`): a worker holds this instance alongside the
   // CSV interpretation's, and that one is documented to go out of core.
   // Removed when the last session on it closes rather than when it does
@@ -202,23 +150,16 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
     // lake rarely read the same files twice.
     await conn.run('SET enable_external_file_cache = false')
 
-    await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'postgres', 'sqlite', 'ducklake'])
+    await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'sqlite', 'ducklake'])
 
     // S3 credentials, in the one shape both this and the OData feed use
     // (`s3SecretBody` — where the REFRESH story is written down).
     await conn.run(`CREATE OR REPLACE SECRET lake_s3 (${s3SecretBody(config)})`)
-
-    // Read by the shared catalog's ATTACH, so set before any. Past the cap a
-    // transaction waits for a connection rather than opening one more, as it
-    // would by default (see LakeLimits.catalogConnections)
-    await conn.run(`SET pg_pool_max_connections = ${Math.trunc(config.limits.catalogConnections)}`)
-    await conn.run(`SET pg_pool_acquire_mode = 'wait'`)
-    await conn.run(`SET pg_pool_wait_timeout_millis = ${LAKE_CATALOG_WAIT_TIMEOUT_MS}`)
     return instance
   } catch (err) {
     // Setup failed partway (extension load, S3 secret). The instance
-    // would otherwise become unreachable while holding its buffer manager,
-    // worker threads, and whatever the ATTACH opened. No session was ever
+    // would otherwise become unreachable while holding its buffer manager
+    // and worker threads. No session was ever
     // opened on it, so `retire` takes the directory with it here.
     retire(instance)
     throw err
@@ -228,76 +169,12 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
 }
 
 /**
- * Instances the shared catalog is attached to, by the attach in flight or done.
- *
- * Attached on the first session that names it rather than when the instance is
- * prepared: a process that only reads the bucket, or only per-resource catalogs
- * (ADR-067), then never opens a connection to PostgreSQL. ATTACH binds the
- * instance, not the connection, so once per instance.
- */
-const sharedCatalogs = new WeakMap<DuckDBInstance, Promise<void>>()
-
-function attachSharedCatalog(instance: DuckDBInstance, config: LakeConfig): Promise<void> {
-  let attaching = sharedCatalogs.get(instance)
-  if (!attaching) {
-    attaching = (async () => {
-      const conn = await instance.connect()
-      let attached = false
-      try {
-        await conn.run(
-          `ATTACH ${sqlLiteral(`ducklake:postgres:${config.pgConnString}`)} AS ${SHARED_CATALOG} ` +
-            `(DATA_PATH ${sqlLiteral(lakeStorageUrl(config, LAKE_DATA_PREFIX))}, ` +
-            `METADATA_SCHEMA ${sqlLiteral(LAKE_METADATA_SCHEMA)})`
-        )
-        attached = true
-        await disableDataInlining(
-          {
-            run: async (sql) => void (await conn.run(sql)),
-            rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
-          },
-          SHARED_CATALOG
-        )
-      } catch (err) {
-        // Undone with the record below, or the next session's ATTACH finds
-        // the alias taken and fails for as long as the instance lives.
-        if (attached) await conn.run(`DETACH ${SHARED_CATALOG}`).catch(() => {})
-        throw err
-      } finally {
-        conn.disconnectSync()
-      }
-    })()
-    sharedCatalogs.set(instance, attaching)
-    // A failed attach must not be cached, or the instance never gets one.
-    attaching.catch(() => sharedCatalogs.delete(instance))
-  }
-  return attaching
-}
-
-/**
  * Open a session on the process's prepared instance, with no catalog.
  *
  * The caller owns it and must `close()` when done; that disconnects, and leaves
  * the instance for the next operation.
  */
-export function openBucketSession(config: LakeConfig): Promise<BucketSession> {
-  return openSession(config, () => Promise.resolve())
-}
-
-/**
- * Open a session on the shared DuckLake catalog, attached as `lake`.
- *
- * The caller owns it and must `close()` when done; that disconnects, and leaves
- * the instance for the next operation.
- */
-export async function openLakeSession(config: LakeConfig): Promise<LakeSession> {
-  const session = await openSession(config, (instance) => attachSharedCatalog(instance, config))
-  return { ...session, catalog: SHARED_CATALOG }
-}
-
-async function openSession(
-  config: LakeConfig,
-  ready: (instance: DuckDBInstance) => Promise<void>
-): Promise<BucketSession> {
+export async function openBucketSession(config: LakeConfig): Promise<BucketSession> {
   const key = JSON.stringify(config)
   let pending = instances.get(key)
   if (!pending) {
@@ -311,7 +188,6 @@ async function openSession(
 
   const forget = (err: unknown) => {
     if (isInstanceLost(err)) {
-      markLost(err)
       if (instances.get(key) === pending) {
         instances.delete(key)
         void pending.then(retire).catch(() => {})
@@ -328,7 +204,6 @@ async function openSession(
   spills.open(instance)
   let conn
   try {
-    await ready(instance)
     conn = await instance.connect()
   } catch (err) {
     spills.close(instance)
@@ -358,9 +233,8 @@ async function openSession(
 }
 
 /**
- * Close every prepared instance. For shutdown: each holds worker threads and
- * the libpq connection its catalog ATTACH opened, neither of which a process
- * should still be holding while it drains.
+ * Close every prepared instance. For shutdown: each holds worker threads, which
+ * a process should not still be holding while it drains.
  */
 export async function closeLakeInstances(): Promise<void> {
   const pending = [...instances.values()]
@@ -374,11 +248,10 @@ export async function closeLakeInstances(): Promise<void> {
  * process, ADR-059). The cache the external file cache setting turns off is
  * not all an instance keeps: measured in a worker loading layer 2, the process
  * stayed some 370 MB above where it sat without it between loads. The next
- * session prepares an instance afresh — the extension loads and the ATTACH, a
- * second or so.
+ * session prepares an instance afresh — the extension loads, a second or so.
  *
  * A session that takes the instance in the same turn as this closes it finds it
- * closed, which reads as a lost instance (`isInstanceLost`): its caller reruns
+ * closed, which reads as a lost instance (`isInstanceLost`): its caller retries
  * it, as after any other loss.
  */
 export async function releaseIdleLakeInstances(): Promise<number> {
@@ -394,52 +267,14 @@ export async function releaseIdleLakeInstances(): Promise<number> {
 }
 
 /**
- * Open a session, run `fn`, and close it whatever happens. A leaked session
- * holds a connection on the shared instance, so every caller needs this — use
- * it unless you need the session object itself (the diff races setup against a
- * deadline).
- *
- * With `rerunIfLost`, a session that failed because its instance was lost is
- * followed by one more run on a rebuilt instance: a task-role credential
- * lapsing between one call and the next is the ordinary case, and the
- * caller's own retry would be a rerun of `fn` anyway — this saves the wait for
- * it. A second loss in a row is reported, not retried again.
+ * Open a session, run `fn`, and close it whatever happens: a leaked session
+ * holds a connection on the shared instance.
  */
-export function withLakeSession<T>(
+export async function withBucketSession<T>(
   config: LakeConfig,
-  fn: (session: LakeSession, attempt: 1 | 2) => Promise<T>,
-  options: LakeSessionOptions = {}
+  fn: (session: BucketSession) => Promise<T>
 ): Promise<T> {
-  return withSession(() => openLakeSession(config), fn, options)
-}
-
-/** {@link withLakeSession} for a session with no catalog ({@link openBucketSession}). */
-export function withBucketSession<T>(
-  config: LakeConfig,
-  fn: (session: BucketSession, attempt: 1 | 2) => Promise<T>,
-  options: LakeSessionOptions = {}
-): Promise<T> {
-  return withSession(() => openBucketSession(config), fn, options)
-}
-
-async function withSession<S extends BucketSession, T>(
-  open: () => Promise<S>,
-  fn: (session: S, attempt: 1 | 2) => Promise<T>,
-  { rerunIfLost = false }: LakeSessionOptions
-): Promise<T> {
-  try {
-    return await inSession(open, (session) => fn(session, 1))
-  } catch (err) {
-    if (!rerunIfLost || !wasLost(err)) throw err
-    return inSession(open, (session) => fn(session, 2))
-  }
-}
-
-async function inSession<S extends BucketSession, T>(
-  open: () => Promise<S>,
-  fn: (session: S) => Promise<T>
-): Promise<T> {
-  const session = await open()
+  const session = await openBucketSession(config)
   try {
     return await fn(session)
   } finally {

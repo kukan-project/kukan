@@ -54,6 +54,7 @@ export default tseslint.config(
       '**/__tests__/**',
       'infra/lib/lambda/**',
       'apps/worker/src/reconcile-orphans.ts',
+      'apps/worker/src/drop-shared-lake-catalog.ts',
     ],
     rules: {
       'no-console': 'off',

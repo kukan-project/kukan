@@ -1,9 +1,9 @@
 /**
- * Rebuild one resource's layer 2 catalog from layer 1 (ADR-067 §6): the move
- * off the shared catalog, resource by resource, and the repair of a catalog
- * whose objects are gone. A resource that needs neither is cleared of what a
- * failed write left instead (§2), and the queue's retry of this job is what
- * retries that clearing.
+ * Rebuild one resource's layer 2 catalog from layer 1 (ADR-067 §6): a resource
+ * with a version left behind a later one — the move off the shared catalog
+ * among them — and the repair of a catalog whose objects are gone. A resource
+ * that needs neither is cleared of what a failed write left instead (§2), and
+ * the queue's retry of this job is what retries that clearing.
  *
  * Its own job because an ingest that finds the resource needs it is already
  * inside an interpretation, and a rebuild interprets every other version.

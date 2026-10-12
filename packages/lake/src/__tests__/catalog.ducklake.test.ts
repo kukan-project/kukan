@@ -58,13 +58,12 @@ let config: LakeConfig
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'lake-catalog-test-'))
   config = {
-    pgConnString: 'host=unused',
     bucket: 'unused',
     region: 'us-east-1',
     s3UseSsl: false,
     s3AccessKey: 'unused',
     s3SecretKey: 'unused',
-    limits: { memoryLimitMb: 256, threads: 1, catalogConnections: 1 },
+    limits: { memoryLimitMb: 256, threads: 1 },
     dataRoot: `${root}/`,
     // Its own, so another suite's catalogs open at the same time are not counted
     tempDir: root,

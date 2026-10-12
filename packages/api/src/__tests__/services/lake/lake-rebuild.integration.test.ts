@@ -189,13 +189,12 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'lake-rebuild-'))
   await mkdir(join(root, 'src'))
   lake = {
-    pgConnString: 'host=unused',
     bucket: 'unused',
     region: 'us-east-1',
     s3UseSsl: false,
     s3AccessKey: 'unused',
     s3SecretKey: 'unused',
-    limits: { memoryLimitMb: 256, threads: 1, catalogConnections: 1 },
+    limits: { memoryLimitMb: 256, threads: 1 },
     dataRoot: `${root}/`,
   }
   const pkg = await db.execute(sql`
@@ -447,6 +446,48 @@ describe('rebuildResourceLake', () => {
     ).rejects.toBeInstanceOf(ConflictError)
     expect(await currentLakeCatalog(db, resourceId)).toBeNull()
     expect((await versions())[0].lake).toBeNull()
+  })
+})
+
+describe('lakeNeedsRebuild, from layer 1 alone (ADR-067 §6)', () => {
+  it('holds for a version not loaded with a later one after it, whatever the shared catalog took', async () => {
+    // Neither version records the shared catalog: what a site that skipped
+    // the releases between finds once that column is gone
+    await addVersion(1)
+    await addVersion(2, { lakeSnapshotId: 5 })
+    expect(await lakeNeedsRebuild(db, resourceId)).toBe(true)
+  })
+
+  it('does not hold when only the newest is still to be loaded, which is added on top', async () => {
+    await addVersion(1, { lakeSnapshotId: 5 })
+    await addVersion(2)
+    expect(await lakeNeedsRebuild(db, resourceId)).toBe(false)
+  })
+
+  it('does not count a later version that is no table', async () => {
+    await addVersion(1)
+    await addVersion(2, { format: 'PDF' })
+    await addVersion(3, { noTableReason: 'not-records' })
+    expect(await lakeNeedsRebuild(db, resourceId)).toBe(false)
+  })
+
+  it('is answered by a rebuild that loads every version, one no catalog ever held included', async () => {
+    const { store, storage } = bucket()
+    const files = new Map([
+      [1, await parquet('v1', `(1, 'a')`)],
+      [2, await parquet('v2', `(1, 'b')`)],
+    ])
+    await addVersion(1)
+    await addVersion(2)
+
+    const outcome = await rebuildResourceLake(
+      db,
+      { lake, store, storage, readVersion: reader(files) },
+      resourceId
+    )
+
+    expect(outcome.loaded.map((l) => l.version)).toEqual([1, 2])
+    expect(await lakeNeedsRebuild(db, resourceId)).toBe(false)
   })
 })
 

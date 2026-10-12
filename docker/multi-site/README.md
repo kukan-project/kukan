@@ -105,8 +105,7 @@ docker compose -f docker/multi-site/compose.site.yml \
   ヒープとホストメモリを増やす
 - PostgreSQL の接続数はサイト数 ×(web/worker プール)で線形に増える
   (`WEB_DB_POOL_MAX` / `WORKER_DB_POOL_MAX` で調整、既定 5 / 5)。1 サイトあたり
-  「web プール + 1 + worker プール + 2」— 足している 1 と 2 は差分取り込み(DuckLake)の
-  カタログ接続。worker が同時に流すジョブ数は `WORKER_CONCURRENCY`(既定は
+  「web プール + worker プール」。worker が同時に流すジョブ数は `WORKER_CONCURRENCY`(既定は
   worker プール − 2、最大 4)
 
 ## サイトの削除(パージ)

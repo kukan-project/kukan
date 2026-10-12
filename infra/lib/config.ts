@@ -9,10 +9,6 @@ import type { Construct } from 'constructs'
 // synth works on a clean checkout (the pipeline runs no workspace build)
 import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
 import { isTimeZone } from '@kukan/shared/env'
-import {
-  WEB_LAKE_CATALOG_CONNECTIONS,
-  WORKER_LAKE_CATALOG_CONNECTIONS,
-} from '@kukan/shared/lake-limits'
 
 export type Scale = 'small' | 'medium' | 'large'
 export type DbEngine = 'rds' | 'aurora'
@@ -733,8 +729,8 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     envComputed.db
   )
   const siteComputed = sites.map((site) => deepMerge(envComputed, site.overrides ?? {}))
-  const perWeb = (c: ScaleComputed) => c.dbPool.webMax + WEB_LAKE_CATALOG_CONNECTIONS
-  const perWorker = (c: ScaleComputed) => c.dbPool.workerMax + WORKER_LAKE_CATALOG_CONNECTIONS
+  const perWeb = (c: ScaleComputed) => c.dbPool.webMax
+  const perWorker = (c: ScaleComputed) => c.dbPool.workerMax
   const steady = siteComputed.reduce(
     (sum, c) => sum + perWeb(c) * c.web.maxSize + perWorker(c) * c.worker.maxTasks,
     0

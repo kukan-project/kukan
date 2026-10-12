@@ -369,13 +369,13 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
-  it('ignores a version a newer one has already overtaken', async () => {
-    // Loading v1 now would leave the lake serving content the resource no
-    // longer has; the ingest refuses it, so listing it would queue work that
-    // can only be turned away (ADR-043).
+  it('counts a version a newer one has already overtaken, which a rebuild loads', async () => {
+    // Its ingest does not load it on top of v2: the resource is rebuilt from
+    // layer 1 with both in order (ADR-067 §6). Left out, v1 would never be
+    // in layer 2.
     await addTabularResource('a', [{ version: 1 }, { version: 2, snapshotId: 7 }])
 
-    expect(await service.countPendingLakeIngest()).toBe(0)
+    expect(await service.countPendingLakeIngest()).toBe(1)
   })
 
   it('ignores a version the ingest refused over its key', async () => {

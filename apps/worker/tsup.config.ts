@@ -7,8 +7,14 @@ export default defineConfig({
   // open issue 1). It is the container that can reach the real bucket.
   //
   // The heavy process is a third (ADR-059), at `dist/heavy/child.js` where the
-  // worker looks for it.
-  entry: ['src/index.ts', 'src/reconcile-orphans.ts', 'src/heavy/child.ts'],
+  // worker looks for it. Dropping the shared lake catalog is a one-off like the
+  // reconciliation (ADR-067 §6).
+  entry: [
+    'src/index.ts',
+    'src/reconcile-orphans.ts',
+    'src/drop-shared-lake-catalog.ts',
+    'src/heavy/child.ts',
+  ],
   format: ['esm'],
   target: 'node24',
   platform: 'node',

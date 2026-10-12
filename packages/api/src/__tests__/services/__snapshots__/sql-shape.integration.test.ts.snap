@@ -133,33 +133,21 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
             SELECT DISTINCT ON ("resourceId") * FROM (
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
          rv.format, rv.lake_ingest_queued_at AS "queuedAt"
-  FROM resource_version rv
+  FROM "resource_version" rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
-    AND rv.state = 'active'
     AND rv.lake_snapshot_id IS NULL
-    AND rv.lake_ingest_reason IS NULL
-    AND lower(rv.format) IN ('csv', 'tsv', 'json', 'geojson')
-    AND rv.size IS NOT NULL
-    AND rv.size <= $1
-    AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
-    AND NOT EXISTS (
-      SELECT 1 FROM resource_version newer
-      WHERE newer.resource_id = rv.resource_id
-        AND newer.version > rv.version
-        AND newer.state = 'active'
-        AND newer.lake_snapshot_id IS NOT NULL
-    )
+    AND ("rv"."state" = $1 and lower("rv"."format") in ($2, $3, $4, $5) and "rv"."size" is not null and "rv"."size" <= $6 and ("rv"."schema" IS NULL OR jsonb_array_length("rv"."schema" -> 'columns') > 0) and "rv"."lake_ingest_reason" IS NULL)
 ) pending
             ORDER BY "resourceId", version
           ) oldest
-          WHERE ("queuedAt" IS NULL OR "queuedAt" <= now() - $2::interval)
+          WHERE ("queuedAt" IS NULL OR "queuedAt" <= now() - $7::interval)
         )
         UPDATE resource_version rv
         SET lake_ingest_queued_at = now(), updated = now()
         FROM due
         WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
-          AND (rv.state = 'active' AND rv.lake_snapshot_id IS NULL AND rv.lake_ingest_reason IS NULL) AND (rv.lake_ingest_queued_at IS NULL OR rv.lake_ingest_queued_at <= now() - $3::interval)
+          AND (rv.state = 'active' AND rv.lake_snapshot_id IS NULL AND rv.lake_ingest_reason IS NULL) AND (rv.lake_ingest_queued_at IS NULL OR rv.lake_ingest_queued_at <= now() - $8::interval)
         RETURNING rv.resource_id AS "resourceId", rv.version",
   "commit",
 ]
@@ -194,33 +182,21 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
             SELECT DISTINCT ON ("resourceId") * FROM (
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
          rv.format, rv.lake_ingest_queued_at AS "queuedAt"
-  FROM resource_version rv
+  FROM "resource_version" rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
-    AND rv.state = 'active'
     AND rv.lake_snapshot_id IS NULL
-    AND rv.lake_ingest_reason IS NULL
-    AND lower(rv.format) IN ('csv', 'tsv', 'json', 'geojson')
-    AND rv.size IS NOT NULL
-    AND rv.size <= $1
-    AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
-    AND NOT EXISTS (
-      SELECT 1 FROM resource_version newer
-      WHERE newer.resource_id = rv.resource_id
-        AND newer.version > rv.version
-        AND newer.state = 'active'
-        AND newer.lake_snapshot_id IS NOT NULL
-    )
+    AND ("rv"."state" = $1 and lower("rv"."format") in ($2, $3, $4, $5) and "rv"."size" is not null and "rv"."size" <= $6 and ("rv"."schema" IS NULL OR jsonb_array_length("rv"."schema" -> 'columns') > 0) and "rv"."lake_ingest_reason" IS NULL)
 ) pending
             ORDER BY "resourceId", version
           ) oldest
-          WHERE ("queuedAt" IS NULL OR "queuedAt" <= now() - $2::interval)
+          WHERE ("queuedAt" IS NULL OR "queuedAt" <= now() - $7::interval)
         )
         UPDATE resource_version rv
         SET lake_ingest_queued_at = now(), updated = now()
         FROM due
         WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
-          AND (rv.state = 'active' AND rv.lake_snapshot_id IS NULL AND rv.lake_ingest_reason IS NULL) AND (rv.lake_ingest_queued_at IS NULL OR rv.lake_ingest_queued_at <= now() - $3::interval)
+          AND (rv.state = 'active' AND rv.lake_snapshot_id IS NULL AND rv.lake_ingest_reason IS NULL) AND (rv.lake_ingest_queued_at IS NULL OR rv.lake_ingest_queued_at <= now() - $8::interval)
         RETURNING rv.resource_id AS "resourceId", rv.version",
   "commit",
 ]

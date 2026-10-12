@@ -110,13 +110,12 @@ beforeEach(async () => {
   await cleanDatabase()
   root = await mkdtemp(join(tmpdir(), 'lake-catalog-api-'))
   lake = {
-    pgConnString: 'host=unused',
     bucket: 'unused',
     region: 'us-east-1',
     s3UseSsl: false,
     s3AccessKey: 'unused',
     s3SecretKey: 'unused',
-    limits: { memoryLimitMb: 256, threads: 1, catalogConnections: 1 },
+    limits: { memoryLimitMb: 256, threads: 1 },
     dataRoot: `${root}/`,
   }
   const pkg = await db.execute(sql`

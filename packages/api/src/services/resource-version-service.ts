@@ -45,7 +45,6 @@ import {
   NotFoundError,
   ValidationError,
   MAX_PARQUET_SOURCE_SIZE,
-  TABLE_SOURCE_FORMATS,
   versionOrigin,
 } from '@kukan/shared'
 import type {
@@ -68,7 +67,12 @@ import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { jobsFor, readyJobsFor, type JobQueue } from '@kukan/queue'
-import { rebuildResourceLake, type LakeVersionReader } from './lake/lake-rebuild'
+import {
+  lakeLoadable,
+  rebuildResourceLake,
+  versionAlias,
+  type LakeVersionReader,
+} from './lake/lake-rebuild'
 import { clearLakeLeftovers } from './lake/lake-catalog'
 import { embeddingDueIf } from './search/resource-embedding'
 import {
@@ -408,15 +412,12 @@ function setAside() {
 // The check itself lives with the pipeline reads: `schemaDescribesLiveContent`
 // (pipeline-service), shared with the queryable predicate (ADR-032).
 
-/** {@link TABLE_SOURCE_FORMATS} as SQL literals: constants, so the statement this pins stays one text. */
-const TABLE_SOURCE_LIST = sql.raw(TABLE_SOURCE_FORMATS.map((f) => `'${f}'`).join(', '))
-
 /**
  * Versions that layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
  *
- * The rule, in one place. A version is outstanding when it is an active version
- * of an active resource with no snapshot — everything else here is about not
- * queueing work that can never succeed:
+ * A version is outstanding when it is an active version of an active resource
+ * with no snapshot. The rest is `lakeLoadable`, the rule a rebuild loads by, and
+ * is about not queueing work that can never succeed:
  *
  * - a format an interpretation makes no table from, and a file too large for
  *   one, or every PDF and oversized CSV would sit here and be re-enqueued every
@@ -431,13 +432,6 @@ const TABLE_SOURCE_LIST = sql.raw(TABLE_SOURCE_FORMATS.map((f) => `'${f}'`).join
  *   the cap would need an `UPDATE` nobody would think to run. The interpretation
  *   refuses over-cap versions too (ADR-046) — that is what makes both callers
  *   give one answer, not a second gate this one has to agree with
- * - a version an *active* newer one has already overtaken, which the ingest
- *   refuses under its own lock (ii-a replaces the table's contents wholesale).
- *   Only active ones overtake: a revert steps the versions above its
- *   destination off, and the destination is then exactly the version the table
- *   has to be loaded with. Counting those would leave a resource whose restored
- *   version never reached the lake standing on retracted rows forever, with
- *   nothing that ever queues it again
  * - a version already interpreted to nothing — an empty CSV has no table to
  *   load and never will, and its schema says so (ADR-046). Absent, rather than
  *   empty, means nothing has interpreted it yet
@@ -454,8 +448,12 @@ const TABLE_SOURCE_LIST = sql.raw(TABLE_SOURCE_FORMATS.map((f) => `'${f}'`).join
  * pointing layer 2 at it meant establishing which content it held. Reading the
  * version file needs none of that.
  *
- * Re-evaluated by the ingest under its own lock, so a version loaded between a
- * scan and the attempt is refused there.
+ * A version a newer one has overtaken stays outstanding. Its ingest does not
+ * load it on top of the newer one: the resource is rebuilt from layer 1 with
+ * every version in order (`lakeNeedsRebuild`, ADR-067 §6).
+ *
+ * Re-evaluated by the ingest under the resource's claim, so a version loaded
+ * between a scan and the attempt is refused there.
  *
  * @param only - narrow to one version, for the handler's own pre-check.
  */
@@ -467,29 +465,18 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
     AND rv.resource_id = ${only.resourceId}::uuid${
       only.version === undefined ? sql`` : sql` AND rv.version = ${only.version}`
     }`
+  const rv = versionAlias('rv')
   // Interpolated at the end of a line, not on one of its own: empty, a line of
   // its own leaves the indentation behind as trailing whitespace in the SQL
   // this pins.
   return sql`
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
          rv.format, rv.lake_ingest_queued_at AS "queuedAt"
-  FROM resource_version rv
+  FROM ${resourceVersion} rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'${forVersion}
-    AND rv.state = 'active'
     AND rv.lake_snapshot_id IS NULL
-    AND rv.lake_ingest_reason IS NULL
-    AND lower(rv.format) IN (${TABLE_SOURCE_LIST})
-    AND rv.size IS NOT NULL
-    AND rv.size <= ${MAX_PARQUET_SOURCE_SIZE}
-    AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
-    AND NOT EXISTS (
-      SELECT 1 FROM resource_version newer
-      WHERE newer.resource_id = rv.resource_id
-        AND newer.version > rv.version
-        AND newer.state = 'active'
-        AND newer.lake_snapshot_id IS NOT NULL
-    )
+    AND ${lakeLoadable(rv)}
 `
 }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** — 2026-10-12 (proposed 2026-10-12), implemented (except the command that drops the shared catalog, §Decision 6)
+**Accepted** — 2026-10-12 (proposed 2026-10-12), implemented (`ducklake_snapshot_id` goes in a later release)
 
 Move the DuckLake catalog from one PostgreSQL schema (a single catalog for everything) to **a
 SQLite file per resource**, kept under the same `lake/<resourceId>/` prefix as its data. Snapshot
@@ -538,6 +538,23 @@ migrated.
 >   without recording anything, since every version would fail the same way
 > - **A version purge of a resource not yet moved moves it too.** The rebuild reads again the
 >   versions only the shared catalog holds, so a purge does not have to wait for the move
+> - **Whether to rebuild, and what goes in, is decided from layer 1's rows alone.** Every version
+>   read as a table goes in (the same conditions as an outstanding ingest), one no catalog ever held
+>   included. A resource is rebuilt when a version not loaded has a later one after it — a catalog
+>   only takes versions on top of the last. Every version only the shared catalog holds is not
+>   loaded, so the migration is this rule too, and `ducklake_snapshot_id` is not read to decide. A
+>   site that skips releases is migrated by the same rule in the release that drops the column. The
+>   outstanding-ingest condition no longer leaves out a version a newer loaded one has overtaken: an
+>   older version whose loading failed for a while as a newer one arrived used to be left out for
+>   good, and the rebuild now picks it up
+> - **The drop command is `drop-shared-lake-catalog`.** What is left of the move is counted as the
+>   resources the hourly sweep moves (`active` ones) that have a version only the shared catalog
+>   holds. Deleted resources are not counted: the sweep does not move them, so counting them would
+>   never reach 0. The files it deletes are the keys under `lake/` outside every resource's prefix —
+>   `lake/main/`, and any earlier layout still there. Files go first and the schema last, so a run
+>   cut short leaves the schema for the report to show there is more to do
+> - **The full data wipe keeps its `DROP SCHEMA`.** On a site that has not run the drop command, the
+>   shared catalog still holds rows to be wiped
 
 ### 7. What the spike checks
 
@@ -628,7 +645,14 @@ What this shows:
 - **DB**: Drizzle migrations add `resource_pipeline.lake_catalog_key`, `resource_version.lake_snapshot_id`
   and its pending-ingest partial index (additive, so the previous image still works).
   `ducklake_snapshot_id` and the old index go in a release after the old catalog is dropped. Dropping
-  the `ducklake` schema is outside Drizzle (the CLI of decision 6)
+  the `ducklake` schema is outside Drizzle (the CLI of decision 6).
+  The column goes only after the decisions read layer 1 alone (the implementation notes of decision
+  6), so upgrading past that release does not stop the migration. What else reads it is a
+  convenience for resources not yet moved, switched to the new catalog's number alone when the
+  column goes: the version purge's rebuild (a purge of such a resource then no longer moves it on
+  the way), the OData feed's key guarantee (not given until the move is done), and the drop
+  command's count of what is left to move (checked against the versions not loaded yet instead; a
+  release without the column cannot go back to an older image anyway)
 - **CI**: the DuckDB extension cache key hashes `packages/lake/package.json`, which does not change
   when `sqlite` is added. Without changing the key an old cache hits, and tests time out fetching the
   extension
@@ -643,8 +667,8 @@ What this shows:
      (up to here is one release)
   5. Package / organisation purges by prefix deletion; remove the stand-down, the reclaim and
      `LAKE_INGEST_LOCK`; docs and UI
-  6. The CLI that deletes the old catalog. After confirming the migration in production, remove the
-     `postgres` extension, the connection budget and `ducklake_snapshot_id`
+  6. The CLI that deletes the old catalog. Remove the `postgres` extension and the connection budget.
+     `ducklake_snapshot_id` goes in a later release (see **DB** above)
 - **Operations**: each diff fetches one catalog file (188 KB at 50 versions, cacheable by key). The libpq share
   (web +1 / worker +2) leaves the PostgreSQL connection budget. Multi-site separation comes for free
   (ADR-043 open issue 3). A release that raises the DuckLake catalog version runs the rebuild

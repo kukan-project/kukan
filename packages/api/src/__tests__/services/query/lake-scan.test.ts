@@ -7,7 +7,7 @@
  * same tick as the interrupt.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { openBucketSession, openLakeCatalogReader, openLakeSession } from '@kukan/lake'
+import { openBucketSession, openLakeCatalogReader } from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
 import { RequestAbandonedError } from '@kukan/shared'
 import { scanBucket, scanCatalog } from '../../../services/query/lake-scan'
@@ -19,7 +19,6 @@ vi.mock('@kukan/lake', async (importOriginal) => {
     ...actual,
     openBucketSession: vi.fn(),
     openLakeCatalogReader: vi.fn(),
-    openLakeSession: vi.fn(),
   }
 })
 
@@ -122,19 +121,17 @@ describe('scanCatalog', () => {
 
 describe('scanBucket', () => {
   it('reads under the same bounds without opening a catalog', async () => {
-    // A scan of the bucket alone has nothing to ask of a catalog, and opening
-    // the shared one would hold a database connection to read nothing from.
     const { session } = fakeSession()
     vi.mocked(openBucketSession).mockResolvedValue(session)
 
     await expect(scanBucket(unreachableLake, 'Scan', async () => 'rows')).resolves.toBe('rows')
     expect(openBucketSession).toHaveBeenCalled()
-    expect(openLakeSession).not.toHaveBeenCalled()
+    expect(openLakeCatalogReader).not.toHaveBeenCalled()
   })
 })
 
-describe('scanCatalog, the shared catalog', () => {
-  it("reads a resource's own catalog under the same bounds, not the shared one", async () => {
+describe('scanCatalog', () => {
+  it("reads a resource's own catalog under the same bounds", async () => {
     const { session } = fakeSession()
     vi.mocked(openLakeCatalogReader).mockResolvedValue(session)
 
@@ -142,6 +139,5 @@ describe('scanCatalog, the shared catalog', () => {
       scanCatalog(unreachableLake, store, catalog, 'Scan', async () => 'rows')
     ).resolves.toBe('rows')
     expect(openLakeCatalogReader).toHaveBeenCalledWith(unreachableLake, store, catalog)
-    expect(openLakeSession).not.toHaveBeenCalled()
   })
 })

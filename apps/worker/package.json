@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/__tests__",
     "lint": "eslint src",
     "clean": "rm -rf dist",
-    "reconcile-orphans": "tsx src/reconcile-orphans.ts"
+    "reconcile-orphans": "tsx src/reconcile-orphans.ts",
+    "drop-shared-lake-catalog": "tsx src/drop-shared-lake-catalog.ts"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",

@@ -81,7 +81,7 @@ export interface SpillRegistry<T> {
    * A session closed; settles when the removal has, if that was the last holder.
    *
    * Unguarded against being called twice for one session — the caller has to be
-   * sure, which `openLakeSession` does with a flag it sets synchronously.
+   * sure, which `openBucketSession` does with a flag it sets synchronously.
    */
   close(key: T): Promise<void>
   /** `key` is out of service; settles when its last session has let it go. */

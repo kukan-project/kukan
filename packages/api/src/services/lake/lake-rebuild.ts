@@ -2,8 +2,9 @@
  * Rebuilding a resource's layer 2 from layer 1 (ADR-067 §4, §6).
  *
  * One operation behind three needs: a purge (everything but the purged
- * version), the migration off the shared catalog (everything the shared one
- * held), and the repair of a catalog whose objects are gone. Each version is interpreted again
+ * version), a resource with a version left behind — the migration off the
+ * shared catalog among them — and the repair of a catalog whose objects are
+ * gone. Each version layer 1 has for layer 2 is interpreted again
  * from its file and loaded in version order into a catalog started empty in a
  * new generation, under the key it was frozen with — so a keyed history comes
  * back as it was, and nothing of a version left out reaches the new catalog.
@@ -11,9 +12,22 @@
  * Interpretation is the worker's (ADR-046, ADR-059), so the caller hands it in
  * as {@link LakeVersionReader}.
  */
-import { and, asc, eq, isNotNull, notInArray, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  countDistinct,
+  eq,
+  exists,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  sql,
+} from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
-import { resourceVersion } from '@kukan/db'
+import { resource, resourceVersion } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import {
@@ -24,7 +38,12 @@ import {
   withLakeCatalogDraft,
   withLakeCatalogReader,
 } from '@kukan/lake'
-import { keyColumnsOf, LAKE_REBUILD_JOB_TYPE } from '@kukan/shared'
+import {
+  keyColumnsOf,
+  LAKE_REBUILD_JOB_TYPE,
+  MAX_PARQUET_SOURCE_SIZE,
+  TABLE_SOURCE_FORMATS,
+} from '@kukan/shared'
 import type { NoTableReason } from '@kukan/shared'
 import { reserveObject } from '../pipeline/storage-pointer'
 import { touchResourceClaim, type ResourceClaim } from '../pipeline/pipeline-claim'
@@ -85,24 +104,44 @@ export interface LakeRebuildOutcome {
 }
 
 /**
- * A resource's versions still standing and not refused a load already — over
- * their key, as no longer a table, or as unreadable — and so not settled:
- * what a rebuild loads, and what owes one. `purging` goes with `purged`: the
- * rebuild a purge runs is what takes that version's rows out of layer 2.
+ * `resource_version` under another name, for a statement that reads it twice
+ * or names it itself. Made on use: tests mock `@kukan/db` without the table.
  */
-const unsettled = (resourceId: string) =>
+export const versionAlias = (name: string) => alias(resourceVersion, name)
+
+/**
+ * The versions of a format and a size an interpretation makes a table from,
+ * not interpreted to nothing, and not refused over their key: what layer 2 is
+ * to hold, decided from layer 1 alone (ADR-067 §6). The sweep's outstanding
+ * versions (`pendingLakeIngestQuery`) are these, of an active resource, not
+ * loaded yet. `purging` is left out with `purged`: the rebuild a purge runs is
+ * what takes that version's rows out of layer 2.
+ *
+ * A recorded `no_table_reason` does not exclude a version here: over the cap or
+ * out of memory, it is to be read again once that changes.
+ */
+export const lakeLoadable = (
+  version: typeof resourceVersion | ReturnType<typeof versionAlias> = resourceVersion
+) =>
   and(
-    eq(resourceVersion.resourceId, resourceId),
-    notInArray(resourceVersion.state, ['purged', 'purging']),
-    sql`${resourceVersion.lakeIngestReason} IS NULL`,
-    sql`${resourceVersion.noTableReason} IS NULL`
+    eq(version.state, 'active'),
+    inArray(sql`lower(${version.format})`, [...TABLE_SOURCE_FORMATS]),
+    isNotNull(version.size),
+    lte(version.size, MAX_PARQUET_SOURCE_SIZE),
+    sql`(${version.schema} IS NULL OR jsonb_array_length(${version.schema} -> 'columns') > 0)`,
+    sql`${version.lakeIngestReason} IS NULL`
   )
 
 /**
- * The versions a rebuild loads: unsettled and held by a catalog — its own or,
- * before migration, the shared one. A version neither ever held is the sweep's
- * to offer, as before.
+ * What a rebuild loads, in version order: {@link lakeLoadable}, less what it
+ * found no table in. It records that without the empty schema the pipeline
+ * writes, so without this every rebuild would leave that version behind a
+ * later one and call for the next.
  */
+const rebuildLoads = (
+  version: typeof resourceVersion | ReturnType<typeof versionAlias> = resourceVersion
+) => and(lakeLoadable(version), sql`${version.noTableReason} IS NULL`)
+
 async function versionsToLoad(db: Database, resourceId: string) {
   return db
     .select({
@@ -113,35 +152,69 @@ async function versionsToLoad(db: Database, resourceId: string) {
       keyColumns: resourceVersion.lakeKeyColumns,
     })
     .from(resourceVersion)
-    .where(
-      and(
-        unsettled(resourceId),
-        or(isNotNull(resourceVersion.lakeSnapshotId), isNotNull(resourceVersion.ducklakeSnapshotId))
-      )
-    )
+    .where(and(eq(resourceVersion.resourceId, resourceId), rebuildLoads()))
     .orderBy(asc(resourceVersion.version))
 }
 
 /**
- * Whether loading a version into the resource's catalog would leave versions
- * behind: ones the shared catalog took that its own does not have (ADR-067
- * §6). Such a resource is rebuilt, not added to — a catalog started with one
- * version would never be migrated, since what is migrated is told apart by
- * not having one.
+ * Whether loading a version into the resource's catalog would leave one
+ * behind: a version a rebuild loads ({@link rebuildLoads}) not loaded, with a later one after it
+ * (ADR-067 §6). A catalog only takes versions on top of the last, so such a
+ * resource is rebuilt from layer 1 rather than added to.
+ *
+ * One rule for every way there: a resource the shared catalog held, whose
+ * versions none are in its own; a site that skipped the releases between; an
+ * older version whose loading failed for a while as a newer one arrived. It
+ * reads nothing the shared catalog wrote, so it holds once that is gone.
  */
 export async function lakeNeedsRebuild(db: Database, resourceId: string): Promise<boolean> {
+  const later = versionAlias('later')
   const [row] = await db
     .select({ version: resourceVersion.version })
     .from(resourceVersion)
     .where(
       and(
-        unsettled(resourceId),
-        isNotNull(resourceVersion.ducklakeSnapshotId),
-        sql`${resourceVersion.lakeSnapshotId} IS NULL`
+        eq(resourceVersion.resourceId, resourceId),
+        rebuildLoads(),
+        isNull(resourceVersion.lakeSnapshotId),
+        exists(
+          db
+            .select({})
+            .from(later)
+            .where(
+              and(
+                eq(later.resourceId, resourceVersion.resourceId),
+                gt(later.version, resourceVersion.version),
+                rebuildLoads(later)
+              )
+            )
+        )
       )
     )
     .limit(1)
   return row !== undefined
+}
+
+/**
+ * Resources with a version the shared catalog took and their own catalog does
+ * not have yet, among those the hourly sweep moves (`active` ones): what is
+ * left of the migration off it. Zero is what lets that catalog be dropped
+ * (`shared-lake-catalog.ts`).
+ */
+export async function countUnmigratedLakeResources(db: Database): Promise<number> {
+  const [row] = await db
+    .select({ count: countDistinct(resourceVersion.resourceId) })
+    .from(resourceVersion)
+    .innerJoin(resource, eq(resource.id, resourceVersion.resourceId))
+    .where(
+      and(
+        eq(resource.state, 'active'),
+        rebuildLoads(),
+        isNotNull(resourceVersion.ducklakeSnapshotId),
+        isNull(resourceVersion.lakeSnapshotId)
+      )
+    )
+  return row?.count ?? 0
 }
 
 /**
