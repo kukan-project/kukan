@@ -1136,6 +1136,9 @@ of exact decimals — money, rates — is inferred as `float`. A primary key ref
 
 ## 9. Step 6 — Propagating a Purge to Layer 2
 
+> **ADR-067 (accepted, not yet implemented) revises this:** make the catalog a SQLite file per resource, and
+> purge by a rebuild — discard layer 2 and re-ingest the remaining versions from layer 1.
+
 Add the handling of layer 2 for tabular resources to the Phase i purge (sysadmin only, tombstone
 approach, ADR-028).
 
