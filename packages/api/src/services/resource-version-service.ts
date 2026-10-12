@@ -28,6 +28,7 @@ import {
   schemaColumnNames,
   pipelineObjectKeys,
   clearPipelineObjectKeys,
+  publicSummary,
 } from '@kukan/db'
 import {
   canIdentifyRows,
@@ -58,6 +59,7 @@ import type {
   VersionState,
   VersionView,
   LakeIngestReason,
+  ResourceSummaryMeta,
 } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
@@ -76,6 +78,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import { jobsFor, readyJobsFor, type JobQueue } from '@kukan/queue'
 import { lakeStandDown, withLakeIngestLock } from './lake/lake-ingest'
 import { reclaimInSession } from './lake/lake-reclaim'
+import { embeddingDueIf } from './search/resource-embedding'
 import {
   CLAIM_STALE_AFTER_MS,
   onRevision,
@@ -688,6 +691,18 @@ function toView(
  * another wrong.
  */
 const SERVING_STATES: VersionState[] = ['active', 'superseded', 'purging']
+
+/** What `summary_meta` says about the abstract's text, and goes with it (ADR-053 §4.1) */
+const SUMMARY_TEXT_META_KEYS = [
+  'source',
+  'version',
+  'material',
+  'coverage',
+  'generatedAt',
+  'genKey',
+  'model',
+  'grounded',
+] satisfies (keyof ResourceSummaryMeta)[]
 
 /**
  * The one-purge-per-resource index refusing a second claim.
@@ -1740,6 +1755,9 @@ export class ResourceVersionService {
     // it. A purge falls the safe way round: interrupted here, live names an
     // object that is gone — unservable — rather than one that is not.
     await deps.storage.delete(row.storageKey)
+
+    // By the abstract's own version, not `isLive` — see discardSummaryOf.
+    await this.discardSummaryOf(resourceId, version)
 
     let rolledBack = false
     if (isLive && pkgRow) {
@@ -3223,6 +3241,53 @@ export class ResourceVersionService {
     // The records above are the safety net, not the plan: these objects go now.
     // A sweep that finds them already gone deletes nothing and drops the record.
     await storage.deleteMany(keys)
+  }
+
+  /**
+   * Take an AI abstract written from `version` off the resource (ADR-053).
+   *
+   * The abstract quotes the file it was written from, and the search document
+   * and the vector are built from it, so leaving it would keep serving what the
+   * purge made unobtainable. Nothing regenerates it on the way out: the rebuild
+   * after a purge runs only when content remains, and Summarize writes nothing
+   * for a private package or without a provider.
+   *
+   * Asked of the abstract's own version rather than of whether this version is
+   * live: one written from a middle version outlives the pointer moving on, and
+   * a column keyed that way is no part of {@link discardDerivedArtifacts}.
+   *
+   * A person's text is theirs and stays. Only what described the text goes:
+   * `hidden` is an editor's decision about the resource, and a standing refusal
+   * (`skip*`) is about the version now served, which the next run must not pay
+   * for again. Retried, the meta no longer names the version and nothing is written.
+   *
+   * Rows a refusal was recorded on before `skipVersion` existed carry the
+   * refused version and generation in `version` and `genKey`, so the text's own
+   * version is unknown; those go whichever version is purged, since keeping
+   * purged text is the failure. The stamp moves to `skipVersion` / `skipGenKey`
+   * first, where Summarize and the estimate read it once `version` is gone.
+   */
+  private async discardSummaryOf(resourceId: string, version: number): Promise<void> {
+    const meta = resource.summaryMeta
+    const legacyRefusal = sql`${meta}->>'skipReason' IN ('rejected', 'format-mismatch') AND ${meta}->'skipVersion' IS NULL`
+    const restamped = sql`${meta} || CASE WHEN ${legacyRefusal}
+      THEN jsonb_strip_nulls(jsonb_build_object('skipVersion', ${meta}->'version', 'skipGenKey', ${meta}->'genKey'))
+      ELSE '{}'::jsonb END`
+    await this.db
+      .update(resource)
+      .set({
+        summary: null,
+        summaryMeta: sql`(${restamped}) - ${sql.param(SUMMARY_TEXT_META_KEYS)}::text[]`,
+        docSyncDueAt: sql`NOW()`,
+        embeddingDueAt: embeddingDueIf(sql`${publicSummary} IS NOT NULL`),
+      })
+      .where(
+        and(
+          eq(resource.id, resourceId),
+          sql`${meta}->>'source' IS DISTINCT FROM 'human'`,
+          or(sql`${meta}->'version' = to_jsonb(${version}::int)`, legacyRefusal)
+        )
+      )
   }
 
   private async getRow(db: Database | Transaction, resourceId: string, version: number) {

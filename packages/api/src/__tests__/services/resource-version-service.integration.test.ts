@@ -15,7 +15,7 @@ import {
   resourceVersion,
 } from '@kukan/db'
 import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
-import type { ResourceSchema, VersionState } from '@kukan/shared'
+import type { ResourceSchema, ResourceSummaryMeta, VersionState } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { PostgresJobQueue, type JobQueue } from '@kukan/queue'
@@ -568,6 +568,131 @@ describe('executePurge', () => {
     const result = await service.executePurge(resourceId, 1, deps)
     expect(result).toEqual({ purged: false, rolledBack: false })
     expect(deps.storage.delete).not.toHaveBeenCalled()
+  })
+})
+
+describe('executePurge — the AI abstract (ADR-053)', () => {
+  /** An abstract on the resource, with both due marks down so a test can see them raised. */
+  async function writeSummary(summary: string, meta: ResourceSummaryMeta) {
+    await db
+      .update(resource)
+      .set({ summary, summaryMeta: meta, docSyncDueAt: null, embeddingDueAt: null })
+      .where(eq(resource.id, resourceId))
+  }
+
+  async function summaryRow() {
+    const [row] = await db
+      .select({
+        summary: resource.summary,
+        meta: resource.summaryMeta,
+        docSyncDueAt: resource.docSyncDueAt,
+        embeddingDueAt: resource.embeddingDueAt,
+      })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+    return row
+  }
+
+  async function purge(version: number) {
+    await service.claimPurge(resourceId, version, userId, 'illegal', purgeQueue)
+    await service.executePurge(resourceId, version, mockDeps())
+  }
+
+  it('takes the abstract of the purged content off a resource the purge empties', async () => {
+    // No version left means no rebuild, and so no Summarize to replace it.
+    await addVersion(1, 'sha256:v2') // only version, live
+    await writeSummary('A table of the retracted rows.', { source: 'ai', version: 1, model: 'm' })
+
+    await purge(1)
+
+    const row = await summaryRow()
+    expect(row.summary).toBeNull()
+    expect(row.meta).toEqual({})
+    expect(row.docSyncDueAt).not.toBeNull()
+    expect(row.embeddingDueAt).not.toBeNull()
+  })
+
+  it('takes one written from a middle version off, though live has moved on', async () => {
+    // Summarize could not replace it — a private package, no provider — so the
+    // abstract still describes v1 while live stands on v2.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await writeSummary('Describes v1.', { source: 'ai', version: 1 })
+
+    await purge(1)
+
+    expect((await summaryRow()).summary).toBeNull()
+  })
+
+  it('keeps what is not about the text: hiding, and a refusal of the version served', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live, refused as too long
+    await writeSummary('Hidden text.', {
+      source: 'ai',
+      version: 1,
+      hidden: true,
+      skipReason: 'rejected',
+      skipVersion: 2,
+      skipGenKey: 'g',
+      rejectedTokens: 900_000,
+    })
+
+    await purge(1)
+
+    const row = await summaryRow()
+    expect(row.summary).toBeNull()
+    expect(row.meta).toEqual({
+      hidden: true,
+      skipReason: 'rejected',
+      skipVersion: 2,
+      skipGenKey: 'g',
+      rejectedTokens: 900_000,
+    })
+    // Nobody saw the text, so the vector was not built from it.
+    expect(row.embeddingDueAt).toBeNull()
+  })
+
+  it('takes off a row whose refusal predates skipVersion, whichever version is purged', async () => {
+    // Recorded before skipVersion: `version` names the refused v2, not the
+    // version the text came from.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await writeSummary('Describes v1.', {
+      source: 'ai',
+      version: 2,
+      genKey: 'g',
+      skipReason: 'rejected',
+    })
+
+    await purge(1)
+
+    const row = await summaryRow()
+    expect(row.summary).toBeNull()
+    // The refusal of v2 is still recognised once `version` and `genKey` are gone.
+    expect(row.meta).toEqual({ skipReason: 'rejected', skipVersion: 2, skipGenKey: 'g' })
+  })
+
+  it('leaves one written from another version', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await writeSummary('Describes v2.', { source: 'ai', version: 2 })
+
+    await purge(1)
+
+    expect(await summaryRow()).toMatchObject({
+      summary: 'Describes v2.',
+      docSyncDueAt: null,
+      embeddingDueAt: null,
+    })
+  })
+
+  it("leaves a person's text", async () => {
+    await addVersion(1, 'sha256:v2') // only version, live
+    await writeSummary('Written by an editor.', { source: 'human', version: 1 })
+
+    await purge(1)
+
+    expect((await summaryRow()).summary).toBe('Written by an editor.')
   })
 })
 

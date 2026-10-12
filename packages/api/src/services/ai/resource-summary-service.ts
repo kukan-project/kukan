@@ -11,7 +11,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { publicSummary, resource } from '@kukan/db'
-import { NotFoundError, type ResourceSummaryMeta } from '@kukan/shared'
+import { ConflictError, NotFoundError, type ResourceSummaryMeta } from '@kukan/shared'
 import { embeddingDueIf } from '../search/resource-embedding'
 
 export interface SummaryUpdate {
@@ -99,8 +99,12 @@ export async function setResourceSummary(
   //
   // The vector is marked only when what it is built from moved — against the
   // row as it stands, not as read above.
+  //
+  // Only onto the row as it was read: the write carries the text back, and a
+  // purge or a run that replaced it in between would see the old text restored
+  // — for a purge, content made unobtainable published again.
   const visibleAfter = meta.hidden ? null : summary
-  await db
+  const written = await db
     .update(resource)
     .set({
       summary,
@@ -108,7 +112,17 @@ export async function setResourceSummary(
       docSyncDueAt: sql`NOW()`,
       embeddingDueAt: embeddingDueIf(sql`${publicSummary} IS DISTINCT FROM ${visibleAfter}`),
     })
-    .where(eq(resource.id, id))
+    .where(
+      and(
+        eq(resource.id, id),
+        sql`${resource.summary} IS NOT DISTINCT FROM ${current.summary}`,
+        sql`${resource.summaryMeta} = ${JSON.stringify(current.meta ?? {})}::jsonb`
+      )
+    )
+    .returning({ id: resource.id })
+  if (written.length === 0) {
+    throw new ConflictError(`The abstract of resource ${id} changed while being edited; retry`)
+  }
 
   return {
     id,

@@ -197,11 +197,14 @@ advisory lock は文書の書き手どうしの排他で、未反映フラグを
 
 1. claim を取る。取れなければ Conflict で失敗し、キューが再試行する。
 2. 版が `purging` でなければ何もしない。
-3. 版ファイルを消す。
+3. 版ファイルを消す。その版から作った AI 抄録があれば消し、検索文書と埋め込みの未反映フラグを立てる
+   （人が書いた文、非表示の指定、配信中の版についての確定済みの拒否は残す）。配信中かどうかは問わない —
+   抄録が前の版のまま残ることがある。
 4. 配信中の版なら、プレビューなどの派生物・本文チャンクを消し、`contentIndexed` を false にし、層 2 から
    外し、配信の指す先を 1 つ前の `active` の版へ戻す（無ければ空にする）。配信中でなければ層 2 だけ扱う。
 5. 作り直しが要る印があれば、`resource-pipeline(rebuildOnly)` を積む（印の消去と同じトランザクション）。
 6. 版を `purged`（墓標）にし、監査ログを書く。
+7. 未反映フラグが立っていれば `sync-search-docs` と `embed-resources` を積む（パイプラインの実行後と同じ）。
 
 ### データセット単位
 
@@ -330,7 +333,9 @@ resource-pipeline
 
 lake-ingest-version ──→ 同じリソースの次の未取込版 / claim が取れなければ自分を積み直す
 embed-resources ──→ 8 バッチで打ち切ったとき、残りの embed-resources
-purge-resource-version ──→ resource-pipeline(rebuildOnly)（配信中の版を消したとき）
+purge-resource-version
+  ├ 配信中の版を消したとき ──────────────→ resource-pipeline(rebuildOnly)
+  └ その版の抄録を消したとき ──────────────→ sync-search-docs / embed-resources
 
 [全件ジョブ: 管理画面から]
   reindex-metadata{includeContent:false}   「検索インデックスの再構築」（何も積まない）

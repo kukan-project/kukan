@@ -581,6 +581,13 @@ await queue.process({
       queue,
       lake,
     })
+    // The abstract the purge took off is still in the document and the vector
+    // until these run; the rebuild that would queue them runs only when
+    // content remains.
+    await Promise.all([
+      enqueueResourceDocSyncIfDue(db, queue, resourceId, log),
+      enqueueResourceEmbedsIfDue(db, { queue, ai, logger: log }, { resourceIds: [resourceId] }),
+    ])
     const elapsed = Math.round(performance.now() - start)
     log.info(
       { jobId: job.id, type: job.type, resourceId, version, ...result, elapsed },
