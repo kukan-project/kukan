@@ -1,6 +1,6 @@
 /** Column list of a DuckDB relation, shared by ingest's schema check and diff. */
 import type { DiffColumn } from '@kukan/shared'
-import type { LakeSession } from './connection'
+import type { BucketSession } from './connection'
 
 /** A described column. The diff publishes these to the client untouched, so it
  *  is the wire's `DiffColumn` rather than a second declaration of it. */
@@ -11,7 +11,7 @@ export type LakeColumn = DiffColumn
  *   `lake.t AT (VERSION => n)`.
  */
 export async function describeColumns(
-  session: LakeSession,
+  session: BucketSession,
   relation: string
 ): Promise<LakeColumn[]> {
   const rows = await session.rows(`DESCRIBE SELECT * FROM ${relation}`)

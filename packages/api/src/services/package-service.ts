@@ -61,7 +61,7 @@ import {
 } from './resource-service'
 import { markPackageDocs } from './search/doc-marks'
 import type { JobQueue } from '@kukan/queue'
-import { queueLakeTablesDrop } from './lake/lake-reclaim'
+import { queueResourceLakesDeletion } from './lake/lake-catalog'
 import { markPackageResourceEmbeddings } from './search/resource-embedding'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
 import { withResourceClaimsOrConflict } from './pipeline/pipeline-claim'
@@ -890,7 +890,7 @@ export class PackageService {
     const target = await this.getByNameOrId(nameOrId, 'deleted')
     if (authorize) await authorize(target)
     // Read while the rows still exist — the delete below takes them with it.
-    const { resourceIds, lakeResourceIds } = await listPurgeTargets(this.db, [target.id])
+    const { resourceIds } = await listPurgeTargets(this.db, [target.id])
 
     return withResourceClaimsOrConflict(this.db, resourceIds, async () => {
       const row = await deps.queue.transaction(this.db, async (tx) => {
@@ -907,7 +907,7 @@ export class PackageService {
             'package-state-changed'
           )
         await deleteOrphanFreeTags(tx)
-        await queueLakeTablesDrop(deps.queue, tx, lakeResourceIds)
+        await queueResourceLakesDeletion(deps.queue, tx, resourceIds)
         return deleted
       })
       await purgePackageExternals(this.db, target.id, deps)
@@ -1123,10 +1123,10 @@ export class PackageService {
   }
 
   /**
-   * Delete the DB rows of a claimed draft, queueing the drop of the DuckLake
-   * tables named by `lakeResourceIds` with them.
+   * Delete the DB rows of a claimed draft, queueing the deletion of
+   * `resourceIds`' layer 2 with them.
    */
-  async finalizeDraftPurge(id: string, queue: JobQueue, lakeResourceIds: string[]) {
+  async finalizeDraftPurge(id: string, queue: JobQueue, resourceIds: string[]) {
     return await queue.transaction(this.db, async (tx) => {
       const [purged] = await tx
         .delete(packageTable)
@@ -1136,7 +1136,7 @@ export class PackageService {
         throw new ConflictError('Package is no longer claimed for purge')
       }
       await deleteOrphanFreeTags(tx)
-      await queueLakeTablesDrop(queue, tx, lakeResourceIds)
+      await queueResourceLakesDeletion(queue, tx, resourceIds)
       return purged
     })
   }
@@ -1154,12 +1154,12 @@ export class PackageService {
   ) {
     const claimed = await this.claimDraftForPurge(nameOrId, authorize)
     // Read while the rows still exist — the finalize below takes them with it.
-    const { resourceIds, lakeResourceIds } = await listPurgeTargets(this.db, [claimed.id])
+    const { resourceIds } = await listPurgeTargets(this.db, [claimed.id])
     // Held across the whole erasure (ADR-044). A refusal leaves the row
     // 'purging', which is exactly the state a re-run recovers from.
     return withResourceClaimsOrConflict(this.db, resourceIds, async () => {
       await purgePackageExternals(this.db, claimed.id, deps)
-      return this.finalizeDraftPurge(claimed.id, deps.queue, lakeResourceIds)
+      return this.finalizeDraftPurge(claimed.id, deps.queue, resourceIds)
     })
   }
 }

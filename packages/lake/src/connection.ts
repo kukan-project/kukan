@@ -1,10 +1,12 @@
 /**
  * DuckLake connection (ADR-043 layer 2 / Phase ii).
  *
- * Opens an in-memory DuckDB session, loads the required extensions, points it at
- * the S3/MinIO bucket, and ATTACHes the DuckLake catalog (backed by PostgreSQL)
- * as `lake`. That setup is instance-scoped, so it is done once per process and
- * every session after the first is a connection on it. All DuckLake access is
+ * Opens an in-memory DuckDB session, loads the required extensions and points it
+ * at the S3/MinIO bucket. That setup is instance-scoped, so it is done once per
+ * process and every session after the first is a connection on it. A session
+ * names the catalog it works on by alias (`LakeSession.catalog`); the shared
+ * one, backed by PostgreSQL, is attached as `lake` on the first session that
+ * asks for it. All DuckLake access is
  * confined to this module (ADR-005): the worker writes through it, the API
  * reads through it, nothing else touches DuckLake directly.
  *
@@ -22,14 +24,18 @@ import {
 } from './config'
 import { openDuckdb } from './duckdb'
 import { createSpillRegistry } from './spill'
-import { sqlLiteral } from './sql'
+import { assertSafeIdentifier, sqlLiteral } from './sql'
 
 /** A row read back from DuckDB, by column name. The diff samples reach the
  *  client as they are read, so it is the wire's `DiffRow` and not a copy. */
 export type LakeRow = DiffRow
 
-/** A DuckDB session with the DuckLake catalog attached as `lake`. */
-export interface LakeSession {
+/**
+ * A DuckDB session on the lake's instance: its extensions and S3 secret, and
+ * no catalog. What reads Parquet straight from the bucket needs (the key
+ * check), and what a session naming a catalog extends.
+ */
+export interface BucketSession {
   /** Execute a statement with no result set. */
   run(sql: string): Promise<void>
   /** Execute a query and return all rows as objects. */
@@ -39,6 +45,15 @@ export interface LakeSession {
   /** Release the connection; the instance stays for the next session. */
   close(): Promise<void>
 }
+
+/** A session with a DuckLake catalog attached under `catalog`. */
+export interface LakeSession extends BucketSession {
+  /** The alias the catalog is attached as, which every statement on it names. */
+  readonly catalog: string
+}
+
+/** The alias the shared catalog is attached as. */
+const SHARED_CATALOG = 'lake'
 
 export interface LakeSessionOptions {
   /**
@@ -57,7 +72,6 @@ export interface LakeSessionOptions {
 type DuckDBInstance = Awaited<
   ReturnType<(typeof import('@duckdb/node-api'))['DuckDBInstance']['create']>
 >
-type DuckDBConnection = Awaited<ReturnType<DuckDBInstance['connect']>>
 
 /**
  * How long a session waits for a catalog connection before failing: as long as
@@ -151,13 +165,17 @@ function isInstanceLost(err: unknown): boolean {
  * this session: the setting must not depend on who opened the connection.
  * Read first so the steady state costs no catalog write.
  */
-async function disableDataInlining(conn: DuckDBConnection): Promise<void> {
-  const reader = await conn.runAndReadAll(
-    `SELECT value FROM ducklake_options('lake') WHERE option_name = 'data_inlining_row_limit'`
+export async function disableDataInlining(
+  session: Pick<BucketSession, 'run' | 'rows'>,
+  catalog: string
+): Promise<void> {
+  const [row] = await session.rows(
+    `SELECT value FROM ducklake_options(${sqlLiteral(catalog)}) WHERE option_name = 'data_inlining_row_limit'`
   )
-  const [row] = reader.getRowObjectsJson() as { value?: string }[]
   if (row?.value === '0') return
-  await conn.run(`CALL lake.set_option('data_inlining_row_limit', 0)`)
+  await session.run(
+    `CALL ${assertSafeIdentifier(catalog)}.set_option('data_inlining_row_limit', 0)`
+  )
 }
 
 async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
@@ -184,28 +202,21 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
     // lake rarely read the same files twice.
     await conn.run('SET enable_external_file_cache = false')
 
-    await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'postgres', 'ducklake'])
+    await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'postgres', 'sqlite', 'ducklake'])
 
     // S3 credentials, in the one shape both this and the OData feed use
     // (`s3SecretBody` — where the REFRESH story is written down).
     await conn.run(`CREATE OR REPLACE SECRET lake_s3 (${s3SecretBody(config)})`)
 
-    // Read by the ATTACH below, so set before it. Past the cap a transaction
-    // waits for a connection rather than opening one more, as it would by
-    // default (see LakeLimits.catalogConnections)
+    // Read by the shared catalog's ATTACH, so set before any. Past the cap a
+    // transaction waits for a connection rather than opening one more, as it
+    // would by default (see LakeLimits.catalogConnections)
     await conn.run(`SET pg_pool_max_connections = ${Math.trunc(config.limits.catalogConnections)}`)
     await conn.run(`SET pg_pool_acquire_mode = 'wait'`)
     await conn.run(`SET pg_pool_wait_timeout_millis = ${LAKE_CATALOG_WAIT_TIMEOUT_MS}`)
-
-    await conn.run(
-      `ATTACH ${sqlLiteral(`ducklake:postgres:${config.pgConnString}`)} AS lake ` +
-        `(DATA_PATH ${sqlLiteral(lakeStorageUrl(config, LAKE_DATA_PREFIX))}, ` +
-        `METADATA_SCHEMA ${sqlLiteral(LAKE_METADATA_SCHEMA)})`
-    )
-    await disableDataInlining(conn)
     return instance
   } catch (err) {
-    // Setup failed partway (extension load, S3 secret, ATTACH). The instance
+    // Setup failed partway (extension load, S3 secret). The instance
     // would otherwise become unreachable while holding its buffer manager,
     // worker threads, and whatever the ATTACH opened. No session was ever
     // opened on it, so `retire` takes the directory with it here.
@@ -217,12 +228,76 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
 }
 
 /**
- * Open a DuckLake session — a connection on the process's prepared instance.
+ * Instances the shared catalog is attached to, by the attach in flight or done.
+ *
+ * Attached on the first session that names it rather than when the instance is
+ * prepared: a process that only reads the bucket, or only per-resource catalogs
+ * (ADR-067), then never opens a connection to PostgreSQL. ATTACH binds the
+ * instance, not the connection, so once per instance.
+ */
+const sharedCatalogs = new WeakMap<DuckDBInstance, Promise<void>>()
+
+function attachSharedCatalog(instance: DuckDBInstance, config: LakeConfig): Promise<void> {
+  let attaching = sharedCatalogs.get(instance)
+  if (!attaching) {
+    attaching = (async () => {
+      const conn = await instance.connect()
+      let attached = false
+      try {
+        await conn.run(
+          `ATTACH ${sqlLiteral(`ducklake:postgres:${config.pgConnString}`)} AS ${SHARED_CATALOG} ` +
+            `(DATA_PATH ${sqlLiteral(lakeStorageUrl(config, LAKE_DATA_PREFIX))}, ` +
+            `METADATA_SCHEMA ${sqlLiteral(LAKE_METADATA_SCHEMA)})`
+        )
+        attached = true
+        await disableDataInlining(
+          {
+            run: async (sql) => void (await conn.run(sql)),
+            rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
+          },
+          SHARED_CATALOG
+        )
+      } catch (err) {
+        // Undone with the record below, or the next session's ATTACH finds
+        // the alias taken and fails for as long as the instance lives.
+        if (attached) await conn.run(`DETACH ${SHARED_CATALOG}`).catch(() => {})
+        throw err
+      } finally {
+        conn.disconnectSync()
+      }
+    })()
+    sharedCatalogs.set(instance, attaching)
+    // A failed attach must not be cached, or the instance never gets one.
+    attaching.catch(() => sharedCatalogs.delete(instance))
+  }
+  return attaching
+}
+
+/**
+ * Open a session on the process's prepared instance, with no catalog.
+ *
+ * The caller owns it and must `close()` when done; that disconnects, and leaves
+ * the instance for the next operation.
+ */
+export function openBucketSession(config: LakeConfig): Promise<BucketSession> {
+  return openSession(config, () => Promise.resolve())
+}
+
+/**
+ * Open a session on the shared DuckLake catalog, attached as `lake`.
  *
  * The caller owns it and must `close()` when done; that disconnects, and leaves
  * the instance for the next operation.
  */
 export async function openLakeSession(config: LakeConfig): Promise<LakeSession> {
+  const session = await openSession(config, (instance) => attachSharedCatalog(instance, config))
+  return { ...session, catalog: SHARED_CATALOG }
+}
+
+async function openSession(
+  config: LakeConfig,
+  ready: (instance: DuckDBInstance) => Promise<void>
+): Promise<BucketSession> {
   const key = JSON.stringify(config)
   let pending = instances.get(key)
   if (!pending) {
@@ -253,6 +328,7 @@ export async function openLakeSession(config: LakeConfig): Promise<LakeSession> 
   spills.open(instance)
   let conn
   try {
+    await ready(instance)
     conn = await instance.connect()
   } catch (err) {
     spills.close(instance)
@@ -329,25 +405,41 @@ export async function releaseIdleLakeInstances(): Promise<number> {
  * caller's own retry would be a rerun of `fn` anyway — this saves the wait for
  * it. A second loss in a row is reported, not retried again.
  */
-export async function withLakeSession<T>(
+export function withLakeSession<T>(
   config: LakeConfig,
   fn: (session: LakeSession, attempt: 1 | 2) => Promise<T>,
   options: LakeSessionOptions = {}
 ): Promise<T> {
-  const { rerunIfLost = false } = options
+  return withSession(() => openLakeSession(config), fn, options)
+}
+
+/** {@link withLakeSession} for a session with no catalog ({@link openBucketSession}). */
+export function withBucketSession<T>(
+  config: LakeConfig,
+  fn: (session: BucketSession, attempt: 1 | 2) => Promise<T>,
+  options: LakeSessionOptions = {}
+): Promise<T> {
+  return withSession(() => openBucketSession(config), fn, options)
+}
+
+async function withSession<S extends BucketSession, T>(
+  open: () => Promise<S>,
+  fn: (session: S, attempt: 1 | 2) => Promise<T>,
+  { rerunIfLost = false }: LakeSessionOptions
+): Promise<T> {
   try {
-    return await inSession(config, (session) => fn(session, 1))
+    return await inSession(open, (session) => fn(session, 1))
   } catch (err) {
     if (!rerunIfLost || !wasLost(err)) throw err
-    return inSession(config, (session) => fn(session, 2))
+    return inSession(open, (session) => fn(session, 2))
   }
 }
 
-async function inSession<T>(
-  config: LakeConfig,
-  fn: (session: LakeSession) => Promise<T>
+async function inSession<S extends BucketSession, T>(
+  open: () => Promise<S>,
+  fn: (session: S) => Promise<T>
 ): Promise<T> {
-  const session = await openLakeSession(config)
+  const session = await open()
   try {
     return await fn(session)
   } finally {

@@ -13,6 +13,7 @@ import type { JobQueue } from '@kukan/queue'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline/pipeline-claim'
+import { lakeNeedsRebuild, queueLakeRebuild } from '@kukan/api/services/lake/lake-rebuild'
 import {
   pendingLakeVersionSource,
   recordLakeIngestFailure,
@@ -47,6 +48,15 @@ export async function retryLakeIngest(
     return
   }
 
+  // Before the interpretation, which the ingest would only throw away: the
+  // rebuild reads every version again, this one's turn included. What every
+  // resource the shared catalog held meets once, on its way off it (ADR-067 §6).
+  if (await lakeNeedsRebuild(deps.db, resourceId)) {
+    await queueLakeRebuild(deps.queue, resourceId)
+    log.info({ resourceId, version }, 'Lake ingest retry queued a rebuild of the resource')
+    return
+  }
+
   // Under the resource's claim like every other writer (ADR-044): a run or a
   // purge in flight is about to move the very version this is loading.
   const outcome = await withResourceClaims(deps.db, [resourceId], async (claims) => {
@@ -54,7 +64,13 @@ export async function retryLakeIngest(
       { storageKey: source.storageKey, size: source.size },
       source.format.toLowerCase(),
       ctx,
-      (t) => ctx.ingestLakeVersion({ resourceId, version, sourcePath: t.parquetPath })
+      (t) =>
+        ctx.ingestLakeVersion({
+          resourceId,
+          version,
+          sourcePath: t.parquetPath,
+          claim: claims[0] ?? null,
+        })
     )
     // Written whether or not there was a table. An empty schema is how this
     // version stops being outstanding: without it, an empty CSV is handed back
@@ -85,6 +101,9 @@ export async function retryLakeIngest(
     // through, leaving the queue's retry as the retry. Not handed on either — the
     // next version loaded first would overtake this one for good.
     const failure = await recordLakeIngestFailure(deps.db, job)
+    // The catalog may be what failed — its object or its files gone — and
+    // nothing else would notice: the rebuild's handler looks
+    await queueLakeRebuild(deps.queue, resourceId)
     log.error(
       { err, resourceId, version, ...failure },
       failure?.gaveUp ? 'Lake ingest gave up on this version' : 'Lake ingest retry failed'

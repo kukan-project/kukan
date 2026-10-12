@@ -65,7 +65,8 @@ export function heldContext(
     },
     async ingestLakeVersion(row) {
       await assertHeld()
-      return ctx.ingestLakeVersion(row)
+      // Carried to the commit, which is conditioned on it
+      return ctx.ingestLakeVersion({ ...row, claim })
     },
   }
 }

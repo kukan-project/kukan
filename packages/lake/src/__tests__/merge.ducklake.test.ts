@@ -54,6 +54,7 @@ beforeEach(async () => {
   await conn.run(`ATTACH 'ducklake:${dir}/catalog.ducklake' AS lake (DATA_PATH '${dir}/data/')`)
   await conn.run(`CALL lake.set_option('data_inlining_row_limit', 0)`)
   session = {
+    catalog: 'lake',
     run: async (sql) => void (await conn.run(sql)),
     rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
     interrupt: () => conn.interrupt(),
@@ -232,8 +233,8 @@ describe('MERGE INTO on DuckLake', () => {
     // Sharing is what decides it. ii-a's loads replace the contents wholesale,
     // so the head's files and an earlier version's are disjoint and the case
     // above passes. **A keyed load updates in place, so ii-b always shares** —
-    // which is why `restandLakeTable` reads the snapshot out into a temp table
-    // before it deletes anything, rather than relying on the branch above.
+    // which is why a move onto an earlier snapshot has to read it out into a
+    // temp table before it deletes anything, rather than rely on the branch above.
     const v1 = await latestSnapshot()
     // An append, so v1's file is still part of the current contents.
     await session.run(`INSERT INTO lake.t SELECT * FROM (VALUES (3, 'c')) v(id, name)`)

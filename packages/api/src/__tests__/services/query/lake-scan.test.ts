@@ -7,15 +7,20 @@
  * same tick as the interrupt.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { openLakeSession } from '@kukan/lake'
+import { openBucketSession, openLakeCatalogReader, openLakeSession } from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
 import { RequestAbandonedError } from '@kukan/shared'
-import { scanLake } from '../../../services/query/lake-scan'
+import { scanBucket, scanCatalog } from '../../../services/query/lake-scan'
 import { unreachableLake } from '../../test-helpers/fixtures'
 
 vi.mock('@kukan/lake', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kukan/lake')>()
-  return { ...actual, openLakeSession: vi.fn() }
+  return {
+    ...actual,
+    openBucketSession: vi.fn(),
+    openLakeCatalogReader: vi.fn(),
+    openLakeSession: vi.fn(),
+  }
 })
 
 /** A session that records what was asked of it and when. */
@@ -32,6 +37,9 @@ function fakeSession() {
   return { session, events }
 }
 
+const store = { download: vi.fn(), upload: vi.fn() }
+const catalog = { catalogKey: 'lake/r/g/catalog.t.sqlite' }
+
 /** Resolves once the microtask queue has drained a few times over. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -39,15 +47,15 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('scanLake', () => {
+describe('scanCatalog', () => {
   it('stops a caller who leaves while the session is still opening', async () => {
     // The listener has to be attached before the open is awaited: a session
-    // takes an extension load and a catalog ATTACH to come up, and a caller
+    // takes an extension load and a catalog download and ATTACH to come up, and a caller
     // that leaves during it would otherwise wait out the whole scan holding the
     // one slot every query shares.
     const { session, events } = fakeSession()
     let open!: () => void
-    vi.mocked(openLakeSession).mockReturnValue(
+    vi.mocked(openLakeCatalogReader).mockReturnValue(
       new Promise<LakeSession>((resolve) => {
         open = () => resolve(session)
       })
@@ -55,9 +63,9 @@ describe('scanLake', () => {
     const scan = vi.fn().mockResolvedValue('rows')
     const abort = new AbortController()
 
-    const running = scanLake(unreachableLake, 'Scan', scan, abort.signal)
+    const running = scanCatalog(unreachableLake, store, catalog, 'Scan', scan, abort.signal)
     await settled()
-    expect(openLakeSession).toHaveBeenCalled()
+    expect(openLakeCatalogReader).toHaveBeenCalled()
     abort.abort()
 
     await expect(running).rejects.toBeInstanceOf(RequestAbandonedError)
@@ -73,7 +81,7 @@ describe('scanLake', () => {
     // Disconnecting in the same tick as the interrupt leaves the driver's
     // promise pending forever (measured), so the close waits for the scan.
     const { session, events } = fakeSession()
-    vi.mocked(openLakeSession).mockResolvedValue(session)
+    vi.mocked(openLakeCatalogReader).mockResolvedValue(session)
     let stopScan!: () => void
     const scan = vi.fn().mockImplementation(
       () =>
@@ -83,7 +91,7 @@ describe('scanLake', () => {
     )
     const abort = new AbortController()
 
-    const running = scanLake(unreachableLake, 'Scan', scan, abort.signal)
+    const running = scanCatalog(unreachableLake, store, catalog, 'Scan', scan, abort.signal)
     await settled()
     abort.abort()
 
@@ -99,13 +107,41 @@ describe('scanLake', () => {
   it('frees the slot when the session never opens', async () => {
     // With a cap of one, a failed ATTACH that kept its slot would wedge every
     // later scan and every ADR-032 query at 429 for the process's lifetime.
-    vi.mocked(openLakeSession).mockRejectedValue(new Error('ATTACH failed'))
-    await expect(scanLake(unreachableLake, 'Scan', async () => 'rows')).rejects.toThrow(
-      'ATTACH failed'
-    )
+    vi.mocked(openLakeCatalogReader).mockRejectedValue(new Error('ATTACH failed'))
+    await expect(
+      scanCatalog(unreachableLake, store, catalog, 'Scan', async () => 'rows')
+    ).rejects.toThrow('ATTACH failed')
 
     const { session } = fakeSession()
-    vi.mocked(openLakeSession).mockResolvedValue(session)
-    await expect(scanLake(unreachableLake, 'Scan', async () => 'rows')).resolves.toBe('rows')
+    vi.mocked(openLakeCatalogReader).mockResolvedValue(session)
+    await expect(
+      scanCatalog(unreachableLake, store, catalog, 'Scan', async () => 'rows')
+    ).resolves.toBe('rows')
+  })
+})
+
+describe('scanBucket', () => {
+  it('reads under the same bounds without opening a catalog', async () => {
+    // A scan of the bucket alone has nothing to ask of a catalog, and opening
+    // the shared one would hold a database connection to read nothing from.
+    const { session } = fakeSession()
+    vi.mocked(openBucketSession).mockResolvedValue(session)
+
+    await expect(scanBucket(unreachableLake, 'Scan', async () => 'rows')).resolves.toBe('rows')
+    expect(openBucketSession).toHaveBeenCalled()
+    expect(openLakeSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('scanCatalog, the shared catalog', () => {
+  it("reads a resource's own catalog under the same bounds, not the shared one", async () => {
+    const { session } = fakeSession()
+    vi.mocked(openLakeCatalogReader).mockResolvedValue(session)
+
+    await expect(
+      scanCatalog(unreachableLake, store, catalog, 'Scan', async () => 'rows')
+    ).resolves.toBe('rows')
+    expect(openLakeCatalogReader).toHaveBeenCalledWith(unreachableLake, store, catalog)
+    expect(openLakeSession).not.toHaveBeenCalled()
   })
 })

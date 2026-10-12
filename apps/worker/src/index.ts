@@ -17,6 +17,7 @@ import {
   RECORD_ROW_GROUPS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
+  LAKE_REBUILD_JOB_TYPE,
   DROP_LAKE_TABLES_JOB_TYPE,
   EMBED_JOB_TYPE,
   SUMMARIZE_ALL_JOB_TYPE,
@@ -30,6 +31,7 @@ import {
   recordRowGroupsJobSchema,
   convertSetAsideJobSchema,
   lakeIngestJobSchema,
+  lakeRebuildJobSchema,
   dropLakeTablesJobSchema,
   embedJobSchema,
   summarizeAllJobSchema,
@@ -56,18 +58,18 @@ import { requestContentReindex } from '@kukan/api/services/search/content-reinde
 import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
+import { deleteResourceLakes } from '@kukan/api/services/lake/lake-catalog'
 import {
-  dropPurgedLakeTables,
-  queueStrandedLakeTables,
-} from '@kukan/api/services/lake/lake-reclaim'
-import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
+  LAKE_INGEST_SWEEP_LIMIT,
+  ResourceVersionService,
+} from '@kukan/api/services/resource-version-service'
 import { createMeteredAI } from '@kukan/api/adapters'
 import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
 import { reanalyseSearchIndex } from './search/reanalyse-index'
 import type { SummaryDeps } from './pipeline/steps/summarize'
 import { enqueueSummarizePackages, summarizeNextInPackage } from './summary/backfill'
 import { createDb, runMigrations } from '@kukan/db'
-import { closeLakeInstances, lakeConfigFromEnv } from '@kukan/lake'
+import { closeLakeInstances, lakeConfigFromEnv, removeStaleLakeCatalogCopies } from '@kukan/lake'
 import { PostgresJobQueue, httpWake, isWakeAuthorized } from '@kukan/queue'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter, PostgresSearchAdapter } from '@kukan/search-adapter'
@@ -75,9 +77,10 @@ import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/run/build-context'
 import { jobConcurrency } from './concurrency'
 import { retryLakeIngest } from './pipeline/retry-lake-ingest'
+import { rebuildLakeCatalog } from './pipeline/rebuild-lake-catalog'
+import { lakeVersionReader } from './pipeline/lake-reader'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
-import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
 import { sweepSearchDocs, sweepResourceEmbeds } from './cron/sweep-resource-marks'
 import {
   expirePendingUploads,
@@ -85,6 +88,7 @@ import {
 } from '@kukan/api/services/pipeline/storage-pointer'
 import {
   DEAD_JOB_RETENTION_MS,
+  LAKE_CATALOG_COPY_STALE_MS,
   LAKE_INGEST_SWEEP_CRON,
   LAKE_MEMORY_LIMIT_MB,
   LAKE_THREADS,
@@ -214,6 +218,15 @@ const lake = lakeConfigFromEnv(env, {
   threads: LAKE_THREADS,
   catalogConnections: WORKER_LAKE_CATALOG_CONNECTIONS,
 })
+// Local catalog copies a killed worker left behind (ADR-067 §2): never reused,
+// so only disk until removed. Not awaited — nothing here depends on it.
+if (lake) {
+  removeStaleLakeCatalogCopies(lake, LAKE_CATALOG_COPY_STALE_MS)
+    .then((removed) => {
+      if (removed > 0) log.info({ removed }, 'Removed local lake catalog copies left behind')
+    })
+    .catch((err: unknown) => log.warn({ err }, 'Could not remove stale local lake catalog copies'))
+}
 
 // --- Orphaned object sweeper (ADR-043) ---
 const orphanSweepLog = log.child({ component: 'orphan-cleanup' })
@@ -246,14 +259,6 @@ const orphanCleanupJob = startCronJob({
     const marked = await markUploadsThatNeverArrived(db, PENDING_UPLOAD_TTL_MS)
     if (marked > 0) orphanSweepLog.info({ marked }, 'Marked uploads that never arrived')
     await sweepOrphanedObjects(db, storage, orphanSweepLog)
-    // Layer 2's orphans are the ones no writer could park: a Parquet written
-    // but never committed to the catalog (ADR-043).
-    await sweepLakeOrphans(lake, orphanSweepLog)
-    // Last: it needs the lake, so a lake out of reach stops only this
-    const lakeTables = await queueStrandedLakeTables(db, queue, lake)
-    if (lakeTables.queued > 0) {
-      orphanSweepLog.info(lakeTables, 'Queued the drop of lake tables left with no job')
-    }
   },
 })
 
@@ -270,7 +275,9 @@ const lakeIngestSweepJob = startCronJob({
   cronExpression: LAKE_INGEST_SWEEP_CRON,
   log: lakeIngestSweepLog,
   run: async () => {
-    const result = await new ResourceVersionService(db).queuePendingLakeIngests(queue)
+    const result = await new ResourceVersionService(db).queuePendingLakeIngests(queue, {
+      limit: LAKE_INGEST_SWEEP_LIMIT,
+    })
     if (result.queued > 0) {
       lakeIngestSweepLog.info(result, 'Queued versions layer 2 has not loaded')
     }
@@ -405,7 +412,7 @@ const syncSearchDocsJob = async (job: Job) => {
 }
 
 // --- Job handlers ---
-const ctx = buildPipelineContext(db, storage, search, lake, summaryDeps)
+const ctx = buildPipelineContext(db, storage, search, lake && { config: lake, queue }, summaryDeps)
 await queue.process({
   // Pipeline (data-plane): process one resource.
   [PIPELINE_JOB_TYPE]: async (job: Job) => {
@@ -556,7 +563,6 @@ await queue.process({
     const { purged, packageCount } = await orgService.purgeDeletedOrg(organizationId, {
       search,
       storage,
-      lake,
     })
     const elapsed = Math.round(performance.now() - start)
     log.info(
@@ -564,8 +570,8 @@ await queue.process({
       purged ? 'Purge organization job completed' : 'Purge organization job skipped (not deleted)'
     )
   },
-  // Make one resource version unobtainable (ADR-043 §5): its file goes, and
-  // layer 2 is put out of reach rather than erased. When the purged version is
+  // Make one resource version unobtainable (ADR-043 §5, ADR-067 §4): its file
+  // goes, and its resource's layer 2 is rebuilt without it. When the purged version is
   // the one being served, the preview and the search index go with it and the
   // live version rolls back to the previous one; for any other version they
   // describe content this purge does not touch and are left alone.
@@ -580,6 +586,8 @@ await queue.process({
       search,
       queue,
       lake,
+      // A tabular version's purge rebuilds its resource's layer 2 (ADR-067)
+      readVersion: lakeVersionReader(ctx),
     })
     // The abstract the purge took off is still in the document and the vector
     // until these run; the rebuild that would queue them runs only when
@@ -608,17 +616,34 @@ await queue.process({
       log: log.child({ jobId: job.id, type: job.type }),
     })
   },
-  // The lake half of a dataset's purge, queued with the rows' deletion: the
-  // purge runs in the web, which does not open DuckDB for it.
+  // Rebuild one resource's layer 2 from layer 1 (ADR-067), or clear what a
+  // failed write left in it: queued by an ingest that finds the resource still
+  // in the shared catalog, and by a failed ingest or diff
+  [LAKE_REBUILD_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, lakeRebuildJobSchema)
+    if (!data) return
+    await rebuildLakeCatalog(data, {
+      ctx,
+      db,
+      queue,
+      storage,
+      lake,
+      log: log.child({ jobId: job.id, type: job.type }),
+    })
+  },
+  // The layer 2 half of a dataset's purge, queued with the rows' deletion: the
+  // purge runs in the web, which leaves the bucket work to the worker
   [DROP_LAKE_TABLES_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, dropLakeTablesJobSchema)
     if (!data) return
     const start = performance.now()
-    const reclaimed = await dropPurgedLakeTables(db, lake, data.resourceIds)
+    // Each purged resource's layer 2, by prefix (ADR-067); a job queued before
+    // the move named the shared catalog's tables, which stay until it is dropped
+    const deleted = await deleteResourceLakes(storage, data.resourceIds)
     const elapsed = Math.round(performance.now() - start)
     log.info(
-      { jobId: job.id, type: job.type, tables: data.resourceIds.length, ...reclaimed, elapsed },
-      'Drop lake tables job completed'
+      { jobId: job.id, type: job.type, resources: data.resourceIds.length, deleted, elapsed },
+      'Delete purged resources layer 2 job completed'
     )
   },
   // One-time migration: name every unversioned resource's live file as v1

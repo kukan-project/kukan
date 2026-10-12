@@ -581,7 +581,7 @@
       "dead": "Dead",
       "retry": "Retry",
       "delete": "Delete",
-      "deleteConfirm": "Delete this job? What it was for will not be done. A purge of a version or organization already under way, or the removal of a purged dataset's lake data, is queued again within the hour.",
+      "deleteConfirm": "Delete this job? What it was for will not be done. A purge of a version or organization already under way is queued again within the hour.",
       "noJobs": "No jobs",
       "actionFailed": "The action failed",
       "colJobType": "Job",
@@ -590,6 +590,7 @@
         "resource-pipeline": "Pipeline run (resources)",
         "sync-search-docs": "Metadata search index sync (datasets, resources)",
         "lake-ingest-version": "Version lake ingest (resources)",
+        "rebuild-lake-catalog": "Lake data rebuild and cleanup (resources)",
         "embed-resources": "Embeddings (resources)",
         "summarize-package": "AI descriptions (resources)",
         "summarize-all": "AI descriptions in bulk (all resources)",
@@ -689,7 +690,7 @@
       "backfill": "Backfill versions",
       "backfilling": "Running…",
       "backfillQueued": "Backfill queued. This section disappears once it completes.",
-      "lakeIngestDescription": "{count} resources have a current version that is not yet loaded for diffing. Loading them lets you see added and removed rows from the next update onward.",
+      "lakeIngestDescription": "{count} resources have versions not yet loaded for diffing (including those loaded in the previous format). Loading them lets you see added and removed rows.",
       "convertRevertsDescription": "{count} resources still hold versions an earlier revert set aside. Converting them makes the latest-version label agree with what is being served."
     },
     "rowGroupBackfill": {

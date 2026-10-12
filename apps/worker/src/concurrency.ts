@@ -8,7 +8,7 @@
  *
  * Hence the pool's default of 5 (`WORKER_DB_POOL_MAX`, and the small preset):
  * three connections can be held for long — the embed run's, and whoever holds
- * or waits for the lake-ingest or the search-document lock — plus the embed
+ * or waits for the search-document lock — plus the embed
  * run's second and one for everything short. Fewer, and the long holders can
  * fill the pool and time the rest out.
  *

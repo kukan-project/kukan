@@ -427,6 +427,14 @@ export const DEAD_JOB_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 
 /**
+ * How long a local catalog copy is left alone before the worker's start
+ * removes it as one a killed process left (ADR-067 §2). A copy in use is
+ * touched on every commit to it; the age spares one another process on the
+ * same host — the web, in development — has open.
+ */
+export const LAKE_CATALOG_COPY_STALE_MS = 60 * 60 * 1000
+
+/**
  * How often versions that never reached DuckLake are swept back in (ADR-043
  * layer 2). Offset from the orphan sweep so the two do not contend for the
  * catalog, and hourly because it only catches what the queue dropped — the
@@ -460,18 +468,6 @@ export const START_SWEEP_DELAY_MS = 10 * 60_000
  * retention: reclaiming an upload still in progress would break it.
  */
 export const PENDING_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
-
-/**
- * How long an untracked DuckLake file is left alone before it counts as an
- * orphan (24 h).
- *
- * Much longer than the layer-1 retention, and deliberately so. That one waits
- * out readers of a key nothing points at; this one has to outlast the gap
- * between DuckLake writing a Parquet and committing it, and a file caught
- * inside that gap is live data. Reclaiming late costs storage; reclaiming
- * early costs the file.
- */
-export const LAKE_ORPHAN_RETENTION_MS = 24 * 60 * 60 * 1000
 
 /**
  * Keys deleted per sweep; the rest wait for the next one. A pipeline run parks

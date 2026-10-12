@@ -33,7 +33,12 @@ vi.mock('@duckdb/node-api', () => ({
               const err = failWith(index, sql)
               if (err) throw err
             },
-            runAndReadAll: async () => ({ getRowObjectsJson: () => [{ value: '0' }] }),
+            runAndReadAll: async (sql: string) => {
+              ran.push(sql)
+              const err = failWith(index, sql)
+              if (err) throw err
+              return { getRowObjectsJson: () => [{ value: '0' }] }
+            },
             disconnectSync: () => {},
             interrupt: () => {},
           }
@@ -45,7 +50,7 @@ vi.mock('@duckdb/node-api', () => ({
   },
 }))
 
-const { withLakeSession, closeLakeInstances } = await import('../connection')
+const { withLakeSession, openLakeSession, closeLakeInstances } = await import('../connection')
 
 const config: LakeConfig = {
   pgConnString: 'host=x',
@@ -172,6 +177,29 @@ describe('withLakeSession', () => {
     await withLakeSession(config, runsWork(), rerun)
 
     expect(instances).toHaveLength(2)
+  })
+})
+
+describe('the shared catalog', () => {
+  it('is attached again after a set-up that failed past its ATTACH', async () => {
+    // The ATTACH went through and what follows it did not: left attached, the
+    // alias would be taken and every later session's ATTACH would fail.
+    let failed = false
+    failWith = (_i, sql) => {
+      if (failed || !sql.includes('ducklake_options')) return undefined
+      failed = true
+      return new Error('TransactionContext Error: Catalog write-write conflict')
+    }
+
+    await expect(openLakeSession(config)).rejects.toThrow('write-write conflict')
+    const session = await openLakeSession(config)
+    await session.close()
+
+    const ran = instances[0].ran
+    const attaches = ran.filter((sql) => sql.startsWith('ATTACH'))
+    expect(attaches).toHaveLength(2)
+    expect(ran.indexOf('DETACH lake')).toBeGreaterThan(ran.indexOf(attaches[0]))
+    expect(ran.indexOf('DETACH lake')).toBeLessThan(ran.lastIndexOf(attaches[1]))
   })
 })
 

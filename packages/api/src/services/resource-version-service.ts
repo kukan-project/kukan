@@ -62,22 +62,14 @@ import type {
   ResourceSummaryMeta,
 } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
-import {
-  dropLakeTable,
-  keyFault,
-  lakeStorageUrl,
-  lakeTableExists,
-  lakeTableName,
-  restandLakeTable,
-  withLakeSession,
-} from '@kukan/lake'
+import { keyFault, lakeStorageUrl } from '@kukan/lake'
 import type { Logger, ResourceColumn, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { jobsFor, readyJobsFor, type JobQueue } from '@kukan/queue'
-import { lakeStandDown, withLakeIngestLock } from './lake/lake-ingest'
-import { reclaimInSession } from './lake/lake-reclaim'
+import { rebuildResourceLake, type LakeVersionReader } from './lake/lake-rebuild'
+import { clearLakeLeftovers } from './lake/lake-catalog'
 import { embeddingDueIf } from './search/resource-embedding'
 import {
   CLAIM_STALE_AFTER_MS,
@@ -97,7 +89,7 @@ import {
   ownedByVersion,
 } from './pipeline/storage-pointer'
 import { PipelineService, schemaDescribesLiveContent } from './pipeline/pipeline-service'
-import { scanLake } from './query/lake-scan'
+import { scanBucket } from './query/lake-scan'
 import { markContentUnindexed } from './search/content-index-record'
 
 /** The row creating a version adds, minus everything the table fills in. */
@@ -351,6 +343,8 @@ interface PurgeDeps {
   search?: SearchAdapter
   queue: JobQueue
   lake?: LakeConfig
+  /** Reads a version's table again, for the rebuild a purge of a tabular version is (ADR-067) */
+  readVersion?: LakeVersionReader
 }
 
 /**
@@ -483,7 +477,7 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'${forVersion}
     AND rv.state = 'active'
-    AND rv.ducklake_snapshot_id IS NULL
+    AND rv.lake_snapshot_id IS NULL
     AND rv.lake_ingest_reason IS NULL
     AND lower(rv.format) IN (${TABLE_SOURCE_LIST})
     AND rv.size IS NOT NULL
@@ -494,7 +488,7 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
       WHERE newer.resource_id = rv.resource_id
         AND newer.version > rv.version
         AND newer.state = 'active'
-        AND newer.ducklake_snapshot_id IS NOT NULL
+        AND newer.lake_snapshot_id IS NOT NULL
     )
 `
 }
@@ -548,6 +542,17 @@ export const LAKE_INGEST_FAILURE_LIMIT = 3
  */
 export const LAKE_INGEST_LEASE_MS = 50 * 60 * 1000
 
+/**
+ * How many versions the hourly sweep hands out at most (`LAKE_INGEST_SWEEP_CRON`
+ * in the worker). Its hand-outs run at normal priority, and after the move to
+ * catalogs of each resource's own (ADR-067 §6) every resource the shared one
+ * held is outstanding at once, each a rebuild that reads all its versions
+ * again: uncapped, the first sweep would put them all ahead of the next
+ * upload. The administrator's control hands out the rest at low priority;
+ * without it the move still ends, this many an hour.
+ */
+export const LAKE_INGEST_SWEEP_LIMIT = 200
+
 /** The reason recorded on giving up, bound to the readers' type. */
 const INGEST_FAILED = 'ingest-failed' satisfies LakeIngestReason
 
@@ -562,7 +567,7 @@ const leasePassed = (column: string) => leasePassedWithin(column, LAKE_INGEST_LE
  * a version a handler has just refused, or one an ingest has just loaded.
  */
 const stillOutstanding = (alias: string) =>
-  sql`(${sql.raw(alias)}.state = 'active' AND ${sql.raw(alias)}.ducklake_snapshot_id IS NULL AND ${sql.raw(alias)}.lake_ingest_reason IS NULL)`
+  sql`(${sql.raw(alias)}.state = 'active' AND ${sql.raw(alias)}.lake_snapshot_id IS NULL AND ${sql.raw(alias)}.lake_ingest_reason IS NULL)`
 
 /** What recording a failed attempt left on the version. */
 export interface LakeIngestFailure {
@@ -769,13 +774,15 @@ export class ResourceVersionService {
   }
 
   /**
-   * Count latest versions that aren't in DuckLake yet — the layer-2 half of the
-   * migration (ADR-043 Phase ii). Zero means every tabular resource's current
-   * version can be diffed once it is updated again.
+   * Count the resources with a version layer 2 has not loaded — the layer-2
+   * half of the migration (ADR-043 Phase ii), and the move off the shared
+   * catalog (ADR-067 §6), whose versions count until their resource is
+   * rebuilt. Resources, as the notice says, not versions: the move counts every
+   * version a resource had.
    */
   async countPendingLakeIngest(): Promise<number> {
     const result = await this.db.execute(sql`
-      SELECT count(*)::int AS count FROM (${pendingLakeIngestQuery()}) t
+      SELECT count(DISTINCT "resourceId")::int AS count FROM (${pendingLakeIngestQuery()}) t
     `)
     return (result.rows[0] as { count: number } | undefined)?.count ?? 0
   }
@@ -1199,74 +1206,48 @@ export class ResourceVersionService {
   }
 
   /**
-   * Propagate a purge into DuckLake (ADR-043 §5, layer 2).
+   * Take the purged version out of layer 2 (ADR-067 §4).
    *
-   * **Moves the contents only when the table is standing on the purged version**,
-   * which is when they would otherwise still hold its rows. That is asked of the
-   * recorded snapshots rather than of the pointer: layer 2 stands on the newest
-   * version it took, which is not the live one as soon as a version the lake could
-   * not take — too large, not tabular, in ii-b an unusable key — sits above it.
-   * Both directions occur, so a middle version can be the top of layer 2 and a
-   * live one can be below it.
+   * A version some catalog held — the resource's own, or the shared one before
+   * migration — has its resource's catalog rebuilt from layer 1 without it, in
+   * a new generation. The rebuild's commit clears every snapshot first, this
+   * row's with them, so a retry after it finds nothing left to rebuild and
+   * goes straight to the deletion below.
    *
-   * The table is then stood on layer 2's own restore target — **not the
-   * pointer's** (spec §9.1, {@link lakeStandDown}) — and dropped only when no
-   * version is left whose rows it can hold. A drop costs the contents alone; the
-   * retained snapshots read through it (spec §9.1).
-   *
-   * **The only operation left that moves contents without publishing** (spec
-   * §7.2). It goes through the ingest path and records nothing: the version it
-   * lands on keeps the snapshot its own ingest wrote, and the landing snapshot is
-   * named by no version row, which is the state §11-3 already keeps.
-   *
-   * Either way the snapshot has to be expired and its Parquet deleted, or the
-   * rows remain readable straight from the catalog. That runs for every purge
-   * of a version that reached the lake, which is why this is not confined to the
-   * live one.
+   * Every other generation under the resource's prefix is then deleted, and on
+   * every attempt — including one with nothing to rebuild — so a retry after a
+   * commit whose deletion failed finishes it.
    *
    * Failures propagate: the version stays in `purging` and the worker retries,
-   * rather than the purge completing while the version is still reachable
-   * through layer 2. Reachability is what this closes — the bytes may stay
-   * (ADR-043 §5).
+   * rather than the purge completing while its rows are still in the bucket.
    */
   private async purgeFromLake(
     resourceId: string,
-    lake: LakeConfig | undefined,
-    purgedSnapshot: number | null
+    row: { lakeSnapshotId: number | null; ducklakeSnapshotId: number | null },
+    deps: PurgeDeps,
+    claim: ResourceClaim | null
   ): Promise<void> {
-    // Never ingested: the lake holds nothing of this version, so there is
-    // neither anything to stand down from nor anything to free. Opening a
-    // session costs extension loads and a catalog ATTACH — not worth it to find
-    // that out, and most resources are not tabular.
-    if (!lake || purgedSnapshot === null) return
-    const table = lakeTableName(resourceId)
-    await withLakeSession(lake, async (session) => {
-      await withLakeIngestLock(this.db, async (tx) => {
-        // Read under the lock, like the ingest reads its base: a run committing
-        // between the read and the move would have its snapshot stood off with
-        // nothing left to queue it again.
-        const down = await lakeStandDown(tx, session, resourceId, purgedSnapshot)
-        // Those contents describe a version this purge does not touch. The
-        // reclaim below still runs — another resource's purge may have left
-        // snapshots behind when it failed partway.
-        if (down.move === 'stays') return
-        // Gone already — dropped by an earlier purge that had nowhere to stand,
-        // or by a restore. There is nothing to move and nothing to make
-        // unfetchable. Asked after the target, so a resource whose recorded ids
-        // no longer resolve still fails rather than reading as one with nothing
-        // to do.
-        if (!(await lakeTableExists(session, table))) return
-        if (down.move === 'drop') {
-          await dropLakeTable(session, table)
-          return
-        }
-        await restandLakeTable(session, { table, snapshot: down.snapshot })
-      })
-      // The row being purged is `purging`, which the reclaim's retained set
-      // excludes along with `purged` — so its snapshot reads as unreferenced
-      // without needing a special case.
-      await reclaimInSession(this.db, session)
-    })
+    if (!deps.lake) return
+    if (row.lakeSnapshotId !== null || row.ducklakeSnapshotId !== null) {
+      // Reading versions again is the worker's (ADR-046); a purge that cannot
+      // must not complete as if it had
+      if (!deps.readVersion) {
+        throw new Error(`Purging a version of resource ${resourceId} needs a version reader`)
+      }
+      await rebuildResourceLake(
+        this.db,
+        {
+          lake: deps.lake,
+          store: deps.storage,
+          storage: deps.storage,
+          readVersion: deps.readVersion,
+        },
+        resourceId,
+        { claim }
+      )
+      return
+    }
+    await clearLakeLeftovers(this.db, deps.storage, resourceId, claim)
   }
 
   /**
@@ -1295,7 +1276,10 @@ export class ResourceVersionService {
    * (`pendingLakeVersionSource`), for the copies the pipeline's own retry
    * still produces.
    */
-  async queuePendingLakeIngests(queue: JobQueue): Promise<{ queued: number }> {
+  async queuePendingLakeIngests(
+    queue: JobQueue,
+    opts: { limit?: number } = {}
+  ): Promise<{ queued: number }> {
     // **One version per resource, the oldest.** A resource can have several
     // outstanding at once — the conversion flips rows into the eligible set and
     // issues a version above them in the same pass (ADR-044 §4) — and the queue
@@ -1320,7 +1304,12 @@ export class ResourceVersionService {
             SELECT DISTINCT ON ("resourceId") * FROM (${pendingLakeIngestQuery()}) pending
             ORDER BY "resourceId", version
           ) oldest
-          WHERE ${leasePassed('"queuedAt"')}
+          WHERE ${leasePassed('"queuedAt"')}${
+            // Never handed out first, then the longest waiting
+            opts.limit === undefined
+              ? sql``
+              : sql` ORDER BY "queuedAt" NULLS FIRST, "resourceId" LIMIT ${opts.limit}`
+          }
         )
         UPDATE resource_version rv
         SET lake_ingest_queued_at = now(), updated = now()
@@ -1532,7 +1521,13 @@ export class ResourceVersionService {
     const [row] = await this.db
       .select({
         keyColumns: resourceVersion.lakeKeyColumns,
-        snapshot: resourceVersion.ducklakeSnapshotId,
+        // Recorded by a rebuild that could not load it again (ADR-067), over a
+        // shared catalog's number it keeps: that number vouches for nothing now
+        refused: resourceVersion.lakeIngestReason,
+        // Either catalog: a version the shared one took had its key judged too
+        snapshot: sql<
+          number | null
+        >`COALESCE(${resourceVersion.lakeSnapshotId}, ${resourceVersion.ducklakeSnapshotId})`,
       })
       .from(resourceVersion)
       .innerJoin(resource, eq(resource.id, resourceVersion.resourceId))
@@ -1545,7 +1540,7 @@ export class ResourceVersionService {
       )
       .orderBy(desc(resourceVersion.version))
       .limit(1)
-    return row?.snapshot == null ? null : keyColumnsOf(row.keyColumns)
+    return row?.snapshot == null || row.refused !== null ? null : keyColumnsOf(row.keyColumns)
   }
 
   /**
@@ -1709,15 +1704,16 @@ export class ResourceVersionService {
     // them reachable and nothing to reclaim them. A purge cannot end with the
     // content still in the bucket. A refusal leaves the version in
     // 'purging', so the redelivered job finishes it.
-    return withResourceClaimsOrConflict(this.db, [resourceId], () =>
-      this.purgeVersion(resourceId, version, deps)
+    return withResourceClaimsOrConflict(this.db, [resourceId], (claims) =>
+      this.purgeVersion(resourceId, version, deps, claims[0] ?? null)
     )
   }
 
   private async purgeVersion(
     resourceId: string,
     version: number,
-    deps: PurgeDeps
+    deps: PurgeDeps,
+    claim: ResourceClaim | null
   ): Promise<{ purged: boolean; rolledBack: boolean }> {
     const [row] = await this.db
       .select()
@@ -1783,7 +1779,7 @@ export class ResourceVersionService {
       // gone leaves them serving content whose layer-1 object has already been
       // deleted — retrievable from the derivatives alone, for as long as the lake
       // stays down. Spec §9.1 orders it the same way, step 3 before step 4.
-      await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId)
+      await this.purgeFromLake(resourceId, row, deps, claim)
 
       // The pointer's own target, which it reads for itself: this row is already
       // out of the active set (`purging`), so it cannot restore itself, and
@@ -1810,7 +1806,7 @@ export class ResourceVersionService {
       // be — it stands on the newest version it took, which is this one whenever
       // nothing above it reached the lake — so the same call runs, and decides for
       // itself from the recorded snapshots (spec §9.1).
-      await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId)
+      await this.purgeFromLake(resourceId, row, deps, claim)
     }
 
     // Regenerate preview/index from whatever the resource serves now. The
@@ -1850,8 +1846,10 @@ export class ResourceVersionService {
         state: 'purged',
         purgedAt: sql`NOW()`,
         updated: sql`NOW()`,
-        // The tombstone must not point at content, and layer 2 is the one
-        // reference left to drop.
+        // The tombstone must not point at content. The rebuild has cleared this
+        // row's own number already; the shared catalog's is cleared here, so
+        // an older image gone back to cannot diff against it (ADR-067 §6).
+        lakeSnapshotId: null,
         ducklakeSnapshotId: null,
       })
       .where(eq(resourceVersion.id, row.id))
@@ -2438,7 +2436,7 @@ export class ResourceVersionService {
    * the counts.
    *
    * Read under the bounds a version diff takes and for the same reason
-   * ({@link scanLake}): a scan over content this process did not choose the
+   * ({@link scanBucket}): a scan over content this process did not choose the
    * size of otherwise holds the only slot, and every query and diff behind it
    * waits it out and then fails.
    */
@@ -2450,7 +2448,7 @@ export class ResourceVersionService {
     const preview = await this.livePreview(resourceId)
     if (typeof preview === 'string') return { checked: false, primaryKey: key, reason: preview }
 
-    const fault = await scanLake(
+    const fault = await scanBucket(
       deps.lake,
       'Key check',
       (session) =>

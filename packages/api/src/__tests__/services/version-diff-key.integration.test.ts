@@ -13,9 +13,9 @@
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { resource, resourceVersion } from '@kukan/db'
+import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
-import { diffVersions, openLakeSession } from '@kukan/lake'
+import { diffVersions, lakeCatalogKey, openLakeCatalogReader } from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
 import { VersionDiffService } from '../../services/version-diff-service'
 import { unreachableLake } from '../test-helpers/fixtures'
@@ -25,13 +25,20 @@ vi.mock('@kukan/lake', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kukan/lake')>()
   return {
     ...actual,
-    openLakeSession: vi.fn(),
+    openLakeCatalogReader: vi.fn(),
     diffVersions: vi.fn(),
   }
 })
 
 const db = getTestDb()
-const service = new VersionDiffService(db, unreachableLake)
+/** A diff's request for a repair, which these cases do not look at. */
+const noQueue = { enqueue: async () => 'job' }
+const store = {
+  download: () => Promise.reject(new Error('the catalog reader is stubbed')),
+  upload: () => Promise.reject(new Error('a diff writes nothing')),
+  head: () => Promise.reject(new Error('the catalog reader is stubbed')),
+}
+const service = new VersionDiffService(db, unreachableLake, store, noQueue)
 
 let packageId: string
 let resourceId: string
@@ -44,7 +51,7 @@ async function addVersion(version: number, snapshotId: number, keyColumns: strin
     size: 100 + version,
     hash: `sha256:v${version}`,
     origin: 'upload',
-    ducklakeSnapshotId: snapshotId,
+    lakeSnapshotId: snapshotId,
     lakeKeyColumns: keyColumns,
   })
 }
@@ -66,7 +73,13 @@ beforeEach(async () => {
   resourceId = res.id
 
   vi.clearAllMocks()
-  vi.mocked(openLakeSession).mockResolvedValue({
+  // Both ends are numbered in the resource's own catalog
+  await db.insert(resourcePipeline).values({
+    resourceId,
+    lakeCatalogKey: lakeCatalogKey(resourceId, '0b9e1f2a-3c4d-4e5f-8a9b-0c1d2e3f4a5b'),
+  })
+  vi.mocked(openLakeCatalogReader).mockResolvedValue({
+    catalog: 'lake_test',
     run: async () => {},
     rows: async () => [],
     interrupt: () => {},

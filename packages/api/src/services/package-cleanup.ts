@@ -10,16 +10,15 @@
  * consistent. The DB rows are deleted by the caller, since only it knows what
  * else goes with them.
  *
- * DuckLake tables are *not* dropped here: they are keyed by resource, not by
- * package, and the org purge drops the whole organization's tables in one
- * session rather than one per package. Callers pair this with
- * `dropResourceTables`, or queue it with the rows' deletion
- * (`queueLakeTablesDrop`) where they run in the web (ADR-043 layer 2).
+ * Layer 2 is *not* deleted here: it is keyed by resource, not by package
+ * (`lake/<resourceId>/`, ADR-067). Callers pair this with
+ * `deleteResourceLakes`, or queue it with the rows' deletion
+ * (`queueResourceLakesDeletion`) where they run in the web.
  */
 
-import { and, eq, exists, inArray, isNotNull } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, resourceVersion } from '@kukan/db'
+import { resource } from '@kukan/db'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -27,45 +26,20 @@ import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from './concurrency/advi
 
 /**
  * What a purge of these packages has to account for, read while the rows still
- * exist: every resource, so the purge can claim them (ADR-044), and the subset
- * whose content reached DuckLake, which names the tables that have to go with
- * them (ADR-043 layer 2).
- *
- * One query for both. They are the same rows read two ways, and a purge that
- * read them separately could see a resource enter the lake in between.
- *
- * Correlated through drizzle rather than written out — see CLAUDE.md; this
- * query is the reason the rule is there. Shape pinned in
- * `__tests__/services/sql-shape.integration.test.ts`.
+ * exist: every resource, so the purge can claim them (ADR-044) and delete
+ * their layer 2 — every one, since a resource whose first load failed can have
+ * files there and no catalog.
  */
 export async function listPurgeTargets(
-  db: Database,
+  db: Pick<Database, 'select'>,
   packageIds: string[]
-): Promise<{ resourceIds: string[]; lakeResourceIds: string[] }> {
-  if (packageIds.length === 0) return { resourceIds: [], lakeResourceIds: [] }
-
+): Promise<{ resourceIds: string[] }> {
+  if (packageIds.length === 0) return { resourceIds: [] }
   const rows = await db
-    .select({
-      id: resource.id,
-      inLake: exists(
-        db
-          .select({})
-          .from(resourceVersion)
-          .where(
-            and(
-              eq(resourceVersion.resourceId, resource.id),
-              isNotNull(resourceVersion.ducklakeSnapshotId)
-            )
-          )
-      ),
-    })
+    .select({ id: resource.id })
     .from(resource)
     .where(inArray(resource.packageId, packageIds))
-
-  return {
-    resourceIds: rows.map((r) => r.id),
-    lakeResourceIds: rows.filter((r) => r.inLake).map((r) => r.id),
-  }
+  return { resourceIds: rows.map((r) => r.id) }
 }
 
 export async function purgePackageExternals(

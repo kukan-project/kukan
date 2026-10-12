@@ -9,8 +9,9 @@ import { resource, resourceVersion, resourcePipeline, packageTable } from '@kuka
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
-import { withLakeSession } from '@kukan/lake'
-import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake/lake-ingest'
+import type { JobQueue } from '@kukan/queue'
+import { ingestVersionIntoResourceCatalog } from '@kukan/api/services/lake/lake-catalog'
+import { lakeNeedsRebuild, queueLakeRebuild } from '@kukan/api/services/lake/lake-rebuild'
 import {
   parseDocumentTextKey,
   parseResourceSchema,
@@ -44,8 +45,11 @@ export function buildPipelineContext(
   db: Database,
   storage: StorageAdapter,
   search?: SearchAdapter,
-  /** DuckLake config; omit to skip layer 2 ingest, e.g. in tests (ADR-043 Phase ii). */
-  lake?: LakeConfig,
+  /**
+   * DuckLake config, and the queue its writes ask for a rebuild or a clearing
+   * on; omit to skip layer 2 ingest, e.g. in tests (ADR-043 Phase ii).
+   */
+  lake?: { config: LakeConfig; queue: Pick<JobQueue, 'enqueue'> },
   /** Omit where no abstracts are written — the step is then never started. */
   summary?: SummaryDeps | null
 ): PipelineContext {
@@ -391,7 +395,7 @@ export function buildPipelineContext(
             eq(resourceVersion.resourceId, resourceId),
             eq(resourceVersion.state, 'active'),
             eq(resourceVersion.hash, contentHash),
-            sql`${resourceVersion.ducklakeSnapshotId} IS NULL`,
+            sql`${resourceVersion.lakeSnapshotId} IS NULL`,
             // The same condition the sweep states (spec §6.6): a version the
             // ingest has refused over its key has no work outstanding, and
             // disagreeing here would run the Lake step on every pass to be
@@ -406,14 +410,22 @@ export function buildPipelineContext(
 
     async ingestLakeVersion(row): Promise<IngestResult | null> {
       if (!lake) return null
-      // Opened outside the lock: session setup costs several round trips, and
-      // the lock is catalog-wide. Heavy like the interpretation that precedes
-      // it: the two side by side would hold both DuckDB caps at once
-      return heavySection(() =>
-        withLakeSession(lake, (session) =>
-          withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row))
-        )
+      // Rebuilt instead, in a job of its own: a rebuild interprets every other
+      // version, and this runs inside an interpretation. That job loads this
+      // version with the rest and hands on from there (ADR-067 §6).
+      if (await lakeNeedsRebuild(db, row.resourceId)) {
+        await queueLakeRebuild(lake.queue, row.resourceId)
+        return null
+      }
+      // Heavy like the interpretation that precedes it: the two side by side
+      // would hold both DuckDB caps at once
+      const result = await heavySection(() =>
+        ingestVersionIntoResourceCatalog(db, { lake: lake.config, store: storage, storage }, row)
       )
+      // Committed, with what earlier attempts left uncleared: the same job
+      // clears it, and the queue retries that
+      if (result?.uncleared) await queueLakeRebuild(lake.queue, row.resourceId)
+      return result
     },
   }
 }

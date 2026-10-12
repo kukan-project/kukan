@@ -429,7 +429,7 @@ Makes a named version **unobtainable**. A mechanism for taking past content out 
 (licensing issues, personal data, mistaken publication, etc.), independent of normal deletion
 (resource delete).
 
-> **ADR-067 (accepted, not yet implemented) revises this:** per-resource catalogs, with the purge done by a
+> **ADR-067 (implemented) revises this:** per-resource catalogs, with the purge done by a
 > rebuild, so that layer 2 can again claim the bytes are erased.
 >
 > **ii-b narrowed what this section claims.** It was originally written as a mechanism to
@@ -779,7 +779,7 @@ bytes: consolidate freely (§6-2).**
 
 4. **Expiry uses an explicit list** (`versions => [...]`).
 
-   > **ADR-067 (accepted, not yet implemented) revises this:** with a catalog per resource, the set operation
+   > **ADR-067 (implemented) revises this:** with a catalog per resource, the set operation
    > that gathers every resource's references is no longer needed.
 
    > **Expiry and purging are different things.** Expiry is **housekeeping** that drops
@@ -868,7 +868,7 @@ bytes: consolidate freely (§6-2).**
    Parquet generation) and covering JSON etc. (same root as ADR-032 open issue 1)
 3. **Multi-site (ADR-041)**: Per-site DuckLake catalogs vs. a single catalog + table-name
    prefix. Counting catalog connections against the connection budget
-   — ADR-067 (accepted, not yet implemented) resolves this with per-resource catalogs
+   — ADR-067 (implemented) resolves this with per-resource catalogs
 4. **Preview Parquet consolidation (Layer 3)**: Replace previews with "exports of the
    latest DuckLake snapshot" to unify the generation path
 5. **MCP tooling**: `get_resource_diff`, version-aware `query_resource`, and other
@@ -908,7 +908,7 @@ bytes: consolidate freely (§6-2).**
    The remaining decisions and measurements are in
    `docs/specs/en/phase-versioning-2-ducklake.md` §0.
 
-   — ADR-067 (accepted, not yet implemented) overturns this settlement: per-resource catalogs make the
+   — ADR-067 (implemented) overturns this settlement: per-resource catalogs make the
    fine-grained purge (a rebuild) work
 
 8. **IAM hardening**: Explicitly deny `s3:GetObjectVersion` / `s3:DeleteObjectVersion` on

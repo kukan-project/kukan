@@ -156,6 +156,13 @@ DuckLake's built-in already fills this role (ADR-043). It is the thing that know
 catalog and the file layout; there is no reason to reimplement that from outside. **No
 generalized per-prefix reconciliation job.**
 
+> **Revised by ADR-067:** catalogs are per resource now, and the `ducklake_delete_orphaned_files`
+> cron is stopped. Leftovers inside a resource are cleared by the writes to that resource. Catalog
+> objects go through the write-ahead ledger (the pointer `resource_pipeline.lake_catalog_key` is
+> part of `referenced`). The reconciliation tool lists `lake/` too, but only for a
+> `lake/<resourceId>/` whose resource row is gone: whether layer 2 is live is decided by its
+> resource existing, not by a pointer per object.
+
 ## What this does not replace
 
 **`pending_storage_key` stays.**

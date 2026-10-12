@@ -30,19 +30,51 @@
 
 import { inArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { orphanedObject } from '@kukan/db'
+import { orphanedObject, resource } from '@kukan/db'
+import { LAKE_DATA_PREFIX, lakeResourceOfKey } from '@kukan/lake'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { Logger } from '@kukan/shared'
 import { RESERVED_UNTIL } from '@kukan/api/services/pipeline/storage-pointer'
 import type { ListedObject, StorageAdapter } from '@kukan/storage-adapter'
 import { referenced } from './sweep-orphans'
 
+/** Which of these listed keys are live. */
+type LiveKeys = (db: Database, keys: string[]) => Promise<Set<string>>
+
+/** Named by a pointer: {@link referenced}, the sweep's own question. */
+const pointedAt: LiveKeys = async (db, keys) => {
+  const rows = await db.execute(referenced(keys))
+  return new Set((rows.rows as unknown as { key: string }[]).map((r) => r.key))
+}
+
 /**
- * Where a leaked object can be. `lake/` is not here: DuckLake knows its own
- * layout and reclaims its own files, and ADR-045 §5 declined to build a second
- * thing that thinks it does.
+ * Layer 2 is a resource's prefix, not objects a pointer names one by one
+ * (ADR-067): a key is live while its resource exists, whose own writes clear
+ * what they leave inside it (§2). What this finds is a whole prefix whose
+ * resource is gone — a purge's deletion job lost before it ran. A key under no
+ * resource's prefix is the shared catalog's (`lake/main/`), which its own
+ * command drops, and is left alone.
  */
-const PREFIXES = [RESOURCE_PREFIX, PREVIEW_PREFIX]
+const ownedByResource: LiveKeys = async (db, keys) => {
+  const owner = new Map(keys.map((key) => [key, lakeResourceOfKey(key)]))
+  const ids = [...new Set([...owner.values()].filter((id) => id !== null))]
+  const existing =
+    ids.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await db.select({ id: resource.id }).from(resource).where(inArray(resource.id, ids))
+          ).map((r) => r.id)
+        )
+  return new Set(keys.filter((key) => !owner.get(key) || existing.has(owner.get(key)!)))
+}
+
+/** Where a leaked object can be, and how a key there is told to be live. */
+const SOURCES: { prefix: string; live: LiveKeys }[] = [
+  { prefix: RESOURCE_PREFIX, live: pointedAt },
+  { prefix: PREVIEW_PREFIX, live: pointedAt },
+  { prefix: LAKE_DATA_PREFIX, live: ownedByResource },
+]
 
 /**
  * How much of the bucket to hold before asking about it. The question is one
@@ -110,7 +142,7 @@ export async function reconcileOrphanedObjects(
     samples: [],
   }
 
-  for (const prefix of PREFIXES) {
+  for (const { prefix, live } of SOURCES) {
     let token: string | undefined
     // Per prefix, so a partial batch is settled before moving on rather than
     // carried across a boundary the report is grouped by.
@@ -123,21 +155,20 @@ export async function reconcileOrphanedObjects(
       pending.push(...page.objects)
 
       while (pending.length >= CHECK_BATCH_SIZE) {
-        await settle(pending.splice(0, CHECK_BATCH_SIZE))
+        await settle(pending.splice(0, CHECK_BATCH_SIZE), live)
       }
     } while (token)
 
-    if (pending.length > 0) await settle(pending.splice(0))
+    if (pending.length > 0) await settle(pending.splice(0), live)
   }
 
   const { samples: _samples, ...counts } = result
   log.info(counts, opts.dryRun ? 'Reconciliation (dry run)' : 'Reconciliation complete')
   return result
 
-  async function settle(batch: ListedObject[]): Promise<void> {
+  async function settle(batch: ListedObject[], isLive: LiveKeys): Promise<void> {
     const keys = batch.map((o) => o.key)
-    const rows = await db.execute(referenced(keys))
-    const live = new Set((rows.rows as unknown as { key: string }[]).map((r) => r.key))
+    const live = await isLive(db, keys)
     result.referenced += live.size
 
     const unreferenced = keys.filter((k) => !live.has(k))

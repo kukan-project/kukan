@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** — 2026-10-12 (proposed 2026-10-12), not yet implemented
+**Accepted** — 2026-10-12 (proposed 2026-10-12), implemented (except the command that drops the shared catalog, §Decision 6)
 
 Move the DuckLake catalog from one PostgreSQL schema (a single catalog for everything) to **a
 SQLite file per resource**, kept under the same `lake/<resourceId>/` prefix as its data. Snapshot
@@ -331,6 +331,15 @@ attempt always downloads afresh from S3. Parquet from a failed attempt remains a
 per catalog; whether running it only for resources whose ingest failed, rather than hourly over all
 of them, is enough is decided during implementation).
 
+> **Decided in the implementation:** no cron. After its commit, a write (an ingest or a rebuild)
+> deletes what the current catalog does not read under the resource's prefix — data files of the
+> current generation the catalog does not refer to, and every other generation. A write that fails
+> deletes what it wrote. What even that could not clear is cleared by the rebuild job
+> (`rebuild-lake-catalog`) under the claim, retried by the queue while it fails. DuckLake names each
+> file with a UUID, so comparing the names the catalog refers to with a listing of the prefix is
+> enough. Catalog objects are left to the write-ahead ledger (ADR-045). The shared catalog's
+> `sweep-lake-orphans` is stopped (decision 6).
+
 ### 3. Reads
 
 - Diffs: download the file at `lake_catalog_key`, ATTACH it (read-only), and open both ends with
@@ -423,6 +432,14 @@ then drop; re-queue stranded tables) are covered by the idempotence of prefix de
 keep the `drop-lake-tables` job or fold `lake/` into the prefix deletion of `purgePackageStorage`
 (`resources/`, `previews/`) is decided during implementation.
 
+> **Decided in the implementation:** the `drop-lake-tables` job stays, under the same type name, so
+> one queued at the time of the upgrade runs as a prefix deletion. The web queues it in the
+> transaction that deletes the rows, and the worker deletes the prefixes. It covers every resource,
+> not only those layer 2 took: a resource whose first load failed can have leftovers and no
+> catalog. An organisation purge runs in the worker, so it deletes them there, under the claim. In
+> place of re-queueing stranded tables (`queueStrandedLakeTables`), the manual reconciliation tool
+> `reconcile-orphans` nominates a `lake/<resourceId>/` whose resource row is gone.
+
 ### 5. The guarantee
 
 Withdraw ADR-043 §5's "layer 2 does not guarantee erasure of bytes", and write instead:
@@ -500,6 +517,27 @@ that point, so redo those purges (an existing property, not specific to layer 2)
 
 If it goes in before the first production adoption goes public, no production history is ever
 migrated.
+
+> **Decided in the implementation:**
+>
+> - **No new control for the move: the existing "Backfill versions" does it.** The outstanding-ingest
+>   predicate reads `lake_snapshot_id`, so a version only the shared catalog holds is outstanding,
+>   and its ingest job hands the resource to a rebuild. The ingest job asks whether the resource is
+>   still to be moved before interpreting anything, so no interpretation is thrown away
+> - **The hourly ingest sweep hands out at most 200** (`LAKE_INGEST_SWEEP_LIMIT`). Its jobs run at
+>   normal priority, and right after the upgrade every resource the shared catalog held is
+>   outstanding at once, each a rebuild that reads all its versions again. Uncapped, the first sweep
+>   would put them all ahead of the next upload
+> - **"Missing" means the pointer's key is gone (HEAD), or a file name the catalog refers to is not
+>   in the listing of the generation's `data/`.** The rebuild job decides it; a failed ingest and a
+>   failed diff read queue it (not when one is already waiting). A diff whose catalog is gone answers
+>   "not ingested"
+> - **A rebuild leaves out a version whose reading fails, as `ingest-failed`, and goes on.** One
+>   that fails each time would otherwise stop the whole rebuild, and with it the move and every
+>   purge. Only when the bucket is out of reach (the version file's HEAD fails) does it throw
+>   without recording anything, since every version would fail the same way
+> - **A version purge of a resource not yet moved moves it too.** The rebuild reads again the
+>   versions only the shared catalog holds, so a purge does not have to wait for the move
 
 ### 7. What the spike checks
 

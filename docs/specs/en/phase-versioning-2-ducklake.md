@@ -893,6 +893,11 @@ the diff next to the version is the most natural path, and it reuses the Phase i
 
 ### 7.2 Moving content is done by issuing a version (a premise of ii-b)
 
+> **ADR-067 revises this (implemented):** written once is a property of the shared catalog's
+> `ducklake_snapshot_id`. A per-resource catalog's `lake_snapshot_id` is rewritten for every version
+> by a rebuild's commit (purge, migration, repair), since the catalog is built afresh and renumbered.
+> The purge's stand-down is gone.
+
 **A version row's `ducklake_snapshot_id` is written once.** It points at the snapshot that holds
 that version's content, and no operation rewrites it afterwards.
 
@@ -1136,8 +1141,13 @@ of exact decimals — money, rates — is inferred as `float`. A primary key ref
 
 ## 9. Step 6 — Propagating a Purge to Layer 2
 
-> **ADR-067 (accepted, not yet implemented) revises this:** make the catalog a SQLite file per resource, and
-> purge by a rebuild — discard layer 2 and re-ingest the remaining versions from layer 1.
+> **ADR-067 revises this (implemented):** the catalog is a SQLite file per resource
+> (`lake/<resourceId>/`), and a purge is a rebuild — discard layer 2 and re-ingest the remaining
+> versions from layer 1. The two layer 2 rows of the table below become "physical deletion, by the
+> rebuilt catalog and the deletion of every other generation", and "deleting a prefix outside
+> DuckLake is forbidden" gives way to deleting a resource's prefix (a dataset or organization purge,
+> old generations). The rest of this section records the design on the shared catalog (one
+> PostgreSQL schema). Rows the shared catalog took stay there until it is dropped (ADR-067 §6).
 
 Add the handling of layer 2 for tabular resources to the Phase i purge (sysadmin only, tombstone
 approach, ADR-028).
@@ -2311,6 +2321,9 @@ bites as versions × table size.
 
 ### 11-3 Expiring snapshots
 
+> **Replaced by ADR-067 (implemented):** nothing is expired. A purge rebuilds, and generations no
+> longer needed are deleted by prefix.
+
 **Snapshot expiry**:
 
 - **The explicit-list form** (`versions => [candidates]`). Candidates = all snapshots − the IDs
@@ -2374,6 +2387,10 @@ subsequent writes, so files in an existing catalog stay snappy (harmless; measur
 catalog with two codecs mixed still reads).
 
 ### 11-5 Backup consistency
+
+> **ADR-067 revises this (implemented):** the catalog is now a file in S3. When only one of the
+> database and the bucket is put back to an earlier time, a missing catalog key, or a missing file it
+> reads, is found when a load or a diff fails, and the resource is rebuilt (ADR-067 §6).
 
 **PG (the catalog + the semantic layer + the version mapping) is the single source of truth, and the
 S3 side is not restored** (ADR-037). Because the catalog lives inside PG, rolling PG back to time T
@@ -2467,6 +2484,10 @@ there is no reason to drag untouched resources along with it. **The unit is the 
 resource)** — degrading per version is not enough, and the whole catalog is too wide.
 
 ### 11-6 Sweep `delete_orphaned_files` from cron
+
+> **Replaced by ADR-067 (implemented):** this cron is stopped — the new layout would look to the
+> shared catalog like files it does not know. A resource's leftovers are cleared by the writes to that
+> resource (ADR-067 §2).
 
 **`ducklake_delete_orphaned_files` is used by the cron sweep** (`sweep-lake-orphans`). Its targets are
 files the catalog does not track (left behind by an abnormal termination after the Parquet write and

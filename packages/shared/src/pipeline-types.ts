@@ -694,6 +694,15 @@ export const CONVERT_SET_ASIDE_JOB_TYPE = 'convert-set-aside-versions' as const
 export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
 
 /**
+ * Rebuild one resource's layer 2 catalog from layer 1 (ADR-067): the move off
+ * the shared catalog, and the repair of one whose objects are gone. Queued by
+ * an ingest that finds the resource needs it, rather than run there — the
+ * rebuild interprets the other versions, which an ingest already inside an
+ * interpretation cannot.
+ */
+export const LAKE_REBUILD_JOB_TYPE = 'rebuild-lake-catalog' as const
+
+/**
  * Drop a purged dataset's DuckLake tables and reclaim what they held (ADR-043
  * §5). Queued in the transaction that deletes the rows, so the tables go only
  * once the rows have, and the web, where a dataset is purged, never opens
@@ -801,6 +810,7 @@ export const lakeIngestJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),
 })
+export const lakeRebuildJobSchema = z.object({ resourceId: z.uuid() })
 export const dropLakeTablesJobSchema = z.object({ resourceIds: z.array(z.uuid()).min(1) })
 /** `refresh` also rewrites abstracts another model, prompt or language wrote */
 export const summarizeAllJobSchema = z.object({ refresh: z.boolean().optional() })

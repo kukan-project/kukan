@@ -42,7 +42,7 @@ export function referenced(keys: string[]) {
                   WHERE ${sql.join(
                     pipelineObjectKeys('rp').map((key) => sql`${key} = o.key`),
                     sql` OR `
-                  )})
+                  )} OR rp.lake_catalog_key = o.key)
   `
 }
 

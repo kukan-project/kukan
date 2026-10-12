@@ -73,6 +73,7 @@ describe('sweepOrphanedObjects', () => {
       previewKey: 'live/preview',
       textHeadKey: 'live/text-head',
       profileKey: 'live/profile',
+      lakeCatalogKey: 'lake/r/g/catalog.t.sqlite',
     }
     await db.execute(sql`
       UPDATE resource SET storage_key = ${live.storageKey},
@@ -92,6 +93,7 @@ describe('sweepOrphanedObjects', () => {
       previewKey: live.previewKey,
       metadata: { textHeadKey: live.textHeadKey },
       profile: { columns: [], key: live.profileKey },
+      lakeCatalogKey: live.lakeCatalogKey,
     })
     for (const key of Object.values(live)) await due(key)
     await due('orphan/nothing-points-here')
@@ -100,7 +102,7 @@ describe('sweepOrphanedObjects', () => {
     const result = await sweepOrphanedObjects(db, storage, log)
 
     expect(deleted).toEqual(['orphan/nothing-points-here'])
-    expect(result).toEqual({ scanned: 7, deleted: 1, stillReferenced: 6 })
+    expect(result).toEqual({ scanned: 8, deleted: 1, stillReferenced: 7 })
     // Both reasons to stop tracking a key end the same way — the object is
     // gone, or something references it after all and the record is the
     // leftover. Left in place either would be re-examined every hour for good.

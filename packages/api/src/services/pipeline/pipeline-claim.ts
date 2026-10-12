@@ -336,7 +336,7 @@ class SomeHeld extends Error {
 export async function withResourceClaimsOrConflict<T>(
   db: Database,
   resourceIds: string[],
-  fn: () => Promise<T>
+  fn: (claims: ResourceClaim[]) => Promise<T>
 ): Promise<T> {
   const outcome = await withResourceClaims(db, resourceIds, fn)
   if (outcome.status === 'held') throw heldConflict(outcome.held, 'purge')
@@ -443,6 +443,25 @@ export async function stillHolds(
 ): Promise<boolean> {
   const result = await db.execute(sql`SELECT 1 FROM resource_pipeline WHERE ${heldBy(claim)}`)
   return result.rows.length > 0
+}
+
+/**
+ * Say the claim is still being worked under. A holder that runs long — a purge
+ * rebuilding a resource's catalog version by version (ADR-067) — would
+ * otherwise read as stale after {@link CLAIM_STALE_AFTER_MS} and be taken over
+ * part-way. Throws a {@link ConflictError} once the claim no longer holds, so
+ * the same call is where such a holder learns it has lost it.
+ */
+export async function touchResourceClaim(
+  db: Pick<Database, 'execute'>,
+  claim: ResourceClaim
+): Promise<void> {
+  const touched = await db.execute(
+    sql`UPDATE resource_pipeline SET claim_owner_at = NOW() WHERE ${heldBy(claim)} RETURNING id`
+  )
+  if (touched.rows.length === 0) {
+    throw new ConflictError(`Resource ${claim.resourceId} is no longer held; retry`)
+  }
 }
 
 /**

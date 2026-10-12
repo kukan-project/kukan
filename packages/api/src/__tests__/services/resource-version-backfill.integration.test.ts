@@ -152,7 +152,7 @@ async function addTabularResource(
       origin: 'upload',
       state: v.state ?? 'active',
       format: v.format ?? format,
-      ducklakeSnapshotId: v.snapshotId ?? null,
+      lakeSnapshotId: v.snapshotId ?? null,
     })
   }
 }
@@ -405,12 +405,13 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(1)
   })
 
-  it('counts every un-ingested version, not just the latest', async () => {
-    // What changed with ADR-046: the ingest reads the version file, which is
-    // there for every version — so an older one that never made it in is real
-    // outstanding work rather than something only the current preview could
-    // have described.
+  it('counts a resource once, however many of its versions are outstanding', async () => {
+    // Every version is outstanding work since ADR-046 — the ingest reads the
+    // version file, which is there for each — but the notice counts resources:
+    // the move off the shared catalog (ADR-067 §6) has every version a resource
+    // had outstanding at once
     await addTabularResource('a', [{ version: 1 }, { version: 2 }])
+    await addTabularResource('b', [{ version: 1 }])
 
     expect(await service.countPendingLakeIngest()).toBe(2)
   })
@@ -560,6 +561,21 @@ describe('queuePendingLakeIngests', () => {
 
     expect(later).toEqual({ queued: 0 })
     expect(await versionRow(1)).toMatchObject({ reason: 'key-null', queuedAt: null })
+  })
+
+  it('hands out no more than asked, those never handed out first', async () => {
+    // The hourly sweep's bound: after the move to catalogs of each resource's
+    // own, every resource the shared one held is outstanding at once
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    await addTabularResource('b', [{ version: 1, snapshotId: null }])
+    await addTabularResource('c', [{ version: 1, snapshotId: null }])
+    const queue = mockQueue()
+    await service.queuePendingLakeIngests(queue, { limit: 1 })
+    const [first] = handedOut(queue)
+    await passLease('lake_ingest_queued_at')
+
+    expect(await service.queuePendingLakeIngests(queue, { limit: 2 })).toEqual({ queued: 2 })
+    expect(handedOut(queue).slice(1)).not.toContainEqual(first)
   })
 
   it('lets the chain take the lease', async () => {

@@ -76,7 +76,13 @@ export const resourceVersion = pgTable(
     noTableReason: varchar('no_table_reason', { length: 32 }).$type<NoTableReason | null>(),
     // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
     // Null for non-tabular versions or before layer-2 ingest; nulled on purge.
+    // The shared catalog's numbering: left as it is when the resource moves to
+    // a catalog of its own, so an older image gone back to still reads it
+    // right (ADR-067 §6). Dropped once the shared catalog is.
     ducklakeSnapshotId: bigint('ducklake_snapshot_id', { mode: 'number' }),
+    // The same, in the resource's own catalog (ADR-067): numbered within the
+    // resource, and renumbered when a purge rebuilds it.
+    lakeSnapshotId: bigint('lake_snapshot_id', { mode: 'number' }),
     // The key this version was read under, frozen when it was created — the
     // resource's setting at that moment, not its current one (spec §6.4). Null
     // is keyless, which is every version before ii-b and every resource that
@@ -147,6 +153,14 @@ export const resourceVersion = pgTable(
       .on(table.resourceId, table.version)
       .where(
         sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL
+            AND ${table.lakeIngestReason} IS NULL`
+      ),
+    // The same for a resource's own catalog (ADR-067); the one above goes with
+    // the shared catalog.
+    index('idx_resource_version_pending_lake_catalog')
+      .on(table.resourceId, table.version)
+      .where(
+        sql`${table.state} = 'active' AND ${table.lakeSnapshotId} IS NULL
             AND ${table.lakeIngestReason} IS NULL`
       ),
   ]

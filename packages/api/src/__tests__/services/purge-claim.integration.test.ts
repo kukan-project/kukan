@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
-import { job, organization, resource, resourcePipeline, resourceVersion } from '@kukan/db'
+import { job, organization, resource, resourcePipeline } from '@kukan/db'
 import { PostgresJobQueue } from '@kukan/queue'
 import { PURGE_ORG_JOB_TYPE } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -48,6 +48,16 @@ function watchingStorage() {
       })
     }),
     delete: vi.fn(),
+    // Layer 2, by each resource's prefix (ADR-067): swept like the rest
+    list: vi.fn(async () => {
+      const rows = await db.select().from(resourcePipeline)
+      duringSweep.push({
+        claimed: rows.some((r) => r.claimOwner !== null),
+        pipelineRows: rows.length,
+      })
+      return { objects: [] }
+    }),
+    deleteMany: vi.fn(async (keys: string[]) => keys),
   } as unknown as StorageAdapter
   return { storage, duringSweep }
 }
@@ -59,19 +69,6 @@ async function addResource(packageId: string): Promise<string> {
     .returning()
   await db.insert(resourcePipeline).values({ resourceId: res.id })
   return res.id
-}
-
-/** A version of the resource that reached DuckLake, which names its table. */
-async function ingest(resourceId: string) {
-  await db.insert(resourceVersion).values({
-    resourceId,
-    version: 1,
-    storageKey: `resources/${resourceId}/v1`,
-    size: 1,
-    hash: 'sha256:v1',
-    origin: 'upload',
-    ducklakeSnapshotId: 1,
-  })
 }
 
 /** Take the resource, as a run in flight holds it. */
@@ -138,34 +135,31 @@ describe('PackageService.purge', () => {
     expect(duringSweep.every((s) => s.pipelineRows === 0)).toBe(true)
   })
 
-  it('leaves the DuckLake tables to the worker, queued with the rows', async () => {
+  it("leaves every resource's layer 2 to the worker, queued with the rows", async () => {
+    // Every one, not only those a catalog holds: a first load that failed
+    // leaves files and no catalog (ADR-067)
     const service = new PackageService(db)
     const pkg = await service.create(createInput('pkg-lake'))
-    const inLake = await addResource(pkg.id)
-    await ingest(inLake)
-    await addResource(pkg.id)
+    const a = await addResource(pkg.id)
+    const b = await addResource(pkg.id)
     await service.delete(pkg.id)
 
     await service.purge(pkg.id, { storage: watchingStorage().storage, queue })
 
-    expect(await queuedLakeDrops()).toEqual([{ resourceIds: [inLake] }])
+    const [drop] = (await queuedLakeDrops()) as { resourceIds: string[] }[]
+    expect([...drop.resourceIds].sort()).toEqual([a, b].sort())
   })
 
-  it('queues nothing when the purge is refused, or has no tables', async () => {
+  it('queues nothing when the purge is refused', async () => {
     const service = new PackageService(db)
     const held = await service.create(createInput('pkg-lake-held'))
     const resourceId = await addResource(held.id)
-    await ingest(resourceId)
     await hold(resourceId)
     await service.delete(held.id)
-    const plain = await service.create(createInput('pkg-plain'))
-    await addResource(plain.id)
-    await service.delete(plain.id)
 
     await expect(
       service.purge(held.id, { storage: watchingStorage().storage, queue })
     ).rejects.toThrow(/being processed/)
-    await service.purge(plain.id, { storage: watchingStorage().storage, queue })
 
     expect(await queuedLakeDrops()).toEqual([])
   })
@@ -201,11 +195,10 @@ describe('PackageService.purgeDraft', () => {
     expect(duringSweep.every((s) => s.claimed)).toBe(true)
   })
 
-  it('leaves the DuckLake tables to the worker, queued with the rows', async () => {
+  it('leaves the layer 2 to the worker, queued with the rows', async () => {
     const service = new PackageService(db)
     const draft = await service.createDraft({ ownerOrg: orgId }, TEST_USER_ID)
     const resourceId = await addResource(draft.id)
-    await ingest(resourceId)
 
     await service.purgeDraft(draft.id, { storage: watchingStorage().storage, queue })
 
@@ -247,6 +240,19 @@ describe('OrganizationService.purgeDeletedOrg', () => {
     expect(result.purged).toBe(true)
     expect(duringSweep).not.toHaveLength(0)
     expect(duringSweep.every((s) => s.claimed)).toBe(true)
+  })
+
+  it("deletes each resource's layer 2 by its prefix, under the claim", async () => {
+    const { resourceId } = await deletedOrgWithResource()
+    const { storage } = watchingStorage()
+    vi.mocked(storage.list).mockResolvedValueOnce({
+      objects: [{ key: `lake/${resourceId}/g/data/f.parquet`, lastModified: new Date() }],
+    })
+
+    await new OrganizationService(db).purgeDeletedOrg(orgId, { storage })
+
+    expect(storage.list).toHaveBeenCalledWith(`lake/${resourceId}/`, undefined)
+    expect(storage.deleteMany).toHaveBeenCalledWith([`lake/${resourceId}/g/data/f.parquet`])
   })
 })
 

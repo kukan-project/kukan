@@ -13,7 +13,7 @@ import { RequestAbandonedError } from '@kukan/shared'
 import { sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
-import { keyFault, lakeStorageUrl, openLakeSession } from '@kukan/lake'
+import { keyFault, lakeStorageUrl, openBucketSession } from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
 import { ResourceVersionService } from '../../services/resource-version-service'
 import { unreachableLake } from '../test-helpers/fixtures'
@@ -21,7 +21,7 @@ import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-h
 
 vi.mock('@kukan/lake', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kukan/lake')>()
-  return { ...actual, openLakeSession: vi.fn(), keyFault: vi.fn() }
+  return { ...actual, openBucketSession: vi.fn(), keyFault: vi.fn() }
 })
 
 const db = getTestDb()
@@ -76,7 +76,7 @@ beforeEach(async () => {
   resourceId = res.id
 
   vi.clearAllMocks()
-  vi.mocked(openLakeSession).mockResolvedValue({
+  vi.mocked(openBucketSession).mockResolvedValue({
     run: async () => {},
     rows: async () => [],
     interrupt: () => {},
@@ -140,7 +140,7 @@ describe('checking a key against the content', () => {
     await liveVersion(['order', 'line'])
     await withPreview('sha256:v1')
     let open!: () => void
-    vi.mocked(openLakeSession).mockReturnValue(
+    vi.mocked(openBucketSession).mockReturnValue(
       new Promise((resolve) => {
         open = () => resolve({ interrupt: () => {}, close: async () => {} } as LakeSession)
       })
@@ -188,6 +188,6 @@ describe('checking a key against the content', () => {
     await withPreview('sha256:v1')
 
     expect(await check(['id'])).toMatchObject({ checked: true, fault: null })
-    expect(openLakeSession).not.toHaveBeenCalled()
+    expect(openBucketSession).not.toHaveBeenCalled()
   })
 })

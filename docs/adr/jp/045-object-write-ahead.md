@@ -147,6 +147,12 @@ DuckLake の組み込み手続きが既に同じ役割を果たしている（AD
 ファイル配置とカタログを知っているのは DuckLake であり、こちらから同じことをする理由がない。
 **prefix ごとに参照元を差し替える共通機構は作らない。**
 
+> **ADR-067 で改訂:** カタログがリソースごとになり、`ducklake_delete_orphaned_files` の cron は止めた。
+> リソースの中の残骸は、そのリソースへの書き込みが片付ける。catalog オブジェクトは先行記録の台帳に
+> 載る（ポインタ `resource_pipeline.lake_catalog_key` を `referenced` に加えた）。照合ツールは
+> `lake/` も一覧するが、見るのは「リソースの行が無い `lake/<resourceId>/`」だけである — 層 2 の
+> 生死はオブジェクトごとのポインタではなく、リソースの存在で決まる。
+
 ## 置き換えないもの
 
 **`pending_storage_key` は残る。**

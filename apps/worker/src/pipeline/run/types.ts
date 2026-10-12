@@ -6,10 +6,10 @@
 import type { Readable } from 'node:stream'
 import type { ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { ObjectMeta } from '@kukan/storage-adapter'
-import type { IngestResult } from '@kukan/lake'
 import type { NoTableReason, PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/pipeline/storage-pointer'
-import type { LakeIngestRow } from '@kukan/api/services/lake/lake-ingest'
+import type { IngestResult } from '@kukan/lake'
+import type { LakeIngestRow } from '@kukan/api/services/lake/lake-catalog'
 import type { ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import type { VersionResult } from './version-gate'
 import type { SummaryDeps } from '../steps/summarize'
@@ -205,8 +205,10 @@ export interface PipelineContext {
   /**
    * Layer 2 (ADR-043 Phase ii): load a created version's tabular content into
    * DuckLake from the table an interpretation produced, and record the snapshot
-   * on the version row (ADR-046). Returns null when the context was built
-   * without a DuckLake config.
+   * on the version row (ADR-046). Returns null when nothing was loaded: the
+   * context was built without a DuckLake config, the version is not
+   * outstanding, or the resource is to be rebuilt rather than added to — whose
+   * job this queues (ADR-067 §6).
    */
   ingestLakeVersion(opts: LakeIngestRow): Promise<IngestResult | null>
   /**

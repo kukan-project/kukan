@@ -304,7 +304,7 @@ export async function diffVersions(
   session: LakeSession,
   opts: { table: string; fromSnapshot: number; toSnapshot: number; key?: string[] | null }
 ): Promise<VersionDiff> {
-  const ref = lakeTableRef(opts.table)
+  const ref = lakeTableRef(session, opts.table)
   const { fromSnapshot, toSnapshot } = opts
 
   const [fromCols, toCols] = await Promise.all([

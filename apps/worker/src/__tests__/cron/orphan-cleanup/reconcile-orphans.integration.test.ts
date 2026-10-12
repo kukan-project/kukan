@@ -136,9 +136,8 @@ describe('reconcileOrphanedObjects', () => {
 
     expect(result).toMatchObject({ listed: 7, referenced: 5, nominated: 2, tooRecent: 0 })
     expect(await tracked()).toEqual(['previews/leaked', 'resources/leaked'])
-    // `lake/` is DuckLake's to reclaim, and ADR-045 §5 declined to build a
-    // second thing that thinks it knows that layout.
-    expect(asked).toEqual(['resources/', 'previews/'])
+    // `lake/` too, though by whether a key's resource exists (below)
+    expect(asked).toEqual(['resources/', 'previews/', 'lake/'])
   })
 
   it('writes nothing in a dry run, but reports what it would do', async () => {
@@ -266,6 +265,30 @@ describe('reconcileOrphanedObjects', () => {
     // Both stop being tracked: one because its object is gone, the other
     // because the nomination turned out to be the leftover.
     expect(await tracked()).toEqual([])
+  })
+
+  it('nominates a layer 2 prefix whose resource is gone, and the sweep deletes it', async () => {
+    // A purge's deletion job lost before it ran (ADR-067). Inside a live
+    // resource, layer 2 is its own writes' to clear; the shared catalog's files
+    // are its own command's to drop.
+    const gone = '9d3a2c1e-0b4f-4e6a-8c7d-112233445566'
+    const live = [`lake/${resourceId}/g/data/a.parquet`, `lake/${resourceId}/g/catalog.x.sqlite`]
+    const stranded = [`lake/${gone}/g/data/a.parquet`, `lake/${gone}/g/catalog.x.sqlite`]
+    const shared = 'lake/main/res_x/ducklake-1.parquet'
+    const { storage } = fakeBucket([...live, ...stranded, shared].map((k) => obj(k)))
+
+    const result = await reconcileOrphanedObjects(db, storage, log, {
+      minAgeMs: DAY_MS,
+      dryRun: false,
+    })
+
+    expect(result).toMatchObject({ listed: 5, referenced: 3, nominated: 2 })
+    expect(await tracked()).toEqual([...stranded].sort())
+
+    await db.execute(sql`UPDATE orphaned_object SET expires_at = now() - interval '1 second'`)
+    const { storage: bucket, deleted } = fakeStorage()
+    await sweepOrphanedObjects(db, bucket, log)
+    expect([...deleted].sort()).toEqual([...stranded].sort())
   })
 
   it('follows the continuation token to the end of a prefix', async () => {

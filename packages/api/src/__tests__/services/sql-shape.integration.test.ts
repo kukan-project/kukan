@@ -19,7 +19,6 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { packageTable, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createTestApp, mockTransaction } from '../test-helpers/test-app'
 import { PackageService } from '../../services/package-service'
-import { listPurgeTargets } from '../../services/package-cleanup'
 import {
   readBeforeFirstVersion,
   ResourceVersionService,
@@ -153,16 +152,9 @@ describe('emitted SQL shape', () => {
     })
   })
 
-  // No endpoint reaches these two — a purge and the backfill correlate to the
-  // row they are reading, from a select the service builds itself. Both lost
-  // that correlation once.
-  describe('listPurgeTargets', () => {
-    it('pins the shape', async () => {
-      await listPurgeTargets(recorder, ['00000000-0000-0000-0000-0000000000ff'])
-      expect(recorded()).toMatchSnapshot()
-    })
-  })
-
+  // No endpoint reaches this — the backfill correlates to the row it is
+  // reading, from a select the service builds itself, and lost that
+  // correlation once.
   describe('readBeforeFirstVersion', () => {
     it('pins the shape', async () => {
       await readBeforeFirstVersion(recorder, '00000000-0000-0000-0000-0000000000ff')

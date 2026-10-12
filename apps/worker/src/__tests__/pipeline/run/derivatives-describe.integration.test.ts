@@ -50,7 +50,7 @@ async function versionExists(opts: { format?: string; snapshot?: number | null }
       columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
       rowCount: 1,
     },
-    ducklakeSnapshotId: opts.snapshot === undefined ? 7 : opts.snapshot,
+    lakeSnapshotId: opts.snapshot === undefined ? 7 : opts.snapshot,
   })
 }
 
@@ -59,7 +59,7 @@ function ask(withLake = true) {
     db,
     storage,
     undefined,
-    withLake ? lake : undefined
+    withLake ? { config: lake, queue: { enqueue: async () => 'job' } } : undefined
   ).derivativesDescribe(resourceId, HASH, 1)
 }
 

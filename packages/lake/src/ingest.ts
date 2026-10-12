@@ -1,11 +1,9 @@
 /**
  * DuckLake loads (ADR-043 layer 2 / Phase ii-a).
  *
- * Two things put contents into a table, and both go through {@link loadContents}
- * so a table is only ever written one way: a version's ingest, reading the
- * preview Parquet the Interpret step already produced (the types were inferred
- * once there, ADR-029, and are reused rather than re-parsed from CSV), and a
- * purge standing the table back on one of its own earlier snapshots.
+ * A version's ingest puts contents into a table through {@link loadContents},
+ * reading the Parquet the Interpret step produced (the types were inferred once
+ * there, ADR-029, and are reused rather than re-parsed from CSV).
  *
  * **Given a key both ends share, the load applies rows rather than replacing
  * them** (ii-b): update what changed, insert what is new, delete what the
@@ -17,10 +15,10 @@
  */
 import type { KeyFault } from '@kukan/shared'
 import { describeColumns, sameColumns } from './columns'
-import type { LakeSession } from './connection'
+import type { BucketSession, LakeSession } from './connection'
 import { keyedLoadSql } from './keyed-load'
 import { sqlIdentifier, sqlLiteral } from './sql'
-import { currentSnapshotId, lakeTableAt, lakeTableExists, lakeTableRef } from './table'
+import { currentSnapshotId, lakeTableExists, lakeTableRef } from './table'
 
 export interface IngestResult {
   /** Snapshot to record on the version; reading it reproduces this content. */
@@ -30,9 +28,10 @@ export interface IngestResult {
 /**
  * Ingest one version's Parquet into its DuckLake table.
  *
- * The caller must hold the ingest lock (`withLakeIngestLock`): the snapshot id
- * is read back as the catalog-wide maximum, which only identifies this commit
- * while writes are serialized.
+ * The caller must be the catalog's only writer — a resource's own catalog,
+ * written under its claim (ADR-067): the snapshot id is read back as the
+ * catalog's maximum, which only identifies this commit while nothing else
+ * writes it.
  */
 export async function ingestParquetVersion(
   session: LakeSession,
@@ -48,13 +47,13 @@ export async function ingestParquetVersion(
      * DuckLake resolves by dropping a row without saying so.
      *
      * Resolved by the caller because it rests on the version rows, which this
-     * package does not read. The purge's step-down and the diff's first stage
-     * ask the same question of the same two lists.
+     * package does not read. The diff's first stage asks the same question of
+     * the same two lists.
      */
     key?: string[] | null
   }
 ): Promise<IngestResult> {
-  const ref = lakeTableRef(opts.table)
+  const ref = lakeTableRef(session, opts.table)
   const source = `read_parquet(${sqlLiteral(opts.parquetUrl)})`
 
   if (await lakeTableExists(session, opts.table)) {
@@ -86,7 +85,7 @@ export async function ingestParquetVersion(
  * the others unaskable.
  */
 export async function keyFault(
-  session: LakeSession,
+  session: BucketSession,
   opts: { parquetUrl: string; keys: string[] }
 ): Promise<KeyFault | null> {
   const source = `read_parquet(${sqlLiteral(opts.parquetUrl)})`
@@ -102,56 +101,6 @@ export async function keyFault(
   )
   if (Number(row.nulls) > 0) return 'key-null'
   return Number(row.distinct_keys) === Number(row.rows) ? null : 'key-not-unique'
-}
-
-/**
- * Stand a table back on the contents of one of its own earlier snapshots.
- *
- * The purge's step down off the version it retracted (spec §9.1 step 4). The
- * source is the table read at that snapshot rather than the version's Parquet
- * rebuilt out of layer 1, which would be a re-interpretation — and the write
- * goes through the same path an ingest takes, so the move costs a load rather
- * than a whole-table rewrite (spec §7.2).
- *
- * **Nothing comes back to record.** The contents are an old snapshot's, the
- * snapshot a new one — no catalog rewinds — but the landing is not a
- * publication, so no version row names it and `ducklake_snapshot_id` stays
- * written once (spec §7.2; §11-3 keeps the newest snapshot whether or not a
- * version names it).
- *
- * **The snapshot is read out before the load, and that is load-bearing.** A
- * `DELETE` inside the transaction takes the time-travel read of the same table
- * with it whenever the two share files — `t AT (VERSION => n)` then answers zero
- * rows and the move silently empties the table (pinned in
- * `merge.ducklake.test.ts`). ii-a never shares: every load replaces the contents
- * wholesale, so the head's files and an earlier version's are disjoint. ii-b's
- * keyed load updates in place, where they always share. Materializing first
- * costs one local copy on an operation that already rewrites every row, and it
- * takes the question out of the caller's hands.
- *
- * The caller must hold the ingest lock, and must have established that the table
- * is there — whether an absent one is a no-op or a fault is a question about the
- * version rows, which this package does not read.
- */
-export async function restandLakeTable(
-  session: LakeSession,
-  opts: { table: string; snapshot: number }
-): Promise<void> {
-  const ref = lakeTableRef(opts.table)
-  // Local to the session, so it commits no catalog snapshot and the load below
-  // still lands exactly one. A fixed name is safe because every caller holds
-  // the catalog-wide ingest lock.
-  const source = 'lake_restand_source'
-  await session.run(
-    `CREATE OR REPLACE TEMP TABLE ${source} AS SELECT * FROM ${lakeTableAt(ref, opts.snapshot)}`
-  )
-  try {
-    // Keyless: §7.2's keyed step-down needs the key both ends share, which is a
-    // version-row question this package does not answer (spec §14.1).
-    await loadContents(session, ref, source, null)
-  } finally {
-    await session.run(`DROP TABLE IF EXISTS ${source}`).catch(() => {})
-  }
 }
 
 /**

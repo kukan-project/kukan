@@ -42,6 +42,16 @@ vi.mock('@kukan/api/services/resource-version-service', () => ({
 
 const chained = vi.hoisted(() => ({ next: vi.fn(async () => false) }))
 
+/** Whether the shared catalog still holds versions of the resource; the database's answer, stubbed. */
+const migration = vi.hoisted(() => ({ pending: false }))
+
+vi.mock('@kukan/api/services/lake/lake-rebuild', () => ({
+  lakeNeedsRebuild: vi.fn(async () => migration.pending),
+  queueLakeRebuild: vi.fn(async (queue: JobQueue, resourceId: string) => {
+    await queue.enqueue('rebuild-lake-catalog', { resourceId }, { unlessWaiting: true })
+  }),
+}))
+
 /** The interpretation itself belongs to `interpret/version`; here it is a stub
  *  that hands over a table so the retry's own decisions are what is tested. */
 const interpreted = vi.hoisted(() => ({ table: true }))
@@ -75,6 +85,7 @@ let deps: { ctx: PipelineContextMock; db: Database; queue: JobQueue; log: Logger
 beforeEach(() => {
   vi.clearAllMocks()
   claim.answer = 'ran'
+  migration.pending = false
   interpreted.table = true
   pending.source = { storageKey: VERSION_KEY, format: 'CSV' }
   const ctx = createPipelineContextMock()
@@ -103,8 +114,26 @@ describe('retryLakeIngest', () => {
     expect(deps.ctx.ingestLakeVersion).toHaveBeenCalledWith({
       ...job,
       sourcePath: '/tmp/kukan-x/v2.parquet',
+      // The load commits under the retry's claim
+      claim: expect.anything(),
     })
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('queues the rebuild without interpreting anything when the resource is still to be moved', async () => {
+    // Every resource the shared catalog held comes this way once (ADR-067 §6),
+    // and the rebuild reads this version again with the rest
+    migration.pending = true
+
+    await retryLakeIngest(job, deps)
+
+    expect(withInterpretedVersion).not.toHaveBeenCalled()
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      'rebuild-lake-catalog',
+      { resourceId: 'res-1' },
+      { unlessWaiting: true }
+    )
+    expect(chained.next).not.toHaveBeenCalled()
   })
 
   it('records the interpretation even when it found no table', async () => {
@@ -180,7 +209,7 @@ describe('retryLakeIngest', () => {
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
   })
 
-  it('counts a throw against the version, lets the message go, and hands nothing on', async () => {
+  it('counts a throw against the version, lets the message go, and asks after the catalog', async () => {
     // Why: see the catch in retryLakeIngest.
     const error = new Error('catalog unreachable')
     deps.ctx.ingestLakeVersion.mockRejectedValue(error)
@@ -193,7 +222,14 @@ describe('retryLakeIngest', () => {
       expect.any(String)
     )
     expect(chained.next).not.toHaveBeenCalled()
-    expect(deps.queue.enqueue).not.toHaveBeenCalled()
+    // Not a retry of this version: whether the catalog is what failed, for the
+    // rebuild's handler to look at (ADR-067 §6)
+    expect(deps.queue.enqueue).toHaveBeenCalledTimes(1)
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      'rebuild-lake-catalog',
+      { resourceId: 'res-1' },
+      { unlessWaiting: true }
+    )
   })
 
   it('still fails the message when the count itself cannot be written', async () => {

@@ -35,15 +35,13 @@ import type {
 import { jobsFor, type JobQueue } from '@kukan/queue'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { LakeConfig } from '@kukan/lake'
-import { dropResourceTables } from '@kukan/lake'
 import {
   orgDeletedDatasetCountSql,
   orgMemberCountSql,
   packageVisibilitySql,
   type AuthUser,
 } from '../auth/permissions'
-import { reclaimLakeStorage } from './lake/lake-reclaim'
+import { deleteResourceLakes } from './lake/lake-catalog'
 import { listPurgeTargets, purgePackageStorage, purgePackagesSearchDocs } from './package-cleanup'
 import { markPackageDocs } from './search/doc-marks'
 import { withResourceClaimsOrConflict } from './pipeline/pipeline-claim'
@@ -345,7 +343,7 @@ export class OrganizationService {
    */
   async purgeDeletedOrg(
     id: string,
-    deps: { search?: SearchAdapter; storage: StorageAdapter; lake?: LakeConfig }
+    deps: { search?: SearchAdapter; storage: StorageAdapter }
   ): Promise<{ purged: boolean; packageCount: number }> {
     const [claimed] = await this.db
       .update(organization)
@@ -363,9 +361,8 @@ export class OrganizationService {
     const packageIds = pkgs.map((p) => p.id)
 
     // Read while the rows still exist (deleted below): every resource, to claim
-    // it, and the ingested ones, which name the DuckLake tables that go with
-    // them — an empty list saves opening a lake session at all.
-    const { resourceIds, lakeResourceIds } = await listPurgeTargets(this.db, packageIds)
+    // it and delete its layer 2.
+    const { resourceIds } = await listPurgeTargets(this.db, packageIds)
 
     // Claimed for the whole erasure (ADR-044). A run in flight writes its
     // preview and version files to storage before the database hears of them,
@@ -377,8 +374,6 @@ export class OrganizationService {
     await withResourceClaimsOrConflict(this.db, resourceIds, async () => {
       // Bounded concurrency; Promise.all (not allSettled) so a single failure throws
       // and skips the DB delete below, leaving the org 'purging' for a retry.
-      // DuckLake is left out of the per-package pass and done once below: opening
-      // a lake session is expensive, and one per package would mean hundreds.
       // The search documents one chunk at a time under the sync's lock, taken
       // once per chunk: it serialises them anyway, and a caller per package
       // waiting on it would hold a pooled connection each
@@ -387,7 +382,8 @@ export class OrganizationService {
         await purgePackagesSearchDocs(this.db, chunk, deps.search)
         await Promise.all(chunk.map((pkgId) => purgePackageStorage(pkgId, deps.storage)))
       }
-      if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
+      // Keyed by resource, not package (ADR-067): under the claim, before the rows go
+      await deleteResourceLakes(deps.storage, resourceIds)
 
       await this.db.transaction(async (tx) => {
         if (packageIds.length > 0) {
@@ -397,12 +393,6 @@ export class OrganizationService {
         await tx.delete(organization).where(eq(organization.id, id))
       })
     })
-
-    // After the rows are gone: dropping the tables only unreferences the
-    // snapshots, and the retained set is read from the version rows the
-    // cascade just deleted (ADR-043 §5). Only when this purge had tables of
-    // its own — a catalog-wide sweep is a maintenance job's business.
-    if (lakeResourceIds.length > 0) await reclaimLakeStorage(this.db, deps.lake)
 
     return { purged: true, packageCount: packageIds.length }
   }

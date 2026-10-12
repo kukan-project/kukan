@@ -29,6 +29,7 @@ import {
   EMBED_JOB_TYPE,
   JOB_STATUSES,
   LAKE_INGEST_JOB_TYPE,
+  LAKE_REBUILD_JOB_TYPE,
   PIPELINE_JOB_TYPE,
   PIPELINE_INDEX_ONLY_KIND,
   PIPELINE_REPROCESS_ALL_KIND,
@@ -60,7 +61,13 @@ const JOB_SECTIONS: { key: string; types: string[] }[] = [
   {
     // In the order the data moves after a write: each feeds the next
     key: 'routine',
-    types: [PIPELINE_JOB_TYPE, LAKE_INGEST_JOB_TYPE, SYNC_SEARCH_DOCS_JOB_TYPE, EMBED_JOB_TYPE],
+    types: [
+      PIPELINE_JOB_TYPE,
+      LAKE_INGEST_JOB_TYPE,
+      LAKE_REBUILD_JOB_TYPE,
+      SYNC_SEARCH_DOCS_JOB_TYPE,
+      EMBED_JOB_TYPE,
+    ],
   },
   {
     // Rebuilding first, removing last; the bulk ones fan out a job per resource

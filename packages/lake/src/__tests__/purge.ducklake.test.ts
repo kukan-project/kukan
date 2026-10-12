@@ -39,6 +39,7 @@ beforeEach(async () => {
   // the catalog instead of the files this is about, and are never reclaimed.
   await conn.run(`CALL lake.set_option('data_inlining_row_limit', 0)`)
   session = {
+    catalog: 'lake',
     run: async (sql) => void (await conn.run(sql)),
     rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
     interrupt: () => conn.interrupt(),
@@ -92,8 +93,9 @@ async function purge(snapshot: number): Promise<void> {
 }
 
 /**
- * Free everything no surviving version names — `reclaimInSession` modelled
- * against the catalog directly, for the range purge below.
+ * Free everything no surviving version names — the shared catalog's reclaim
+ * (since replaced by rebuilding, ADR-067) modelled against the catalog
+ * directly, for the range purge below.
  */
 async function reclaim(retain: readonly number[]): Promise<void> {
   const all = (await session.rows(`SELECT snapshot_id FROM ducklake_snapshots('lake')`)).map((r) =>
@@ -310,9 +312,9 @@ describe('destroying one version of a keyed table', () => {
     // next step never names — so rows survive a purge that reported success.
     //
     // Needs three versions to show: with two, the one rollback is also the
-    // newest snapshot and holds N-1's rows alone. `reclaimInSession` recomputing
-    // the retained set from the surviving version rows is what makes §9.2 true,
-    // and it is not an implementation detail.
+    // newest snapshot and holds N-1's rows alone. The shared catalog's reclaim
+    // recomputing the retained set from the surviving version rows is what made
+    // §9.2 true there, and it was not an implementation detail.
     await session.run(
       `CREATE TABLE lake.t AS SELECT i AS id, 'v1_' || i AS name FROM range(100) tbl(i)`
     )

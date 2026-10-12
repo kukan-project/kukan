@@ -48,6 +48,11 @@ export const resourcePipeline = pgTable(
     // `metadata` because only the pages and tools that show it read it, and a
     // profile's lists would otherwise ride along on every read of the row.
     profile: jsonb('profile').$type<TableProfile>(),
+    // The resource's layer 2 catalog (ADR-067): a SQLite file under
+    // `lake/<resourceId>/<generation>/`, written to a new key on every commit.
+    // Not one of the pointers below — those are what retracting content
+    // discards, and layer 2 is rebuilt rather than discarded.
+    lakeCatalogKey: text('lake_catalog_key'),
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -55,6 +60,7 @@ export const resourcePipeline = pgTable(
     uniqueIndex('idx_resource_pipeline_resource_id').on(table.resourceId),
     index('idx_resource_pipeline_status').on(table.status),
     index('idx_resource_pipeline_preview_key').on(table.previewKey),
+    index('idx_resource_pipeline_lake_catalog_key').on(table.lakeCatalogKey),
     // The storage pointers that live inside JSON rather than in a column. The
     // orphan sweep asks whether any pointer still references a key before
     // deleting its object (ADR-045 §3), and these are the ones it could not

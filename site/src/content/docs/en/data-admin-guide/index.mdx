@@ -252,8 +252,10 @@ A **Backfill versions** item appears on the site administrator's dashboard — r
 
 - **Layer 1**: records each unversioned resource's current file as v1 (nothing is re-fetched or
   re-indexed)
-- **Layer 2**: loads the current version of each tabular resource into the diff store, so diffs
-  become available from the next update onwards
+- **Layer 2**: loads the versions of each tabular resource into the diff store, so diffs
+  become available from the next update onwards. It also moves diffs loaded by an earlier release
+  into the new format (a catalog per resource); until moved, those diffs cannot be shown (the diff
+  says the version has no row-level snapshot)
 - **Revert conversion**: converts resources still holding versions an earlier revert set aside,
   so the latest-version label agrees with what is being served
 

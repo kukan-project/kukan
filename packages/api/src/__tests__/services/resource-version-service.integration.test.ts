@@ -63,6 +63,7 @@ function mockDeps() {
       copy: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn().mockImplementation((keys: string[]) => Promise.resolve(keys)),
+      list: vi.fn().mockResolvedValue({ objects: [] }),
     } as unknown as StorageAdapter,
     search: { deleteContent: vi.fn() } as unknown as SearchAdapter,
     queue: {
@@ -864,20 +865,38 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     expect(row.state).toBe('purging')
   }, 60_000)
 
-  it('leaves the lake alone for a version that never reached it', async () => {
-    // Most resources are not tabular. Opening a session costs extension loads
-    // and a catalog ATTACH, so a version with no snapshot must not pay it —
-    // an unusable config proves the lake is never contacted.
+  it('rebuilds nothing for a version that never reached layer 2, and only clears old generations', async () => {
+    // Most resources are not tabular, and reading every version again would be
+    // for nothing — an unusable config, and no reader, prove neither happens.
+    // The old generations are cleared on every attempt all the same (ADR-067 §4).
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
 
-    const result = await service.executePurge(resourceId, 1, {
-      ...mockDeps(),
-      lake: unreachableLake,
-    })
+    const deps = { ...mockDeps(), lake: unreachableLake }
+    const result = await service.executePurge(resourceId, 1, deps)
 
     expect(result.purged).toBe(true)
+    expect(deps.storage.list).toHaveBeenCalledWith(`lake/${resourceId}/`, undefined)
+  })
+
+  it('will not finish a purge of a version in layer 2 without a way to read the others', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await db
+      .update(resourceVersion)
+      .set({ lakeSnapshotId: 1 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
+
+    await expect(
+      service.executePurge(resourceId, 1, { ...mockDeps(), lake: unreachableLake })
+    ).rejects.toThrow(/version reader/)
+    const [row] = await db
+      .select({ state: resourceVersion.state })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row.state).toBe('purging')
   })
 })
 
@@ -2278,7 +2297,7 @@ describe('a revert layer 2 follows by ordinary ingest (ADR-043 layer 2)', () => 
   async function setSnapshot(version: number, snapshot: number) {
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: snapshot })
+      .set({ lakeSnapshotId: snapshot })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))
   }
 

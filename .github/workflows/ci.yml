@@ -293,19 +293,21 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         run: pnpm build --filter='!@kukan/web' --filter='!@kukan/site'
 
-      # `maintenance.ducklake.test.ts` runs against a real DuckLake catalog, so
-      # it needs the `ducklake` extension (~35 MB from extensions.duckdb.org).
-      # Downloading it inside a test means the download is on the clock of the
-      # default 5s timeout, which is how #230 failed. Warm it here instead, and
-      # cache the directory so only a cold branch pays for it. The runtime image
-      # installs the full set (httpfs/aws/postgres/ducklake) itself — see the
-      # Dockerfile — because a closed-network deployment cannot fetch them.
+      # The `.ducklake.test.ts` files run against real DuckLake catalogs, so they
+      # need the extensions (~35 MB for `ducklake` alone, from
+      # extensions.duckdb.org). Downloading them inside a test puts the download
+      # on the clock of the test timeout, which is how #230 failed. Warm them
+      # here instead, and cache the directory so only a cold branch pays for it.
+      # The list is in the key: a cache from before an extension was added would
+      # otherwise hit and leave the test to fetch it. The runtime image installs
+      # the same set itself — see the Dockerfile — because a closed-network
+      # deployment cannot fetch them.
       - name: Cache DuckDB extensions
         if: steps.changes.outputs.code == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.duckdb/extensions
-          key: duckdb-ext-${{ runner.os }}-${{ hashFiles('packages/lake/package.json') }}
+          key: duckdb-ext-${{ runner.os }}-${{ hashFiles('packages/lake/package.json') }}-httpfs-aws-postgres-sqlite-ducklake
 
       - name: Warm DuckDB extensions
         if: steps.changes.outputs.code == 'true'
@@ -315,7 +317,7 @@ jobs:
           node --input-type=module -e "
             const { DuckDBInstance } = await import('@duckdb/node-api')
             const conn = await (await DuckDBInstance.create(':memory:')).connect()
-            await conn.run('INSTALL ducklake')
+            for (const e of ['httpfs', 'aws', 'postgres', 'sqlite', 'ducklake']) await conn.run('INSTALL ' + e)
           "
 
       - name: Test (unit only)

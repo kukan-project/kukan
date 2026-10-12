@@ -13,16 +13,6 @@ import { inTurn } from '@kukan/shared'
 export const RESOURCE_POSITION_LOCK = 'resource_position'
 
 /**
- * Serialize DuckLake ingest across the whole catalog (ADR-043 layer 2).
- *
- * Not per resource: snapshot ids increase across the catalog and a commit's
- * snapshot is identified by reading back the maximum, so two concurrent ingests
- * would each be able to observe the other's. Ingest only runs when a resource's
- * content changes, so serializing costs little next to the certainty it buys.
- */
-export const LAKE_INGEST_LOCK = 'lake_ingest'
-
-/**
  * Serialize the search-document sync (ADR-053 §9.3): resources' documents and
  * datasets'.
  *
@@ -41,13 +31,6 @@ export const SEARCH_DOC_SYNC_LOCK = 'resource_doc_sync'
  * twice; the compare-and-set keeps the result right, not the bill.
  */
 export const RESOURCE_EMBED_LOCK = 'resource_embed'
-
-/**
- * One pass at a time over the lake tables left without a drop job. Every
- * worker task runs the hourly sweep in the same minute; without it each would
- * find the same tables and queue its own drop for them.
- */
-export const STRANDED_LAKE_TABLES_LOCK = 'stranded_lake_tables'
 
 /**
  * Hold `<namespace>:<id>` for the rest of the transaction.

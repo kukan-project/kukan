@@ -16,7 +16,15 @@ import { unreachableLake } from '../test-helpers/fixtures'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
-const service = new VersionDiffService(db, unreachableLake)
+/** A diff's request for a repair, which these cases do not look at. */
+const noQueue = { enqueue: async () => 'job' }
+/** Every case here returns before a catalog is read; one that does not fails here. */
+const unreachableStore = {
+  download: () => Promise.reject(new Error('catalog read in a case that never diffs')),
+  upload: () => Promise.reject(new Error('catalog written by a diff')),
+  head: () => Promise.reject(new Error('catalog looked for in a case that never diffs')),
+}
+const service = new VersionDiffService(db, unreachableLake, unreachableStore, noQueue)
 
 let packageId: string
 let resourceId: string
@@ -37,7 +45,7 @@ async function addVersion(
     hash: `sha256:v${version}`,
     origin: 'upload',
     state: opts.state ?? 'active',
-    ducklakeSnapshotId: opts.snapshotId ?? null,
+    lakeSnapshotId: opts.snapshotId ?? null,
     lakeIngestReason: opts.ingestReason ?? null,
   })
 }
@@ -82,6 +90,16 @@ describe('VersionDiffService.diff', () => {
     const result = await service.diff(resourceId, 2)
 
     expect(result).toMatchObject({ available: false, reason: 'not-ingested', from: 1, to: 2 })
+  })
+
+  it('reports not-ingested when the ends carry numbers but the resource has no catalog', async () => {
+    // Numbers with no catalog to read them in: a catalog lost, before the repair
+    await addVersion(1, { snapshotId: 1 })
+    await addVersion(2, { snapshotId: 2 })
+
+    const result = await service.diff(resourceId, 2)
+
+    expect(result).toMatchObject({ available: false, reason: 'not-ingested' })
   })
 
   it('reports not-ingested against the side that has no snapshot', async () => {
@@ -186,6 +204,13 @@ describe('VersionDiffService.diff', () => {
     const result = await service.diff(resourceId, 2)
 
     expect(result).toMatchObject({ available: false, reason: 'purged', from: 1, to: 2 })
+  })
+
+  it('does not compare a version being purged, whose rows layer 2 still holds', async () => {
+    await addVersion(1, { snapshotId: 10 })
+    await addVersion(2, { state: 'purging', snapshotId: 20 })
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({ available: false, reason: 'purged' })
   })
 
   it('defaults to the immediately preceding version, skipping gaps', async () => {

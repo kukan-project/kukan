@@ -3,8 +3,7 @@ import { stat } from 'node:fs/promises'
 import type { Env } from '@kukan/shared'
 import { lakeConfigFromEnv } from '../config'
 import { useOwnTempDirectory } from '../spill'
-import { lakeTableName, lakeTableResourceIds } from '../table'
-import type { LakeSession } from '../connection'
+import { lakeTableName } from '../table'
 
 function envWith(overrides: Partial<Env>): Env {
   return {
@@ -25,13 +24,6 @@ describe('lakeTableName', () => {
     expect(lakeTableName('429ff69d-7b24-4a8f-a0ec-671bcceee31e')).toBe(
       'res_429ff69d7b244a8fa0ec671bcceee31e'
     )
-  })
-
-  it('is read back into the resource id, and nothing else is', async () => {
-    const id = '429ff69d-7b24-4a8f-a0ec-671bcceee31e'
-    const tables = [lakeTableName(id), 'res_short', 'orders']
-    const session = { rows: async () => tables.map((table_name) => ({ table_name })) }
-    expect(await lakeTableResourceIds(session as unknown as LakeSession)).toEqual([id])
   })
 })
 

@@ -37,6 +37,14 @@ export interface LakeConfig {
   s3AccessKey?: string
   s3SecretKey?: string
   limits: LakeLimits
+  /**
+   * Where a resource's catalog keeps its data files, in place of
+   * `s3://<bucket>/` (ADR-067). Tests point it at a local directory; a
+   * deployment leaves it unset.
+   */
+  dataRoot?: string
+  /** Where catalogs are copied to while open; the OS's temporary directory unless set */
+  tempDir?: string
 }
 
 /**

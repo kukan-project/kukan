@@ -13,8 +13,14 @@
  * to cover session setup, the interrupt has to reach a session that may not
  * exist yet, and the close has to wait for the interrupted scan to unwind.
  */
-import type { LakeConfig, LakeSession } from '@kukan/lake'
-import { lakeConfigFromEnv, openLakeSession } from '@kukan/lake'
+import type {
+  BucketSession,
+  LakeCatalogReaderOptions,
+  LakeConfig,
+  LakeObjectStore,
+  LakeSession,
+} from '@kukan/lake'
+import { lakeConfigFromEnv, openBucketSession, openLakeCatalogReader } from '@kukan/lake'
 import type { Env } from '@kukan/shared'
 import {
   RequestAbandonedError,
@@ -37,7 +43,36 @@ export function webLakeConfig(env: Env): LakeConfig {
 }
 
 /**
- * Run `scan` against a lake session, holding one shared DuckDB slot, capped in
+ * A scan of the bucket alone, which opens no catalog: the key check reads the
+ * preview's Parquet, and opening a catalog for it would read nothing from it.
+ */
+export function scanBucket<T>(
+  lake: LakeConfig,
+  what: string,
+  scan: (session: BucketSession) => Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  return scanWith(() => openBucketSession(lake), what, scan, signal)
+}
+
+/**
+ * A scan of one resource's own catalog (ADR-067), downloaded and attached
+ * read-only. The download is inside the bounds too: it is network work before
+ * the scan, and a hung one must not hold the slot.
+ */
+export function scanCatalog<T>(
+  lake: LakeConfig,
+  store: LakeObjectStore,
+  catalog: LakeCatalogReaderOptions,
+  what: string,
+  scan: (session: LakeSession) => Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  return scanWith(() => openLakeCatalogReader(lake, store, catalog), what, scan, signal)
+}
+
+/**
+ * Run `scan` against a session, holding one shared DuckDB slot, capped in
  * memory and threads, and stopped by whichever comes first of a wall-clock
  * deadline and the caller giving up.
  *
@@ -48,14 +83,14 @@ export function webLakeConfig(env: Env): LakeConfig {
  * of one, a single failed ATTACH would otherwise wedge every later scan *and*
  * every ADR-032 query at 429 for the process's lifetime.
  */
-export async function scanLake<T>(
-  lake: LakeConfig,
+async function scanWith<S extends BucketSession, T>(
+  open: () => Promise<S>,
   what: string,
-  scan: (session: LakeSession) => Promise<T>,
+  scan: (session: S) => Promise<T>,
   signal?: AbortSignal
 ): Promise<T> {
   return withDuckdbSlot(async () => {
-    let session: LakeSession | null = null
+    let session: S | null = null
     let scanning: Promise<T> | null = null
 
     // Two reasons to stop, one mechanism: the run outlived its budget, or its
@@ -88,7 +123,7 @@ export async function scanLake<T>(
 
     // Held separately from `session` so a setup that lands after the deadline is
     // still closed rather than leaked.
-    const opening = openLakeSession(lake).then((s) => (session = s))
+    const opening = open().then((s) => (session = s))
 
     try {
       await Promise.race([opening, stopped])

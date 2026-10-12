@@ -14,7 +14,7 @@
  * no format test here.
  */
 
-import type { LakeIngestRow } from '@kukan/api/services/lake/lake-ingest'
+import type { LakeIngestRow } from '@kukan/api/services/lake/lake-catalog'
 import { RunCancelledError } from '../run/step-tracker'
 import type { PipelineContext } from '../run/types'
 
@@ -46,8 +46,8 @@ export async function executeLake(
 
   try {
     const result = await ctx.ingestLakeVersion({ resourceId, version, sourcePath })
-    // null when the context carries no DuckLake config, or when something else
-    // ingested this version first.
+    // null when the context carries no DuckLake config, when something else
+    // ingested this version first, or when the resource is to be rebuilt.
     return result === null ? { status: 'skipped' } : { status: 'ingested' }
   } catch (err) {
     // A kill is not this step failing. Treated as one, a stopped run would

@@ -688,8 +688,9 @@ adminRouter.get('/embedding-status', async (c) => {
 // Drives the one-time "backfill versions" control (ADR-043): the UI shows the
 // action while any count is above zero. `unversionedCount` is layer 1
 // (resources with no version at all), `pendingLakeIngestCount` is layer 2
-// (tabular current versions not yet in DuckLake), `unconvertedRevertCount` is
-// resources still holding versions an old-style revert set aside (ADR-044 §4).
+// (resources with a tabular version not yet in their own catalog),
+// `unconvertedRevertCount` is resources still holding versions an old-style
+// revert set aside (ADR-044 §4).
 adminRouter.get('/version-backfill-status', async (c) => {
   const service = new ResourceVersionService(c.get('db'))
   const [unversionedCount, pendingLakeIngestCount, unconvertedRevertCount] = await Promise.all([

@@ -677,7 +677,12 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
   await checkResourcePermission(db, user, new ResourceService(db), id)
-  const service = new VersionDiffService(db, webLakeConfig(c.get('env')))
+  const service = new VersionDiffService(
+    db,
+    webLakeConfig(c.get('env')),
+    c.get('storage'),
+    c.get('queue')
+  )
   // The request's own signal: a browser that hangs up (a page left, or dev's
   // double-fired fetch discarding its first attempt) must not keep scanning
   // both snapshots and holding the one DuckDB slot the live request needs.

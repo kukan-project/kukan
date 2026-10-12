@@ -9,7 +9,7 @@ import { MaintenanceNotice } from '@/components/dashboard/maintenance/maintenanc
 interface BackfillStatus {
   /** Layer 1: resources with no version at all. */
   unversionedCount: number
-  /** Layer 2: tabular current versions not yet loaded into DuckLake. */
+  /** Layer 2: resources with a tabular version not yet loaded into their own catalog. */
   pendingLakeIngestCount: number
   /** Resources still holding versions an old-style revert set aside (ADR-044 §4). */
   unconvertedRevertCount: number
