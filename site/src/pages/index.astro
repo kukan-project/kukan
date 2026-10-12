@@ -51,21 +51,21 @@ const t = {
     pillars: [
       {
         word: '読める',
-        lead: '中身を解釈して、人にも AI にも分かる形で見せます。',
+        lead: '開かなくても中身が分かり、ファイルの中まで探せます。',
         items: [
           {
-            title: '中身を読んで、説明を書く',
-            desc: 'リソースを登録すると、AI が中身を読んで短い説明を書きます。表は列の構成と先頭の行から、PDF や Office 文書は本文から。タイトル・説明・タグの提案も同じ素材から起こし、フィールド単位で確認して採用します。',
+            title: 'AI の説明で中身をつかむ',
+            desc: 'ファイルを登録すると、AI が中身を読んで短い説明を書きます。タイトル・説明・タグの提案も受けられ、項目ごとに確かめて採用できます。',
             doc: { guide: 'data-admin-guide', hash: 'ai-による説明抄録' },
           },
           {
             title: 'ファイルの中まで探す',
-            desc: 'キーワードと意味を合わせたハイブリッド検索で、データセットではなくファイル単位に当たります。「どのファイルが、なぜ一致したか」まで示し、CSV の表も PDF の本文も対象。日本語の形態素解析も内蔵しています。',
+            desc: 'キーワードと意味を組み合わせたハイブリッド検索で、言葉が違っても見つかります。どのファイルがなぜ一致したかまで分かり、表も PDF の本文も対象です。',
             doc: { guide: 'user-guide', hash: 'どのリソースが一致したか' },
           },
           {
             title: 'ダウンロードせずに見る',
-            desc: 'CSV・JSON・GeoJSON・PDF・Office・一太郎・Markdown をブラウザでそのままプレビュー。GeoJSON は地理院地図や OpenStreetMap の上に、表は並べ替えと絞り込みのできる形で。データが一覧の形になっている JSON と GeoJSON も、表で見られます。多いリソースは見出しで区切って整理できます。',
+            desc: 'CSV・PDF・Office・一太郎・Markdown などを、ブラウザでそのまま見られます。表は並べ替えや絞り込みができ、GeoJSON は地図で見られます。',
             doc: { guide: 'user-guide', hash: 'リソースのプレビュー' },
           },
         ],
@@ -76,17 +76,17 @@ const t = {
         items: [
           {
             title: 'SQL で聞く',
-            desc: '表形式のリソースには Data API が付き、ブラウザからも API からも SQL で問い合わせられます。CSV だけでなく、一覧の形の JSON と GeoJSON も対象です。必要な列と行だけを取り出し、集計もその場で。列の名前と型（スキーマ）も API で読め、AI エージェントも同じ口を使います。',
+            desc: '表形式のリソースに、ブラウザからも API からも SQL で問い合わせられます。必要な列と行だけを取り出し、その場で集計も。一覧の形の JSON も対象です。',
             doc: { guide: 'api/rest', hash: 'スキーマとデータクエリ' },
           },
           {
             title: '何が変わったかを聞く',
-            desc: 'ファイルを差し替えるたびに、前の内容を版として残します。過去の版はダウンロードでき、表形式のリソースは増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認。混入した個人情報は版単位で削除します。',
+            desc: 'ファイルを差し替えても、前の内容は版として残ります。表なら増えた行・減った行や書き換わった行を画面で確かめられ、個人情報が混入した版は削除できます。',
             doc: { guide: 'data-admin-guide', hash: 'バージョン管理' },
           },
           {
-            title: 'まだ届くか聞く（ヘルスチェック）',
-            desc: '外部 URL のリソースは定期的に HEAD で死活を確かめ、中身が変わっていれば取り込み直します。結果とエラーになったリソースは管理画面で一覧。宣言されたフォーマットと中身の食い違いも、取得時に見つけます。',
+            title: 'まだ届くかを聞く',
+            desc: '外部 URL のリソースは定期的に確かめられ、リンク切れは管理画面で分かります。中身が変わっていれば自動で取り込み直し、プレビューや検索も追いつきます。',
             doc: { guide: 'system-admin-guide', hash: 'ヘルスチェック' },
           },
         ],
@@ -96,18 +96,18 @@ const t = {
         lead: '人の画面だけでなく、AI エージェントや BI ツール、既存のツールからも使えます。',
         items: [
           {
-            title: 'AI エージェントから',
-            desc: 'MCP サーバーを内蔵。AI エージェントが自然文でデータセットを探し、文書の該当箇所を、章・節・ページまで特定して引き、表に SQL で問い合わせます。人が画面でできることを AI にも同じ入口から。Claude などの MCP 対応クライアントで使えます。',
+            title: 'AI エージェントから使う',
+            desc: '内蔵の MCP サーバーで、Claude などの AI エージェントが自然文でデータを探せます。文書は章・節・ページまで特定して引用し、表には SQL で問い合わせられます。',
             doc: { guide: 'api/mcp' },
           },
           {
-            title: 'BI ツールから',
-            desc: '表形式のリソースには OData の接続 URL が付きます。Excel・Tableau・Power BI の OData コネクタに貼るだけで、ダウンロードなしにその表を開けます。大きな表は分割して配信し、ツール側が続きを取りに行きます。',
+            title: 'BI ツールで開く',
+            desc: '表形式のリソースには OData の接続 URL が付きます。Excel・Power BI・Tableau に貼るだけで、ダウンロードせずに表を開いて集計・可視化できます。',
             doc: { guide: 'user-guide', hash: 'bi-ツールで開く' },
           },
           {
-            title: '既存のツールから',
-            desc: 'CKAN 互換の読み取り API を備え、package_search や package_show をそのまま呼べます。CKAN 向けのクライアントや他カタログとの連携を保ったまま移行でき、REST API と API トークンも揃っています。',
+            title: 'CKAN のツールのまま使う',
+            desc: 'CKAN 互換の読み取り API で、package_search などをそのまま呼べます。CKAN 向けのクライアントや他カタログとの連携を保ったまま、移行できます。',
             doc: { guide: 'api/ckan' },
           },
         ],
@@ -126,12 +126,12 @@ const t = {
       },
       {
         title: '組織とグループで権限を分ける',
-        desc: '組織とカテゴリー（グループ）の単位でメンバーの役割を持ち、データセットの公開・非公開と編集権限を管理。API トークンも同じ権限です。',
+        desc: '組織とカテゴリー（グループ）ごとにメンバーの役割を決め、データセットを編集できる人を分けられます。非公開にしたデータセットは組織のメンバーだけが見られ、API トークンにも同じ権限が効きます。',
         doc: { guide: 'data-admin-guide', hash: '組織の管理' },
       },
       {
-        title: 'オープンソース、日英、ブランド',
-        desc: 'AGPL-3.0 でソースを公開。UI とドキュメントは日本語と英語を切り替えられ、配色・ロゴ・文言を自組織向けに上書きできます。',
+        title: 'オープンソース、日英対応、デザインカスタマイズ',
+        desc: 'AGPL-3.0 でソースを公開しているので、誰でも導入して手を入れられます。画面とドキュメントは日本語と英語を切り替えられ、配色・ロゴ・文言は自組織向けに変えられます。',
         doc: { guide: 'system-admin-guide/brand-customization' },
       },
     ],
@@ -170,21 +170,21 @@ const t = {
     pillars: [
       {
         word: 'Read',
-        lead: 'It interprets what it stores and shows it in a form people and AI both understand.',
+        lead: 'Know what a file holds without opening it, and search right inside it.',
         items: [
           {
-            title: 'Reads it, writes the description',
-            desc: 'Register a resource and an AI reads it and writes a short description: a table from its columns and first rows, a document from its text. Title, description and tag suggestions come from the same material, adopted field by field.',
+            title: 'Get the gist from an AI description',
+            desc: 'Register a file and an AI reads it and writes a short description. You also get title, description and tag suggestions to check and adopt field by field.',
             doc: { guide: 'data-admin-guide', hash: 'ai-written-descriptions' },
           },
           {
             title: 'Search inside the files',
-            desc: 'Hybrid search by keyword and by meaning lands on a file, not just a dataset, and says which file matched and why. CSV tables and PDF text are both searchable, and Japanese morphological analysis is built in.',
+            desc: 'Hybrid search, by keyword and by meaning, finds the data even when it uses different words. You see which file matched and why, across CSV tables and PDF text alike.',
             doc: { guide: 'user-guide', hash: 'which-resource-matched' },
           },
           {
             title: 'See it without downloading',
-            desc: 'Preview CSV, JSON, GeoJSON, PDF, Office, Ichitaro and Markdown files in the browser. GeoJSON renders on GSI or OpenStreetMap tiles, and tables sort and filter in place; JSON and GeoJSON that hold a list of items show as tables too. Long resource lists fold under headings you drag into place.',
+            desc: 'View CSV, PDF, Office, Ichitaro, Markdown and more right in the browser. Tables sort and filter in place, and GeoJSON shows on a map.',
             doc: { guide: 'user-guide', hash: 'resource-preview' },
           },
         ],
@@ -195,17 +195,17 @@ const t = {
         items: [
           {
             title: 'Ask in SQL',
-            desc: 'A tabular resource — a CSV, or JSON and GeoJSON holding a list of items — carries a Data API: query it in SQL from the browser or over the API, pull just the columns and rows you need, and aggregate on the spot. Column names and types come from the same API, for people and agents alike.',
+            desc: 'Query a tabular resource in SQL from the browser or over the API. Pull just the rows and columns you need and aggregate on the spot, JSON lists included.',
             doc: { guide: 'api/rest', hash: 'schema-and-data-query' },
           },
           {
             title: 'Ask what changed',
-            desc: 'Replacing a file keeps the old content as a version. Download any past version; for a table see added and removed rows, or with a primary key how each row changed. A version that leaked personal data can be deleted on its own.',
+            desc: 'Replacing a file keeps the old content as a version. For a table, see the rows added, removed and changed, and delete a version that leaked personal data.',
             doc: { guide: 'data-admin-guide', hash: 'version-history' },
           },
           {
-            title: 'Still reachable? Health checks',
-            desc: 'External-URL resources get a scheduled HEAD check and are re-ingested when their content changes. Results and failing resources are listed in the dashboard, and a file whose declared format disagrees with its bytes is caught on fetch.',
+            title: 'Ask if it is still there',
+            desc: 'External-URL resources are checked on a schedule, and broken links show up in the dashboard. Changed content is picked up again, so previews and search keep up.',
             doc: { guide: 'system-admin-guide', hash: 'health-checks' },
           },
         ],
@@ -215,18 +215,18 @@ const t = {
         lead: 'Not only through the web UI: from AI agents, BI tools and the tools you already have.',
         items: [
           {
-            title: 'From AI agents',
-            desc: "A built-in MCP server lets an AI agent find datasets in natural language, cite the passages of documents down to the chapter, section and page, and query a table in SQL. Whatever a person can do on screen, an agent can do through the same door, from Claude or any MCP client.",
+            title: 'Use it from AI agents',
+            desc: 'A built-in MCP server lets Claude and other AI agents find data in natural language. They cite documents down to the chapter, section and page, and query tables in SQL.',
             doc: { guide: 'api/mcp' },
           },
           {
-            title: 'From BI tools',
-            desc: 'A tabular resource carries an OData connection URL. Paste it into the OData connector in Excel, Tableau or Power BI and the table opens with nothing to download. Large tables are served in pages the tool follows on its own.',
+            title: 'Open it in BI tools',
+            desc: 'A tabular resource carries an OData connection URL. Paste it into Excel, Power BI or Tableau to open the table, aggregate and chart it, with nothing to download.',
             doc: { guide: 'user-guide', hash: 'opening-the-table-in-a-bi-tool' },
           },
           {
-            title: 'From the tools you have',
-            desc: 'A CKAN-compatible read API answers package_search, package_show and the rest as-is, so CKAN clients and catalog federations keep working through a migration. A REST API and API tokens round out the programmatic side.',
+            title: 'Keep your CKAN tools',
+            desc: 'A CKAN-compatible read API answers package_search and the rest as-is. Migrate while your CKAN clients and links with other catalogs keep working.',
             doc: { guide: 'api/ckan' },
           },
         ],
@@ -245,12 +245,12 @@ const t = {
       },
       {
         title: 'Permissions by organization and group',
-        desc: 'Members hold roles per organization and category (group), governing who sees and edits each dataset. API tokens carry the same permissions.',
+        desc: 'Give members roles per organization and category (group) to decide who edits each dataset. A private dataset is visible only to members of its organization, and API tokens carry the same permissions.',
         doc: { guide: 'data-admin-guide', hash: 'organization-management' },
       },
       {
         title: 'Open source, bilingual, brandable',
-        desc: 'AGPL-3.0 with the full source open. UI and docs switch between Japanese and English; colors, logo and wording can be overridden per organization.',
+        desc: 'AGPL-3.0 with the full source open, so anyone can deploy it and adapt it. The UI and docs switch between Japanese and English, and colors, logo and wording can be made your own.',
         doc: { guide: 'system-admin-guide/brand-customization' },
       },
     ],
@@ -270,7 +270,7 @@ const recentMeta = [
 const newestRecent = recentMeta[0].version
 const pillarMeta = [
   { id: 'read', icon: '📖' },
-  { id: 'query', icon: '🧮' },
+  { id: 'query', icon: '💬' },
   { id: 'connect', icon: '🔗' },
 ]
 const foundationIcons = ['☁', '🏙', '🔒', '🌐']
