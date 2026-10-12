@@ -444,6 +444,105 @@ describe('S3StorageAdapter', () => {
 
       await expect(storage.deleteByPrefix('prefix/')).rejects.toThrow('Failed to delete 1 objects')
     })
+
+    describe('with deletes in flight', () => {
+      /** Pages of one key each; deletes hang until released */
+      function stubPages(pageCount: number) {
+        const releases: Array<(value: unknown) => void> = []
+        let listed = 0
+        let inFlight = 0
+        let maxInFlight = 0
+        mockSend.mockImplementation((cmd: { _type: string }) => {
+          if (cmd._type === 'ListObjectsV2') {
+            listed++
+            return Promise.resolve({
+              Contents: [{ Key: `prefix/${listed}.txt` }],
+              IsTruncated: listed < pageCount,
+              NextContinuationToken: `token-${listed}`,
+            })
+          }
+          inFlight++
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          return new Promise((resolve) => {
+            releases.push((value) => {
+              inFlight--
+              resolve(value)
+            })
+          })
+        })
+        return {
+          releases,
+          listed: () => listed,
+          maxInFlight: () => maxInFlight,
+        }
+      }
+
+      const settle = () => new Promise((r) => setTimeout(r, 0))
+
+      it('lists the next page while a delete is still running, up to three at once', async () => {
+        const stub = stubPages(5)
+        const run = storage.deleteByPrefix('prefix/')
+
+        // The fourth page is listed, but its delete waits for a free slot
+        await settle()
+        expect(stub.listed()).toBe(4)
+        expect(stub.releases).toHaveLength(3)
+
+        stub.releases[0]({})
+        await settle()
+        expect(stub.releases).toHaveLength(4)
+
+        for (const release of stub.releases.slice(1)) release({})
+        await settle()
+        for (const release of stub.releases.slice(4)) release({})
+
+        await expect(run).resolves.toBe(5)
+        expect(stub.maxInFlight()).toBe(3)
+      })
+
+      it('stops listing on a failed batch, and throws only after the others finish', async () => {
+        const stub = stubPages(10)
+        let settled = false
+        const run = storage.deleteByPrefix('prefix/').finally(() => {
+          settled = true
+        })
+        run.catch(() => {})
+
+        await settle()
+        stub.releases[0]({ Errors: [{ Key: 'prefix/1.txt', Code: 'AccessDenied' }] })
+        await settle()
+        expect(settled).toBe(false)
+        expect(stub.releases).toHaveLength(3)
+
+        stub.releases[1]({})
+        stub.releases[2]({})
+        await expect(run).rejects.toThrow('Failed to delete 1 objects')
+        expect(stub.listed()).toBeLessThan(10)
+      })
+
+      it('waits for running deletes when a list call fails', async () => {
+        const releases: Array<(value: unknown) => void> = []
+        mockSend
+          .mockResolvedValueOnce({
+            Contents: [{ Key: 'prefix/a.txt' }],
+            IsTruncated: true,
+            NextContinuationToken: 'token-1',
+          })
+          .mockImplementationOnce(() => new Promise((resolve) => releases.push(resolve)))
+          .mockRejectedValueOnce(new Error('list failed'))
+        let settled = false
+        const run = storage.deleteByPrefix('prefix/').finally(() => {
+          settled = true
+        })
+        run.catch(() => {})
+
+        await settle()
+        expect(settled).toBe(false)
+
+        releases[0]({})
+        await expect(run).rejects.toThrow('list failed')
+      })
+    })
   })
 
   describe('downloadRange', () => {

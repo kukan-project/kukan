@@ -27,6 +27,14 @@ import {
 const DELETE_BATCH_SIZE = 1000
 
 /**
+ * DeleteObjects requests one deleteByPrefix keeps in flight. Enough to hide
+ * the delete behind the next list call, and kept small so a large purge does
+ * not pile delete load onto one prefix; a SlowDown (503) that still comes
+ * back is retried by the SDK.
+ */
+const DELETE_CONCURRENCY = 3
+
+/**
  * A metadata value as an RFC 2047 encoded-word when it is not printable ASCII.
  *
  * User metadata travels as HTTP headers, where a non-ASCII value is either
@@ -290,35 +298,57 @@ export class S3StorageAdapter implements StorageAdapter {
 
   async deleteByPrefix(prefix: string): Promise<number> {
     let deleted = 0
-    let continuationToken: string | undefined
-
-    for (;;) {
-      const list = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: prefix,
-          ContinuationToken: continuationToken,
-        })
-      )
-
-      const keys = (list.Contents ?? []).map((o) => ({ Key: o.Key! }))
-      if (keys.length > 0) {
-        const result = await this.client.send(
-          new DeleteObjectsCommand({
-            Bucket: this.bucket,
-            Delete: { Objects: keys },
-          })
+    let failure: unknown
+    const pending = new Set<Promise<void>>()
+    const startDelete = (keys: { Key: string }[]) => {
+      const done: Promise<void> = this.client
+        .send(new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: keys } }))
+        .then(
+          (result) => {
+            if (result.Errors && result.Errors.length > 0) {
+              failure ??= new Error(`Failed to delete ${result.Errors.length} objects`)
+            } else {
+              deleted += keys.length
+            }
+          },
+          (err: unknown) => {
+            failure ??= err
+          }
         )
-        if (result.Errors && result.Errors.length > 0) {
-          throw new Error(`Failed to delete ${result.Errors.length} objects`)
-        }
-        deleted += keys.length
-      }
-
-      if (!list.IsTruncated) break
-      continuationToken = list.NextContinuationToken
+        .finally(() => pending.delete(done))
+      pending.add(done)
     }
 
+    // Listing is sequential (each page needs the previous token), so the
+    // deletes run behind it, at most DELETE_CONCURRENCY at a time: a page then
+    // costs about one list round trip instead of a list and a delete.
+    try {
+      let continuationToken: string | undefined
+      for (;;) {
+        const list = await this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          })
+        )
+
+        const keys = (list.Contents ?? []).map((o) => ({ Key: o.Key! }))
+        if (keys.length > 0) {
+          while (pending.size >= DELETE_CONCURRENCY) await Promise.race(pending)
+          if (failure !== undefined) break
+          startDelete(keys)
+        }
+
+        if (!list.IsTruncated || failure !== undefined) break
+        continuationToken = list.NextContinuationToken
+      }
+    } finally {
+      // The handlers above catch, so this only waits; nothing is left running
+      await Promise.all(pending)
+    }
+
+    if (failure !== undefined) throw failure
     return deleted
   }
 
