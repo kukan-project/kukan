@@ -6,6 +6,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.35.1] - 2026-10-13
+
+**Bug Fixes**
+
+- fix(lake): a failed DuckLake write no longer keeps failing the worker's later jobs (#910). The worker opens each resource's DuckLake record on one DuckDB instance it shares between jobs. After a write failed with SQLite `database is locked`, a record could be left half-closed on that instance, and later rebuilds of other resources failed with `Catalog "__ducklake_metadata_…" does not exist!` until the instance happened to be released while idle. Some of them used up their retries during the move to per-resource records. Now the first job that meets this error replaces the instance, and its retry runs on a fresh one. Resources whose rebuild was given up on are picked up again by the hourly retry, or by **Backfill versions** on the dashboard.
+
+**Upgrade Notes**
+
+- The `resource_version.ducklake_snapshot_id` column announced for removal in v0.35.0 is not dropped in this release; it is still planned for a later one. Rolling back to v0.34.0 works as described for v0.35.0.
+
+---
+
+**バグ修正**
+
+- fix(lake): DuckLake への書き込みが 1 回失敗すると、worker の後続のジョブまで失敗し続ける問題を修正しました（#910）。worker は、リソースごとの DuckLake の記録を、ジョブの間で共有する 1 つの DuckDB インスタンスで開きます。書き込みが SQLite の `database is locked` で失敗したあと、記録が半分閉じた状態でそのインスタンスに残ることがありました。そうなると、空いている間にインスタンスが解放されるまで、別のリソースの作り直しが `Catalog "__ducklake_metadata_…" does not exist!` で失敗していました。リソースごとの記録への移行中には、再試行を使い切って打ち切られたものもありました。今後は、このエラーに最初に当たったジョブがインスタンスを作り直し、その再試行は新しいインスタンスで走ります。作り直しが打ち切られたリソースは、毎時の再実行か、ダッシュボードの「バージョンを補完」で再び処理されます。
+
+**アップグレード時の注意**
+
+- v0.35.0 で削除を予告した `resource_version.ducklake_snapshot_id` 列は、このリリースでは削除していません。削除は引き続き今後のリリースで予定しています。v0.34.0 への巻き戻しは、v0.35.0 の説明のとおり可能です。
+
 ## [0.35.0] - 2026-10-12
 
 **Upgrade Notes**
