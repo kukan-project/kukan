@@ -108,6 +108,21 @@ describe('a lost instance', () => {
     expect(instances[0].closeSync).not.toHaveBeenCalled()
   })
 
+  it('is what a catalog left half-detached by another session means', async () => {
+    // The alias is another session's: what it left fails any statement that
+    // lists the instance's catalogs, whichever catalog the session works on
+    failFirstInstance(
+      'Binder Error: Failed to query most recent snapshot for DuckLake: ' +
+        'Catalog "__ducklake_metadata_lake_d005df31ee52" does not exist!'
+    )
+
+    await expect(withBucketSession(config, runsWork())).rejects.toThrow('does not exist')
+    expect(instances[0].closeSync).toHaveBeenCalled()
+
+    await withBucketSession(config, runsWork())
+    expect(instances).toHaveLength(2)
+  })
+
   it('is what a connect refused by a closed instance means', async () => {
     // Another session's loss closed the instance while this caller already
     // held it out of the cache; its connect fails, and that is the same loss.

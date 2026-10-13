@@ -88,10 +88,21 @@ function retire(instance: DuckDBInstance): Promise<void> {
  * only fires on the error codes httpfs recognizes, and a task-role credential
  * that lapsed mid-statement can still surface as a plain ExpiredToken. A
  * rebuild resolves the chain afresh either way.
+ *
+ * A DuckLake catalog whose metadata database is gone is one some earlier
+ * session left half-detached. Statements naming other catalogs still run, but
+ * any that lists the instance's catalogs — `duckdb_tables()`, which the
+ * ingest's table check reads — fails on it until the instance goes. Seen after
+ * SQLite catalogs failed with `database is locked`, by a path not reproduced;
+ * whichever session meets it first takes the instance out, and the queue's
+ * retry runs on a fresh one.
  */
 function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  return /connection|socket|ExpiredToken|token has expired|instance closed/i.test(message)
+  return (
+    /connection|socket|ExpiredToken|token has expired|instance closed/i.test(message) ||
+    /Catalog "__ducklake_metadata_\w+" does not exist/.test(message)
+  )
 }
 
 /**
