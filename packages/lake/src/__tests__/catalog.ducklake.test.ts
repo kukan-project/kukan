@@ -154,8 +154,8 @@ describe('a catalog draft', () => {
       const at = (n: number) =>
         session.rows(`SELECT count(*) AS n FROM ${session.catalog}.t AT (VERSION => ${n})`)
       const latest = Number(before[0].id) + 1
-      expect((await at(latest - 1))[0].n).toBe('1')
-      expect((await at(latest))[0].n).toBe('2')
+      expect((await at(latest - 1))[0].n).toBe(1)
+      expect((await at(latest))[0].n).toBe(2)
     })
   })
 
@@ -174,7 +174,7 @@ describe('a catalog draft', () => {
     await draft.publish(key)
     await withLakeCatalogReader(config, store, { catalogKey: key }, async (session) => {
       const [row] = await session.rows(`SELECT count(*) AS n FROM ${session.catalog}.t`)
-      expect(row.n).toBe('2')
+      expect(row.n).toBe(2)
     })
   })
 
@@ -358,9 +358,7 @@ describe('a catalog reader', () => {
     const cache: LakeCatalogCache = { get: (k) => held.get(k), set: (k, v) => void held.set(k, v) }
     for (let i = 0; i < 2; i++) {
       await withLakeCatalogReader(config, store, { catalogKey: key, cache }, async (session) => {
-        expect((await session.rows(`SELECT count(*) AS n FROM ${session.catalog}.t`))[0].n).toBe(
-          '1'
-        )
+        expect((await session.rows(`SELECT count(*) AS n FROM ${session.catalog}.t`))[0].n).toBe(1)
         await expect(session.run(`INSERT INTO ${session.catalog}.t VALUES (2)`)).rejects.toThrow()
       })
     }

@@ -201,7 +201,9 @@ preview directly** rather than loading data into dedicated tables.
    agent writes SQL after seeing the schema.
 8. **Result format**: the API returns JSON (`{ columns, rows, rowCount, truncated, elapsedMs }`, where
    `rows` is an array of column-keyed objects); the MCP `query_resource` tool returns a Markdown table.
-   Values are serialized JSON-safe (BIGINT, etc. become strings).
+   Values are serialized JSON-safe: 64-bit and wider integers are numbers, and a value a double
+   cannot hold exactly (absolute value 2^53 or more) is a string, decided per value. DECIMAL and
+   dates are strings.
 
 ## Consequences
 

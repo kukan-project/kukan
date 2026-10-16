@@ -25,6 +25,7 @@ export type { DuckdbHandle } from './duckdb'
 export { lakeTableName, lakeTableExists, currentSnapshotId } from './table'
 export { sqlLiteral, sqlIdentifier } from './sql'
 export { readRowGroupRows } from './parquet'
+export { rowObjectsJson } from './json-rows'
 export {
   openBucketSession,
   withBucketSession,

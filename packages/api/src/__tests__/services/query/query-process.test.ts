@@ -66,7 +66,7 @@ describe('runQueryInProcess', () => {
 
   it('answers the query from a process of its own, which is gone afterwards', async () => {
     const res = await runQueryInProcess(fixture, 'SELECT count(*) AS c FROM data', LIMITS)
-    expect(res).toEqual({ columns: ['c'], rows: [{ c: '100' }], rowCount: 1, truncated: false })
+    expect(res).toEqual({ columns: ['c'], rows: [{ c: 100 }], rowCount: 1, truncated: false })
     expect(spawned).toHaveLength(1)
     await exitOf(spawned[0].child)
     expect(spawned[0].child.exitCode).toBe(0)

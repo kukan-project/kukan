@@ -196,7 +196,8 @@ search_datasets → get_dataset → get_resource_schema → query_resource
    スキーマを見てから SQL を書けるようにする。
 8. **結果フォーマット**: API は JSON（`{ columns, rows, rowCount, truncated, elapsedMs }`、`rows` は
    列名キーのオブジェクト配列）、MCP `query_resource` は Markdown テーブルを返す。値は JSON 安全な
-   形に直列化する（BIGINT 等は文字列）。
+   形に直列化する。64 ビット以上の整数は数値で、倍精度で正確に表せない値（絶対値 2^53 以上）だけを
+   値ごとに文字列にする。DECIMAL・日付は文字列。
 
 ## 影響
 

@@ -32,7 +32,7 @@ describe('runSandboxedQuery', () => {
   it('runs a SELECT against the `data` table', async () => {
     const res = await runSandboxedQuery(fixture, 'SELECT count(*) AS c FROM data', LIMITS)
     expect(res.columns).toEqual(['c'])
-    expect(res.rows[0].c).toBe('100')
+    expect(res.rows[0].c).toBe(100)
   })
 
   it('spills somewhere of its own, and takes it away after', async () => {
@@ -60,7 +60,16 @@ describe('runSandboxedQuery', () => {
   it('returns column names and row objects', async () => {
     const res = await runSandboxedQuery(fixture, 'SELECT id, name FROM data ORDER BY id', LIMITS)
     expect(res.columns).toEqual(['id', 'name'])
-    expect(res.rows[0]).toEqual({ id: '0', name: 'name0' })
+    expect(res.rows[0]).toEqual({ id: 0, name: 'name0' })
+  })
+
+  it('returns integers as numbers, and a string only past 2^53 (rowObjectsJson)', async () => {
+    const res = await runSandboxedQuery(
+      fixture,
+      'SELECT count(*) AS n, 9007199254740992::BIGINT AS big FROM data',
+      LIMITS
+    )
+    expect(res.rows[0]).toEqual({ n: 100, big: '9007199254740992' })
   })
 
   it('deduplicates repeated output column names to match the row keys', async () => {
@@ -70,7 +79,7 @@ describe('runSandboxedQuery', () => {
       LIMITS
     )
     expect(res.columns).toEqual(['a', 'a:1'])
-    expect(res.rows[0]).toEqual({ a: '0', 'a:1': 'name0' })
+    expect(res.rows[0]).toEqual({ a: 0, 'a:1': 'name0' })
   })
 
   it('truncates results beyond maxRows', async () => {
@@ -161,7 +170,7 @@ describe('runSandboxedQuery', () => {
 
     it('materializes the table', async () => {
       const res = await runSandboxedQuery(url, 'SELECT count(*) AS c FROM data', LIMITS)
-      expect(res.rows[0].c).toBe('100')
+      expect(res.rows[0].c).toBe(100)
     })
 
     it('cannot read the URL again once the lockdown is on', async () => {

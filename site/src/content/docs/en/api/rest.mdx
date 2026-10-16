@@ -352,9 +352,9 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
   "id": "…",
   "columns": ["city", "n"],
   "rows": [
-    { "city": "Adachi", "n": "117" },
-    { "city": "Edogawa", "n": "110" },
-    { "city": "Ota", "n": "86" }
+    { "city": "Adachi", "n": 117 },
+    { "city": "Edogawa", "n": 110 },
+    { "city": "Ota", "n": 86 }
   ],
   "rowCount": 3,
   "truncated": false,
@@ -367,6 +367,7 @@ Query rules:
 - The data is exposed as a table named `data`. Double-quote column names that contain spaces or non-ASCII characters.
 - A single `SELECT` / `WITH` statement only. Writes and DDL (`INSERT` / `UPDATE` / `DELETE` / `CREATE` / `DROP` / `ATTACH` / `COPY` / `PRAGMA`, …) are rejected.
 - Runs in a throwaway in-memory DuckDB instance; all external access (files, URLs, extension loading) is disabled.
+- Integers are numbers, except a value a double cannot hold exactly (absolute value 2^53 or more), which alone is a string. A column can mix the two, so handle both. DECIMAL is a string to keep its precision, as are dates and times.
 
 Limits and errors:
 
@@ -482,7 +483,7 @@ not a public endpoint.
   "keyed": false,
   "addedRows": 42,
   "removedRows": 3,
-  "sampleAdded": [{ "city": "Adachi", "count": "117" }],
+  "sampleAdded": [{ "city": "Adachi", "count": 117 }],
   "sampleRemoved": []
 }
 ```
@@ -495,6 +496,8 @@ not a public endpoint.
   changed; presence in the older side does. With no key declared, or a different key at
   each end, it is `false` and **editing one row appears as one addition plus one removal** —
   nothing identifies the row as the same one
+- Sample values follow the same rule as `POST /resources/{id}/query` (integers are numbers; only a value of
+  absolute value 2^53 or more is a string)
 - Versions whose columns differ return
   `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}` and no row
   comparison is attempted

@@ -136,7 +136,7 @@ describe('POST /api/v1/resources/:id/query', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.columns).toEqual(['c'])
-    expect(body.rows[0].c).toBe('100')
+    expect(body.rows[0].c).toBe(100)
     expect(body.truncated).toBe(false)
   })
 
@@ -146,8 +146,8 @@ describe('POST /api/v1/resources/:id/query', () => {
     const body = await res.json()
     expect(body.columns).toEqual(['id', 'name'])
     expect(body.rows).toEqual([
-      { id: '0', name: 'name0' },
-      { id: '1', name: 'name1' },
+      { id: 0, name: 'name0' },
+      { id: 1, name: 'name1' },
     ])
   })
 

@@ -334,9 +334,9 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
   "id": "…",
   "columns": ["city", "n"],
   "rows": [
-    { "city": "足立区", "n": "117" },
-    { "city": "江戸川区", "n": "110" },
-    { "city": "大田区", "n": "86" }
+    { "city": "足立区", "n": 117 },
+    { "city": "江戸川区", "n": 110 },
+    { "city": "大田区", "n": 86 }
   ],
   "rowCount": 3,
   "truncated": false,
@@ -349,6 +349,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 - データは `data` という名前のテーブルとして参照します。列名に空白や非 ASCII を含む場合は二重引用符で囲みます。
 - 単一の `SELECT` / `WITH` 文のみ。`INSERT` / `UPDATE` / `DELETE` / `CREATE` / `DROP` / `ATTACH` / `COPY` / `PRAGMA` 等の書き込み・DDL は拒否されます。
 - 使い捨ての in-memory DuckDB 上で実行され、ファイル・URL・拡張ロード等の外部アクセスは全面的に禁止されます。
+- 整数は数値で返します。ただし、倍精度の浮動小数点数で正確に表せない値（絶対値が 2^53 以上）は、その値だけ文字列で返します。同じ列に数値と文字列が混ざりうるので、受け取る側は両方を扱えるようにしてください。DECIMAL は精度を保つため文字列、日付・時刻も文字列です。
 
 制限とエラー:
 
@@ -462,7 +463,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
   "keyed": false,
   "addedRows": 42,
   "removedRows": 3,
-  "sampleAdded": [{ "市区町村": "足立区", "件数": "117" }],
+  "sampleAdded": [{ "市区町村": "足立区", "件数": 117 }],
   "sampleRemoved": []
 }
 ```
@@ -473,6 +474,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
   含まれません。見本のセルは表示用に切り詰められるため、両者を比べても変わったかどうかは判定できません。
   列が変更前の側にあるかどうかが答えです）。主キーが指定されていない・両端で違う場合は `false` で、
   **1 行の書き換えは追加 1 行 + 削除 1 行として現れます**（行を同定できないため）
+- 見本の値は `POST /resources/{id}/query` と同じ規則で返します（整数は数値、絶対値が 2^53 以上の値だけ文字列）
 - 列構成が変わった版どうしは `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}`
   を返し、行差分は行いません
 - 差分を出せない場合は

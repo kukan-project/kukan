@@ -13,6 +13,7 @@ import type { DiffRow } from '@kukan/shared'
 import type { LakeConfig } from './config'
 import { loadDuckdbExtensions, s3SecretBody } from './config'
 import { openDuckdb } from './duckdb'
+import { rowObjectsJson } from './json-rows'
 import { createSpillRegistry } from './spill'
 import { assertSafeIdentifier, sqlLiteral } from './sql'
 
@@ -228,8 +229,7 @@ export async function openBucketSession(config: LakeConfig): Promise<BucketSessi
     },
     rows: async (sql) => {
       const reader = await conn.runAndReadAll(sql).catch(forget)
-      // JSON variant serializes BIGINT etc. to JSON-safe values.
-      return reader.getRowObjectsJson() as LakeRow[]
+      return rowObjectsJson(reader)
     },
     interrupt: () => conn.interrupt(),
     close: async () => {

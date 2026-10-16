@@ -17,6 +17,7 @@ import {
   forgetEnvironmentCredentials,
   loadDuckdbExtensions,
   openDuckdb,
+  rowObjectsJson,
   sealDuckdb,
   sqlLiteral,
 } from '@kukan/lake'
@@ -170,10 +171,10 @@ export async function runSandboxedQuery(
     clearTimeout(timer)
     timer = undefined
 
-    // Deduplicated (`a`, `a:1`) to match getRowObjectsJson's row keys — the
+    // Deduplicated (`a`, `a:1`) to match rowObjectsJson's row keys — the
     // raw names would repeat duplicates and point consumers at missing keys.
     const columns = reader.deduplicatedColumnNames()
-    const all = reader.getRowObjectsJson() as Record<string, unknown>[]
+    const all = await rowObjectsJson(reader)
     let truncated = all.length > limits.maxRows
     let rows = truncated ? all.slice(0, limits.maxRows) : all
 

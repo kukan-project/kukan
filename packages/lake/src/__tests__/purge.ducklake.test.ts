@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
 import { keyedLoadSql } from '../keyed-load'
+import { rowObjectsJson } from '../json-rows'
 
 let dir: string
 let dataDir: string
@@ -41,7 +42,7 @@ beforeEach(async () => {
   session = {
     catalog: 'lake',
     run: async (sql) => void (await conn.run(sql)),
-    rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
+    rows: async (sql) => (await rowObjectsJson(await conn.runAndReadAll(sql))) as LakeRow[],
     interrupt: () => conn.interrupt(),
     close: async () => conn.disconnectSync(),
   }

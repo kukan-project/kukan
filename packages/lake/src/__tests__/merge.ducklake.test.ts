@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
 import { keyedUpsertSql, keyedDeleteSql, type KeyedLoadShape } from '../keyed-load'
+import { rowObjectsJson } from '../json-rows'
 
 let dir: string
 let conn: DuckDBConnection
@@ -56,7 +57,7 @@ beforeEach(async () => {
   session = {
     catalog: 'lake',
     run: async (sql) => void (await conn.run(sql)),
-    rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
+    rows: async (sql) => (await rowObjectsJson(await conn.runAndReadAll(sql))) as LakeRow[],
     interrupt: () => conn.interrupt(),
     close: async () => conn.disconnectSync(),
   }
@@ -549,7 +550,7 @@ describe('MERGE INTO on DuckLake', () => {
                               AND a.name IS DISTINCT FROM b.name) AS changed
         FROM (SELECT * FROM lake.t AT (VERSION => ${v1})) a
         FULL OUTER JOIN (SELECT * FROM lake.t AT (VERSION => ${v3})) b ON a.id = b.id`)
-    expect(net).toEqual({ added: '0', removed: '0', changed: '0' })
+    expect(net).toEqual({ added: 0, removed: 0, changed: 0 })
   })
 
   it('counts the starting snapshot as part of the range', async () => {

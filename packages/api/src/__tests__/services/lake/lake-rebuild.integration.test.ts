@@ -262,7 +262,7 @@ describe('rebuildResourceLake', () => {
          WHERE name = 'secret'`
       )
     )
-    expect(leaked[0].n).toBe('0')
+    expect(leaked[0].n).toBe(0)
 
     const [v1, v3] = outcome.loaded
     const diff = await withLakeCatalogReader(lake, store, { catalogKey: key }, (session) =>
@@ -927,7 +927,7 @@ describe('a purge of a tabular version (ADR-067 §4)', () => {
          WHERE name = 'secret'`
       )
     )
-    expect(leaked[0].n).toBe('0')
+    expect(leaked[0].n).toBe(0)
     expect(
       await new VersionDiffService(db, lake, store, noQueue).diff(resourceId, 3, 1)
     ).toMatchObject({

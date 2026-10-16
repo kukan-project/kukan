@@ -22,6 +22,7 @@ import type { LakeRow, LakeSession } from '../connection'
 import { ingestParquetVersion, keyFault } from '../ingest'
 import { diffVersions } from '../diff'
 import { describeColumns } from '../columns'
+import { rowObjectsJson } from '../json-rows'
 
 let dir: string
 let conn: DuckDBConnection
@@ -41,7 +42,7 @@ beforeEach(async () => {
   session = {
     catalog: 'lake',
     run: async (sql) => void (await conn.run(sql)),
-    rows: async (sql) => (await conn.runAndReadAll(sql)).getRowObjectsJson() as LakeRow[],
+    rows: async (sql) => (await rowObjectsJson(await conn.runAndReadAll(sql))) as LakeRow[],
     interrupt: () => conn.interrupt(),
     close: async () => conn.disconnectSync(),
   }

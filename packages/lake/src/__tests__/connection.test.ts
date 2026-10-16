@@ -15,6 +15,9 @@ let failWith: (instanceIndex: number, sql: string) => Error | undefined
 let refuseConnect: (instanceIndex: number, nth: number) => boolean
 
 vi.mock('@duckdb/node-api', () => ({
+  // What `rowObjectsJson` imports; the stub's reader ignores the converter
+  DuckDBTypeId: {},
+  JsonDuckDBValueConverter: () => null,
   DuckDBInstance: {
     create: async (_path: string, options: Record<string, string>) => {
       const index = instances.length
@@ -37,7 +40,7 @@ vi.mock('@duckdb/node-api', () => ({
               ran.push(sql)
               const err = failWith(index, sql)
               if (err) throw err
-              return { getRowObjectsJson: () => [{ value: '0' }] }
+              return { convertRowObjects: () => [{ value: '0' }] }
             },
             disconnectSync: () => {},
             interrupt: () => {},
