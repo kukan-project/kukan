@@ -13,7 +13,12 @@ import { Readable, Transform } from 'node:stream'
 import { PayloadTooLargeError, ValidationError } from '@kukan/shared'
 
 export interface MultipartFile {
-  filename: string
+  /**
+   * As busboy reduced it: the base name, so `''` for one like `dir/` or `..`,
+   * and `undefined` when the part is a file only by its
+   * `application/octet-stream` type and names none.
+   */
+  filename: string | undefined
   contentType: string
   /** The file's bytes as they arrive. The consumer has to read them to the end. */
   stream: Readable
@@ -143,7 +148,10 @@ export async function receiveMultipartFile<T>(
       stream.pipe(counted)
 
       taken = use({ filename: info.filename, contentType: info.mimeType, stream: counted }).then(
-        (result) => ({ result, size })
+        (result) => ({
+          result,
+          size,
+        })
       )
       taken.catch(fail)
     })

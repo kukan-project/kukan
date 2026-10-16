@@ -803,15 +803,21 @@ resourcesRouter.post('/:id/upload', async (c) => {
     c.req.raw,
     { field: 'file', maxFileSize: MAX_UPLOAD_SIZE, limitMessage: UPLOAD_TOO_LARGE },
     async (file) => {
+      // The rule upload-url holds the name to. Refused before the stream is
+      // read, which the helper turns into closing the body.
+      const filename = uploadUrlSchema.shape.filename.safeParse(file.filename)
+      if (!filename.success) {
+        throw new ValidationError('The file part needs a filename of 1 to 500 characters')
+      }
       const contentType = file.contentType || 'application/octet-stream'
       const pendingKey = await resourceService.prepareForUpload(
         id,
-        { filename: file.filename, contentType },
+        { filename: filename.data, contentType },
         existing
       )
       await storage.upload(pendingKey, file.stream, {
         contentType,
-        originalFilename: file.filename,
+        originalFilename: filename.data,
       })
       return pendingKey
     }

@@ -147,6 +147,29 @@ describe('receiveMultipartFile', () => {
     expect(use).not.toHaveBeenCalled()
   })
 
+  it('hands over a file part that carries no filename as undefined', async () => {
+    // busboy treats an `application/octet-stream` part as a file whether or
+    // not its disposition names one. Whether that will do is the caller's.
+    const boundary = 'n0name'
+    const request = new Request('http://test/upload', {
+      method: 'POST',
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      body:
+        `--${boundary}\r\n` +
+        'Content-Disposition: form-data; name="file"\r\n' +
+        'Content-Type: application/octet-stream\r\n\r\n' +
+        'a,b\r\n' +
+        `--${boundary}--\r\n`,
+    })
+
+    const { result } = await receiveMultipartFile(request, opts, async (file) => ({
+      filename: file.filename,
+      body: (await drain(file)).toString(),
+    }))
+
+    expect(result).toEqual({ filename: undefined, body: 'a,b' })
+  })
+
   it('rejects a body that is not multipart', async () => {
     const request = new Request('http://test/upload', {
       method: 'POST',

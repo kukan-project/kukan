@@ -1556,6 +1556,38 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(400)
     })
 
+    // busboy hands over an `application/octet-stream` part with no filename
+    // as a file, and reduces a name to its base, which is '' for these.
+    it.each([
+      ['no filename', ''],
+      ['a directory', '; filename="dir/"'],
+      ['a parent reference', '; filename=".."'],
+      ['a name over 500 characters', `; filename="${'a'.repeat(501)}.csv"`],
+    ])('should reject a file part with %s', async (_, disposition) => {
+      const pkg = await createPackage(`upload-badname-${disposition.length}-pkg`)
+      const resource = await createResource(pkg.id)
+      const boundary = 'badname'
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/upload`, {
+        method: 'POST',
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+        body:
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="file"${disposition}\r\n` +
+          'Content-Type: application/octet-stream\r\n\r\n' +
+          'a,b\r\n' +
+          `--${boundary}--\r\n`,
+      })
+      expect(res.status).toBe(400)
+
+      // Refused before an upload was prepared for it.
+      const [row] = await db
+        .select({ pendingStorageKey: resourceTable.pendingStorageKey })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row.pendingStorageKey).toBeNull()
+    })
+
     it('should reject unauthenticated requests', async () => {
       const pkg = await createPackage('upload-unauth-pkg')
       const resource = await createResource(pkg.id)
