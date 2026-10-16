@@ -7,11 +7,13 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DEFAULT_LOCALE, LOCALE_HEADER, SUPPORTED_LOCALES } from '@kukan/shared'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
 /**
- * Returns the CF Function source with ALLOWED / BASIC_AUTH substituted in.
+ * Returns the CF Function source with ALLOWED / BASIC_AUTH and the locale
+ * constants substituted in.
  * Basic credentials are base64-encoded here because CloudFront Functions have no
  * btoa/Buffer at runtime; the full `Basic <base64>` header is injected so the
  * function compares without a per-request concat.
@@ -21,6 +23,9 @@ export function loadViewerRequestCode(
   basicAuth?: { username: string; password: string }
 ): string {
   let src = readFileSync(join(here, 'viewer-request.js'), 'utf-8')
+    .replace('var LOCALES = []', `var LOCALES = ${JSON.stringify(SUPPORTED_LOCALES)}`)
+    .replace("var DEFAULT_LOCALE = ''", `var DEFAULT_LOCALE = ${JSON.stringify(DEFAULT_LOCALE)}`)
+    .replace("var LOCALE_HEADER = ''", `var LOCALE_HEADER = ${JSON.stringify(LOCALE_HEADER)}`)
   if (allowedIpRanges) {
     src = src.replace('var ALLOWED = []', `var ALLOWED = ${JSON.stringify(allowedIpRanges)}`)
   }

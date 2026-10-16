@@ -1,6 +1,6 @@
 import { cookies, headers } from 'next/headers'
 import { getRequestConfig } from 'next-intl/server'
-import { timeZoneSchema } from '@kukan/shared'
+import { LOCALE_HEADER, timeZoneSchema } from '@kukan/shared'
 
 // Barrel import so the @/brand alias resolves the active brand (ADR-042).
 import { messages as BRAND_MESSAGES } from '@/brand/messages'
@@ -31,14 +31,18 @@ function parseAcceptLanguage(header: string): SupportedLocale | undefined {
 const TIME_ZONE = timeZoneSchema.parse(process.env.TIME_ZONE)
 
 export default getRequestConfig(async () => {
-  const cookieStore = await cookies()
-  const cookieLocale = cookieStore.get('NEXT_LOCALE')?.value
+  const headerStore = await headers()
+  // Behind CloudFront the edge has already chosen, and the cache key varies on its choice
+  const edgeLocale = headerStore.get(LOCALE_HEADER)
+  const cookieLocale = (await cookies()).get('NEXT_LOCALE')?.value
 
   let locale: SupportedLocale = DEFAULT_LOCALE
-  if (cookieLocale && isSupportedLocale(cookieLocale)) {
+  if (edgeLocale && isSupportedLocale(edgeLocale)) {
+    locale = edgeLocale
+  } else if (cookieLocale && isSupportedLocale(cookieLocale)) {
     locale = cookieLocale
   } else {
-    const acceptLang = (await headers()).get('accept-language')
+    const acceptLang = headerStore.get('accept-language')
     if (acceptLang) {
       locale = parseAcceptLanguage(acceptLang) ?? DEFAULT_LOCALE
     }

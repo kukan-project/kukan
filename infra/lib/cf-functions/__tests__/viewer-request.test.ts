@@ -26,14 +26,14 @@ function makeHandler(
 
 function event(
   ip: string,
-  opts: { auth?: string; cookies?: Record<string, unknown> } = {}
+  opts: { auth?: string; cookies?: Record<string, unknown>; headers?: Record<string, string> } = {}
 ): unknown {
+  const headers: Record<string, { value: string }> = {}
+  for (const [k, v] of Object.entries(opts.headers ?? {})) headers[k] = { value: v }
+  if (opts.auth) headers.authorization = { value: opts.auth }
   return {
     viewer: { ip },
-    request: {
-      cookies: opts.cookies ?? {},
-      headers: opts.auth ? { authorization: { value: opts.auth } } : {},
-    },
+    request: { cookies: opts.cookies ?? {}, headers },
   }
 }
 
@@ -120,6 +120,38 @@ describe('viewer-request access control', () => {
     it('leaves requests without a session cookie untouched', () => {
       const r = h(event('8.8.8.8', { cookies: { other: { value: 'x' } } }))
       expect(r.headers?.['x-cache-bypass']).toBeUndefined()
+    })
+  })
+
+  describe('locale header', () => {
+    const h = makeHandler()
+    const locale = (opts: Parameters<typeof event>[1]) =>
+      h(event('8.8.8.8', opts)).headers?.['x-kukan-locale']?.value
+
+    it('takes the NEXT_LOCALE cookie first', () => {
+      expect(
+        locale({ cookies: { NEXT_LOCALE: { value: 'ja' } }, headers: { 'accept-language': 'en' } })
+      ).toBe('ja')
+    })
+    it('ignores an unsupported cookie value and falls through to Accept-Language', () => {
+      expect(
+        locale({ cookies: { NEXT_LOCALE: { value: 'fr' } }, headers: { 'accept-language': 'ja' } })
+      ).toBe('ja')
+    })
+    it('picks the highest-q supported tag, matching on the primary subtag', () => {
+      expect(locale({ headers: { 'accept-language': 'fr;q=0.9, en-US;q=0.5, ja-JP;q=0.8' } })).toBe(
+        'ja'
+      )
+    })
+    it('keeps header order between equal q values', () => {
+      expect(locale({ headers: { 'accept-language': 'ja, en' } })).toBe('ja')
+    })
+    it('falls back to the default locale', () => {
+      expect(locale({ headers: { 'accept-language': 'fr, de' } })).toBe('en')
+      expect(locale({})).toBe('en')
+    })
+    it('overwrites a viewer-sent value', () => {
+      expect(locale({ headers: { 'x-kukan-locale': 'fr', 'accept-language': 'ja' } })).toBe('ja')
     })
   })
 })

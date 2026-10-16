@@ -47,6 +47,9 @@ export * from './ai-usage'
 // Example-query chips under the search box (ADR-036)
 export * from './search-example-queries'
 
+// UI locales
+export * from './locales'
+
 // Site-wide custom metadata (ADR-064)
 export * from './site-metadata'
 

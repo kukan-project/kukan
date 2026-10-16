@@ -2169,6 +2169,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "HeaderBehavior": "whitelist",
               "Headers": [
                 "x-cache-bypass",
+                "x-kukan-locale",
               ],
             },
             "QueryStringsConfig": {
@@ -2210,11 +2211,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
 // 2. Cache bypass: inject unique header when session cookie is present.
+// 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 //
 // ALLOWED (IP ranges) and BASIC_AUTH (the full expected \`Basic <base64>\` header) are
 // injected by CDK at synth time (see constructs/cdn.ts). Both empty → access control skipped.
+// LOCALES / DEFAULT_LOCALE / LOCALE_HEADER are always injected from @kukan/shared.
 var ALLOWED = []
 var BASIC_AUTH = ''
+var LOCALES = ["ja","en"]
+var DEFAULT_LOCALE = "en"
+var LOCALE_HEADER = "x-kukan-locale"
 
 function handler(event) {
   // --- Access control: IP allowlist OR Basic auth ---
@@ -2263,7 +2269,37 @@ function handler(event) {
       break
     }
   }
+
+  // --- Locale ---
+  // Set unconditionally so a viewer-sent value never reaches the origin unchecked.
+  // Keying on the resolved locale rather than the raw cookie and Accept-Language
+  // keeps the key to one entry per locale instead of one per browser's header.
+  req.headers[LOCALE_HEADER] = { value: resolveLocale(req) }
   return req
+}
+
+// Same order as the web app's request config: NEXT_LOCALE cookie, then
+// Accept-Language by q, then the default.
+function resolveLocale(req) {
+  var c = req.cookies.NEXT_LOCALE
+  if (c && LOCALES.indexOf(c.value) >= 0) return c.value
+  var h = req.headers['accept-language']
+  if (h) {
+    var tags = h.value.split(',').map(function (part, i) {
+      var p = part.trim().split(';q=')
+      return { lang: p[0].trim().toLowerCase(), q: p[1] ? parseFloat(p[1]) : 1, i: i }
+    })
+    tags.sort(function (a, b) {
+      return b.q - a.q || a.i - b.i
+    })
+    for (var j = 0; j < tags.length; j++) {
+      var lang = tags[j].lang
+      if (LOCALES.indexOf(lang) >= 0) return lang
+      var prefix = lang.split('-')[0]
+      if (LOCALES.indexOf(prefix) >= 0) return prefix
+    }
+  }
+  return DEFAULT_LOCALE
 }
 
 // --- CIDR matching (IPv4 + IPv6) ---
@@ -4900,6 +4936,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "HeaderBehavior": "whitelist",
               "Headers": [
                 "x-cache-bypass",
+                "x-kukan-locale",
               ],
             },
             "QueryStringsConfig": {
@@ -4941,11 +4978,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
 // 2. Cache bypass: inject unique header when session cookie is present.
+// 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 //
 // ALLOWED (IP ranges) and BASIC_AUTH (the full expected \`Basic <base64>\` header) are
 // injected by CDK at synth time (see constructs/cdn.ts). Both empty → access control skipped.
+// LOCALES / DEFAULT_LOCALE / LOCALE_HEADER are always injected from @kukan/shared.
 var ALLOWED = []
 var BASIC_AUTH = ''
+var LOCALES = ["ja","en"]
+var DEFAULT_LOCALE = "en"
+var LOCALE_HEADER = "x-kukan-locale"
 
 function handler(event) {
   // --- Access control: IP allowlist OR Basic auth ---
@@ -4994,7 +5036,37 @@ function handler(event) {
       break
     }
   }
+
+  // --- Locale ---
+  // Set unconditionally so a viewer-sent value never reaches the origin unchecked.
+  // Keying on the resolved locale rather than the raw cookie and Accept-Language
+  // keeps the key to one entry per locale instead of one per browser's header.
+  req.headers[LOCALE_HEADER] = { value: resolveLocale(req) }
   return req
+}
+
+// Same order as the web app's request config: NEXT_LOCALE cookie, then
+// Accept-Language by q, then the default.
+function resolveLocale(req) {
+  var c = req.cookies.NEXT_LOCALE
+  if (c && LOCALES.indexOf(c.value) >= 0) return c.value
+  var h = req.headers['accept-language']
+  if (h) {
+    var tags = h.value.split(',').map(function (part, i) {
+      var p = part.trim().split(';q=')
+      return { lang: p[0].trim().toLowerCase(), q: p[1] ? parseFloat(p[1]) : 1, i: i }
+    })
+    tags.sort(function (a, b) {
+      return b.q - a.q || a.i - b.i
+    })
+    for (var j = 0; j < tags.length; j++) {
+      var lang = tags[j].lang
+      if (LOCALES.indexOf(lang) >= 0) return lang
+      var prefix = lang.split('-')[0]
+      if (LOCALES.indexOf(prefix) >= 0) return prefix
+    }
+  }
+  return DEFAULT_LOCALE
 }
 
 // --- CIDR matching (IPv4 + IPv6) ---

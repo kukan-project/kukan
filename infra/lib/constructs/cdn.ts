@@ -2,15 +2,16 @@
  * KUKAN CDN Construct
  * CloudFront distribution in front of the given origin (a VPC origin to the
  * site's own or the shared internal ALB — composeSite), cookie-based cache
- * bypass, optional edge gate (IP allowlist and/or Basic auth, via CF Function),
- * WAF integration, and access logs (AccessLogConstruct).
+ * bypass, HTML cache keyed on the resolved locale, optional edge gate (IP
+ * allowlist and/or Basic auth, via CF Function), WAF integration, and access
+ * logs (AccessLogConstruct).
  */
 
 import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import { Construct } from 'constructs'
-import { PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
+import { LOCALE_HEADER, PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { loadViewerRequestCode } from '../cf-functions/inject.js'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
@@ -48,12 +49,16 @@ export class CdnConstruct extends Construct {
     })
 
     // --- Cache Policy: HTML pages (TTL 60–300s, bypass via header) ---
+    // The page is rendered in the viewer's locale, so the key varies on the
+    // locale the viewer-request function resolved. Without it the next viewer
+    // gets whichever language the last cache miss was rendered in — and minTtl
+    // holds even a `no-store` response for a minute.
     const htmlCachePolicy = new cloudfront.CachePolicy(this, 'HtmlCachePolicy', {
       cachePolicyName: resourceName(this, 'html'),
       defaultTtl: cdk.Duration.seconds(60),
       minTtl: cdk.Duration.seconds(60),
       maxTtl: cdk.Duration.seconds(300),
-      headerBehavior: cloudfront.CacheHeaderBehavior.allowList('x-cache-bypass'),
+      headerBehavior: cloudfront.CacheHeaderBehavior.allowList('x-cache-bypass', LOCALE_HEADER),
       queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       enableAcceptEncodingGzip: true,
