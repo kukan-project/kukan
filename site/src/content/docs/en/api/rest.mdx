@@ -304,7 +304,9 @@ returned with `queryable: false`. `primaryKey` lists the column names of the
 resource's settled primary key (composite keys in their chosen order), or is
 `null` when none is set. `type` is one of `integer` / `float` / `boolean` / `string` /
 `date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are
-decimal strings. `columnRoles` is each column's role (`measure` / `numeric-text` / `identifier` /
+always decimal strings, whatever their size, while float min/max are numbers (the type follows the
+column's `type` alone, so a range past 2^53 keeps its digits; rows from `/query` differ, with integers
+below 2^53 as numbers). `columnRoles` is each column's role (`measure` / `numeric-text` / `identifier` /
 `free-text` / `name` / `category` / `empty`), at the same position as the column in `schema`, or
 `null` for a table interpreted before roles. Why the rules decided a role is not returned here — `GET /resources/{id}/column-roles` (editors only) reads it.
 

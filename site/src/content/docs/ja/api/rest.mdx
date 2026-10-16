@@ -289,7 +289,8 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 内容差し替え後にプレビューが未再生成）は、`queryable: false` のまま `schema` を返します。
 `primaryKey` はリソースに確定された主キーの列名リスト（複合キーは指定順)で、未設定なら `null` です。
 `type` は `integer` / `float` / `boolean` / `string` / `date` / `timestamp`。`stats` は数値列のみで、
-整数の min/max は十進文字列です。
+整数の min/max は値の大きさによらず常に十進文字列、小数の min/max は数値です（範囲が 2^53 を超えても桁を
+失わないように、型を列の `type` だけで決めています。`/query` の行の値は、2^53 未満の整数が数値になる点が違います）。
 `columnRoles` は `schema` の列と同じ位置に並ぶ各列の役割（`measure` / `numeric-text` / `identifier` /
 `free-text` / `name` / `category` / `empty`）で、役割を判定する前に解釈された表では `null` です。
 規則がそう判定した根拠は返しません — 根拠は
