@@ -31,7 +31,7 @@
     "encoding-japanese": "^2.4.0",
     "lru-cache": "~11.5.3",
     "pino": "^10.4.0",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/encoding-japanese": "^2.4.0",
