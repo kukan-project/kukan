@@ -236,7 +236,11 @@ function devWakeUrl(nodeEnv: Env['NODE_ENV']): string | undefined {
 }
 
 function urlFrom(p: z.infer<typeof postgresSchema>): string {
-  return `postgresql://${p.POSTGRES_USER}:${p.POSTGRES_PASSWORD}@${p.POSTGRES_HOST}:${p.POSTGRES_PORT}/${p.POSTGRES_DB}`
+  // Encoded, or a `#`, `@` or `/` in a password moves where the URL says the
+  // host is; pg decodes both back
+  const user = encodeURIComponent(p.POSTGRES_USER)
+  const password = encodeURIComponent(p.POSTGRES_PASSWORD)
+  return `postgresql://${user}:${password}@${p.POSTGRES_HOST}:${p.POSTGRES_PORT}/${p.POSTGRES_DB}`
 }
 
 /**

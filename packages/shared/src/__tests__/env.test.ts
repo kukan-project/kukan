@@ -253,6 +253,18 @@ describe('loadEnv', () => {
     expect(databaseUrl()).toBe('postgresql://kukan:kukan@db.example.com:5432/kukan')
   })
 
+  it('encodes a user and password the URL would misread, as pg decodes them', () => {
+    process.env.POSTGRES_HOST = 'db.example.com'
+    process.env.POSTGRES_USER = 'kukan@site'
+    process.env.POSTGRES_PASSWORD = 'p#ss:w@rd/?% ='
+
+    const url = new URL(databaseUrl())
+    expect(url.hostname).toBe('db.example.com')
+    expect(url.pathname).toBe('/kukan')
+    expect(decodeURIComponent(url.username)).toBe('kukan@site')
+    expect(decodeURIComponent(url.password)).toBe('p#ss:w@rd/?% =')
+  })
+
   it('should throw on invalid environment', () => {
     delete process.env.BETTER_AUTH_SECRET
 
