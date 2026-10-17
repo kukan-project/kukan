@@ -5,13 +5,13 @@
 
 # ---- Base (what the images run on: upgraded OS) ----
 # Pinned by digest for a reproducible, tamper-evident base (Scorecard
-# Pinned-Dependencies). The digest below is node 24.21.0 on alpine 3.24.2.
+# Pinned-Dependencies). The digest below is node 24.22.0 on alpine 3.24.2.
 # Dependabot (docker ecosystem) is configured to bump it as the node:24-alpine
 # tag moves, but has not once for this registry: compare `node -v` here with
 # the tag's by hand until it does. `apk upgrade` covers the OS packages
 # meanwhile; nothing covers node itself, which a scan of the image does not see.
 # The other places that name the Node version are listed in docs/node-version.md.
-FROM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS base
+FROM public.ecr.aws/docker/library/node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
 RUN apk upgrade --no-cache
 WORKDIR /app
 
@@ -20,7 +20,7 @@ WORKDIR /app
 # natively: an arm64 image built on x86_64 would otherwise do them under QEMU.
 # Only the stages the image is made of run on the target platform. The same
 # image as `base`: bump the two digests together.
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build-base
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build-base
 WORKDIR /app
 
 # ---- Dependencies ----
