@@ -286,7 +286,8 @@ export async function openLakeCatalogDraft(
       }
       await suspend()
       for (const suffix of ['-journal', '-wal']) {
-        if (existsSync(file + suffix)) {
+        // A temp file at run time: traced, the web's whole project would ship with it
+        if (existsSync(/*turbopackIgnore: true*/ file + suffix)) {
           throw new Error(`Catalog left a ${suffix.slice(1)} behind; refusing to publish it`)
         }
       }
