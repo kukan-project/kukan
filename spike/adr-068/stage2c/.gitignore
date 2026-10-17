@@ -1,0 +1,5 @@
+dist/
+web.zip
+.auth-secret
+results/
+.admin

@@ -1,0 +1,204 @@
+# ADR-068 stage 2b: the network §Decision 2 proposes, in a VPC of its own.
+# A dual-stack VPC whose public subnets leave over IPv6 through the internet
+# gateway (no NAT), a private PostgreSQL, an S3 gateway endpoint, a Bedrock
+# Runtime interface endpoint in one AZ, and a DualStack egress connector.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ADR-068 stage 2b probe network (deletable as a whole)
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.68.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: kukan-probe }]
+
+  VpcIpv6:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref Vpc
+      AmazonProvidedIpv6CidrBlock: true
+
+  Igw:
+    Type: AWS::EC2::InternetGateway
+  IgwAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: { VpcId: !Ref Vpc, InternetGatewayId: !Ref Igw }
+
+  PublicA:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.68.0.0/24
+      Ipv6CidrBlock: !Select [0, !Cidr [!Select [0, !GetAtt Vpc.Ipv6CidrBlocks], 4, 64]]
+  PublicC:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.68.1.0/24
+      Ipv6CidrBlock: !Select [1, !Cidr [!Select [0, !GetAtt Vpc.Ipv6CidrBlocks], 4, 64]]
+  IsolatedA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.68.10.0/24
+  IsolatedC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.68.11.0/24
+
+  # As KUKAN's public subnets, plus ::/0. The connector's interfaces get no
+  # public IPv4, so the IPv4 default route does not take them out.
+  PublicRoutes:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  PublicV4Default:
+    Type: AWS::EC2::Route
+    DependsOn: IgwAttach
+    Properties:
+      { RouteTableId: !Ref PublicRoutes, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref Igw }
+  PublicV6Default:
+    Type: AWS::EC2::Route
+    DependsOn: IgwAttach
+    Properties:
+      { RouteTableId: !Ref PublicRoutes, DestinationIpv6CidrBlock: '::/0', GatewayId: !Ref Igw }
+  PublicAAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicA, RouteTableId: !Ref PublicRoutes }
+  PublicCAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicC, RouteTableId: !Ref PublicRoutes }
+  IsolatedRoutes:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  IsolatedAAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref IsolatedA, RouteTableId: !Ref IsolatedRoutes }
+  IsolatedCAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref IsolatedC, RouteTableId: !Ref IsolatedRoutes }
+
+  S3Gateway:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PublicRoutes]
+
+  ConnectorSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: kukan-probe connector (outbound only)
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - { IpProtocol: '-1', CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: '-1', CidrIpv6: '::/0' }
+  DbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: kukan-probe db
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref ConnectorSg }
+  EndpointSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: kukan-probe interface endpoints
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, SourceSecurityGroupId: !Ref ConnectorSg }
+
+  BedrockRuntime:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-runtime
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PublicA]
+      SecurityGroupIds: [!Ref EndpointSg]
+
+  DbSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: kukan-probe isolated
+      SubnetIds: [!Ref IsolatedA, !Ref IsolatedC]
+  # Generated without the characters KUKAN's own DB secrets leave out (site-database.ts):
+  # the web builds DATABASE_URL from the password as is (packages/shared/src/env.ts)
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"kukan"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: " '\"\\/@%&+:;?#[]()<>{}|"
+  Db:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Engine: postgres
+      EngineVersion: '16.15'
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: '20'
+      StorageType: gp3
+      DBName: kukan
+      MasterUsername: kukan
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DbSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DbSubnets
+      VPCSecurityGroups: [!Ref DbSg]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 0
+      DeletionProtection: false
+
+  # The web's object store for stage 2c (cleanup.sh empties it before the stack goes)
+  Data:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ConnectorOperator:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - { Effect: Allow, Principal: { Service: lambda.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/AWSLambdaNetworkConnectorOperatorPolicy]
+  Connector:
+    Type: AWS::Lambda::NetworkConnector
+    Properties:
+      Name: kukan-probe
+      OperatorRole: !GetAtt ConnectorOperator.Arn
+      Configuration:
+        VpcEgressConfiguration:
+          SubnetIds: [!Ref PublicA, !Ref PublicC]
+          SecurityGroupIds: [!Ref ConnectorSg]
+          NetworkProtocol: DualStack
+          AssociatedComputeResourceTypes: [WebFunction]
+      Tags: [{ Key: project, Value: kukan-probe }]
+
+Outputs:
+  ConnectorVersionArn:
+    Value: !GetAtt Connector.LatestVersionArn
+  DbHost:
+    Value: !GetAtt Db.Endpoint.Address
+  DbSecretArn:
+    Value: !Ref DbSecret
+  DataBucket:
+    Value: !Ref Data

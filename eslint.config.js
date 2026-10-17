@@ -61,6 +61,25 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist', 'node_modules', '.turbo', 'drizzle'],
+    // Throwaway measurement harnesses run by hand under Node, whose output is
+    // stdout. No package lints them, and no tsconfig types their globals.
+    files: ['spike/**'],
+    rules: {
+      'no-console': 'off',
+      'no-undef': 'off',
+    },
+  },
+  {
+    ignores: [
+      'dist',
+      'node_modules',
+      '.turbo',
+      'drizzle',
+      // A spike's vendored bundles and what its runs produce
+      'spike/**/vendor/**',
+      'spike/**/dist/**',
+      'spike/**/.cache/**',
+      'spike/**/results/**',
+    ],
   }
 )
