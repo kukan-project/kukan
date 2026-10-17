@@ -3,7 +3,7 @@
 #   docker build --target web -t kukan-web .
 #   docker build --target worker -t kukan-worker .
 
-# ---- Base (shared by all targets: upgraded OS) ----
+# ---- Base (what the images run on: upgraded OS) ----
 # Pinned by digest for a reproducible, tamper-evident base (Scorecard
 # Pinned-Dependencies). The digest below is node 24.21.0 on alpine 3.24.2.
 # Dependabot (docker ecosystem) is configured to bump it as the node:24-alpine
@@ -15,15 +15,24 @@ FROM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e
 RUN apk upgrade --no-cache
 WORKDIR /app
 
+# ---- Build base (the machine's own platform) ----
+# Install and build produce JavaScript, the same on every platform, so they run
+# natively: an arm64 image built on x86_64 would otherwise do them under QEMU.
+# Only the stages the image is made of run on the target platform. The same
+# image as `base`: bump the two digests together.
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build-base
+WORKDIR /app
+
 # ---- Dependencies ----
-# pnpm is installed here rather than in `base`, which every stage derives from.
+# pnpm is installed here rather than in `base`, which the images derive from.
 # It unpacks ~21 MB that only the build stages use, and a runtime stage built
 # on `base` carried it to production — with the node_modules pnpm brings (tar,
 # brace-expansion, ip-address), which scanners then report against an image
 # that never runs pnpm. A later `rm` would not have helped: the bytes stay in
 # the layer that wrote them. The script installs the version and hash that
 # `packageManager` names, without corepack (gone from Node 25 on).
-FROM base AS deps
+FROM build-base AS deps
+ARG TARGETARCH
 COPY package.json ./
 COPY scripts/install-pnpm.sh scripts/
 RUN sh scripts/install-pnpm.sh
@@ -40,7 +49,11 @@ COPY packages/adapters/storage/package.json packages/adapters/storage/
 COPY packages/adapters/ai/package.json packages/adapters/ai/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
-RUN pnpm install --frozen-lockfile
+# Native packages for the build tools (this machine) and for the image (the
+# target): pnpm otherwise installs only this machine's.
+RUN host=$(node -p process.arch) && target=$(echo "$TARGETARCH" | sed 's/^amd64$/x64/') \
+  && printf '\nsupportedArchitectures:\n  os: [linux]\n  libc: [musl]\n  cpu: [%s, %s]\n' "$host" "$target" >> pnpm-workspace.yaml \
+  && pnpm install --frozen-lockfile
 
 # ---- Build ----
 FROM deps AS build
@@ -50,6 +63,21 @@ ARG KUKAN_BRAND
 ENV KUKAN_BRAND=${KUKAN_BRAND}
 COPY . .
 RUN pnpm build --filter='!@kukan/site'
+
+# ---- Web files (the target's native binaries only) ----
+# The standalone output traces both platforms' bindings the deps stage
+# installed; keep the target's. Next.js traces the DuckDB .node addon but not
+# libduckdb.so (a dynamic dependency), so that is picked out here as well.
+FROM build AS web-files
+ARG TARGETARCH
+RUN target=$(echo "$TARGETARCH" | sed 's/^amd64$/x64/') \
+  && cd apps/web/.next/standalone/node_modules/.pnpm \
+  && for d in @duckdb+node-bindings-linux-*-musl@* @img+sharp-linuxmusl-*@* @img+sharp-libvips-linuxmusl-*@* \
+      node_modules/@duckdb/node-bindings-linux-*-musl node_modules/@img/sharp-linuxmusl-* node_modules/@img/sharp-libvips-linuxmusl-*; do \
+      case "$d" in *-"$target"-musl*|*linuxmusl-"$target"*) ;; *) rm -rf "$d" ;; esac; \
+    done \
+  && mkdir /app/duckdb-lib \
+  && cp /app/node_modules/.pnpm/@duckdb+node-bindings-linux-"$target"-musl@*/node_modules/@duckdb/node-bindings-linux-"$target"-musl/libduckdb.so /app/duckdb-lib/
 
 # ---- Web (Next.js standalone) ----
 FROM base AS web
@@ -70,13 +98,12 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && addgroup -S appgroup && adduser -S appuser -G appgroup && chown appuser:appgroup /app
-COPY --chown=appuser:appgroup --from=build /app/apps/web/.next/standalone ./
+COPY --chown=appuser:appgroup --from=web-files /app/apps/web/.next/standalone ./
 COPY --chown=appuser:appgroup --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --chown=appuser:appgroup --from=build /app/apps/web/public ./apps/web/public
-# DuckDB native bindings for server-side resource queries (ADR-032 Part B).
-# Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
-# Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
-COPY --chown=appuser:appgroup --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
+# DuckDB native bindings for server-side resource queries (ADR-032 Part B):
+# libduckdb.so sits in a dedicated directory LD_LIBRARY_PATH points at.
+COPY --chown=appuser:appgroup --from=web-files /app/duckdb-lib /app/duckdb-lib/
 # The process a resource query runs in (ADR-032). Next bundles @kukan/api from
 # source, so the child's own file is not in the standalone output. It sits
 # under .pnpm because that is where @duckdb/node-api, its one import, resolves.
@@ -110,17 +137,18 @@ CMD ["/bin/sh", "-c", "HOSTNAME=0.0.0.0 node apps/web/server.js"]
 # DuckLake (ADR-043 layer 2) throws on the first ingest, and sharp's
 # (@img/sharp-* — the module plus libvips), without which the worker throws on
 # boot because summarize.ts imports sharp at the top level (ADR-053). The deps
-# stage installed them for this image's own platform, so copy those back in
-# rather than widening the flag.
+# stage installed them for this machine and for the target, so copy the
+# target's back in rather than widening the flag.
 FROM build AS worker-deps
-# The globs copy whichever binaries the deps stage resolved for this image's
-# platform, so an arm64 build needs no change here.
-RUN pnpm --filter @kukan/worker deploy --prod --no-optional --legacy /app/worker-deploy \
+ARG TARGETARCH
+RUN target=$(echo "$TARGETARCH" | sed 's/^amd64$/x64/') \
+  && pnpm --filter @kukan/worker deploy --prod --no-optional --legacy /app/worker-deploy \
   && mkdir -p /app/worker-deploy/node_modules/.pnpm/node_modules/@duckdb \
-  && cp -RL /app/node_modules/.pnpm/node_modules/@duckdb/node-bindings-* \
+  && cp -RL /app/node_modules/.pnpm/node_modules/@duckdb/node-bindings-linux-"$target"-musl \
     /app/worker-deploy/node_modules/.pnpm/node_modules/@duckdb/ \
   && mkdir -p /app/worker-deploy/node_modules/.pnpm/node_modules/@img \
-  && cp -RL /app/node_modules/.pnpm/node_modules/@img/sharp-* \
+  && cp -RL /app/node_modules/.pnpm/node_modules/@img/sharp-linuxmusl-"$target" \
+    /app/node_modules/.pnpm/node_modules/@img/sharp-libvips-linuxmusl-"$target" \
     /app/worker-deploy/node_modules/.pnpm/node_modules/@img/
 
 # ---- Worker (tsup bundle — workspace packages are bundled, npm deps are external) ----
