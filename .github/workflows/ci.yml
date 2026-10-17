@@ -506,8 +506,30 @@ jobs:
           key: turbo-web-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-web-${{ runner.os }}-
 
+      # Kept for the next step; a turbo cache hit replays the log too
       - if: steps.changes.outputs.code == 'true'
-        run: pnpm build --filter=@kukan/web...
+        run: pnpm build --filter=@kukan/web... 2>&1 | tee "$RUNNER_TEMP/web-build.log"
+
+      # Turbopack copies into the standalone output what the server may read at
+      # run time. A filesystem path it cannot resolve at build time makes it
+      # trace the whole project instead, and the build still passes with only a
+      # warning: the web's sources, scripts and config files then ship in the
+      # image. A lake check did this for a release before anyone read the log.
+      # So the build fails on any Turbopack warning, and on anything in the
+      # standalone app directory beyond what the server needs, in case a
+      # future Next words the warning differently.
+      - name: Check the standalone output
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          if sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/web-build.log" | grep -E '^@kukan/web:build: +Warning: '; then
+            echo 'standalone check: Turbopack warned (above)'; exit 1
+          fi
+          extra=$(ls -A apps/web/.next/standalone/apps/web | grep -v -x -E '\.next|node_modules|package\.json|server\.js' || true)
+          if [ -n "$extra" ]; then
+            echo "standalone check: unexpected files in the standalone app directory:"
+            printf '%s\n' "$extra"; exit 1
+          fi
+          echo 'standalone check: no Turbopack warnings, nothing beyond the server'
 
       # A build that succeeds can still produce a server that cannot start —
       # Next 16.3.1's standalone output missed @swc/helpers' esm files and every
