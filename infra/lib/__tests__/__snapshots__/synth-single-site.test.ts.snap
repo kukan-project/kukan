@@ -775,6 +775,7 @@ function expandV6(addr) {
       "Properties": {
         "AllocatedStorage": "20",
         "BackupRetentionPeriod": 7,
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "CopyTagsToSnapshot": true,
         "DBInstanceClass": "db.t4g.micro",
         "DBInstanceIdentifier": "kukan-dev",
@@ -2144,7 +2145,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -2944,7 +2949,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -4403,6 +4412,7 @@ function expandV6(addr) {
         "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8",
       ],
       "Properties": {
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "DBClusterIdentifier": {
           "Ref": "DatabaseAuroraCluster35AE33F7",
         },
@@ -4489,6 +4499,7 @@ function expandV6(addr) {
         "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8",
       ],
       "Properties": {
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "DBClusterIdentifier": {
           "Ref": "DatabaseAuroraCluster35AE33F7",
         },
@@ -5825,7 +5836,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -6660,7 +6675,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -7954,6 +7973,7 @@ function expandV6(addr) {
       "Properties": {
         "AllocatedStorage": "20",
         "BackupRetentionPeriod": 7,
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "CopyTagsToSnapshot": true,
         "DBInstanceClass": "db.t4g.micro",
         "DBInstanceIdentifier": "kukan-dev",
@@ -9150,7 +9170,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -9829,7 +9853,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -11366,6 +11394,7 @@ function expandV6(addr) {
       "Properties": {
         "AllocatedStorage": "20",
         "BackupRetentionPeriod": 7,
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "CopyTagsToSnapshot": true,
         "DBInstanceClass": "db.t4g.micro",
         "DBInstanceIdentifier": "kukan-dev",
@@ -12781,7 +12810,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -13568,7 +13601,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -14983,6 +15020,7 @@ function expandV6(addr) {
         "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8",
       ],
       "Properties": {
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "DBClusterIdentifier": {
           "Ref": "DatabaseAuroraCluster35AE33F7",
         },
@@ -16281,7 +16319,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -17081,7 +17123,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",

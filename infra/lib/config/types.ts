@@ -10,6 +10,14 @@ export type DbEngine = 'rds' | 'aurora'
 /** CPU architecture the web and worker run on (Fargate) and their images are built for. */
 export type CpuArchitecture = 'x86_64' | 'arm64'
 
+/** RDS certificate authorities that can sign the database's server certificate. */
+export const RDS_CA_CERTIFICATES = [
+  'rds-ca-rsa2048-g1',
+  'rds-ca-rsa4096-g1',
+  'rds-ca-ecc384-g1',
+] as const
+export type RdsCaCertificate = (typeof RDS_CA_CERTIFICATES)[number]
+
 /** Bedrock embedding for semantic search (ADR-034). Presence enables it. */
 export interface BedrockConfig {
   /** Bedrock API region. Omit → the deployment region. */
@@ -112,6 +120,14 @@ export interface EnvironmentConfig {
    * Omit → arm64 (Graviton, about 20% less per vCPU and GB than x86_64).
    */
   cpuArchitecture?: CpuArchitecture
+  /**
+   * Certificate authority of the database's server certificate, which the web
+   * and worker verify against the RDS CA bundle in their images. Named rather
+   * than left to the account's default, which `modify-certificates` can change.
+   * Omit → rds-ca-rsa2048-g1, the one offered in every Region (the other two
+   * are not, e.g. in Mumbai or Zurich).
+   */
+  rdsCaCertificate?: RdsCaCertificate
   // --- Site-scoped fields, enableWaf through timeZone (ADR-041) ---
   // Legacy single-site placement, kept for compatibility: without `sites` they
   // apply to the environment's one site; with `sites` declared they are
@@ -291,6 +307,7 @@ export interface KukanConfig extends ScaleComputed {
   dbEngine: DbEngine
   enableOpenSearch: boolean
   cpuArchitecture: CpuArchitecture
+  rdsCaCertificate: RdsCaCertificate
   enableWaf: boolean
   allowedIpRanges?: string[]
   basicAuth?: { username: string; password: string }

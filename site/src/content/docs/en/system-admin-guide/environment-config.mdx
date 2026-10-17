@@ -64,23 +64,24 @@ customer-managed key (decided automatically), adding roughly $1 per month per ke
 Settings for the shared resources (database, OpenSearch, VPC, ECS cluster) and
 CI/CD.
 
-| Field                 | Type                           | Default                                          | Description                                                                                                                                                           |
-| --------------------- | ------------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `account`             | string                         | **required**                                     | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)                                                                        |
-| `region`              | string                         | `ap-northeast-1`                                 | Target region                                                                                                                                                         |
-| `scale`               | `small` \| `medium` \| `large` | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                                |
-| `dbEngine`            | `rds` \| `aurora`              | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                       |
-| `enableOpenSearch`    | boolean                        | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                        |
-| `cpuArchitecture`     | `arm64` \| `x86_64`            | `arm64`                                          | CPU of the web and worker tasks (Graviton by default). The images are built for it (see "CPU architecture" below)                                                     |
-| `bedrock`             | object \| `false`              | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                       |
-| `githubRepo`          | string                         | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                     |
-| `deployBranch`        | string                         | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                         |
-| `deployNotification`  | boolean                        | none                                             | Post deploy outcomes to Slack (pipeline mode only). The webhook URL goes into a secret the stack creates                                                              |
-| `overrides`           | deep-partial                   | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                                                                                                    |
-| `sites`               | SiteConfig[]                   | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine)                                                                       |
-| `deployConcurrency`   | number                         | `2`                                              | Sites deployed at once after the canary. Their simultaneous rolling updates count against the database connection budget; synth fails when it does not fit            |
-| `ecrImageRetention`   | number                         | `100`                                            | Images kept (newest first) in the CDK bootstrap ECR repository. Environments in one account share the repository, so give them the same value (synth fails otherwise) |
-| `cdnLogRetentionDays` | number                         | `90`                                             | Days CloudFront access logs are kept (applies to every site in the environment)                                                                                       |
+| Field                 | Type                                                             | Default                                          | Description                                                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `account`             | string                                                           | **required**                                     | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)                                                                        |
+| `region`              | string                                                           | `ap-northeast-1`                                 | Target region                                                                                                                                                         |
+| `scale`               | `small` \| `medium` \| `large`                                   | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                                |
+| `dbEngine`            | `rds` \| `aurora`                                                | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                       |
+| `enableOpenSearch`    | boolean                                                          | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                        |
+| `cpuArchitecture`     | `arm64` \| `x86_64`                                              | `arm64`                                          | CPU of the web and worker tasks (Graviton by default). The images are built for it (see "CPU architecture" below)                                                     |
+| `rdsCaCertificate`    | `rds-ca-rsa2048-g1` \| `rds-ca-rsa4096-g1` \| `rds-ca-ecc384-g1` | `rds-ca-rsa2048-g1`                              | CA that issues the database's server certificate, which the web and worker verify when they connect (see "Database certificate" below)                                |
+| `bedrock`             | object \| `false`                                                | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                       |
+| `githubRepo`          | string                                                           | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                     |
+| `deployBranch`        | string                                                           | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                         |
+| `deployNotification`  | boolean                                                          | none                                             | Post deploy outcomes to Slack (pipeline mode only). The webhook URL goes into a secret the stack creates                                                              |
+| `overrides`           | deep-partial                                                     | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                                                                                                    |
+| `sites`               | SiteConfig[]                                                     | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine)                                                                       |
+| `deployConcurrency`   | number                                                           | `2`                                              | Sites deployed at once after the canary. Their simultaneous rolling updates count against the database connection budget; synth fails when it does not fit            |
+| `ecrImageRetention`   | number                                                           | `100`                                            | Images kept (newest first) in the CDK bootstrap ECR repository. Environments in one account share the repository, so give them the same value (synth fails otherwise) |
+| `cdnLogRetentionDays` | number                                                           | `90`                                             | Days CloudFront access logs are kept (applies to every site in the environment)                                                                                       |
 
 ### `bedrock` fields
 
@@ -105,6 +106,22 @@ override it.
   Docker Desktop (Windows / Mac) needs nothing more. On Linux with Docker Engine alone, run
   `docker run --privileged --rm tonistiigi/binfmt --install arm64` once
 - An existing environment switches over in an ordinary deploy (the tasks are replaced)
+
+### Database certificate
+
+The web and worker verify the server certificate on their TLS connections to RDS / Aurora
+(`POSTGRES_SSLMODE=verify-full`). The CA bundle they check it against is in the images.
+
+- `rdsCaCertificate` pins the CA that issues the server certificate. Left out, the account's
+  default would apply, and `modify-certificates` can change that. The default
+  `rds-ca-rsa2048-g1` is offered in every Region; the other two are not offered in some, such
+  as Mumbai and Zurich
+- The bundle in the images covers every Region of the commercial partition. GovCloud and China
+  Regions publish their own bundles, which it cannot verify (unsupported)
+- On an existing environment whose instances use a CA other than `rdsCaCertificate`, the
+  deploy switches the CA and the database restarts
+- It is an environment-level setting (the database is shared by the environment's sites);
+  `-c` cannot override it
 
 ## Site entry fields (`sites[]`)
 

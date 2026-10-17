@@ -15,7 +15,7 @@ import * as logs from 'aws-cdk-lib/aws-logs'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as cr from 'aws-cdk-lib/custom-resources'
 import { Construct } from 'constructs'
-import type { DbAccess } from './database.js'
+import { POSTGRES_TLS_ENVIRONMENT, type DbAccess } from './database.js'
 
 export interface SiteDatabaseProps {
   /** Validated site name (config.validateSites) — becomes `kukan_<site>` in PostgreSQL. */
@@ -114,7 +114,7 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
       POSTGRES_HOST: this.dbHost,
       POSTGRES_PORT: this.dbPort,
       POSTGRES_DB: this.dbName,
-      POSTGRES_SSLMODE: 'require',
+      ...POSTGRES_TLS_ENVIRONMENT,
     }
   }
 

@@ -1088,9 +1088,19 @@ For every other option see `.env.prod.example`.
   host. In production, restrict access with a firewall or change `ports:` to `expose:` in
   compose.yml.
 - **Password management**: `.env.prod` is gitignored. Always change the default passwords.
-- **DB SSL**: enable SSL connections with `POSTGRES_SSLMODE=require`. AWS (RDS/Aurora PG16+)
-  requires SSL, so CDK sets it automatically. On-premises defaults to `disable` because
-  postgres:16-alpine does not support SSL.
+- **DB SSL**: set with `POSTGRES_SSLMODE`. `verify-full` encrypts and also checks the server
+  certificate (its issuer and host name); `require` encrypts without checking the certificate.
+  AWS (RDS/Aurora PG16+) requires SSL, so CDK sets `verify-full` and pins the CA of the server
+  certificate with `rdsCaCertificate` (default `rds-ca-rsa2048-g1`, offered in every Region). The
+  CA bundle used for the check is at `/etc/ssl/rds-ca.crt` in the images, and CDK points
+  `POSTGRES_SSLROOTCERT` at it (the bundle shared by every Region of the commercial partition,
+  fetched at build time with a checksum, so the build fails when AWS replaces it). GovCloud and
+  China publish their own bundles, which this one cannot verify (unsupported). On an existing
+  environment whose instances use a CA other than `rdsCaCertificate`, the deploy switches the CA
+  and the database restarts. To connect on-premises to a PostgreSQL with your own CA under
+  `verify-full`, mount the CA file into the web and worker and point `POSTGRES_SSLROOTCERT` at it
+  (the `volumes` example in compose.yml).
+  On-premises defaults to `disable` because postgres:16-alpine does not support SSL.
 - **Preventing direct ALB access**: on AWS the CloudFront VPC Origin keeps the ALB internal (no
   public IP). On-premises, Caddy sits in front as the reverse proxy.
 

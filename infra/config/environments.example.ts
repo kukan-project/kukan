@@ -29,8 +29,8 @@
  *
  * Where each field goes:
  *   - Environment entry ONLY (the shared boxes + CI/CD):
- *       account, region, scale, dbEngine, enableOpenSearch, cpuArchitecture, bedrock,
- *       githubRepo, deployBranch
+ *       account, region, scale, dbEngine, enableOpenSearch, cpuArchitecture,
+ *       rdsCaCertificate, bedrock, githubRepo, deployBranch
  *   - Site entries ONLY (rejected on the environment entry):
  *       name, brand, domainName, hostedZoneId, hostedZoneName, certificateArn,
  *       webAclArn, enableWaf, allowedIpRanges, basicAuth, bucketName,
@@ -88,6 +88,7 @@ export const environments = {
     // dbEngine: 'rds', // omit → scale default (small=rds, medium/large=aurora)
     // enableOpenSearch: true, // false → PostgreSQL full-text fallback
     // cpuArchitecture: 'arm64', // 'arm64' | 'x86_64' — web/worker tasks; omit → arm64 (Graviton)
+    // rdsCaCertificate: 'rds-ca-rsa2048-g1', // CA of the DB's server certificate; omit → rds-ca-rsa2048-g1
     // deployConcurrency: 1, // sites deployed at once after the canary; omit → 2, 1 = serial (ADR-041)
     // ecrImageRetention: 100, // images kept in the bootstrap ECR repository; omit → 100
     // cdnLogRetentionDays: 90, // days CloudFront access logs are kept (every site); omit → 90

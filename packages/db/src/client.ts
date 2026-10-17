@@ -6,6 +6,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema'
+import { pgSsl } from './ssl'
 
 export interface DbPoolOptions {
   max?: number
@@ -16,14 +17,12 @@ export interface DbPoolOptions {
 const globalForPool = globalThis as unknown as { __kukanPool?: Pool }
 
 export function createDb(connectionString: string, poolOptions?: DbPoolOptions) {
-  // POSTGRES_SSLMODE=require → SSL without CA verification (for RDS/Aurora)
-  const ssl = process.env.POSTGRES_SSLMODE === 'require' ? { rejectUnauthorized: false } : undefined
-
   // In development, reuse the pool across HMR to prevent connection leaks
   if (process.env.NODE_ENV !== 'production' && globalForPool.__kukanPool) {
     return drizzle(globalForPool.__kukanPool, { schema })
   }
 
+  const ssl = pgSsl()
   const pool = new Pool({ connectionString, ...poolOptions, ...(ssl && { ssl }) })
   globalForPool.__kukanPool = pool
   return drizzle(pool, { schema })

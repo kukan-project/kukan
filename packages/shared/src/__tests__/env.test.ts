@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { envSchema, loadEnv, databaseUrl, timeZoneSchema } from '../env'
+import { envSchema, loadEnv, databaseUrl, postgresSsl, timeZoneSchema } from '../env'
 
 describe('envSchema', () => {
   it('should apply defaults for optional fields', () => {
@@ -257,5 +257,37 @@ describe('loadEnv', () => {
     delete process.env.BETTER_AUTH_SECRET
 
     expect(() => loadEnv()).toThrow()
+  })
+})
+
+describe('postgresSsl', () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    process.env = { ...originalEnv }
+    delete process.env.POSTGRES_SSLMODE
+    delete process.env.POSTGRES_SSLROOTCERT
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
+  it('defaults to a plain connection', () => {
+    expect(postgresSsl()).toEqual({ mode: 'disable', rootCertPath: undefined })
+  })
+
+  it('reads the bundle, an empty one as unset', () => {
+    process.env.POSTGRES_SSLMODE = 'verify-full'
+    process.env.POSTGRES_SSLROOTCERT = '/etc/ssl/rds-ca.crt'
+    expect(postgresSsl()).toEqual({ mode: 'verify-full', rootCertPath: '/etc/ssl/rds-ca.crt' })
+
+    process.env.POSTGRES_SSLROOTCERT = ''
+    expect(postgresSsl()).toEqual({ mode: 'verify-full', rootCertPath: undefined })
+  })
+
+  it('refuses a mode it does not know', () => {
+    process.env.POSTGRES_SSLMODE = 'verify-ca'
+    expect(() => postgresSsl()).toThrow()
   })
 })

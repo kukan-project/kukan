@@ -8,12 +8,14 @@ import type { Construct } from 'constructs'
 // synth works on a clean checkout (the pipeline runs no workspace build)
 import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
 import { isTimeZone } from '@kukan/shared/env'
+import { RDS_CA_CERTIFICATES } from './types.js'
 import type {
   BedrockConfig,
   CpuArchitecture,
   DbEngine,
   EnvironmentConfig,
   KukanConfig,
+  RdsCaCertificate,
   Scale,
 } from './types.js'
 import { computeScaled } from './scale.js'
@@ -32,6 +34,9 @@ export const DEFAULT_ECR_IMAGE_RETENTION = 100
 
 /** Architecture of the web and worker when `cpuArchitecture` is omitted. */
 export const DEFAULT_CPU_ARCHITECTURE: CpuArchitecture = 'arm64'
+
+/** CA of the database's server certificate when `rdsCaCertificate` is omitted. */
+export const DEFAULT_RDS_CA_CERTIFICATE: RdsCaCertificate = 'rds-ca-rsa2048-g1'
 
 /** Days CloudFront access logs are kept when `cdnLogRetentionDays` is omitted:
  *  long enough to look back on a burst noticed weeks later. */
@@ -138,6 +143,19 @@ export function resolveCpuArchitecture(
   return arch
 }
 
+/** Validated `rdsCaCertificate`, checked at runtime for the same reason. */
+export function resolveRdsCaCertificate(
+  env: Pick<EnvironmentConfig, 'rdsCaCertificate'>
+): RdsCaCertificate {
+  const ca = env.rdsCaCertificate ?? DEFAULT_RDS_CA_CERTIFICATE
+  if (!RDS_CA_CERTIFICATES.includes(ca)) {
+    throw new Error(
+      `rdsCaCertificate must be one of ${RDS_CA_CERTIFICATES.join(', ')} (got ${JSON.stringify(ca)})`
+    )
+  }
+  return ca
+}
+
 /**
  * Resolve the AWS environment (account/region) for an environment definition.
  * `account` is mandatory — the explicit account makes CDK reject deploys whose
@@ -191,6 +209,8 @@ export function loadConfig(
   // env-only (no ctx): the pipeline picks its asset-publishing CodeBuild from
   // the entry, which a -c on a standalone deploy cannot reach
   const cpuArchitecture = resolveCpuArchitecture(env)
+  // env-only (no ctx): the database is shared by every site in the environment
+  const rdsCaCertificate = resolveRdsCaCertificate(env)
   const allowedIpRanges = ctx<string[]>('allowedIpRanges') ?? env.allowedIpRanges
   // Read as written, an empty allowlist admits nobody; the viewer-request
   // function reads it as no gate at all. Neither can be what was meant.
@@ -273,6 +293,7 @@ export function loadConfig(
     dbEngine: db.engine,
     enableOpenSearch,
     cpuArchitecture,
+    rdsCaCertificate,
     enableWaf,
     allowedIpRanges,
     basicAuth,

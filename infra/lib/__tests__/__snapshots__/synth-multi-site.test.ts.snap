@@ -211,6 +211,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8",
       ],
       "Properties": {
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
         "DBClusterIdentifier": {
           "Ref": "DatabaseAuroraCluster35AE33F7",
         },
@@ -3057,7 +3058,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -3934,7 +3939,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -5780,7 +5789,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",
@@ -6622,7 +6635,11 @@ function expandV6(addr) {
               },
               {
                 "Name": "POSTGRES_SSLMODE",
-                "Value": "require",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
               },
               {
                 "Name": "S3_BUCKET",

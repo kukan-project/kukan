@@ -1022,7 +1022,7 @@ Client ─→ Caddy (:80/:443) ─→ web (:3000)
 - **IP 制限**: Caddyfile の `remote_ip` マッチャーで設定可能。
 - **ポート公開**: インフラサービス（postgres:5432, minio:9000 等）はホストに公開される。本番環境ではファイアウォールでアクセスを制限するか、compose.yml の `ports:` を `expose:` に変更する。
 - **パスワード管理**: `.env.prod` は `.gitignore` 対象。デフォルトパスワードから必ず変更すること。
-- **DB SSL**: `POSTGRES_SSLMODE=require` で SSL 接続を有効化。AWS（RDS/Aurora PG16+）は SSL 必須のため CDK で自動設定。オンプレは postgres:16-alpine が SSL 非対応のためデフォルト `disable`。
+- **DB SSL**: `POSTGRES_SSLMODE` で指定する。`verify-full` は暗号化に加えてサーバーの証明書（発行元とホスト名）を検証し、`require` は暗号化だけで証明書を検証しない。AWS（RDS/Aurora PG16+）は SSL 必須のため、CDK が `verify-full` を設定し、サーバーの証明書の CA を `rdsCaCertificate`（既定 `rds-ca-rsa2048-g1`、全リージョンで使える）で固定する。検証に使う CA の束はイメージの `/etc/ssl/rds-ca.crt` にあり、CDK が `POSTGRES_SSLROOTCERT` でそこを指す（商用パーティションの全リージョン共通の束。ビルド時に checksum 付きで取得し、AWS が束を差し替えるとビルドが落ちる）。GovCloud・中国は束の配布元が別で、この束では検証できない（未対応）。既存の環境で、インスタンスの今の CA が `rdsCaCertificate` と違うと、デプロイで CA が切り替わり DB が再起動する。オンプレで独自 CA の PostgreSQL に `verify-full` でつなぐときは、CA のファイルを web と worker にマウントし `POSTGRES_SSLROOTCERT` で指す（compose.yml の `volumes` の例）。オンプレは postgres:16-alpine が SSL 非対応のためデフォルト `disable`。
 - **ALB 直アクセス防止**: AWS では CloudFront VPC Origin により ALB は internal（パブリック IP なし）。オンプレミスでは Caddy がリバースプロキシとして前面に立つ。
 
 ### デプロイ手順

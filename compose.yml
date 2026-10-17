@@ -13,6 +13,8 @@ x-app-environment: &app-environment
   POSTGRES_USER: ${POSTGRES_USER:-kukan}
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kukan}
   POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
+  # CA for verify-full: mount it (`volumes` on web and worker); empty = Node's trust store
+  POSTGRES_SSLROOTCERT: ${POSTGRES_SSLROOTCERT:-}
   # Empty = the defaults in env.ts (worker concurrency is derived from its pool)
   WEB_DB_POOL_MAX: ${WEB_DB_POOL_MAX:-}
   WEB_DB_POOL_IDLE_TIMEOUT_MS: ${WEB_DB_POOL_IDLE_TIMEOUT_MS:-}
@@ -212,6 +214,8 @@ services:
       PORT: '3000'
       # Where the web tells the worker a job is waiting (ADR-058)
       WORKER_WAKE_URL: http://worker:8080/wake
+    # volumes:
+    #   - ./certs/db-ca.crt:/etc/kukan/db-ca.crt:ro # POSTGRES_SSLROOTCERT=/etc/kukan/db-ca.crt
     # A memory limit is worth setting on a host that runs anything else. The
     # OData feed (ADR-055) reads as many pages at once as the memory it is given
     # affords, and with no limit it reads the host's — which on a box also
@@ -245,6 +249,8 @@ services:
         condition: service_healthy
     environment:
       <<: *app-environment
+    # volumes:
+    #   - ./certs/db-ca.crt:/etc/kukan/db-ca.crt:ro # POSTGRES_SSLROOTCERT=/etc/kukan/db-ca.crt
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/health || exit 1']
       interval: 10s

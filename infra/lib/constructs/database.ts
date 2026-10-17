@@ -13,6 +13,15 @@ import { Construct } from 'constructs'
 import { rdsInstanceClass, type KukanConfig } from '../config.js'
 import { envPrefix } from '../naming.js'
 
+/**
+ * How the web and worker connect: verifying the server against the RDS CA
+ * bundle, which the Dockerfile's `base` stage puts at this path.
+ */
+export const POSTGRES_TLS_ENVIRONMENT = {
+  POSTGRES_SSLMODE: 'verify-full',
+  POSTGRES_SSLROOTCERT: '/etc/ssl/rds-ca.crt',
+} as const
+
 export interface DatabaseProps {
   config: KukanConfig
   vpc: ec2.IVpc
@@ -42,6 +51,7 @@ export class DatabaseConstruct extends Construct {
     super(scope, id)
 
     const { config, vpc, dbSecurityGroup } = props
+    const caCertificate = rds.CaCertificate.of(config.rdsCaCertificate)
 
     if (config.db.engine === 'aurora') {
       const cluster = new rds.DatabaseCluster(this, 'AuroraCluster', {
@@ -51,8 +61,11 @@ export class DatabaseConstruct extends Construct {
         }),
         serverlessV2MinCapacity: config.db.minAcu ?? 0,
         serverlessV2MaxCapacity: config.db.maxAcu ?? 2,
-        writer: rds.ClusterInstance.serverlessV2('Writer'),
-        ...(config.db.multiAz ? { readers: [rds.ClusterInstance.serverlessV2('Reader')] } : {}),
+        // The CA is an instance's setting in Aurora, not the cluster's
+        writer: rds.ClusterInstance.serverlessV2('Writer', { caCertificate }),
+        ...(config.db.multiAz
+          ? { readers: [rds.ClusterInstance.serverlessV2('Reader', { caCertificate })] }
+          : {}),
         vpc,
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
         securityGroups: [dbSecurityGroup],
@@ -83,6 +96,7 @@ export class DatabaseConstruct extends Construct {
         backupRetention: cdk.Duration.days(config.backup.dbBackupRetentionDays),
         storageEncrypted: true,
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
+        caCertificate,
       })
       this.secret = instance.secret!
       this.endpoint = instance.instanceEndpoint.hostname
@@ -99,7 +113,7 @@ export class DatabaseConstruct extends Construct {
       POSTGRES_HOST: this.endpoint,
       POSTGRES_PORT: String(this.port),
       POSTGRES_DB: 'kukan',
-      POSTGRES_SSLMODE: 'require',
+      ...POSTGRES_TLS_ENVIRONMENT,
     }
   }
 

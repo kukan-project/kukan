@@ -10,6 +10,7 @@ import { Client } from 'pg'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { pgSsl } from './ssl'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -81,7 +82,7 @@ export async function runMigrations(
   options: MigrationOptions = {}
 ): Promise<void> {
   const { lockTimeoutMs, attempts, retryDelayMs } = { ...DEFAULTS, ...options }
-  const ssl = process.env.POSTGRES_SSLMODE === 'require' ? { rejectUnauthorized: false } : undefined
+  const ssl = pgSsl()
   // One session for the lock and the DDL: the advisory lock lives exactly as
   // long as the connection, and the timeout set on it reaches every statement
   // the migration runs, with nothing handed back to a pool afterwards.

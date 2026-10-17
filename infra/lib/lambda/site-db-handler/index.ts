@@ -75,8 +75,8 @@ export async function handler(event: CustomResourceEvent): Promise<{
     database: 'postgres',
     user: master.username,
     password: master.password,
-    // Matches the app's POSTGRES_SSLMODE=require posture (packages/db client):
-    // encrypted, no CA verification — VPC-internal traffic to RDS/Aurora
+    // Encrypted, no CA verification — unlike the web and worker, which verify
+    // (POSTGRES_SSLMODE=verify-full); VPC-internal traffic to RDS/Aurora
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 15_000,
   })

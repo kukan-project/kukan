@@ -13,6 +13,16 @@
 # The other places that name the Node version are listed in docs/node-version.md.
 FROM public.ecr.aws/docker/library/node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
 RUN apk upgrade --no-cache
+# CA bundle the AWS deployment verifies RDS and Aurora against (CDK points
+# POSTGRES_SSLROOTCERT here). The checksum fails the build when AWS changes the
+# bundle, rather than letting it change unseen: fetch the new one, check what
+# it adds, and bump the digest. A remote ADD lands as 600, which the images'
+# non-root user could not read, and --chmod would give a directory it creates
+# the file's mode too, so the bundle goes into one that exists. Not *.pem:
+# Lambda Web Functions' deploy drops those from its zip (ADR-068). ADD
+# --checksum needs the Dockerfile frontend 1.6 or later.
+ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b \
+  https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/rds-ca.crt
 WORKDIR /app
 
 # ---- Build base (the machine's own platform) ----

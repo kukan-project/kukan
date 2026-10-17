@@ -8,12 +8,14 @@
  * (aws-cdk-lib upgrades): run `vitest -u --project infra` and eyeball the diff.
  */
 
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { Annotations, Match, type Template } from 'aws-cdk-lib/assertions'
 import * as cxapi from 'aws-cdk-lib/cx-api'
 import { CDN_LOG_BUCKET, normalize, stackOf, stackTemplate, synthStage } from './helpers/synth.js'
 import { validateEcrImageRetention } from '../config.js'
 import { supportsLegacyCdnLogging } from '../constructs/access-log.js'
+import { POSTGRES_TLS_ENVIRONMENT } from '../constructs/database.js'
 
 describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
   const stage = synthStage({
@@ -348,6 +350,54 @@ describe('cpuArchitecture', () => {
     expect(() => synthStage({ cpuArchitecture: 'amd64' as unknown as 'x86_64' })).toThrow(
       /cpuArchitecture must be "x86_64" or "arm64" \(got "amd64"\)/
     )
+  })
+})
+
+describe('rdsCaCertificate', () => {
+  const synth = (dbEngine: 'rds' | 'aurora', rdsCaCertificate?: 'rds-ca-rsa4096-g1') =>
+    stackTemplate(
+      synthStage({
+        scale: dbEngine === 'aurora' ? 'large' : 'small',
+        dbEngine,
+        enableOpenSearch: false,
+        bedrock: false,
+        rdsCaCertificate,
+      }),
+      'KukanStack'
+    )
+  /** The CA each database instance names. */
+  const pinned = (template: Template) =>
+    Object.values(template.findResources('AWS::RDS::DBInstance')).map(
+      (def) => (def.Properties as { CACertificateIdentifier?: string }).CACertificateIdentifier
+    )
+
+  it('names the CA every Region offers', () => {
+    expect(pinned(synth('rds'))).toEqual(['rds-ca-rsa2048-g1'])
+  })
+
+  it('names it on each Aurora instance, the writer and the readers', () => {
+    expect(pinned(synth('aurora'))).toEqual(['rds-ca-rsa2048-g1', 'rds-ca-rsa2048-g1'])
+  })
+
+  it('takes another CA when the environment asks for it', () => {
+    expect(pinned(synth('rds', 'rds-ca-rsa4096-g1'))).toEqual(['rds-ca-rsa4096-g1'])
+  })
+
+  it('rejects a name RDS does not offer at synth', () => {
+    expect(() =>
+      synthStage({ rdsCaCertificate: 'rds-ca-2019' as unknown as 'rds-ca-rsa2048-g1' })
+    ).toThrow(/rdsCaCertificate must be one of .* \(got "rds-ca-2019"\)/)
+  })
+
+  it('has the web and worker verify the server against the bundle the images hold', () => {
+    const template = synth('rds')
+    for (const container of ['Web', 'Worker']) {
+      expectContainerEnv(template, container, POSTGRES_TLS_ENVIRONMENT)
+    }
+    // Only the Dockerfile puts the bundle there: a path the image lacks would
+    // pass synth and fail every connection after the deploy
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8')
+    expect(dockerfile).toContain(` ${POSTGRES_TLS_ENVIRONMENT.POSTGRES_SSLROOTCERT}\n`)
   })
 })
 

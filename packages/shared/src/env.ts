@@ -29,7 +29,11 @@ const postgresSchema = z.object({
   POSTGRES_DB: z.string().default('kukan'),
   POSTGRES_USER: z.string().default('kukan'),
   POSTGRES_PASSWORD: z.string().default('kukan'),
-  POSTGRES_SSLMODE: z.enum(['disable', 'require']).default('disable'),
+  // libpq's names: `require` encrypts without checking who answers, `verify-full`
+  // checks the certificate chain and the host name
+  POSTGRES_SSLMODE: z.enum(['disable', 'require', 'verify-full']).default('disable'),
+  // CA bundle for `verify-full`; unset → Node's own trust store
+  POSTGRES_SSLROOTCERT: z.preprocess(emptyAsUndefined, z.string().optional()),
 })
 
 /** True for a name Intl resolves, e.g. `Asia/Tokyo` or `UTC`. */
@@ -247,4 +251,13 @@ function urlFrom(p: z.infer<typeof postgresSchema>): string {
  */
 export function databaseUrl(): string {
   return urlFrom(postgresSchema.parse(process.env))
+}
+
+/** POSTGRES_SSLMODE and its CA bundle, read as {@link databaseUrl} reads the rest. */
+export function postgresSsl(): {
+  mode: z.infer<typeof postgresSchema>['POSTGRES_SSLMODE']
+  rootCertPath?: string
+} {
+  const p = postgresSchema.parse(process.env)
+  return { mode: p.POSTGRES_SSLMODE, rootCertPath: p.POSTGRES_SSLROOTCERT }
 }
