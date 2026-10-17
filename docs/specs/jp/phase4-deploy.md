@@ -563,6 +563,39 @@ docker build --target web -t kukan-web .
 docker build --target worker -t kukan-worker .
 ```
 
+依存のインストールと `pnpm build`（`deps` / `build` ステージ）は、ビルドするマシン本来の
+アーキテクチャ（`$BUILDPLATFORM`）で動く。出力が JavaScript でアーキテクチャに依存しないためで、
+ターゲットのネイティブバイナリ（DuckDB、sharp + libvips）はイメージへ移すときに選ぶ。
+ターゲットのアーキテクチャで動くのは、イメージそのものの段の `RUN`（DuckDB 拡張機能の
+INSTALL など）だけ。
+
+### CPU アーキテクチャ（`cpuArchitecture`）
+
+web と worker のタスクは、既定で **arm64（Graviton）** で動く。Fargate の単価は x86_64 より
+vCPU・メモリとも 2 割安い（東京・大阪）。環境エントリの `cpuArchitecture: 'x86_64'` で
+x86_64 に戻せる。環境単位の設定で、サイトごとには変えられない（パイプラインが環境ごとに
+1 本のため）。`-c` でも上書きできない（パイプラインのビルド環境に届かないため）。
+
+この 1 項目が次の 3 つを決める（`infra/lib/cpu-architecture.ts`）。
+
+| 対象                                     | arm64                                            | x86_64                       |
+| ---------------------------------------- | ------------------------------------------------ | ---------------------------- |
+| イメージのビルド先（`DockerImageAsset`） | `linux/arm64`                                    | `linux/amd64`                |
+| タスク定義の `runtimePlatform`           | `ARM64`                                          | `X86_64`                     |
+| パイプラインのアセット公開 CodeBuild     | `amazonlinux-aarch64-standard:3.0`（ARM MEDIUM） | `standard:7.0`（x86 MEDIUM） |
+
+- **pipeline**: イメージはタスクと同じアーキテクチャの CodeBuild でビルドするので、QEMU を使わない。
+  ARM の MEDIUM は x86 と同じ 8 GiB / 4 vCPU（Next.js の型検査に要るメモリ）。東京・大阪にはあるが、
+  ARM の CodeBuild（`ARM_CONTAINER`）がないリージョンにパイプラインを置くなら `x86_64` を指定する
+- **standalone**: デプロイするマシンと違うアーキテクチャでは、イメージそのものの段だけが QEMU で動く
+  （WSL・x86_64 から arm64 を作っても、web が約 75 秒・worker が約 50 秒で、同じアーキテクチャと
+  ほぼ変わらない）。Docker Desktop（Windows / Mac）は QEMU を自分で登録しているので準備は要らない。
+  Docker Engine だけの Linux では一度だけ `docker run --privileged --rm tonistiigi/binfmt --install arm64`
+  を実行する
+- アーキテクチャが違えばイメージのハッシュ（タグ）も違うので、同一アカウントで dev を arm64、
+  prd を x86_64 にしてもタグは競合しない
+- Docker Compose（開発・オンプレ）は手元のアーキテクチャでビルドするので、この設定に関係しない
+
 ## DB マイグレーション
 
 Worker 起動時にマイグレーションを自動実行:

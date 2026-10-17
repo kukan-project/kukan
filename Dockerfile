@@ -32,7 +32,6 @@ WORKDIR /app
 # the layer that wrote them. The script installs the version and hash that
 # `packageManager` names, without corepack (gone from Node 25 on).
 FROM build-base AS deps
-ARG TARGETARCH
 COPY package.json ./
 COPY scripts/install-pnpm.sh scripts/
 RUN sh scripts/install-pnpm.sh
@@ -49,10 +48,11 @@ COPY packages/adapters/storage/package.json packages/adapters/storage/
 COPY packages/adapters/ai/package.json packages/adapters/ai/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
-# Native packages for the build tools (this machine) and for the image (the
-# target): pnpm otherwise installs only this machine's.
-RUN host=$(node -p process.arch) && target=$(echo "$TARGETARCH" | sed 's/^amd64$/x64/') \
-  && printf '\nsupportedArchitectures:\n  os: [linux]\n  libc: [musl]\n  cpu: [%s, %s]\n' "$host" "$target" >> pnpm-workspace.yaml \
+# Native packages for both architectures: the build tools need this machine's
+# and the image the target's (pnpm otherwise installs only this machine's).
+# Installing both whichever they are keeps this stage and `build` the same for
+# every target, so building the other architecture reuses them.
+RUN printf '\nsupportedArchitectures:\n  os: [linux]\n  libc: [musl]\n  cpu: [x64, arm64]\n' >> pnpm-workspace.yaml \
   && pnpm install --frozen-lockfile
 
 # ---- Build ----
@@ -65,7 +65,7 @@ COPY . .
 RUN pnpm build --filter='!@kukan/site'
 
 # ---- Web files (the target's native binaries only) ----
-# The standalone output traces both platforms' bindings the deps stage
+# The standalone output traces both architectures' bindings the deps stage
 # installed; keep the target's. Next.js traces the DuckDB .node addon but not
 # libduckdb.so (a dynamic dependency), so that is picked out here as well.
 FROM build AS web-files
@@ -137,8 +137,8 @@ CMD ["/bin/sh", "-c", "HOSTNAME=0.0.0.0 node apps/web/server.js"]
 # DuckLake (ADR-043 layer 2) throws on the first ingest, and sharp's
 # (@img/sharp-* — the module plus libvips), without which the worker throws on
 # boot because summarize.ts imports sharp at the top level (ADR-053). The deps
-# stage installed them for this machine and for the target, so copy the
-# target's back in rather than widening the flag.
+# stage installed them for both architectures, so copy the target's back in
+# rather than widening the flag.
 FROM build AS worker-deps
 ARG TARGETARCH
 RUN target=$(echo "$TARGETARCH" | sed 's/^amd64$/x64/') \

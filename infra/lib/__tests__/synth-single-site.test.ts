@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { Annotations, Match, type Template } from 'aws-cdk-lib/assertions'
+import * as cxapi from 'aws-cdk-lib/cx-api'
 import { CDN_LOG_BUCKET, normalize, stackOf, stackTemplate, synthStage } from './helpers/synth.js'
 import { validateEcrImageRetention } from '../config.js'
 import { supportsLegacyCdnLogging } from '../constructs/access-log.js'
@@ -305,6 +306,48 @@ describe('CloudFront access logs', () => {
 
   it('rejects a non-positive retention at synth', () => {
     expect(() => synthStage({ cdnLogRetentionDays: 0 })).toThrow(/cdnLogRetentionDays must be/)
+  })
+})
+
+describe('cpuArchitecture', () => {
+  /** The task definitions' architectures and the platforms the images are built for. */
+  const platforms = (cpuArchitecture?: 'x86_64' | 'arm64') => {
+    const stage = synthStage({ enableOpenSearch: false, bedrock: false, cpuArchitecture })
+    const template = stackTemplate(stage, 'KukanStack')
+    const tasks = Object.values(template.findResources('AWS::ECS::TaskDefinition')).map(
+      (def) => (def.Properties as { RuntimePlatform: { CpuArchitecture: string } }).RuntimePlatform
+    )
+    const stackId = stackOf(stage, 'KukanStack').artifactId
+    const manifest = stage
+      .synth()
+      .artifacts.find(
+        (artifact): artifact is cxapi.AssetManifestArtifact =>
+          artifact instanceof cxapi.AssetManifestArtifact && artifact.id === `${stackId}.assets`
+      )
+    const images = Object.values(manifest?.contents.dockerImages ?? {}).map(
+      (image) => image.source.platform
+    )
+    return { tasks: tasks.map((task) => task.CpuArchitecture), images }
+  }
+
+  it('runs and builds on arm64 by default', () => {
+    expect(platforms()).toEqual({
+      tasks: ['ARM64', 'ARM64'],
+      images: ['linux/arm64', 'linux/arm64'],
+    })
+  })
+
+  it('stays on x86_64 when the environment asks for it', () => {
+    expect(platforms('x86_64')).toEqual({
+      tasks: ['X86_64', 'X86_64'],
+      images: ['linux/amd64', 'linux/amd64'],
+    })
+  })
+
+  it('rejects anything else at synth', () => {
+    expect(() => synthStage({ cpuArchitecture: 'amd64' as unknown as 'x86_64' })).toThrow(
+      /cpuArchitecture must be "x86_64" or "arm64" \(got "amd64"\)/
+    )
   })
 })
 

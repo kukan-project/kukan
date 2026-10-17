@@ -2310,6 +2310,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -3094,6 +3098,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -5988,6 +5996,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -6806,6 +6818,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -9265,6 +9281,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -9932,6 +9952,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -12910,6 +12934,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -13694,6 +13722,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -16415,6 +16447,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",
@@ -17199,6 +17235,10 @@ function expandV6(addr) {
         "RequiresCompatibilities": [
           "FARGATE",
         ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
         "Tags": [
           {
             "Key": "kukan:component",

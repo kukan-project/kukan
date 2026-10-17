@@ -15,6 +15,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { ARCHITECTURES } from '../cpu-architecture.js'
 import { resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
@@ -90,7 +91,7 @@ export class WebServiceConstruct extends Construct {
       directory: '../',
       file: 'Dockerfile',
       target: 'web',
-      platform: assets.Platform.LINUX_AMD64,
+      platform: ARCHITECTURES[config.cpuArchitecture].imagePlatform,
       ignoreMode: cdk.IgnoreMode.DOCKER,
       buildArgs: props.imageBuildArgs,
     })
@@ -99,6 +100,7 @@ export class WebServiceConstruct extends Construct {
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       cpu: config.web.cpu,
       memoryLimitMiB: config.web.memory,
+      runtimePlatform: ARCHITECTURES[config.cpuArchitecture].taskRuntimePlatform,
     })
 
     // Grant permissions to task role

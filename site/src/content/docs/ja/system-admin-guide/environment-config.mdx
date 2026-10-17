@@ -66,6 +66,7 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 | `scale`               | `small` \| `medium` \| `large` | `small`                                      | デプロイ規模(リソースサイズを一括制御)                                                                                                     |
 | `dbEngine`            | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora) | DB エンジン                                                                                                                                |
 | `enableOpenSearch`    | boolean                        | `true`                                       | `false` → PostgreSQL 全文検索フォールバック                                                                                                |
+| `cpuArchitecture`     | `arm64` \| `x86_64`            | `arm64`                                      | web と worker のタスクの CPU(既定は Graviton)。イメージもこのアーキテクチャ向けにビルドする(下記「CPU アーキテクチャ」)                    |
 | `bedrock`             | object \| `false`              | 有効(Titan v2)                               | セマンティック検索・AI メタデータ提案・AI による説明(抄録)。`false` で無効(`AI_TYPE=none`)。フィールドは下記「`bedrock` のフィールド」     |
 | `githubRepo`          | string                         | なし                                         | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外                                                          |
 | `deployBranch`        | string                         | `main`                                       | この env を pipeline でデプロイするブランチ                                                                                                |
@@ -86,6 +87,18 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 | `vectorMinSimilarity` | number   | モデルごとの実測推奨値              | 意味検索に含める類似度の下限の上書き                                                                                                |
 | `completionModels`    | string[] | `['jp.anthropic.claude-haiku-5-5']` | タスクロールに `InvokeModel` を許可する生成モデル。管理画面のモデル選択肢も兼ね、先頭が AI メタデータ提案の既定。変更には再デプロイ |
 | `summaryModel`        | string   | なし(AI による説明を生成しない)     | AI による説明(抄録)を書くモデル。`completionModels` に含まれないと synth エラー                                                     |
+
+### CPU アーキテクチャ
+
+web と worker のタスクは、既定で arm64(Graviton)で動きます。Fargate の料金は x86_64 より
+2 割ほど安くなります。x86_64 で動かしたい環境は `cpuArchitecture: 'x86_64'` を指定します。
+環境単位の設定で、サイトごとには変えられません。`-c` でも上書きできません。
+
+- パイプラインは、タスクと同じアーキテクチャの CodeBuild でイメージをビルドします
+- standalone でデプロイするとき、手元のマシンと違うアーキテクチャのイメージも作れます。
+  Docker Desktop(Windows / Mac)はそのままで構いません。Docker Engine だけの Linux では、
+  一度だけ `docker run --privileged --rm tonistiigi/binfmt --install arm64` を実行してください
+- 既存の環境の切り替えは、通常のデプロイ(タスクの入れ替え)で行われます
 
 ## サイトエントリのフィールド(`sites[]`)
 

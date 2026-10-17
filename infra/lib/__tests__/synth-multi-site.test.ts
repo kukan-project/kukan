@@ -440,6 +440,32 @@ describe('pipeline mode', () => {
       )
     )
 
+  /** Image, environment type and size of the CodeBuild projects that publish the Docker assets. */
+  const dockerAssetBuilds = (extra: Partial<EnvironmentConfig> = {}) =>
+    Object.entries(notifications(extra).findResources('AWS::CodeBuild::Project'))
+      .filter(([id]) => id.includes('DockerAsset'))
+      .map(([, project]) => {
+        const { Image, Type, ComputeType } = (
+          project.Properties as { Environment: Record<string, unknown> }
+        ).Environment
+        return { Image, Type, ComputeType }
+      })
+
+  it('publishes the images on a CodeBuild of the same architecture as the tasks', () => {
+    const arm = {
+      Image: 'aws/codebuild/amazonlinux-aarch64-standard:3.0',
+      Type: 'ARM_CONTAINER',
+      ComputeType: 'BUILD_GENERAL1_MEDIUM',
+    }
+    expect(dockerAssetBuilds()).toEqual([arm, arm])
+    const x86 = {
+      Image: 'aws/codebuild/standard:7.0',
+      Type: 'LINUX_CONTAINER',
+      ComputeType: 'BUILD_GENERAL1_MEDIUM',
+    }
+    expect(dockerAssetBuilds({ cpuArchitecture: 'x86_64' })).toEqual([x86, x86])
+  })
+
   it('creates no notification resources unless the environment asks for them', () => {
     for (const template of [notifications(), notifications({ deployNotification: false })]) {
       template.resourceCountIs('AWS::CodeStarNotifications::NotificationRule', 0)

@@ -71,6 +71,7 @@ CI/CD.
 | `scale`               | `small` \| `medium` \| `large` | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                                |
 | `dbEngine`            | `rds` \| `aurora`              | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                       |
 | `enableOpenSearch`    | boolean                        | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                        |
+| `cpuArchitecture`     | `arm64` \| `x86_64`            | `arm64`                                          | CPU of the web and worker tasks (Graviton by default). The images are built for it (see "CPU architecture" below)                                                     |
 | `bedrock`             | object \| `false`              | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                       |
 | `githubRepo`          | string                         | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                     |
 | `deployBranch`        | string                         | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                         |
@@ -91,6 +92,19 @@ CI/CD.
 | `vectorMinSimilarity` | number   | the model's measured recommendation | Override of the similarity floor for semantic search                                                                                                          |
 | `completionModels`    | string[] | `['jp.anthropic.claude-haiku-5-5']` | Generation models the task role may `InvokeModel`. Also the dashboard's model options; the first is the default for AI metadata suggestions. Needs a redeploy |
 | `summaryModel`        | string   | none (no AI-written descriptions)   | Model that writes AI descriptions (abstracts). Synth fails unless it is in `completionModels`                                                                 |
+
+### CPU architecture
+
+The web and worker tasks run on arm64 (Graviton) by default, which costs about 20% less on
+Fargate than x86_64. Set `cpuArchitecture: 'x86_64'` for an environment that should run on
+x86_64. It is an environment-level setting; it cannot differ per site, and `-c` cannot
+override it.
+
+- The pipeline builds the images on a CodeBuild of the tasks' architecture
+- A standalone deploy can build images for an architecture other than the local machine's.
+  Docker Desktop (Windows / Mac) needs nothing more. On Linux with Docker Engine alone, run
+  `docker run --privileged --rm tonistiigi/binfmt --install arm64` once
+- An existing environment switches over in an ordinary deploy (the tasks are replaced)
 
 ## Site entry fields (`sites[]`)
 

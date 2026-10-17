@@ -12,6 +12,8 @@ import { isTimeZone } from '@kukan/shared/env'
 
 export type Scale = 'small' | 'medium' | 'large'
 export type DbEngine = 'rds' | 'aurora'
+/** CPU architecture the web and worker run on (Fargate) and their images are built for. */
+export type CpuArchitecture = 'x86_64' | 'arm64'
 
 /** Default region when an environment does not specify one. */
 export const DEFAULT_REGION = 'ap-northeast-1'
@@ -165,6 +167,14 @@ export interface EnvironmentConfig {
   scale?: Scale
   dbEngine?: DbEngine
   enableOpenSearch?: boolean
+  /**
+   * CPU architecture of the web and worker tasks. The images are built for it
+   * wherever the deploy runs: the pipeline publishes them on a CodeBuild of the
+   * same architecture, and a standalone deploy from a machine of the other one
+   * builds the image's own stages under QEMU (Docker Desktop provides it).
+   * Omit → arm64 (Graviton, about 20% less per vCPU and GB than x86_64).
+   */
+  cpuArchitecture?: CpuArchitecture
   // --- Site-scoped fields, enableWaf through timeZone (ADR-041) ---
   // Legacy single-site placement, kept for compatibility: without `sites` they
   // apply to the environment's one site; with `sites` declared they are
@@ -390,6 +400,9 @@ export const DEFAULT_DEPLOY_CONCURRENCY = 2
  *  roughly two months of daily deploys, and far beyond what running tasks reference. */
 export const DEFAULT_ECR_IMAGE_RETENTION = 100
 
+/** Architecture of the web and worker when `cpuArchitecture` is omitted. */
+export const DEFAULT_CPU_ARCHITECTURE: CpuArchitecture = 'arm64'
+
 /** Days CloudFront access logs are kept when `cdnLogRetentionDays` is omitted:
  *  long enough to look back on a burst noticed weeks later. */
 export const DEFAULT_CDN_LOG_RETENTION_DAYS = 90
@@ -427,6 +440,20 @@ export function validateEcrImageRetention(environments: Record<string, Environme
     }
     seen.set(key, { name, keep })
   }
+}
+
+/**
+ * Validated `cpuArchitecture`. Checked at runtime too because tsx strips types
+ * without type-checking, and a typo would otherwise fall through to x86_64.
+ */
+export function resolveCpuArchitecture(
+  env: Pick<EnvironmentConfig, 'cpuArchitecture'>
+): CpuArchitecture {
+  const arch = env.cpuArchitecture ?? DEFAULT_CPU_ARCHITECTURE
+  if (arch !== 'x86_64' && arch !== 'arm64') {
+    throw new Error(`cpuArchitecture must be "x86_64" or "arm64" (got ${JSON.stringify(arch)})`)
+  }
+  return arch
 }
 
 /** Validated `deployConcurrency` (sites per wave after the canary, ≥ 1). */
@@ -1010,6 +1037,7 @@ export interface KukanConfig extends ScaleComputed {
   scale: Scale
   dbEngine: DbEngine
   enableOpenSearch: boolean
+  cpuArchitecture: CpuArchitecture
   enableWaf: boolean
   allowedIpRanges?: string[]
   basicAuth?: { username: string; password: string }
@@ -1127,6 +1155,9 @@ export function loadConfig(
 
   const scale = ctx<Scale>('scale') ?? env.scale ?? 'small'
   const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
+  // env-only (no ctx): the pipeline picks its asset-publishing CodeBuild from
+  // the entry, which a -c on a standalone deploy cannot reach
+  const cpuArchitecture = resolveCpuArchitecture(env)
   const allowedIpRanges = ctx<string[]>('allowedIpRanges') ?? env.allowedIpRanges
   // Read as written, an empty allowlist admits nobody; the viewer-request
   // function reads it as no gate at all. Neither can be what was meant.
@@ -1208,6 +1239,7 @@ export function loadConfig(
     scale,
     dbEngine: db.engine,
     enableOpenSearch,
+    cpuArchitecture,
     enableWaf,
     allowedIpRanges,
     basicAuth,

@@ -17,6 +17,7 @@ import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
 import { WAITING_METRIC_NAME, WAITING_METRIC_NAMESPACE } from '@kukan/shared'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
@@ -74,7 +75,7 @@ export class WorkerServiceConstruct extends Construct {
       directory: '../',
       file: 'Dockerfile',
       target: 'worker',
-      platform: assets.Platform.LINUX_AMD64,
+      platform: ARCHITECTURES[config.cpuArchitecture].imagePlatform,
       ignoreMode: cdk.IgnoreMode.DOCKER,
     })
 
@@ -82,6 +83,7 @@ export class WorkerServiceConstruct extends Construct {
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       cpu: config.worker.cpu,
       memoryLimitMiB: config.worker.memory,
+      runtimePlatform: ARCHITECTURES[config.cpuArchitecture].taskRuntimePlatform,
     })
 
     // Grant permissions to task role

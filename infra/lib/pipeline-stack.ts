@@ -9,7 +9,13 @@ import * as codebuild from 'aws-cdk-lib/aws-codebuild'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelines'
 import { Construct } from 'constructs'
-import { needsGlobalStack, resolveEnv, type EnvironmentConfig } from './config.js'
+import {
+  needsGlobalStack,
+  resolveCpuArchitecture,
+  resolveEnv,
+  type EnvironmentConfig,
+} from './config.js'
+import { ARCHITECTURES } from './cpu-architecture.js'
 import { pascal } from './naming.js'
 import { KukanStage, MAIN_STACK_ID, siteStackId } from './kukan-stage.js'
 import { DeployNotificationConstruct } from './constructs/deploy-notification.js'
@@ -83,9 +89,13 @@ export class KukanPipelineStack extends cdk.Stack {
         }),
         // The default SMALL (3 GB) instance OOM-kills the Next.js type checker
         // inside the web image build with no diagnostics ("Failed to type
-        // check."), so asset publishing gets the next size up.
+        // check."), so asset publishing gets the next size up. ARM's MEDIUM is
+        // the same 8 GB.
         assetPublishingCodeBuildDefaults: {
-          buildEnvironment: { computeType: codebuild.ComputeType.MEDIUM },
+          buildEnvironment: {
+            computeType: codebuild.ComputeType.MEDIUM,
+            buildImage: ARCHITECTURES[resolveCpuArchitecture(config)].assetBuildImage,
+          },
         },
         synthCodeBuildDefaults: {
           // Name the Node major instead of taking the image's default, which

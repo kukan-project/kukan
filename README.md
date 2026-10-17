@@ -215,6 +215,7 @@ Environments (dev / prd, etc.) are defined in `infra/config/environments.ts` (co
 | `scale`             | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                                                             |
 | `dbEngine`          | `rds` \| `aurora`              | Scale-dependent    | DB engine                                                                                          |
 | `enableOpenSearch`  | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                                                            |
+| `cpuArchitecture`   | `arm64` \| `x86_64`            | `arm64`            | CPU of the web and worker tasks (Graviton by default); the images are built for it                 |
 | `enableWaf`         | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo)                                                                         |
 | `allowedIpRanges`   | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)                                             |
 | `domainName`        | string                         | —                  | Custom domain (CloudFront default domain when unset)                                               |

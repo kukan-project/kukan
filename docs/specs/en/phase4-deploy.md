@@ -585,6 +585,41 @@ docker build --target web -t kukan-web .
 docker build --target worker -t kukan-worker .
 ```
 
+Dependency installation and `pnpm build` (the `deps` / `build` stages) run on the build
+machine's own architecture (`$BUILDPLATFORM`). Their output is JavaScript and does not depend on
+the architecture; the target's native binaries (DuckDB, sharp + libvips) are picked when the
+files move into the image. Only the `RUN` steps of the image's own stages (installing the DuckDB
+extensions and the like) run on the target architecture.
+
+### CPU architecture (`cpuArchitecture`)
+
+The web and worker tasks run on **arm64 (Graviton)** by default. Fargate charges 20% less
+per vCPU and per GB than x86_64 (Tokyo, Osaka). Set `cpuArchitecture: 'x86_64'` on the
+environment entry to go back to x86_64. It is an environment-level setting and cannot differ
+per site (there is one pipeline per environment), nor can `-c` override it (it would not reach
+the pipeline's build environment).
+
+This one field decides three things (`infra/lib/cpu-architecture.ts`):
+
+| What                                      | arm64                                           | x86_64                      |
+| ----------------------------------------- | ----------------------------------------------- | --------------------------- |
+| Image build platform (`DockerImageAsset`) | `linux/arm64`                                   | `linux/amd64`               |
+| Task definition `runtimePlatform`         | `ARM64`                                         | `X86_64`                    |
+| Pipeline asset-publishing CodeBuild       | `amazonlinux-aarch64-standard:3.0` (ARM MEDIUM) | `standard:7.0` (x86 MEDIUM) |
+
+- **Pipeline**: the images are built on a CodeBuild of the tasks' architecture, so QEMU is not
+  involved. ARM MEDIUM has the same 8 GiB / 4 vCPU as x86 (the memory the Next.js type check needs). Tokyo
+  and Osaka have it; set `x86_64` for a pipeline in a region without ARM CodeBuild (`ARM_CONTAINER`)
+- **Standalone**: on a machine of the other architecture, only the image's own stages run under
+  QEMU (building arm64 from WSL on x86_64 took about 75 s for the web and 50 s for the worker,
+  close to a native build). Docker Desktop (Windows / Mac) registers QEMU itself, so nothing needs
+  setting up. On Linux with Docker Engine alone, run
+  `docker run --privileged --rm tonistiigi/binfmt --install arm64` once
+- Different architectures give different image hashes (tags), so dev on arm64 and prd on x86_64
+  in the same account do not collide
+- Docker Compose (development, on-premises) builds for the local architecture and is not affected
+  by this setting
+
 ## DB Migrations
 
 Migrations run automatically when the Worker starts:
