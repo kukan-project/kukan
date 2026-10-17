@@ -22,10 +22,16 @@ export function lakeTableAt(ref: string, snapshot: number): string {
   return `${ref} AT (VERSION => ${Math.trunc(snapshot)})`
 }
 
+/**
+ * Asked of the session's catalog alone: `duckdb_tables()`, even filtered, opens
+ * every catalog on the shared instance — other jobs' drafts (ADR-067) — and
+ * one mid-commit fails it, and the commit, with `database is locked`. Reads
+ * what is committed, so it is for outside a transaction.
+ */
 export async function lakeTableExists(session: LakeSession, table: string): Promise<boolean> {
   const rows = await session.rows(
-    `SELECT 1 FROM duckdb_tables() WHERE database_name = ${sqlLiteral(session.catalog)} ` +
-      `AND table_name = ${sqlLiteral(table)}`
+    `SELECT 1 FROM ducklake_table_info(${sqlLiteral(session.catalog)}) ` +
+      `WHERE table_name = ${sqlLiteral(table)}`
   )
   return rows.length > 0
 }

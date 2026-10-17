@@ -9,6 +9,8 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { Readable } from 'node:stream'
 import type { LakeConfig } from '../config'
 import { closeLakeInstances, releaseIdleLakeInstances, withBucketSession } from '../connection'
@@ -28,6 +30,7 @@ import {
   type LakeCatalogCache,
   type LakeObjectStore,
 } from '../catalog'
+import { lakeTableExists } from '../table'
 
 const RESOURCE = '429ff69d-7b24-4a8f-a0ec-671bcceee31e'
 const OTHER = '9d3a2c1e-0b4f-4e6a-8c7d-112233445566'
@@ -96,6 +99,26 @@ describe('catalog keys', () => {
     ).toBeNull()
   })
 })
+
+/** An exclusive lock on a SQLite file, held by another process until released. */
+async function holdExclusive(file: string): Promise<() => Promise<void>> {
+  const holder = spawn(
+    process.execPath,
+    [
+      '--no-warnings',
+      '-e',
+      `const db = new (require('node:sqlite').DatabaseSync)(${JSON.stringify(file)});` +
+        "db.exec('BEGIN EXCLUSIVE'); process.stdout.write('held');" +
+        "process.stdin.on('end', () => process.exit(0)).resume()",
+    ],
+    { stdio: ['pipe', 'pipe', 'inherit'] }
+  )
+  await once(holder.stdout, 'data')
+  return async () => {
+    holder.stdin.end()
+    await once(holder, 'exit')
+  }
+}
 
 describe('a catalog draft', () => {
   it('starts empty with inlining off, and keeps it off once published and reopened', async () => {
@@ -253,7 +276,7 @@ describe('a catalog draft', () => {
         expect(draft.created).toBe(true)
         expect(draft.generation).not.toBe(first.generation)
         const tables = await draft.session.rows(
-          `SELECT 1 FROM duckdb_tables() WHERE database_name = '${draft.session.catalog}'`
+          `SELECT 1 FROM ducklake_table_info('${draft.session.catalog}')`
         )
         expect(tables).toEqual([])
       }
@@ -269,6 +292,34 @@ describe('a catalog draft', () => {
     await b.session.run(`CREATE TABLE ${b.session.catalog}.t AS SELECT 2 AS id`)
     await a.publish(lakeCatalogKey(RESOURCE, a.generation))
     await b.publish(lakeCatalogKey(OTHER, b.generation))
+  })
+
+  it('reads nothing of the catalog beside it, for a table it has or not', async () => {
+    const { store } = memoryStore()
+    const b = await openLakeCatalogDraft(config, store, { resourceId: OTHER, from: null })
+    const [bDir] = await leftovers()
+    const a = await openLakeCatalogDraft(config, store, { resourceId: RESOURCE, from: null })
+    await a.session.run(`CREATE TABLE ${a.session.catalog}.t AS SELECT 1 AS id`)
+
+    // A commit to b, held: a read of b now waits out SQLite's busy timeout and
+    // fails. From another process, as SQLite's file locks are per process.
+    const release = await holdExclusive(join(root, bDir, 'catalog.sqlite'))
+    try {
+      expect(await lakeTableExists(a.session, 't')).toBe(true)
+      expect(await lakeTableExists(a.session, 'missing')).toBe(false)
+      // Not a "Did you mean" looked for in every catalog on the instance
+      const catalog = a.session.catalog
+      await expect(a.session.rows(`SELECT * FROM ${catalog}.missing`)).rejects.toThrow(
+        /Catalog Error/
+      )
+      await expect(a.session.rows(`SELECT * FROM ${catalog}.t AT (VERSION => 0)`)).rejects.toThrow(
+        /Catalog Error/
+      )
+    } finally {
+      await release()
+      await a.dispose()
+      await b.dispose()
+    }
   })
 })
 

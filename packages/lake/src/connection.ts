@@ -92,11 +92,11 @@ function retire(instance: DuckDBInstance): Promise<void> {
  *
  * A DuckLake catalog whose metadata database is gone is one some earlier
  * session left half-detached. Statements naming other catalogs still run, but
- * any that lists the instance's catalogs — `duckdb_tables()`, which the
- * ingest's table check reads — fails on it until the instance goes. Seen after
- * SQLite catalogs failed with `database is locked`, by a path not reproduced;
- * whichever session meets it first takes the instance out, and the queue's
- * retry runs on a fresh one.
+ * any that reads every catalog — a listing like `duckdb_tables()` — fails on
+ * it until the instance goes. Seen after SQLite catalogs failed with `database
+ * is locked`, and from such a read meeting a catalog another session is
+ * detaching; whichever session meets it first takes the instance out, and the
+ * queue's retry runs on a fresh one.
  */
 function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
@@ -161,6 +161,13 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
     // between operations. The cache buys nothing here anyway: operations on the
     // lake rarely read the same files twice.
     await conn.run('SET enable_external_file_cache = false')
+
+    // **A statement on one catalog must not read the others.** A table that
+    // does not exist sends the binder through every attached catalog for a
+    // "Did you mean", and here those are other jobs' drafts: one mid-commit
+    // fails the statement with `database is locked` after the busy timeout,
+    // and the commit with it (ADR-067). Its own catalog still answers.
+    await conn.run('SET catalog_error_max_schemas = 0')
 
     await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'sqlite', 'ducklake'])
 
