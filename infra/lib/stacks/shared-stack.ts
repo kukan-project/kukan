@@ -11,11 +11,11 @@ import * as cdk from 'aws-cdk-lib'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ssm from 'aws-cdk-lib/aws-ssm'
 import type { Construct } from 'constructs'
-import { loadConfig, type EnvironmentConfig } from './config.js'
+import { loadConfig, type EnvironmentConfig } from '../config.js'
 import { composeShared } from './composition.js'
-import { sharedParamName, type SharedParam } from './naming.js'
-import { BackupConstruct } from './constructs/backup.js'
-import { SharedAlbConstruct } from './constructs/shared-alb.js'
+import { sharedParamName, type SharedParam } from '../naming.js'
+import { BackupConstruct } from '../constructs/backup.js'
+import { SharedAlbConstruct } from '../constructs/shared-alb.js'
 
 export interface KukanSharedStackProps extends cdk.StackProps {
   envConfig: EnvironmentConfig

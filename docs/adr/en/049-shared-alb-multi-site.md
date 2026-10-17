@@ -268,9 +268,9 @@ Operational notes for the cutover (also in `docs/specs/jp/phase4-deploy.md`):
 
 ## Impact
 
-- `infra/lib/shared-stack.ts`: add the ALB, listener, VPC origin and three SSM
+- `infra/lib/stacks/shared-stack.ts`: add the ALB, listener, VPC origin and three SSM
   parameters
-- `infra/lib/site-stack.ts` / `composition.ts`: import the shared listener and VPC
+- `infra/lib/stacks/site-stack.ts` / `composition.ts`: import the shared listener and VPC
   origin and pass them through `SiteSurface`
 - `infra/lib/constructs/web-service.ts`: the optional `sharedListener` branch
   (current path unchanged when absent)

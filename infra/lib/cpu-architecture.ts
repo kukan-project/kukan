@@ -1,5 +1,5 @@
 /**
- * What `cpuArchitecture` (config.ts) means to each place that has to agree on
+ * What `cpuArchitecture` (config/types.ts) means to each place that has to agree on
  * it: the platform the images are built for, the one the tasks run on, and the
  * CodeBuild the pipeline builds the images on (the target's own architecture,
  * which keeps QEMU out of the pipeline).

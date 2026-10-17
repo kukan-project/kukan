@@ -119,7 +119,7 @@ export class AccessLogConstruct extends Construct {
         },
       },
     })
-    table.addDependency(database)
+    table.addResourceDependency(database)
   }
 }
 

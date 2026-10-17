@@ -240,8 +240,8 @@ ENI の重複はサイト数に依存しなくなる。代わりに「同一 VPC
 
 ## 影響
 
-- `infra/lib/shared-stack.ts`: ALB・リスナー・VPC origin・SSM パラメータ 3 本の追加
-- `infra/lib/site-stack.ts` / `composition.ts`: 共有リスナーと VPC origin の
+- `infra/lib/stacks/shared-stack.ts`: ALB・リスナー・VPC origin・SSM パラメータ 3 本の追加
+- `infra/lib/stacks/site-stack.ts` / `composition.ts`: 共有リスナーと VPC origin の
   インポート、`SiteSurface` への受け渡し
 - `infra/lib/constructs/web-service.ts`: 任意の `sharedListener` 分岐
   （未指定時は現行パスのまま）

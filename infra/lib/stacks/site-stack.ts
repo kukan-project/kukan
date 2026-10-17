@@ -21,11 +21,11 @@ import {
   resolveSiteConfig,
   type EnvironmentConfig,
   type SiteConfig,
-} from './config.js'
+} from '../config.js'
 import { composeSite } from './composition.js'
-import { envPrefix, sharedParamName, type SharedParam, type SiteScopedStack } from './naming.js'
-import { BackupConstruct } from './constructs/backup.js'
-import { SiteDatabaseConstruct } from './constructs/site-database.js'
+import { envPrefix, sharedParamName, type SharedParam, type SiteScopedStack } from '../naming.js'
+import { BackupConstruct } from '../constructs/backup.js'
+import { SiteDatabaseConstruct } from '../constructs/site-database.js'
 
 export interface KukanSiteStackProps extends cdk.StackProps {
   envConfig: EnvironmentConfig
@@ -60,6 +60,16 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
       availabilityZones: splitPair(read('vpc/azs')),
       publicSubnetIds: splitPair(read('vpc/public-subnet-ids')),
       isolatedSubnetIds: splitPair(read('vpc/isolated-subnet-ids')),
+    })
+    // Imported for its subnet IDs alone
+    cdk.Validations.of(vpc).acknowledge({
+      id: 'Construct-Annotations::@aws-cdk/aws-ec2:noSubnetRouteTableId',
+      reason: 'no route table of the shared VPC is read',
+    })
+    // A template-wide rule, so it cannot be scoped to the VPC
+    cdk.Validations.of(this).acknowledge({
+      id: 'CloudFormation-Validate::W2001',
+      reason: 'the vpc/azs parameter only fills a field fromVpcAttributes requires',
     })
     const cluster = ecs.Cluster.fromClusterAttributes(this, 'SharedCluster', {
       clusterName: read('ecs/cluster-name'),

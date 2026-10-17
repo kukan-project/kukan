@@ -151,11 +151,23 @@ infra/
 │   ├── environments.example.ts       # environment definition template (committed)
 │   └── environments.ts               # environment definitions (committed by the fork; copy and edit the example)
 ├── lib/
-│   ├── kukan-stage.ts                # KukanStage (wraps Global+Main, the env boundary)
-│   ├── pipeline-stack.ts             # CDK Pipelines (CodeConnections, one per env)
-│   ├── kukan-stack.ts                # the main stack
-│   ├── global-stack.ts               # the global stack (us-east-1)
-│   ├── config.ts                     # config resolution (EnvironmentConfig / loadConfig)
+│   ├── config.ts                     # config entry point (re-exports config/)
+│   ├── config/
+│   │   ├── types.ts                  # EnvironmentConfig / SiteConfig / KukanConfig
+│   │   ├── load.ts                   # loadConfig, environment-level defaults and checks
+│   │   ├── scale.ts                  # scale presets, overrides, database sizing
+│   │   ├── sites.ts                  # multi-site validation (ADR-041 / ADR-049)
+│   │   └── edge.ts                   # the CloudFront edge (when cert / WAF are created)
+│   ├── naming.ts                     # resource and SSM parameter names (ADR-031)
+│   ├── cpu-architecture.ts           # cpuArchitecture → image / task / CodeBuild
+│   ├── stacks/
+│   │   ├── kukan-stage.ts            # KukanStage (wraps the stacks, the env boundary)
+│   │   ├── pipeline-stack.ts         # CDK Pipelines (CodeConnections, one per env)
+│   │   ├── kukan-stack.ts            # the main stack (single site)
+│   │   ├── shared-stack.ts           # the shared stack (multi-site, ADR-041)
+│   │   ├── site-stack.ts             # a site stack (multi-site, ADR-041)
+│   │   ├── composition.ts            # assembles the shared and the per-site parts
+│   │   └── global-stack.ts           # the global stack (us-east-1)
 │   └── constructs/
 │       ├── network.ts                # VPC, SG, S3 Endpoint
 │       ├── database.ts               # RDS / Aurora + Secrets Manager
@@ -811,8 +823,8 @@ automatically (ADR-030). It is started from CodeConnections (a GitHub App) as th
 pipeline self-mutates (updating itself when its definition changes), and each environment is
 deployed as a CDK Stage (ADR-031).
 
-- Pipeline definition: `infra/lib/pipeline-stack.ts` (one pipeline per env)
-- Environment boundary: `infra/lib/kukan-stage.ts` (`KukanStage` wraps Global+Main)
+- Pipeline definition: `infra/lib/stacks/pipeline-stack.ts` (one pipeline per env)
+- Environment boundary: `infra/lib/stacks/kukan-stage.ts` (`KukanStage` wraps Global+Main)
 - Environment definitions: `infra/config/environments.ts`
 - Authentication: CodeConnections (no long-lived tokens)
 
@@ -1007,7 +1019,7 @@ so long site names and domains can overflow it; synth then stops and names the s
 - CDK: the whole `infra/` directory
 - Environment definitions: `infra/config/environments.ts` (committed by the fork),
   `infra/config/environments.example.ts`
-- CI/CD: `infra/lib/pipeline-stack.ts`, `infra/lib/kukan-stage.ts`
+- CI/CD: `infra/lib/stacks/pipeline-stack.ts`, `infra/lib/stacks/kukan-stage.ts`
 - Deploy notifications: `infra/lib/constructs/deploy-notification.ts`, `infra/lib/lambda/deploy-notification/`
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker health check: `apps/worker/src/index.ts`

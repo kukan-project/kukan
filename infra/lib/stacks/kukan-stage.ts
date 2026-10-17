@@ -19,8 +19,8 @@ import {
   validateSites,
   type EnvironmentConfig,
   resolveDeployConcurrency,
-} from './config.js'
-import { pascal } from './naming.js'
+} from '../config.js'
+import { pascal } from '../naming.js'
 import { KukanGlobalStack } from './global-stack.js'
 import { KukanStack } from './kukan-stack.js'
 import { KukanSharedStack } from './shared-stack.js'

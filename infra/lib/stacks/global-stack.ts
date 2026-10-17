@@ -9,9 +9,9 @@ import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as route53 from 'aws-cdk-lib/aws-route53'
 import type { Construct } from 'constructs'
-import { loadConfig, needsManagedCert, needsManagedWaf, type EnvironmentConfig } from './config.js'
-import { pascal } from './naming.js'
-import { WafConstruct } from './constructs/waf.js'
+import { loadConfig, needsManagedCert, needsManagedWaf, type EnvironmentConfig } from '../config.js'
+import { pascal } from '../naming.js'
+import { WafConstruct } from '../constructs/waf.js'
 
 export interface KukanGlobalStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */

@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Implemented and in operation (`infra/lib/kukan-stage.ts` / `config/environments.ts`). Designed together with ADR-030 (CDK Pipelines). ADR-041 extends it with the site axis.
+**Accepted** — Implemented and in operation (`infra/lib/stacks/kukan-stage.ts` / `config/environments.ts`). Designed together with ADR-030 (CDK Pipelines). ADR-041 extends it with the site axis.
 
 ## Context
 
@@ -29,7 +29,7 @@ Since KUKAN is meant to be forked as OSS, it is desirable for forks to **build m
 ### KukanStage (environment boundary)
 
 ```ts
-// infra/lib/kukan-stage.ts
+// infra/lib/stacks/kukan-stage.ts
 export class KukanStage extends cdk.Stage {
   constructor(scope: Construct, id: string, props: EnvironmentConfig & cdk.StageProps) {
     super(scope, id, props)
@@ -164,7 +164,7 @@ env entry (`scale` + `overrides`) > scale defaults (`config.ts`) > built-in defa
 ## Consequences (changes at implementation time)
 
 - New: `infra/config/environments.ts` (committed by forks) + `environments.example.ts` (committed by upstream) + type `EnvironmentConfig`
-- New: `infra/lib/kukan-stage.ts` (`KukanStage`, encapsulating Global+Main)
+- New: `infra/lib/stacks/kukan-stage.ts` (`KukanStage`, encapsulating Global+Main)
 - `infra/bin/app.ts`: read `environments.ts` and register stages with CDK Pipelines (ADR-030) (optionally also a standalone Stage for local direct deploys)
 - `infra/lib/config.ts`: `loadConfig` merges the env entry + `overrides`; change the `bucketName` default to auto-naming
 - `infra/lib/constructs/*`: remove/suffix fixed physical names (cluster / service / queue / cf-function / bucket)

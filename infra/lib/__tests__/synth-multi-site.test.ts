@@ -20,7 +20,7 @@ import {
   type SiteConfig,
 } from '../config.js'
 import { pascal } from '../naming.js'
-import { KukanPipelineStack } from '../pipeline-stack.js'
+import { KukanPipelineStack } from '../stacks/pipeline-stack.js'
 import {
   CDN_LOG_BUCKET,
   normalize,

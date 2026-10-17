@@ -14,11 +14,11 @@ import {
   resolveCpuArchitecture,
   resolveEnv,
   type EnvironmentConfig,
-} from './config.js'
-import { ARCHITECTURES } from './cpu-architecture.js'
-import { pascal } from './naming.js'
+} from '../config.js'
+import { ARCHITECTURES } from '../cpu-architecture.js'
+import { pascal } from '../naming.js'
 import { KukanStage, MAIN_STACK_ID, siteStackId } from './kukan-stage.js'
-import { DeployNotificationConstruct } from './constructs/deploy-notification.js'
+import { DeployNotificationConstruct } from '../constructs/deploy-notification.js'
 
 /** The Node major the synth step runs on; keep it with the Dockerfile's (see docs/node-version.md). */
 const NODE_MAJOR = 24

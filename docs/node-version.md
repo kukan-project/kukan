@@ -13,7 +13,7 @@ Docker イメージに合わせて手で上げる（Dependabot はこのレジ�
 | `Dockerfile` の `FROM`（`base` と `build-base` の 2 か所）        | タグ + ダイジェスト、コメントに版 | 毎回                            |
 | `.node-version`                                                   | 完全な版（Dockerfile と同じ）     | 毎回                            |
 | `.github/workflows/ci.yml`、`deploy-site.yml` の `setup-node`     | メジャー                          | メジャー                        |
-| `infra/lib/pipeline-stack.ts` の `NODE_MAJOR`                     | メジャー（CodeBuild の runtime）  | メジャー                        |
+| `infra/lib/stacks/pipeline-stack.ts` の `NODE_MAJOR`              | メジャー（CodeBuild の runtime）  | メジャー                        |
 | `infra/lib/constructs/site-database.ts`、`deploy-notification.ts` | `lambda.Runtime.NODEJS_XX_X`      | メジャー（Lambda の対応を待つ） |
 | 全 `package.json` の `@types/node`                                | `^XX.y.z`（lock は 1 つの版）     | メジャー                        |
 | `.github/dependabot.yml` の `@types/node` のメジャー除外          | —                                 | メジャー（除外はそのまま残す）  |

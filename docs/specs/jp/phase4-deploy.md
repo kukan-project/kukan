@@ -148,11 +148,23 @@ infra/
 │   ├── environments.example.ts       # 環境定義テンプレート（commit）
 │   └── environments.ts               # 環境定義（フォークがコミット。example をコピーして編集）
 ├── lib/
-│   ├── kukan-stage.ts                # KukanStage（Global+Main を内包、env 境界）
-│   ├── pipeline-stack.ts             # CDK Pipelines（CodeConnections、env ごと）
-│   ├── kukan-stack.ts                # メインスタック
-│   ├── global-stack.ts               # グローバルスタック（us-east-1）
-│   ├── config.ts                     # 設定解決（EnvironmentConfig / loadConfig）
+│   ├── config.ts                     # 設定の入口（config/ の型と関数を再エクスポート）
+│   ├── config/
+│   │   ├── types.ts                  # EnvironmentConfig / SiteConfig / KukanConfig
+│   │   ├── load.ts                   # loadConfig、環境単位の既定値と検査
+│   │   ├── scale.ts                  # スケール既定値、overrides、DB のサイズ
+│   │   ├── sites.ts                  # マルチサイトの検証（ADR-041 / ADR-049）
+│   │   └── edge.ts                   # CloudFront のエッジ（証明書・WAF の要否）
+│   ├── naming.ts                     # リソース名・SSM パラメータ名（ADR-031）
+│   ├── cpu-architecture.ts           # cpuArchitecture → イメージ・タスク・CodeBuild
+│   ├── stacks/
+│   │   ├── kukan-stage.ts            # KukanStage（スタックを内包、env 境界）
+│   │   ├── pipeline-stack.ts         # CDK Pipelines（CodeConnections、env ごと）
+│   │   ├── kukan-stack.ts            # メインスタック（シングルサイト）
+│   │   ├── shared-stack.ts           # 共有スタック（マルチサイト、ADR-041）
+│   │   ├── site-stack.ts             # サイトスタック（マルチサイト、ADR-041）
+│   │   ├── composition.ts            # 共有部分とサイト部分の組み立て
+│   │   └── global-stack.ts           # グローバルスタック（us-east-1）
 │   └── constructs/
 │       ├── network.ts                # VPC, SG, S3 Endpoint
 │       ├── database.ts               # RDS / Aurora + Secrets Manager
@@ -769,8 +781,8 @@ npx cdk deploy -c env=dev 'Dev/**'
 自動デプロイする（ADR-030）。CodeConnections（GitHub App）をソースに起動し、パイプラインは
 自己変異（定義変更時に自身を更新）し、各環境を CDK Stage（ADR-031）としてデプロイする。
 
-- パイプライン定義: `infra/lib/pipeline-stack.ts`（env ごとに1パイプライン）
-- 環境境界: `infra/lib/kukan-stage.ts`（`KukanStage` が Global+Main を内包）
+- パイプライン定義: `infra/lib/stacks/pipeline-stack.ts`（env ごとに1パイプライン）
+- 環境境界: `infra/lib/stacks/kukan-stage.ts`（`KukanStage` が Global+Main を内包）
 - 環境定義: `infra/config/environments.ts`
 - 認証: CodeConnections（長期トークン不要）
 
@@ -947,7 +959,7 @@ aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 
 
 - CDK: `infra/` ディレクトリ全体
 - 環境定義: `infra/config/environments.ts`（フォークがコミット）, `infra/config/environments.example.ts`
-- CI/CD: `infra/lib/pipeline-stack.ts`, `infra/lib/kukan-stage.ts`
+- CI/CD: `infra/lib/stacks/pipeline-stack.ts`, `infra/lib/stacks/kukan-stage.ts`
 - デプロイ通知: `infra/lib/constructs/deploy-notification.ts`, `infra/lib/lambda/deploy-notification/`
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker ヘルスチェック: `apps/worker/src/index.ts`

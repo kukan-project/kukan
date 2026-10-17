@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/kukan-stage.ts` / `config/environments.ts`）。ADR-030（CDK Pipelines）と対で設計する。サイト軸の追加は ADR-041 が拡張する。
+**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/stacks/kukan-stage.ts` / `config/environments.ts`）。ADR-030（CDK Pipelines）と対で設計する。サイト軸の追加は ADR-041 が拡張する。
 
 ## コンテキスト
 
@@ -27,7 +27,7 @@ OSS としてフォークされる前提では、フォーク側が **設定フ�
 ### KukanStage（環境境界）
 
 ```ts
-// infra/lib/kukan-stage.ts
+// infra/lib/stacks/kukan-stage.ts
 export class KukanStage extends cdk.Stage {
   constructor(scope: Construct, id: string, props: EnvironmentConfig & cdk.StageProps) {
     super(scope, id, props)
@@ -157,7 +157,7 @@ env エントリ（`scale` + `overrides`）　＞　スケール既定（`config
 ## 影響（実装時の変更点）
 
 - 新規: `infra/config/environments.ts`（フォークがコミット）＋ `environments.example.ts`（upstream がコミット）＋ 型 `EnvironmentConfig`
-- 新規: `infra/lib/kukan-stage.ts`（`KukanStage`、Global+Main を内包）
+- 新規: `infra/lib/stacks/kukan-stage.ts`（`KukanStage`、Global+Main を内包）
 - `infra/bin/app.ts`: `environments.ts` を読み、CDK Pipelines（ADR-030）に Stage を登録（ローカル直接デプロイ用に Stage 単体生成も併設可）
 - `infra/lib/config.ts`: `loadConfig` が env エントリ＋`overrides` をマージ、`bucketName` 既定を自動命名へ
 - `infra/lib/constructs/*`: 固定物理名の除去/サフィックス化（cluster / service / queue / cf-function / bucket）

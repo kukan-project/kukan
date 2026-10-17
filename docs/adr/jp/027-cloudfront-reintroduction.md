@@ -212,12 +212,12 @@ VPC Origin により ALB のパブリック IPv4 が不要になり、Origin Ver
 ### 実装（完了）
 
 1. ADR 承認
-2. `infra/lib/global-stack.ts` 作成（us-east-1: ACM 証明書 + WAF WebACL）
+2. `infra/lib/stacks/global-stack.ts` 作成（us-east-1: ACM 証明書 + WAF WebACL）
 3. `infra/lib/constructs/cdn.ts` 作成（CloudFront Distribution + VPC Origin）
 4. `infra/lib/cf-functions/viewer-request.js` 作成（アクセス制限: IP/Basic + Cookie bypass）
 5. `infra/lib/constructs/network.ts` 更新
    - ALB SG: CloudFront マネージドプレフィックスリストから port 80 のみ許可
-6. `infra/lib/kukan-stack.ts` 更新
+6. `infra/lib/stacks/kukan-stack.ts` 更新
    - 地域 ACM 証明書を廃止（CloudFront が TLS 終端）
    - CDN コンストラクト追加
    - Route53 レコードを CNAME → ALB から A (Alias) → CloudFront に変更

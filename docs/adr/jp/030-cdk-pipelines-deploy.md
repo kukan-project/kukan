@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/pipeline-stack.ts`。CodePipeline は V2）。ADR-031（Stage ベースのマルチ環境）と対で設計する。
+**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/stacks/pipeline-stack.ts`。CodePipeline は V2）。ADR-031（Stage ベースのマルチ環境）と対で設計する。
 
 ## コンテキスト
 
@@ -68,7 +68,7 @@ new CodePipeline(this, 'Pipeline', {
 
 ## 影響（実装時の変更点）
 
-- 新規: `infra/lib/pipeline-stack.ts`（`CodePipeline` 定義）、`infra/lib/kukan-stage.ts`（Stage、ADR-031）
+- 新規: `infra/lib/stacks/pipeline-stack.ts`（`CodePipeline` 定義）、`infra/lib/stacks/kukan-stage.ts`（Stage、ADR-031）
 - **廃止**: `infra/lib/constructs/ci-oidc.ts`、`.github/workflows/deploy.yml`（GitHub Actions + OIDC 案の撤回。`kukan-stack.ts` の `CiOidc` 配線も除去）
 - `infra/bin/app.ts`: パイプラインスタックを生成（ローカル直接デプロイ用に Stage 単体生成も併設可）
 - 設定: CodeConnections の Connection ARN を環境設定（ADR-031 の `environments.ts`）または context に追加

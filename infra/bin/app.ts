@@ -27,8 +27,8 @@ import {
   validateEcrImageRetention,
 } from '../lib/config.js'
 import { pascal } from '../lib/naming.js'
-import { KukanStage } from '../lib/kukan-stage.js'
-import { KukanPipelineStack } from '../lib/pipeline-stack.js'
+import { KukanStage } from '../lib/stacks/kukan-stage.js'
+import { KukanPipelineStack } from '../lib/stacks/pipeline-stack.js'
 import * as exampleEnvs from '../config/environments.example.js'
 
 interface EnvModule {

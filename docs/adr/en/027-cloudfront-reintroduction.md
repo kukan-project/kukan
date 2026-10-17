@@ -215,12 +215,12 @@ For higher data transfer volumes, CloudFront is even cheaper ($0.085 vs $0.114/G
 ### Implementation (Complete)
 
 1. ADR approval
-2. Create `infra/lib/global-stack.ts` (us-east-1: ACM certificate + WAF WebACL)
+2. Create `infra/lib/stacks/global-stack.ts` (us-east-1: ACM certificate + WAF WebACL)
 3. Create `infra/lib/constructs/cdn.ts` (CloudFront Distribution with VPC Origin)
 4. Create `infra/lib/cf-functions/viewer-request.js` (access control: IP/Basic + cookie bypass)
 5. Update `infra/lib/constructs/network.ts`
    - Remove ALB SG internet-facing ingress rules (ALB is internal)
-6. Update `infra/lib/kukan-stack.ts`
+6. Update `infra/lib/stacks/kukan-stack.ts`
    - Remove regional ACM certificate (CloudFront terminates TLS)
    - Remove Origin Verify Secret (replaced by VPC origin)
    - Add CDN construct with VPC origin

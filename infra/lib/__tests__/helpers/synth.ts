@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import * as cdk from 'aws-cdk-lib'
 import { Match, Template } from 'aws-cdk-lib/assertions'
-import { KukanStage } from '../../kukan-stage.js'
+import { KukanStage } from '../../stacks/kukan-stage.js'
 import type { EnvironmentConfig } from '../../config.js'
 
 // Asset paths in the constructs (e.g. DockerImageAsset `directory: '../'`) are

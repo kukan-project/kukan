@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Implemented and in operation (`infra/lib/pipeline-stack.ts`; CodePipeline V2). Designed together with ADR-031 (Stage-based multi-environment).
+**Accepted** — Implemented and in operation (`infra/lib/stacks/pipeline-stack.ts`; CodePipeline V2). Designed together with ADR-031 (Stage-based multi-environment).
 
 ## Context
 
@@ -70,7 +70,7 @@ new CodePipeline(this, 'Pipeline', {
 
 ## Consequences (changes at implementation time)
 
-- New: `infra/lib/pipeline-stack.ts` (`CodePipeline` definition), `infra/lib/kukan-stage.ts` (Stage, ADR-031)
+- New: `infra/lib/stacks/pipeline-stack.ts` (`CodePipeline` definition), `infra/lib/stacks/kukan-stage.ts` (Stage, ADR-031)
 - **Removed**: `infra/lib/constructs/ci-oidc.ts`, `.github/workflows/deploy.yml` (withdrawing the GitHub Actions + OIDC option; the `CiOidc` wiring in `kukan-stack.ts` is also removed)
 - `infra/bin/app.ts`: instantiate the pipeline stack (optionally also a standalone Stage for local direct deploys)
 - Config: add the CodeConnections Connection ARN to the environment config (ADR-031's `environments.ts`) or context

@@ -10,9 +10,9 @@
 
 import * as cdk from 'aws-cdk-lib'
 import type { Construct } from 'constructs'
-import { loadConfig, type EnvironmentConfig } from './config.js'
+import { loadConfig, type EnvironmentConfig } from '../config.js'
 import { composeShared, composeSite } from './composition.js'
-import { BackupConstruct } from './constructs/backup.js'
+import { BackupConstruct } from '../constructs/backup.js'
 
 export interface KukanStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */
