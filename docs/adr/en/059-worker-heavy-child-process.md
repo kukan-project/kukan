@@ -155,7 +155,9 @@ Each start, stop, rerun and release of layer 2 instances is logged with why
 - The parent makes the temporary directory, passes it, and removes it (a child can be stopped
   midway, so it cannot clean up after itself)
 - The child's code is a second tsup entry of the worker, next to it in `dist`. No setting like the
-  web's `QUERY_CHILD_ENTRY` is needed
+  web's `QUERY_CHILD_ENTRY` is needed. Nor for the query child process (ADR-032) that reads the
+  summary's sample rows: the image puts it in `dist` too, and the query service finds it beside
+  itself
 
 ### 5. Shared mechanism
 

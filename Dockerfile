@@ -134,6 +134,9 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
   && addgroup -S appgroup && adduser -S appuser -G appgroup && chown appuser:appgroup /app
 COPY --chown=appuser:appgroup --from=worker-deps /app/worker-deploy/node_modules ./node_modules
 COPY --chown=appuser:appgroup --from=build /app/apps/worker/dist ./apps/worker/dist
+# The query process the summary's sample rows read through (ADR-053), beside
+# the bundle where the query service looks; @duckdb/node-api resolves from here
+COPY --chown=appuser:appgroup --from=build /app/packages/api/dist/services/query/query-child.mjs ./apps/worker/dist/query-child.mjs
 COPY --chown=appuser:appgroup --from=build /app/apps/worker/package.json ./apps/worker/
 # The release the worker names in its User-Agent (apps/worker/src/user-agent.ts)
 COPY --chown=appuser:appgroup --from=build /app/package.json ./

@@ -2005,9 +2005,11 @@ plain notice when the material is too thin) brought it to **9%**. Most of what r
 whose material really is thin — column names that are only years, three rows — where a short
 notice is what decision 7 asks for. The rule is in, and the generation is raised to 4.
 
-**A measurement trap.** Writing abstracts from outside the worker, the query child process that
-reads a CSV's sample rows does not start without `QUERY_CHILD_ENTRY`, and generation goes on with
-the column definitions alone after a warning in the log. The first run did that, and the
+**A measurement trap.** The query child process that reads a CSV's sample rows does not start
+when it finds neither `QUERY_CHILD_ENTRY` nor a `query-child.mjs` beside the query service, and
+generation goes on with the column definitions alone after a warning in the log. Not only from
+outside the worker: the worker itself was in that state until its image carried the child's file
+(and so was the worker under `pnpm dev`). The first run did that, and the
 "could not describe it from the material" self-report reached 66% of the CSVs (187/282); given the
 sample rows it fell to 5% (13/282). The self-reports were not a Haiku 5.5 habit.
 

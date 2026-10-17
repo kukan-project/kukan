@@ -634,6 +634,35 @@ jobs:
           printf '%s\n' "$out" | head -20
           exit 1
 
+      # The worker reads a table's sample rows for its summaries through the
+      # query process (ADR-053), and a failure there is only a warning — the
+      # summary goes on from the schema alone. So nothing else shows the child
+      # missing from the image, or failing to load DuckDB from where it sits.
+      - name: Smoke-test the worker's query process
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          docker run --rm -i kukan-worker:ci node --input-type=module - <<'JS'
+          import { fork } from 'node:child_process'
+          import { DuckDBInstance } from '@duckdb/node-api'
+          const file = '/tmp/smoke.parquet'
+          const conn = await (await DuckDBInstance.create(':memory:')).connect()
+          await conn.run(`COPY (SELECT 42 AS n) TO '${file}' (FORMAT parquet)`)
+          // As startChild does: not this script's --input-type, which the child would inherit
+          const child = fork('apps/worker/dist/query-child.mjs', [], { execArgv: [] })
+          const fail = (why) => { console.error(`query process smoke: ${why}`); process.exit(1) }
+          setTimeout(() => fail('no answer within 30s'), 30_000).unref()
+          child.on('exit', (code) => fail(`exited (${code}) before answering`))
+          child.on('message', (m) => {
+            if (m.ready) {
+              const limits = { maxRows: 10, maxBytes: 1_000_000, timeoutMs: 10_000, memoryLimitMb: 256, threads: 1 }
+              return child.send({ location: file, sql: 'SELECT n FROM data', limits })
+            }
+            if (!m.ok || m.result.rows[0]?.n !== 42) fail(JSON.stringify(m))
+            console.log('query process smoke: answered')
+            process.exit(0)
+          })
+          JS
+
       # Same idea, one step later: the web image has no env either, so any HTTP
       # response (the env-validation 500 included) means the server resolved its
       # modules and initialised. See `web-build` for the same check against the

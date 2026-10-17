@@ -8,6 +8,7 @@
  * caller gets a refusal instead.
  */
 
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -52,6 +53,11 @@ let childCommand: ChildCommand | undefined
  * through tsx**, so a change to the sandbox is what runs. Started in this
  * package's directory, where `--import tsx` resolves from its devDependencies:
  * `import.meta.resolve` would say where tsx is, but Turbopack does not provide it.
+ *
+ * **Otherwise, the built child beside this file.** The worker imports this
+ * package's `dist`, where the build puts `query-child.mjs` next to this module,
+ * and its image puts the child next to its own bundle — so neither sets
+ * anything, as with its heavy process (ADR-059).
  */
 function resolveChild(): ChildCommand {
   const configured = process.env.QUERY_CHILD_ENTRY
@@ -63,6 +69,10 @@ function resolveChild(): ChildCommand {
       execArgv: ['--import', 'tsx'],
       cwd: join(here, '../../..'),
     }
+  }
+  if (import.meta.url.startsWith('file:')) {
+    const built = join(dirname(fileURLToPath(import.meta.url)), 'query-child.mjs')
+    if (existsSync(built)) return { entry: built, execArgv: [] }
   }
   throw new ServiceUnavailableError(
     'The query process cannot be started: set QUERY_CHILD_ENTRY to the built query-child.mjs'
