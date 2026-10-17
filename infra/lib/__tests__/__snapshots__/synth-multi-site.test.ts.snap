@@ -2454,6 +2454,11 @@ function expandV6(addr) {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
           "S3Key": "ASSET_HASH.zip",
         },
+        "Environment": {
+          "Variables": {
+            "NODE_EXTRA_CA_CERTS": "/var/runtime/ca-cert.pem",
+          },
+        },
         "Handler": "index.handler",
         "LoggingConfig": {
           "LogGroup": {
@@ -5184,6 +5189,11 @@ function expandV6(addr) {
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
           "S3Key": "ASSET_HASH.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "NODE_EXTRA_CA_CERTS": "/var/runtime/ca-cert.pem",
+          },
         },
         "Handler": "index.handler",
         "LoggingConfig": {

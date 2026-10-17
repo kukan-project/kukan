@@ -79,6 +79,11 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.dbAccessSecurityGroup],
+      // Node.js 20+ runtimes leave out the Amazon CAs they ship, the RDS ones
+      // among them. This bundle lags the RDS one for regions opened lately
+      // (ap-southeast-5, mx-central-1, ...), where the handler would refuse the
+      // server; Tokyo and Osaka are in it.
+      environment: { NODE_EXTRA_CA_CERTS: '/var/runtime/ca-cert.pem' },
       bundling: { minify: false, sourcesContent: false },
     })
     // Token ARNs can't go through Secret.fromSecretCompleteArn (synth-time parse)

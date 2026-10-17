@@ -75,9 +75,9 @@ export async function handler(event: CustomResourceEvent): Promise<{
     database: 'postgres',
     user: master.username,
     password: master.password,
-    // Encrypted, no CA verification — unlike the web and worker, which verify
-    // (POSTGRES_SSLMODE=verify-full); VPC-internal traffic to RDS/Aurora
-    ssl: { rejectUnauthorized: false },
+    // Verifies the server and its hostname, as the web and worker do
+    // (verify-full): the RDS CAs come from NODE_EXTRA_CA_CERTS (site-database.ts)
+    ssl: true,
     connectionTimeoutMillis: 15_000,
   })
   await client.connect()
@@ -114,7 +114,7 @@ export async function handler(event: CustomResourceEvent): Promise<{
     database: dbName,
     user: master.username,
     password: master.password,
-    ssl: { rejectUnauthorized: false },
+    ssl: true,
     connectionTimeoutMillis: 15_000,
   })
   await siteClient.connect()
