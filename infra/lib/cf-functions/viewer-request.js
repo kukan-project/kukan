@@ -3,15 +3,18 @@
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
 // 2. Cache bypass: inject unique header when session cookie is present.
 // 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
+// 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
 //
 // ALLOWED (IP ranges) and BASIC_AUTH (the full expected `Basic <base64>` header) are
 // injected by CDK at synth time (see constructs/cdn.ts). Both empty → access control skipped.
-// LOCALES / DEFAULT_LOCALE / LOCALE_HEADER are always injected from @kukan/shared.
+// LOCALES / DEFAULT_LOCALE / LOCALE_HEADER / CLIENT_IP_HEADER are always injected
+// from @kukan/shared.
 var ALLOWED = []
 var BASIC_AUTH = ''
 var LOCALES = []
 var DEFAULT_LOCALE = ''
 var LOCALE_HEADER = ''
+var CLIENT_IP_HEADER = ''
 
 function handler(event) {
   // --- Access control: IP allowlist OR Basic auth ---
@@ -66,6 +69,11 @@ function handler(event) {
   // Keying on the resolved locale rather than the raw cookie and Accept-Language
   // keeps the key to one entry per locale instead of one per browser's header.
   req.headers[LOCALE_HEADER] = { value: resolveLocale(req) }
+
+  // --- Client IP ---
+  // Also unconditional: X-Forwarded-For ends in CloudFront's own address, and a
+  // viewer-sent value here would let a client pick its own rate-limit bucket.
+  req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
   return req
 }
 

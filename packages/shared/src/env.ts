@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { passwordMinScoreSchema } from './password-strength'
 import { AI_PROVIDERS } from './ai-usage'
+import { EDGE_CLIENT_IP_HEADER } from './client-ip'
 
 const booleanString = z.preprocess(
   (v) => (typeof v === 'string' ? v : String(v)),
@@ -148,6 +149,13 @@ export const envSchema = z.object({
     .default(
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'
     ),
+
+  // The header the sign-in rate limits read the client's IP from (client-ip.ts)
+  // Lowercased: a header name is case-insensitive, and Better Auth looks it up as given
+  CLIENT_IP_HEADER: z.preprocess(
+    (v) => (typeof v === 'string' ? v.toLowerCase() : v),
+    z.enum(['x-forwarded-for', EDGE_CLIENT_IP_HEADER]).default('x-forwarded-for')
+  ),
 
   TIME_ZONE: timeZoneSchema,
 

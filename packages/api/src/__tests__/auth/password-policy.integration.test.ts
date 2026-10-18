@@ -41,7 +41,7 @@ afterAll(async () => {
 
 describe('password strength policy', () => {
   it('rejects a guessable password at sign-up', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.signUpEmail({
@@ -51,7 +51,7 @@ describe('password strength policy', () => {
   })
 
   it('rejects a password derived from the account being created', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.signUpEmail({
@@ -65,7 +65,7 @@ describe('password strength policy', () => {
   })
 
   it('rejects a weak password on change, and accepts a strong one', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     const signUp = await auth.api.signUpEmail({
       body: { email: 'changer@example.com', password: STRONG, name: 'changer' },
       asResponse: true,
@@ -88,7 +88,7 @@ describe('password strength policy', () => {
   })
 
   it('weighs the display name a change is made under', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     const signUp = await auth.api.signUpEmail({
       body: { email: 'named@example.com', password: STRONG, name: 'u-8842' },
       asResponse: true,
@@ -108,7 +108,7 @@ describe('password strength policy', () => {
   })
 
   it('weighs the display name a user is created with', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.createUser({
@@ -123,7 +123,7 @@ describe('password strength policy', () => {
   })
 
   it('refuses an over-long password by name, without scoring it', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     // Scoring is superlinear in length, and this hook runs ahead of Better
     // Auth's own length check — an unauthenticated caller could otherwise buy
     // seconds of blocking CPU per request
@@ -137,7 +137,7 @@ describe('password strength policy', () => {
   })
 
   it('refuses a too-short password by name, not as a weak one', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.signUpEmail({
@@ -148,7 +148,7 @@ describe('password strength policy', () => {
 
   it('accepts a guessable password when the environment lowers the score floor', async () => {
     vi.stubEnv('PASSWORD_MIN_SCORE', '0')
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.signUpEmail({
@@ -159,7 +159,7 @@ describe('password strength policy', () => {
 
   it('keeps the length floor even with the score floor at zero', async () => {
     vi.stubEnv('PASSWORD_MIN_SCORE', '0')
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.signUpEmail({
@@ -169,7 +169,7 @@ describe('password strength policy', () => {
   })
 
   it('counts a floor-length password of emoji for what it is', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await expect(
       auth.api.signUpEmail({

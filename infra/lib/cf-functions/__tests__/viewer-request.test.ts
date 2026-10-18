@@ -154,4 +154,17 @@ describe('viewer-request access control', () => {
       expect(locale({ headers: { 'x-kukan-locale': 'fr', 'accept-language': 'ja' } })).toBe('ja')
     })
   })
+
+  describe('client IP header', () => {
+    const h = makeHandler()
+
+    it('states the viewer address, IPv6 included', () => {
+      expect(h(event('8.8.8.8')).headers?.['x-kukan-client-ip']?.value).toBe('8.8.8.8')
+      expect(h(event('2001:db8::1')).headers?.['x-kukan-client-ip']?.value).toBe('2001:db8::1')
+    })
+    it('overwrites a viewer-sent value', () => {
+      const r = h(event('8.8.8.8', { headers: { 'x-kukan-client-ip': '203.0.113.9' } }))
+      expect(r.headers?.['x-kukan-client-ip']?.value).toBe('8.8.8.8')
+    })
+  })
 })

@@ -10,11 +10,11 @@ import { admin } from 'better-auth/plugins'
 import { adminAc } from 'better-auth/plugins/admin/access'
 import type { Database } from '@kukan/db'
 import { auditLog } from '@kukan/db'
-import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '@kukan/shared'
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, type Env } from '@kukan/shared'
 import { claimBootstrapPromotion } from '../services/bootstrap'
 import { enforcePasswordPolicy } from './password-policy'
 
-export function createAuth(db: Database) {
+export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']) {
   // Links the before-hook promotion decision to the after-hook audit write.
   // Safe as a closure flag: bootstrap promotes at most one user per process.
   let bootstrapPromotion = false
@@ -95,6 +95,13 @@ export function createAuth(db: Database) {
     ],
     rateLimit: {
       enabled: true,
+      // Process memory would give each web task (or Web Functions environment)
+      // its own count, multiplying the limit by however many are running
+      storage: 'database',
+    },
+    advanced: {
+      // EDGE_CLIENT_IP_HEADER (@kukan/shared) behind CloudFront
+      ipAddress: { ipAddressHeaders: [clientIpHeader] },
     },
     plugins: [
       // Used for its schema fields (role/banned) and defaultRole only; the

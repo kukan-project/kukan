@@ -30,7 +30,7 @@ afterAll(async () => {
 
 describe('user additional fields', () => {
   it('persists a displayName handed to createUser', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     await auth.api.createUser({
       body: {
         name: 'display-test',
@@ -44,7 +44,7 @@ describe('user additional fields', () => {
   })
 
   it('refuses a displayName a user sets on themselves', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     const signUp = await auth.api.signUpEmail({
       body: { email: 'self@example.com', password: 'harbor-lantern-quiet-42', name: 'self-user' },
       asResponse: true,

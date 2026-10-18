@@ -171,7 +171,7 @@ itself sit in the VPC and need a NAT for Fetch — the NAT only moves.
   - Listen on `AWS_LAMBDA_HTTP_ENDPOINT` when it is set (unchanged otherwise)
   - Without a cgroup, watch the environment through `/proc/meminfo` (§Decision 4)
   - Store sign-in rate limiting in the DB (§Decision 6; also better for Fargate with several tasks)
-  - Take the client's IP from `CloudFront-Viewer-Address` (CloudFront is in front either way)
+  - Take the client's IP from the header CloudFront's viewer-request function sets (CloudFront is in front either way)
   - Fetch secrets from Secrets Manager when they are not in the environment (§Decision 5; on ECS
     they are injected, as today)
 - Three branches in the CDK: the site's web (`WebService` or a Web Function), the shared
@@ -203,7 +203,9 @@ CloudFront Function, so nothing replaces the ALB's security group. Once every si
 shared ALB goes.
 
 The last `X-Forwarded-For` value becomes a CloudFront address. Whatever uses the client's IP takes
-it from `CloudFront-Viewer-Address`.
+it from `x-kukan-client-ip`, which the viewer-request function overwrites with the viewer's address
+on every request (`CLIENT_IP_HEADER`). `CloudFront-Viewer-Address` is not used: it carries the source
+port, which Better Auth cannot read as it is.
 
 ### 4. Memory and disk
 

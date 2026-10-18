@@ -30,7 +30,7 @@ beforeEach(async () => {
   resetBootstrapCache()
   await ensureTestUser()
 
-  auth = createAuth(db)
+  auth = createAuth(db, 'x-forwarded-for')
   const signUp = await auth.api.signUpEmail({
     body: { email: 'renamer@example.com', password: 'harbor-lantern-quiet-42', name: 'renamer' },
     asResponse: true,

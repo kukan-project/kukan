@@ -89,7 +89,7 @@ const CLASSIFIED = [...BLOCKED, ...IN_USE, ...INERT, ...ACCEPTED]
 
 // A dummy database is enough: building the instance reads the route table and
 // runs no query
-const auth = createAuth({} as never)
+const auth = createAuth({} as never, 'x-forwarded-for')
 
 /** The paths Better Auth mounts. Server-only endpoints (setPassword) carry no
  *  path and are not part of the HTTP surface. */

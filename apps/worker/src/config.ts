@@ -423,6 +423,12 @@ export const CLAIM_RETRY_DELAY_S = 30
  */
 export const DEAD_JOB_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
+/**
+ * How long a sign-in rate-limit counter is kept after its last request. Better
+ * Auth's longest window is a minute; past an hour, no window counts it.
+ */
+export const RATE_LIMIT_RETENTION_MS = 60 * 60 * 1000
+
 /** How often orphaned objects are swept (ADR-043); matches the retention. */
 export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 

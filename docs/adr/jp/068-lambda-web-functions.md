@@ -166,7 +166,7 @@ VPC に入れることになり、Fetch のために NAT が要る（NAT の場�
   - 待ち受けの番地は `AWS_LAMBDA_HTTP_ENDPOINT` があればそれにする（無ければ今と同じ）
   - cgroup が無ければ `/proc/meminfo` で環境全体を見る（§決定 4）
   - ログイン試行の回数制限の記録先を DB にする（§決定 6。タスクが複数の Fargate でも改善になる）
-  - クライアントの IP は `CloudFront-Viewer-Address` から取る（どちらの方式でも CloudFront が前にある）
+  - クライアントの IP は CloudFront の viewer-request 関数が付けるヘッダーから取る（どちらの方式でも CloudFront が前にある）
   - 秘密情報が環境変数に無ければ Secrets Manager から取る（§決定 5。ECS では注入されるので今と同じ）
 - CDK の分岐は 3 か所に収める。サイトの web（`WebService` か Web Function か）、共有インフラ
   （共有 ALB と VPC オリジンか、IPv6・connector・Bedrock のエンドポイントか）、CloudFront の
@@ -193,8 +193,10 @@ CloudFront → Web Function（`IamAuth` + OAC）。オリジンへのヘッダ�
 `AllViewerExceptHostHeader`（Host を渡すと 404）。IP 制限は既に CloudFront Function で行っている
 ので、ALB のセキュリティグループに代わるものは要らない。全サイトが移れば共有 ALB を外す。
 
-`X-Forwarded-For` の最後の値は CloudFront のアドレスになる。クライアントの IP を使うところは
-`CloudFront-Viewer-Address` から取る。
+`X-Forwarded-For` の最後の値は CloudFront のアドレスになる。クライアントの IP を使うところは、
+viewer-request 関数が毎回 viewer のアドレスで上書きする `x-kukan-client-ip` から取る
+（`CLIENT_IP_HEADER`）。`CloudFront-Viewer-Address` は送り元のポートが付き、Better Auth が
+そのままでは読めないため使わない。
 
 ### 4. メモリとディスク
 

@@ -55,6 +55,7 @@ import {
 import { markContentUnindexed } from '@kukan/api/services/search/content-index-record'
 import { requestContentReindex } from '@kukan/api/services/search/content-reindex'
 import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
+import { pruneRateLimits } from '@kukan/api/services/auth-rate-limit'
 import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
 import { deleteResourceLakes } from '@kukan/api/services/lake/lake-catalog'
@@ -87,6 +88,7 @@ import {
 } from '@kukan/api/services/pipeline/storage-pointer'
 import {
   DEAD_JOB_RETENTION_MS,
+  RATE_LIMIT_RETENTION_MS,
   LAKE_CATALOG_COPY_STALE_MS,
   LAKE_INGEST_SWEEP_CRON,
   LAKE_MEMORY_LIMIT_MB,
@@ -239,6 +241,9 @@ const orphanCleanupJob = startCronJob({
     queue.wakeHere()
     const pruned = await queue.pruneDead(DEAD_JOB_RETENTION_MS)
     if (pruned > 0) orphanSweepLog.info({ pruned }, 'Deleted dead jobs past their retention')
+    // Better Auth deletes its expired counters only when the same key comes back
+    const counters = await pruneRateLimits(db, RATE_LIMIT_RETENTION_MS)
+    if (counters > 0) orphanSweepLog.info({ counters }, 'Deleted expired sign-in rate limits')
     // After the prune, which is one way a purge loses its job
     const versions = await new ResourceVersionService(db).queueStrandedPurges(queue)
     const orgs = await new OrganizationService(db).queueStrandedPurges(queue)

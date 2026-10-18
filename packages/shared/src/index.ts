@@ -50,6 +50,9 @@ export * from './search-example-queries'
 // UI locales
 export * from './locales'
 
+// The client IP the edge states
+export * from './client-ip'
+
 // Site-wide custom metadata (ADR-064)
 export * from './site-metadata'
 

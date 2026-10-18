@@ -1,9 +1,9 @@
 /**
  * Better Auth Required Tables
- * session, account, verification tables for Better Auth + admin plugin
+ * session, account, verification, rate_limit tables for Better Auth + admin plugin
  */
 
-import { pgTable, uuid, text, timestamp, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, index, integer, bigint } from 'drizzle-orm/pg-core'
 import { user } from './user'
 
 export const session = pgTable('session', {
@@ -50,4 +50,18 @@ export const verification = pgTable('verification', {
   expiresAt: timestamp('expiresAt', { withTimezone: true }).notNull(),
   createdAt: timestamp('createdAt', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updatedAt', { withTimezone: true }).defaultNow().notNull(),
+})
+
+/**
+ * Better Auth's rate-limit counters (`rateLimit.storage: 'database'`), kept
+ * here rather than in process memory so that every web task or environment
+ * counts the same attempts. Better Auth reads and writes the rows itself and
+ * prunes expired ones, so they carry no created/updated timestamps.
+ */
+export const rateLimit = pgTable('rate_limit', {
+  id: text('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  // Epoch milliseconds, as Better Auth compares them
+  lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
 })

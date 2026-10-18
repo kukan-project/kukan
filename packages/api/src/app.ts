@@ -37,7 +37,7 @@ export async function createApp() {
   })
 
   // Initialize Better Auth
-  const auth = createAuth(db)
+  const auth = createAuth(db, env.CLIENT_IP_HEADER)
 
   // Initialize adapters
   const baseLogger = createLogger({ name: 'api', level: env.LOG_LEVEL })

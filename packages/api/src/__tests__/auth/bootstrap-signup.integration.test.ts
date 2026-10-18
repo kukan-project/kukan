@@ -22,7 +22,7 @@ afterAll(async () => {
 
 describe('first-user bootstrap', () => {
   it('promotes the first sign-up to sysadmin, audits it, and keeps later users regular', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     await auth.api.signUpEmail({
       body: { email: 'first@example.com', password: 'harbor-lantern-quiet-42', name: 'first-user' },
@@ -55,7 +55,7 @@ describe('first-user bootstrap', () => {
   })
 
   it('promotes exactly one user under concurrent sign-ups', async () => {
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
 
     // Claim-race losers are rejected with a retryable CONFLICT, so some
     // settle as rejected — never as extra sysadmins or claim-window users
@@ -87,7 +87,7 @@ describe('first-user bootstrap', () => {
               now() - interval '5 minutes')
     `)
 
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     await auth.api.signUpEmail({
       body: { email: 'retry@example.com', password: 'harbor-lantern-quiet-42', name: 'retry-user' },
     })
@@ -103,7 +103,7 @@ describe('first-user bootstrap', () => {
       INSERT INTO system_setting (key, value) VALUES ('bootstrap-completed', 'true'::jsonb)
     `)
 
-    const auth = createAuth(db)
+    const auth = createAuth(db, 'x-forwarded-for')
     await expect(
       auth.api.signUpEmail({
         body: { email: 'late@example.com', password: 'harbor-lantern-quiet-42', name: 'late-user' },

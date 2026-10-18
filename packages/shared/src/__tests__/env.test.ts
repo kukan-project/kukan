@@ -33,6 +33,17 @@ describe('envSchema', () => {
     expect(envSchema.safeParse({ ...base, TIME_ZONE: 'Tokyo' }).success).toBe(false)
   })
 
+  it('should default CLIENT_IP_HEADER to x-forwarded-for and take a header name in any case', () => {
+    const base = {
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+    }
+    const defaulted = envSchema.safeParse(base)
+    expect(defaulted.success && defaulted.data.CLIENT_IP_HEADER).toBe('x-forwarded-for')
+    const edge = envSchema.safeParse({ ...base, CLIENT_IP_HEADER: 'X-Kukan-Client-IP' })
+    expect(edge.success && edge.data.CLIENT_IP_HEADER).toBe('x-kukan-client-ip')
+    expect(envSchema.safeParse({ ...base, CLIENT_IP_HEADER: 'x-real-ip' }).success).toBe(false)
+  })
+
   it('should take USER_AGENT_URL as an ASCII http(s) URL, and leave it unset when blank', () => {
     const base = {
       BETTER_AUTH_SECRET: 'a'.repeat(32),

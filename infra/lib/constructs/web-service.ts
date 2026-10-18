@@ -20,6 +20,7 @@ import { resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
 import { createInternalAlb, SITE_ROUTING_HEADER } from './shared-alb.js'
+import { EDGE_CLIENT_IP_HEADER } from '@kukan/shared'
 
 /** Attachment to the environment's shared ALB listener (ADR-049). */
 export interface SharedListenerAttachment {
@@ -114,6 +115,8 @@ export class WebServiceConstruct extends Construct {
       S3_REGION: cdk.Aws.REGION,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WEB_DB_POOL_MAX: String(config.dbPool.webMax),
+      // The viewer-request function sets it on every request (cdn.ts)
+      CLIENT_IP_HEADER: EDGE_CLIENT_IP_HEADER,
     }
     configureBedrockEmbedding(config, taskDef, environment)
     configureBedrockCompletion(config, taskDef, environment)
