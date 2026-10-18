@@ -81,6 +81,14 @@ export function createTestPool(connectionString: string): Pool {
 /**
  * Truncate `tables` — FK-safe with CASCADE — and leave them empty.
  *
+ * Only those with rows are named. TRUNCATE gives every table it names a new
+ * file, and its indexes and TOAST table too, empty or not, and the next
+ * checkpoint fsyncs each one: 153 of them for the api's list, before every
+ * test, about 380,000 over a run — measured, a teardown's DROP DATABASE waited
+ * three minutes on that checkpoint. Most tests write to a few tables. A table
+ * the CASCADE reaches but the list does not name is still emptied as long as
+ * its key to a listed table is NOT NULL: with that table empty, it has to be.
+ *
  * Holding the pool keeps a leftover query out of the truncate's locks, but not
  * out of the tables: a leftover `await read; await write` can have its read
  * finish before the truncate and its write queued behind it, and that write
@@ -99,13 +107,26 @@ export function createTestPool(connectionString: string): Pool {
  * queued — waiting on something other than the database, say. Nothing at the
  * pool distinguishes that from work that has finished.
  *
- * Quoted names, so a table named after a reserved word (`group`) needs nothing
- * of the caller. Every name in these lists is lower case, which is what quoting
- * keeps.
+ * Quoted with `%I`, so a table named after a reserved word (`group`) needs
+ * nothing of the caller. Every name in these lists is lower case, which is what
+ * quoting keeps.
  */
 export async function truncateTables(pool: Pool, tables: string[]): Promise<void> {
-  const names = tables.map((table) => `"${table}"`).join(', ')
-  const statement = `TRUNCATE TABLE ${names} CASCADE`
+  const names = tables.map((table) => `'${table}'`).join(', ')
+  const statement = `DO $$
+    DECLARE
+      t text;
+      written text[] := '{}';
+      has boolean;
+    BEGIN
+      FOREACH t IN ARRAY ARRAY[${names}] LOOP
+        EXECUTE format('SELECT EXISTS (SELECT FROM %I)', t) INTO has;
+        IF has THEN written := written || t; END IF;
+      END LOOP;
+      IF cardinality(written) > 0 THEN
+        EXECUTE (SELECT 'TRUNCATE TABLE ' || string_agg(format('%I', x), ', ') || ' CASCADE' FROM unnest(written) x);
+      END IF;
+    END $$`
   const waiting = budget(ACQUIRE_TIMEOUT_MS)
 
   for (let attempt = 1; attempt <= TRUNCATE_ATTEMPTS; attempt++) {

@@ -44,7 +44,27 @@ afterAll(async () => {
 const rows = async () =>
   Number((await pool.query<{ n: string }>('SELECT count(*) AS n FROM leftover')).rows[0].n)
 
+const file = async () =>
+  (
+    await pool.query<{ f: string }>(
+      `SELECT relfilenode AS f FROM pg_class WHERE relname = 'leftover'`
+    )
+  ).rows[0].f
+
 describe('truncateTables', () => {
+  it('empties a table with rows, and leaves the file of an empty one alone', async () => {
+    await pool.query('INSERT INTO leftover (id) VALUES (1)')
+    const written = await file()
+    await truncateTables(pool, TABLES)
+    expect(await rows()).toBe(0)
+    expect(await file()).not.toBe(written)
+
+    // A new file is one the next checkpoint has to fsync
+    const empty = await file()
+    await truncateTables(pool, TABLES)
+    expect(await file()).toBe(empty)
+  })
+
   it('waits for a query that is still running', async () => {
     const order: string[] = []
     // pg_sleep takes no table lock, so nothing but the wait puts these in
