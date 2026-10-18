@@ -232,9 +232,13 @@ export interface SearchQuery {
   filters?: SearchFilters
   /** Request aggregation-based facet counts */
   facets?: boolean
-  /** Sort field. When omitted, adapters use their default
-   *  (OpenSearch: _score+updated for queries, updated for browse;
-   *   PostgreSQL: updated DESC). */
+  /**
+   * Sort field. When omitted, adapters use their default (OpenSearch: _score
+   * then updated for queries, updated for browse; PostgreSQL: updated DESC).
+   * Every order ends on `id`, in the same direction, so rows sharing a value
+   * keep one order and `offset` pages neither overlap nor skip; `id` alone
+   * needs nothing after it.
+   */
   sortBy?: 'updated' | 'created' | 'name' | 'id'
   /** Sort direction (default: desc) */
   sortOrder?: 'asc' | 'desc'

@@ -89,6 +89,22 @@ describe('PostgresSearchAdapter.searchByVector', () => {
     expect(hits[0].similarity).toBeGreaterThan(0.99)
   })
 
+  it('cuts packages tied on distance at the window by id, the same on every call', async () => {
+    // Created c, b, a, so the ids rank against creation order
+    const ids: string[] = []
+    for (const [i, name] of ['tie-c', 'tie-b', 'tie-a'].entries()) {
+      const id = `00000000-0000-4000-8000-${String(3 - i).padStart(12, '0')}`
+      await db.execute(sql`INSERT INTO package (id, name, state) VALUES (${id}, ${name}, 'active')`)
+      await insertResource(id, { embedding: [1, 0, 0] })
+      ids.push(id)
+    }
+
+    const hits = await adapter.searchByVector([1, 0, 0], MODEL, {}, 2)
+
+    // The two smallest ids, whatever order the rows were written in
+    expect(hits.map((h) => h.id)).toEqual([ids[2], ids[1]])
+  })
+
   it("fills the window with distinct packages, not one package's resources", async () => {
     const many = await insertPackage({ name: 'many' })
     for (let i = 0; i < 5; i++) await insertResource(many, { embedding: [1, 0.01 * i, 0] })

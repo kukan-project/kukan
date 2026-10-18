@@ -1171,17 +1171,21 @@ export class OpenSearchAdapter implements SearchAdapter {
     contents: 'content',
   }
 
-  /** Build OpenSearch sort clause from query */
+  /**
+   * Sort clause from the query, ending on the id (see SearchQuery.sortBy):
+   * otherwise hits sharing a score or a timestamp fall in shard order, which
+   * merges and reindexing move.
+   */
   private buildSort(query: SearchQuery): (string | Record<string, unknown>)[] {
     if (query.sortBy && OpenSearchAdapter.VALID_SORT_FIELDS.has(query.sortBy)) {
       const order = query.sortOrder ?? 'desc'
+      if (query.sortBy === 'id') return [{ id: { order } }]
       // `name` is analyzed text, which OpenSearch refuses to sort on
       const field = query.sortBy === 'name' ? 'name.keyword' : query.sortBy
-      return [{ [field]: { order } }]
+      return [{ [field]: { order } }, { id: { order } }]
     }
-    return query.q?.trim()
-      ? ['_score', { updated: { order: 'desc' as const } }]
-      : [{ updated: { order: 'desc' as const } }]
+    const byUpdated = [{ updated: { order: 'desc' as const } }, { id: { order: 'desc' as const } }]
+    return query.q?.trim() ? ['_score', ...byUpdated] : byUpdated
   }
 
   /** Build OpenSearch filter clauses from SearchFilters */

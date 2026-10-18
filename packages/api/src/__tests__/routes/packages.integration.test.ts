@@ -51,6 +51,20 @@ async function ensureTestOrg() {
   return testOrgId
 }
 
+/**
+ * Gives the named packages one `updated`, as a bulk import does, and ids that
+ * rank against their creation order, so a test expecting the larger id first
+ * sees the tie-break and not whatever order the sort leaves ties in.
+ */
+async function tieOnUpdated(names: string[]) {
+  for (const [i, name] of names.entries()) {
+    const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`
+    await db.execute(
+      sql`UPDATE package SET updated = '2026-01-01T00:00:00Z', id = ${id} WHERE name = ${name}`
+    )
+  }
+}
+
 async function createPackage(data: Record<string, unknown>) {
   const orgId = await ensureTestOrg()
   return app.request('/api/v1/packages', {
@@ -101,6 +115,19 @@ describe('Packages API Routes', () => {
       const body = await res.json()
       expect(body).toMatchObject({ total: 3, offset: 2, limit: 2 })
       expect(body.items).toHaveLength(1)
+    })
+
+    it('pages datasets that share a timestamp without repeating or skipping one', async () => {
+      for (const name of ['tie-a', 'tie-b', 'tie-c']) await createPackage({ name })
+      await tieOnUpdated(['tie-a', 'tie-b', 'tie-c'])
+
+      const anon = createTestApp(db, { search, user: null })
+      const page = async (offset: number) =>
+        (await (await anon.request(`/api/v1/packages?limit=2&offset=${offset}`)).json()).items.map(
+          (p: { name: string }) => p.name
+        )
+      // All share `updated`, so the larger id comes first
+      expect([...(await page(0)), ...(await page(2))]).toEqual(['tie-c', 'tie-b', 'tie-a'])
     })
 
     it('does not name facet values that only private datasets carry', async () => {
@@ -1799,6 +1826,21 @@ describe('Packages API Routes', () => {
         method: 'PUT',
       })
       expect(bad.status).toBe(400)
+    })
+
+    it('should page drafts that share a timestamp without repeating or skipping one', async () => {
+      for (const name of ['tie-draft-a', 'tie-draft-b', 'tie-draft-c']) await createDraft({ name })
+      await tieOnUpdated(['tie-draft-a', 'tie-draft-b', 'tie-draft-c'])
+
+      const page = async (offset: number) =>
+        (
+          await (await app.request(`/api/v1/packages?state=draft&limit=2&offset=${offset}`)).json()
+        ).items.map((p: { name: string }) => p.name)
+      expect([...(await page(0)), ...(await page(2))]).toEqual([
+        'tie-draft-c',
+        'tie-draft-b',
+        'tie-draft-a',
+      ])
     })
 
     it('should apply q, organization, and sort filters to the draft listing', async () => {

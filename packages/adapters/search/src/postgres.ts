@@ -239,16 +239,16 @@ export class PostgresSearchAdapter implements SearchAdapter {
     return conditions
   }
 
-  /** Build ORDER BY clause from query sort params */
+  /** ORDER BY from the query's sort params, ending on the id (see SearchQuery.sortBy) */
   private buildOrderBy(query: SearchQuery) {
-    if (!query.sortBy) return desc(packageTable.updated)
     const col = {
       name: packageTable.name,
       created: packageTable.created,
       updated: packageTable.updated,
       id: packageTable.id,
-    }[query.sortBy]
-    return query.sortOrder === 'asc' ? asc(col) : desc(col)
+    }[query.sortBy ?? 'updated']
+    const dir = query.sortBy && query.sortOrder === 'asc' ? asc : desc
+    return query.sortBy === 'id' ? [dir(col)] : [dir(col), dir(packageTable.id)]
   }
 
   async search(query: SearchQuery): Promise<SearchResult> {
@@ -279,7 +279,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
       .from(packageTable)
       .leftJoin(organization, eq(packageTable.ownerOrg, organization.id))
       .where(where!)
-      .orderBy(this.buildOrderBy(query))
+      .orderBy(...this.buildOrderBy(query))
       .limit(limit)
       .offset(offset)
 
@@ -572,13 +572,15 @@ export class PostgresSearchAdapter implements SearchAdapter {
           eq(resource.embeddingModel, modelKey)
         )
       )
-      .orderBy(resource.packageId, sql`"distance"`)
+      // The id picks one of a package's resources that tie on distance
+      .orderBy(resource.packageId, sql`"distance"`, resource.id)
       .as('best')
 
     const rows = await this.db
       .select({ id: best.packageId, resourceId: best.resourceId, distance: best.distance })
       .from(best)
-      .orderBy(best.distance)
+      // Ties at the k boundary must fall the same way on every page (fusion slices this)
+      .orderBy(best.distance, best.packageId)
       .limit(k)
 
     // Rows are distance-ascending, so thresholding the k results here is

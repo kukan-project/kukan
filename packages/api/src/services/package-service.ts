@@ -297,12 +297,11 @@ export class PackageService {
       created: packageTable.created,
       name: packageTable.name,
     }[params.sortBy ?? 'updated']
+    const dir = params.sortOrder === 'asc' ? asc : desc
+    // Ends on the id, as the search adapters do (SearchQuery.sortBy)
     const rows = hasSearchResults
       ? await baseQuery
-      : await baseQuery
-          .orderBy(params.sortOrder === 'asc' ? asc(sortCol) : desc(sortCol))
-          .limit(limit)
-          .offset(offset)
+      : await baseQuery.orderBy(dir(sortCol), dir(packageTable.id)).limit(limit).offset(offset)
 
     if (hasSearchResults) {
       // Preserve SearchAdapter score order

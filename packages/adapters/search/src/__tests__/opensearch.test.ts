@@ -880,25 +880,44 @@ describe('OpenSearchAdapter', () => {
         })
       })
 
-      it('should sort by updated DESC when browsing', async () => {
+      it('should sort by updated DESC when browsing, ending on the id', async () => {
         await adapter.search({ q: '' })
         const callArgs = mockClient.search.mock.calls[0][0]
-        expect(callArgs.body.sort).toEqual([{ updated: { order: 'desc' } }])
+        expect(callArgs.body.sort).toEqual([
+          { updated: { order: 'desc' } },
+          { id: { order: 'desc' } },
+        ])
+      })
+
+      it('should sort a keyword search by score, then updated, then the id', async () => {
+        await adapter.search({ q: 'x' })
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([
+          '_score',
+          { updated: { order: 'desc' } },
+          { id: { order: 'desc' } },
+        ])
       })
 
       it('should sort by specified field', async () => {
         await adapter.search({ q: '', sortBy: 'created', sortOrder: 'asc' })
         const callArgs = mockClient.search.mock.calls[0][0]
-        expect(callArgs.body.sort).toEqual([{ created: { order: 'asc' } }])
+        expect(callArgs.body.sort).toEqual([
+          { created: { order: 'asc' } },
+          { id: { order: 'asc' } },
+        ])
       })
 
       it('sorts by name on its keyword field', async () => {
         await adapter.search({ q: '', sortBy: 'name', sortOrder: 'asc' })
         const callArgs = mockClient.search.mock.calls[0][0]
-        expect(callArgs.body.sort).toEqual([{ 'name.keyword': { order: 'asc' } }])
+        expect(callArgs.body.sort).toEqual([
+          { 'name.keyword': { order: 'asc' } },
+          { id: { order: 'asc' } },
+        ])
       })
 
-      it('sorts by id', async () => {
+      it('sorts by id alone, which settles every tie', async () => {
         await adapter.search({ q: '', sortBy: 'id', sortOrder: 'asc' })
         const callArgs = mockClient.search.mock.calls[0][0]
         expect(callArgs.body.sort).toEqual([{ id: { order: 'asc' } }])
