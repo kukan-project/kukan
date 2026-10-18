@@ -5,6 +5,8 @@
 // (ADR-068). Elsewhere the container runtime sets HOSTNAME to the container's
 // own address, and Next listening only there would miss the health checks that
 // come in on localhost, so every interface it is.
+import process from 'node:process'
+
 const endpoint = process.env.AWS_LAMBDA_HTTP_ENDPOINT
 if (endpoint) {
   // An IPv6 host comes bracketed, which listen() does not take
