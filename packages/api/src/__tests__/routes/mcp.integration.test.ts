@@ -1353,9 +1353,19 @@ describe('MCP Server', () => {
           headings: ['第2章 汚泥'],
           words: ['下水道'],
           readFrom: { block: 2, offset: 0 },
+          cursor: expect.any(String),
           describesLiveContent: true,
         }),
       ])
+
+      // The cursor reads the page the passage is on, and on from it
+      const section = await app.request(
+        `/api/v1/resources/${res.id}/document-section?cursor=${body.passages[0].cursor}`
+      )
+      expect(section.status).toBe(200)
+      const { parts, next } = await section.json()
+      expect(parts.map((p: { loc: object }) => p.loc)).toEqual([{ page: 3, label: '3' }])
+      expect(next).toBeNull()
     })
 
     it('over REST, says which version the text is from where it is not the file the resource holds now', async () => {

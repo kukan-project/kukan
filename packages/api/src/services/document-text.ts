@@ -6,6 +6,7 @@
  * the abstract are written from (ADR-040, ADR-053).
  */
 
+import { createHash } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { pipeline } from 'node:stream'
 import { createZstdDecompress } from 'node:zlib'
@@ -17,6 +18,9 @@ import {
   type DocumentTextLoc,
 } from '@kukan/shared'
 import { truncateToByteLimit } from '@kukan/shared/encoding-node'
+import { z } from 'zod'
+import type { DocumentTextTarget } from './pipeline/pipeline-service'
+import { MCP_SECTION_DEFAULT_CHARS, MCP_SECTION_MAX_BLOCKS } from '../config'
 
 /** The artifact's lines as decompressed; what is left unread is not downloaded. */
 async function* artifactLines(storage: StorageAdapter, key: string): AsyncGenerator<string> {
@@ -102,6 +106,8 @@ export interface DocumentSectionPart {
   text: string
   /** Where in the block's text it starts: past 0, where the part before it ended. */
   offset: number
+  /** Of a sheet, the rows this part's text is (of `block.loc.rows`). */
+  rows?: number[]
 }
 
 export interface DocumentSection {
@@ -113,6 +119,74 @@ export interface DocumentSection {
    * sheets (null for a document without), so the caller can ask again.
    */
   unmatched?: { units: UnitRange | null }
+}
+
+/**
+ * What a cursor carries: the selection it continues, where it stopped, and
+ * which artifact it stopped in. A block index means nothing in another one, so
+ * a cursor from another document, or from before this one was extracted again,
+ * is refused rather than followed.
+ */
+const cursorSchema = z.object({
+  k: z.string(),
+  q: z.object({
+    from: z.number().int().optional(),
+    to: z.number().int().optional(),
+    heading: z.string().optional(),
+  }),
+  at: z.object({ block: z.number().int().nonnegative(), offset: z.number().int().nonnegative() }),
+})
+
+function artifactTag(key: string): string {
+  return createHash('sha256').update(key).digest('base64url').slice(0, 12)
+}
+
+/** A cursor that reads `query` on from `at` in the artifact at `key`. */
+export function encodeSectionCursor(key: string, query: SectionQuery, at: SectionPosition): string {
+  return Buffer.from(JSON.stringify({ k: artifactTag(key), q: query, at })).toString('base64url')
+}
+
+/**
+ * The selection and position a cursor continues in the artifact at `key`;
+ * `malformed` for text that is no cursor, `stale` for one from another
+ * artifact.
+ */
+function decodeSectionCursor(
+  text: string,
+  key: string
+): { query: SectionQuery; start: SectionPosition } | 'malformed' | 'stale' {
+  let parsed
+  try {
+    parsed = cursorSchema.safeParse(JSON.parse(Buffer.from(text, 'base64url').toString()))
+  } catch {
+    return 'malformed'
+  }
+  if (!parsed.success) return 'malformed'
+  if (parsed.data.k !== artifactTag(key)) return 'stale'
+  return { query: parsed.data.q, start: parsed.data.at }
+}
+
+/**
+ * The rows of a sheet a part's text is: the block's text has a line per row
+ * (`DocumentTextLoc.rows`), so a part cut from it holds the rows its lines are.
+ */
+function partRows({ block, text, offset }: DocumentSectionPart): number[] {
+  const lines = (s: string) => s.split('\n').length
+  const first = lines(block.text.slice(0, offset)) - 1
+  return (block.loc.rows ?? []).slice(first, first + lines(text.replace(/\n$/, '')))
+}
+
+/**
+ * Which version of the file a document's text is from, beside the file's own:
+ * a failed Interpret keeps the text of the bytes before, and the version to
+ * cite is the one the text is from.
+ */
+export function textVersions(latestVersion: number | null, text: DocumentTextTarget) {
+  return {
+    latestVersion,
+    describesLiveContent: text.describesLiveContent,
+    sourceVersion: text.describesLiveContent ? latestVersion : text.sourceVersion,
+  }
 }
 
 /** The first and last page, slide or sheet. */
@@ -242,7 +316,9 @@ export async function readDocumentSection(
     const offset = index === start.block ? start.offset : 0
     const rest = block.text.slice(offset)
     const cut = cutAt(rest, maxChars - chars)
-    parts.push({ block, text: rest.slice(0, cut), offset })
+    const part: DocumentSectionPart = { block, text: rest.slice(0, cut), offset }
+    if (block.loc.rows) part.rows = partRows(part)
+    parts.push(part)
     chars += cut
     if (cut < rest.length) {
       next = { block: index, offset: offset + cut }
@@ -251,6 +327,37 @@ export async function readDocumentSection(
   }
   if (matched) return { parts, next }
   return { parts, next, unmatched: { units: min <= max ? { min, max } : null } }
+}
+
+/** What a reader asks a section for: a selection, or a cursor that carries one. */
+export interface SectionRequest extends SectionQuery {
+  cursor?: string
+  maxChars?: number
+}
+
+/**
+ * The section a request asks for, and the cursor its rest is read with —
+ * `malformed` for a cursor that is none, `stale` for one from another artifact.
+ * A cursor carries its selection: the request's own is then not read.
+ */
+export async function readSection(
+  storage: StorageAdapter,
+  key: string,
+  { cursor, maxChars, ...selection }: SectionRequest
+): Promise<
+  { query: SectionQuery; section: DocumentSection; next: string | null } | 'malformed' | 'stale'
+> {
+  const resumed = cursor ? decodeSectionCursor(cursor, key) : null
+  if (typeof resumed === 'string') return resumed
+  const query = resumed?.query ?? selection
+  const section = await readDocumentSection(
+    storage,
+    key,
+    query,
+    resumed?.start ?? { block: 0, offset: 0 },
+    { maxChars: maxChars ?? MCP_SECTION_DEFAULT_CHARS, maxBlocks: MCP_SECTION_MAX_BLOCKS }
+  )
+  return { query, section, next: section.next && encodeSectionCursor(key, query, section.next) }
 }
 
 /** One heading of an outline, or a sheet of a workbook that has none. */

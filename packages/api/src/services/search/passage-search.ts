@@ -17,7 +17,13 @@ import type { DocumentTextLoc, SemanticState } from '@kukan/shared'
 import type { AuthUser } from '../../auth/permissions'
 import { ResourceService, latestLiveVersionAgg } from '../resource-service'
 import { PipelineService, type DocumentTextTarget } from '../pipeline/pipeline-service'
-import { cutAt, isGone, readDocumentBlocks, type SectionPosition } from '../document-text'
+import {
+  cutAt,
+  encodeSectionCursor,
+  isGone,
+  readDocumentBlocks,
+  type SectionPosition,
+} from '../document-text'
 import { Semaphore } from '../concurrency/semaphore'
 import { mapWithConcurrency } from '../concurrency/map-with-concurrency'
 import { hybridSearch, type HybridSearchDeps } from './hybrid-search'
@@ -95,6 +101,8 @@ export interface Passage {
   headings: string[]
   /** Where get_document_section reads on from: the passage's page, or the passage itself in a long block */
   readFrom: SectionPosition
+  /** The cursor that reads on from `readFrom` */
+  cursor: string
 }
 
 export interface PassageSearchResult {
@@ -304,6 +312,7 @@ export async function searchPassages(
     mine.push(passage)
     taken.set(source.id, mine)
     const first = passage.blocks[0]!
+    const from = readFrom(passage)
     passages.push({
       resourceId: source.id,
       text,
@@ -311,7 +320,8 @@ export async function searchPassages(
       first: first.loc,
       last: passage.blocks.at(-1)!.loc,
       headings: first.headings ?? [],
-      readFrom: readFrom(passage),
+      readFrom: from,
+      cursor: encodeSectionCursor(source.text.key, {}, from),
     })
   }
 

@@ -245,6 +245,33 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 公開エンドポイントの可視性判定はダウンロード・プレビューと同じです（非公開データセットは
 権限が必要）。
 
+### 文書の本文
+
+PDF・Word・PowerPoint・Excel・一太郎・Markdown のリソースは、パイプラインが抽出した本文を、ページ・スライド・シートと
+見出しの位置付きで読めます。MCP の `get_document_outline` / `get_document_section` と同じ読み出しです。
+
+| Method | Path                               | 説明                                                         | 認証 |
+| ------ | ---------------------------------- | ------------------------------------------------------------ | ---- |
+| GET    | `/resources/{id}/document-text`    | 本文のブロックを先頭から一括で取得（プレビューサイズ制限）   | 公開 |
+| GET    | `/resources/{id}/document-outline` | 見出し（シート）と、それぞれのページ範囲・読めないページ     | 公開 |
+| GET    | `/resources/{id}/document-section` | ページ範囲・見出しを指定して本文を読む（カーソルで続きから） | 公開 |
+
+- **`document-outline`**：`from` / `to` でページ（スライド・シート）を絞れます。`units`（ページ等の種類と最初・最後）、
+  `entries`（見出しごとの `depth`・`title`・`units`、シートは `rows`）、`unreadable`（スキャン等で本文の読めないページ）、
+  `partlyUnreadable`（一部の文字が読めないページ）を返します。
+- **`document-section`**：`from` / `to`（ページ・スライド・シート、1 始まり）、`heading`（見出しの一部か `A > B` のパス、
+  シート名の一部。大文字小文字・全半角・空白は区別しない）、`max_chars`（デフォルト: 8,000、最大: 32,000）。
+  `parts` は `document-text` のブロックと同じ形で、`text` は切った範囲、`offset` はブロックの本文の中の開始位置です。
+  シートのブロックの `loc.rows` は、切った範囲が持つ行に絞られます。続きがあるときは `next` にカーソルが入るので、
+  `cursor` に渡して続きを読みます。カーソルは範囲と見出しを持つので、そのとき `from` / `to` / `heading` は読みません。
+  何も一致しないときは、`parts` が空で、`unmatched.units` に文書のページ等の範囲が入ります。
+- カーソルが壊れているときは 400、別の文書や、抽出し直す前の本文のカーソルのときは 409 を返します。後者は
+  カーソルなしで読み直してください。
+
+3 つとも、版（`latestVersion` が今のファイルの版、`sourceVersion` が本文の抽出元の版、`describesLiveContent`）を返します。
+`describesLiveContent` が `false` のときは、ファイルが差し替えられて本文の抽出が追いついていないので、引用には
+`sourceVersion` を使ってください。
+
 ### スキーマとデータクエリ
 
 表形式のリソース（CSV/TSV と、レコードの一覧として読める JSON/GeoJSON。パイプラインでプレビュー Parquet を生成済み・≤100MB）は、**列スキーマの取得**と
@@ -676,8 +703,8 @@ MCP の `search_passages` と同じ検索です。パラメータは `q`（必�
 `k`（デフォルト: 5、最大: 20）、`per_resource`（デフォルト: 2）、`max_chars`（デフォルト: 8,000、最大: 32,000）、
 `semantic`（`false` でキーワード一致のみ）。すべての語を持つデータセットが無いときは、語の少ない一致に
 緩めて文書を探し、応答に `minWords`（一致に求めた語の数）を付けます。各箇所は、リソースとデータセット、位置（`first` / `last` のページ・
-スライド・シート、`headings`）、一致した語（`words`）、本文（`text`）、`get_document_section` で前後を読むための
-開始位置（`readFrom`）と、版（`latestVersion` が今のファイルの版、`sourceVersion` が本文の抽出元の版）を持ちます。
+スライド・シート、`headings`）、一致した語（`words`）、本文（`text`）、その箇所の
+ページの先頭（長いブロックでは箇所そのもの）から続きを読むためのカーソル（`cursor`、`/resources/{id}/document-section` に渡す）と開始位置（`readFrom`）、版（`latestVersion` が今のファイルの版、`sourceVersion` が本文の抽出元の版）を持ちます。
 `describesLiveContent` が `false` のときは、ファイルが差し替えられて本文の抽出が追いついていないので、引用には
 `sourceVersion` を使ってください。
 

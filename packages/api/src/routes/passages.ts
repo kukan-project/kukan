@@ -8,6 +8,7 @@ import { zValidator, repeatedParam } from '../middleware/validator'
 import { z } from 'zod'
 import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { searchPassages } from '../services/search/passage-search'
+import { textVersions } from '../services/document-text'
 import { MCP_SECTION_MAX_CHARS, PASSAGE_MAX_K, PASSAGE_QUERY_MAX_CHARS } from '../config'
 import type { AppContext } from '../context'
 
@@ -62,13 +63,7 @@ passagesRouter.get(
           format: source.format,
           packageName: source.packageName,
           packageTitle: source.packageTitle,
-          // The version to cite is the one the text is from: a failed Interpret
-          // leaves the text of an earlier file behind (as get_document_section says)
-          latestVersion: source.latestVersion,
-          describesLiveContent: source.text.describesLiveContent,
-          sourceVersion: source.text.describesLiveContent
-            ? source.latestVersion
-            : source.text.sourceVersion,
+          ...textVersions(source.latestVersion, source.text),
         }
       }),
       semantic: result.semantic,

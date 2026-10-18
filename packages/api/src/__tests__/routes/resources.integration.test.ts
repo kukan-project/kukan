@@ -20,6 +20,7 @@ import type { ResourceColumnType } from '@kukan/shared'
 import { PostgresJobQueue } from '@kukan/queue'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline/pipeline-claim'
+import { encodeSectionCursor } from '../../services/document-text'
 import {
   getTestDb,
   cleanDatabase,
@@ -335,10 +336,17 @@ describe('Resources API Routes', () => {
         },
       })
 
-    async function withDocumentText(resourceId: string) {
+    /** The artifact at KEY, read from the bytes the resource holds unless `live` is false. */
+    async function withDocumentText(resourceId: string, { live = true } = {}) {
       await db
-        .insert(resourcePipeline)
-        .values({ resourceId, status: 'complete', metadata: { documentTextKey: KEY } })
+        .update(resourceTable)
+        .set({ hash: 'sha256:live' })
+        .where(eq(resourceTable.id, resourceId))
+      await db.insert(resourcePipeline).values({
+        resourceId,
+        status: 'complete',
+        metadata: { documentTextKey: KEY, sourceHash: live ? 'sha256:live' : 'sha256:older' },
+      })
     }
 
     it('returns the blocks of the artifact the pipeline row names', async () => {
@@ -356,8 +364,26 @@ describe('Resources API Routes', () => {
       )
 
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ blocks, truncated: false })
+      expect(await res.json()).toEqual({
+        blocks,
+        truncated: false,
+        latestVersion: null,
+        describesLiveContent: true,
+        sourceVersion: null,
+      })
       expect(read).toEqual([KEY])
+    })
+
+    it('says the text is not of the file the resource holds now', async () => {
+      const pkg = await createPackage('document-text-stale-pkg')
+      const resource = await createResource(pkg.id, { name: 'a.pdf' })
+      await withDocumentText(resource.id, { live: false })
+
+      const res = await appReading(artifact([{ schema: 1 }])).request(
+        `/api/v1/resources/${resource.id}/document-text`
+      )
+
+      expect(await res.json()).toMatchObject({ describesLiveContent: false })
     })
 
     it('says there is none for a resource without the artifact', async () => {
@@ -391,6 +417,126 @@ describe('Resources API Routes', () => {
       const body = await res.json()
       expect(body.blocks.map((b: { loc: { page: number } }) => b.loc.page)).toEqual([1, 2])
       expect(body.truncated).toBe(true)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/document-outline and /document-section', () => {
+    const KEY = 'previews/pkg/res.tok.text.ndjson.zst'
+    const blocks = [
+      { loc: { page: 1 }, headings: ['第1章'], text: '一ページ目' },
+      { loc: { page: 2 }, headings: ['第1章', '概要'], text: 'あいうえお\nかきくけこ' },
+      { loc: { page: 3 }, text: '', unreadable: 'no-text' },
+      { loc: { page: 4 }, headings: ['第2章'], text: '四ページ目' },
+    ]
+    const app = (lines: object[] = blocks) =>
+      createTestApp(db, {
+        storage: {
+          ...mockStorage,
+          download: async () =>
+            Readable.from(
+              zstdCompressSync(
+                Buffer.from([{ schema: 1 }, ...lines].map((l) => JSON.stringify(l) + '\n').join(''))
+              )
+            ),
+        },
+      })
+
+    async function document(name: string, opts: { private?: boolean } = {}) {
+      const pkg = await createPackage(name, opts)
+      const resource = await createResource(pkg.id, { name: 'a.pdf' })
+      await db.insert(resourcePipeline).values({
+        resourceId: resource.id,
+        status: 'complete',
+        metadata: { documentTextKey: KEY },
+      })
+      return resource
+    }
+
+    it('lists the headings with the pages they span, and the pages that cannot be read', async () => {
+      const resource = await document('outline-pkg')
+
+      const res = await app().request(`/api/v1/resources/${resource.id}/document-outline`)
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        units: { kind: 'page', min: 1, max: 4 },
+        entries: [
+          { depth: 0, title: '第1章', units: { min: 1, max: 2 } },
+          { depth: 1, title: '概要', units: { min: 2, max: 2 } },
+          { depth: 0, title: '第2章', units: { min: 4, max: 4 } },
+        ],
+        unreadable: [{ min: 3, max: 3 }],
+        partlyUnreadable: [],
+      })
+    })
+
+    it('reads a heading, cut at max_chars, and on with the cursor it gives', async () => {
+      const resource = await document('section-pkg')
+      const url = `/api/v1/resources/${resource.id}/document-section`
+
+      const first = await (await app().request(`${url}?heading=概要&max_chars=6`)).json()
+      expect(first.parts).toEqual([
+        { loc: { page: 2 }, headings: ['第1章', '概要'], text: 'あいうえお\n', offset: 0 },
+      ])
+      expect(first.next).toEqual(expect.any(String))
+
+      // The cursor carries the heading: from/to given beside it are not read
+      const second = await (await app().request(`${url}?cursor=${first.next}&from=4`)).json()
+      expect(second.parts).toEqual([
+        { loc: { page: 2 }, headings: ['第1章', '概要'], text: 'かきくけこ', offset: 6 },
+      ])
+      expect(second.next).toBeNull()
+    })
+
+    it('gives the rows of a sheet that the part cut from it holds', async () => {
+      const resource = await document('section-sheet-pkg')
+      const sheet = {
+        loc: { sheet: 1, sheetName: 'Data', rows: [1, 2, 3] },
+        text: 'a\tb\nc\td\ne\tf',
+      }
+
+      const res = await app([sheet]).request(
+        `/api/v1/resources/${resource.id}/document-section?max_chars=8`
+      )
+
+      const { parts } = await res.json()
+      expect(parts[0]).toMatchObject({ loc: { sheet: 1, rows: [1, 2] }, text: 'a\tb\nc\td\n' })
+    })
+
+    it('says what pages the document has where nothing matches', async () => {
+      const resource = await document('section-unmatched-pkg')
+
+      const res = await app().request(
+        `/api/v1/resources/${resource.id}/document-section?from=9&to=10`
+      )
+
+      expect(await res.json()).toMatchObject({
+        parts: [],
+        next: null,
+        unmatched: { units: { min: 1, max: 4 } },
+      })
+    })
+
+    it('refuses a cursor that is none, and one from another artifact', async () => {
+      const resource = await document('section-cursor-pkg')
+      const url = `/api/v1/resources/${resource.id}/document-section`
+      const stale = encodeSectionCursor(
+        'previews/other.text.ndjson.zst',
+        {},
+        { block: 1, offset: 0 }
+      )
+
+      expect((await app().request(`${url}?cursor=nonsense`)).status).toBe(400)
+      expect((await app().request(`${url}?cursor=${stale}`)).status).toBe(409)
+    })
+
+    it('returns 404 for a private package resource to an outsider', async () => {
+      const resource = await document('section-private-pkg', { private: true })
+
+      for (const path of ['document-outline', 'document-section']) {
+        const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/${path}`)
+        expect(res.status).toBe(404)
+      }
     })
   })
 

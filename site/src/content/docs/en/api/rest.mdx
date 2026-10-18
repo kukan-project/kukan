@@ -256,6 +256,36 @@ values may be any JSON.
 The public endpoints apply the same visibility check as download and preview (a private dataset
 still requires permission).
 
+### Document text
+
+The text the pipeline extracts from PDF, Word, PowerPoint, Excel, Ichitaro and Markdown resources can be read
+with the page, slide or sheet and the headings each part is under — the same reads as MCP's
+`get_document_outline` / `get_document_section`.
+
+| Method | Path                               | Description                                                                | Auth   |
+| ------ | ---------------------------------- | -------------------------------------------------------------------------- | ------ |
+| GET    | `/resources/{id}/document-text`    | The text's blocks from the start, at once (preview size limit)             | Public |
+| GET    | `/resources/{id}/document-outline` | The headings (or sheets), the pages each spans, and the pages without text | Public |
+| GET    | `/resources/{id}/document-section` | The text of a range of pages or a heading (read on with a cursor)          | Public |
+
+- **`document-outline`**: `from` / `to` limit it to pages (slides, sheets). Returns `units` (what the document
+  counts, and the first and last), `entries` (each heading's `depth`, `title` and `units`; a sheet's `rows`),
+  `unreadable` (pages whose text cannot be read, such as scans) and `partlyUnreadable` (pages with some
+  characters that cannot be read).
+- **`document-section`**: `from` / `to` (pages, slides or sheets, 1-based), `heading` (part of a heading, a
+  path `A > B`, or part of a sheet's name; case, width and spaces are ignored), `max_chars` (default: 8,000,
+  max: 32,000). `parts` have the shape of `document-text`'s blocks; `text` is the part cut, and `offset` where
+  in the block's text it starts. A sheet block's `loc.rows` are narrowed to the rows of the part. Where more
+  text follows, `next` holds a cursor: pass it as `cursor` to read on. A cursor carries the range and the
+  heading, so `from` / `to` / `heading` are then not read. Where nothing matches, `parts` is empty and
+  `unmatched.units` gives the range of the document's pages.
+- A broken cursor gets 400; a cursor from another document, or from before this one was extracted again, gets
+  409 — read again without it.
+
+All three return the versions (`latestVersion` for the file the resource holds now, `sourceVersion` for the
+file the text was extracted from, and `describesLiveContent`). Where `describesLiveContent` is `false`, the
+file has been replaced and its text not yet extracted again: cite `sourceVersion`.
+
 ### Schema and data query
 
 Tabular resources (CSV/TSV, and JSON/GeoJSON whose records read as a table, with a pipeline-generated preview Parquet, ≤100 MB) support **column schema
@@ -714,7 +744,8 @@ The same search as MCP's `search_passages`. Parameters: `q` (required, up to 500
 word, the documents are found by fewer of them, and the response carries `minWords` (how many words were
 required). Each passage carries its
 resource and dataset, where it is (`first` / `last` page, slide or sheet, and `headings`), the words that
-matched (`words`), its text (`text`), where `get_document_section` reads on from (`readFrom`), and its
+matched (`words`), its text (`text`), a cursor to read on from the top of its page — or from the passage itself in a long block — with
+(`cursor`, for `/resources/{id}/document-section`), where that is (`readFrom`), and its
 versions (`latestVersion` for the file the resource holds now, `sourceVersion` for the file the text was
 extracted from). Where `describesLiveContent` is `false`, the file has been replaced and its text not yet
 extracted again: cite `sourceVersion`.

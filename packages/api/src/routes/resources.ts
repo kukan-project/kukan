@@ -16,7 +16,14 @@ import {
   isQueryable,
   profiledColumns,
 } from '../services/pipeline/pipeline-service'
-import { readDocumentText } from '../services/document-text'
+import {
+  isGone,
+  readDocumentOutline,
+  readDocumentText,
+  readSection,
+  textVersions,
+  type DocumentSectionPart,
+} from '../services/document-text'
 import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline/pipeline-claim'
 import { PackageService } from '../services/package-service'
@@ -35,6 +42,7 @@ import {
   UnauthorizedError,
   NotFoundError,
   ValidationError,
+  ConflictError,
   PayloadTooLargeError,
   getMimeType,
   detectContentType,
@@ -53,7 +61,7 @@ import {
   TEXT_PREVIEW_LIMIT,
 } from '@kukan/shared'
 import type { ColumnRolesView } from '@kukan/shared'
-import { QUERY_MAX_SQL_LENGTH } from '../config'
+import { MCP_SECTION_MAX_CHARS, MCP_SECTION_MAX_UNIT, QUERY_MAX_SQL_LENGTH } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
   canWritePackage,
@@ -103,11 +111,9 @@ function downloadHeaders(
   return headers
 }
 
-/** Convert S3 NoSuchKey errors to 404 NotFoundError */
-function throwIfNotFound(err: unknown, resourceId: string): never {
-  if (err && typeof err === 'object' && 'name' in err && err.name === 'NoSuchKey') {
-    throw new NotFoundError('Resource file', resourceId)
-  }
+/** A read of an object that is not there (purged, or replaced since its key was read) is a 404 */
+function throwIfNotFound(err: unknown, resourceId: string, what = 'Resource file'): never {
+  if (isGone(err)) throw new NotFoundError(what, resourceId)
   throw err
 }
 
@@ -299,28 +305,113 @@ resourcesRouter.get('/:id/text', async (c) => {
   })
 })
 
+/** The resource as the viewer may see it, and its document text artifact; 404 for either missing. */
+async function openDocumentText(c: Context<{ Variables: AppContext }>, id: string) {
+  const db = c.get('db')
+  const [res, text] = await Promise.all([
+    new ResourceService(db).getByIdWithAccessCheck(id, c.get('user')),
+    new PipelineService(db).getDocumentText(id),
+  ])
+  if (!text) throw new NotFoundError('Document text', id)
+  return { latestVersion: res.latestVersion, text }
+}
+
+/** A part of a section as a block: its text cut where the part is, and of a sheet, the rows that text is. */
+function partBlock({ block, text, offset, rows }: DocumentSectionPart) {
+  return { ...block, loc: rows ? { ...block.loc, rows } : block.loc, text, offset }
+}
+
 // GET /api/v1/resources/:id/document-text - A document's extracted text as
 // blocks, with the page, slide or sheet each is from and the headings over it.
 // Hard-limited to TEXT_PREVIEW_LIMIT bytes of text, like /text.
 resourcesRouter.get('/:id/document-text', async (c) => {
   const id = c.req.param('id')
-  const db = c.get('db')
-  const user = c.get('user')
-  const [, documentText] = await Promise.all([
-    new ResourceService(db).getByIdWithAccessCheck(id, user),
-    new PipelineService(db).getDocumentText(id),
-  ])
-  if (!documentText) throw new NotFoundError('Document text', id)
+  const { latestVersion, text } = await openDocumentText(c, id)
 
-  let text
+  let content
   try {
-    text = await readDocumentText(c.get('storage'), documentText.key, TEXT_PREVIEW_LIMIT)
+    content = await readDocumentText(c.get('storage'), text.key, TEXT_PREVIEW_LIMIT)
   } catch (err) {
-    throwIfNotFound(err, id)
+    throwIfNotFound(err, id, 'Document text')
   }
   c.header('Cache-Control', 'private, max-age=300')
-  return c.json(text)
+  return c.json({ ...content, ...textVersions(latestVersion, text) })
 })
+
+const unitParam = z.coerce.number().int().min(1).max(MCP_SECTION_MAX_UNIT).optional()
+
+// GET /api/v1/resources/:id/document-outline - A document's headings, or a
+// workbook's sheets, with the pages, slides or rows each spans, and the pages
+// whose text cannot be read. As get_document_outline lists them, uncut.
+resourcesRouter.get(
+  '/:id/document-outline',
+  zValidator('query', z.object({ from: unitParam, to: unitParam })),
+  async (c) => {
+    const id = c.req.param('id')
+    const { from, to } = c.req.valid('query')
+    const { latestVersion, text } = await openDocumentText(c, id)
+
+    let outline
+    try {
+      outline = await readDocumentOutline(c.get('storage'), text.key, { from, to })
+    } catch (err) {
+      throwIfNotFound(err, id, 'Document text')
+    }
+    c.header('Cache-Control', 'private, max-age=300')
+    return c.json({ ...outline, ...textVersions(latestVersion, text) })
+  }
+)
+
+// GET /api/v1/resources/:id/document-section - A document's text by where it
+// is: pages, slides or sheets (from/to), a heading, or both, up to max_chars.
+// A section that goes on gives a cursor in `next`; so does each of /passages,
+// to read on from its page. A cursor carries its selection, so from/to/heading are
+// then not read.
+resourcesRouter.get(
+  '/:id/document-section',
+  zValidator(
+    'query',
+    z.object({
+      from: unitParam,
+      to: unitParam,
+      heading: z.string().regex(/\S/).optional(),
+      max_chars: z.coerce.number().int().min(1).max(MCP_SECTION_MAX_CHARS).optional(),
+      cursor: z.string().min(1).optional(),
+    })
+  ),
+  async (c) => {
+    const id = c.req.param('id')
+    const { from, to, heading, max_chars, cursor } = c.req.valid('query')
+    const { latestVersion, text } = await openDocumentText(c, id)
+
+    let read
+    try {
+      read = await readSection(c.get('storage'), text.key, {
+        from,
+        to,
+        heading,
+        cursor,
+        maxChars: max_chars,
+      })
+    } catch (err) {
+      throwIfNotFound(err, id, 'Document text')
+    }
+    if (read === 'malformed') throw new ValidationError('The cursor is not one this API gave')
+    if (read === 'stale') {
+      throw new ConflictError(
+        'The cursor is from another document, or from before this one was extracted again'
+      )
+    }
+    const { section, next } = read
+    c.header('Cache-Control', 'private, max-age=300')
+    return c.json({
+      parts: section.parts.map(partBlock),
+      next,
+      ...(section.unmatched && { unmatched: section.unmatched }),
+      ...textVersions(latestVersion, text),
+    })
+  }
+)
 
 // GET /api/v1/resources/:id/json - Serve minified JSON/GeoJSON.
 // Returns 413 if file exceeds limit (truncated JSON is unparseable).

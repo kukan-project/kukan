@@ -7,7 +7,6 @@
  * text, with what an answer needs to cite it.
  */
 
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { publicOrigin, type DocumentTextBlock, type DocumentTextLoc, type Env } from '@kukan/shared'
@@ -26,13 +25,11 @@ import {
   blockUnit,
   isGone,
   readDocumentOutline,
-  readDocumentSection,
+  readSection,
+  textVersions,
   unitKind,
   type DocumentOutline,
-  type DocumentSection,
   type DocumentSectionPart,
-  type SectionPosition,
-  type SectionQuery,
   type UnitKind,
   type UnitRange,
 } from '../../services/document-text'
@@ -44,7 +41,6 @@ import {
   MCP_OUTLINE_MAX_CHARS,
   MCP_OUTLINE_TITLE_CHARS,
   MCP_SECTION_DEFAULT_CHARS,
-  MCP_SECTION_MAX_BLOCKS,
   MCP_SECTION_MAX_CHARS,
   MCP_SECTION_MAX_UNIT,
 } from '../../config'
@@ -53,49 +49,6 @@ import {
 type DocumentToolsContext = PassageSearchDeps & {
   env: Env
   user?: AuthUser
-}
-
-/**
- * What a cursor carries: the selection it continues, where it stopped, and
- * which artifact it stopped in. A block index means nothing in another one, so
- * a cursor from another document, or from before this one was extracted again,
- * is refused rather than followed.
- */
-const cursorSchema = z.object({
-  k: z.string(),
-  q: z.object({
-    from: z.number().int().optional(),
-    to: z.number().int().optional(),
-    heading: z.string().optional(),
-  }),
-  at: z.object({ block: z.number().int().nonnegative(), offset: z.number().int().nonnegative() }),
-})
-
-function artifactTag(key: string): string {
-  return createHash('sha256').update(key).digest('base64url').slice(0, 12)
-}
-
-function encodeCursor(key: string, q: SectionQuery, at: SectionPosition): string {
-  return Buffer.from(JSON.stringify({ k: artifactTag(key), q, at })).toString('base64url')
-}
-
-function decodeCursor(text: string): z.infer<typeof cursorSchema> | null {
-  try {
-    const parsed = cursorSchema.safeParse(JSON.parse(Buffer.from(text, 'base64url').toString()))
-    return parsed.success ? parsed.data : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * The rows of a sheet a part's text is: the block's text has a line per row
- * (`DocumentTextLoc.rows`), so a part cut from it holds the rows its lines are.
- */
-function partRows({ block, text, offset }: DocumentSectionPart): number[] {
-  const lines = (s: string) => s.split('\n').length
-  const first = lines(block.text.slice(0, offset)) - 1
-  return (block.loc.rows ?? []).slice(first, first + lines(text.replace(/\n$/, '')))
 }
 
 /** `5`, or `5–60`. */
@@ -117,7 +70,7 @@ function partPlace(part: DocumentSectionPart): string {
     case 'slide':
       return `slide ${loc.slide}`
     case 'sheet': {
-      const rows = partRows(part)
+      const rows = part.rows ?? []
       const at = rows.length ? `, ${span('row', { min: rows[0]!, max: rows.at(-1)! })}` : ''
       return `sheet ${loc.sheet}${loc.sheetName ? ` "${loc.sheetName}"` : ''}${at}`
     }
@@ -269,6 +222,7 @@ function sourceLines(
 ): (string | false | null)[] {
   const origin = publicOrigin(env)
   const file = res.urlType === 'upload' ? `${origin}${resourceDownloadPath(res.id)}` : res.url
+  const versions = textVersions(res.latestVersion ?? null, text)
   return [
     `Source: ${res.name || '(untitled)'}${pkg.title ? ` — ${pkg.title}` : ''}`,
     `Resource page: ${origin}/dataset/${pkg.name}/resource/${res.id}`,
@@ -279,11 +233,11 @@ function sourceLines(
     !!res.format && `Format: ${res.format}`,
     // A failed Interpret keeps the text of the bytes before: the version to
     // cite is the one the text is from, kept apart from the file's
-    ...(text.describesLiveContent
-      ? [res.latestVersion != null && `Version: ${res.latestVersion}`]
+    ...(versions.describesLiveContent
+      ? [versions.latestVersion != null && `Version: ${versions.latestVersion}`]
       : [
-          `Text from: ${text.sourceVersion != null ? `version ${text.sourceVersion}` : 'an earlier version of the file'}`,
-          res.latestVersion != null && `Current file version: ${res.latestVersion}`,
+          `Text from: ${versions.sourceVersion != null ? `version ${versions.sourceVersion}` : 'an earlier version of the file'}`,
+          versions.latestVersion != null && `Current file version: ${versions.latestVersion}`,
           'Note: the file has changed since this text was extracted; cite the version the text is from.',
         ]),
   ]
@@ -425,30 +379,26 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
       if ('content' in doc) return doc
       const { text } = doc
 
-      let query: SectionQuery = { from, to, heading }
-      let start: SectionPosition = { block: 0, offset: 0 }
-      if (cursor) {
-        const decoded = decodeCursor(cursor)
-        if (!decoded) return reply(['The cursor is not one this tool returned.'])
-        if (decoded.k !== artifactTag(text.key)) {
-          return reply([
-            'The cursor is from another document, or from before this one was extracted again. Start again without it.',
-          ])
-        }
-        query = decoded.q
-        start = decoded.at
-      }
-
-      let section: DocumentSection
+      let read: Awaited<ReturnType<typeof readSection>>
       try {
-        section = await readDocumentSection(storage, text.key, query, start, {
-          maxChars: max_chars ?? MCP_SECTION_DEFAULT_CHARS,
-          maxBlocks: MCP_SECTION_MAX_BLOCKS,
+        read = await readSection(storage, text.key, {
+          from,
+          to,
+          heading,
+          cursor,
+          maxChars: max_chars,
         })
       } catch (err) {
         if (isGone(err)) return gone(id)
         throw err
       }
+      if (read === 'malformed') return reply(['The cursor is not one this tool returned.'])
+      if (read === 'stale') {
+        return reply([
+          'The cursor is from another document, or from before this one was extracted again. Start again without it.',
+        ])
+      }
+      const { query, section, next } = read
 
       if (section.unmatched) {
         const { units } = section.unmatched
@@ -476,8 +426,8 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
         '',
         ...section.parts.flatMap((part, i) => [...(i > 0 ? [''] : []), ...partLines(part)]),
         '',
-        section.next
-          ? `More text follows. Call get_document_section with cursor "${encodeCursor(text.key, query, section.next)}" to read on.`
+        next
+          ? `More text follows. Call get_document_section with cursor "${next}" to read on.`
           : 'End of the selected text.',
       ])
     }
@@ -490,7 +440,6 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
     i: number
   ): (string | false | null)[] {
     const place = passagePlace(passage.first, passage.last)
-    const cursor = encodeCursor(source.text.key, {}, passage.readFrom)
     return [
       `[${i + 1}]`,
       ...sourceLines(
@@ -502,7 +451,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
       ),
       `Where: ${[place, passage.headings.join(' > ')].filter(Boolean).join(' · ') || 'the document has no pages or headings here'}`,
       passage.words.length > 0 && `Matched: ${passage.words.join(', ')}`,
-      `Read around it: get_document_section with id "${source.id}" and cursor "${cursor}"`,
+      `Read around it: get_document_section with id "${source.id}" and cursor "${passage.cursor}"`,
       '',
       passage.text,
     ]
