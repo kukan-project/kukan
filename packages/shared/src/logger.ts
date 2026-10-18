@@ -22,60 +22,33 @@ const PRETTY_OPTS = {
   ignore: 'pid,hostname',
 }
 
-/**
- * Try to create an in-process pino-pretty stream via native require.
- * Uses __non_webpack_require__ in webpack to bypass static analysis,
- * avoiding both bundling errors and worker-thread instability.
- * Memoized: a single stream is shared across all logger instances.
- */
-let _prettyStream: pino.DestinationStream | null | undefined
-function createPrettyStream(): pino.DestinationStream | null {
-  if (_prettyStream !== undefined) return _prettyStream
-  try {
-    // @ts-expect-error -- __non_webpack_require__ is webpack's native require escape hatch
-    if (typeof __non_webpack_require__ === 'function') {
-      // @ts-expect-error -- __non_webpack_require__ bypasses webpack static analysis
-      const mod = __non_webpack_require__('pino-pretty')
-      _prettyStream = (mod.default ?? mod)(PRETTY_OPTS) as pino.DestinationStream
-      return _prettyStream
+/** One pino-pretty worker thread, shared by every logger in the process. */
+let prettyTransport: pino.DestinationStream | null | undefined
+function sharedPrettyTransport(): pino.DestinationStream | null {
+  if (prettyTransport === undefined) {
+    try {
+      prettyTransport = pino.transport({ target: 'pino-pretty', options: PRETTY_OPTS })
+    } catch {
+      // pino-pretty not available — fall back to JSON
+      prettyTransport = null
     }
-  } catch {
-    // pino-pretty not available — fall through
   }
-  _prettyStream = null
-  return null
+  return prettyTransport
 }
 
 /**
  * Create a pino logger instance.
  *
- * - Production / non-TTY: JSON to stdout (CloudWatch Logs compatible)
- * - Development (native Node.js): pino-pretty via worker-thread transport
- * - Development (Next.js webpack): pino-pretty in-process via native require
+ * - Production / tests / piped output: JSON to stdout (CloudWatch Logs compatible)
+ * - Development: pino-pretty in a worker thread
  */
 export function createLogger(options: CreateLoggerOptions): Logger {
   const level = options.level ?? process.env.LOG_LEVEL ?? 'info'
   const baseOpts: pino.LoggerOptions = { name: options.name, level }
 
-  if (!process.stdout?.isTTY) {
-    return pino(baseOpts)
-  }
-
-  // Webpack (Next.js): in-process pino-pretty stream (no worker threads)
-  const stream = createPrettyStream()
-  if (stream) return pino(baseOpts, stream)
-
-  // Native Node.js (API standalone / Worker): worker-thread transport
-  if (typeof pino.transport === 'function') {
-    try {
-      return pino({
-        ...baseOpts,
-        transport: { target: 'pino-pretty', options: PRETTY_OPTS },
-      })
-    } catch {
-      // fall through to JSON
-    }
-  }
-
-  return pino(baseOpts)
+  // `next dev` hands its server's output to the parent over a socket, not a TTY
+  const pretty = process.stdout?.isTTY || process.env.NODE_ENV === 'development'
+  // pino's browser and Edge builds have no transport
+  const stream = pretty && typeof pino.transport === 'function' ? sharedPrettyTransport() : null
+  return stream ? pino(baseOpts, stream) : pino(baseOpts)
 }

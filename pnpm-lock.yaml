@@ -119,6 +119,9 @@ importers:
       next-intl:
         specifier: ^4.14.8
         version: 4.14.9(@swc/helpers@0.5.23)(@types/react@19.3.0)(next@16.4.0(@opentelemetry/api@1.9.1)(@playwright/test@1.64.0)(@types/node@24.19.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      pino:
+        specifier: ^10.4.0
+        version: 10.4.0
       react:
         specifier: ^19.3.0
         version: 19.3.0
