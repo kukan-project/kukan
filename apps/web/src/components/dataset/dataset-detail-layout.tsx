@@ -8,6 +8,7 @@ import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
 import { DatasetMetadata } from './dataset-metadata'
 import { ResourceExplorer, type Resource } from '@/components/resource/resource-explorer'
+import { LinkPendingIndicator } from '@/components/link-pending-indicator'
 
 interface Organization {
   id: string
@@ -92,6 +93,7 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
                   >
                     <Building2 className="h-3.5 w-3.5" />
                     {pkg.organization.title || pkg.organization.name}
+                    <LinkPendingIndicator />
                   </Link>
                 )}
                 {pkg.groups.map((g) => (
@@ -102,6 +104,7 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
                   >
                     <FolderOpen className="h-3.5 w-3.5" />
                     {g.title || g.name}
+                    <LinkPendingIndicator />
                   </Link>
                 ))}
                 {pkg.tags.map((pkgTag) => (

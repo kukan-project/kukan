@@ -1,5 +1,6 @@
 import { Separator, Skeleton } from '@kukan/ui'
 
+// The route group keeps this boundary to this page (see __tests__/loading-boundaries.test.ts)
 export default function GroupListLoading() {
   return (
     <div className="mx-auto max-w-[var(--kukan-container-max-width)] px-4 py-8">

@@ -1,5 +1,6 @@
 import { Card, CardContent, Separator, Skeleton } from '@kukan/ui'
 
+// The route group keeps this boundary to this page (see __tests__/loading-boundaries.test.ts)
 export default function HomeLoading() {
   return (
     <div className="mx-auto flex max-w-[var(--kukan-container-max-width)] flex-col items-center gap-8 px-4 py-16">

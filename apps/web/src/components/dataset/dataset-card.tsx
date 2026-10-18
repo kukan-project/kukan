@@ -7,6 +7,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { FormatBadge } from '@/components/format-badge'
 import { FormatBadges } from '@/components/format-badges'
 import { CompactDate } from '@/components/date-time'
+import { LinkPendingIndicator } from '@/components/link-pending-indicator'
 import { parseGroups } from '@/lib/parse-groups'
 import { foldMatched } from '@/lib/matched-resources'
 import { sectionTrail } from '@/lib/resource-sections'
@@ -71,13 +72,17 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
         <CardHeader className="gap-3 sm:gap-2">
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-2">
             <CardTitle className="min-w-0 text-lg sm:flex-1">
-              <Link
-                href={datasetHref}
-                className={`after:absolute after:inset-0 after:content-[''] ${HIGHLIGHT_MARK}`}
-                {...(pkg.highlightedTitle
-                  ? { dangerouslySetInnerHTML: { __html: pkg.highlightedTitle } }
-                  : { children: pkg.title || pkg.name })}
-              />
+              <Link href={datasetHref} className="after:absolute after:inset-0 after:content-['']">
+                {pkg.highlightedTitle ? (
+                  <span
+                    className={HIGHLIGHT_MARK}
+                    dangerouslySetInnerHTML={{ __html: pkg.highlightedTitle }}
+                  />
+                ) : (
+                  pkg.title || pkg.name
+                )}
+                <LinkPendingIndicator />
+              </Link>
             </CardTitle>
             {pkg.matchSource === 'semantic' && (
               <Badge
@@ -190,6 +195,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                               text={r.name || r.id}
                               className="truncate font-medium group-hover/resource:underline"
                             />
+                            <LinkPendingIndicator />
                             {r.format && <FormatBadge format={r.format} className="shrink-0" />}
                             {row.others > 0 && (
                               <span className="shrink-0 text-xs text-muted-foreground">

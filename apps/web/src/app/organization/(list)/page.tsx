@@ -8,8 +8,9 @@ import { SearchForm } from '@/components/search/search-form'
 import { PaginationNav } from '@/components/pagination-nav'
 import { SortLinks, parseListOrder, orderParam } from '@/components/search/sort-links'
 import { EntityImage } from '@/components/entity-image'
+import { LinkPendingIndicator } from '@/components/link-pending-indicator'
 
-interface Group {
+interface Organization {
   id: string
   name: string
   title?: string | null
@@ -22,10 +23,10 @@ interface Props {
   searchParams: Promise<{ q?: string; offset?: string; limit?: string; orderBy?: string }>
 }
 
-export const generateMetadata = titleMetadata('category', 'title')
+export const generateMetadata = titleMetadata('organization', 'title')
 
-export default async function GroupsPage({ searchParams }: Props) {
-  const [params, t] = await Promise.all([searchParams, getTranslations('category')])
+export default async function OrganizationsPage({ searchParams }: Props) {
+  const [params, t] = await Promise.all([searchParams, getTranslations('organization')])
   const tc = await getTranslations('common')
   const q = params.q || ''
   const offset = Number(params.offset) || 0
@@ -41,9 +42,9 @@ export default async function GroupsPage({ searchParams }: Props) {
   query.set('limit', String(limit))
   query.set('orderBy', orderBy)
 
-  let data: PaginatedResult<Group> = { items: [], total: 0, offset: 0, limit: 20 }
+  let data: PaginatedResult<Organization> = { items: [], total: 0, offset: 0, limit: 20 }
   try {
-    const res = await serverFetch(`/api/v1/groups?${query}`)
+    const res = await serverFetch(`/api/v1/organizations?${query}`)
     if (res.ok) {
       data = await res.json()
     }
@@ -60,37 +61,40 @@ export default async function GroupsPage({ searchParams }: Props) {
         </div>
 
         <SearchForm
-          action="/group"
+          action="/organization"
           defaultValue={q}
           placeholder={t('searchPlaceholder')}
           hiddenParams={{ orderBy: orderParam(orderBy) }}
         />
 
-        <SortLinks basePath="/group" params={listParams} active={orderBy} />
+        <SortLinks basePath="/organization" params={listParams} active={orderBy} />
 
         <Separator />
 
         {data.items.length === 0 ? (
           <p className="py-12 text-center text-muted-foreground">
-            {q ? t('noMatchingCategories', { query: q }) : t('noCategories')}
+            {q ? t('noMatchingOrganizations', { query: q }) : t('noOrganizations')}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {data.items.map((grp) => (
-              <Link key={grp.id} href={`/group/${grp.name}`}>
+            {data.items.map((org) => (
+              <Link key={org.id} href={`/organization/${org.name}`}>
                 <Card className="h-full transition-colors hover:bg-accent/50">
                   <CardContent className="flex flex-col items-center gap-3 px-4 py-6 text-center">
-                    <EntityImage imageUrl={grp.imageUrl} name={grp.title || grp.name} />
+                    <EntityImage imageUrl={org.imageUrl} name={org.title || org.name} />
                     <div className="min-w-0">
-                      <p className="font-semibold">{grp.title || grp.name}</p>
-                      {grp.description && (
+                      <p className="font-semibold">
+                        {org.title || org.name}
+                        <LinkPendingIndicator />
+                      </p>
+                      {org.description && (
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                          {grp.description}
+                          {org.description}
                         </p>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {t('datasetCount', { count: grp.datasetCount })}
+                      {t('datasetCount', { count: org.datasetCount })}
                     </p>
                   </CardContent>
                 </Card>
@@ -100,7 +104,7 @@ export default async function GroupsPage({ searchParams }: Props) {
         )}
 
         <PaginationNav
-          basePath="/group"
+          basePath="/organization"
           params={listParams}
           offset={offset}
           limit={limit}

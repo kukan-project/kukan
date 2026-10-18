@@ -167,7 +167,7 @@ export async function DefaultHeader() {
 ```
 
 ```typescript
-// apps/web/src/app/page.tsx (main side)
+// apps/web/src/app/(home)/page.tsx (main side)
 import { overrides } from '@/brand'
 
 export default async function HomePage() {
@@ -289,7 +289,7 @@ In both cases `brand.siteName` / `brand.footerLinks[].label` etc. are resolved s
 | `brand/pages/index.ts`         | Sample only                      | **Modifies**      | **Very low**                                  |
 | `brand/pages/*.tsx`            | Sample only                      | **Adds/removes**  | **Very low**                                  |
 | `public/brand/*`               | Defaults only                    | **Replaces**      | **Very low**                                  |
-| `app/page.tsx`                 | Normal development               | Does not modify   | None                                          |
+| `app/(home)/page.tsx`          | Normal development               | Does not modify   | None                                          |
 | `components/layout/header.tsx` | Normal development               | Does not modify   | None                                          |
 | `app/globals.css`              | Normal development               | Does not modify   | None                                          |
 

@@ -165,7 +165,7 @@ export async function DefaultHeader() {
 ```
 
 ```typescript
-// apps/web/src/app/page.tsx（本体側）
+// apps/web/src/app/(home)/page.tsx（本体側）
 import { overrides } from '@/brand'
 
 export default async function HomePage() {
@@ -286,7 +286,7 @@ const brand = resolveBrandConfig(useLocale())
 | `brand/pages/index.ts`         | サンプルのみ                     | **変更する**     | **極低**                   |
 | `brand/pages/*.tsx`            | サンプルのみ                     | **追加/削除**    | **極低**                   |
 | `public/brand/*`               | デフォルトのみ                   | **差し替え**     | **極低**                   |
-| `app/page.tsx`                 | 通常通り開発                     | 変更しない       | なし                       |
+| `app/(home)/page.tsx`          | 通常通り開発                     | 変更しない       | なし                       |
 | `components/layout/header.tsx` | 通常通り開発                     | 変更しない       | なし                       |
 | `app/globals.css`              | 通常通り開発                     | 変更しない       | なし                       |
 

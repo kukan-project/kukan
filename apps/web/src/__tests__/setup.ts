@@ -26,6 +26,7 @@ vi.mock('next/link', () => ({
     href: string
     [key: string]: unknown
   }) => createElement('a', { href, ...props }, children),
+  useLinkStatus: () => ({ pending: false }),
 }))
 
 // Mock next/navigation — notFound() throws to mimic Next.js render interruption

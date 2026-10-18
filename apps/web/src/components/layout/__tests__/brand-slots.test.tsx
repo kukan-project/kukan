@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Footer } from '../footer'
 import { Header } from '../header'
-import HomePage from '@/app/page'
+import HomePage from '@/app/(home)/page'
 
 // Verify the ADR-023 slot mechanism: when a fork registers an override,
 // the slot component renders it instead of the default implementation.
