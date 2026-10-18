@@ -37,7 +37,12 @@ const t = {
     ctaTitle: 'さっそく始めてみましょう',
     ctaDesc: '詳細なセットアップ手順はドキュメントをご覧ください。',
     ctaButton: 'ドキュメントへ',
-    ctaNote: '開発の背景についてはこちら',
+    adoptersTitle: 'KUKAN を使っていますか？',
+    adoptersDesc:
+      'KUKAN を利用している組織は、GitHub の Issue でぜひお知らせください。<br>今後の開発の参考にするほか、公式サイトへのロゴとリンクの掲載をご相談することもあります。',
+    adoptersButton: '利用を知らせる',
+    ctaNote: '読めて、聞けて、つながる — KUKAN 開発記',
+    diary: { guide: 'dev-diary' },
     releaseNotes: 'リリースノート',
     switchLang: 'English',
     recent: [
@@ -156,7 +161,12 @@ const t = {
     ctaTitle: 'Get Started',
     ctaDesc: 'Check the documentation for detailed setup instructions.',
     ctaButton: 'Go to Docs',
-    ctaNote: 'Read about the story behind this project',
+    adoptersTitle: 'Using KUKAN?',
+    adoptersDesc:
+      'If your organization runs KUKAN, let us know in a GitHub issue. It helps us decide what to build next, and we may ask to list your logo and a link on this site.',
+    adoptersButton: 'Tell Us You Use It',
+    ctaNote: 'Read, Query, Connect — The KUKAN Dev Diary',
+    diary: { guide: 'dev-diary' },
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
     recent: [
@@ -502,15 +512,25 @@ const techStack = [
       </div>
     </section>
 
+    <section class="adopters">
+      <div class="container">
+        <h2 class="section-title" data-i18n="adoptersTitle">{t.en.adoptersTitle}</h2>
+        <p class="adopters-desc" data-i18n-html="adoptersDesc">{t.en.adoptersDesc}</p>
+        <a href="https://github.com/kukan-project/kukan/issues/new?template=adopter.yml" target="_blank" rel="noopener" class="btn-outline">
+          <span data-i18n="adoptersButton">{t.en.adoptersButton}</span>
+          <svg class="ext-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+        </a>
+      </div>
+    </section>
+
     <section class="cta">
       <div class="container">
         <h2 class="section-title" data-i18n="ctaTitle">{t.en.ctaTitle}</h2>
         <p class="cta-desc" data-i18n="ctaDesc">{t.en.ctaDesc}</p>
         <a href={`${base}en/`} class="btn-primary btn-lg" data-i18n="ctaButton" id="cta-link">{t.en.ctaButton}</a>
         <p class="cta-note">
-          <a href="https://note.com/masagon73/n/ncfb409f3b4a9" target="_blank" rel="noopener noreferrer">
+          <a href={docHref(t.en.diary)} data-doc="diary">
             <span data-i18n="ctaNote">{t.en.ctaNote}</span>
-            <svg class="ext-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
           </a>
         </p>
       </div>
@@ -1082,6 +1102,25 @@ const techStack = [
         font-size: 0.875rem;
         color: #475569;
         font-weight: 500;
+      }
+
+      /* Adopters */
+      .adopters {
+        padding: 3rem 1rem;
+        text-align: center;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .adopters .section-title {
+        margin-bottom: 1rem;
+      }
+      .adopters-desc {
+        max-width: 48rem;
+        margin: 0 auto 1.5rem;
+        font-size: 1.0625rem;
+        color: #64748b;
+        line-height: 1.65;
+        word-break: auto-phrase;
+        text-wrap: balance;
       }
 
       /* CTA */

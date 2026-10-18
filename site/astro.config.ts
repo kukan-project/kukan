@@ -72,6 +72,7 @@ export default defineConfig({
           translations: { en: 'API Reference' },
           items: [{ autogenerate: { directory: 'api' } }],
         },
+        { slug: 'dev-diary' },
       ],
     }),
   ],

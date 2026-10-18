@@ -1,0 +1,38 @@
+name: We Use KUKAN / KUKAN を使っています
+description: Tell us your organization uses KUKAN / KUKAN を利用している組織を教えてください
+title: '[Adopter] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for using KUKAN! Knowing who runs it helps us decide what to work on next. We may also ask to list your organization's logo and a link on the KUKAN website; we will not list anything without your consent. We reply in this issue; anything that should not be public, such as logo files or the consent to list, moves to email.
+        KUKAN をご利用いただきありがとうございます。どこで使われているかを知ることは、今後の開発の参考になります。公式サイトへの組織のロゴとリンクの掲載をご相談することもあります。同意をいただかずに掲載することはありません。ご連絡はこの Issue へのコメントで行います。ロゴのファイルや掲載の許諾など、公開しないやり取りはメールに移ります。
+  - type: input
+    id: organization
+    attributes:
+      label: Organization / 組織名
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Site URL / サイトの URL
+      description: Your KUKAN site, if it is public / 公開している KUKAN のサイトがあれば
+    validations:
+      required: false
+  - type: textarea
+    id: usage
+    attributes:
+      label: How You Use It / 利用の概要
+      description: What data you publish, and anything you would like us to know / 公開しているデータの種類や、伝えたいことがあれば
+    validations:
+      required: false
+  - type: dropdown
+    id: listing
+    attributes:
+      label: Logo and Link on the KUKAN Website / 公式サイトへのロゴとリンクの掲載
+      options:
+        - Open to it — please contact us / 検討したいので連絡がほしい
+        - Not now / 今は希望しない
+    validations:
+      required: true

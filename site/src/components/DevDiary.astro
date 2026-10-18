@@ -1,0 +1,131 @@
+---
+/**
+ * The note series in order, from part 1, as cards with each article's header image.
+ * One list for both languages: English links open note's English version.
+ * Add a new article at the end, with its header image under assets/dev-diary/.
+ */
+import { Image } from 'astro:assets'
+import type { ImageMetadata } from 'astro'
+import whyRebuild from '../assets/dev-diary/01-why-rebuild.png'
+import csvUpload from '../assets/dev-diary/02-csv-upload.png'
+import aiAbstract from '../assets/dev-diary/03-ai-abstract.png'
+import biAccess from '../assets/dev-diary/04-bi-access.png'
+import mcpPassages from '../assets/dev-diary/05-mcp-passages.png'
+
+interface Article {
+  url: string
+  date: string
+  image: ImageMetadata
+  ja: string
+  /** note's own English title for the article */
+  en: string
+}
+
+const articles: Article[] = [
+  {
+    url: 'https://note.com/masagon73/n/ncfb409f3b4a9',
+    date: '2026-04-19',
+    image: whyRebuild,
+    ja: 'なぜ私たちは、データカタログをゼロから作り直したのか。AI時代を見据えたOSS「KUKAN」公開の裏側',
+    en: "Why We Rebuilt Our Data Catalog from Scratch: The Story Behind the Release of the AI-Ready OSS 'KUKAN'",
+  },
+  {
+    url: 'https://note.com/masagon73/n/n7583af21cc37',
+    date: '2026-08-28',
+    image: csvUpload,
+    ja: 'CSV を 1 枚アップロードしたら、何が起きるか — オープンデータカタログ KUKAN のいま',
+    en: 'What happens when you upload a single CSV? — The current state of the open data catalog KUKAN',
+  },
+  {
+    url: 'https://note.com/masagon73/n/nad8c383c7374',
+    date: '2026-09-20',
+    image: aiAbstract,
+    ja: 'データの説明を AI に書かせたら、検索が当たるようになった — オープンデータカタログ KUKAN で測ったこと',
+    en: 'I had AI write data descriptions, and now search results are accurate — What I measured with the open data catalog KUKAN',
+  },
+  {
+    url: 'https://note.com/masagon73/n/n2cfa9657793e',
+    date: '2026-09-26',
+    image: biAccess,
+    ja: 'その表、URL を貼るだけで Excel や Tableau で開けます — データを「使う側」から見た KUKAN',
+    en: 'That table can be opened in Excel or Tableau just by pasting a URL — KUKAN from the perspective of the "data user"',
+  },
+  {
+    url: 'https://note.com/masagon73/n/n58af563ccf1c',
+    date: '2026-10-12',
+    image: mcpPassages,
+    ja: 'AI に聞いたら、資料のページを添えて答えが返ってきた — 表も文書も MCP 一本で「聞ける」KUKAN',
+    en: 'When I asked AI, it returned an answer with the document page — KUKAN, where you can "ask" both tables and documents with a single MCP',
+  },
+]
+
+const { lang } = Astro.props as { lang: 'ja' | 'en' }
+---
+
+<ul class="dev-diary not-content">
+  {articles.map((a) => (
+    <li>
+      <a href={lang === 'en' ? `${a.url}?hl=en` : a.url} target="_blank" rel="noopener">
+        <Image src={a.image} alt="" widths={[400, 640]} sizes="(max-width: 50rem) 100vw, 22rem" />
+        <span class="dev-diary-body">
+          <span class="dev-diary-title">{a[lang]}</span>
+          <time datetime={a.date}>{a.date}</time>
+        </span>
+      </a>
+    </li>
+  ))}
+</ul>
+
+<style>
+  .dev-diary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+    padding: 0;
+    list-style: none;
+  }
+  .dev-diary a {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    color: inherit;
+    text-decoration: none;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
+  }
+  .dev-diary a:hover {
+    border-color: var(--sl-color-accent);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+  }
+  .dev-diary img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1280 / 670;
+    object-fit: cover;
+    border-bottom: 1px solid var(--sl-color-gray-5);
+  }
+  .dev-diary-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem 1rem;
+  }
+  .dev-diary-title {
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--sl-color-white);
+    word-break: auto-phrase;
+  }
+  .dev-diary time {
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+  }
+</style>
