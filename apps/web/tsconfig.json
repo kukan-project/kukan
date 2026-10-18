@@ -24,7 +24,8 @@
       "@/*": ["./src/*"],
       "@kukan/shared": ["../../packages/shared/src"],
       "@kukan/ui": ["../../packages/ui/src"],
-      "@kukan/api": ["../../packages/api/src"]
+      "@kukan/api": ["../../packages/api/src"],
+      "@kukan/api/secrets": ["../../packages/api/src/secrets"]
     }
   },
   "include": [

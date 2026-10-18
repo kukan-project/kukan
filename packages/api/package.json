@@ -13,6 +13,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./adapters": "./dist/adapters.js",
+    "./secrets": "./dist/secrets.js",
     "./services/search/search-index": "./dist/services/search/search-index.js",
     "./services/search/resource-embedding": "./dist/services/search/resource-embedding.js",
     "./services/pipeline/pipeline-service": "./dist/services/pipeline/pipeline-service.js",
@@ -50,6 +51,7 @@
     "eval:suggest": "tsx scripts/eval-suggest.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1150.0",
     "@duckdb/node-api": "1.5.5-r.5",
     "@google-analytics/data": "^7.3.0",
     "@hono/node-server": "^2.1.5",

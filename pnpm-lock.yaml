@@ -401,6 +401,9 @@ importers:
 
   packages/api:
     dependencies:
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.1150.0
+        version: 3.1150.0
       '@duckdb/node-api':
         specifier: 1.5.5-r.5
         version: 1.5.5-r.5
