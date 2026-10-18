@@ -6,6 +6,110 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.36.0] - 2026-10-18
+
+**Breaking Changes**
+
+- The `resource_version.ducklake_snapshot_id` column is dropped, as announced in v0.35.0 (#961). After the migration an image of v0.35.x or earlier no longer runs against the database, so there is no rolling back past this release. While a rolling deploy replaces the tasks, ones still on the old image can fail requests such as the version list or a version deletion; jobs are retried on the new image. You can upgrade straight from v0.34.x or earlier: resources whose DuckLake record has not been rebuilt yet are rebuilt hourly, or by **Backfill versions** on the dashboard. `drop-shared-lake-catalog.js --commit`, which deletes the old site-wide record, no longer waits for those rebuilds, since they read only the stored version files.
+- AWS: the web and worker run on arm64 (Graviton) by default (#930). An environment entry without `cpuArchitecture` switches on its next deployment; set `cpuArchitecture: 'x86_64'` to stay. Fargate on arm64 costs about 20% less than on x86_64. To build the arm64 images for a standalone deployment from an x86_64 Linux host with Docker Engine only (no Docker Desktop), run `docker run --privileged --rm tonistiigi/binfmt --install arm64` once.
+- REST: integers in the rows of `POST /resources/{id}/query` and in the samples of `GET /resources/{id}/versions/{v}/diff` are JSON numbers instead of strings (#918). Only values of magnitude 2^53 or more stay strings, so that JavaScript clients do not round them. MCP output and OData do not change, and column statistics from `/schema` keep integer bounds as strings (#921).
+
+**Upgrade Notes**
+
+- AWS: the web and worker now verify the RDS / Aurora server certificate (`POSTGRES_SSLMODE=verify-full`, with the RDS CA bundle in the images) (#940, #945). The CDK pins the instances' CA with the new `rdsCaCertificate` (default `rds-ca-rsa2048-g1`); if an instance uses another CA, the deployment switches it and **the database restarts**. GovCloud and China regions are not supported. On Docker Compose, `require` still encrypts without verifying; `verify-full` with `POSTGRES_SSLROOTCERT` is now available.
+- The migration adds a `rate_limit` table for sign-in rate limits (#947). On AWS the CDK sets `CLIENT_IP_HEADER`; elsewhere leave it unset.
+- AI abstracts of tables made before this release were written without sample rows (#925). The abstract generation version is raised (#962), so the admin screen counts every stored abstract as written some other way and quotes the cost of rewriting them; nothing is rewritten until you choose to refresh. Abstracts of documents are counted too, although #925 did not change them.
+- The worker's first hourly pass after the upgrade deletes the expired sessions that have piled up (#952).
+
+**Highlights**
+
+- Sign-in rate limits now work per client on AWS (#947). Behind CloudFront every visitor shared one limit, so three sign-ins in 10 seconds by anyone made the next one fail for everyone; and each web task counted on its own. Limits are now kept in the database and keyed by the address CloudFront sees.
+- Database connections verify who answers (#940, #945): the web, the worker and the multi-site database Lambda check the server certificate and host name instead of only encrypting.
+- Documents can be read over REST, as through MCP (#956): `GET /resources/{id}/document-outline` for headings and page ranges, `GET /resources/{id}/document-section` to read a part with a cursor to continue, and a `cursor` on each passage of `/passages`.
+
+**Features**
+
+- feat(infra): run the web and worker on arm64 (Graviton) by default (#930) — `cpuArchitecture` sets the image platform, the task definitions and the pipeline's build machines together.
+- feat(infra): publish an AAAA alias beside the A record, so the site is reachable over IPv6 (#954). The new site setting `enableIpv6Dns` defaults to on, and to off on sites with `allowedIpRanges`. `-c` flags such as `-c enableWaf=false` are now read as booleans instead of the string `"false"`.
+- feat(api): read a document's outline and sections over REST, and on from a passage (#956) — `/document-text` also returns the version it describes.
+- feat(web): prepare the web for Lambda Web Functions (ADR-068) without changing how it runs elsewhere (#948, #949, #951) — it listens where the runtime says, sizes memory from the function when there is no cgroup, and with `SECRET_ARNS` set reads secrets from Secrets Manager at startup.
+
+**Bug Fixes**
+
+- fix(api): keep sign-in rate limits in the database, per client (#947); expired limits, sessions and verifications are deleted hourly by the worker (#952).
+- fix(db): verify the server certificate on TLS connections to RDS and Aurora (#940), and in the site database Lambda (#945).
+- fix(shared): encode the user and password when building `DATABASE_URL` from `POSTGRES_*` (#943) — a password with `#`, `@`, `/` or `?` changed the host connected to.
+- fix(infra): vary the CloudFront HTML cache by language (#923) — signed-out visitors could get a page in the language of whoever missed the cache before them.
+- fix(worker): give AI abstracts of tables their sample rows (#925, #962) — the worker could not start the query process it reads them through, so abstracts were written from the schema alone.
+- fix(lake): keep a statement on one resource's DuckLake record from reading the others (#926) — concurrent jobs failed with `database is locked`.
+- fix(lake): keep the web image free of source files the build traced by mistake (#931).
+- fix(api): check the filename of a multipart upload by the same rule as `upload-url` (#920).
+- fix(docker): build images on the host's own architecture and ship only the target's native binaries (#928) — arm64 images build on Apple Silicon, and building the arm64 web image from x86_64 went from about 640 to 75 seconds.
+- fix(shared): pretty-print logs under `next dev` again (#955).
+
+**Documentation**
+
+- docs(adr): ADR-068 proposes running the web on Lambda Web Functions, with the measurements and the billing basis checked against a bill (#934, #953).
+- docs: the guides, ADRs and specs catch up with this release (#963) — the environment variable table gains `POSTGRES_SSLMODE` and `POSTGRES_SSLROOTCERT`, the configuration references gain `enableIpv6Dns` and `rdsCaCertificate`, and ADR-067 records that the column is gone.
+- feat(site): the website asks organizations running KUKAN to say so in a GitHub issue, with a template that also asks whether to list their logo and a link, and gains a dev diary page that collects the note series with each article's header image, linking English readers to note's machine-translated versions (#964).
+
+**Maintenance**
+
+- refactor(infra): split the infra configuration into modules and move the stacks under `infra/lib/stacks` (#932). The synthesized templates do not change, and `infra/lib/config.ts` still exports the same names for forks' `environments.ts`.
+- build(deps): Node.js 24.22.0 (#929); 18 pnpm overrides that no longer held anything back are removed (#944); the AWS SDK 3.1150, aws-cdk-lib 2.273, openai 7.32 and other updates (#913, #922).
+
+---
+
+**破壊的変更**
+
+- v0.35.0 で予告したとおり、`resource_version.ducklake_snapshot_id` 列を削除しました（#961）。マイグレーションの後は v0.35.x 以前のイメージが動かなくなり、このリリースより前へは戻せません。ローリングデプロイでタスクが入れ替わる間は、古いイメージのままのタスクで版の一覧や版の削除などが失敗することがあります。ジョブは新しいイメージで再試行されます。v0.34.x 以前からも直接上げられます。DuckLake の記録をまだ作り直していないリソースは、毎時、またはダッシュボードの「バージョンの補完」で作り直されます。以前のサイト全体の記録を削除する `drop-shared-lake-catalog.js --commit` は、作り直しの完了を待たなくなりました。作り直しは保存済みの版のファイルだけを読むためです。
+- AWS: web と worker は既定で arm64（Graviton）で動きます（#930）。`cpuArchitecture` を指定していない環境は、次のデプロイで切り替わります。x86_64 のままにするには `cpuArchitecture: 'x86_64'` を指定してください。arm64 の Fargate は x86_64 より約 2 割安くなります。Docker Engine だけの x86_64 の Linux（Docker Desktop なし）から standalone でデプロイする場合は、一度 `docker run --privileged --rm tonistiigi/binfmt --install arm64` を実行してください。
+- REST: `POST /resources/{id}/query` の行と、`GET /resources/{id}/versions/{v}/diff` の見本の整数を、文字列ではなく JSON の数値で返すようにしました（#918）。絶対値が 2^53 以上の値だけは、JavaScript のクライアントで丸まらないよう文字列のままです。MCP の出力と OData は変わりません。`/schema` の列の統計の整数の範囲は文字列のままです（#921）。
+
+**アップグレード時の注意**
+
+- AWS: web と worker は、RDS / Aurora のサーバー証明書を検証するようになりました（`POSTGRES_SSLMODE=verify-full`、RDS の CA の束をイメージに同梱）（#940、#945）。CDK は新しい `rdsCaCertificate`（既定は `rds-ca-rsa2048-g1`）でインスタンスの CA を固定します。インスタンスが別の CA を使っている場合は、デプロイで切り替わり、**データベースが再起動します**。GovCloud と中国のリージョンには対応していません。Docker Compose では、`require` は引き続き検証せずに暗号化だけを行います。`POSTGRES_SSLROOTCERT` と組み合わせた `verify-full` も使えるようになりました。
+- マイグレーションで、ログイン試行の回数制限のための `rate_limit` 表を追加します（#947）。AWS では CDK が `CLIENT_IP_HEADER` を設定します。それ以外の環境では設定しないでください。
+- このリリースより前に作った表の AI 抄録は、見本の行なしで書かれています（#925）。抄録の生成版を上げたので（#962）、管理画面では保存済みのすべての抄録が「書き方が変わった抄録」として数えられ、作り直しの費用の見積もりが出ます。作り直すのは、作り直しを実行したときだけです。#925 の影響を受けていない文書の抄録も数えられます。
+- アップグレード後の worker の最初の毎時の見回りで、これまでに溜まった期限切れのセッションをまとめて削除します（#952）。
+
+**ハイライト**
+
+- AWS で、ログイン試行の回数制限がクライアントごとに効くようになりました（#947）。CloudFront の後ろでは全員が 1 つの枠を共有していたため、誰かが 10 秒に 3 回ログインすると、次のログインは誰でも失敗していました。また、web のタスクごとに別々に数えていました。今後は回数をデータベースに記録し、CloudFront が見た接続元のアドレスごとに数えます。
+- データベースへの接続で、相手を確かめるようになりました（#940、#945）。web、worker、マルチサイトのデータベースを作る Lambda は、暗号化するだけでなく、サーバーの証明書とホスト名を検証します。
+- 文書を MCP と同じように REST からも読めるようになりました（#956）。見出しとページ範囲は `GET /resources/{id}/document-outline`、一部分を読み、続きをカーソルで読むには `GET /resources/{id}/document-section` を使います。`/passages` の各箇所にも `cursor` が付きます。
+
+**機能**
+
+- feat(infra): web と worker を既定で arm64（Graviton）で動かす（#930）— `cpuArchitecture` 1 つで、イメージのプラットフォーム、タスク定義、パイプラインのビルド環境をまとめて決めます。
+- feat(infra): A レコードの隣に AAAA のエイリアスを置き、IPv6 でもサイトに届くようにする（#954）。新しいサイト単位の設定 `enableIpv6Dns` の既定は有効で、`allowedIpRanges` のあるサイトでは無効です。`-c enableWaf=false` のような `-c` の指定を、文字列の `"false"` ではなく真偽値として読むようにしました。
+- feat(api): 文書の見出しと本文の一部を REST で読み、一節検索の箇所から続きを読む（#956）— `/document-text` も、どの版の内容かを返します。
+- feat(web): web を Lambda Web Functions（ADR-068）で動かす準備（#948、#949、#951）— ほかの環境での動きは変わりません。ランタイムが指定する番地で待ち受け、cgroup が無いときは関数のメモリから上限を決め、`SECRET_ARNS` があれば起動時に Secrets Manager から秘密情報を読みます。
+
+**バグ修正**
+
+- fix(api): ログイン試行の回数制限をデータベースに記録し、クライアントごとに数える（#947）。期限切れの回数制限・セッション・検証の行は、worker が毎時削除します（#952）。
+- fix(db): RDS と Aurora への TLS 接続でサーバー証明書を検証する（#940）。サイトのデータベースを作る Lambda も同じく検証します（#945）。
+- fix(shared): `POSTGRES_*` から `DATABASE_URL` を組み立てるとき、ユーザー名とパスワードをエンコードする（#943）— パスワードに `#`・`@`・`/`・`?` があると、接続先のホストが変わっていました。
+- fix(infra): CloudFront の HTML のキャッシュを言語ごとに分ける（#923）— 未ログインの閲覧者に、直前にキャッシュを外した人の言語のページが返ることがありました。
+- fix(worker): 表の AI 抄録に見本の行を入れる（#925、#962）— worker が見本の行を読むクエリのプロセスを起動できず、抄録がスキーマだけから書かれていました。
+- fix(lake): あるリソースの DuckLake の記録に対する文が、ほかのリソースの記録を読まないようにする（#926）— 同時に動くジョブが `database is locked` で失敗していました。
+- fix(lake): ビルドが誤って追跡したソースファイルを web のイメージに入れない（#931）。
+- fix(api): multipart のアップロードのファイル名を、`upload-url` と同じ規則で検査する（#920）。
+- fix(docker): ビルドするマシン本来のアーキテクチャでビルドし、ターゲットのネイティブのバイナリだけを入れる（#928）— Apple Silicon でも arm64 のイメージを作れるようになり、x86_64 から arm64 の web のイメージを作る時間は約 640 秒から 75 秒になりました。
+- fix(shared): `next dev` でログを再び整形して表示する（#955）。
+
+**ドキュメント**
+
+- docs(adr): ADR-068 で web を Lambda Web Functions で動かすことを提案し、実測と、請求で確かめた課金の基準を記録しました（#934、#953）。
+- docs: ガイド・ADR・仕様書をこのリリースの内容に合わせました（#963）。環境変数の表に `POSTGRES_SSLMODE` と `POSTGRES_SSLROOTCERT` を、設定の一覧に `enableIpv6Dns` と `rdsCaCertificate` を足し、ADR-067 に列を外したことを記録しました。
+- feat(site): 公式サイトで、KUKAN を利用している組織に GitHub の Issue で知らせてもらうようお願いし、ロゴとリンクの掲載の希望も聞く Issue テンプレートを用意しました。note の連載を見出し画像付きで並べた開発記のページも足しました。英語のページからは note の機械翻訳版へリンクします（#964）。
+
+**保守**
+
+- refactor(infra): infra の設定を役割ごとのモジュールに分け、スタックを `infra/lib/stacks` の下に移しました（#932）。合成されるテンプレートは変わりません。フォークの `environments.ts` が読む `infra/lib/config.ts` は、同じ名前を引き続き公開します。
+- build(deps): Node.js 24.22.0（#929）。役目を終えた pnpm の override 18 個を外しました（#944）。AWS SDK 3.1150、aws-cdk-lib 2.273、openai 7.32 ほかの更新（#913、#922）。
+
 ## [0.35.1] - 2026-10-13
 
 **Bug Fixes**
