@@ -51,9 +51,12 @@ export function testApp(extraContext: Record<string, unknown> = {}): cdk.App {
   })
 }
 
-/** Synthesize a stage named `Dev` for the given environment definition. */
-export function synthStage(config: Omit<EnvironmentConfig, 'account'>): KukanStage {
-  return new KukanStage(testApp(), 'Dev', { config: { account: TEST_ACCOUNT, ...config } })
+/** Synthesize a stage named `Dev` for the given environment definition (and `-c` context). */
+export function synthStage(
+  config: Omit<EnvironmentConfig, 'account'>,
+  context: Record<string, unknown> = {}
+): KukanStage {
+  return new KukanStage(testApp(context), 'Dev', { config: { account: TEST_ACCOUNT, ...config } })
 }
 
 /** A stack inside the stage ('KukanStack' / 'KukanGlobalStack'). */

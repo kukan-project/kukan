@@ -513,6 +513,12 @@ pg_dump / restore → S3 sync → reindex → DNS switch → destroy the old env
 When `allowedIpRanges` is set, a CloudFront Function (viewer request) restricts IP addresses
 (ADR-027). Both IPv4 CIDRs and IPv6 prefixes are supported. No extra cost.
 
+The domain gets A and AAAA aliases, so it is reached over IPv6 too (`enableIpv6Dns`). On a site
+with `allowedIpRanges` the AAAA is left out by default: a viewer admitted by its IPv4 address would
+come over IPv6 once its network has it, miss the list and get a 403, which browsers do not retry
+over IPv4. An IPv6 prefix in the list does not say every admitted IPv4 viewer's IPv6 is in it.
+Once the list holds the IPv6 prefixes of every place it admits, `enableIpv6Dns: true` adds the AAAA.
+
 - ALB: internal (reachable only via the CloudFront VPC Origin, restricted by a managed prefix list)
 - Web task SG: allows only port 3000 from the ALB (no direct access)
 - Worker task SG: no inbound

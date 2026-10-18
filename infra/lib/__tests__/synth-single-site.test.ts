@@ -172,6 +172,64 @@ describe('edge-gated (basic auth + IP allowlist, WAF auto-off)', () => {
   })
 })
 
+describe('IPv6 in DNS (AAAA beside the A)', () => {
+  const domain = {
+    scale: 'small',
+    domainName: 'data.example.jp',
+    hostedZoneId: 'Z0000000000000000000',
+    hostedZoneName: 'example.jp',
+  } as const
+  const recordTypes = (
+    overrides: Parameters<typeof synthStage>[0],
+    context?: Record<string, unknown>
+  ) =>
+    Object.values(
+      stackTemplate(synthStage(overrides, context), 'KukanStack').findResources(
+        'AWS::Route53::RecordSet'
+      )
+    )
+      .map((r) => r.Properties.Type)
+      .sort()
+
+  it('resolves an open site over both', () => {
+    expect(recordTypes(domain)).toEqual(['A', 'AAAA'])
+  })
+
+  it('keeps a site behind an IP allowlist on IPv4, an IPv6 prefix in it or not', () => {
+    expect(recordTypes({ ...domain, allowedIpRanges: ['203.0.113.0/24'] })).toEqual(['A'])
+    expect(
+      recordTypes({ ...domain, allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'] })
+    ).toEqual(['A'])
+  })
+
+  it('resolves a site behind an IP allowlist over IPv6 when asked', () => {
+    expect(
+      recordTypes({
+        ...domain,
+        allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
+        enableIpv6Dns: true,
+      })
+    ).toEqual(['A', 'AAAA'])
+  })
+
+  it('leaves an open site on IPv4 when asked', () => {
+    expect(recordTypes({ ...domain, enableIpv6Dns: false })).toEqual(['A'])
+  })
+
+  it('reads -c enableIpv6Dns=false as off, not as a truthy string', () => {
+    expect(recordTypes(domain, { enableIpv6Dns: 'false' })).toEqual(['A'])
+    expect(
+      recordTypes({ ...domain, allowedIpRanges: ['203.0.113.0/24'] }, { enableIpv6Dns: 'true' })
+    ).toEqual(['A', 'AAAA'])
+  })
+
+  it('refuses a -c flag that is neither true nor false', () => {
+    expect(() => synthStage(domain, { enableIpv6Dns: 'no' })).toThrow(
+      /-c enableIpv6Dns must be true or false/
+    )
+  })
+})
+
 describe('self-created global stack (domain without certificateArn)', () => {
   const stage = synthStage({
     scale: 'small',

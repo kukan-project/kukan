@@ -2399,6 +2399,31 @@ function expandV6(addr) {
       },
       "Type": "AWS::Route53::RecordSet",
     },
+    "DnsRecordV67D1E586E": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "CDNDistributionD4FAE585",
+              "DomainName",
+            ],
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition",
+              },
+              "zoneId",
+            ],
+          },
+        },
+        "HostedZoneId": "Z0000000000000000000",
+        "Name": "catalog.city-a.example.jp.",
+        "Type": "AAAA",
+      },
+      "Type": "AWS::Route53::RecordSet",
+    },
     "Ga4ClientEmailSecretA087C8AB": {
       "DeletionPolicy": "Delete",
       "Properties": {

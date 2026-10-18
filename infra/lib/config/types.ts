@@ -140,6 +140,14 @@ export interface EnvironmentConfig {
    * only — credentials are embedded (base64) in the readable CF Function source (ADR-027).
    */
   basicAuth?: { username: string; password: string }
+  /**
+   * Resolve the domain over IPv6 too (an AAAA alias beside the A). Omit → on,
+   * except behind `allowedIpRanges`: there a viewer admitted by its IPv4
+   * address would come over IPv6 once its network has it, miss the list and
+   * get a 403, which browsers do not retry over IPv4. Set it there only once
+   * the list holds the IPv6 prefixes of every place it admits.
+   */
+  enableIpv6Dns?: boolean
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
@@ -254,6 +262,14 @@ export interface SiteConfig {
   /** Non-empty: omit it to leave the site open (checked again at synth). */
   allowedIpRanges?: [string, ...string[]]
   basicAuth?: { username: string; password: string }
+  /**
+   * Resolve the domain over IPv6 too (an AAAA alias beside the A). Omit → on,
+   * except behind `allowedIpRanges`: there a viewer admitted by its IPv4
+   * address would come over IPv6 once its network has it, miss the list and
+   * get a 403, which browsers do not retry over IPv4. Set it there only once
+   * the list holds the IPv6 prefixes of every place it admits.
+   */
+  enableIpv6Dns?: boolean
   /** S3 bucket name. Omit → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi?: boolean
@@ -311,6 +327,8 @@ export interface KukanConfig extends ScaleComputed {
   enableWaf: boolean
   allowedIpRanges?: string[]
   basicAuth?: { username: string; password: string }
+  /** Whether the domain has an AAAA alias beside the A. */
+  enableIpv6Dns: boolean
   /** Whether the worker's User-Agent carries the site URL (USER_AGENT_URL). */
   nameSiteInUserAgent: boolean
   domainName?: string

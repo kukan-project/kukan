@@ -496,6 +496,12 @@ pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧�
 `allowedIpRanges` 設定時、CloudFront Function（Viewer Request）で IP アドレスを制限（ADR-027）。
 IPv4 CIDR と IPv6 プレフィックスの両方に対応。追加コストなし。
 
+ドメインには A と AAAA のエイリアスを置き、IPv6 でも受ける（`enableIpv6Dns`）。ただし
+`allowedIpRanges` を設定したサイトでは、既定で AAAA を置かない。IPv4 で許可した利用者も、回線が
+IPv6 を持てば IPv6 で来て許可リストに当たらず 403 になり、ブラウザは IPv4 でやり直さないため。
+リストに IPv6 のプレフィックスがあっても、許可した IPv4 の利用者すべての IPv6 が入っているとは
+限らない。許可するすべての拠点の IPv6 をリストに入れたら、`enableIpv6Dns: true` で AAAA を置く。
+
 - ALB: internal（CloudFront VPC Origin 経由のみ、マネージドプレフィックスリストで制限）
 - Web タスク SG: ALB からの 3000 番ポートのみ許可（直接アクセス不可）
 - Worker タスク SG: インバウンドなし

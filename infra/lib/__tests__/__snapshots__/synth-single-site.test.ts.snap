@@ -4562,6 +4562,31 @@ function expandV6(addr) {
       },
       "Type": "AWS::Route53::RecordSet",
     },
+    "DnsRecordV67D1E586E": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "CDNDistributionD4FAE585",
+              "DomainName",
+            ],
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition",
+              },
+              "zoneId",
+            ],
+          },
+        },
+        "HostedZoneId": "Z0000000000000000000",
+        "Name": "data.example.jp.",
+        "Type": "AAAA",
+      },
+      "Type": "AWS::Route53::RecordSet",
+    },
     "EcrAssetRetentionPolicyC14B6DF7": {
       "DeletionPolicy": "Delete",
       "DependsOn": [
@@ -11579,6 +11604,31 @@ function expandV6(addr) {
         "HostedZoneId": "Z0000000000000000000",
         "Name": "data.example.jp.",
         "Type": "A",
+      },
+      "Type": "AWS::Route53::RecordSet",
+    },
+    "DnsRecordV67D1E586E": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": {
+            "Fn::GetAtt": [
+              "CDNDistributionD4FAE585",
+              "DomainName",
+            ],
+          },
+          "HostedZoneId": {
+            "Fn::FindInMap": [
+              "AWSCloudFrontPartitionHostedZoneIdMap",
+              {
+                "Ref": "AWS::Partition",
+              },
+              "zoneId",
+            ],
+          },
+        },
+        "HostedZoneId": "Z0000000000000000000",
+        "Name": "data.example.jp.",
+        "Type": "AAAA",
       },
       "Type": "AWS::Route53::RecordSet",
     },

@@ -244,18 +244,21 @@ export function composeSite(
     )
   }
 
-  // --- DNS Record (A Alias → CloudFront) ---
+  // --- DNS Records (A and AAAA Alias → CloudFront) ---
   if (config.domainName && config.hostedZoneId && config.hostedZoneName) {
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(scope, 'Zone', {
       hostedZoneId: config.hostedZoneId,
       zoneName: config.hostedZoneName,
     })
-
-    new route53.ARecord(scope, 'DnsRecord', {
+    const record = {
       zone: hostedZone,
       recordName: config.domainName,
       target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(cdn.distribution)),
-    })
+    }
+
+    new route53.ARecord(scope, 'DnsRecord', record)
+    // An alias answers for its own type only: IPv6 viewers need the AAAA beside the A
+    if (config.enableIpv6Dns) new route53.AaaaRecord(scope, 'DnsRecordV6', record)
   }
 
   // --- Outputs ---

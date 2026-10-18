@@ -20,7 +20,7 @@ import {
   rdsInstanceClass,
 } from './scale.js'
 import { rejectBlankEdgeArns } from './edge.js'
-import { loadConfig, positiveInt } from './load.js'
+import { contextFlag, loadConfig, positiveInt } from './load.js'
 
 const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
 
@@ -62,6 +62,7 @@ const SITE_SCOPED_FIELDS = Object.keys({
   enableWaf: true,
   allowedIpRanges: true,
   basicAuth: true,
+  enableIpv6Dns: true,
   bucketName: true,
   enableGa4DataApi: true,
   nameSiteInUserAgent: true,
@@ -274,7 +275,10 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
 
   // Burstable shared OpenSearch: one site's reindex degrades every site, so
   // warn (not error) from the second site on.
-  const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
+  const enableOpenSearch =
+    contextFlag('enableOpenSearch', ctx<unknown>('enableOpenSearch')) ??
+    env.enableOpenSearch ??
+    true
   if (
     sites.length >= 2 &&
     enableOpenSearch &&

@@ -101,6 +101,17 @@ export function positiveInt(field: string, value: number): number {
   return value
 }
 
+/**
+ * A boolean from CDK context: `-c key=false` arrives as the string "false",
+ * truthy as it stands, while cdk.json gives a real boolean.
+ */
+export function contextFlag(key: string, value: unknown): boolean | undefined {
+  if (value === undefined || typeof value === 'boolean') return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error(`-c ${key} must be true or false (got ${JSON.stringify(value)})`)
+}
+
 /** Validated `ecrImageRetention` (images kept, ≥ 1). */
 export function resolveEcrImageRetention(
   env: Pick<EnvironmentConfig, 'ecrImageRetention'>
@@ -203,9 +214,10 @@ export function loadConfig(
 ): KukanConfig {
   const ctx = <T>(key: string): T | undefined =>
     ignoreContext.includes(key) ? undefined : (scope.node.tryGetContext(key) as T | undefined)
+  const flag = (key: string): boolean | undefined => contextFlag(key, ctx<unknown>(key))
 
   const scale = ctx<Scale>('scale') ?? env.scale ?? 'small'
-  const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
+  const enableOpenSearch = flag('enableOpenSearch') ?? env.enableOpenSearch ?? true
   // env-only (no ctx): the pipeline picks its asset-publishing CodeBuild from
   // the entry, which a -c on a standalone deploy cannot reach
   const cpuArchitecture = resolveCpuArchitecture(env)
@@ -224,13 +236,14 @@ export function loadConfig(
   // WAF provides managed rules on CloudFront scope (ADR-027). The edge gate (IP allowlist
   // and/or Basic auth) is handled by a CloudFront Function, so WAF defaults OFF when either
   // is set (saves ~$9/month).
-  const enableWafExplicit = ctx<boolean>('enableWaf') ?? env.enableWaf
+  const enableWafExplicit = flag('enableWaf') ?? env.enableWaf
   const edgeGated = isEdgeGated({ allowedIpRanges, basicAuth })
   const enableWaf = enableWafExplicit ?? !edgeGated
+  // Off behind an IP allowlist unless asked: see EnvironmentConfig.enableIpv6Dns
+  const enableIpv6Dns = flag('enableIpv6Dns') ?? env.enableIpv6Dns ?? !allowedIpRanges
   // Asked for, not inferred: whether a site is meant to be found is the
   // operator's call. Behind an edge gate it cannot be, whatever was asked.
-  const nameSiteInUserAgent =
-    ctx<boolean>('nameSiteInUserAgent') ?? env.nameSiteInUserAgent ?? false
+  const nameSiteInUserAgent = flag('nameSiteInUserAgent') ?? env.nameSiteInUserAgent ?? false
   if (nameSiteInUserAgent && edgeGated) {
     throw new Error(
       'nameSiteInUserAgent is set on an edge-gated site — the worker would hand out ' +
@@ -242,7 +255,7 @@ export function loadConfig(
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
   // undefined → CDK auto-naming (globally unique). ADR-031.
   const bucketName = ctx<string>('bucketName') ?? env.bucketName
-  const enableGa4DataApi = ctx<boolean>('enableGa4DataApi') ?? env.enableGa4DataApi ?? false
+  const enableGa4DataApi = flag('enableGa4DataApi') ?? env.enableGa4DataApi ?? false
   // env-only (no ctx): shared by every environment in the account/region and
   // checked for agreement across environments.ts (validateEcrImageRetention).
   const ecrImageRetention = resolveEcrImageRetention(env)
@@ -297,6 +310,7 @@ export function loadConfig(
     enableWaf,
     allowedIpRanges,
     basicAuth,
+    enableIpv6Dns,
     nameSiteInUserAgent,
     domainName,
     timeZone,
