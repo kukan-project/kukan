@@ -15,9 +15,15 @@ export interface Entity {
   description?: string | null
 }
 
+/**
+ * `null` only when the API says 404 (it answers 404 for what the viewer may not
+ * see, too). Any other failure throws, so an outage reaches the error boundary
+ * instead of rendering an existing entity as not found.
+ */
 async function fetchJson(path: string) {
-  const res = await serverFetch(path).catch(() => null)
-  if (!res?.ok) return null
+  const res = await serverFetch(path)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`GET ${path} failed with ${res.status}`)
   return res.json()
 }
 

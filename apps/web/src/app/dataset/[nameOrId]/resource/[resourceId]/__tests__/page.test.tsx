@@ -27,8 +27,8 @@ vi.mock('@/components/dataset/dataset-detail-layout', () => ({
   ),
 }))
 
-function mockResponse(data: unknown, ok = true) {
-  return { ok, json: async () => data } as Response
+function mockResponse(data: unknown, status = 200) {
+  return { ok: status < 400, status, json: async () => data } as Response
 }
 
 const samplePkg = {
@@ -61,17 +61,17 @@ describe('ResourceDetailPage', () => {
     expect(layout).toHaveAttribute('data-resource-id', 'r1')
   })
 
-  it('should call notFound when package fetch fails', async () => {
-    vi.mocked(serverFetch).mockRejectedValue(new Error('Network error'))
+  it('should throw, not call notFound, when the API fails', async () => {
+    vi.mocked(serverFetch).mockResolvedValue(mockResponse(null, 500))
 
     await expect(ResourceDetailPage(makeParams('population-data', 'r1'))).rejects.toThrow(
-      'NEXT_NOT_FOUND'
+      'failed with 500'
     )
-    expect(notFound).toHaveBeenCalled()
+    expect(notFound).not.toHaveBeenCalled()
   })
 
-  it('should call notFound when package response is not ok', async () => {
-    vi.mocked(serverFetch).mockResolvedValue(mockResponse(null, false))
+  it('should call notFound when the package API answers 404', async () => {
+    vi.mocked(serverFetch).mockResolvedValue(mockResponse(null, 404))
 
     await expect(ResourceDetailPage(makeParams('population-data', 'r1'))).rejects.toThrow(
       'NEXT_NOT_FOUND'

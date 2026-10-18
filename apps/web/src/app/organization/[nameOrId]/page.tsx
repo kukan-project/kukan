@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
 import { Separator } from '@kukan/ui'
@@ -39,13 +40,14 @@ export default async function OrganizationDatasetsPage({ params, searchParams }:
     getTranslations('organization'),
     getTranslations('common'),
   ])
+  if (!org) notFound()
 
   let data: PaginatedResult<DatasetCardItem> = { items: [], total: 0, offset: 0, limit: 20 }
   if (dataRes?.ok) {
     data = await dataRes.json()
   }
 
-  const orgTitle = org?.title || org?.name || nameOrId
+  const orgTitle = org.title || org.name
 
   return (
     <div className="mx-auto max-w-[var(--kukan-container-max-width)] px-4 py-8">
@@ -65,7 +67,7 @@ export default async function OrganizationDatasetsPage({ params, searchParams }:
           </p>
         </div>
 
-        {org?.description && <p className="text-sm text-muted-foreground">{org.description}</p>}
+        {org.description && <p className="text-sm text-muted-foreground">{org.description}</p>}
 
         <SearchForm
           action={`/organization/${nameOrId}`}

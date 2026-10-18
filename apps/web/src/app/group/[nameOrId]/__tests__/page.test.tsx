@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { notFound } from 'next/navigation'
 import { serverFetch } from '@/lib/server-api'
 import GroupDatasetsPage from '../page'
 
@@ -7,8 +8,8 @@ vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
 }))
 
-function mockResponse(data: unknown, ok = true) {
-  return { ok, json: async () => data } as Response
+function mockResponse(data: unknown, status = 200) {
+  return { ok: status < 400, status, json: async () => data } as Response
 }
 
 const sampleGroup = {
@@ -52,6 +53,7 @@ function makeProps(nameOrId: string, searchParams: Record<string, string> = {}) 
 describe('GroupDatasetsPage', () => {
   beforeEach(() => {
     vi.mocked(serverFetch).mockReset()
+    vi.mocked(notFound).mockClear()
   })
 
   it('should display group title and breadcrumb', async () => {
@@ -134,28 +136,22 @@ describe('GroupDatasetsPage', () => {
     expect(screen.getByText('Next')).toBeInTheDocument()
   })
 
-  it('should handle group fetch failure gracefully', async () => {
+  it('should call notFound when the API answers 404', async () => {
     vi.mocked(serverFetch)
-      .mockResolvedValueOnce(mockResponse(null, false))
-      .mockResolvedValueOnce(
-        mockResponse({ items: sampleDatasets, total: 2, offset: 0, limit: 20 })
-      )
-    const jsx = await GroupDatasetsPage(makeProps('demographics'))
-    render(jsx)
+      .mockResolvedValueOnce(mockResponse(null, 404))
+      .mockResolvedValueOnce(mockResponse({ items: [], total: 0, offset: 0, limit: 20 }))
 
-    // Falls back to nameOrId as title
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('demographics')
+    await expect(GroupDatasetsPage(makeProps('no-such-group'))).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(notFound).toHaveBeenCalled()
   })
 
-  it('should handle both fetches failing gracefully', async () => {
+  it('should throw, not call notFound, when the API fails', async () => {
     vi.mocked(serverFetch)
-      .mockRejectedValueOnce(new Error('API down'))
-      .mockRejectedValueOnce(new Error('API down'))
-    const jsx = await GroupDatasetsPage(makeProps('demographics'))
-    render(jsx)
+      .mockResolvedValueOnce(mockResponse(null, 500))
+      .mockResolvedValueOnce(mockResponse({ items: [], total: 0, offset: 0, limit: 20 }))
 
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('demographics')
-    expect(screen.getByText('No results')).toBeInTheDocument()
+    await expect(GroupDatasetsPage(makeProps('no-such-group'))).rejects.toThrow('failed with 500')
+    expect(notFound).not.toHaveBeenCalled()
   })
 
   it('should use name as fallback when group title is null', async () => {
@@ -163,7 +159,7 @@ describe('GroupDatasetsPage', () => {
     vi.mocked(serverFetch)
       .mockResolvedValueOnce(mockResponse(groupNoTitle))
       .mockResolvedValueOnce(mockResponse({ items: [], total: 0, offset: 0, limit: 20 }))
-    const jsx = await GroupDatasetsPage(makeProps('demographics'))
+    const jsx = await GroupDatasetsPage(makeProps('g1'))
     render(jsx)
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('demographics')

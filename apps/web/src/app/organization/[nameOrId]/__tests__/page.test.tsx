@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { notFound } from 'next/navigation'
 import { serverFetch } from '@/lib/server-api'
 import OrganizationDatasetsPage from '../page'
 
@@ -7,8 +8,8 @@ vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
 }))
 
-function mockResponse(data: unknown, ok = true) {
-  return { ok, json: async () => data } as Response
+function mockResponse(data: unknown, status = 200) {
+  return { ok: status < 400, status, json: async () => data } as Response
 }
 
 const sampleOrg = {
@@ -52,6 +53,7 @@ function makeProps(nameOrId: string, searchParams: Record<string, string> = {}) 
 describe('OrganizationDatasetsPage', () => {
   beforeEach(() => {
     vi.mocked(serverFetch).mockReset()
+    vi.mocked(notFound).mockClear()
   })
 
   it('should display organization title and breadcrumb', async () => {
@@ -144,27 +146,36 @@ describe('OrganizationDatasetsPage', () => {
     expect(packagesUrl).toContain('offset=20')
   })
 
-  it('should handle org fetch failure gracefully', async () => {
+  it('should call notFound when the API answers 404', async () => {
     vi.mocked(serverFetch)
-      .mockRejectedValueOnce(new Error('API down'))
-      .mockRejectedValueOnce(new Error('API down'))
-    const jsx = await OrganizationDatasetsPage(makeProps('tokyo'))
-    render(jsx)
+      .mockResolvedValueOnce(mockResponse(null, 404))
+      .mockResolvedValueOnce(mockResponse({ items: [], total: 0, offset: 0, limit: 20 }))
 
-    // Falls back to nameOrId as title
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('tokyo')
-    expect(screen.getByText('No results')).toBeInTheDocument()
+    await expect(OrganizationDatasetsPage(makeProps('no-such-org'))).rejects.toThrow(
+      'NEXT_NOT_FOUND'
+    )
+    expect(notFound).toHaveBeenCalled()
   })
 
-  it('should use nameOrId as fallback when org has no title', async () => {
-    const orgNoTitle = { ...sampleOrg, title: null, name: null }
+  it('should throw, not call notFound, when the API fails', async () => {
+    vi.mocked(serverFetch)
+      .mockResolvedValueOnce(mockResponse(null, 500))
+      .mockResolvedValueOnce(mockResponse({ items: [], total: 0, offset: 0, limit: 20 }))
+
+    await expect(OrganizationDatasetsPage(makeProps('no-such-org'))).rejects.toThrow(
+      'failed with 500'
+    )
+    expect(notFound).not.toHaveBeenCalled()
+  })
+
+  it('should use name as fallback when org has no title', async () => {
+    const orgNoTitle = { ...sampleOrg, title: null }
     vi.mocked(serverFetch)
       .mockResolvedValueOnce(mockResponse(orgNoTitle))
       .mockResolvedValueOnce(mockResponse({ items: [], total: 0, offset: 0, limit: 20 }))
-    const jsx = await OrganizationDatasetsPage(makeProps('tokyo'))
+    const jsx = await OrganizationDatasetsPage(makeProps('org-1'))
     render(jsx)
 
-    // Falls back to nameOrId param
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('tokyo')
   })
 

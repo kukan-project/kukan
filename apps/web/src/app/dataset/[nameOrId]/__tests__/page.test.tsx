@@ -27,8 +27,8 @@ vi.mock('@/components/dataset/dataset-detail-layout', () => ({
   ),
 }))
 
-function mockResponse(data: unknown, ok = true) {
-  return { ok, json: async () => data } as Response
+function mockResponse(data: unknown, status = 200) {
+  return { ok: status < 400, status, json: async () => data } as Response
 }
 
 const samplePkg = {
@@ -67,15 +67,17 @@ describe('DatasetDetailPage', () => {
     expect(serverFetch).toHaveBeenCalledWith('/api/v1/packages/population-data')
   })
 
-  it('should call notFound when fetch fails', async () => {
-    vi.mocked(serverFetch).mockRejectedValue(new Error('Network error'))
+  it('should throw, not call notFound, when the API fails', async () => {
+    vi.mocked(serverFetch).mockResolvedValue(mockResponse(null, 500))
 
-    await expect(DatasetDetailPage(makeParams('nonexistent'))).rejects.toThrow('NEXT_NOT_FOUND')
-    expect(notFound).toHaveBeenCalled()
+    await expect(DatasetDetailPage(makeParams('population-data'))).rejects.toThrow(
+      'failed with 500'
+    )
+    expect(notFound).not.toHaveBeenCalled()
   })
 
-  it('should call notFound when response is not ok', async () => {
-    vi.mocked(serverFetch).mockResolvedValue(mockResponse(null, false))
+  it('should call notFound when the API answers 404', async () => {
+    vi.mocked(serverFetch).mockResolvedValue(mockResponse(null, 404))
 
     await expect(DatasetDetailPage(makeParams('nonexistent'))).rejects.toThrow('NEXT_NOT_FOUND')
     expect(notFound).toHaveBeenCalled()
