@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed — stage 2 passed, the whole web included; decide after checking the billing basis against the bill** — 2026-10-17
+**Proposed — stage 2 passed, the whole web included, and the billing basis checked against the bill; decide once the CDK L2 is released** — 2026-10-18
 
 Let the web in AWS environments run on **Lambda Web Functions** as well as on ECS Fargate + ALB.
 Web Functions run an ordinary Node HTTP server that listens on a port, so the main reasons ADR-020
@@ -33,19 +33,19 @@ is unaffected.
 
 A third form of Lambda; the existing Lambda is renamed Event Functions.
 
-| Item                | Detail                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------- |
-| How it runs         | An HTTP server listening on `AWS_LAMBDA_HTTP_ENDPOINT`. No adapter                        |
-| Environment         | 2 vCPU / 2 GB fixed, Arm64 only (not selectable), Node.js 24 (`nodejs24.x`)               |
-| Concurrency         | Up to 128 requests per environment (default 64, `maxConcurrencyPerEnvironment`)           |
-| Startup             | Must start listening within 10 seconds. Scales to zero environments without traffic       |
-| Requests            | Up to 900 seconds. Response streaming. HTTP/1.1 only, no WebSocket                        |
-| Packaging           | Zip only (in a versioned S3 bucket). No container images                                  |
-| Runtime patches     | Applied automatically; cannot be pinned                                                   |
-| Inbound             | Always a public endpoint. No PrivateLink. Protected by CloudFront OAC and `IamAuth`       |
-| Outbound            | Without a connector, directly over Lambda's public IPv4. With one, from the VPC's subnets |
-| Billing             | Active CPU time + memory while an environment lives + requests + data transfer            |
-| Regions (at launch) | us-east-1, us-east-2, us-west-2, ap-northeast-1, eu-west-1 (not Osaka)                    |
+| Item                | Detail                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| How it runs         | An HTTP server listening on `AWS_LAMBDA_HTTP_ENDPOINT`. No adapter                            |
+| Environment         | 2 vCPU / 2 GB fixed, Arm64 only (not selectable), Node.js 24 (`nodejs24.x`)                   |
+| Concurrency         | Up to 128 requests per environment (default 64, `maxConcurrencyPerEnvironment`)               |
+| Startup             | Must start listening within 10 seconds. Scales to zero about 6 minutes after the last request |
+| Requests            | Up to 900 seconds. Response streaming. HTTP/1.1 only, no WebSocket                            |
+| Packaging           | Zip only (in a versioned S3 bucket). No container images                                      |
+| Runtime patches     | Applied automatically; cannot be pinned                                                       |
+| Inbound             | Always a public endpoint. No PrivateLink. Protected by CloudFront OAC and `IamAuth`           |
+| Outbound            | Without a connector, directly over Lambda's public IPv4. With one, from the VPC's subnets     |
+| Billing             | Active CPU time + memory used × the time an environment lives + requests + data transfer      |
+| Regions (at launch) | us-east-1, us-east-2, us-west-2, ap-northeast-1, eu-west-1 (not Osaka)                        |
 
 A connector replaces the default way out, and its network interfaces get no public IPv4 (there is
 no setting for one). The documentation says "IPv4 destinations need a route to a NAT gateway, IPv6
@@ -60,7 +60,7 @@ by route; a security group refusing it makes that unnecessary).
 | Needs OpenNext; incompatible with the single origin | **Gone.** `server.js` runs as is; the difference is a few lines of listen address    |
 | Next.js standalone cold start of 1–3 s              | Starting from zero remains, but one environment takes many requests and scales ahead |
 | INIT-phase billing erodes the cost advantage        | A different billing model (active CPU time)                                          |
-| Kept warm, it costs about as much as Fargate        | Idle time is not billed for CPU                                                      |
+| Kept warm, it costs about as much as Fargate        | Idle time is not billed for CPU, and memory is billed as used, not as held           |
 
 ### 3. Where the web reaches, inside and outside the VPC
 
@@ -285,7 +285,7 @@ standalone) went on the same connector (`stage2c`, with an `IamAuth` endpoint).
 | A heavy query                                  | The budget stops the child; the environment stays | ✓ A query with DuckDB allowed 1.5 GB was stopped at the budget (613 MB) with a 400. The environment went on                                                                                                                                                                                                                                                                                                |
 | RDS, OpenSearch, `/wake` through the connector | Reached, with latency close to Fargate's          | ✓ RDS over TLS (certificate verified) connected in 141 ms; `SELECT 1` round trips had a 0.58 ms median. OpenSearch and `/wake` take the same path (a private address in the VPC), so RDS stood in                                                                                                                                                                                                          |
 | IPv6 egress                                    | GA4 and Secrets Manager reached without a NAT     | ✓ Secrets Manager (107 ms), the GA4 API and OpenAI were reached; IPv4-only hosts were not. S3 through the gateway endpoint, Bedrock Runtime through its interface endpoint (an address in the VPC). The 109 MB aggregation through the connector took 2.0 s                                                                                                                                                |
-| Billing                                        | What memory is billed on; the VPC transfer rate   | Open. The log when an environment stops carries the peak memory used (`maxMemoryUsageMb`); to be checked against the bill                                                                                                                                                                                                                                                                                  |
+| Billing                                        | What memory is billed on; the VPC transfer rate   | ✓ Checked against the bill (Billing as measured, below). Memory is billed as used, not as held (2 GB). Transfer to the VPC was counted on the Lambda side as cross-AZ at $0, but the volume was too small to be sure                                                                                                                                                                                       |
 | The whole web (Next.js)                        | It starts and answers SSR and API requests        | ✓ 330 MB unpacked, 108 MB zipped (accepted past the 250 MB limit of Event Functions). SSR pages, static files, DB-backed APIs, the CKAN-compatible API, the first sign-up (sysadmin) and creating a dataset all worked. A 23 MB upload (straight to a presigned URL) took 0.3 s; a 23 MB download through the web took 2.8 s. The first request on a new environment took 2.5–2.6 s, later ones 0.08–0.4 s |
 
 What the checks turned up:
@@ -309,9 +309,39 @@ What the checks turned up:
   2 GB with CPU billed as used; holding 2 vCPU / 2 GB on Fargate (arm64) costs about $65 a month. The
   conditions differ, though: one dataset in the probe's DB, PostgreSQL search, AI off.
 
+### Billing as measured (the bill for 2026-10-17)
+
+The bill for the three test functions on 2026-10-17 (Cost Explorer) was matched against the
+CloudWatch metrics (`AWS/Lambda/Web`), which outlive the functions.
+
+| Usage type (Tokyo, arm64)  | Quantity      | Rate (matches the Price List) | Matched against                                                                                                                                                     |
+| -------------------------- | ------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Web-vCPU-Second-ARM`      | 79.879 vCPU-s | $0.0000322421 / vCPU-s        | The sum of `EnvironmentCPUTime`, 79.879 s: the CPU time used, exactly                                                                                               |
+| `Web-Memory-GB-Second-ARM` | 3,480 GB-s    | $0.0000042688 / GB-s          | Environments lived 12,167 s in all; held memory would be 24,334 GB-s. Memory used × time alive, per minute, gives 3,420–3,905 GB-s (weighted by average to maximum) |
+| `Web-Request-ARM`          | 1,737         | $0.30 / million               | Equals the sum of `ExecutedRequests`                                                                                                                                |
+| `DataTransfer-xAZ-In/Out`  | 0.00004 GB    | $0 on the bill                | Transfer to the VPC through the connector. Not to be read as free (see the note below)                                                                              |
+
+- **Memory is billed as used:** the memory an environment used (`EnvironmentMaxMemoryUsage`) × the
+  time it lived. The whole web's environments used about 0.3 GB (up to 851 MB where DuckDB queries
+  ran).
+- An environment lives about 6 minutes after its last request, its memory billed all the while (its
+  CPU not).
+- Tokyo is about 1.16 times us-east-1 (memory $0.0000036667, vCPU $0.0000276944); requests cost the
+  same.
+- The Price List (`AWSDataTransfer`) has xAZ-In/Out at $0.00 at any volume, but EC2 cross-AZ
+  transfer is normally charged under `DataTransfer-Regional-Bytes` ($0.01/GB), so it is not to be
+  read as free. `AWSLambda` has no entry for it. At the tested volume (0.00004 GB) even $0.01/GB
+  shows as 0, so the two cannot be told apart.
+- The tests called the functions without CloudFront, so internet transfer (0.047 GB at $0.114/GB)
+  was billed to Lambda. How it is billed behind CloudFront is to be checked once the CDK is built.
+
 ## Cost (small, per month)
 
-Tokyo prices (Price List API). Web Functions have no published Tokyo price; us-east-1 is used.
+Tokyo prices (Price List API; Web Functions confirmed against the bill). Web Functions usage is
+estimated from two weeks of demo's Main site (small): 160k requests a month (the ALB's
+`RequestCountPerTarget`, i.e. CloudFront cache misses) and Fargate CPU at 1.37% on average (of
+0.25 vCPU), about 54 ms of CPU per request. An environment lives as long as requests come less than
+6 minutes apart, so one environment at 0.3 GB is taken to live all month.
 
 | Kind                              | Item                                              | Per month                                              |
 | --------------------------------- | ------------------------------------------------- | ------------------------------------------------------ |
@@ -320,13 +350,30 @@ Tokyo prices (Price List API). Web Functions have no published Tokyo price; us-e
 | Goes away (once every site moves) | Shared ALB (hourly)                               | $17.74 + LCU                                           |
 |                                   | The ALB's public IPv4 (2 AZs)                     | $7.30                                                  |
 | Added (shared)                    | Bedrock Runtime endpoint (1 AZ)                   | $10.22 + $0.01/GB                                      |
-| Added (per site)                  | Web Functions usage (300k requests/month)         | about $5                                               |
-|                                   | Transfer between Web Functions and the VPC        | Unpublished ($0.01–0.02/GB if it matches EC2 cross-AZ) |
+| Added (per site)                  | Web Functions usage (160k requests/month)         | about $3.7 (memory $3.32 + CPU $0.29 + requests $0.05) |
+|                                   | Transfer between Web Functions and the VPC        | $0 in the tests (too small to be sure)                 |
 
 The baseline is arm64 Fargate (vCPU $0.04045/h, GB $0.00442/h; the web and worker default to
-arm64). Expected saving: about $22/month for one site ($37.69 + LCU gone, about $15 added), about
-$38/month for three ($63 + LCU gone, about $25 added). Usage grows with traffic, so the point where
-Fargate becomes cheaper at medium / large is left until stage 2 measures the billing.
+arm64). Expected saving: about $24/month for one site ($37.69 + LCU gone, about $14 added), about
+$42/month for three ($63 + LCU gone, about $21 added).
+
+### Break-even at medium / large
+
+Web Functions usage comes to "the environments always alive × $3.3 a month (0.3 GB) + about $2.0
+per million requests ($1.74 for 54 ms of CPU, $0.30 for the requests)". Fargate is taken at its
+minimum task count.
+
+| Scale  | The web's Fargate (minimum, IPv4 included) | Requests a month at which Web Functions cost more    |
+| ------ | ------------------------------------------ | ---------------------------------------------------- |
+| medium | 0.5 vCPU / 1 GB × 1 = $21.64               | about 6–9 million (3 to 1 environments always alive) |
+| large  | 1 vCPU / 2 GB × 2 = $79.26                 | about 26–36 million (8 to 2)                         |
+
+- Fargate grows past its minimum as traffic rises, so this break-even leans against Web Functions.
+- The 54 ms is demo's, mostly browsing. Sites heavy on DuckDB queries or search use more, which
+  lowers the break-even.
+- How many environments live depends on concurrent requests and on a fresh environment taking only
+  two at once (§Decision 8). In stage 2c's steady clicking, 120 requests a minute reached 8
+  environments.
 
 ## Out of scope
 
@@ -339,9 +386,10 @@ Fargate becomes cheaper at medium / large is left until stage 2 measures the bil
 
 ## Open issues
 
-1. The transfer rate between Web Functions and the VPC, the Tokyo price, and what memory is billed
-   on (used or held).
-2. The break-even at medium / large.
+1. The transfer rate between Web Functions and the VPC ($0 in the tests, at a small volume), and how
+   internet transfer is billed behind CloudFront.
+2. Measure, on a real site, how many environments stay alive and the CPU per request (the
+   break-even's assumptions).
 3. The effect of starting from zero on SSR (SEO), and of lru-cache leaving with an environment. In
    stage 2c the first request on a new environment took 2.5–2.6 s.
 4. Should Bedrock Runtime get a dual-stack endpoint, the interface endpoint can go.
