@@ -15,13 +15,20 @@ import { runMigrations } from '@kukan/db'
 import { createEmptyDatabase, testDatabaseName, testDatabaseUrl } from '../index'
 
 // Empty, not a copy of the migrated template: an already-migrated database
-// leaves two runners nothing to collide over. The run's teardown drops it.
+// leaves two runners nothing to collide over. The run's teardown drops them.
 const NAME = testDatabaseName(inject('testDbPrefix'))
+let made = 0
 
-/** An empty database under this file's name; each test starts from one. */
+/**
+ * A new empty database for each test, never the last one dropped and made
+ * again: DROP DATABASE waits on a checkpoint, and mid-run that checkpoint syncs
+ * every file the rest of the run has written since the last one — a minute on
+ * a slow disk. The digit appended keeps the name one the teardown drops.
+ */
 async function freshDatabase(): Promise<string> {
-  await createEmptyDatabase(NAME)
-  return testDatabaseUrl(NAME)
+  const name = `${NAME}${++made}`
+  await createEmptyDatabase(name)
+  return testDatabaseUrl(name)
 }
 
 async function appliedMigrations(url: string): Promise<number> {
