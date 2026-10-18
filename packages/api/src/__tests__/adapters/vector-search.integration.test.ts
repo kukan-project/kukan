@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { rankedId } from '../test-helpers/paging'
 
 const db = getTestDb()
 const adapter = new PostgresSearchAdapter(db)
@@ -90,10 +91,10 @@ describe('PostgresSearchAdapter.searchByVector', () => {
   })
 
   it('cuts packages tied on distance at the window by id, the same on every call', async () => {
-    // Created c, b, a, so the ids rank against creation order
+    // Created c, b, a, so the ids rank against creation order (see test-helpers/paging)
     const ids: string[] = []
     for (const [i, name] of ['tie-c', 'tie-b', 'tie-a'].entries()) {
-      const id = `00000000-0000-4000-8000-${String(3 - i).padStart(12, '0')}`
+      const id = rankedId(3 - i)
       await db.execute(sql`INSERT INTO package (id, name, state) VALUES (${id}, ${name}, 'active')`)
       await insertResource(id, { embedding: [1, 0, 0] })
       ids.push(id)

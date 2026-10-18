@@ -14,6 +14,7 @@ import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { ServiceUnavailableError } from '@kukan/shared'
 import { packageGroup } from '@kukan/db'
 import { holdDocSyncLock, packageDueAt } from '../test-helpers/doc-sync'
+import { pagedField, rankedId } from '../test-helpers/paging'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
@@ -51,16 +52,11 @@ async function ensureTestOrg() {
   return testOrgId
 }
 
-/**
- * Gives the named packages one `updated`, as a bulk import does, and ids that
- * rank against their creation order, so a test expecting the larger id first
- * sees the tie-break and not whatever order the sort leaves ties in.
- */
+/** Gives the named packages one `updated`, as a bulk import does, and ranked ids (see test-helpers/paging) */
 async function tieOnUpdated(names: string[]) {
   for (const [i, name] of names.entries()) {
-    const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`
     await db.execute(
-      sql`UPDATE package SET updated = '2026-01-01T00:00:00Z', id = ${id} WHERE name = ${name}`
+      sql`UPDATE package SET updated = '2026-01-01T00:00:00Z', id = ${rankedId(i + 1)} WHERE name = ${name}`
     )
   }
 }
@@ -122,12 +118,12 @@ describe('Packages API Routes', () => {
       await tieOnUpdated(['tie-a', 'tie-b', 'tie-c'])
 
       const anon = createTestApp(db, { search, user: null })
-      const page = async (offset: number) =>
-        (await (await anon.request(`/api/v1/packages?limit=2&offset=${offset}`)).json()).items.map(
-          (p: { name: string }) => p.name
-        )
       // All share `updated`, so the larger id comes first
-      expect([...(await page(0)), ...(await page(2))]).toEqual(['tie-c', 'tie-b', 'tie-a'])
+      expect(await pagedField(anon, '/api/v1/packages', 'name', 2)).toEqual([
+        'tie-c',
+        'tie-b',
+        'tie-a',
+      ])
     })
 
     it('does not name facet values that only private datasets carry', async () => {
@@ -1832,11 +1828,7 @@ describe('Packages API Routes', () => {
       for (const name of ['tie-draft-a', 'tie-draft-b', 'tie-draft-c']) await createDraft({ name })
       await tieOnUpdated(['tie-draft-a', 'tie-draft-b', 'tie-draft-c'])
 
-      const page = async (offset: number) =>
-        (
-          await (await app.request(`/api/v1/packages?state=draft&limit=2&offset=${offset}`)).json()
-        ).items.map((p: { name: string }) => p.name)
-      expect([...(await page(0)), ...(await page(2))]).toEqual([
+      expect(await pagedField(app, '/api/v1/packages?state=draft', 'name', 2)).toEqual([
         'tie-draft-c',
         'tie-draft-b',
         'tie-draft-a',

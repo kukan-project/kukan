@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { resource } from '@kukan/db'
+import { packageTable, resource } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { pagedField, rankedId } from '../test-helpers/paging'
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -165,6 +166,30 @@ describe('Admin Health API Routes', () => {
 
       expect(body2.total).toBe(3)
       expect(body2.items).toHaveLength(1)
+    })
+
+    it('pages resources never checked without repeating or skipping one', async () => {
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'health-tie-pkg', state: 'active' })
+        .returning({ id: packageTable.id })
+      // All unknown and unchecked, so they tie on status and on the null time
+      for (const i of [0, 1, 2, 3]) {
+        await db.insert(resource).values({
+          id: rankedId(i + 1), // see test-helpers/paging
+          packageId: pkg.id,
+          name: `tie-${i}`,
+          state: 'active',
+          url: `https://example.com/tie-${i}.csv`,
+        })
+      }
+
+      expect(await pagedField(app, '/api/v1/admin/health', 'name', 3)).toEqual([
+        'tie-3',
+        'tie-2',
+        'tie-1',
+        'tie-0',
+      ])
     })
 
     it('should exclude upload resources', async () => {

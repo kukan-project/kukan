@@ -120,7 +120,11 @@ adminRouter.use('*', async (c, next) => {
 const DEFAULT_PAGE_LIMIT = 20
 const MAX_PAGE_LIMIT = 100
 
-/** Parse offset / limit / status query params shared by paginated admin endpoints */
+/**
+ * Parse offset / limit / status query params shared by paginated admin endpoints.
+ * Offset paging needs an ORDER BY that ends on a unique column (the id), or rows
+ * tying on the rest repeat or vanish between pages.
+ */
 function parsePaginatedQuery(c: { req: { query: (k: string) => string | undefined } }) {
   const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0)
   const limit = Math.min(
@@ -836,7 +840,7 @@ adminRouter.get('/jobs', async (c) => {
     .innerJoin(resource, eq(resourcePipeline.resourceId, resource.id))
     .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
     .where(whereClause)
-    .orderBy(statusOrder, desc(resourcePipeline.updated))
+    .orderBy(statusOrder, desc(resourcePipeline.updated), desc(resourcePipeline.id))
     .limit(limit)
     .offset(offset)
 
@@ -991,7 +995,8 @@ adminRouter.get('/health', async (c) => {
     .from(resource)
     .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
     .where(and(...conditions))
-    .orderBy(statusOrder, sql`${resource.healthCheckedAt} DESC NULLS LAST`)
+    // Ends on the id: resources never checked share a null, often by the hundred
+    .orderBy(statusOrder, sql`${resource.healthCheckedAt} DESC NULLS LAST`, desc(resource.id))
     .limit(limit)
     .offset(offset)
 
@@ -1054,7 +1059,7 @@ adminRouter.get('/users', async (c) => {
     })
     .from(user)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(user.createdAt))
+    .orderBy(desc(user.createdAt), desc(user.id))
     .limit(limit)
     .offset(offset)
 

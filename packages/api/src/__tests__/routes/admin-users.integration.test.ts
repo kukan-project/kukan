@@ -8,6 +8,7 @@ import {
   ensureTestUser,
   TEST_USER_ID,
 } from '../test-helpers/test-db'
+import { pagedField, rankedId } from '../test-helpers/paging'
 import type { Auth } from '../../auth/auth'
 
 const db = getTestDb()
@@ -170,6 +171,23 @@ describe('Admin Users API', () => {
 
       expect(body.total).toBe(1)
       expect(body.items[0].email).toBe('alice@special.com')
+    })
+
+    it('pages users created at the same moment without repeating or skipping one', async () => {
+      for (const i of [0, 1, 2, 3]) {
+        // see test-helpers/paging
+        await insertUser(rankedId(i + 1), `tie-${i}`, `tie-${i}@example.com`)
+      }
+      await db.execute(
+        sql`UPDATE "user" SET "createdAt" = '2026-01-01T00:00:00Z' WHERE name LIKE 'tie-%'`
+      )
+
+      expect(await pagedField(app, '/api/v1/admin/users?q=tie-', 'name', 3)).toEqual([
+        'tie-3',
+        'tie-2',
+        'tie-1',
+        'tie-0',
+      ])
     })
 
     it('should support pagination', async () => {

@@ -434,7 +434,12 @@ export class PostgresJobQueue implements JobQueue {
         })
         .from(jobTable)
         .where(where)
-        .orderBy(...(options.status === 'waiting' ? takeOrder() : [desc(jobTable.updated)]))
+        // Jobs dead-lettered or retried in one statement share `updated`; the id settles them
+        .orderBy(
+          ...(options.status === 'waiting'
+            ? takeOrder()
+            : [desc(jobTable.updated), desc(jobTable.id)])
+        )
         .limit(options.limit)
         .offset(options.offset),
       this.db.$count(jobTable, where),

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { announcement } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { pagedField, rankedId } from '../test-helpers/paging'
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -78,6 +80,23 @@ describe('Announcements API Routes', () => {
       const res = await regularApp.request('/api/v1/announcements?publishedOnly=false')
       const body = await res.json()
       expect(body.total).toBe(1)
+    })
+    it('pages announcements published at the same moment without repeating or skipping one', async () => {
+      // Reversed ids: the published_at index, read backwards, returns ties newest-written first
+      for (const i of [0, 1, 2, 3]) {
+        await db.insert(announcement).values({
+          id: rankedId(4 - i), // see test-helpers/paging
+          title: `tie-${i}`,
+          publishedAt: new Date('2020-01-01T00:00:00Z'),
+        })
+      }
+
+      expect(await pagedField(app, '/api/v1/announcements', 'title', 3)).toEqual([
+        'tie-0',
+        'tie-1',
+        'tie-2',
+        'tie-3',
+      ])
     })
   })
 

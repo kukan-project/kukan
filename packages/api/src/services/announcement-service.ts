@@ -37,7 +37,7 @@ export class AnnouncementService {
       })
       .from(announcement)
       .where(where)
-      .orderBy(orderBy)
+      .orderBy(orderBy, desc(announcement.id))
       .limit(limit)
       .offset(offset)
 

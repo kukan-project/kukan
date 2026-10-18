@@ -12,6 +12,7 @@ import {
 } from '@kukan/db'
 import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { pagedField, rankedId } from '../test-helpers/paging'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { MAX_CONTENT_CHUNK_SIZE, PIPELINE_JOB_TYPE, generationKey } from '@kukan/shared'
@@ -1700,6 +1701,32 @@ describe('Admin API Routes', () => {
         ])
       )
     })
+    it('pages runs sharing a status and a time without repeating or skipping one', async () => {
+      const orgId = await ensureOrg('jobs-tie-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'jobs-tie-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      for (const i of [0, 1, 2, 3]) {
+        const [res] = await db
+          .insert(resource)
+          .values({ packageId: pkg.id, name: `tie-${i}`, state: 'active' })
+          .returning({ id: resource.id })
+        await db.insert(resourcePipeline).values({
+          id: rankedId(i + 1), // see test-helpers/paging
+          resourceId: res.id,
+          status: 'complete',
+          updated: new Date('2026-01-01T00:00:00Z'),
+        })
+      }
+
+      expect(await pagedField(app, '/api/v1/admin/jobs', 'resourceName', 3)).toEqual([
+        'tie-3',
+        'tie-2',
+        'tie-1',
+        'tie-0',
+      ])
+    })
   })
 
   describe('/api/v1/admin/queue (ADR-058)', () => {
@@ -1714,6 +1741,18 @@ describe('Admin API Routes', () => {
         .where(eq(job.id, id))
       return id
     }
+
+    it('pages jobs that failed together without repeating or skipping one', async () => {
+      // Dead-lettered in one statement, they share `updated`
+      for (const i of [0, 1, 2, 3]) {
+        const id = await deadJob()
+        await db.execute(
+          sql`UPDATE job SET id = ${rankedId(i + 1)}, updated = '2026-01-01T00:00:00Z' WHERE id = ${id}`
+        )
+      }
+      const ids = await pagedField(queueApp, '/api/v1/admin/queue/jobs?status=dead', 'id', 3)
+      expect(ids).toEqual([rankedId(4), rankedId(3), rankedId(2), rankedId(1)])
+    })
 
     it('should reject non-sysadmin requests', async () => {
       const res = await nonAdminApp.request('/api/v1/admin/queue/jobs')
