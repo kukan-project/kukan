@@ -94,6 +94,26 @@ describe('Tags API Routes', () => {
       expect(body.items[0].name).toBe('population')
     })
 
+    it('should order by name by default, and by dataset count on request', async () => {
+      await createPackageWithTags('order-a', ['beta', 'gamma'])
+      await createPackageWithTags('order-b', ['gamma'])
+      await createPackageWithTags('order-c', ['alpha', 'gamma', 'beta'])
+
+      const names = async (query: string) =>
+        (await (await app.request(`/api/v1/tags${query}`)).json()).items.map(
+          (t: { name: string }) => t.name
+        )
+      expect(await names('')).toEqual(['alpha', 'beta', 'gamma'])
+      expect(await names('?orderBy=datasetCount')).toEqual(['gamma', 'beta', 'alpha'])
+      // Pages of the default order meet without overlap
+      expect([...(await names('?limit=2')), ...(await names('?limit=2&offset=2'))]).toEqual([
+        'alpha',
+        'beta',
+        'gamma',
+      ])
+      expect((await app.request('/api/v1/tags?orderBy=popularity')).status).toBe(400)
+    })
+
     it('should not leak draft-only tags to the public list, candidates, or detail', async () => {
       const orgId = await ensureTestOrg()
       // An active package's tag is public; a draft-only tag must not be
@@ -112,7 +132,7 @@ describe('Tags API Routes', () => {
       expect(names).toContain('public-tag')
       expect(names).not.toContain('draft-only-tag')
 
-      const { items } = await new TagService(db).list({ limit: 10, orderBy: 'packageCount' })
+      const { items } = await new TagService(db).list({ limit: 10, orderBy: 'datasetCount' })
       expect(items.map((t) => t.name)).not.toContain('draft-only-tag')
 
       // Detail lookup 404s for a tag with no active package
@@ -250,11 +270,11 @@ describe('Tags API Routes', () => {
     })
 
     it('should scope the AI candidate list to the suggest user', async () => {
-      const anonymous = await new TagService(db).list({ limit: 10, orderBy: 'packageCount' })
+      const anonymous = await new TagService(db).list({ limit: 10, orderBy: 'datasetCount' })
       expect(anonymous.items.map((t) => t.name)).not.toContain('private-mine-tag')
 
       const asOutsider = await new TagService(db).list(
-        { limit: 10, orderBy: 'packageCount' },
+        { limit: 10, orderBy: 'datasetCount' },
         { id: OUTSIDER_USER_ID, sysadmin: false }
       )
       expect(asOutsider.items.map((t) => t.name)).toContain('private-mine-tag')
@@ -262,13 +282,13 @@ describe('Tags API Routes', () => {
     })
   })
 
-  describe('TagService.list orderBy packageCount (ADR-040 tag candidates)', () => {
+  describe('TagService.list orderBy datasetCount (ADR-040 tag candidates)', () => {
     it('should order tags by usage, most-used first', async () => {
       await createPackageWithTags('order-pkg-1', ['人気タグ', 'ふつうタグ'])
       await createPackageWithTags('order-pkg-2', ['人気タグ', 'ふつうタグ'])
       await createPackageWithTags('order-pkg-3', ['人気タグ', 'レアタグ'])
 
-      const { items } = await new TagService(db).list({ limit: 10, orderBy: 'packageCount' })
+      const { items } = await new TagService(db).list({ limit: 10, orderBy: 'datasetCount' })
       expect(items.map((t) => t.name)).toEqual(['人気タグ', 'ふつうタグ', 'レアタグ'])
       expect(items[0].packageCount).toBe(3)
     })

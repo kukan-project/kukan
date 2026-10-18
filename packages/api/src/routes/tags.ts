@@ -24,6 +24,8 @@ tagsRouter.get(
       offset: z.coerce.number().min(0).default(0),
       limit: z.coerce.number().min(1).max(100).default(100),
       q: z.string().optional(),
+      // Same values as the organization and group lists
+      orderBy: z.enum(['name', 'datasetCount']).default('name'),
     })
   ),
   async (c) => {

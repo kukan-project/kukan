@@ -147,7 +147,7 @@ export class MetadataSuggestService {
     const { described, others } = await this.collectMaterials(pkg, user)
     const [tagCandidates, groupCandidates] = await Promise.all([
       new TagService(this.db)
-        .list({ limit: SUGGEST_TAG_CANDIDATES, orderBy: 'packageCount' }, user)
+        .list({ limit: SUGGEST_TAG_CANDIDATES, orderBy: 'datasetCount' }, user)
         .then((r) => r.items.map((t) => t.name)),
       this.fetchGroupCandidates(user),
     ])

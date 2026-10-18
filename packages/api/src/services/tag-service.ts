@@ -51,13 +51,14 @@ export class TagService {
       /** `null` reads them all, as CKAN's tag_list does */
       limit?: number | null
       q?: string
-      orderBy?: 'packageCount' | 'name'
+      /** Name by default: some order is what keeps offset paging from repeating or skipping */
+      orderBy?: 'name' | 'datasetCount'
       /** Leave out controlled-vocabulary tags, as CKAN's `tag_list` does by default */
       freeOnly?: boolean
     },
     viewer?: AuthUser
   ) {
-    const { offset = 0, limit = 100, q, orderBy, freeOnly } = params
+    const { offset = 0, limit = 100, q, orderBy = 'name', freeOnly } = params
 
     const where = and(
       q ? ilike(tag.name, `%${escapeLike(q)}%`) : undefined,
@@ -88,12 +89,11 @@ export class TagService {
       .having(sql`${tag.vocabularyId} IS NOT NULL OR COUNT(DISTINCT ${packageTable.id}) > 0`)
       .$dynamic()
 
-    // Most-used first — tag candidates for AI suggestions (ADR-040)
-    if (orderBy === 'packageCount') {
-      query = query.orderBy(sql`package_count desc`, tag.name)
-    } else if (orderBy === 'name') {
-      query = query.orderBy(tag.name, tag.id)
-    }
+    // A name is unique only within a vocabulary, so the id settles the rest
+    query =
+      orderBy === 'datasetCount'
+        ? query.orderBy(sql`package_count desc`, tag.name, tag.id)
+        : query.orderBy(tag.name, tag.id)
 
     const rows = await (limit === null ? query : query.limit(limit)).offset(offset)
 

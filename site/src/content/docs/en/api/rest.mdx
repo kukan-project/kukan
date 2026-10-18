@@ -757,6 +757,10 @@ extracted again: cite `sourceVersion`.
 | GET    | `/tags`      | List tags   | Public |
 | GET    | `/tags/{id}` | Tag details | Public |
 
+`GET /tags` takes `q` (part of the name), `offset`, `limit` (default 100, at most 100) and
+`orderBy` (`name`, the default, or `datasetCount`, most datasets first). The order is fixed,
+so paging with `offset` neither repeats nor skips a tag.
+
 ## Users
 
 | Method | Path                      | Description                          | Auth |
