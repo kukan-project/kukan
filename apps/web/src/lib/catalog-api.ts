@@ -1,8 +1,10 @@
 import 'server-only'
 
 import { cache } from 'react'
+import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from './server-api'
 import type { Package } from '@/components/dataset/dataset-detail-layout'
+import type { DatasetCardItem } from '@/components/dataset/dataset-card'
 
 /**
  * Cached catalog reads. Deduped per request so a route's `generateMetadata`
@@ -36,6 +38,11 @@ export const getEntity = cache(
   (kind: 'organizations' | 'groups', nameOrId: string) =>
     fetchJson(`/api/v1/${kind}/${encodeURIComponent(nameOrId)}`) as Promise<Entity | null>
 )
+
+/** A page of the dataset search — the one `/dataset` runs */
+export function searchPackages(query: URLSearchParams) {
+  return fetchJson(`/api/v1/packages?${query}`) as Promise<PaginatedResult<DatasetCardItem> | null>
+}
 
 export async function getResource(nameOrId: string, resourceId: string) {
   const pkg = await getPackage(nameOrId)

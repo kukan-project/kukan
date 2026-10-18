@@ -121,7 +121,7 @@ pnpm format        # Prettier フォーマット
 
 | 領域                                              | レンダリング | API クライアント                    | 理由                                          |
 | ------------------------------------------------- | ------------ | ----------------------------------- | --------------------------------------------- |
-| 公開一覧（dataset, organization, group）          | SSR          | `serverFetch`（`server-api.ts`）    | SEO・初回表示速度                             |
+| 公開一覧（dataset, organization, group, tag）     | SSR          | `serverFetch`（`server-api.ts`）    | SEO・初回表示速度                             |
 | データセット詳細（dataset/[nameOrId]）            | SSR          | `serverFetch`（`server-api.ts`）    | SEO・OGP 対応                                 |
 | リソース詳細（dataset/.../resource/[resourceId]） | SSR          | `serverFetch`（`server-api.ts`）    | SEO・ダウンロードリンク                       |
 | データセット検索結果（dataset?q=...）             | CSR          | `clientFetch`（`client-api.ts`）    | OpenSearch 待ちを避け体感向上・クローラー制御 |

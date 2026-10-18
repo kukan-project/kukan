@@ -23,6 +23,20 @@ export function isValidPackageName(name: string): boolean {
 }
 
 /**
+ * A tag is reached at `/tag/<name>`, the name as one path segment. Empty, `.`
+ * and `..` cannot be one: `/tag/` names no tag, and the URL resolves the two
+ * dot segments away (encoded as `%2E` too), opening another page.
+ */
+export const tagNameSchema = z
+  .string()
+  .refine((name) => name !== '' && name !== '.' && name !== '..', VALIDATION_MESSAGES.tagName)
+  // The separators of the tag input (parseTags) and of the list API's tags
+  // field, as in CKAN; a name holding one comes back as two tags
+  .refine((name) => !/[,、]/.test(name), VALIDATION_MESSAGES.tagComma)
+
+const packageTagsSchema = z.array(z.object({ name: tagNameSchema }))
+
+/**
  * How many resources one create may carry. A bound on the one transaction
  * and the fan-out that follows it, not a limit on a dataset: more are added
  * one at a time. Above the largest dataset seen so far by a wide margin.
@@ -53,7 +67,7 @@ export const createPackageSchema = z.object({
   private: z.boolean().default(false),
   type: z.string().max(100).default('dataset'),
   extras: z.record(z.string(), z.unknown()).default({}),
-  tags: z.array(z.object({ name: z.string() })).default([]),
+  tags: packageTagsSchema.default([]),
   groups: z.array(z.object({ name: z.string() })).default([]),
   resources: packageResourcesSchema.default([]),
 })
@@ -81,7 +95,7 @@ export const updatePackageSchema = createPackageSchema
     private: z.boolean().optional(),
     type: z.string().max(100).optional(),
     extras: z.record(z.string(), z.unknown()).optional(),
-    tags: z.array(z.object({ name: z.string() })).optional(),
+    tags: packageTagsSchema.optional(),
     groups: z.array(z.object({ name: z.string() })).optional(),
   })
 

@@ -79,6 +79,15 @@ describe('DatasetCard', () => {
     expect(screen.getByText('Health')).toBeInTheDocument()
   })
 
+  it('should link each tag to its page', () => {
+    render(<DatasetCard pkg={{ ...basePkg, tags: '防災,a/b' }} />)
+    expect(screen.getByRole('link', { name: '防災' })).toHaveAttribute(
+      'href',
+      '/tag/%E9%98%B2%E7%81%BD'
+    )
+    expect(screen.getByRole('link', { name: 'a/b' })).toHaveAttribute('href', '/tag/a%2Fb')
+  })
+
   it('should render matched resources with links', () => {
     render(
       <DatasetCard

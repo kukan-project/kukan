@@ -271,6 +271,9 @@
     "descriptionPlaceholder": "Category description",
     "categoryMembers": "Category Members: {name}"
   },
+  "tag": {
+    "heading": "Tag: {name}"
+  },
   "auth": {
     "signIn": "Sign In",
     "signUp": "Create Account",
@@ -1232,7 +1235,9 @@
     "privateAddress": "URLs pointing to a private or reserved address are not allowed",
     "keyColumnEmpty": "A primary key column name cannot be empty",
     "keyColumnRepeated": "The same column cannot appear twice in the primary key",
-    "reservedKey": "This key is reserved"
+    "reservedKey": "This key is reserved",
+    "tagName": "A tag name cannot be empty, \".\" or \"..\"",
+    "tagComma": "A tag name cannot contain a comma (\",\" or \"、\")"
   },
   "problem": {
     "packageNameTaken": "This URL identifier is already in use",

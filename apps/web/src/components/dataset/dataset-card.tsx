@@ -8,6 +8,7 @@ import { FormatBadge } from '@/components/format-badge'
 import { FormatBadges } from '@/components/format-badges'
 import { CompactDate } from '@/components/date-time'
 import { LinkPendingIndicator } from '@/components/link-pending-indicator'
+import { tagPath } from '@/lib/paths'
 import { parseGroups } from '@/lib/parse-groups'
 import { foldMatched } from '@/lib/matched-resources'
 import { sectionTrail } from '@/lib/resource-sections'
@@ -140,11 +141,16 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                   </span>
                 ))}
               {pkg.tags &&
+                // A tag name holds no comma (tagNameSchema), so the split is safe
                 pkg.tags.split(',').map((tagName) => (
-                  <Badge key={tagName} variant="secondary" wrap className="text-xs">
-                    <Tag className="mr-0.5 h-3 w-3" />
-                    {tagName}
-                  </Badge>
+                  // Above the card's stretched link, like the matched resources
+                  <Link key={tagName} href={tagPath(tagName)} className="relative z-10">
+                    <Badge variant="secondary" wrap className="text-xs hover:bg-accent">
+                      <Tag className="mr-0.5 h-3 w-3" />
+                      {tagName}
+                      <LinkPendingIndicator />
+                    </Badge>
+                  </Link>
                 ))}
             </div>
           )}

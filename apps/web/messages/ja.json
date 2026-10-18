@@ -271,6 +271,9 @@
     "descriptionPlaceholder": "カテゴリーの説明",
     "categoryMembers": "カテゴリーメンバー: {name}"
   },
+  "tag": {
+    "heading": "タグ: {name}"
+  },
   "auth": {
     "signIn": "ログイン",
     "signUp": "アカウント登録",
@@ -1247,7 +1250,9 @@
     "privateAddress": "プライベートアドレスや予約済みアドレスを指す URL は使用できません",
     "keyColumnEmpty": "主キーの列名を空にすることはできません",
     "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません",
-    "reservedKey": "このキーは予約されているため使えません"
+    "reservedKey": "このキーは予約されているため使えません",
+    "tagName": "タグ名を空、「.」、「..」にすることはできません",
+    "tagComma": "タグ名にカンマ（「,」「、」）は使えません"
   },
   "problem": {
     "packageNameTaken": "この URL 識別子はすでに使われています",

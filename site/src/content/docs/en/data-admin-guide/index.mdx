@@ -35,6 +35,11 @@ used as a placeholder (the dataset cannot be published with it).
 Add tags to classify your dataset.
 Choose from existing tags or create new ones.
 
+Each tag gets a list page (`/tag/<tag name>`), with the tag name as the URL.
+For that reason a tag name cannot be empty, `.` or `..` (none of them can be a URL path segment).
+A comma (`,` or `、`) separates tags, so a tag name cannot contain one either.
+Such tags registered before these rules do not open their list page correctly, and saving their dataset asks for the tag to be removed.
+
 ### Managing and deleting drafts
 
 Drafts are managed in the dashboard "Drafts" tab. They can be edited by their creator and site

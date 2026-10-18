@@ -92,6 +92,17 @@ describe('Packages API Routes', () => {
       expect(await names(member)).toEqual(['stale-hidden', 'stale-shown'])
     })
 
+    it('answers with the page it was asked for', async () => {
+      for (const name of ['page-a', 'page-b', 'page-c']) await createPackage({ name })
+
+      const res = await createTestApp(db, { search, user: null }).request(
+        '/api/v1/packages?offset=2&limit=2'
+      )
+      const body = await res.json()
+      expect(body).toMatchObject({ total: 3, offset: 2, limit: 2 })
+      expect(body.items).toHaveLength(1)
+    })
+
     it('does not name facet values that only private datasets carry', async () => {
       await createPackage({ name: 'facet-open', tags: [{ name: 'open-tag' }] })
       await createPackage({

@@ -9,6 +9,7 @@ import { DateTime } from '@/components/date-time'
 import { DatasetMetadata } from './dataset-metadata'
 import { ResourceExplorer, type Resource } from '@/components/resource/resource-explorer'
 import { LinkPendingIndicator } from '@/components/link-pending-indicator'
+import { tagPath } from '@/lib/paths'
 
 interface Organization {
   id: string
@@ -108,10 +109,11 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
                   </Link>
                 ))}
                 {pkg.tags.map((pkgTag) => (
-                  <Link key={pkgTag.id} href={`/dataset?tags=${encodeURIComponent(pkgTag.name)}`}>
+                  <Link key={pkgTag.id} href={tagPath(pkgTag.name)}>
                     <Badge variant="secondary" wrap className="text-xs hover:bg-accent">
                       <Tag className="mr-0.5 h-3 w-3" />
                       {pkgTag.name}
+                      <LinkPendingIndicator />
                     </Badge>
                   </Link>
                 ))}

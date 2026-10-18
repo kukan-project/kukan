@@ -6,6 +6,7 @@ import {
   DRAFT_NAME_PLACEHOLDER_RE,
   MAX_RESOURCES_PER_PACKAGE,
 } from '../../validators/package'
+import { VALIDATION_MESSAGES } from '../../validators/messages'
 
 const TEST_ORG_ID = '550e8400-e29b-41d4-a716-446655440000'
 
@@ -247,4 +248,34 @@ describe('DRAFT_NAME_PLACEHOLDER_RE', () => {
     expect(DRAFT_NAME_PLACEHOLDER_RE.test('my-untitled-ab12cd34')).toBe(false)
     expect(DRAFT_NAME_PLACEHOLDER_RE.test('untitled-ab12cd34-x')).toBe(false)
   })
+})
+
+describe('tag names', () => {
+  const base = { name: 'tagged', ownerOrg: TEST_ORG_ID }
+
+  it.each(['', '.', '..'])('should refuse %j, which is no URL path segment', (name) => {
+    const tags = [{ name }]
+    for (const result of [
+      createPackageSchema.safeParse({ ...base, tags }),
+      updatePackageSchema.safeParse({ tags }),
+      createDraftPackageSchema.safeParse({ tags }),
+    ]) {
+      expect(result.success).toBe(false)
+      expect(result.error?.issues[0].message).toBe(VALIDATION_MESSAGES.tagName)
+      expect(result.error?.issues[0].path).toEqual(['tags', 0, 'name'])
+    }
+  })
+
+  it.each(['a,b', '防災、減災', ','])('should refuse %j, which would come back as two', (name) => {
+    const result = createPackageSchema.safeParse({ ...base, tags: [{ name }] })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0].message).toBe(VALIDATION_MESSAGES.tagComma)
+  })
+
+  it.each(['...', '.hidden', 'v1.0', 'a/b', '防災', ' . ', '新型コロナウイルス（COVID-19）'])(
+    'should accept %j',
+    (name) => {
+      expect(createPackageSchema.safeParse({ ...base, tags: [{ name }] }).success).toBe(true)
+    }
+  )
 })

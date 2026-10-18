@@ -13,6 +13,8 @@ export const VALIDATION_MESSAGES = {
   keyColumnEmpty: 'A key column name cannot be empty',
   keyColumnRepeated: 'Key columns must not repeat',
   reservedKey: 'This key is reserved',
+  tagName: 'A tag name cannot be empty, "." or ".."',
+  tagComma: 'A tag name cannot contain a comma ("," or "、")',
 } as const
 
 const KEY_BY_MESSAGE = new Map(

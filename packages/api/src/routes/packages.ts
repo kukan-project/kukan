@@ -255,6 +255,9 @@ packagesRouter.get(
 
     // SearchAdapter ranks and filters; service.list re-checks visibility and enriches
     const result = await service.list({
+      // Echoed back only: the search already cut this page
+      offset: rest.offset,
+      limit: rest.limit,
       searchMatchIds: searchResult.items.map((i) => i.id),
       searchTotal: searchResult.total,
       searchMatchedResources,
