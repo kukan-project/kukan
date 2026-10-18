@@ -210,8 +210,10 @@ port, which Better Auth cannot read as it is.
 ### 4. Memory and disk
 
 - Without a cgroup, the environment-wide check (the container bound in `host.ts`) uses
-  `MemTotal - MemAvailable` from `/proc/meminfo`. OData's capacity falls back to `host` with the
-  right figure, but warns every start, so recognise Web Functions and name the source.
+  `MemTotal - MemAvailable` from `/proc/meminfo`. The limit is the function's configured memory
+  (`AWS_LAMBDA_FUNCTION_MEMORY_SIZE`), not `os.totalmem()` (about 2.4 GB for a 2 GB function).
+  OData's capacity reads the same figure and names its source `web-function` (falling back to
+  `host` would give the larger figure and a warning).
 - Re-divide the 2 GB among `maxConcurrencyPerEnvironment`, `QUERY_MAX_CONCURRENT` and the OData
   slots. Without the OOM backstop, make the poll interval or the headroom conservative.
 - Fit DuckDB's spill limit (`max_temp_directory_size`) to the shared `/tmp`.

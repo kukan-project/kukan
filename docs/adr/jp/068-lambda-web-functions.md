@@ -201,8 +201,9 @@ viewer-request 関数が毎回 viewer のアドレスで上書きする `x-kukan
 ### 4. メモリとディスク
 
 - 環境全体の監視（`host.ts` の container の判定）を、cgroup が無いとき `/proc/meminfo` の
-  `MemTotal - MemAvailable` で行う。OData の capacity は `host` に落ちても値は合うが、警告の
-  ログが毎回出るので、Web Functions を見分けて取得元を示す。
+  `MemTotal - MemAvailable` で行う。上限は `os.totalmem()`（2 GB の関数で約 2.4 GB）ではなく、
+  関数に設定したメモリ（`AWS_LAMBDA_FUNCTION_MEMORY_SIZE`）を使う。OData の capacity も同じ値を
+  引き、取得元を `web-function` と示す（`host` に落ちると、大きい値と警告のログになる）。
 - 2 GB の中で、`maxConcurrencyPerEnvironment`、`QUERY_MAX_CONCURRENT`、OData の枠を配分し直す。
   OOM の後ろ盾が無い分、監視の間隔か余裕の幅を保守的にする。
 - DuckDB の書き出しの上限（`max_temp_directory_size`）を、共有の `/tmp` に合わせる。

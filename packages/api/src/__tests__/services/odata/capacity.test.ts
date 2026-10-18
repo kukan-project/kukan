@@ -39,6 +39,6 @@ describe('capacity', () => {
     expect(capacity.slots).toBeGreaterThanOrEqual(2)
     expect(capacity.slots).toBeLessThanOrEqual(8)
     expect(capacity.memoryMb).toBeGreaterThan(0)
-    expect(['cgroup-v2', 'cgroup-v1', 'host']).toContain(capacity.source)
+    expect(['cgroup-v2', 'cgroup-v1', 'web-function', 'host']).toContain(capacity.source)
   })
 })

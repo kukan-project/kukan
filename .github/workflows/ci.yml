@@ -540,8 +540,10 @@ jobs:
       - name: Boot-smoke the standalone output
         if: steps.changes.outputs.code == 'true'
         run: |
+          # Through the image's entry, given the address as Lambda Web Functions give it
+          cp apps/web/start.mjs apps/web/.next/standalone/apps/web/
           cd apps/web/.next/standalone
-          PORT=3999 HOSTNAME=127.0.0.1 node apps/web/server.js & pid=$!
+          AWS_LAMBDA_HTTP_ENDPOINT=127.0.0.1:3999 node apps/web/start.mjs & pid=$!
           trap 'kill $pid 2>/dev/null || true' EXIT
           for i in $(seq 1 60); do
             if ! kill -0 $pid 2>/dev/null; then

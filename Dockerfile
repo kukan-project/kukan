@@ -111,6 +111,8 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 COPY --chown=appuser:appgroup --from=web-files /app/apps/web/.next/standalone ./
 COPY --chown=appuser:appgroup --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --chown=appuser:appgroup --from=build /app/apps/web/public ./apps/web/public
+# The entry, which hands Lambda Web Functions' listen address to the server
+COPY --chown=appuser:appgroup --from=build /app/apps/web/start.mjs ./apps/web/start.mjs
 # DuckDB native bindings for server-side resource queries (ADR-032 Part B):
 # libduckdb.so sits in a dedicated directory LD_LIBRARY_PATH points at.
 COPY --chown=appuser:appgroup --from=web-files /app/duckdb-lib /app/duckdb-lib/
@@ -130,10 +132,8 @@ WORKDIR /app/node_modules/.pnpm/node_modules
 RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
 WORKDIR /app
 EXPOSE 3000
-# Override HOSTNAME so Next.js standalone server binds to 0.0.0.0 (not the container IP).
-# The container runtime sets HOSTNAME to the container's IP, causing Next.js to bind only
-# to that IP. The App Runner health check uses localhost, so it would fail without this.
-CMD ["/bin/sh", "-c", "HOSTNAME=0.0.0.0 node apps/web/server.js"]
+# start.mjs decides where Next listens (0.0.0.0 here)
+CMD ["node", "apps/web/start.mjs"]
 
 # ---- Worker production dependencies (prod-only, isolated node_modules) ----
 # `pnpm deploy --prod` resolves just the worker's production dependencies into a

@@ -120,7 +120,8 @@ async function statusMb(pid: number, field: keyof typeof STATUS_FIELDS): Promise
 /** Read once: the limit does not change under a running process. */
 const container = processMemory()
 
-/** The memory this container may use (MiB): its cgroup limit, or the host's. */
+/** The memory this container may use (MiB): its cgroup limit, a Web Function's
+ *  configured size, or the host's (process-memory.ts). */
 export function containerLimitMb(): number {
   return container.memoryMb
 }
