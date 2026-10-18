@@ -12,7 +12,7 @@
  * holders (ADR-044), and the pointer's compare-and-set turns away one that
  * lost the claim, or found the catalog moved underneath it.
  */
-import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { orphanedObject, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeConfig, LakeObjectStore, LakeSession } from '@kukan/lake'
@@ -140,18 +140,6 @@ export async function commitLakeCatalog(
         .update(resourceVersion)
         .set({ lakeSnapshotId: null })
         .where(eq(resourceVersion.resourceId, commit.resourceId))
-      // A version on its way out is out of every catalog now. Its shared number
-      // goes with this commit, not with the purge's tombstone: a purge retried
-      // after a failed cleanup must find nothing left to rebuild (ADR-067 §4).
-      await tx
-        .update(resourceVersion)
-        .set({ ducklakeSnapshotId: null })
-        .where(
-          and(
-            eq(resourceVersion.resourceId, commit.resourceId),
-            inArray(resourceVersion.state, ['purging', 'purged'])
-          )
-        )
     }
     for (const refusal of commit.refused ?? []) {
       const { version } = refusal

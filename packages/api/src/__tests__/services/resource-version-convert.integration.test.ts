@@ -663,7 +663,7 @@ describe('convertSetAsideVersions', () => {
     // v1 goes out first; pretend the worker loaded it.
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: 1 })
+      .set({ lakeSnapshotId: 1 })
       .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
 
     const queue = mockQueue()
@@ -684,7 +684,7 @@ describe('convertSetAsideVersions', () => {
     // The newest carries a snapshot, so everything below it is overtaken.
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: 9 })
+      .set({ lakeSnapshotId: 9 })
       .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 3)))
 
     const queue = mockQueue()
@@ -706,7 +706,7 @@ describe('convertSetAsideVersions', () => {
     // only version outstanding. Only the exclusion keeps it from coming back.
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: 5 })
+      .set({ lakeSnapshotId: 5 })
       .where(and(eq(resourceVersion.resourceId, id), inArray(resourceVersion.version, [1, 2])))
 
     const queue = mockQueue()

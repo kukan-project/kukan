@@ -194,7 +194,7 @@ async function createResource(opts?: {
       storageKey: `versions/${resource.id}`,
       origin: 'upload',
       hash: 'sha256:live',
-      ducklakeSnapshotId: 7,
+      lakeSnapshotId: 7,
       lakeKeyColumns: opts.ingestedKey,
     })
   }

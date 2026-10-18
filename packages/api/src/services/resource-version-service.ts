@@ -1195,9 +1195,8 @@ export class ResourceVersionService {
   /**
    * Take the purged version out of layer 2 (ADR-067 §4).
    *
-   * A version some catalog held — the resource's own, or the shared one before
-   * migration — has its resource's catalog rebuilt from layer 1 without it, in
-   * a new generation. The rebuild's commit clears every snapshot first, this
+   * A version the resource's catalog holds has that catalog rebuilt from layer
+   * 1 without it, in a new generation. The rebuild's commit clears every snapshot first, this
    * row's with them, so a retry after it finds nothing left to rebuild and
    * goes straight to the deletion below.
    *
@@ -1210,12 +1209,12 @@ export class ResourceVersionService {
    */
   private async purgeFromLake(
     resourceId: string,
-    row: { lakeSnapshotId: number | null; ducklakeSnapshotId: number | null },
+    row: { lakeSnapshotId: number | null },
     deps: PurgeDeps,
     claim: ResourceClaim | null
   ): Promise<void> {
     if (!deps.lake) return
-    if (row.lakeSnapshotId !== null || row.ducklakeSnapshotId !== null) {
+    if (row.lakeSnapshotId !== null) {
       // Reading versions again is the worker's (ADR-046); a purge that cannot
       // must not complete as if it had
       if (!deps.readVersion) {
@@ -1242,7 +1241,7 @@ export class ResourceVersionService {
    *
    * The migration's second pass, and the standing repair for every version that
    * did not reach the lake the first time. The intent to ingest is already in
-   * the database — an active version with no `ducklake_snapshot_id` — so a run
+   * the database — an active version with no `lake_snapshot_id` — so a run
    * whose Lake step failed *and* whose retry could not be enqueued is not lost
    * work, it is a row this pass will find. That is what makes an enqueue
    * failure survivable without an outbox of its own.
@@ -1508,13 +1507,9 @@ export class ResourceVersionService {
     const [row] = await this.db
       .select({
         keyColumns: resourceVersion.lakeKeyColumns,
-        // Recorded by a rebuild that could not load it again (ADR-067), over a
-        // shared catalog's number it keeps: that number vouches for nothing now
+        // Recorded by a rebuild that could not load it again (ADR-067)
         refused: resourceVersion.lakeIngestReason,
-        // Either catalog: a version the shared one took had its key judged too
-        snapshot: sql<
-          number | null
-        >`COALESCE(${resourceVersion.lakeSnapshotId}, ${resourceVersion.ducklakeSnapshotId})`,
+        snapshot: resourceVersion.lakeSnapshotId,
       })
       .from(resourceVersion)
       .innerJoin(resource, eq(resource.id, resourceVersion.resourceId))
@@ -1833,11 +1828,9 @@ export class ResourceVersionService {
         state: 'purged',
         purgedAt: sql`NOW()`,
         updated: sql`NOW()`,
-        // The tombstone must not point at content. The rebuild has cleared this
-        // row's own number already; the shared catalog's is cleared here, so
-        // an older image gone back to cannot diff against it (ADR-067 §6).
+        // The tombstone must not point at content. A rebuild has cleared this
+        // row's number already; without layer 2 configured there was none
         lakeSnapshotId: null,
-        ducklakeSnapshotId: null,
       })
       .where(eq(resourceVersion.id, row.id))
 

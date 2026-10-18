@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** — 2026-10-12 (proposed 2026-10-12), implemented (`ducklake_snapshot_id` goes in a later release)
+**Accepted** — 2026-10-12 (proposed 2026-10-12), implemented (`ducklake_snapshot_id` and the old index went in a later release)
 
 Move the DuckLake catalog from one PostgreSQL schema (a single catalog for everything) to **a
 SQLite file per resource**, kept under the same `lake/<resourceId>/` prefix as its data. Snapshot
@@ -669,6 +669,12 @@ What this shows:
      `LAKE_INGEST_LOCK`; docs and UI
   6. The CLI that deletes the old catalog. Remove the `postgres` extension and the connection budget.
      `ducklake_snapshot_id` goes in a later release (see **DB** above)
+  7. Drop `ducklake_snapshot_id` and the old index, and switch what read it to the new catalog's
+     number alone (as **DB** above says). The drop command's check, though, was removed rather than
+     switched to the versions not loaded yet. The migration reads layer 1 only, and once the column
+     is gone no image reads the old catalog, so the check guards nothing. The versions not loaded yet
+     need not reach 0 — versions waiting on a cap change, fresh uploads — so it would only keep
+     blocking the drop
 - **Operations**: each diff fetches one catalog file (188 KB at 50 versions, cacheable by key). The libpq share
   (web +1 / worker +2) leaves the PostgreSQL connection budget. Multi-site separation comes for free
   (ADR-043 open issue 3). A release that raises the DuckLake catalog version runs the rebuild

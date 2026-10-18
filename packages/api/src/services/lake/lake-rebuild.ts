@@ -12,22 +12,10 @@
  * Interpretation is the worker's (ADR-046, ADR-059), so the caller hands it in
  * as {@link LakeVersionReader}.
  */
-import {
-  and,
-  asc,
-  countDistinct,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lte,
-  sql,
-} from 'drizzle-orm'
+import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
-import { resource, resourceVersion } from '@kukan/db'
+import { resourceVersion } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import {
@@ -164,8 +152,7 @@ async function versionsToLoad(db: Database, resourceId: string) {
  *
  * One rule for every way there: a resource the shared catalog held, whose
  * versions none are in its own; a site that skipped the releases between; an
- * older version whose loading failed for a while as a newer one arrived. It
- * reads nothing the shared catalog wrote, so it holds once that is gone.
+ * older version whose loading failed for a while as a newer one arrived.
  */
 export async function lakeNeedsRebuild(db: Database, resourceId: string): Promise<boolean> {
   const later = versionAlias('later')
@@ -193,28 +180,6 @@ export async function lakeNeedsRebuild(db: Database, resourceId: string): Promis
     )
     .limit(1)
   return row !== undefined
-}
-
-/**
- * Resources with a version the shared catalog took and their own catalog does
- * not have yet, among those the hourly sweep moves (`active` ones): what is
- * left of the migration off it. Zero is what lets that catalog be dropped
- * (`shared-lake-catalog.ts`).
- */
-export async function countUnmigratedLakeResources(db: Database): Promise<number> {
-  const [row] = await db
-    .select({ count: countDistinct(resourceVersion.resourceId) })
-    .from(resourceVersion)
-    .innerJoin(resource, eq(resource.id, resourceVersion.resourceId))
-    .where(
-      and(
-        eq(resource.state, 'active'),
-        rebuildLoads(),
-        isNotNull(resourceVersion.ducklakeSnapshotId),
-        isNull(resourceVersion.lakeSnapshotId)
-      )
-    )
-  return row?.count ?? 0
 }
 
 /**

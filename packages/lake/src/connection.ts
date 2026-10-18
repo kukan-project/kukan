@@ -118,8 +118,8 @@ function isInstanceLost(err: unknown): boolean {
  * under ii-b it frees whatever the retained set stops holding (spec §9).
  *
  * **Not a guarantee that a purge erases anything.** What makes a purged version
- * unobtainable is nulling its `ducklake_snapshot_id`; this only keeps capacity
- * reclaimable at all, which inlined rows are not.
+ * unobtainable is the rebuild that leaves it out (ADR-067 §4); this only keeps
+ * capacity reclaimable at all, which inlined rows are not.
  *
  * Stored on the catalog rather than passed to ATTACH, which would only bind
  * this session: the setting must not depend on who opened the connection.

@@ -175,7 +175,6 @@ async function versions() {
     .select({
       version: resourceVersion.version,
       lake: resourceVersion.lakeSnapshotId,
-      shared: resourceVersion.ducklakeSnapshotId,
       keyFault: resourceVersion.lakeIngestReason,
       noTable: resourceVersion.noTableReason,
     })
@@ -276,31 +275,14 @@ describe('rebuildResourceLake', () => {
     expect(diff).toMatchObject({ keyed: true, addedRows: 1, removedRows: 0, changedRows: 0 })
   })
 
-  it('migrates what the shared catalog held, leaving its numbering alone', async () => {
-    const { store, storage } = bucket()
-    const files = new Map([
-      [1, await parquet('v1', `(1, 'a')`)],
-      [2, await parquet('v2', `(1, 'b')`)],
-    ])
-    await addVersion(1, { ducklakeSnapshotId: 40 })
-    await addVersion(2, { ducklakeSnapshotId: 57 })
-
-    await rebuildResourceLake(db, { lake, store, storage, readVersion: reader(files) }, resourceId)
-
-    const rows = await versions()
-    expect(rows.map((r) => r.shared)).toEqual([40, 57])
-    expect(rows.every((r) => r.lake !== null)).toBe(true)
-    expect(await currentLakeCatalog(db, resourceId)).not.toBeNull()
-  })
-
   it('holds no instance while a version is interpreted, so the heavy process can have it back', async () => {
     const { store, storage } = bucket()
     const files = new Map([
       [1, await parquet('v1', `(1, 'a')`)],
       [2, await parquet('v2', `(1, 'b')`)],
     ])
-    await addVersion(1, { ducklakeSnapshotId: 40 })
-    await addVersion(2, { ducklakeSnapshotId: 57 })
+    await addVersion(1)
+    await addVersion(2)
     const released: number[] = []
     const interpret = reader(files)
     const readVersion: LakeVersionReader = async (file, use) => {
@@ -322,9 +304,9 @@ describe('rebuildResourceLake', () => {
       [2, 'not-records'],
       [3, await parquet('v3', `(1, 'a'), (1, 'b')`)],
     ])
-    await addVersion(1, { ducklakeSnapshotId: 1 })
-    await addVersion(2, { ducklakeSnapshotId: 2 })
-    await addVersion(3, { ducklakeSnapshotId: 3, lakeKeyColumns: ['id'] })
+    await addVersion(1)
+    await addVersion(2)
+    await addVersion(3, { lakeKeyColumns: ['id'] })
 
     const outcome = await rebuildResourceLake(
       db,
@@ -350,7 +332,7 @@ describe('rebuildResourceLake', () => {
       [2, 'fails'],
       [3, await parquet('v3', `(1, 'a'), (2, 'b')`)],
     ])
-    for (const v of [1, 2, 3]) await addVersion(v, { ducklakeSnapshotId: v })
+    for (const v of [1, 2, 3]) await addVersion(v)
 
     const outcome = await rebuildResourceLake(
       db,
@@ -368,10 +350,10 @@ describe('rebuildResourceLake', () => {
   })
 
   it('takes back the key a version left out was verified under', async () => {
-    // Its shared catalog's number stays, for a rollback; it vouches for a key
-    // over content layer 2 no longer holds (the OData feed reads it)
+    // It vouched for a key over content layer 2 no longer holds (the OData
+    // feed reads it)
     const { store, storage } = bucket()
-    await addVersion(1, { ducklakeSnapshotId: 1, lakeKeyColumns: ['id'] })
+    await addVersion(1, { lakeSnapshotId: 1, lakeKeyColumns: ['id'] })
     await db.update(resource).set({ hash: 'sha256:v1' }).where(eq(resource.id, resourceId))
     const service = new ResourceVersionService(db)
     expect(await service.liveLakeKey(resourceId)).toEqual(['id'])
@@ -392,7 +374,7 @@ describe('rebuildResourceLake', () => {
       [1, await parquet('v1', `(1, 'a')`)],
       [2, 'fails'],
     ])
-    for (const v of [1, 2]) await addVersion(v, { ducklakeSnapshotId: v })
+    for (const v of [1, 2]) await addVersion(v)
     outOfReach()
 
     await expect(
@@ -429,7 +411,7 @@ describe('rebuildResourceLake', () => {
 
   it('stops, writing nothing, once its claim is lost', async () => {
     const { store, storage } = bucket()
-    await addVersion(1, { ducklakeSnapshotId: 1 })
+    await addVersion(1)
 
     await expect(
       rebuildResourceLake(
@@ -450,9 +432,9 @@ describe('rebuildResourceLake', () => {
 })
 
 describe('lakeNeedsRebuild, from layer 1 alone (ADR-067 §6)', () => {
-  it('holds for a version not loaded with a later one after it, whatever the shared catalog took', async () => {
-    // Neither version records the shared catalog: what a site that skipped
-    // the releases between finds once that column is gone
+  it('holds for a version not loaded with a later one after it', async () => {
+    // What a resource the shared catalog held finds, and a site that skipped
+    // the releases between
     await addVersion(1)
     await addVersion(2, { lakeSnapshotId: 5 })
     expect(await lakeNeedsRebuild(db, resourceId)).toBe(true)
@@ -918,7 +900,7 @@ describe('a purge of a tabular version (ADR-067 §4)', () => {
 
     expect(result.purged).toBe(true)
     const rows = await versions()
-    expect(rows.find((r) => r.version === 2)).toMatchObject({ lake: null, shared: null })
+    expect(rows.find((r) => r.version === 2)).toMatchObject({ lake: null })
     expect(rows.filter((r) => r.version !== 2).every((r) => r.lake !== null)).toBe(true)
     const remaining = await dataFiles(lakeResourcePrefix(resourceId))
     const leaked = await withBucketSession(lake, (session) =>
@@ -944,9 +926,9 @@ describe('a purge of a tabular version (ADR-067 §4)', () => {
       [1, await parquet('v1', `(1, 'a')`)],
       [2, await parquet('v2', `(1, 'secret')`)],
     ])
-    // In a generation of their own catalog, and still numbered in the shared one
+    // In a generation of their own catalog
     for (const v of [1, 2]) {
-      await addVersion(v, { ducklakeSnapshotId: 10 + v })
+      await addVersion(v)
       await ingestVersionIntoResourceCatalog(
         db,
         { lake, store, storage },

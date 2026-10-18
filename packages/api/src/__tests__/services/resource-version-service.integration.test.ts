@@ -807,7 +807,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     await addVersion(2, 'sha256:v2') // live
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: 9 })
+      .set({ lakeSnapshotId: 9 })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
     await service.claimPurge(resourceId, 2, userId, 'test', purgeQueue)
     const [before] = await db.select().from(resource).where(eq(resource.id, resourceId))
@@ -826,7 +826,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     await addVersion(1, 'sha256:v1')
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: 42 })
+      .set({ lakeSnapshotId: 42 })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
     await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
 
@@ -834,7 +834,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     await service.executePurge(resourceId, 1, mockDeps())
 
     const [row] = await db
-      .select({ snap: resourceVersion.ducklakeSnapshotId, state: resourceVersion.state })
+      .select({ snap: resourceVersion.lakeSnapshotId, state: resourceVersion.state })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
     expect(row.state).toBe('purged')
@@ -846,7 +846,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     await addVersion(2, 'sha256:v2')
     await db
       .update(resourceVersion)
-      .set({ ducklakeSnapshotId: 7 })
+      .set({ lakeSnapshotId: 7 })
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
     await service.claimPurge(resourceId, 1, userId, 'test', purgeQueue)
 

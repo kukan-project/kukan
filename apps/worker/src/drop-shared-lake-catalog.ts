@@ -1,6 +1,5 @@
 /**
- * Drop the shared lake catalog once every resource has moved off it (ADR-067
- * §6). Wiring only — the logic is in `@kukan/api`'s `shared-lake-catalog.ts`.
+ * Drop the shared lake catalog layer 2 moved off (ADR-067 §6). Wiring only — the logic is in `@kukan/api`'s `shared-lake-catalog.ts`.
  *
  * In the deployed container, which is the one with the production database and
  * bucket in reach — once per site's database in a multi-site environment:
@@ -16,9 +15,7 @@
  * A tsup entry beside `reconcile-orphans`, for the same reason: the image
  * carries `dist` and nothing to run a script with.
  *
- * `--commit` deletes the files and drops the schema, and refuses while any
- * resource is still to be migrated. Past it, an image from before the move can
- * no longer be rolled back to with its layer 2.
+ * `--commit` deletes the files and drops the schema.
  */
 
 import { config } from 'dotenv'
@@ -49,20 +46,12 @@ const storage = new S3StorageAdapter({
 })
 
 const found = await inspectSharedLakeCatalog(db, storage)
-console.log(`Resources still to be migrated: ${found.unmigrated}`)
 console.log(`Schema "${LAKE_METADATA_SCHEMA}": ${found.schema ? 'present' : 'absent'}`)
 console.log(`Files: ${found.files.length}`)
 
 if (!found.schema && found.files.length === 0) {
   console.log('\nNothing of the shared catalog is left.')
   process.exit(0)
-}
-if (found.unmigrated > 0) {
-  console.log(
-    '\nThe migration is not finished: the hourly sweep moves these, or press' +
-      ' "Backfill versions" in the admin dashboard. Run again once it shows 0.'
-  )
-  process.exit(commit ? 1 : 0)
 }
 if (!commit) {
   console.log('\nRe-run with --commit to delete these files and drop the schema.')

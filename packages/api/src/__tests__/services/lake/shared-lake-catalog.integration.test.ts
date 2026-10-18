@@ -1,6 +1,5 @@
 /**
- * Dropping the shared lake catalog (ADR-067 §6): refused while a resource is
- * still to be moved off it, and then nothing of it left — its schema, and its
+ * Dropping the shared lake catalog (ADR-067 §6): nothing of it left — its schema, and its
  * files outside any resource's prefix — while every resource's own stays.
  */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
@@ -33,7 +32,7 @@ const SHARED_FILE = 'lake/main/res_0a/ducklake-0001.parquet'
 let resourceId: string
 let packageId: string
 
-async function addVersion(version: number, extra: Partial<typeof resourceVersion.$inferInsert>) {
+async function addVersion(version: number) {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
@@ -42,7 +41,6 @@ async function addVersion(version: number, extra: Partial<typeof resourceVersion
     hash: `sha256:v${version}`,
     origin: 'upload',
     format: 'CSV',
-    ...extra,
   })
 }
 
@@ -74,40 +72,21 @@ afterAll(async () => {
 })
 
 describe('dropSharedLakeCatalog', () => {
-  it('refuses while a resource is still to be moved off it, deleting nothing', async () => {
-    await addVersion(1, { ducklakeSnapshotId: 40 })
-
+  it("drops its schema and files, and keeps each resource's own", async () => {
+    // Not waited on: the move off it reads layer 1 only
+    await addVersion(1)
     expect(await inspectSharedLakeCatalog(db, storage)).toEqual({
-      unmigrated: 1,
       schema: true,
       files: [SHARED_FILE],
     })
-    await expect(dropSharedLakeCatalog(db, storage)).rejects.toThrow('still to be moved')
-    expect(objects.has(SHARED_FILE)).toBe(true)
-    expect(await schemaExists()).toBe(true)
-  })
-
-  it("drops its schema and files once every resource is moved, and keeps each resource's own", async () => {
-    await addVersion(1, { ducklakeSnapshotId: 40, lakeSnapshotId: 1 })
-    // Not to be moved: purged, or refused a load already
-    await addVersion(2, { ducklakeSnapshotId: 41, state: 'purged' })
-    await addVersion(3, { ducklakeSnapshotId: 42, lakeIngestReason: 'ingest-failed' })
 
     await dropSharedLakeCatalog(db, storage)
 
     expect(await schemaExists()).toBe(false)
     expect([...objects]).toEqual([`${lakeResourcePrefix(resourceId)}g/catalog.c.sqlite`])
     expect(await inspectSharedLakeCatalog(db, storage)).toEqual({
-      unmigrated: 0,
       schema: false,
       files: [],
     })
-  })
-
-  it('does not wait on a deleted resource, which the sweep does not move', async () => {
-    await addVersion(1, { ducklakeSnapshotId: 40 })
-    await db.update(resource).set({ state: 'deleted' })
-
-    expect((await inspectSharedLakeCatalog(db, storage)).unmigrated).toBe(0)
   })
 })

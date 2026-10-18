@@ -74,14 +74,10 @@ export const resourceVersion = pgTable(
     // which nothing, which is what someone asking "why is there no preview?"
     // is after. Null whenever a table *was* produced (ADR-046).
     noTableReason: varchar('no_table_reason', { length: 32 }).$type<NoTableReason | null>(),
-    // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
-    // Null for non-tabular versions or before layer-2 ingest; nulled on purge.
-    // The shared catalog's numbering: left as it is when the resource moves to
-    // a catalog of its own, so an older image gone back to still reads it
-    // right (ADR-067 §6). Dropped once the shared catalog is.
-    ducklakeSnapshotId: bigint('ducklake_snapshot_id', { mode: 'number' }),
-    // The same, in the resource's own catalog (ADR-067): numbered within the
-    // resource, and renumbered when a purge rebuilds it.
+    // DuckLake snapshot this tabular version maps to in the resource's own
+    // catalog (ADR-043 layer 2, ADR-067): numbered within the resource, and
+    // renumbered when a purge rebuilds it. Null for non-tabular versions, before
+    // layer-2 ingest, and on a purged version.
     lakeSnapshotId: bigint('lake_snapshot_id', { mode: 'number' }),
     // The key this version was read under, frozen when it was created — the
     // resource's setting at that moment, not its current one (spec §6.4). Null
@@ -149,14 +145,6 @@ export const resourceVersion = pgTable(
     // and be re-read on every pass. Every query carrying this index's predicate
     // carries the clause too — `pendingLakeVersion` in the worker does not use
     // this index.
-    index('idx_resource_version_pending_lake')
-      .on(table.resourceId, table.version)
-      .where(
-        sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL
-            AND ${table.lakeIngestReason} IS NULL`
-      ),
-    // The same for a resource's own catalog (ADR-067); the one above goes with
-    // the shared catalog.
     index('idx_resource_version_pending_lake_catalog')
       .on(table.resourceId, table.version)
       .where(
