@@ -82,6 +82,6 @@ describe('summary prompt (ADR-053)', () => {
   })
 
   it('pins the version that stales every stored abstract when it moves', () => {
-    expect(SUMMARY_GENERATION_VERSION).toBe(4)
+    expect(SUMMARY_GENERATION_VERSION).toBe(5)
   })
 })

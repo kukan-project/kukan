@@ -211,8 +211,11 @@ export const SUMMARY_CONTEXT_NOTES_CHARS = 400
  *    the derived material did)
  * 4: no sentences about what the abstract leaves out or could not confirm
  *    (ADR-053, appendix 20)
+ * 5: a table's sample rows reach the worker's material; it could not start
+ *    the query process they are read through, so tables went from the schema
+ *    alone
  */
-export const SUMMARY_GENERATION_VERSION = 4
+export const SUMMARY_GENERATION_VERSION = 5
 
 /**
  * How a deployment writes abstracts now: the model, the generation and the
