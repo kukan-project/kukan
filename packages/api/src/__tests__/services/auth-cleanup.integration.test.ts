@@ -1,10 +1,17 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { rateLimit } from '@kukan/db'
+import { rateLimit, session, verification } from '@kukan/db'
 import { EDGE_CLIENT_IP_HEADER } from '@kukan/shared'
-import { getTestDb, cleanDatabase, cleanUsers, closeTestDb } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  cleanUsers,
+  closeTestDb,
+  ensureTestUser,
+  TEST_USER_ID,
+} from '../test-helpers/test-db'
 import { createAuth } from '../../auth/auth'
-import { pruneRateLimits } from '../../services/auth-rate-limit'
+import { pruneExpiredAuthRows } from '../../services/auth-cleanup'
 import { resetBootstrapCache } from '../../services/bootstrap'
 
 const db = getTestDb()
@@ -33,7 +40,7 @@ async function keys() {
   return rows.map((r) => r.key).sort()
 }
 
-describe('pruneRateLimits', () => {
+describe('pruneExpiredAuthRows', () => {
   it('deletes the counters Better Auth leaves behind for addresses that do not return', async () => {
     const auth = createAuth(db, EDGE_CLIENT_IP_HEADER)
     await auth.handler(signIn('198.51.100.7'))
@@ -44,7 +51,31 @@ describe('pruneRateLimits', () => {
     // Better Auth prunes only when an existing key's window restarts
     expect(await keys()).toEqual(['198.51.100.7|/sign-in/email', '203.0.113.9|/sign-in/email'])
 
-    expect(await pruneRateLimits(db, HOUR_MS)).toBe(1)
+    expect((await pruneExpiredAuthRows(db, HOUR_MS)).rateLimits).toBe(1)
     expect(await keys()).toEqual(['203.0.113.9|/sign-in/email'])
+  })
+
+  it('deletes expired sessions and verifications, and keeps the live ones', async () => {
+    await ensureTestUser()
+    const past = new Date(Date.now() - 60_000)
+    const future = new Date(Date.now() + HOUR_MS)
+    await db.insert(session).values([
+      { id: 'expired', userId: TEST_USER_ID, token: 'expired-token', expiresAt: past },
+      { id: 'live', userId: TEST_USER_ID, token: 'live-token', expiresAt: future },
+    ])
+    await db.insert(verification).values([
+      { identifier: 'expired', value: 'x', expiresAt: past },
+      { identifier: 'live', value: 'x', expiresAt: future },
+    ])
+
+    expect(await pruneExpiredAuthRows(db, HOUR_MS)).toEqual({
+      sessions: 1,
+      verifications: 1,
+      rateLimits: 0,
+    })
+    expect(await db.select({ id: session.id }).from(session)).toEqual([{ id: 'live' }])
+    expect(await db.select({ identifier: verification.identifier }).from(verification)).toEqual([
+      { identifier: 'live' },
+    ])
   })
 })

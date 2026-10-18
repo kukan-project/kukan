@@ -35,7 +35,7 @@
     "./services/suggest/prompt": "./dist/services/suggest/prompt.js",
     "./services/suggest/summary-prompt": "./dist/services/suggest/summary-prompt.js",
     "./services/system-setting": "./dist/services/system-setting.js",
-    "./services/auth-rate-limit": "./dist/services/auth-rate-limit.js",
+    "./services/auth-cleanup": "./dist/services/auth-cleanup.js",
     "./services/ai/resource-summary-service": "./dist/services/ai/resource-summary-service.js"
   },
   "scripts": {
