@@ -71,6 +71,11 @@ KUKAN's `user` table and Better Auth's `user` table are integrated as a **single
 2. Add KUKAN-specific columns (`name`, `display_name`, `sysadmin`, `state`, `extras`, etc.)
 3. Use Better Auth's default definitions as-is for `session`, `account`, and `verification`
 
+**Supplement (2026-10, v0.36.0):** Sign-in rate limits are kept in the `rate_limit` table via Better
+Auth's `rateLimit.storage: 'database'` (held in each task's memory, the counts would split across
+tasks and Lambda instances). The worker's hourly pass at :17 deletes expired `session` /
+`verification` rows and `rate_limit` rows older than one hour (`pruneExpiredAuthRows`).
+
 ```typescript
 // packages/db/src/schema/auth.ts
 import { betterAuth } from 'better-auth'

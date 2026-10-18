@@ -168,6 +168,12 @@ VPC に入れることになり、Fetch のために NAT が要る（NAT の場�
   - ログイン試行の回数制限の記録先を DB にする（§決定 6。タスクが複数の Fargate でも改善になる）
   - クライアントの IP は CloudFront の viewer-request 関数が付けるヘッダーから取る（どちらの方式でも CloudFront が前にある）
   - 秘密情報が環境変数に無ければ Secrets Manager から取る（§決定 5。ECS では注入されるので今と同じ）
+
+  **補足（2026-10、v0.36.0）:** この 5 つは実装済み。待ち受けの番地は `apps/web/start.mjs` が
+  読み、cgroup が無いときのメモリの上限は `AWS_LAMBDA_FUNCTION_MEMORY_SIZE` を使う。回数制限は
+  `rate_limit` 表、クライアントの IP は viewer-request 関数が上書きする `x-kukan-client-ip`
+  （`CLIENT_IP_HEADER`）から取る。秘密情報は `SECRET_ARNS` に並べた ARN を起動時に読む。
+
 - CDK の分岐は 3 か所に収める。サイトの web（`WebService` か Web Function か）、共有インフラ
   （共有 ALB と VPC オリジンか、IPv6・connector・Bedrock のエンドポイントか）、CloudFront の
   オリジン（`cdn.ts` は `cloudfront.IOrigin` を受けるので差し替えるだけ）。worker・DB・

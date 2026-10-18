@@ -21,7 +21,9 @@ x-app-environment: &app-environment
   POSTGRES_DB: kukan_${SITE}
   POSTGRES_USER: kukan_${SITE}
   POSTGRES_PASSWORD: ${SITE_DB_PASSWORD}
-  POSTGRES_SSLMODE: disable
+  POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
+  # CA for verify-full: mount it (`volumes` on web and worker); empty = Node's trust store
+  POSTGRES_SSLROOTCERT: ${POSTGRES_SSLROOTCERT:-}
   # Empty = the defaults in env.ts (worker concurrency is derived from its pool)
   WEB_DB_POOL_MAX: ${WEB_DB_POOL_MAX:-}
   WEB_DB_POOL_IDLE_TIMEOUT_MS: ${WEB_DB_POOL_IDLE_TIMEOUT_MS:-}
@@ -62,6 +64,8 @@ services:
       PORT: '3000'
       # This site's worker, by container name on the shared network (ADR-058)
       WORKER_WAKE_URL: http://kukan-${SITE}-worker:8080/wake
+    # volumes:
+    #   - ./certs/db-ca.crt:/etc/kukan/db-ca.crt:ro # POSTGRES_SSLROOTCERT=/etc/kukan/db-ca.crt
     expose:
       - '3000'
     healthcheck:
@@ -80,6 +84,8 @@ services:
     container_name: kukan-${SITE}-worker
     restart: unless-stopped
     environment: *app-environment
+    # volumes:
+    #   - ./certs/db-ca.crt:/etc/kukan/db-ca.crt:ro # POSTGRES_SSLROOTCERT=/etc/kukan/db-ca.crt
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/health || exit 1']
       interval: 10s

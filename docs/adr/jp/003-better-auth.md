@@ -69,6 +69,11 @@ KUKAN の `user` テーブルと Better Auth の `user` テーブルは **同一
 2. KUKAN独自カラム（`name`, `display_name`, `sysadmin`, `state`, `extras` 等）を追加
 3. `session`, `account`, `verification` は Better Auth のデフォルト定義をそのまま使用
 
+**補足（2026-10、v0.36.0）:** サインインの回数制限は Better Auth の `rateLimit.storage: 'database'` で
+`rate_limit` 表に置く（タスクごとのメモリに持つと、複数タスク・Lambda で数が分かれるため）。
+worker が毎時 17 分の回に、期限切れの `session` / `verification` と 1 時間を過ぎた `rate_limit` の
+行を削除する（`pruneExpiredAuthRows`）。
+
 ```typescript
 // packages/db/src/schema/auth.ts
 import { betterAuth } from 'better-auth'

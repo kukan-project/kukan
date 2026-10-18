@@ -3,7 +3,7 @@ import { capacity, slotsForMemory, SLOT_MB } from '../../../services/odata/capac
 import { QUERY_MAX_CONCURRENT, QUERY_SLOT_RSS_MB } from '../../../config'
 
 describe('slotsForMemory', () => {
-  // The scales the deployment actually ships (infra/lib/config.ts). 1024 MB:
+  // The scales the deployment actually ships (infra/lib/config/scale.ts). 1024 MB:
   // 498 for a query slot, 128 for the process, 398 left = six pages. 512 MB has
   // nothing left and gets the floor's two regardless.
   it.each([

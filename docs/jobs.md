@@ -390,6 +390,8 @@ purge-resource-version
 [cron / タイマー]
   5 分ごと（HEALTH_CHECK_CRON）──→ resource-pipeline（変化を検知したもの、定期の全取得）
   毎時 17 分 ──→ 取り残された purge-*（ジョブを失った purging の版・組織）
+            （同じ回にジョブではない掃除も行う: 30 日を過ぎた dead のジョブ、期限切れの session /
+             verification、1 時間を過ぎた rate_limit の行を削除）
   毎時 37 分 ──→ lake-ingest-version（層 2 に入っていない版、上限 200 件）
   毎時 47 分 ──→ sync-search-docs（doc_sync_due_at が 10 分以上立ったままのリソース・データセットがあれば 1 件）
   毎時 52 分 ──→ embed-resources（embedding_due_at が 10 分以上立ったままの行があれば 1 件）

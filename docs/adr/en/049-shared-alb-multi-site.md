@@ -276,8 +276,8 @@ Operational notes for the cutover (also in `docs/specs/jp/phase4-deploy.md`):
   (current path unchanged when absent)
 - `infra/lib/constructs/cdn.ts`: optional VPC origin import and origin custom
   headers
-- `infra/lib/config.ts`: `SiteConfig.albPriority` (optional), `resolveAlbPriority()`,
-  uniqueness validation in `validateSites()`
+- `infra/lib/config/types.ts` / `config/sites.ts`: `SiteConfig.albPriority` (optional),
+  `resolveAlbPriority()`, uniqueness validation in `validateSites()`
 - `infra/lib/constructs/shared-alb.ts`: new `SharedAlbConstruct` bundling the ALB,
   listener and VPC origin
 - `infra/lib/__tests__/`: update the multi-site snapshots (the single-site ones

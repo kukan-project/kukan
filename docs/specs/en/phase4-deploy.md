@@ -84,7 +84,8 @@ Switched with the CDK `dbEngine` parameter (`rds` | `aurora`).
 
 ### Small (demo / PoC): ~$120/month
 
-\* Based on the ap-northeast-1 (Tokyo) region. Excluding tax.
+\* Based on the ap-northeast-1 (Tokyo) region. Excluding tax. ECS Fargate is priced for x86; the
+default arm64 is about 20% cheaper (the same holds for the tables below).
 
 | Service               | Spec                  | USD/month |
 | --------------------- | --------------------- | --------- |
@@ -220,7 +221,7 @@ environment that declares `sites` they go on each site entry (validateSites reje
 time).
 
 Precedence: the CLI `-c` flag > the env entry in `environments.ts` > the scale defaults
-(`config.ts`) > built-in defaults.
+(`config/scale.ts`) > built-in defaults.
 However, `-c` only affects fields on the environment entry; `-c` for a site-scoped field is
 ignored in a multi-site environment (preventing the accident of one `-c domainName=…` applying to
 every site at once, ADR-041).
@@ -345,8 +346,8 @@ prd: {
   CloudFront, so deleting a resource still in use would fail the deploy). A detached WebACL keeps
   incurring charges, so delete it manually once nothing references it
 - **Site-scoped fields cannot be written at the env level**: domainName / hostedZone\* /
-  certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth / bucketName /
-  enableGa4DataApi / nameSiteInUserAgent and timeZone are declared only inside `sites` (writing them at the env level is rejected by
+  certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth / enableIpv6Dns /
+  bucketName / enableGa4DataApi / nameSiteInUserAgent and timeZone are declared only inside `sites` (writing them at the env level is rejected by
   validateSites at synth time — safer than being silently ignored). The one exception is
   `overrides`, where the site's values are deep-merged on top of the env's (tuning shared by all
   sites plus per-site overrides). To apply the same gate to every site, define it as a TypeScript
@@ -518,6 +519,10 @@ with `allowedIpRanges` the AAAA is left out by default: a viewer admitted by its
 come over IPv6 once its network has it, miss the list and get a 403, which browsers do not retry
 over IPv4. An IPv6 prefix in the list does not say every admitted IPv4 viewer's IPv6 is in it.
 Once the list holds the IPv6 prefixes of every place it admits, `enableIpv6Dns: true` adds the AAAA.
+
+The same function overwrites `x-kukan-client-ip` with `event.viewer.ip` on every request (a value
+the viewer sent is never used). The web reads it for sign-in rate limits (`CLIENT_IP_HEADER`, set
+by the CDK) and keeps the counts in the DB table `rate_limit` (so several tasks count the same).
 
 - ALB: internal (reachable only via the CloudFront VPC Origin, restricted by a managed prefix list)
 - Web task SG: allows only port 3000 from the ALB (no direct access)
@@ -1090,6 +1095,7 @@ For every other option see `.env.prod.example`.
 - **TLS termination**: configured in the Caddyfile. Supports Let's Encrypt automatic certificates
   or custom certificates.
 - **IP restriction**: configurable with the Caddyfile's `remote_ip` matcher.
+- **Sign-in rate limits**: the counts are kept in the DB table `rate_limit`, and the client IP is read from `CLIENT_IP_HEADER` (default `x-forwarded-for`, set by Caddy). On AWS the CDK names `x-kukan-client-ip`, which CloudFront's viewer-request function overwrites (viewers cannot spoof it).
 - **Exposed ports**: infrastructure services (postgres:5432, minio:9000 etc.) are exposed on the
   host. In production, restrict access with a firewall or change `ports:` to `expose:` in
   compose.yml.

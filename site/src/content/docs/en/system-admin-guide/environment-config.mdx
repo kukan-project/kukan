@@ -101,7 +101,8 @@ Fargate than x86_64. Set `cpuArchitecture: 'x86_64'` for an environment that sho
 x86_64. It is an environment-level setting; it cannot differ per site, and `-c` cannot
 override it.
 
-- The pipeline builds the images on a CodeBuild of the tasks' architecture
+- The pipeline builds the images on a CodeBuild of the tasks' architecture (Tokyo and Osaka
+  have ARM). Set `x86_64` for a pipeline in a Region without ARM CodeBuild (`ARM_CONTAINER`)
 - A standalone deploy can build images for an architecture other than the local machine's.
   Docker Desktop (Windows / Mac) needs nothing more. On Linux with Docker Engine alone, run
   `docker run --privileged --rm tonistiigi/binfmt --install arm64` once
@@ -111,6 +112,8 @@ override it.
 
 The web and worker verify the server certificate on their TLS connections to RDS / Aurora
 (`POSTGRES_SSLMODE=verify-full`). The CA bundle they check it against is in the images.
+In a multi-site deployment, the Lambda that creates each site's database verifies the certificate
+too (against the CAs bundled with the Lambda runtime).
 
 - `rdsCaCertificate` pins the CA that issues the server certificate. Left out, the account's
   default would apply, and `modify-certificates` can change that. The default

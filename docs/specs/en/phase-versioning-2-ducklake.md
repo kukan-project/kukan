@@ -35,7 +35,7 @@ not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" ar
 | Keyed ingest is **two predicated `MERGE` statements in one transaction** (the diff approach)                                                           | §11-2.4 |
 | Diffs are produced by **matching the content at both ends on the primary key**. `table_changes` is not used                                            | §7      |
 | The first stage applies **only when `lake_key_columns` matches at both ends**. Otherwise it degrades to keyless                                        | §7      |
-| A version row's `ducklake_snapshot_id` is **written once**. Moving content is done by issuing a version                                                | §7.2    |
+| A version row's `ducklake_snapshot_id` is **written once**. Moving content is done by issuing a version (ADR-067: column dropped in v0.36.0)           | §7.2    |
 | **`superseded` is abolished.** Layer 1's automatic fallback after a purge is **the highest `active` version**                                          | §7.2    |
 | Existing `superseded` rows are **converted** by a backfill; left alone, every predicate carries two regimes                                            | §7.2    |
 | A resend decides "already at the destination" **by content**, not by version number                                                                    | §7.2    |
@@ -214,7 +214,8 @@ Add `apps/worker/src/pipeline/steps/lake.ts` and insert it **after the Version s
 Columns are added to Phase i's `resource_version` (a Drizzle migration):
 
 - `ducklake_snapshot_id BIGINT` (non-null only for tabular versions; the layer-2 pointer of the
-  version)
+  version). Dropped in v0.36.0 — the pointer is now `lake_snapshot_id`, the number in the
+  resource's own catalog (ADR-067)
 - (ii-b) the primary key is held as **the current value on the resource side and the value used on
   the version side** (`lake_key_columns`) (§6.1).
 
@@ -680,6 +681,10 @@ key column matches that condition forever, being queued hourly and skipped every
 same shape of accident as #423, where `pendingLakeIngestQuery` and the ordering check on the ingest
 side were brought into line.
 
+> **ADR-067 revises this (implemented):** the predicate is now `lake_snapshot_id IS NULL`. A version
+> is not left out because a newer one is loaded: an overtaken version stays outstanding, and the
+> resource's rebuild picks it up (ADR-067 §6).
+
 The existing `NoTableReason` values (`no-columns` / `too-many-columns` / `too-large`) escape this
 today because **they can all be written as predicates over the frozen schema** (column count, size).
 
@@ -896,7 +901,8 @@ the diff next to the version is the most natural path, and it reuses the Phase i
 > **ADR-067 revises this (implemented):** written once is a property of the shared catalog's
 > `ducklake_snapshot_id`. A per-resource catalog's `lake_snapshot_id` is rewritten for every version
 > by a rebuild's commit (purge, migration, repair), since the catalog is built afresh and renumbered.
-> The purge's stand-down is gone.
+> The purge's stand-down is gone. The `ducklake_snapshot_id` column itself was dropped in v0.36.0
+> (ADR-067 §6, implementation order 7).
 
 **A version row's `ducklake_snapshot_id` is written once.** It points at the snapshot that holds
 that version's content, and no operation rewrites it afterwards.
@@ -2790,6 +2796,10 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
    "v1's history with it" was wrong: the retained snapshots read through a `DROP`. What is permanent
    is that nobody puts the head back.
 
+   > **Superseded by ADR-067 (implemented):** a purge rebuilds the catalog by reading the remaining
+   > versions from layer 1 again, so `versionsLakeCanStandOn`, the step-down and the `DROP` are all
+   > gone (ADR-067 §4).
+
 1. **Widening the query targets**: currently ≤100MB CSV/TSV. Extending to JSON and so on (the
    same root as ADR-032/043)
 2. **Put compaction in the ingest job**: the decision of §11-2.1 (a thresholded
@@ -2917,6 +2927,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
      time** is the split that fits the format. It is tempting to write layer 2's retention in the same
      words as layer 1's, but the expressible forms differ
 
+   > **ADR-067 changed the premise (to be reconsidered):** a rebuild (purge, migration, rebuild what
+   > is missing) reads layer-1 bytes again, so a version thinned out of layer 1 falls out of layer 2
+   > at the next rebuild. "Layer 2 as the only record" does not fit the rebuild. With the catalog now
+   > per resource, the case for stating layer-2 retention in time needs another look too.
+
 9. **Manual vacuum** (explicitly running compaction per resource from the admin screen). The
    per-ingest `merge_adjacent_files` is a default tuned to append-dominated data, and for resources
    with fast row turnover (current-event listings, notices with a posting deadline, availability
@@ -3041,6 +3056,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
       purge's step-down is the only operation left that rides a recorded id to move contents, and it
       walks resolution already (§9.1)
 
+    > **Largely resolved by ADR-067 (to be reconsidered):** a purge rebuilds from the remaining
+    > versions instead of riding recorded ids, so it no longer stops on ids that do not resolve. A
+    > missing catalog or data file is recovered by "rebuild what is missing" (ADR-067 §6). There is
+    > no check for a catalog that is present but disagrees with the version rows' numbers.
+
 16. **The head can be left disagreeing with the surviving versions' content.** Two paths lead there —
     **a revert that empties the resource** (the retracted rows stay, which follows from owing no drop,
     §9.1) and **a purge that failed partway through its step-down** (the purged version's rows stay,
@@ -3054,6 +3074,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
       `clearEmptied` for an emptied resource and never looks at layer 2, so dropping inside the revert
       alone leaves no way in when that one attempt fails
 
+    > **Partly resolved by ADR-067:** the path of a purge failing partway through its step-down is
+    > gone — the purge CASes the pointer onto the rebuilt catalog, so one that fails partway leaves
+    > the old catalog in place and the retry does it again (ADR-067 §4). The emptying revert's path
+    > is to be reconsidered.
+
 17. **"Which version layer 2 stands on" rests on what the version rows record.** The purge
     answers it from the recorded snapshots, as "no `active` version was loaded after this one", so it
     is wrong for a table
@@ -3063,6 +3088,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
     than the recording**, which is worth seeing before ii-b's `MERGE` takes the current contents as
     its base. Closing the window needs the ingest to record first (write-ahead, the shape of ADR-045)
     or a read of the head to confirm.
+
+    > **Resolved by ADR-067 (implemented):** the ingest PUTs the catalog, then writes the version
+    > row's `lake_snapshot_id` and CASes `lake_catalog_key` in one transaction, so a commit that is
+    > not recorded is never read (ADR-067 §2). The purge, too, rebuilds from layer 1's rows rather
+    > than from what the version rows record.
 
 ## 15. Out of Scope (Phase iii)
 

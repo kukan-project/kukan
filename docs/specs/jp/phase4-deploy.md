@@ -82,7 +82,8 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 
 ### Small（デモ / PoC）: ~$120/月
 
-※ ap-northeast-1（東京）リージョン基準。税別。
+※ ap-northeast-1（東京）リージョン基準。税別。ECS Fargate は x86 の単価。既定の arm64 では
+約 2 割安い（以下の表も同じ）。
 
 | サービス            | スペック             | 月額 USD |
 | ------------------- | -------------------- | -------- |
@@ -207,7 +208,7 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 直下に書けるのはシングルサイト形状（`sites` なし）だけの**過去互換**で、`sites`
 を宣言した環境では各サイトエントリに書く（混在は synth 時に validateSites が拒否）。
 
-優先順位: CLI `-c` フラグ > `environments.ts` の env エントリ > スケール既定（`config.ts`）> 組込み既定。
+優先順位: CLI `-c` フラグ > `environments.ts` の env エントリ > スケール既定（`config/scale.ts`）> 組込み既定。
 ただし `-c` が効くのは環境エントリのフィールドのみで、サイトスコープのフィールドへの
 `-c` はマルチサイト環境では無視される（1 つの `-c domainName=…` が全サイトへ
 一括適用される事故の防止、ADR-041）。
@@ -332,7 +333,7 @@ prd: {
   手動で削除する
 - **サイトスコープのフィールドは env 側に書けない**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth /
-  bucketName / enableGa4DataApi / nameSiteInUserAgent / timeZone は `sites` 内でのみ宣言する（env 側に書くと
+  enableIpv6Dns / bucketName / enableGa4DataApi / nameSiteInUserAgent / timeZone は `sites` 内でのみ宣言する（env 側に書くと
   synth 時に validateSites が拒否。黙って無視されるより安全）。例外は
   `overrides` のみで、env の値の上にサイトの値が deep-merge される（全サイト
   共通のチューニング + サイト個別上書き）。全サイトに同じゲートを掛けたい
@@ -501,6 +502,10 @@ IPv4 CIDR と IPv6 プレフィックスの両方に対応。追加コストな�
 IPv6 を持てば IPv6 で来て許可リストに当たらず 403 になり、ブラウザは IPv4 でやり直さないため。
 リストに IPv6 のプレフィックスがあっても、許可した IPv4 の利用者すべての IPv6 が入っているとは
 限らない。許可するすべての拠点の IPv6 をリストに入れたら、`enableIpv6Dns: true` で AAAA を置く。
+
+同じ関数は `x-kukan-client-ip` を毎リクエスト `event.viewer.ip` で上書きする（閲覧者が送った値は
+使わない）。web はこれをサインインの回数制限に使い（`CLIENT_IP_HEADER`、CDK が設定）、回数は DB の
+`rate_limit` 表に置く（タスクが複数でも同じ数を数える）。
 
 - ALB: internal（CloudFront VPC Origin 経由のみ、マネージドプレフィックスリストで制限）
 - Web タスク SG: ALB からの 3000 番ポートのみ許可（直接アクセス不可）
@@ -1026,6 +1031,7 @@ Client ─→ Caddy (:80/:443) ─→ web (:3000)
 
 - **TLS 終端**: Caddyfile で設定。Let's Encrypt 自動証明書またはカスタム証明書に対応。
 - **IP 制限**: Caddyfile の `remote_ip` マッチャーで設定可能。
+- **サインインの回数制限**: 回数は DB の `rate_limit` 表に置き、クライアントの IP は `CLIENT_IP_HEADER`（既定 `x-forwarded-for`、Caddy が付ける）から取る。AWS では CDK が CloudFront の viewer-request 関数が上書きする `x-kukan-client-ip` を指定する（閲覧者が偽れない）。
 - **ポート公開**: インフラサービス（postgres:5432, minio:9000 等）はホストに公開される。本番環境ではファイアウォールでアクセスを制限するか、compose.yml の `ports:` を `expose:` に変更する。
 - **パスワード管理**: `.env.prod` は `.gitignore` 対象。デフォルトパスワードから必ず変更すること。
 - **DB SSL**: `POSTGRES_SSLMODE` で指定する。`verify-full` は暗号化に加えてサーバーの証明書（発行元とホスト名）を検証し、`require` は暗号化だけで証明書を検証しない。AWS（RDS/Aurora PG16+）は SSL 必須のため、CDK が `verify-full` を設定し、サーバーの証明書の CA を `rdsCaCertificate`（既定 `rds-ca-rsa2048-g1`、全リージョンで使える）で固定する。検証に使う CA の束はイメージの `/etc/ssl/rds-ca.crt` にあり、CDK が `POSTGRES_SSLROOTCERT` でそこを指す（商用パーティションの全リージョン共通の束。ビルド時に checksum 付きで取得し、AWS が束を差し替えるとビルドが落ちる）。GovCloud・中国は束の配布元が別で、この束では検証できない（未対応）。既存の環境で、インスタンスの今の CA が `rdsCaCertificate` と違うと、デプロイで CA が切り替わり DB が再起動する。オンプレで独自 CA の PostgreSQL に `verify-full` でつなぐときは、CA のファイルを web と worker にマウントし `POSTGRES_SSLROOTCERT` で指す（compose.yml の `volumes` の例）。オンプレは postgres:16-alpine が SSL 非対応のためデフォルト `disable`。

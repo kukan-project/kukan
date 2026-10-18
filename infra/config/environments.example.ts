@@ -33,8 +33,8 @@
  *       rdsCaCertificate, bedrock, githubRepo, deployBranch
  *   - Site entries ONLY (rejected on the environment entry):
  *       name, brand, domainName, hostedZoneId, hostedZoneName, certificateArn,
- *       webAclArn, enableWaf, allowedIpRanges, basicAuth, bucketName,
- *       enableGa4DataApi, nameSiteInUserAgent, timeZone
+ *       webAclArn, enableWaf, allowedIpRanges, basicAuth, enableIpv6Dns,
+ *       bucketName, enableGa4DataApi, nameSiteInUserAgent, timeZone
  *       (the type still accepts these on the environment entry, but ONLY as
  *       the legacy single-site shape without `sites`. Mixing the shapes —
  *       `sites` plus env-level site fields — is invalid and rejected at synth)
@@ -158,6 +158,7 @@ export const environments = {
         // allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
         // Basic auth gate, OR-combined with allowedIpRanges (light gate only — ADR-027):
         // basicAuth: { username: 'preview', password: 'change-me' },
+        // enableIpv6Dns: false, // AAAA alias; omit → on (off when allowedIpRanges is set)
 
         // --- Custom domain (standalone: cert auto-created from the hosted zone;
         //     pipeline: paste the us-east-1 ARNs — see the header) ---
@@ -201,6 +202,7 @@ export const environments = {
       //   domainName: 'catalog.city-a.example.jp',
       //   hostedZoneId: 'Z0123456789',
       //   hostedZoneName: 'city-a.example.jp',
+      //   enableIpv6Dns: false, // AAAA alias; omit → on (off when allowedIpRanges is set)
       //   certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...', // pipeline only
       //   webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...', // sharable
       //   overrides: { web: { maxSize: 10 } },

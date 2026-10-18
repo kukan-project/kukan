@@ -250,6 +250,8 @@ matches, the response gives the document's page range and points to `get_documen
 A longer section is cut — at a line break where it can be — and the response ends with a cursor to
 read on. A cursor stops working once the document is extracted again.
 
+The outline and the text are also available over REST as `GET /api/v1/resources/{id}/document-outline` and `document-section`, with the same parameters and a JSON response.
+
 ### search_passages
 
 Return the passages of documents' text across the catalog (PDF, Word, PowerPoint, Excel, Ichitaro) that

@@ -605,7 +605,7 @@ Workerが落ちていてもジョブは `job` 表に残り、起動時に表を�
 
 ### 4.4 コスト概算
 
-CDK デプロイプロファイル（`infra/lib/config.ts`）に基づく東京リージョンでの月額概算。
+CDK デプロイプロファイル（`infra/lib/config/scale.ts`）に基づく東京リージョンでの月額概算。
 ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFront → VPC Origin → internal ALB。
 
 **small — 小規模（最小コスト）**

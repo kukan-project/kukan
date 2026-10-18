@@ -183,6 +183,12 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 #    Custom domain/WAF envs also need us-east-1 (GlobalStack) / 独自ドメイン/WAF は us-east-1 も
 cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
 
+#    Building arm64 images (the default) on x86_64 Linux with Docker Engine only:
+#    register QEMU once (Docker Desktop on Windows / Mac needs nothing)
+#    Docker Engine だけの x86_64 Linux で arm64（既定）のイメージを作るなら、一度だけ
+#    QEMU を登録する（Windows / Mac の Docker Desktop は不要）
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+
 # 4. Deploy a named environment (Docker build + ECR push + all resources)
 #    The stacks are nested in a Stage (e.g. Dev/KukanStack), so select the
 #    Stage with a glob — `--all` only matches top-level stacks and finds none.
@@ -209,31 +215,33 @@ Environments (dev / prd, etc.) are defined in `infra/config/environments.ts` (co
 `environments.example.ts`; forks commit it, upstream does not). Each entry is an `EnvironmentConfig`:
 環境は `infra/config/environments.ts`（example をコピー。フォークがコミット、upstream はコミットしない）で定義。各エントリのフィールド:
 
-| Field               | Type                           | Default            | Description                                                                                        |
-| ------------------- | ------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------- |
-| `account`           | string                         | **required**       | Target account ID (misdeployment guard: CDK refuses if your credentials are for another account)   |
-| `region`            | string                         | `ap-northeast-1`   | Target region                                                                                      |
-| `scale`             | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                                                             |
-| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent    | DB engine                                                                                          |
-| `enableOpenSearch`  | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                                                            |
-| `cpuArchitecture`   | `arm64` \| `x86_64`            | `arm64`            | CPU of the web and worker tasks (Graviton by default); the images are built for it                 |
-| `enableWaf`         | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo)                                                                         |
-| `allowedIpRanges`   | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)                                             |
-| `domainName`        | string                         | —                  | Custom domain (CloudFront default domain when unset)                                               |
-| `hostedZoneId/Name` | string                         | —                  | Route53 Hosted Zone (required with `domainName`)                                                   |
-| `certificateArn`    | string                         | —                  | Pre-created us-east-1 ACM cert ARN (for pipeline mode)                                             |
-| `webAclArn`         | string                         | —                  | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)                                           |
-| `bucketName`        | string                         | auto               | S3 bucket name (auto-generated, globally unique, when unset)                                       |
-| `enableGa4DataApi`  | boolean                        | `false`            | GA4 analytics dashboard                                                                            |
-| `githubRepo`        | string                         | —                  | CodeConnections source repo (`owner/repo`)                                                         |
-| `deployBranch`      | string                         | `main`             | Branch that deploys this env (pipeline mode)                                                       |
-| `sites`             | SiteConfig[]                   | —                  | Multi-site: run several catalogs on one shared backbone (opt-in; omit for a single stack)          |
-| `bedrock`           | object \| `false`              | enabled            | Bedrock models to grant and inject, also per site (ADR-041); `false` turns AI off (`AI_TYPE=none`) |
-| `basicAuth`         | `{ username, password }`       | —                  | Basic authentication in front of the site                                                          |
-| `timeZone`          | string                         | `Asia/Tokyo`       | IANA zone the environment prerenders times in                                                      |
-| `deployConcurrency` | number                         | `2`                | Sites deployed per wave (`1` = serial); multi-site only                                            |
-| `ecrImageRetention` | number                         | `100`              | Container images kept per repository                                                               |
-| `overrides`         | deep-partial                   | —                  | Fine-grained overrides of the scale preset                                                         |
+| Field               | Type                           | Default             | Description                                                                                                 |
+| ------------------- | ------------------------------ | ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `account`           | string                         | **required**        | Target account ID (misdeployment guard: CDK refuses if your credentials are for another account)            |
+| `region`            | string                         | `ap-northeast-1`    | Target region                                                                                               |
+| `scale`             | `small` \| `medium` \| `large` | `small`             | Resource sizing preset                                                                                      |
+| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent     | DB engine                                                                                                   |
+| `enableOpenSearch`  | boolean                        | `true`              | `false` → PostgreSQL full-text fallback                                                                     |
+| `cpuArchitecture`   | `arm64` \| `x86_64`            | `arm64`             | CPU of the web and worker tasks (Graviton by default); the images are built for it                          |
+| `rdsCaCertificate`  | string                         | `rds-ca-rsa2048-g1` | CA of the RDS / Aurora server certificate, which the web and worker verify (`POSTGRES_SSLMODE=verify-full`) |
+| `enableWaf`         | boolean                        | `!allowedIpRanges`  | WAF on CloudFront (~$9/mo)                                                                                  |
+| `allowedIpRanges`   | string[]                       | —                   | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)                                                      |
+| `enableIpv6Dns`     | boolean                        | `!allowedIpRanges`  | AAAA alias for the custom domain (IPv6); on behind `allowedIpRanges` only once it lists every IPv6 prefix   |
+| `domainName`        | string                         | —                   | Custom domain (CloudFront default domain when unset)                                                        |
+| `hostedZoneId/Name` | string                         | —                   | Route53 Hosted Zone (required with `domainName`)                                                            |
+| `certificateArn`    | string                         | —                   | Pre-created us-east-1 ACM cert ARN (for pipeline mode)                                                      |
+| `webAclArn`         | string                         | —                   | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)                                                    |
+| `bucketName`        | string                         | auto                | S3 bucket name (auto-generated, globally unique, when unset)                                                |
+| `enableGa4DataApi`  | boolean                        | `false`             | GA4 analytics dashboard                                                                                     |
+| `githubRepo`        | string                         | —                   | CodeConnections source repo (`owner/repo`)                                                                  |
+| `deployBranch`      | string                         | `main`              | Branch that deploys this env (pipeline mode)                                                                |
+| `sites`             | SiteConfig[]                   | —                   | Multi-site: run several catalogs on one shared backbone (opt-in; omit for a single stack)                   |
+| `bedrock`           | object \| `false`              | enabled             | Bedrock models to grant and inject, also per site (ADR-041); `false` turns AI off (`AI_TYPE=none`)          |
+| `basicAuth`         | `{ username, password }`       | —                   | Basic authentication in front of the site                                                                   |
+| `timeZone`          | string                         | `Asia/Tokyo`        | IANA zone the environment prerenders times in                                                               |
+| `deployConcurrency` | number                         | `2`                 | Sites deployed per wave (`1` = serial); multi-site only                                                     |
+| `ecrImageRetention` | number                         | `100`               | Container images kept per repository                                                                        |
+| `overrides`         | deep-partial                   | —                   | Fine-grained overrides of the scale preset                                                                  |
 
 Precedence: CLI `-c` > env entry > scale defaults. Override ad hoc:
 優先順位: `-c` > env エントリ > スケール既定。一時上書き:

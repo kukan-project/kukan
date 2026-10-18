@@ -392,7 +392,8 @@ The new `purgeFromLake` (under the claim, after the layer 1 deletion):
    the sweep interval)
 
 The tombstone nulls both `lake_snapshot_id` and `ducklake_snapshot_id` (the latter for going back
-to an older version, decision 6).
+to an older version, decision 6). Implementation order 7 (v0.36.0) dropped the latter column, so it
+now nulls `lake_snapshot_id` alone.
 
 Today's three branches (`stays` / `drop` / `onto`) and the reclaim (`reclaimInSession`) are no
 longer needed. In the rebuilt catalog, the table's current contents are the last version ingested
@@ -502,6 +503,10 @@ version's hourly sweep picks them up again. With these limits:
 - If the older version's orphan sweep deletes the new layout while you are back, "rebuild what is
   missing" kicks in when you come forward again. Meanwhile diffs show "not ingested"
 
+> **Revised (implementation order 7, v0.36.0):** this paragraph records the v0.35.x period. From the
+> release that dropped `ducklake_snapshot_id` (v0.36.0) on, there is no going back to an image of
+> v0.35.x or earlier — the column the older image reads is gone.
+
 **Deleting the old catalog.** The shared catalog (the `ducklake` schema, outside Drizzle) and the
 old files (`lake/main/`, decision 7-6) are dropped once the migration has nothing left and you have
 decided not to go back. AWS has no procedure for running SQL directly against PostgreSQL, so add a
@@ -509,6 +514,10 @@ worker CLI shaped like `reconcile-orphans`. By default it only reports; with `--
 `DROP SCHEMA ducklake CASCADE` and deletes `lake/main/`, and it refuses while the migration has
 anything left. On multi-site, run it per site database. **Until it runs, rows of versions purged in
 the past remain in the old catalog** (the guarantee of decision 5 holds after this deletion).
+
+> **Revised (implementation order 7, v0.36.0):** the "refuses while the migration has anything left"
+> check was removed. The migration reads layer 1 only, and once the column is gone no image reads
+> the old catalog, so it can be dropped without waiting for the migration to finish.
 
 **Restoring from backup.** If either the DB or S3 is restored to an earlier point, do not try to
 restore `lake/`; leave it to "rebuild what is missing". Do not restore noncurrent versions under
@@ -547,14 +556,23 @@ migrated.
 >   outstanding-ingest condition no longer leaves out a version a newer loaded one has overtaken: an
 >   older version whose loading failed for a while as a newer one arrived used to be left out for
 >   good, and the rebuild now picks it up
-> - **The drop command is `drop-shared-lake-catalog`.** What is left of the move is counted as the
->   resources the hourly sweep moves (`active` ones) that have a version only the shared catalog
->   holds. Deleted resources are not counted: the sweep does not move them, so counting them would
->   never reach 0. The files it deletes are the keys under `lake/` outside every resource's prefix —
->   `lake/main/`, and any earlier layout still there. Files go first and the schema last, so a run
->   cut short leaves the schema for the report to show there is more to do
+> - **The drop command is `drop-shared-lake-catalog`.** The files it deletes are the keys under
+>   `lake/` outside every resource's prefix — `lake/main/`, and any earlier layout still there.
+>   Files go first and the schema last, so a run cut short leaves the schema for the report to show
+>   there is more to do. At first it refused until what was left of the move reached 0 (the
+>   resources the hourly sweep moves, `active` ones, that have a version only the shared catalog
+>   holds; deleted resources were not counted, since the sweep does not move them), but
+>   implementation order 7 removed that check (the revision to "Deleting the old catalog" above)
 > - **The full data wipe keeps its `DROP SCHEMA`.** On a site that has not run the drop command, the
 >   shared catalog still holds rows to be wiped
+> - **A statement reads its own catalog and no other.** The worker's DuckDB instance is shared
+>   between jobs, with other jobs' catalogs ATTACHed to it. Statements that scanned every catalog
+>   (`duckdb_tables()`, and the binder's "Did you mean" search on a table that does not exist) hit
+>   another catalog mid-COMMIT and failed with SQLite `database is locked` (or
+>   `Catalog "__ducklake_metadata_*" does not exist` during its DETACH), taking their own commit with
+>   them. Whether a table exists is asked of the session's catalog alone, with
+>   `ducklake_table_info(<alias>)`, and instance setup sets `catalog_error_max_schemas = 0` to stop
+>   the search
 
 ### 7. What the spike checks
 
@@ -644,15 +662,16 @@ What this shows:
   counts in the multi-site guide
 - **DB**: Drizzle migrations add `resource_pipeline.lake_catalog_key`, `resource_version.lake_snapshot_id`
   and its pending-ingest partial index (additive, so the previous image still works).
-  `ducklake_snapshot_id` and the old index go in a release after the old catalog is dropped. Dropping
-  the `ducklake` schema is outside Drizzle (the CLI of decision 6).
+  `ducklake_snapshot_id` and the old index `idx_resource_version_pending_lake` went in a later
+  release (implementation order 7, v0.36.0), whether or not operators had dropped the old catalog.
+  Dropping the `ducklake` schema is outside Drizzle (the CLI of decision 6).
   The column goes only after the decisions read layer 1 alone (the implementation notes of decision
-  6), so upgrading past that release does not stop the migration. What else reads it is a
+  6), so upgrading past that release does not stop the migration. What else read it was a
   convenience for resources not yet moved, switched to the new catalog's number alone when the
-  column goes: the version purge's rebuild (a purge of such a resource then no longer moves it on
-  the way), the OData feed's key guarantee (not given until the move is done), and the drop
-  command's count of what is left to move (checked against the versions not loaded yet instead; a
-  release without the column cannot go back to an older image anyway)
+  column went: the version purge's rebuild (a purge of such a resource then no longer moves it on
+  the way) and the OData feed's key guarantee (not given until the move is done). The drop
+  command's check of what is left to move was removed rather than switched (order 7 below). From
+  the release without the column, there is no going back to an older image
 - **CI**: the DuckDB extension cache key hashes `packages/lake/package.json`, which does not change
   when `sqlite` is added. Without changing the key an old cache hits, and tests time out fetching the
   extension

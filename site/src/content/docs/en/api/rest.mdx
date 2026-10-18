@@ -157,31 +157,31 @@ the listing.
 
 ## Resources
 
-| Method | Path                                    | Description                                                                                       | Auth       |
-| ------ | --------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------- |
-| GET    | `/resources/count`                      | Active resource count (`my_org=true` limits to organizations where the user is `editor` or above) | Public     |
-| GET    | `/resources/formats`                    | List formats of the resources the viewer can see                                                  | Public     |
-| GET    | `/resources/{id}`                       | Resource details                                                                                  | Public     |
-| GET    | `/resources/{id}/text`                  | Text content (preview-size limited)                                                               | Public     |
-| GET    | `/resources/{id}/json`                  | Minified JSON/GeoJSON (415 if not JSON, 413 over the limit)                                       | Public     |
-| GET    | `/resources/{id}/download`              | Download file (302 redirect for external URLs)                                                    | Public     |
-| GET    | `/resources/{id}/preview`               | Server-proxied preview (Range supported)                                                          | Public     |
-| GET    | `/resources/{id}/pipeline-status`       | Pipeline job status                                                                               | Public     |
-| GET    | `/resources/{id}/schema`                | Column schema (names, types, row count, numeric stats). Tables only                               | Public     |
-| POST   | `/resources/{id}/query`                 | Server-side DuckDB query (SELECT only). Tables only                                               | Public     |
-| POST   | `/resources/{id}/upload-url`            | Issue presigned upload URL                                                                        | Org editor |
-| POST   | `/resources/{id}/upload`                | Server-proxied upload (multipart `file`, streamed; 413 over the cap)                              | Org editor |
-| POST   | `/resources/{id}/upload-complete`       | Notify completion, enqueue pipeline                                                               | Org editor |
-| POST   | `/resources/{id}/run-pipeline`          | Manually trigger pipeline                                                                         | Org editor |
-| POST   | `/resources/{id}/cancel-pipeline`       | Stop the running job (content is left alone)                                                      | Org editor |
-| POST   | `/resources/{id}/revert`                | Stop the job and put the content back on a given version                                          | Org editor |
-| GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over                         | Org editor |
-| POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                                         | Org editor |
-| PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                                            | Org editor |
-| GET    | `/resources/{id}/column-roles`          | The columns' roles, and why the rules decided them                                                | Org editor |
-| PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                                          | Org editor |
-| PUT    | `/resources/{id}`                       | Update resource (full replacement; only `section` is kept when omitted)                           | Org editor |
-| DELETE | `/resources/{id}`                       | Delete resource                                                                                   | Org editor |
+| Method | Path                                    | Description                                                                                                                                       | Auth       |
+| ------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| GET    | `/resources/count`                      | Active resource count (`my_org=true` limits to organizations where the user is `editor` or above)                                                 | Public     |
+| GET    | `/resources/formats`                    | List formats of the resources the viewer can see                                                                                                  | Public     |
+| GET    | `/resources/{id}`                       | Resource details                                                                                                                                  | Public     |
+| GET    | `/resources/{id}/text`                  | Text content (preview-size limited)                                                                                                               | Public     |
+| GET    | `/resources/{id}/json`                  | Minified JSON/GeoJSON (415 if not JSON, 413 over the limit)                                                                                       | Public     |
+| GET    | `/resources/{id}/download`              | Download file (302 redirect for external URLs)                                                                                                    | Public     |
+| GET    | `/resources/{id}/preview`               | Server-proxied preview (Range supported)                                                                                                          | Public     |
+| GET    | `/resources/{id}/pipeline-status`       | Pipeline job status                                                                                                                               | Public     |
+| GET    | `/resources/{id}/schema`                | Column schema (names, types, row count, numeric stats). Tables only                                                                               | Public     |
+| POST   | `/resources/{id}/query`                 | Server-side DuckDB query (SELECT only). Tables only                                                                                               | Public     |
+| POST   | `/resources/{id}/upload-url`            | Issue presigned upload URL                                                                                                                        | Org editor |
+| POST   | `/resources/{id}/upload`                | Server-proxied upload (multipart `file`, streamed; 413 over the cap, 400 when the filename fails the same rule as `upload-url`: 1–500 characters) | Org editor |
+| POST   | `/resources/{id}/upload-complete`       | Notify completion, enqueue pipeline                                                                                                               | Org editor |
+| POST   | `/resources/{id}/run-pipeline`          | Manually trigger pipeline                                                                                                                         | Org editor |
+| POST   | `/resources/{id}/cancel-pipeline`       | Stop the running job (content is left alone)                                                                                                      | Org editor |
+| POST   | `/resources/{id}/revert`                | Stop the job and put the content back on a given version                                                                                          | Org editor |
+| GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over                                                                         | Org editor |
+| POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                                                                                         | Org editor |
+| PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                                                                                            | Org editor |
+| GET    | `/resources/{id}/column-roles`          | The columns' roles, and why the rules decided them                                                                                                | Org editor |
+| PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                                                                                          | Org editor |
+| PUT    | `/resources/{id}`                       | Update resource (full replacement; only `section` is kept when omitted)                                                                           | Org editor |
+| DELETE | `/resources/{id}`                       | Delete resource                                                                                                                                   | Org editor |
 
 ### Sections (section)
 
@@ -744,8 +744,8 @@ The same search as MCP's `search_passages`. Parameters: `q` (required, up to 500
 word, the documents are found by fewer of them, and the response carries `minWords` (how many words were
 required). Each passage carries its
 resource and dataset, where it is (`first` / `last` page, slide or sheet, and `headings`), the words that
-matched (`words`), its text (`text`), a cursor to read on from the top of its page — or from the passage itself in a long block — with
-(`cursor`, for `/resources/{id}/document-section`), where that is (`readFrom`), and its
+matched (`words`), its text (`text`), a cursor for `/resources/{id}/document-section` to read on from the
+top of its page — or from the passage itself in a long block — (`cursor`), where that is (`readFrom`), and its
 versions (`latestVersion` for the file the resource holds now, `sourceVersion` for the file the text was
 extracted from). Where `describesLiveContent` is `false`, the file has been replaced and its text not yet
 extracted again: cite `sourceVersion`.

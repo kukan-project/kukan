@@ -235,6 +235,8 @@ URL（PDF は `#page=N` を付けるとそのページで開きます）、フ�
 長い範囲は途中で切り（できるだけ改行の位置で）、続きを読むためのカーソルを末尾に付けます。
 文書の抽出がやり直されると、それ以前のカーソルは使えなくなります。
 
+目次と本文は REST の `GET /api/v1/resources/{id}/document-outline`・`document-section` でも読めます（パラメータは同じで、応答は JSON です）。
+
 ### search_passages
 
 カタログ全体の文書（PDF・Word・PowerPoint・Excel・一太郎）の本文から、検索語に一致する箇所を、

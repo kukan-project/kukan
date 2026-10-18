@@ -130,5 +130,6 @@ Backup Selection（S3 バケットと DB を tag ではなく ARN 指定）+ サ
 
 - ADR-031: マルチ環境デプロイ（preset + overrides 機構、明示優先の方針）
 - ADR-027: CloudFront 再導入（安全側デフォルトの前例）
-- 実装: `infra/lib/config.ts` / `infra/lib/constructs/storage.ts` /
-  `infra/lib/constructs/database.ts` / `infra/lib/constructs/backup.ts`（新規）
+- 実装: `infra/lib/config/scale.ts`（`config/types.ts`）/
+  `infra/lib/constructs/storage.ts` / `infra/lib/constructs/database.ts` /
+  `infra/lib/constructs/backup.ts`（新規）

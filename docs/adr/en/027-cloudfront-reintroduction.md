@@ -184,9 +184,9 @@ KukanStack (ap-northeast-1)
 ├── WorkerService (Fargate)
 ├── CDN (CloudFront Distribution)
 │   ├── VPC Origin → internal ALB
-│   ├── CloudFront Functions (access control: IP/Basic + cookie bypass)
+│   ├── CloudFront Functions (access control: IP/Basic + cookie bypass + locale/client IP headers)
 │   └── Cache Policy / Origin Request Policy
-└── Route53 A (Alias) → CloudFront
+└── Route53 A / AAAA (Alias) → CloudFront
 ```
 
 ### Impact on On-Premises Version
@@ -275,6 +275,24 @@ curl -sI https://<domain> | grep x-cache
 # Verify API endpoint functionality
 # Verify WAF rule behavior (when enableWaf is enabled)
 ```
+
+## Supplement (2026-10, v0.36.0)
+
+Besides access control and the cookie bypass, the viewer-request function overwrites two headers
+on every request (a value the viewer sent is never used).
+
+- **`x-kukan-locale`**: the locale resolved from the `NEXT_LOCALE` cookie, then `Accept-Language`
+  by q, then the default `en`. The HTML cache policy includes this header in the cache key.
+  Keying on `Accept-Language` itself would split entries per browser; this folds them into one
+  entry per locale. The web prefers this header when present.
+- **`x-kukan-client-ip`**: `event.viewer.ip`. The end of `X-Forwarded-For` is CloudFront's own
+  address, and trusting a viewer-sent value would let a client pick its own rate-limit bucket. The
+  web reads this header, named by `CLIENT_IP_HEADER` (set by the CDK), for sign-in rate limits
+  (ADR-003 supplement).
+
+Route 53 also gets an AAAA alias beside the A (`enableIpv6Dns`, overridable per site). It is on by
+default, but off where `allowedIpRanges` is set: a viewer admitted by its IPv4 address would come
+over IPv6, get a 403, and browsers do not retry over IPv4.
 
 ## Related
 

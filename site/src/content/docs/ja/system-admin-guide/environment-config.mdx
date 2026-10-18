@@ -95,7 +95,7 @@ web と worker のタスクは、既定で arm64(Graviton)で動きます。Farg
 2 割ほど安くなります。x86_64 で動かしたい環境は `cpuArchitecture: 'x86_64'` を指定します。
 環境単位の設定で、サイトごとには変えられません。`-c` でも上書きできません。
 
-- パイプラインは、タスクと同じアーキテクチャの CodeBuild でイメージをビルドします
+- パイプラインは、タスクと同じアーキテクチャの CodeBuild でイメージをビルドします。ARM の CodeBuild（`ARM_CONTAINER`）は東京・大阪にはありますが、ないリージョンにパイプラインを置くなら `x86_64` を指定してください
 - standalone でデプロイするとき、手元のマシンと違うアーキテクチャのイメージも作れます。
   Docker Desktop(Windows / Mac)はそのままで構いません。Docker Engine だけの Linux では、
   一度だけ `docker run --privileged --rm tonistiigi/binfmt --install arm64` を実行してください
@@ -105,6 +105,8 @@ web と worker のタスクは、既定で arm64(Graviton)で動きます。Farg
 
 web と worker は、RDS / Aurora への TLS 接続でサーバーの証明書を検証します
 (`POSTGRES_SSLMODE=verify-full`)。検証に使う CA の束はイメージに入っています。
+マルチサイト構成でサイトごとのデータベースを作る Lambda も、同じく証明書を検証して接続します
+（Lambda ランタイムに同梱の CA を使います）。
 
 - サーバーの証明書を発行する CA は `rdsCaCertificate` で固定します。指定しないと、アカウントの
   既定(`modify-certificates` で変えられる)に従ってしまうためです。既定の `rds-ca-rsa2048-g1`

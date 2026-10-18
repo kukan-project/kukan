@@ -69,9 +69,9 @@ operations do not wait for the move.
 
 The data in the previous format (the PostgreSQL `ducklake` schema and `lake/main/`) is left in
 place, neither read nor written. **Until it is deleted, the rows of versions and datasets purged
-after the upgrade also remain in that data.** Once you have decided not to go back to an earlier
-release, delete it by running the following in the deployed container — once
-per site in a multi-site deployment:
+after the upgrade also remain in that data.** From v0.36.0 on there is no going back to a release
+that reads it, so it can be deleted at any time. Delete it by running the following in the deployed
+container — once per site in a multi-site deployment:
 
 ```bash
 node apps/worker/dist/drop-shared-lake-catalog.js            # report only
@@ -82,6 +82,8 @@ node apps/worker/dist/drop-shared-lake-catalog.js --commit   # delete
   files)
 - The move does not read the data in the earlier format, so it can be deleted without waiting for
   the move to finish
+- Upgrading to v0.36.0 makes rolling back to v0.35.x or earlier impossible (its migration drops the
+  `resource_version.ducklake_snapshot_id` column)
 :::
 
 On-premises deployments use the following alternative services:
@@ -316,6 +318,7 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 ## User management
 
 System administrators (sysadmin) can manage users from the admin dashboard.
+The worker deletes expired sessions every hour.
 
 ### User list & editing
 
@@ -748,6 +751,8 @@ Key environment variables are listed below. See `.env.example` for the full list
 | `POSTGRES_DB`                            | Database name                                                                                                                             | `kukan`                                                                                                         |
 | `POSTGRES_USER`                          | Database user                                                                                                                             | `kukan`                                                                                                         |
 | `POSTGRES_PASSWORD`                      | Database password                                                                                                                         | `kukan`                                                                                                         |
+| `POSTGRES_SSLMODE`                       | TLS to the DB (`disable` / `require` / `verify-full`); `verify-full` also checks the certificate. On AWS the CDK sets `verify-full`       | `disable`                                                                                                       |
+| `POSTGRES_SSLROOTCERT`                   | Path to the CA bundle `verify-full` checks against; unset, Node's trust store. On AWS the CDK sets `/etc/ssl/rds-ca.crt`                  | -                                                                                                               |
 | `S3_BUCKET`                              | S3 bucket name                                                                                                                            | `kukan-dev`                                                                                                     |
 | `S3_ENDPOINT`                            | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)                                                                                   | -                                                                                                               |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY`        | MinIO credentials (omit on AWS, which uses the IAM role)                                                                                  | -                                                                                                               |

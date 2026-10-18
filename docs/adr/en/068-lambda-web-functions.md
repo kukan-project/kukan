@@ -174,6 +174,13 @@ itself sit in the VPC and need a NAT for Fetch — the NAT only moves.
   - Take the client's IP from the header CloudFront's viewer-request function sets (CloudFront is in front either way)
   - Fetch secrets from Secrets Manager when they are not in the environment (§Decision 5; on ECS
     they are injected, as today)
+
+  **Supplement (2026-10, v0.36.0):** These five are implemented. `apps/web/start.mjs` reads the
+  listen address; without a cgroup the memory limit comes from `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`.
+  Rate limits live in the `rate_limit` table, and the client IP comes from `x-kukan-client-ip`,
+  which the viewer-request function overwrites (`CLIENT_IP_HEADER`). Secrets are read at startup
+  from the ARNs listed in `SECRET_ARNS`.
+
 - Three branches in the CDK: the site's web (`WebService` or a Web Function), the shared
   infrastructure (shared ALB and VPC origin, or IPv6, connector and the Bedrock endpoint), and the
   CloudFront origin (`cdn.ts` takes a `cloudfront.IOrigin`, so it is a swap). The worker, DB,

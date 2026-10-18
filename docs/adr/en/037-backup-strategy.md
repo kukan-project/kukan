@@ -143,5 +143,6 @@ field.
 
 - ADR-031: Multi-environment deploys (preset + overrides machinery, explicit-first stance)
 - ADR-027: CloudFront reintroduction (secure-by-default precedent)
-- Implementation: `infra/lib/config.ts` / `infra/lib/constructs/storage.ts` /
-  `infra/lib/constructs/database.ts` / `infra/lib/constructs/backup.ts` (new)
+- Implementation: `infra/lib/config/scale.ts` (`config/types.ts`) /
+  `infra/lib/constructs/storage.ts` / `infra/lib/constructs/database.ts` /
+  `infra/lib/constructs/backup.ts` (new)

@@ -67,8 +67,8 @@ Docker Compose の `.env` にある `SQS_*` は不要です（残っていても
 
 以前の形式のデータ（PostgreSQL の `ducklake` スキーマと `lake/main/`）は、移行後は読み書きされずに
 残ります。**削除するまで、アップグレード後に完全削除した版やデータセットの行も、以前の形式のデータには
-残ります。** 以前のリリースへ戻さないと決めたら、デプロイ済みのコンテナ内で次のコマンドを
-実行して削除します。マルチサイト構成ではサイトごとに実行します。
+残ります。** v0.36.0 以降はこのデータを読むリリースへ戻せないので、いつでも削除できます。
+デプロイ済みのコンテナ内で次のコマンドを実行して削除します。マルチサイト構成ではサイトごとに実行します。
 
 ```bash
 node apps/worker/dist/drop-shared-lake-catalog.js            # 報告のみ
@@ -77,6 +77,7 @@ node apps/worker/dist/drop-shared-lake-catalog.js --commit   # 削除
 
 - **既定は報告のみ**です。削除の対象（スキーマの有無とファイルの数）を表示します
 - 移行は以前の形式のデータを読まないので、移行の完了を待たずに削除できます
+- v0.36.0 へ上げると、v0.35.x 以前へは戻せなくなります（マイグレーションで `resource_version.ducklake_snapshot_id` 列を外すため）
 :::
 
 オンプレミス構成では以下の代替サービスを使用します。
@@ -309,6 +310,7 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 ## ユーザー管理
 
 システム管理者（sysadmin）は管理画面からユーザーを管理できます。
+有効期限の切れたセッションは、worker が毎時削除します。
 
 ### ユーザー一覧・編集
 
@@ -638,6 +640,8 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 | `POSTGRES_DB`                            | データベース名                                                                                                            | `kukan`                                                                                                    |
 | `POSTGRES_USER`                          | データベースユーザー                                                                                                      | `kukan`                                                                                                    |
 | `POSTGRES_PASSWORD`                      | データベースパスワード                                                                                                    | `kukan`                                                                                                    |
+| `POSTGRES_SSLMODE`                       | DB 接続の TLS（`disable` / `require` / `verify-full`）。`verify-full` は証明書も検証する（AWS では CDK が設定）           | `disable`                                                                                                  |
+| `POSTGRES_SSLROOTCERT`                   | `verify-full` で照合する CA バンドルのパス。未設定なら Node の信頼ストア。AWS では CDK が `/etc/ssl/rds-ca.crt` を設定    | -                                                                                                          |
 | `S3_BUCKET`                              | S3 バケット名                                                                                                             | `kukan-dev`                                                                                                |
 | `S3_ENDPOINT`                            | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略）                                                            | -                                                                                                          |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY`        | MinIO の認証情報（AWS では省略し IAM ロールを使う）                                                                       | -                                                                                                          |

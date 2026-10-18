@@ -255,7 +255,7 @@ pnpm format        # Prettier フォーマット
 - AI メタデータ提案（提案型・オンデマンド生成） → `docs/adr/jp/040-ai-metadata-suggest.md`
 - マルチサイトデプロイ（共用インフラ + サイト単位の論理分離、ADR-031 拡張） → `docs/adr/jp/041-multi-site-deploy.md`
 - マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張） → `docs/adr/jp/042-multi-brand-build.md`
-- リソースバージョニングと行レベル差分（DuckLake、層 1・ii-a 実装済み） → `docs/adr/jp/043-resource-versioning-ducklake.md`
+- リソースバージョニングと行レベル差分（DuckLake、層 1・ii-a・ii-b 実装済み） → `docs/adr/jp/043-resource-versioning-ducklake.md`
 - リソース単位の実行 claim（同時実行の排他） → `docs/adr/jp/044-resource-execution-claim.md`
 - ストレージオブジェクトの先行記録（クラッシュ由来のリーク） → `docs/adr/jp/045-object-write-ahead.md`
 - 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ） → `docs/adr/jp/046-interpret-stage.md`

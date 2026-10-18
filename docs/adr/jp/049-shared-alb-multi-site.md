@@ -247,8 +247,8 @@ ENI の重複はサイト数に依存しなくなる。代わりに「同一 VPC
   （未指定時は現行パスのまま）
 - `infra/lib/constructs/cdn.ts`: 任意の VPC origin インポートとオリジンカスタム
   ヘッダー
-- `infra/lib/config.ts`: `SiteConfig.albPriority`（任意）と `resolveAlbPriority()`、
-  `validateSites()` での一意性検証
+- `infra/lib/config/types.ts` / `config/sites.ts`: `SiteConfig.albPriority`（任意）と
+  `resolveAlbPriority()`、`validateSites()` での一意性検証
 - `infra/lib/constructs/shared-alb.ts`: ALB・リスナー・VPC origin をまとめた
   `SharedAlbConstruct`（新規）
 - `infra/lib/__tests__/`: マルチサイトのスナップショット更新（単一サイトは不変で

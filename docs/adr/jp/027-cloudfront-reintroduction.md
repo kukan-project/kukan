@@ -181,9 +181,9 @@ KukanStack (ap-northeast-1)
 ├── WorkerService (Fargate)
 ├── CDN (CloudFront Distribution)
 │   ├── VPC Origin → internal ALB
-│   ├── CloudFront Functions (アクセス制限: IP/Basic + Cookie bypass)
+│   ├── CloudFront Functions (アクセス制限: IP/Basic + Cookie bypass + ロケール/クライアント IP ヘッダー)
 │   └── Cache Policy / Origin Request Policy
-└── Route53 A (Alias) → CloudFront
+└── Route53 A / AAAA (Alias) → CloudFront
 ```
 
 ### オンプレ版への影響
@@ -272,6 +272,23 @@ curl -sI https://<domain> | grep x-cache
 # API エンドポイントの正常動作
 # WAF ルールの動作確認（enableWaf 有効時）
 ```
+
+## 補足（2026-10、v0.36.0）
+
+viewer-request 関数は、アクセス制限と Cookie バイパスに加えて 2 つのヘッダーを毎リクエスト
+上書きする（閲覧者が送った値は使わない）。
+
+- **`x-kukan-locale`**: `NEXT_LOCALE` Cookie → `Accept-Language`（q の順）→ 既定 `en` の順で
+  決めたロケール。HTML の Cache Policy はこのヘッダーをキャッシュキーに含める。
+  `Accept-Language` そのものをキーにするとブラウザごとにエントリが分かれるため、ロケールごとの
+  1 エントリに畳む。web はこのヘッダーがあればそれを優先する。
+- **`x-kukan-client-ip`**: `event.viewer.ip`。`X-Forwarded-For` の末尾は CloudFront 自身の番地で、
+  閲覧者が送る値を信じると回数制限の単位を自分で選べてしまう。web は `CLIENT_IP_HEADER`
+  （CDK が設定）で指定されたこのヘッダーを、サインインの回数制限に使う（ADR-003 補足）。
+
+Route 53 には A に並べて AAAA の Alias も作る（`enableIpv6Dns`、サイトごとに上書き可）。既定は
+有効だが、`allowedIpRanges` を設定した環境では無効にする。IPv4 の番地で許可していた閲覧者が IPv6 で来ると
+403 になり、ブラウザは IPv4 でやり直さないため。
 
 ## 関連
 
