@@ -1091,9 +1091,64 @@ describe('OpenSearchAdapter', () => {
 
       const result = await adapter.search({ q: 'test' })
 
-      // Script and img tags should be stripped, only <mark> preserved
-      expect(result.items[0].highlightedTitle).toBe('alert(1)<mark>test</mark>')
-      expect(result.items[0].highlightedNotes).toBe('<mark>note</mark>')
+      // Every tag but a bare <mark> comes out as text, not markup
+      expect(result.items[0].highlightedTitle).toBe(
+        '&lt;script&gt;alert(1)&lt;/script&gt;<mark>test</mark>'
+      )
+      expect(result.items[0].highlightedNotes).toBe('&lt;img onerror=alert(1)&gt;<mark>note</mark>')
+    })
+
+    it.each([
+      ['<<b>img src=x onerror=alert(1)>', '&lt;&lt;b&gt;img src=x onerror=alert(1)&gt;'],
+      [
+        '<<a>a href=javascript:alert(1)>x</<a>a>',
+        '&lt;&lt;a&gt;a href=javascript:alert(1)&gt;x&lt;/&lt;a&gt;a&gt;',
+      ],
+      ['<<mark>svg onload=alert(1)>', '&lt;<mark>svg onload=alert(1)&gt;'],
+      ['<img src="a>b" onerror=alert(1)>', '&lt;img src=&quot;a&gt;b&quot; onerror=alert(1)&gt;'],
+    ])('should leave no tag behind that removing another would make: %s', async (title, out) => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                _score: 5,
+                highlight: { title: [title] },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'test' })
+
+      expect(result.items[0].highlightedTitle).toBe(out)
+      expect(result.items[0].highlightedTitle).not.toMatch(/<(?!\/?mark>)/)
+    })
+
+    it('should keep text that only looks like markup readable', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                _score: 5,
+                highlight: { title: ['A & B <mark>人口</mark> x<y'] },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: '人口' })
+
+      expect(result.items[0].highlightedTitle).toBe('A &amp; B <mark>人口</mark> x&lt;y')
     })
 
     it('should strip attributes from mark tags to prevent XSS', async () => {
@@ -1117,7 +1172,9 @@ describe('OpenSearchAdapter', () => {
 
       const result = await adapter.search({ q: 'test' })
 
-      expect(result.items[0].highlightedTitle).toBe('<mark>test</mark>')
+      expect(result.items[0].highlightedTitle).toBe(
+        '&lt;mark onmouseover=&quot;alert(1)&quot;&gt;test</mark>'
+      )
     })
 
     it('should sanitize XSS in resource highlight snippets via inner_hits', async () => {
@@ -1166,7 +1223,7 @@ describe('OpenSearchAdapter', () => {
       const result = await adapter.search({ q: 'data' })
 
       const matched = result.items[0].matchedResources![0]
-      expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
+      expect(matched.highlightedName).toBe('&lt;script&gt;x&lt;/script&gt;<mark>data</mark>.csv')
       // What the hit was on, and how many matched in all, ride along for the card
       expect(matched.matchedOn).toEqual(['name'])
       expect(result.items[0].matchedResourcesCount).toEqual({ total: 1, atLeast: false })
@@ -1795,7 +1852,7 @@ describe('OpenSearchAdapter', () => {
       })
 
       const result = await adapter.fetchContentHighlights(['chunk-1'], 'data')
-      expect(result['chunk-1']).toBe('alert(1)<mark>data</mark>')
+      expect(result['chunk-1']).toBe('&lt;script&gt;alert(1)&lt;/script&gt;<mark>data</mark>')
     })
 
     it('should return empty object on OpenSearch error', async () => {

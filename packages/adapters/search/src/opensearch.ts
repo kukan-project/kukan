@@ -289,13 +289,26 @@ function matchedResourcesCount(hit: {
   return { total, atLeast: truncated || hit.contentCapped || relation === 'gte' }
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+}
+
 /**
- * Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags.
- * The output is parsed downstream on `/` with `</mark>` spared (a section label
- * drawn as a trail), so it must stay bare `<mark>` and `</mark>` and nothing else.
+ * Sanitize OpenSearch highlight output: the field's text escaped whole, then
+ * only bare <mark> and </mark> let back. The highlighter hands back the raw
+ * source text with its tags wrapped in, so anything else that reads as a tag
+ * was written by whoever wrote the field. Escaping rather than stripping, so
+ * no input can come out of it as a tag the way `<<b>img …>` comes out of
+ * removing `<b>`. The output is parsed downstream on `/` with `</mark>` spared
+ * (a section label drawn as a trail), so it must stay bare `<mark>` and
+ * `</mark>` and nothing else.
  */
 function sanitizeHighlight(html: string): string {
-  return html.replace(/<mark\b[^>]*>/gi, '<mark>').replace(/<\/?(?!mark\b)[a-z][^>]*>/gi, '')
+  return html.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]).replace(/&lt;(\/?)mark&gt;/gi, '<$1mark>')
 }
 
 export interface OpenSearchConfig {
