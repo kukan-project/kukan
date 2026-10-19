@@ -353,6 +353,30 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -454,6 +478,54 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3929,6 +4001,30 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -4033,6 +4129,54 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -7520,6 +7664,30 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -7621,6 +7789,54 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10940,6 +11156,30 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -11044,6 +11284,54 @@ exports[`self-created global stack (domain without certificateArn) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14491,6 +14779,30 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -14592,6 +14904,54 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },

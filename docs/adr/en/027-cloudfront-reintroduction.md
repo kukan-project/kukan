@@ -87,12 +87,14 @@ and there is no risk of private datasets leaking via cache.
 
 ### Cache Behavior Design
 
-| Priority | Path Pattern      | Cache Policy                 | Origin Request Policy           | Notes                     |
-| -------- | ----------------- | ---------------------------- | ------------------------------- | ------------------------- |
-| 1        | `/_next/static/*` | Long-term cache (TTL 1 year) | None                            | Content-hashed, immutable |
-| 2        | `/api/*`          | Cache disabled               | All Viewer                      | Auth, CRUD, MCP           |
-| 3        | `/auth/*`         | Cache disabled               | All Viewer                      | Better Auth               |
-| 4        | `/*` (default)    | TTL 60–300 seconds           | Cookie forwarding (CF Function) | HTML pages                |
+| Priority | Path Pattern      | Cache Policy                 | Origin Request Policy           | Notes                                |
+| -------- | ----------------- | ---------------------------- | ------------------------------- | ------------------------------------ |
+| 1        | `/_next/static/*` | Long-term cache (TTL 1 year) | None                            | Content-hashed, immutable            |
+| 2        | `/api/*`          | Cache disabled               | All Viewer                      | Auth, CRUD, MCP                      |
+| 3        | `/auth/*`         | Cache disabled               | All Viewer                      | Better Auth                          |
+| 4        | `/robots.txt`     | TTL 1 hour (empty key)       | None                            | Not split by locale, cookie or query |
+| 5        | `/sitemap*`       | TTL 1 hour (empty key)       | None                            | `/sitemap.xml` and `/sitemap/*`      |
+| 6        | `/*` (default)    | TTL 60–300 seconds           | Cookie forwarding (CF Function) | HTML pages                           |
 
 ### Cache TTL and Update Strategy
 

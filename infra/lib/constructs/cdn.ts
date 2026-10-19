@@ -89,6 +89,25 @@ export class CdnConstruct extends Construct {
       enableAcceptEncodingBrotli: true,
     })
 
+    // --- Cache Policy: crawl files (sitemap, robots.txt) ---
+    // The same bytes for every viewer and language, and fetched by crawlers far
+    // more than by people, so none of the viewer's headers, cookies or query
+    // string splits the key (under the HTML policy one copy per locale, and any
+    // `?x` reaches the origin). An hour for both: robots.txt comes back from
+    // Next with `max-age=0`, so `minTtl` sets the age, not the origin. A change
+    // that must show sooner — the brand's noindex flipped — wants an invalidation.
+    const crawlFilesCachePolicy = new cloudfront.CachePolicy(this, 'CrawlFilesCachePolicy', {
+      cachePolicyName: resourceName(this, 'crawl'),
+      defaultTtl: cdk.Duration.hours(1),
+      minTtl: cdk.Duration.hours(1),
+      maxTtl: cdk.Duration.hours(1),
+      headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.none(),
+      cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+    })
+
     // --- Viewer certificate ---
     const viewerCertificate = certificateArn
       ? acm.Certificate.fromCertificateArn(this, 'ViewerCert', certificateArn)
@@ -128,6 +147,16 @@ export class CdnConstruct extends Construct {
       functionAssociations: fnAssociations,
     }
 
+    // Crawl files: what the crawl policy keys on reaches the origin, and nothing
+    // else — no cookie, so they are rendered as the anonymous viewer sees them
+    const crawlFiles: cloudfront.BehaviorOptions = {
+      origin: albOrigin,
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      cachePolicy: crawlFilesCachePolicy,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      functionAssociations: fnAssociations,
+    }
+
     // OData feed: read-only, unauthenticated, and re-fetched page by page by a
     // BI tool's extract — the one API-shaped path worth caching (ADR-055 §6).
     // It sits outside `/api/*` precisely so `CACHING_DISABLED` does not apply.
@@ -162,6 +191,9 @@ export class CdnConstruct extends Construct {
         '/auth/*': passthrough,
         '/api/*': passthrough,
         '/odata/*': odataFeed,
+        '/robots.txt': crawlFiles,
+        // Both the index, /sitemap.xml, and its files under /sitemap/
+        '/sitemap*': crawlFiles,
       },
       ...(viewerCertificate && config.domainName
         ? { domainNames: [config.domainName], certificate: viewerCertificate }

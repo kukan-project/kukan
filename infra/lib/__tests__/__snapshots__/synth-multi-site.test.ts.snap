@@ -1968,6 +1968,30 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-citya-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -2072,6 +2096,54 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -4802,6 +4874,30 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::Glue::Table",
     },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-cityb-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -4903,6 +4999,54 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },

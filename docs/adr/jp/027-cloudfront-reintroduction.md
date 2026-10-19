@@ -91,7 +91,9 @@ Better Auth のセッション Cookie（`__Secure-better-auth.session_token`）�
 | 1      | `/_next/static/*`  | 長期キャッシュ（TTL 1 年） | なし                            | コンテンツハッシュ付き、immutable |
 | 2      | `/api/*`           | キャッシュ無効             | All Viewer                      | 認証・CRUD・MCP                   |
 | 3      | `/auth/*`          | キャッシュ無効             | All Viewer                      | Better Auth                       |
-| 4      | `/*`（デフォルト） | TTL 60–300 秒              | Cookie 転送（CF Function 制御） | HTML ページ                       |
+| 4      | `/robots.txt`      | TTL 1 時間（キーは空）     | なし                            | 言語・Cookie・クエリで分けない    |
+| 5      | `/sitemap*`        | TTL 1 時間（キーは空）     | なし                            | `/sitemap.xml` と `/sitemap/*`    |
+| 6      | `/*`（デフォルト） | TTL 60–300 秒              | Cookie 転送（CF Function 制御） | HTML ページ                       |
 
 ### キャッシュ TTL と更新戦略
 

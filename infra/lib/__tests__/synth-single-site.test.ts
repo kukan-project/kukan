@@ -77,6 +77,41 @@ describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
     })
   })
 
+  it('caches the sitemap and robots.txt for an hour, keyed on nothing the viewer sends', () => {
+    template.hasResourceProperties('AWS::CloudFront::CachePolicy', {
+      CachePolicyConfig: Match.objectLike({
+        Name: Match.stringLikeRegexp('-crawl$'),
+        DefaultTTL: 3600,
+        MinTTL: 3600,
+        MaxTTL: 3600,
+        ParametersInCacheKeyAndForwardedToOrigin: {
+          CookiesConfig: { CookieBehavior: 'none' },
+          HeadersConfig: { HeaderBehavior: 'none' },
+          QueryStringsConfig: { QueryStringBehavior: 'none' },
+          EnableAcceptEncodingGzip: true,
+          EnableAcceptEncodingBrotli: true,
+        },
+      }),
+    })
+    const [policyId] = Object.keys(
+      template.findResources('AWS::CloudFront::CachePolicy', {
+        Properties: { CachePolicyConfig: { Name: Match.stringLikeRegexp('-crawl$') } },
+      })
+    )
+    const behaviors = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0]
+      .Properties.DistributionConfig.CacheBehaviors as {
+      PathPattern: string
+      CachePolicyId: { Ref: string }
+      OriginRequestPolicyId?: unknown
+    }[]
+    for (const path of ['/robots.txt', '/sitemap*']) {
+      const behavior = behaviors.find((b) => b.PathPattern === path)
+      expect(behavior?.CachePolicyId).toEqual({ Ref: policyId })
+      // No origin request policy: no cookie reaches the origin
+      expect(behavior?.OriginRequestPolicyId).toBeUndefined()
+    }
+  })
+
   it('logs to the site log bucket without cookies, expiring after 90 days by default', () => {
     template.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({
