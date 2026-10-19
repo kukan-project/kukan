@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getLocale, getTranslations } from 'next-intl/server'
+import { brandConfig } from '@/brand/brand-config'
 import { resolveBrandConfig } from '@/lib/resolved-brand'
 import type { Entity } from '@/lib/catalog-api'
 
@@ -33,6 +34,18 @@ export function titleMetadata(namespace: string, key: string) {
     const t = await getTranslations(namespace)
     return { title: t(key) }
   }
+}
+
+/**
+ * Robots for a page reached with a search or a filter: not indexed, as
+ * the combinations are endless, but its links still followed to the datasets.
+ * Spread into the page's metadata. A page's robots replaces the layout's — even
+ * `robots: undefined` clears a noindex brand's — so with no query there is no
+ * key at all, and with one a noindex brand keeps its nofollow.
+ */
+export function queryRobots(searchParams: Record<string, unknown>): Pick<Metadata, 'robots'> {
+  if (!Object.values(searchParams).some((v) => v !== undefined && v !== '')) return {}
+  return { robots: { index: false, follow: !brandConfig.noindex } }
 }
 
 /** Metadata for an organization or group page. */

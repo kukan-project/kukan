@@ -36,6 +36,11 @@ const samplePkg = {
   name: 'population-data',
   title: 'Population Data',
   resources: [{ id: 'r1', name: 'population.csv', format: 'CSV' }],
+  tags: [],
+  groups: [],
+  organization: null,
+  created: '2025-01-01T00:00:00.000Z',
+  updated: '2026-01-01T00:00:00.000Z',
 }
 
 function makeParams(nameOrId: string) {

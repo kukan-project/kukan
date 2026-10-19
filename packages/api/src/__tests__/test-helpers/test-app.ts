@@ -32,12 +32,13 @@ import { adminRouter } from '../../routes/admin'
 import { usersRouter } from '../../routes/users'
 import { apiTokensRouter } from '../../routes/api-tokens'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
+import { sitemapRouter } from '../../routes/sitemap'
 import { announcementsRouter } from '../../routes/announcements'
 import { siteRouter } from '../../routes/site'
 import { passagesRouter } from '../../routes/passages'
 import { mcpRouter } from '../../routes/mcp'
 import { odataRouter } from '../../routes/odata'
-import { ODATA_BASE_PATH } from '@kukan/shared'
+import { ODATA_BASE_PATH, SITEMAP_BASE_PATH } from '@kukan/shared'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
 export const mockSearch: SearchAdapter = {
@@ -297,6 +298,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
 
   // OData feed (ADR-055)
   app.route(ODATA_BASE_PATH, odataRouter)
+  app.route(SITEMAP_BASE_PATH, sitemapRouter)
 
   // 404 handler
   app.notFound((c) => {

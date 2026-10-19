@@ -50,6 +50,7 @@ import {
   hasOrgMembership,
   hasDraftAccess,
   packageVisibilitySql,
+  publicPackageSql,
   type AuthUser,
 } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
@@ -537,7 +538,7 @@ export class PackageService {
     const query = this.db
       .select({ name: packageTable.name })
       .from(packageTable)
-      .where(and(eq(packageTable.state, 'active'), eq(packageTable.private, false)))
+      .where(publicPackageSql())
       .orderBy(packageTable.name)
       .offset(offset)
       .$dynamic()

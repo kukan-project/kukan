@@ -3,8 +3,9 @@
  * (what the MCP server's instructions name, so a model searches in it).
  */
 
-import { and, desc, eq } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 import { packageTable, type Database } from '@kukan/db'
+import { publicPackageSql } from '../auth/permissions'
 
 /** A language a catalog's titles can be told to be in by their script alone. */
 export type CatalogLanguage = 'Japanese' | 'Korean'
@@ -38,7 +39,7 @@ export async function catalogLanguage(db: Database): Promise<CatalogLanguage | n
   const rows = await db
     .select({ title: packageTable.title, name: packageTable.name })
     .from(packageTable)
-    .where(and(eq(packageTable.state, 'active'), eq(packageTable.private, false)))
+    .where(publicPackageSql())
     .orderBy(desc(packageTable.updated))
     .limit(SAMPLE)
   return languageOfTitles(rows.map((r) => r.title || r.name))

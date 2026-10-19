@@ -97,6 +97,8 @@ function FilterList({
           <li key={item.name}>
             <Link
               href={buildHref(item.name)}
+              // Filter combinations are endless; robots.txt turns them away too
+              rel="nofollow"
               className={`${baseClass} transition-colors hover:bg-accent ${
                 isActive ? 'bg-accent font-medium' : 'text-muted-foreground'
               }`}
@@ -183,7 +185,11 @@ export function DatasetFilters({ baseParams, facets }: DatasetFiltersProps) {
             }
             const newTags = toggleArray(currentTags, tag.name)
             return (
-              <Link key={tag.name} href={buildDatasetUrl({ ...baseParams, tags: newTags })}>
+              <Link
+                key={tag.name}
+                href={buildDatasetUrl({ ...baseParams, tags: newTags })}
+                rel="nofollow"
+              >
                 <Badge
                   variant={isSelected ? 'default' : 'secondary'}
                   wrap

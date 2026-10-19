@@ -4,18 +4,23 @@ import { getTranslations } from 'next-intl/server'
 import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { getEntity } from '@/lib/catalog-api'
-import { entityMetadata } from '@/lib/page-metadata'
+import { entityMetadata, queryRobots } from '@/lib/page-metadata'
 import type { DatasetCardItem } from '@/components/dataset/dataset-card'
 import { EntityDatasets } from '@/components/dataset/entity-datasets'
+import { organizationPath } from '@/lib/paths'
 
 interface Props {
   params: Promise<{ nameOrId: string }>
   searchParams: Promise<{ q?: string; offset?: string; limit?: string }>
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { nameOrId } = await params
-  return entityMetadata(await getEntity('organizations', nameOrId))
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+  const [{ nameOrId }, sp] = await Promise.all([params, searchParams])
+  // Paging stays indexable; a search within the page does not
+  return {
+    ...entityMetadata(await getEntity('organizations', nameOrId)),
+    ...queryRobots({ q: sp.q }),
+  }
 }
 
 export default async function OrganizationDatasetsPage({ params, searchParams }: Props) {
@@ -48,7 +53,7 @@ export default async function OrganizationDatasetsPage({ params, searchParams }:
       parent={{ href: '/organization', label: t('title') }}
       title={entity.title || entity.name}
       description={entity.description}
-      basePath={`/organization/${nameOrId}`}
+      basePath={organizationPath(nameOrId)}
       data={data}
       search={{ q, placeholder: t('searchDatasetsPlaceholder') }}
     />

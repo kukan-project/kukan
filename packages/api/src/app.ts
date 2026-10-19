@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
-import { createLogger, loadEnv, ODATA_BASE_PATH } from '@kukan/shared'
+import { createLogger, loadEnv, ODATA_BASE_PATH, SITEMAP_BASE_PATH } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { PostgresJobQueue, httpWake } from '@kukan/queue'
 import { createAdapters } from './adapters'
@@ -188,6 +188,9 @@ export async function createApp() {
   const { ckanCompatRouter } = await import('./routes/ckan-compat')
   app.route('/api/3/action', ckanCompatRouter)
   app.route('/api/action', ckanCompatRouter)
+
+  const { sitemapRouter } = await import('./routes/sitemap')
+  app.route(SITEMAP_BASE_PATH, sitemapRouter)
 
   // 404 handler
   app.notFound((c) => {

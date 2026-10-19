@@ -27,12 +27,18 @@ export function isValidPackageName(name: string): boolean {
  * and `..` cannot be one: `/tag/` names no tag, and the URL resolves the two
  * dot segments away (encoded as `%2E` too), opening another page.
  */
+export const PATHLESS_TAG_NAMES: readonly string[] = ['', '.', '..']
+/**
+ * The separators of the tag input (parseTags) and of the list API's tags field,
+ * as in CKAN; a name holding one comes back as two tags. A character class, so
+ * the sitemap's SQL can test saved names with the same pattern.
+ */
+export const TAG_SEPARATOR_CLASS = '[,、]'
+
 export const tagNameSchema = z
   .string()
-  .refine((name) => name !== '' && name !== '.' && name !== '..', VALIDATION_MESSAGES.tagName)
-  // The separators of the tag input (parseTags) and of the list API's tags
-  // field, as in CKAN; a name holding one comes back as two tags
-  .refine((name) => !/[,、]/.test(name), VALIDATION_MESSAGES.tagComma)
+  .refine((name) => !PATHLESS_TAG_NAMES.includes(name), VALIDATION_MESSAGES.tagName)
+  .refine((name) => !new RegExp(TAG_SEPARATOR_CLASS).test(name), VALIDATION_MESSAGES.tagComma)
 
 const packageTagsSchema = z.array(z.object({ name: tagNameSchema }))
 

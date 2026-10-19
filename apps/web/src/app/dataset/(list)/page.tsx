@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
+import type { Metadata } from 'next'
+import { getTranslations } from 'next-intl/server'
 import { serverFetch } from '@/lib/server-api'
-import { titleMetadata } from '@/lib/page-metadata'
+import { queryRobots } from '@/lib/page-metadata'
 import { toArray } from '@/lib/query'
 import { DatasetList, type DatasetData } from '@/components/search/dataset-list'
 
@@ -19,7 +21,10 @@ interface Props {
   }>
 }
 
-export const generateMetadata = titleMetadata('dataset', 'title')
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  const [t, sp] = await Promise.all([getTranslations('dataset'), searchParams])
+  return { title: t('title'), ...queryRobots(sp) }
+}
 
 export default async function DatasetsPage({ searchParams }: Props) {
   const params = await searchParams

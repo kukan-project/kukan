@@ -67,6 +67,7 @@ export * from './password-strength'
 
 // Validators
 export * from './url'
+export * from './catalog-paths'
 export * from './worker-metric'
 export * from './validators/messages'
 export * from './validators/package'

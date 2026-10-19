@@ -393,6 +393,15 @@ export function buildVisibilityFilters(
 }
 
 /**
+ * What an anonymous viewer may open: an active dataset that is not private. The
+ * one definition for public listings (the sitemap, CKAN package_list) and for
+ * reading the catalog as the public sees it.
+ */
+export function publicPackageSql(): SQL {
+  return and(eq(packageTable.state, 'active'), eq(packageTable.private, false))!
+}
+
+/**
  * The same visibility rule as a SQL predicate over `packageTable`, for the
  * direct-DB dataset counts on the group/organization routes. Renders
  * buildVisibilityFilters() so the decision itself is made in one place —

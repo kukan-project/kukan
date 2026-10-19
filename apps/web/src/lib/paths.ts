@@ -1,3 +1,5 @@
+import { resourcePath } from '@kukan/shared'
+
 export function datasetEditPath(packageId: string) {
   return `/dashboard/datasets/${packageId}/edit`
 }
@@ -12,12 +14,24 @@ export function resourceEditPath(nameOrId: string, resourceId: string) {
   return `/dashboard/datasets/${encodeURIComponent(nameOrId)}/edit?resource=${encodeURIComponent(resourceId)}`
 }
 
-/**
- * A tag's page. The whole name is one segment — `/` goes as `%2F`, read back
- * by the page's decoding; names that cannot be one are refused (`tagNameSchema`).
- * A `.` or `..` tag saved before that rule gets no page: its link resolves to
- * `/tag/` or `/`. Editing the dataset asks for the tag to go.
- */
-export function tagPath(name: string) {
-  return `/tag/${encodeURIComponent(name)}`
+export { datasetPath, groupPath, organizationPath, resourcePath, tagPath } from '@kukan/shared'
+
+/** The last segment of a URL's path, or the string itself when it is no URL */
+export function extractFilename(urlOrFilename: string): string {
+  try {
+    const url = new URL(urlOrFilename)
+    const segments = url.pathname.split('/').filter(Boolean)
+    return segments[segments.length - 1] || urlOrFilename
+  } catch {
+    return urlOrFilename
+  }
+}
+
+/** A resource's CKAN-compatible download permalink; the filename is cosmetic */
+export function resourceDownloadPath(
+  datasetNameOrId: string,
+  resourceId: string,
+  filename: string
+) {
+  return `${resourcePath(datasetNameOrId, resourceId)}/download/${encodeURIComponent(extractFilename(filename))}`
 }
