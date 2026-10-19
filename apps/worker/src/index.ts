@@ -101,7 +101,7 @@ import {
 } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedDueResources } from './embed/embed-resources'
-import { setUserAgent } from './safe-fetch'
+import { setLocalRefusals, setUserAgent } from './safe-fetch'
 import { buildUserAgent } from './user-agent'
 import { WAITING_METRIC_INTERVAL_MS, waitingMetricLine } from './queue/waiting-metric'
 import { stopHeavyProcess } from './heavy'
@@ -114,6 +114,18 @@ if (process.env.NODE_ENV !== 'production') {
 const env = loadEnv()
 const log = createLogger({ name: 'worker', level: env.LOG_LEVEL })
 setUserAgent(buildUserAgent(env))
+// A resource URL may not name what this worker itself talks to
+setLocalRefusals({
+  denyPrivateNetworks: env.FETCH_DENY_PRIVATE_NETWORKS,
+  serviceUrls: [
+    env.OPENSEARCH_URL,
+    env.S3_ENDPOINT,
+    env.OLLAMA_URL,
+    env.OPENAI_BASE_URL,
+    env.WORKER_WAKE_URL,
+  ],
+  hosts: env.FETCH_DENY_HOSTS?.split(',').map((host) => host.trim()) ?? [],
+})
 
 // Sized with the jobs it runs at once in mind (see ./concurrency)
 const db = createDb(env.DATABASE_URL, {

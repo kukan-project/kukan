@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   DNS_CACHE_TTL_MS,
+  DNS_TIMEOUT_MS,
   HEALTH_CHECK_BATCH_SIZE,
   HEALTH_CHECK_CONCURRENCY,
   MAX_REDIRECT_BODY,
@@ -13,9 +14,12 @@ import {
 // what has to be stubbed.
 const mockResolve4 = vi.fn()
 const mockResolve6 = vi.fn()
+// What the worker's own services are resolved with (getaddrinfo, not c-ares)
+const mockLookup = vi.fn()
 const dnsError = (code: string) => Object.assign(new Error(code), { code })
 vi.mock('node:dns', () => ({
   promises: {
+    lookup: (...args: unknown[]) => mockLookup(...args) as Promise<unknown>,
     Resolver: class {
       resolve4 = (...args: unknown[]) => mockResolve4(...args) as Promise<string[]>
       resolve6 = (...args: unknown[]) => mockResolve6(...args) as Promise<string[]>
@@ -56,8 +60,14 @@ vi.mock('undici', async (importOriginal) => {
   }
 })
 
-const { safeFetch, ssrfSafeLookup, forgetResolutions, HopRefusedError, setUserAgent } =
-  await import('../safe-fetch')
+const {
+  safeFetch,
+  ssrfSafeLookup,
+  forgetResolutions,
+  HopRefusedError,
+  setLocalRefusals,
+  setUserAgent,
+} = await import('../safe-fetch')
 
 describe('ssrfSafeLookup', () => {
   // The shape `net.connect` actually asks for. Every one of these tests passes
@@ -1029,5 +1039,328 @@ describe('safeFetch', () => {
       expect(sent(1).redirect).toBe('manual')
       expect((sent(1) as { dispatcher?: unknown }).dispatcher).toBeDefined()
     })
+  })
+})
+
+describe('ssrfSafeLookup — refusals of this deployment', () => {
+  const lookedUp = (hostname: string) =>
+    new Promise<{ err: Error | null; addresses: unknown }>((resolve) => {
+      ssrfSafeLookup(hostname, { all: true }, ((err: Error | null, addresses: unknown) =>
+        resolve({ err, addresses })) as never)
+    })
+
+  /** Resource URLs resolve through c-ares, the worker's services through getaddrinfo. */
+  const answering = ({
+    urls = {},
+    services = {},
+  }: {
+    urls?: Record<string, string[]>
+    services?: Record<string, string[]>
+  }) => {
+    mockResolve4.mockImplementation(async (name: string) => {
+      if (urls[name]) return urls[name]
+      throw dnsError('ENOTFOUND')
+    })
+    mockLookup.mockImplementation(async (name: string) => {
+      if (services[name]) return services[name].map((address) => ({ address, family: 4 }))
+      throw dnsError('ENOTFOUND')
+    })
+  }
+
+  /** Let the services' pass that `setLocalRefusals` started finish. */
+  const settled = () => new Promise((resolve) => setImmediate(resolve))
+
+  beforeEach(() => {
+    forgetResolutions()
+    mockResolve4.mockReset()
+    mockResolve6.mockReset()
+    mockLookup.mockReset()
+    mockInterfaces.mockReset()
+    mockInterfaces.mockReturnValue(IPV4_ONLY)
+    mockResolve6.mockRejectedValue(dnsError('ENOTFOUND'))
+  })
+
+  afterEach(() => {
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: [] })
+  })
+
+  it('refuses a service by name, and any name that resolves to where it lives', async () => {
+    answering({
+      urls: { 'evil.example.com': ['10.0.3.17'] },
+      services: { 'vpc-kukan.ap-northeast-1.es.amazonaws.com': ['10.0.3.17'] },
+    })
+    setLocalRefusals({
+      denyPrivateNetworks: false,
+      serviceUrls: ['https://vpc-kukan.ap-northeast-1.es.amazonaws.com'],
+    })
+    await settled()
+
+    const service = await lookedUp('VPC-kukan.ap-northeast-1.es.amazonaws.com.')
+    const alias = await lookedUp('evil.example.com')
+
+    expect(service.err!.message).toContain('Blocked hostname')
+    expect(alias.err!.message).toContain('private address: 10.0.3.17')
+  })
+
+  it('refuses a service address however it is spelled', async () => {
+    answering({ services: { opensearch: ['172.18.0.4'] } })
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+    await settled()
+
+    const mapped = await lookedUp('::ffff:172.18.0.4')
+
+    expect(mapped.err!.message).toContain('private address')
+  })
+
+  it('leaves other private addresses open, for an intranet deployment', async () => {
+    answering({
+      urls: { 'files.intra.example.jp': ['172.18.5.9'] },
+      services: { opensearch: ['172.18.0.4'] },
+    })
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+    await settled()
+
+    const { err, addresses } = await lookedUp('files.intra.example.jp')
+
+    expect(err).toBeNull()
+    expect(addresses).toEqual([{ address: '172.18.5.9', family: 4 }])
+  })
+
+  it('opens the intranet once a service whose name does not exist has said so', async () => {
+    answering({ urls: { 'files.intra.example.jp': ['172.18.5.9'] } })
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://ollama:11434'] })
+    await settled()
+
+    const { err } = await lookedUp('files.intra.example.jp')
+
+    expect(err).toBeNull()
+  })
+
+  it('does not take a public address from a service, which it shares with others', async () => {
+    answering({
+      urls: { 'bucket.s3.ap-northeast-1.amazonaws.com': ['52.219.4.10'] },
+      services: { 's3.ap-northeast-1.amazonaws.com': ['52.219.4.10'] },
+    })
+    setLocalRefusals({
+      denyPrivateNetworks: false,
+      serviceUrls: ['https://s3.ap-northeast-1.amazonaws.com'],
+    })
+    await settled()
+
+    const { err } = await lookedUp('bucket.s3.ap-northeast-1.amazonaws.com')
+
+    expect(err).toBeNull()
+  })
+
+  it('refuses the extra hosts it is given, and the private addresses they resolve to', async () => {
+    answering({
+      urls: { 'alias.example.com': ['172.18.0.7'] },
+      services: { 'opensearch-dashboards': ['172.18.0.7'] },
+    })
+    setLocalRefusals({
+      denyPrivateNetworks: false,
+      serviceUrls: [],
+      hosts: ['opensearch-dashboards', ' '],
+    })
+    await settled()
+
+    const byName = await lookedUp('opensearch-dashboards')
+    const alias = await lookedUp('alias.example.com')
+
+    expect(byName.err!.message).toContain('Blocked hostname')
+    expect(alias.err!.message).toContain('private address: 172.18.0.7')
+  })
+
+  it('does not ask about localhost, which the shared list refuses already', async () => {
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://localhost:11435'] })
+    await settled()
+
+    expect(mockLookup).not.toHaveBeenCalled()
+  })
+
+  it.each(['10.1.2.3', '172.31.0.1', '192.168.1.1', '100.64.0.1', 'fd12:3456::1'])(
+    'refuses every private network when told to: %s',
+    async (address) => {
+      setLocalRefusals({ denyPrivateNetworks: true, serviceUrls: [] })
+
+      const { err } = await lookedUp(address)
+
+      expect(err!.message).toContain('private address')
+    }
+  )
+
+  it('still lets a public address through when private networks are refused', async () => {
+    answering({ urls: { 'www.example.go.jp': ['203.0.113.7'] } })
+    setLocalRefusals({ denyPrivateNetworks: true, serviceUrls: [] })
+
+    const { err } = await lookedUp('www.example.go.jp')
+
+    expect(err).toBeNull()
+  })
+
+  it('follows a service recreated at a new address, at once', async () => {
+    answering({
+      urls: { 'alias.example.com': ['172.18.0.12'] },
+      services: { opensearch: ['172.18.0.4'] },
+    })
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+    expect((await lookedUp('alias.example.com')).err).toBeNull()
+
+    // The container comes back at another address; nothing waits for a refresh
+    mockLookup.mockResolvedValue([{ address: '172.18.0.12', family: 4 }])
+
+    expect((await lookedUp('alias.example.com')).err!.message).toContain(
+      'private address: 172.18.0.12'
+    )
+  })
+
+  it('refuses rather than waits when a service does not answer in time', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      answering({ urls: { 'files.intra.example.jp': ['172.18.5.9'] } })
+      mockLookup.mockReturnValue(new Promise(() => {}))
+      setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+
+      const pending = lookedUp('files.intra.example.jp')
+      await vi.advanceTimersByTimeAsync(DNS_TIMEOUT_MS)
+
+      expect((await pending).err!.message).toContain('private address: 172.18.5.9')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('starts no second lookup while one hangs, and refuses at once once it has', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      answering({ urls: { 'files.intra.example.jp': ['172.18.5.9'] } })
+      let answer!: (addresses: { address: string; family: number }[]) => void
+      mockLookup.mockImplementation(() => new Promise((resolve) => (answer = resolve)))
+      setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+
+      const first = lookedUp('files.intra.example.jp')
+      await vi.advanceTimersByTimeAsync(DNS_TIMEOUT_MS)
+      expect((await first).err!.message).toContain('private address')
+
+      // Past the deadline: told at once, and no new lookup started
+      const later = await lookedUp('files.intra.example.jp')
+      expect(later.err!.message).toContain('private address')
+      expect(mockLookup).toHaveBeenCalledTimes(1)
+
+      // Once the hung lookup returns, the next judgement asks afresh
+      answer([{ address: '172.18.0.4', family: 4 }])
+      await vi.advanceTimersByTimeAsync(0)
+      mockLookup.mockResolvedValue([{ address: '172.18.0.4', family: 4 }])
+      expect((await lookedUp('files.intra.example.jp')).err).toBeNull()
+      expect(mockLookup).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not ask where the services are for a public address', async () => {
+    answering({ urls: { 'www.example.go.jp': ['203.0.113.7'] } })
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+
+    await lookedUp('www.example.go.jp')
+
+    expect(mockLookup).not.toHaveBeenCalled()
+  })
+})
+
+describe('safeFetch — refusals of this deployment for address literals', () => {
+  // Node connects to an address literal without a lookup, so these have to be
+  // refused from the URL, at the start and at every hop.
+  beforeEach(() => {
+    forgetResolutions()
+    mockResolve4.mockReset()
+    mockResolve6.mockReset()
+    mockUndiciFetch.mockReset()
+    mockLookup.mockReset()
+    mockInterfaces.mockReturnValue(IPV4_ONLY)
+    mockResolve6.mockRejectedValue(dnsError('ENOTFOUND'))
+  })
+
+  afterEach(() => {
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: [] })
+  })
+
+  it.each(['http://10.0.3.17/_search', 'http://[::ffff:a00:311]/_search'])(
+    'refuses a private literal when private networks are refused: %s',
+    async (url) => {
+      setLocalRefusals({ denyPrivateNetworks: true, serviceUrls: [] })
+
+      await expect(safeFetch(url)).rejects.toThrow('private or reserved IP address')
+      expect(mockUndiciFetch).not.toHaveBeenCalled()
+    }
+  )
+
+  it("refuses a literal of a service's address", async () => {
+    mockLookup.mockResolvedValue([{ address: '172.18.0.4', family: 4 }])
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    await expect(safeFetch('http://172.18.0.4:9200/_cat/indices')).rejects.toThrow(
+      'private or reserved IP address'
+    )
+    expect(mockUndiciFetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses both an alias and a literal while a service keeps failing to resolve', async () => {
+    mockLookup.mockRejectedValue(dnsError('EAI_AGAIN'))
+    mockResolve4.mockResolvedValue(['172.18.0.4'])
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    await expect(safeFetch('http://172.18.0.4:9200/_search')).rejects.toThrow(
+      'private or reserved IP address'
+    )
+    const viaAlias = await new Promise<Error | null>((resolve) => {
+      ssrfSafeLookup('alias.example.com', { all: true }, ((err: Error | null) =>
+        resolve(err)) as never)
+    })
+    expect(viaAlias!.message).toContain('private address: 172.18.0.4')
+    expect(mockUndiciFetch).not.toHaveBeenCalled()
+  })
+
+  it("refuses the Compose dashboards' unauthenticated API by name", async () => {
+    setLocalRefusals({
+      denyPrivateNetworks: false,
+      serviceUrls: [],
+      hosts: ['opensearch-dashboards'],
+    })
+
+    await expect(
+      safeFetch('http://opensearch-dashboards:5601/api/dsl/cat.indices?format=json')
+    ).rejects.toThrow('Blocked hostname: opensearch-dashboards')
+    expect(mockUndiciFetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses a service by name from the URL', async () => {
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: ['http://opensearch:9200'] })
+
+    await expect(safeFetch('http://opensearch:9200/_search')).rejects.toThrow('Blocked hostname')
+  })
+
+  it("refuses a redirect to a service's address literal", async () => {
+    setLocalRefusals({ denyPrivateNetworks: true, serviceUrls: [] })
+    mockUndiciFetch.mockResolvedValueOnce(
+      new Response(null, { status: 302, headers: { location: 'http://10.0.3.17/_search' } })
+    )
+    mockResolve4.mockResolvedValue(['203.0.113.7'])
+
+    await expect(safeFetch('http://www.example.go.jp/a')).rejects.toThrow(
+      'Redirect target is unsafe: URL points to a private or reserved IP address'
+    )
+    expect(mockUndiciFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets an intranet literal through when private networks are allowed', async () => {
+    setLocalRefusals({ denyPrivateNetworks: false, serviceUrls: [] })
+    mockUndiciFetch.mockResolvedValueOnce(new Response('ok', { status: 200 }))
+
+    const res = await safeFetch('http://172.18.5.9/file.csv')
+
+    expect(res.status).toBe(200)
   })
 })

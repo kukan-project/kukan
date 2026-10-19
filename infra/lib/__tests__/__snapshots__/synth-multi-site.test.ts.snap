@@ -4084,6 +4084,10 @@ function expandV6(addr) {
                 "Value": "8080",
               },
               {
+                "Name": "FETCH_DENY_PRIVATE_NETWORKS",
+                "Value": "true",
+              },
+              {
                 "Name": "WORKER_METRIC_SITE",
                 "Value": "kukan-dev-citya",
               },
@@ -6867,6 +6871,10 @@ function expandV6(addr) {
               {
                 "Name": "HEALTH_PORT",
                 "Value": "8080",
+              },
+              {
+                "Name": "FETCH_DENY_PRIVATE_NETWORKS",
+                "Value": "true",
               },
               {
                 "Name": "WORKER_METRIC_SITE",

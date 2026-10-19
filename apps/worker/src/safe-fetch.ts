@@ -13,10 +13,12 @@ import { isIP } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { Agent, fetch as undiciFetch } from 'undici'
 import {
+  addressKey,
   checkUrlSafety,
   createCache,
   isBlockedAddress,
   isBlockedHostname,
+  isPrivateAddress,
   normalizeHostname,
 } from '@kukan/shared'
 import {
@@ -263,6 +265,161 @@ export function forgetResolutions(): void {
   resolutions.clear()
 }
 
+// ---------------------------------------------------------------------------
+// Refusals of this deployment's own
+// ---------------------------------------------------------------------------
+
+/**
+ * What this worker refuses beyond the shared list.
+ *
+ * The shared list leaves private ranges open, because an intranet deployment
+ * keeps its resources on them. The worker's own services sit on them too — the
+ * search index, the object store, a local model server — and answer whoever
+ * reaches them: OpenSearch takes any request from inside the security group,
+ * and a resource URL naming its `_search` would have the worker save another
+ * site's private documents as a public file. So the services' names are
+ * refused, and the private addresses they resolve to; and where nothing on a
+ * private network is meant to be fetched at all (AWS: the worker has no route
+ * to anyone's intranet) the ranges are refused whole, which still holds when
+ * the search domain's network interfaces are replaced and its addresses change.
+ *
+ * Only private addresses are taken from the services. One reached at a public
+ * address — S3, a hosted model API — shares it with everything else served
+ * there, and refusing it would refuse every resource on the same host. Its name
+ * is refused all the same, which costs only resources on that very hostname.
+ */
+export interface LocalRefusals {
+  /** Refuse 10/8, 172.16/12, 192.168/16, 100.64/10 and fc00::/7 outright. */
+  denyPrivateNetworks: boolean
+  /** URLs of the services this worker talks to. */
+  serviceUrls: readonly (string | undefined)[]
+  /** Other hosts to refuse the same way, by name (`FETCH_DENY_HOSTS`). */
+  hosts?: readonly string[]
+}
+
+let denyPrivateNetworks = false
+let serviceHosts: string[] = []
+
+/** Where the services are, as of one pass: their private address keys, or unknown. */
+type ServiceAddresses = Set<string> | 'unknown'
+
+/**
+ * One service's name, resolved the way the service's own client resolves it.
+ * `getaddrinfo`, not the c-ares resolver resource URLs go through: these names
+ * are the operator's, so the threadpool is not at stake, and a service named
+ * in `/etc/hosts` or by a short name the search list completes is reached at
+ * an address c-ares would never return. "No such name" is an answer — there is
+ * no address to refuse, and the name is refused anyway. Anything else leaves
+ * the service's whereabouts unknown.
+ */
+async function locateService(host: string): Promise<Set<string> | null> {
+  if (addressKey(host)) return isPrivateAddress(host) ? new Set([addressKey(host)!]) : new Set()
+  try {
+    const addresses = await dnsPromises.lookup(host, { all: true })
+    return new Set(
+      addresses.filter((a) => isPrivateAddress(a.address)).map((a) => addressKey(a.address)!)
+    )
+  } catch (err) {
+    return isNegativeAnswer(err) ? new Set() : null
+  }
+}
+
+/** The pass under way, until it has really finished, and when it began. */
+let locating: { pass: Promise<ServiceAddresses>; startedAt: number } | undefined
+
+/**
+ * Where the services are now, asked afresh for each private address judged —
+ * and only for those, so a public fetch costs nothing. Afresh, because a
+ * container recreated comes back at a new address, and an answer held from
+ * before would leave that one open until it was asked again.
+ *
+ * A pass is shared by whoever asks while it runs, and is not let go of until
+ * it has finished: `getaddrinfo` cannot be cancelled, and starting another
+ * while one hangs would pile lookups onto the threadpool the database driver
+ * shares. Each caller waits for it no longer than `DNS_TIMEOUT_MS` from when
+ * it began, and past that is told the services' whereabouts are unknown, which
+ * refuses rather than waits — at once, for whoever asks once a pass has hung.
+ */
+function locateServices(): Promise<ServiceAddresses> {
+  if (!locating) {
+    const pass: Promise<ServiceAddresses> = Promise.all(serviceHosts.map(locateService)).then(
+      (found) => (found.includes(null) ? 'unknown' : new Set(found.flatMap((keys) => [...keys!])))
+    )
+    const current = { pass, startedAt: Date.now() }
+    locating = current
+    void pass.finally(() => {
+      if (locating === current) locating = undefined
+    })
+  }
+  const { pass, startedAt } = locating
+  const left = startedAt + DNS_TIMEOUT_MS - Date.now()
+  if (left <= 0) return Promise.resolve('unknown')
+  return new Promise((resolve) => {
+    const deadline = setTimeout(() => resolve('unknown'), left)
+    deadline.unref()
+    void pass.then((services) => {
+      clearTimeout(deadline)
+      resolve(services)
+    })
+  })
+}
+
+/** Set once at startup. */
+export function setLocalRefusals(value: LocalRefusals): void {
+  denyPrivateNetworks = value.denyPrivateNetworks
+  serviceHosts = [
+    ...new Set(
+      [...value.serviceUrls, ...(value.hosts ?? []).map((host) => `http://${host}`)].flatMap(
+        (url) => {
+          try {
+            const host = url ? normalizeHostname(new URL(url).hostname) : ''
+            // `localhost` is refused by the shared list already, and asking
+            // about it costs a query for nothing
+            return host && !isBlockedHostname(host) ? [host] : []
+          } catch {
+            return []
+          }
+        }
+      )
+    ),
+  ]
+  locating = undefined
+}
+
+function isRefusedHostname(hostname: string): boolean {
+  return serviceHosts.includes(normalizeHostname(hostname))
+}
+
+/**
+ * The first of these addresses refused here, on top of `isBlockedAddress`: a
+ * private address, where private networks are refused or where a service is
+ * now — or every private address while where the services are is unknown.
+ */
+async function refusedHere(addresses: readonly string[]): Promise<string | undefined> {
+  const candidates = addresses.filter(isPrivateAddress)
+  if (candidates.length === 0) return undefined
+  if (denyPrivateNetworks) return candidates[0]
+  if (serviceHosts.length === 0) return undefined
+  const services = await locateServices()
+  return candidates.find((a) => services === 'unknown' || services.has(addressKey(a)!))
+}
+
+/**
+ * `checkUrlSafety`, and this worker's refusals on top. Asked of the URL as well
+ * as at connect time, because a connection to an address literal never asks
+ * the lookup below — Node only resolves names.
+ */
+async function urlRefusal(url: string): Promise<string | null> {
+  const shared = checkUrlSafety(url)
+  if (shared) return shared.message
+  const { hostname } = new URL(url)
+  if (isRefusedHostname(hostname)) return `Blocked hostname: ${normalizeHostname(hostname)}`
+  if (addressKey(hostname) && (await refusedHere([hostname]))) {
+    return 'URL points to a private or reserved IP address'
+  }
+  return null
+}
+
 /**
  * DNS lookup callback that rejects private/reserved IPs.
  * Exported for testing — verifies the blocking logic is wired correctly.
@@ -287,26 +444,32 @@ export function ssrfSafeLookup(
   // caller, and after this function has already reported success.
   const done = (...args: Parameters<LookupCallback>) => process.nextTick(callback, ...args)
 
-  if (isBlockedHostname(hostname)) {
+  if (isBlockedHostname(hostname) || isRefusedHostname(hostname)) {
     done(new Error(`Blocked hostname: ${hostname}`), [])
     return
   }
 
-  resolveCached(hostname, wantedFamily(options.family)).then(
-    (addresses) => {
-      const blocked = addresses.find((a) => isBlockedAddress(a.address))
-      if (blocked) {
-        done(new Error(`DNS resolved to private address: ${blocked.address}`), blocked.address)
-      } else if (options.all) {
-        done(null, addresses)
-      } else {
-        done(null, addresses[0].address, addresses[0].family)
+  resolveCached(hostname, wantedFamily(options.family))
+    .then(async (addresses) => ({
+      addresses,
+      blocked:
+        addresses.find((a) => isBlockedAddress(a.address))?.address ??
+        (await refusedHere(addresses.map((a) => a.address))),
+    }))
+    .then(
+      ({ addresses, blocked }) => {
+        if (blocked) {
+          done(new Error(`DNS resolved to private address: ${blocked}`), blocked)
+        } else if (options.all) {
+          done(null, addresses)
+        } else {
+          done(null, addresses[0].address, addresses[0].family)
+        }
+      },
+      (err: NodeJS.ErrnoException) => {
+        done(err, [])
       }
-    },
-    (err: NodeJS.ErrnoException) => {
-      done(err, [])
-    }
-  )
+    )
 }
 
 function createSsrfSafeAgent(): Agent {
@@ -467,9 +630,9 @@ export async function safeFetch(
   init?: RequestInit,
   hooks?: SafeFetchHooks
 ): Promise<Response> {
-  const safetyError = checkUrlSafety(url)
+  const safetyError = await urlRefusal(url)
   if (safetyError) {
-    throw new Error(`Unsafe URL: ${safetyError.message}`)
+    throw new Error(`Unsafe URL: ${safetyError}`)
   }
 
   let currentUrl = url
@@ -546,9 +709,9 @@ export async function safeFetch(
       throw new Error(`Redirect target is unsafe: https downgraded to ${next.protocol}`)
     }
 
-    const nextSafetyError = checkUrlSafety(next.href)
+    const nextSafetyError = await urlRefusal(next.href)
     if (nextSafetyError) {
-      throw new Error(`Redirect target is unsafe: ${nextSafetyError.message}`)
+      throw new Error(`Redirect target is unsafe: ${nextSafetyError}`)
     }
 
     // Before the slot below, because that is the first thing here with an

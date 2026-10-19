@@ -144,6 +144,22 @@ function parseIPv6(host: string): number[] | null {
 
 const isBlockedV4 = (bytes: readonly number[]) => BLOCKED_V4.some((s) => matches(bytes, s))
 
+/** The address as bytes, an IPv4 carried inside IPv6 unwrapped; null when not an address. */
+function addressBytes(address: string): number[] | null {
+  // Brackets only ever arrive from `URL.hostname`, and only round IPv6, so the
+  // rewrite is skipped for every dotted-quad and every hostname.
+  const bare =
+    address.charCodeAt(0) === 0x5b ? address.slice(1, -1).toLowerCase() : address.toLowerCase()
+  const v4 = parseIPv4(bare)
+  if (v4) return v4
+  const v6 = parseIPv6(bare)
+  if (!v6) return null
+  for (const { subnet, at } of EMBEDS_IPV4) {
+    if (matches(v6, subnet)) return v6.slice(at, at + 4)
+  }
+  return v6
+}
+
 /**
  * Whether this address is off limits.
  *
@@ -153,23 +169,46 @@ const isBlockedV4 = (bytes: readonly number[]) => BLOCKED_V4.some((s) => matches
  * {@link checkUrlSafety} hand it a bare hostname.
  */
 export function isBlockedAddress(address: string): boolean {
-  // Brackets only ever arrive from `URL.hostname`, and only round IPv6, so the
-  // rewrite is skipped for every dotted-quad and every hostname.
-  const bare =
-    address.charCodeAt(0) === 0x5b ? address.slice(1, -1).toLowerCase() : address.toLowerCase()
+  // Judged on the IPv4 it carries, if it carries one, so that `::ffff:8.8.8.8`
+  // is not caught by `::/96`.
+  const bytes = addressBytes(address)
+  if (!bytes) return false
+  return bytes.length === 4
+    ? isBlockedV4(bytes)
+    : BLOCKED_V6.some((subnet) => matches(bytes, subnet))
+}
 
-  const v4 = parseIPv4(bare)
-  if (v4) return isBlockedV4(v4)
+/** The ranges {@link isBlockedAddress} leaves open for intranet deployments. */
+const PRIVATE_V4 = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '100.64.0.0/10', // CGNAT (RFC 6598)
+].map(cidr)
 
-  const v6 = parseIPv6(bare)
-  if (!v6) return false
+const PRIVATE_V6 = [
+  'fc00::/7', // unique local (RFC 4193)
+].map(cidr)
 
-  // Judged on what it carries, ahead of the list below so that
-  // `::ffff:8.8.8.8` is not caught by `::/96`.
-  for (const { subnet, at } of EMBEDS_IPV4) {
-    if (matches(v6, subnet)) return isBlockedV4(v6.slice(at, at + 4))
-  }
-  return BLOCKED_V6.some((subnet) => matches(v6, subnet))
+/**
+ * Whether the address is on a private network: the ranges an intranet
+ * deployment keeps its resources on, which is why {@link isBlockedAddress}
+ * does not refuse them. A deployment with nothing of the kind to reach refuses
+ * them as well (the worker's `FETCH_DENY_PRIVATE_NETWORKS`).
+ */
+export function isPrivateAddress(address: string): boolean {
+  const bytes = addressBytes(address)
+  if (!bytes) return false
+  return (bytes.length === 4 ? PRIVATE_V4 : PRIVATE_V6).some((subnet) => matches(bytes, subnet))
+}
+
+/**
+ * One spelling per address, to compare two of them: `10.0.0.5`,
+ * `::ffff:10.0.0.5` and `[::ffff:a00:5]` all give the same key. Null when the
+ * string is not an address.
+ */
+export function addressKey(address: string): string | null {
+  return addressBytes(address)?.join('.') ?? null
 }
 
 /** Why a URL may not be fetched. `reason` is what callers branch on; `message`

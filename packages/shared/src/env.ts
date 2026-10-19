@@ -107,6 +107,15 @@ export const envSchema = z.object({
 
   // Health Check
   HEALTH_CHECK_ENABLED: booleanString.default(true),
+  // Refuse resource URLs on private networks (10/8, 172.16/12, 192.168/16,
+  // 100.64/10, fc00::/7) as well as loopback and link-local. Off by default:
+  // an intranet deployment keeps its resources there. The CDK stack turns it
+  // on, where the worker has no route to anyone's intranet.
+  FETCH_DENY_PRIVATE_NETWORKS: booleanString.default(false),
+  // More hosts a resource URL may not name, comma-separated: internal services
+  // the worker does not itself talk to but can reach (Compose: the dashboards).
+  // The worker's own services are refused without being listed.
+  FETCH_DENY_HOSTS: z.preprocess(emptyAsUndefined, z.string().optional()),
   HEALTH_CHECK_CRON: z.string().default('*/5 * * * *'),
   HEALTH_CHECK_STALENESS_HOURS: z.coerce.number().default(24),
   HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS: z.coerce.number().default(168),

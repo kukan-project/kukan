@@ -39,6 +39,10 @@ x-app-environment: &app-environment
   AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-}
   USER_AGENT_URL: ${USER_AGENT_URL:-}
   OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+  # true = resource URLs on private networks are refused too (see .env.example)
+  FETCH_DENY_PRIVATE_NETWORKS: ${FETCH_DENY_PRIVATE_NETWORKS:-false}
+  # Reachable from the worker without authentication, and not a service it uses
+  FETCH_DENY_HOSTS: ${FETCH_DENY_HOSTS:-opensearch-dashboards}
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
 

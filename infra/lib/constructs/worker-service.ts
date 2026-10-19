@@ -97,6 +97,9 @@ export class WorkerServiceConstruct extends Construct {
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WORKER_DB_POOL_MAX: String(config.dbPool.workerMax),
       HEALTH_PORT: String(config.worker.healthPort),
+      // Nothing a resource URL should name lives on a private network here,
+      // and the search domain does — reachable from this task, unauthenticated.
+      FETCH_DENY_PRIVATE_NETWORKS: 'true',
       // Only where there is a policy to read it: a custom metric is billed
       ...(scales && { WORKER_METRIC_SITE: metricSite }),
     }
