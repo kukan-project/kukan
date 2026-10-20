@@ -25,6 +25,14 @@ cp .env.prod.example .env.prod
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 
+:::caution[Expose it through Caddy only]
+Only the setup that serves through the bundled Caddy (the `caddy` service) is supported. Don't publish the web container (port 3000) directly, or replace Caddy with another proxy.
+- The sign-in rate limit tells clients apart by `X-Forwarded-For`. Caddy sets it afresh, so it can't be forged; with web exposed directly, a client can send any value and slip the limit.
+- Caddy also holds the setting that keeps authentication responses uncompressed (a BREACH mitigation).
+
+If you need TLS termination or IP restrictions, put them in front of Caddy or in `docker/Caddyfile`.
+:::
+
 #### Updating
 
 Check the [release notes](https://github.com/kukan-project/kukan/releases) for breaking changes and migration steps before upgrading.

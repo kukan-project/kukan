@@ -30,6 +30,10 @@ Fields marked "Required to publish" may stay unset while the dataset is a draft,
 must be set before it can be published. While the name is blank, an auto-generated identifier is
 used as a placeholder (the dataset cannot be published with it).
 
+:::note[When making a dataset private or deleting it]
+On sites running on AWS (CloudFront), public pages and API responses are cached for a while. Right after a dataset is made private or deleted, its earlier content may still be visible. Most of it clears within a few minutes; OData pages can stay for up to about 10 minutes, and the sitemap for up to about an hour.
+:::
+
 ### Tags
 
 Add tags to classify your dataset.

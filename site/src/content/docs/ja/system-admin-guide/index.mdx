@@ -25,6 +25,14 @@ cp .env.prod.example .env.prod
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 
+:::caution[公開は Caddy 経由のみ]
+サポートするのは、同梱の Caddy（`caddy` サービス）を通して公開する構成だけです。web コンテナ（ポート 3000）を直接公開したり、Caddy を外して別のプロキシに置き換えたりしないでください。
+- サインインの回数制限は `X-Forwarded-For` でクライアントを見分けます。Caddy はこれを付け直すので偽装できませんが、web を直接公開すると、任意の値を送って制限を逃れられます。
+- 認証の応答を圧縮しない設定（BREACH 対策）も、Caddy が持っています。
+
+TLS の終端や IP 制限が要る場合は、Caddy の前に置くか、`docker/Caddyfile` に設定してください。
+:::
+
 #### アップデート
 
 アップグレード前に[リリースノート](https://github.com/kukan-project/kukan/releases)で破壊的変更と移行手順を確認してください。
