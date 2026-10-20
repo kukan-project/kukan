@@ -15,14 +15,16 @@ interface QueryToolsContext {
   user?: AuthUser
 }
 
-/** Render query results as a Markdown table (cells escaped for `|` and newlines). */
-function toMarkdownTable(columns: string[], rows: Record<string, unknown>[]): string {
+/** Render query results as a Markdown table (cells escaped for `\`, `|` and newlines). */
+export function toMarkdownTable(columns: string[], rows: Record<string, unknown>[]): string {
   if (columns.length === 0) return '(no columns)'
   const esc = (v: unknown) =>
     String(v ?? '')
+      // The backslash first, or a value's own `\` would undo the `|` escape
+      .replace(/\\/g, '\\\\')
       .replace(/\|/g, '\\|')
       .replace(/\n/g, ' ')
-  const header = `| ${columns.join(' | ')} |`
+  const header = `| ${columns.map(esc).join(' | ')} |`
   const sep = `| ${columns.map(() => '---').join(' | ')} |`
   if (rows.length === 0) return [header, sep].join('\n')
   const body = rows.map((r) => `| ${columns.map((c) => esc(r[c])).join(' | ')} |`).join('\n')

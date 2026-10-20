@@ -6,6 +6,7 @@
 
 import { parseArgs } from 'node:util'
 import { randomBytes, scrypt } from 'node:crypto'
+import { generateId } from './generate-id'
 import { config } from 'dotenv'
 import { and, eq, or, count } from 'drizzle-orm'
 import { loadEnv, checkPasswordGuessability, normalizePassword } from '@kukan/shared'
@@ -117,17 +118,6 @@ function exitWithIssues(issues: { path: PropertyKey[]; message: string }[], fiel
     console.error(`Error: ${field ?? issue.path.join('.')} — ${issue.message}`)
   }
   process.exit(1)
-}
-
-/** Generate a random alphanumeric ID (same format as Better Auth's generateId) */
-function generateId(size = 32): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  const bytes = randomBytes(size)
-  let result = ''
-  for (let i = 0; i < size; i++) {
-    result += chars[bytes[i] % chars.length]
-  }
-  return result
 }
 
 /** Hash password using scrypt — must match Better Auth's parameters (N=16384, r=16, p=1, dkLen=64) */
