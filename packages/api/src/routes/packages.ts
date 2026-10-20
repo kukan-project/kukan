@@ -20,6 +20,8 @@ import {
   ValidationError,
   ServiceUnavailableError,
   PACKAGE_STATES,
+  SEARCH_QUERY_MAX_CHARS,
+  SEARCH_RESULT_WINDOW,
 } from '@kukan/shared'
 import type { MatchedResource, MatchedResourcesCount, SearchFilters } from '@kukan/search-adapter'
 import {
@@ -92,7 +94,7 @@ packagesRouter.get(
     z.object({
       offset: z.coerce.number().min(0).default(0),
       limit: z.coerce.number().min(1).max(100).default(20),
-      q: z.string().optional(),
+      q: z.string().max(SEARCH_QUERY_MAX_CHARS).optional(),
       name: z.string().optional(),
       organization: repeatedParam,
       groups: repeatedParam,
@@ -175,6 +177,12 @@ packagesRouter.get(
         }),
       })
       return c.json(result)
+    }
+
+    // OpenSearch refuses a page past its result window; the dashboard's my_org
+    // listing reads PostgreSQL, which has none
+    if (!my_org && rest.offset + rest.limit > SEARCH_RESULT_WINDOW) {
+      throw new ValidationError(`offset + limit must be at most ${SEARCH_RESULT_WINDOW}`)
     }
 
     // state=deleted is only allowed when my_org=true AND user is authenticated
@@ -292,7 +300,7 @@ packagesRouter.post(
   zValidator(
     'json',
     z.object({
-      q: z.string().min(1),
+      q: z.string().min(1).max(SEARCH_QUERY_MAX_CHARS),
       chunks: z.array(z.string()).min(1).max(200),
     })
   ),

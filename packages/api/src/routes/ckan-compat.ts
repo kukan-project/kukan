@@ -9,7 +9,13 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { KukanError, LICENSES, publicOrigin } from '@kukan/shared'
+import {
+  KukanError,
+  LICENSES,
+  publicOrigin,
+  SEARCH_QUERY_MAX_CHARS,
+  SEARCH_RESULT_WINDOW,
+} from '@kukan/shared'
 import type { SearchFacets, SearchFilters } from '@kukan/search-adapter'
 import { PackageService } from '../services/package-service'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
@@ -376,12 +382,20 @@ async function searchVisibility(c: Ctx, includePrivate: boolean): Promise<Search
 // semantics), with the parts of Solr's syntax that search-params.ts reads
 action('package_search', async (c, params) => {
   const rawQ = stringParam(params, 'q') ?? ''
+  if (rawQ.length > SEARCH_QUERY_MAX_CHARS) {
+    throw new CkanValidationError({ q: [`Must be at most ${SEARCH_QUERY_MAX_CHARS} characters`] })
+  }
   const q = rawQ === '*:*' ? '' : rawQ
   const fq = parseFq(stringParam(params, 'fq'), listParam(params, 'fq_list'))
   const sortText = stringParam(params, 'sort')
   const sort = parseSort(sortText, q !== '')
   const rows = Math.min(intParam(params, 'rows', DEFAULT_ROWS), MAX_ROWS)
   const start = intParam(params, 'start', 0)
+  if (start + rows > SEARCH_RESULT_WINDOW) {
+    throw new CkanValidationError({
+      start: [`start + rows must be at most ${SEARCH_RESULT_WINDOW}`],
+    })
+  }
   const facetEnabled = boolParam(params, 'facet', true)
   const facetFields = facetEnabled ? parseFacetFields(params['facet.field']) : []
   const facetLimitRaw = intParam(params, 'facet.limit', 50, -1)

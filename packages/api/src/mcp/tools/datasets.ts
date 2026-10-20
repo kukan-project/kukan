@@ -2,7 +2,12 @@
  * MCP Tools — Dataset search and retrieval
  */
 
-import { sectionLayout } from '@kukan/shared'
+import {
+  sectionLayout,
+  SEARCH_QUERY_MAX_CHARS,
+  SEARCH_RESULT_WINDOW,
+  ValidationError,
+} from '@kukan/shared'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
@@ -86,10 +91,16 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         "A dataset matches by keyword if it holds every word of q; where none does, those holding most of them are returned instead, each with the words it lacks. Give a few words in the catalog's language, those its title or description would use; if nothing fits, drop a word or try another. " +
         "To find the part of a document's text that answers a question, use search_passages.",
       inputSchema: {
-        q: z.string().describe('Search query keywords'),
+        q: z.string().max(SEARCH_QUERY_MAX_CHARS).describe('Search query keywords'),
         organization: z.string().optional().describe('Filter by organization name (slug)'),
         tags: z.array(z.string()).optional().describe('Filter by tag names'),
-        offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
+        offset: z
+          .number()
+          .min(0)
+          .default(0)
+          .describe(
+            `Number of results to skip (for pagination); offset + limit is at most ${SEARCH_RESULT_WINDOW}`
+          ),
         limit: z.number().min(1).max(50).default(10).describe('Maximum number of results'),
         semantic: z
           .boolean()
@@ -99,6 +110,9 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
       annotations: { readOnlyHint: true },
     },
     async ({ q, organization, tags, offset, limit, semantic }) => {
+      if (offset + limit > SEARCH_RESULT_WINDOW) {
+        throw new ValidationError(`offset + limit must be at most ${SEARCH_RESULT_WINDOW}`)
+      }
       const userOrgIds = await resolveUserOrgIds(db, user)
       const visibility = buildVisibilityFilters(user, userOrgIds)
 

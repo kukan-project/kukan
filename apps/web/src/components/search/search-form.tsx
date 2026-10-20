@@ -1,4 +1,5 @@
 import { useTranslations } from 'next-intl'
+import { SEARCH_QUERY_MAX_CHARS } from '@kukan/shared'
 import { Button, Input } from '@kukan/ui'
 
 /** Keyword search box. The input is uncontrolled, so a changed `defaultValue`
@@ -25,6 +26,7 @@ export function SearchForm({
         key={defaultValue}
         name="q"
         type="search"
+        maxLength={SEARCH_QUERY_MAX_CHARS}
         defaultValue={defaultValue}
         placeholder={placeholder ?? t('searchPlaceholder')}
       />

@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import type { PaginatedResult, FacetCounts, SemanticState } from '@kukan/shared'
+import {
+  SEARCH_QUERY_MAX_CHARS,
+  SEARCH_RESULT_WINDOW,
+  type PaginatedResult,
+  type FacetCounts,
+  type SemanticState,
+} from '@kukan/shared'
 import { Button, Separator } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset/dataset-card'
@@ -40,7 +46,8 @@ export function DatasetList({ initialData }: Props) {
   const searchParams = useSearchParams()
   const paramsKey = searchParams.toString()
 
-  const q = searchParams.get('q') || ''
+  // A query from the URL can run past what the search box allows; the API refuses it
+  const q = (searchParams.get('q') || '').slice(0, SEARCH_QUERY_MAX_CHARS)
   const offset = Number(searchParams.get('offset')) || 0
   const limit = Number(searchParams.get('limit')) || 20
   const currentOrgs = searchParams.getAll('organization')
@@ -96,6 +103,7 @@ export function DatasetList({ initialData }: Props) {
 
     // Build query string directly from searchParams to avoid stale closures
     const query = new URLSearchParams(searchParams.toString())
+    if (q) query.set('q', q)
     query.set('include_facets', 'true')
     if (!query.has('limit')) query.set('limit', '20')
 
@@ -124,7 +132,7 @@ export function DatasetList({ initialData }: Props) {
       })
 
     return () => controller.abort()
-  }, [paramsKey, isInitialSsr, searchParams, reloadKey])
+  }, [paramsKey, isInitialSsr, searchParams, q, reloadKey])
 
   /** Fetch content snippets for matched resources and merge into state */
   function fetchSnippets(result: DatasetData, queryText: string, signal: AbortSignal) {
@@ -257,6 +265,7 @@ export function DatasetList({ initialData }: Props) {
                 offset={offset}
                 limit={limit}
                 total={data.total}
+                maxResults={SEARCH_RESULT_WINDOW}
               />
             </div>
           )}

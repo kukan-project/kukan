@@ -47,6 +47,9 @@ export * from './ai-usage'
 // Example-query chips under the search box (ADR-036)
 export * from './search-example-queries'
 
+// Bounds on a dataset search's query and paging
+export * from './search-limits'
+
 // UI locales
 export * from './locales'
 

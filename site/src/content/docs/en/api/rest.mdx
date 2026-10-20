@@ -46,11 +46,11 @@ As an exception, **PUT on a dataset in draft state is a partial update** (see "D
 
 | Parameter          | Description                                                                                                                                                             |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `q`                | Search query (keywords or natural language; hybrid search)                                                                                                              |
+| `q`                | Search query (keywords or natural language; hybrid search; at most 500 characters)                                                                                      |
 | `name`             | Dataset name prefix match                                                                                                                                               |
 | `semantic`         | `false` limits results to keyword matches only (default: `true`)                                                                                                        |
 | `match`            | `relaxed` settles for fewer of `q`'s words where no dataset holds them all (default: `all`; see below)                                                                  |
-| `offset` / `limit` | Pagination (max 100)                                                                                                                                                    |
+| `offset` / `limit` | Pagination (`limit` at most 100; `offset + limit` at most 10,000, except with `my_org=true` or `state=draft`)                                                           |
 | `organization[]`   | Filter by organization                                                                                                                                                  |
 | `groups[]`         | Filter by category                                                                                                                                                      |
 | `tags[]`           | Filter by tag                                                                                                                                                           |

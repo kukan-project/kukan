@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
-import type { PaginatedResult } from '@kukan/shared'
+import { SEARCH_QUERY_MAX_CHARS, type PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { getEntity } from '@/lib/catalog-api'
 import { entityMetadata, queryRobots } from '@/lib/page-metadata'
@@ -22,7 +22,8 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
 export default async function GroupDatasetsPage({ params, searchParams }: Props) {
   const [{ nameOrId }, sp] = await Promise.all([params, searchParams])
-  const q = sp.q || ''
+  // A query from the URL can run past what the search box allows; the API refuses it
+  const q = (sp.q || '').slice(0, SEARCH_QUERY_MAX_CHARS)
   const offset = Number(sp.offset) || 0
   const limit = Number(sp.limit) || 20
 

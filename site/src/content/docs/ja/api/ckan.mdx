@@ -89,7 +89,8 @@ CKAN と同じく、組織が最大 10 件、カテゴリーが最大 1000 件�
 同じく、呼び出し元が閲覧できるデータセットを返します。
 
 既定値は CKAN と同じです（`package_search` の `rows` は 10・上限 1000、`organization_list` の並びは
-`title asc`、`all_fields` 時の `limit` 上限は 25 など）。
+`title asc`、`all_fields` 時の `limit` 上限は 25 など）。`package_search` の `q` は最大 500 文字、
+`start + rows` は最大 10,000 で、超えると `409` です。
 
 ## 応答の形
 

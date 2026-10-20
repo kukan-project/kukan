@@ -24,7 +24,7 @@ import {
 } from '@kukan/ui'
 import { Building2, FolderOpen, Tag } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import type { PackageDbState } from '@kukan/shared'
+import { SEARCH_QUERY_MAX_CHARS, type PackageDbState } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { parseGroups } from '@/lib/parse-groups'
 import { rowActivateProps } from '@/lib/row-activate'
@@ -281,7 +281,11 @@ export default function DatasetsManagePage() {
         <Field className="min-w-0 flex-1 gap-1">
           <FieldLabel className="text-xs text-muted-foreground">{tc('title')}</FieldLabel>
           <FieldControl>
-            <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+            <Input
+              value={keyword}
+              maxLength={SEARCH_QUERY_MAX_CHARS}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
           </FieldControl>
         </Field>
       </div>

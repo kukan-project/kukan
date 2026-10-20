@@ -598,7 +598,8 @@ export const PASSAGE_QUEUE_WAIT_MS = 10_000
 export const PASSAGE_READS_PER_SEARCH = 4
 
 /** A passage search's query, at most: in characters, and in the words the
- *  text is scanned for where no index cut the passages */
+ *  text is scanned for where no index cut the passages. Set apart from the
+ *  dataset search's SEARCH_QUERY_MAX_CHARS, though the same today */
 export const PASSAGE_QUERY_MAX_CHARS = 500
 export const PASSAGE_QUERY_MAX_WORDS = 16
 

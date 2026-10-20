@@ -46,4 +46,21 @@ describe('PaginationNav', () => {
     const prevLink = screen.getByText('Previous').closest('a')
     expect(prevLink).toHaveAttribute('href', expect.stringContaining('q=test'))
   })
+
+  it('should stop at the last whole page inside maxResults', () => {
+    render(
+      <PaginationNav basePath="/dataset" offset={80} limit={20} total={500} maxResults={100} />
+    )
+    expect(screen.getByText('5 / 5')).toBeInTheDocument()
+    expect(screen.queryByText('Next')).not.toBeInTheDocument()
+  })
+
+  it('should not link a next page that would reach past maxResults', () => {
+    // A limit that does not divide the cap: page 4 would end at 120
+    render(
+      <PaginationNav basePath="/dataset" offset={60} limit={30} total={500} maxResults={100} />
+    )
+    expect(screen.getByText('3 / 3')).toBeInTheDocument()
+    expect(screen.queryByText('Next')).not.toBeInTheDocument()
+  })
 })

@@ -90,6 +90,7 @@ the ones the caller can read, private datasets of their organizations included. 
 
 Defaults follow CKAN's (`package_search` returns 10 rows by default, at most 1000;
 `organization_list` sorts by `title asc`; `limit` is at most 25 with `all_fields`; and so on).
+`package_search`'s `q` is at most 500 characters and `start + rows` at most 10,000; past either, `409`.
 
 ## Response shapes
 

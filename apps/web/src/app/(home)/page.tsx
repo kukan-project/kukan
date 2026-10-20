@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
 import { Badge, Button, Card, CardContent, Input, Separator } from '@kukan/ui'
-import type { PaginatedResult } from '@kukan/shared'
+import { SEARCH_QUERY_MAX_CHARS, type PaginatedResult } from '@kukan/shared'
 import { overrides } from '@/brand'
 import { getSiteSettings, serverFetch } from '@/lib/server-api'
 import { safeExternalHref } from '@/lib/safe-url'
@@ -83,6 +83,7 @@ export default async function HomePage() {
         <Input
           name="q"
           type="search"
+          maxLength={SEARCH_QUERY_MAX_CHARS}
           placeholder={t(
             semanticSearchEnabled ? 'home.searchPlaceholder' : 'home.searchPlaceholderKeyword'
           )}

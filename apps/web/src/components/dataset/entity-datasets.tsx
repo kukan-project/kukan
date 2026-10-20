@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Separator } from '@kukan/ui'
-import type { PaginatedResult } from '@kukan/shared'
+import { SEARCH_RESULT_WINDOW, type PaginatedResult } from '@kukan/shared'
 import { SearchForm } from '@/components/search/search-form'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset/dataset-card'
 import { PaginationNav } from '@/components/pagination-nav'
@@ -67,6 +67,7 @@ export function EntityDatasets({
           offset={data.offset}
           limit={data.limit}
           total={data.total}
+          maxResults={SEARCH_RESULT_WINDOW}
         />
       </div>
     </div>
