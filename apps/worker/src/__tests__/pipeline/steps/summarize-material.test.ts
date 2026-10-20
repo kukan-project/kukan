@@ -1,6 +1,8 @@
 import { Readable } from 'node:stream'
+import { crc32, deflateSync } from 'node:zlib'
 import { describe, it, expect, vi } from 'vitest'
 import { PDFDocument, PDFString } from '@cantoo/pdf-lib'
+import sharp from 'sharp'
 import type { MeteredAI } from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { createLogger } from '@kukan/shared'
@@ -42,6 +44,58 @@ async function encryptedPdfOf(pages: number): Promise<Buffer> {
   return Buffer.from(await doc.save())
 }
 
+/**
+ * A PNG whose header claims the given size over one row of pixel data — what
+ * a decompression bomb looks like before it is opened. Decoding it would fail
+ * on the missing rows, so a clean refusal shows the header was read alone.
+ */
+function pngClaiming(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const out = Buffer.alloc(body.length + 8)
+    out.writeUInt32BE(data.length, 0)
+    body.copy(out, 4)
+    out.writeUInt32BE(crc32(body), body.length + 4)
+    return out
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr.set([8, 2, 0, 0, 0], 8) // 8-bit RGB, no interlace
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(Buffer.alloc(1 + width * 3))),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+/**
+ * A JPEG that is only a header claiming the given size. Like the PNG above, it
+ * cannot be decoded, so a clean refusal shows the header was read alone.
+ */
+function jpegClaiming(width: number, height: number, progressive = false): Buffer {
+  const segment = (marker: number, data: number[]) =>
+    Buffer.from([0xff, marker, (data.length + 2) >> 8, (data.length + 2) & 0xff, ...data])
+  return Buffer.concat([
+    Buffer.from([0xff, 0xd8]),
+    segment(0xdb, [0, ...Array<number>(64).fill(1)]),
+    segment(progressive ? 0xc2 : 0xc0, [
+      8,
+      height >> 8,
+      height & 0xff,
+      width >> 8,
+      width & 0xff,
+      1,
+      1,
+      0x11,
+      0,
+    ]),
+    segment(0xda, [1, 1, 0, 0, 63, 0]),
+    Buffer.from([0, 0, 0, 0, 0xff, 0xd9]),
+  ])
+}
+
 const DOCUMENT_TEXT = 'previews/document-text'
 
 function deps(opts: {
@@ -52,6 +106,7 @@ function deps(opts: {
    */
   textHead?: string
   documents?: boolean
+  maxImageBytes?: number
 }): SummaryDeps {
   const storage = {
     download: vi.fn(async (key: string) =>
@@ -74,7 +129,7 @@ function deps(opts: {
         : {
             documentFormats: ['pdf', 'xlsx', 'docx'],
             imageFormats: ['jpeg', 'png'],
-            maxImageBytes: 5 * 1024 * 1024,
+            maxImageBytes: opts.maxImageBytes ?? 5 * 1024 * 1024,
           },
   } as unknown as MeteredAI
   return {
@@ -427,6 +482,44 @@ describe('choosing what to send (ADR-053 §3)', () => {
 
       expect(plan).toMatchObject({ kind: 'image' })
       expect(plan).toHaveProperty('attachment.bytes', bytes)
+    })
+
+    // 100M pixels: over the worker's limit, under sharp's own default
+    it.each([
+      ['a PNG', 'PNG', () => pngClaiming(10_000, 10_000)],
+      ['a baseline JPEG', 'JPEG', () => jpegClaiming(10_000, 10_000)],
+      ['a progressive JPEG', 'JPEG', () => jpegClaiming(10_000, 10_000, true)],
+    ])(
+      'refuses %s whose header claims more pixels than the limit, without decoding it',
+      async (_, format, make) => {
+        const bytes = make()
+        const plan = await planMaterial(
+          input({ format, size: bytes.byteLength }),
+          noArtifacts,
+          INTERPRETED,
+          deps({ bytes, maxImageBytes: 16 })
+        )
+
+        expect(plan).toEqual({ reason: 'too-large' })
+      }
+    )
+
+    it('still downscales one over the byte limit and within the pixel limit', async () => {
+      const bytes = await sharp({
+        create: { width: 3200, height: 100, channels: 3, background: '#808080' },
+      })
+        .png()
+        .toBuffer()
+      const plan = await planMaterial(
+        input({ format: 'PNG', size: bytes.byteLength }),
+        noArtifacts,
+        INTERPRETED,
+        deps({ bytes, maxImageBytes: 16 })
+      )
+
+      expect(plan).toMatchObject({ kind: 'image' })
+      const sent = (plan as MaterialPlan).attachment?.bytes as Buffer
+      expect((await sharp(sent).metadata()).width).toBe(1600)
     })
 
     it('is not offered where the provider takes no images', async () => {

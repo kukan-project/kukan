@@ -75,7 +75,7 @@ import {
   SUMMARY_OUTPUT_JSON_SCHEMA,
   type SummaryDatasetContext,
 } from '@kukan/api/services/suggest/summary-prompt'
-import { SUMMARY_MAX_TOKENS, SUMMARY_TIMEOUT_MS } from '@/config'
+import { SUMMARY_IMAGE_MAX_INPUT_PIXELS, SUMMARY_MAX_TOKENS, SUMMARY_TIMEOUT_MS } from '@/config'
 
 export interface SummaryDeps {
   db: Database
@@ -281,15 +281,12 @@ export async function planMaterial(
 
   if (isImageFormat(input.format)) {
     if (!documentInfo?.imageFormats.includes(format)) return { reason: 'unsupported-format' }
+    const bytes = await downloadImage(input, documentInfo.maxImageBytes, deps)
+    if (!bytes) return { reason: 'too-large' }
     return {
       kind: 'image',
       material: EMPTY_MATERIAL,
-      attachment: {
-        kind: 'image',
-        format,
-        name: 'image',
-        bytes: await downloadImage(input, documentInfo.maxImageBytes, deps),
-      },
+      attachment: { kind: 'image', format, name: 'image', bytes },
     }
   }
 
@@ -520,22 +517,36 @@ async function pageCount(bytes: Buffer, deps: SummaryDeps): Promise<number | nul
  * works in libjpeg's DCT stage, which took an 8,256 by 5,504 photo from 365MB
  * of peak RSS to 105MB. And an image's tokens follow its pixels, not its bytes
  * — 1600px on the long edge is about 1,697 tokens, cheaper than one PDF page.
+ *
+ * But the header cannot say whether a JPEG will take it: a progressive one, or
+ * a baseline one in several scans, has libjpeg hold every coefficient at full
+ * size however far it scales, and PNG, WebP and GIF decode whole. All of it is
+ * in this process, so every format is held to one pixel limit, read from the
+ * header before any pixel is, and a very large photo is skipped with the rest.
+ * Null for an image over it, left unstamped like the other size refusals, so a
+ * later run re-reads the header and a raised limit takes effect.
  */
 async function downloadImage(
   input: SummaryInput,
   maxBytes: number,
   deps: SummaryDeps
-): Promise<Buffer> {
+): Promise<Buffer | null> {
   const bytes = await readAll(await deps.storage.download(input.storageKey))
   if (bytes.byteLength <= maxBytes) return bytes
-  return sharp(bytes)
-    .resize({
-      width: SUMMARY_IMAGE_RESIZE_PX,
-      height: SUMMARY_IMAGE_RESIZE_PX,
-      fit: 'inside',
-      withoutEnlargement: true,
-    })
-    .toBuffer()
+  try {
+    return await sharp(bytes, { limitInputPixels: SUMMARY_IMAGE_MAX_INPUT_PIXELS })
+      .resize({
+        width: SUMMARY_IMAGE_RESIZE_PX,
+        height: SUMMARY_IMAGE_RESIZE_PX,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .toBuffer()
+  } catch (err) {
+    if (!(err instanceof Error && /pixel limit/i.test(err.message))) throw err
+    deps.log.warn({ component: 'summarize', err }, 'image exceeds the pixel limit')
+    return null
+  }
 }
 
 function withinBytes(size: number | null, limit: number): boolean {

@@ -500,6 +500,9 @@ export const LAKE_THREADS = 2
 export const SUMMARY_MAX_TOKENS = 700
 /** One completion measured 3–11s; the ceiling covers a slow original. */
 export const SUMMARY_TIMEOUT_MS = 120_000
+/** Pixels an over-limit image may claim before it is downscaled in the worker
+ *  process. sharp's default (~268M) is about 1GB of RGBA for one PNG. */
+export const SUMMARY_IMAGE_MAX_INPUT_PIXELS = 50_000_000
 /** Bytes of the extracted-text artifact used as material. Matches the suggest
  *  read budget: the same head, read for the same purpose. */
 export const SUMMARY_TEXT_HEAD_BYTES = 16 * 1024
