@@ -165,7 +165,7 @@ export function parseFq(fq: string | undefined, fqList: string[] = []): ParsedFq
           throw refuse('Solr syntax is not supported in an extras value; quote it')
         }
         addExtrasCondition(filters, extras, value, refuse)
-      } else if (field in LIST_FIELDS) {
+      } else if (Object.hasOwn(LIST_FIELDS, field)) {
         const key = LIST_FIELDS[field as keyof typeof LIST_FIELDS]
         const list = filters[key] ?? []
         if (!list.includes(value)) {
@@ -220,7 +220,7 @@ export function parseSort(
     }
     if (field === 'score') {
       if (dir !== 'desc') throw new CkanValidationError({ sort: ['Only score desc is supported'] })
-    } else if (!SORT_FIELDS[field]) {
+    } else if (!Object.hasOwn(SORT_FIELDS, field)) {
       throw new CkanValidationError({ sort: [`Unsupported sort field: ${field}`] })
     }
     return { field, dir }
@@ -259,7 +259,7 @@ export function parseFacetFields(value: unknown): FacetField[] {
     throw new CkanValidationError({ 'facet.field': ['Expected a list of field names'] })
   }
   for (const field of list) {
-    if (!(field in FACET_FIELDS)) {
+    if (!Object.hasOwn(FACET_FIELDS, field)) {
       throw new CkanValidationError({ 'facet.field': [`Unsupported facet field: ${field}`] })
     }
   }

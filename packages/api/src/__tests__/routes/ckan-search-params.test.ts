@@ -141,6 +141,12 @@ describe('parseFq', () => {
   })
 })
 
+describe('parseFq — names off Object.prototype', () => {
+  it.each(['constructor:x', 'toString:x', '__proto__:x'])('refuses %s', (fq) => {
+    expect(() => parseFq(fq)).toThrow(CkanValidationError)
+  })
+})
+
 describe('parseSort', () => {
   it('reads score first as relevance while there is a query', () => {
     expect(parseSort('score desc, metadata_modified desc', true)).toEqual({})
@@ -174,6 +180,12 @@ describe('parseSort', () => {
   ])('refuses %s with a query', (sort) => {
     expect(() => parseSort(sort, true)).toThrow(CkanValidationError)
   })
+
+  it('refuses a name Object.prototype carries, rather than ordering by it', () => {
+    for (const sort of ['constructor asc', 'toString', '__proto__ desc']) {
+      expect(() => parseSort(sort, false), sort).toThrow(CkanValidationError)
+    }
+  })
 })
 
 describe('parseFacetFields', () => {
@@ -183,9 +195,12 @@ describe('parseFacetFields', () => {
     expect(parseFacetFields(undefined)).toEqual([])
   })
 
-  it.each(['tags', '["author"]', '{"a":1}', [1]])('refuses %j', (value) => {
-    expect(() => parseFacetFields(value)).toThrow(CkanValidationError)
-  })
+  it.each(['tags', '["author"]', '{"a":1}', [1], '["constructor"]', ['__proto__']])(
+    'refuses %j',
+    (value) => {
+      expect(() => parseFacetFields(value)).toThrow(CkanValidationError)
+    }
+  )
 })
 
 describe('ckanTimestamp', () => {

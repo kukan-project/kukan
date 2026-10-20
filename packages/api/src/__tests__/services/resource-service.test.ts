@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { ResourceService } from '../../services/resource-service'
 import { createMockDb } from '../test-helpers/mock-db'
 import { createResourceFixture, createPackageFixture } from '../test-helpers/fixtures'
+import { NotFoundError } from '@kukan/shared'
 
 describe('ResourceService', () => {
   let service: ResourceService
@@ -44,9 +45,19 @@ describe('ResourceService', () => {
         'Resource not found: nonexistent'
       )
     })
+
+    it('should refuse a non-uuid id as not found without querying', async () => {
+      mock.addResult([createResourceFixture()]) // would be found, were it asked
+      await expect(service.getById('not-a-uuid')).rejects.toThrow(NotFoundError)
+    })
   })
 
   describe('getByIdWithAccessCheck', () => {
+    it('should refuse a non-uuid id as not found without querying', async () => {
+      mock.addResult([{ resource: createResourceFixture(), pkgState: 'active', pkgPrivate: false }])
+      await expect(service.getByIdWithAccessCheck('not-a-uuid')).rejects.toThrow(NotFoundError)
+    })
+
     it('should return resource when parent package is public', async () => {
       const res = createResourceFixture()
       // JOIN query returns resource + package columns in a single row

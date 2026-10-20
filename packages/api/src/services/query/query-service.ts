@@ -21,8 +21,16 @@ import {
   QUERY_MEMORY_LIMIT_MB,
   QUERY_THREADS,
   QUERY_MAX_SQL_LENGTH,
+  QUERY_LOG_SQL_LENGTH,
   QUERY_SOURCE_URL_EXPIRES_S,
 } from '../../config'
+
+/** `sql` as the query log records it: cut to {@link QUERY_LOG_SQL_LENGTH}, with
+ *  the full length alongside so a cut one is recognizable as such. */
+export function sqlLogFields(sql: string): { sql: string; sqlLength: number } {
+  const cut = sql.length > QUERY_LOG_SQL_LENGTH ? `${sql.slice(0, QUERY_LOG_SQL_LENGTH)}…` : sql
+  return { sql: cut, sqlLength: sql.length }
+}
 
 export interface QueryResult {
   columns: string[]
@@ -102,7 +110,7 @@ export class QueryService {
         {
           component: 'query',
           resourceId,
-          sql,
+          ...sqlLogFields(sql),
           elapsedMs,
           rowCount: result.rowCount,
           truncated: result.truncated,

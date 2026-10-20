@@ -58,7 +58,26 @@ function isAuthApiError(
   )
 }
 
+/** PostgreSQL refusing a value as a uuid (invalid_text_representation, raised
+ *  by `string_to_uuid`): a path id that is not a uuid reaching a uuid column.
+ *  Services refuse those before querying; this catches a lookup that does not,
+ *  so a malformed id reads as the absent row it is. Matched on the routine, not
+ *  the message, which follows the server's locale; any other bad cast is a bug
+ *  and stays a 500. Drizzle wraps the driver's error in `cause`. */
+function isUuidCastError(err: unknown): boolean {
+  let link: unknown = err
+  for (let depth = 0; link instanceof Error && depth < 8; depth++) {
+    const { code, routine } = link as { code?: unknown; routine?: unknown }
+    if (code === '22P02') return routine === 'string_to_uuid'
+    link = link.cause
+  }
+  return false
+}
+
 export const errorHandler: ErrorHandler = (err, c) => {
+  // The fallback logger guards against errors before the context middleware
+  const log = c.get('logger') ?? fallbackLogger
+
   // Hono refuses some requests itself — a malformed JSON body is the common one
   // — with the right status but not the Problem Details shape. Unmapped, every
   // one of them reached the fallback below and was reported (and logged) as an
@@ -74,6 +93,11 @@ export const errorHandler: ErrorHandler = (err, c) => {
   } else if (isAuthApiError(err)) {
     const code = err.body?.code ?? REFUSAL_CODES[err.statusCode]
     if (code) reported = new KukanError(err.body?.message ?? err.message, code, err.statusCode)
+  } else if (isUuidCastError(err)) {
+    // Logged, as it means a lookup is missing its check; the driver's message
+    // quotes the value and the type, neither of which is the client's business
+    log.warn({ err }, 'Non-uuid id reached a uuid column')
+    reported = new KukanError('Not found', 'NOT_FOUND', 404)
   }
 
   if (reported instanceof KukanError || isKukanShaped(reported)) {
@@ -89,8 +113,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
     )
   }
 
-  // Unknown error — fallback logger guards against errors before context middleware
-  const log = c.get('logger') ?? fallbackLogger
+  // Unknown error
   log.error({ err }, 'Unhandled error')
   return c.json(
     {

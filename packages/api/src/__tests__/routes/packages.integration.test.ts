@@ -1023,6 +1023,60 @@ describe('Packages API Routes', () => {
       const body = await res.json()
       expect(body.name).toBe('secret-pkg3')
     })
+
+    it('should answer writes to a private package from a non-member as 404, like the read', async () => {
+      const pkg = await (await createPackage({ name: 'secret-write-pkg', private: true })).json()
+      const jsonBody = (body: unknown) => ({
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const put = await outsiderApp.request('/api/v1/packages/secret-write-pkg', {
+        method: 'PUT',
+        ...jsonBody({ title: 'x' }),
+      })
+      expect(put.status).toBe(404)
+      const del = await outsiderApp.request('/api/v1/packages/secret-write-pkg', {
+        method: 'DELETE',
+      })
+      expect(del.status).toBe(404)
+      const addResource = await outsiderApp.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        ...jsonBody({ url: 'https://example.com/a.csv' }),
+      })
+      expect(addResource.status).toBe(404)
+      const reorder = await outsiderApp.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        ...jsonBody({ resourceIds: ['00000000-0000-4000-8000-000000000001'] }),
+      })
+      expect(reorder.status).toBe(404)
+
+      // Deleted: purge and restore answer the same
+      await app.request('/api/v1/packages/secret-write-pkg', { method: 'DELETE' })
+      for (const action of ['purge', 'restore']) {
+        const res = await outsiderApp.request(`/api/v1/packages/secret-write-pkg/${action}`, {
+          method: 'POST',
+          ...jsonBody({}),
+        })
+        expect(res.status).toBe(404)
+      }
+    })
+
+    it('should keep 403 for a member who can see a private package but not edit it', async () => {
+      await createPackage({ name: 'secret-member-pkg', private: true })
+      await db.execute(
+        sql`INSERT INTO user_org_membership (user_id, organization_id, role)
+            VALUES (${OUTSIDER_USER_ID}, ${testOrgId}, 'member')
+            ON CONFLICT DO NOTHING`
+      )
+
+      const res = await outsiderApp.request('/api/v1/packages/secret-member-pkg', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'x' }),
+      })
+      expect(res.status).toBe(403)
+    })
   })
 
   describe('POST /api/v1/packages/:nameOrId/restore', () => {
@@ -1545,15 +1599,16 @@ describe('Packages API Routes', () => {
       const show = await outsiderApp.request(`/api/v1/packages/${draft.id}?state=draft`)
       expect(show.status).toBe(404)
 
+      // Writes answer as the read does, so they do not confirm the draft exists
       const publish = await outsiderApp.request(`/api/v1/packages/${draft.id}/publish`, {
         method: 'POST',
       })
-      expect(publish.status).toBe(403)
+      expect(publish.status).toBe(404)
 
       const del = await outsiderApp.request(`/api/v1/packages/${draft.id}`, {
         method: 'DELETE',
       })
-      expect(del.status).toBe(403)
+      expect(del.status).toBe(404)
     })
 
     it('should list only accessible drafts with state=draft', async () => {

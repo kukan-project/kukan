@@ -243,6 +243,8 @@ export class ResourceService {
    * Get resource by ID
    */
   async getById(id: string) {
+    // Not a resource's id at all; querying would fail the uuid cast as a 500
+    if (!isUuid(id)) throw new NotFoundError('Resource', id)
     const [res] = await this.db
       .select()
       .from(resource)
@@ -270,6 +272,7 @@ export class ResourceService {
    * the fields stay out of the responses that serialize a resource directly.
    */
   async getByIdWithOwnership(id: string, viewer?: AuthUser) {
+    if (!isUuid(id)) throw new NotFoundError('Resource', id)
     const versionAgg = latestLiveVersionAgg(this.db)
     const [row] = await this.db
       .select({

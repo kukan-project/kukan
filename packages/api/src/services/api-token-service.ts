@@ -7,7 +7,7 @@ import { randomBytes, createHash } from 'node:crypto'
 import { eq, and } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { apiToken, user } from '@kukan/db'
-import { NotFoundError } from '@kukan/shared'
+import { NotFoundError, isUuid } from '@kukan/shared'
 
 const TOKEN_PREFIX = 'kukan_'
 const TOKEN_BYTES = 32
@@ -77,6 +77,7 @@ export class ApiTokenService {
    * Revoke (delete) an API token.
    */
   async revoke(tokenId: string, userId: string) {
+    if (!isUuid(tokenId)) throw new NotFoundError('API Token', tokenId)
     const [existing] = await this.db
       .select()
       .from(apiToken)

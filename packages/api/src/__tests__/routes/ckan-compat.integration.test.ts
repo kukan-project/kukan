@@ -287,6 +287,12 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       expect(body.success).toBe(false)
     })
 
+    it('should return 404 for an id that is not a uuid', async () => {
+      const res = await app.request('/api/3/action/resource_show?id=not-a-uuid')
+      expect(res.status).toBe(404)
+      expect((await res.json()).success).toBe(false)
+    })
+
     it('should return 404 for private package resource when unauthenticated', async () => {
       const pkg = await createPackage('private-ckan-res', { private: true })
 
@@ -722,6 +728,11 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
         ).result
         expect(bare, sort).toEqual(['org-busy'])
       }
+
+      // A name Object.prototype carries is not a sort field
+      const inherited = await app.request('/api/3/action/organization_list?sort=constructor')
+      expect(inherited.status).toBe(409)
+      expect((await inherited.json()).error.__type).toBe('Validation Error')
 
       const named = (
         await (

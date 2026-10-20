@@ -300,6 +300,11 @@ describe('Tags API Routes', () => {
       expect(res.status).toBe(404)
     })
 
+    it('should return 404 for an id that is not a uuid', async () => {
+      const res = await app.request('/api/v1/tags/not-a-uuid')
+      expect(res.status).toBe(404)
+    })
+
     it('should return tag with package count', async () => {
       await createPackageWithTags('pkg-a', ['shared-tag'])
       await createPackageWithTags('pkg-b', ['shared-tag'])

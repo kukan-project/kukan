@@ -490,7 +490,10 @@ async function listGroups(c: Ctx, params: Params, isOrganization: boolean) {
   // A bare count sort is busiest first in CKAN, kept from before it took a direction
   const sortOrder =
     givenOrder ?? (sortField === 'packages' || sortField === 'package_count' ? 'desc' : 'asc')
-  if (!(sortField in GROUP_SORT_FIELDS) || (sortOrder !== 'asc' && sortOrder !== 'desc')) {
+  if (
+    !Object.hasOwn(GROUP_SORT_FIELDS, sortField) ||
+    (sortOrder !== 'asc' && sortOrder !== 'desc')
+  ) {
     throw new CkanValidationError({ sort: [`Unsupported sort: ${sortText}`] })
   }
   const query = {

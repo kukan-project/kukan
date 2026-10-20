@@ -32,7 +32,9 @@ const CREATION_PATHS = new Set([
   '/email-otp/reset-password',
 ])
 
-export const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
+type AuthMiddlewareContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]
+
+export async function checkPasswordPolicy(ctx: AuthMiddlewareContext): Promise<void> {
   const body = ctx.body as Record<string, unknown> | undefined
   if (!body) return
 
@@ -69,7 +71,7 @@ export const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
     message: 'Password is too easy to guess',
     code: 'PASSWORD_TOO_WEAK',
   })
-})
+}
 
 /**
  * Account details the new password must not be derived from. Creation paths
@@ -77,7 +79,7 @@ export const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
  * (the token identifies the user, but not before the endpoint runs).
  */
 async function accountHints(
-  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+  ctx: AuthMiddlewareContext,
   body: Record<string, unknown>
 ): Promise<{ email?: string; name?: string; displayName?: string | null }> {
   // The display name rides in `data` on the admin creation path, where Better

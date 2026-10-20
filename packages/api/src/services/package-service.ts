@@ -47,8 +47,7 @@ import type {
   RestorePackageInput,
 } from '@kukan/shared'
 import {
-  hasOrgMembership,
-  hasDraftAccess,
+  canViewPackage,
   packageVisibilitySql,
   publicPackageSql,
   type AuthUser,
@@ -504,32 +503,19 @@ export class PackageService {
   }
 
   /**
-   * Get package by name or ID with private visibility check.
-   * Throws NotFoundError if the package is private and the viewer lacks access.
+   * Get package by name or ID with the visibility check ({@link canViewPackage}).
+   * Throws NotFoundError if the viewer may not see it, as if it did not exist.
    */
   async getByNameOrIdWithAccessCheck(
     nameOrId: string,
     viewer?: AuthUser,
-    state: PackageState | PackageState[] = 'active'
+    state: PackageDbState | PackageDbState[] = 'active'
   ) {
     const pkg = await this.getByNameOrId(nameOrId, state)
-
-    // Drafts: creator / sysadmin / owner-org editors only (ADR-039)
-    if (pkg.state === 'draft') {
-      if (!(await hasDraftAccess(this.db, pkg, viewer))) {
-        throw new NotFoundError('Package', nameOrId)
-      }
-      return pkg
-    }
-
-    // Private and deleted packages: org member+ or sysadmin
-    // (restore/purge operations are separately guarded by editor+/admin+ role checks)
-    const requiresMembership = pkg.state === 'deleted' || pkg.private
-
-    if (requiresMembership && !(await hasOrgMembership(this.db, pkg.ownerOrg, viewer))) {
+    // Restore/purge operations are separately guarded by editor+/admin+ role checks
+    if (!(await canViewPackage(this.db, pkg, viewer))) {
       throw new NotFoundError('Package', nameOrId)
     }
-
     return pkg
   }
 

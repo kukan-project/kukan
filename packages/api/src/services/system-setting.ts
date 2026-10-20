@@ -84,7 +84,7 @@ type SettingValue<K extends SettingKey> = z.infer<(typeof SETTING_DEFINITIONS)[K
 export const SETTING_KEYS = Object.keys(SETTING_DEFINITIONS) as SettingKey[]
 
 export function isSettingKey(key: string): key is SettingKey {
-  return key in SETTING_DEFINITIONS
+  return Object.hasOwn(SETTING_DEFINITIONS, key)
 }
 
 /** Validate a candidate value against the key's registry schema (generic admin API) */

@@ -3,6 +3,8 @@ import { NotFoundError } from '@kukan/shared'
 import { createMockDb } from '../test-helpers/mock-db'
 import { ApiTokenService } from '../../services/api-token-service'
 
+const TOKEN_ID = '00000000-0000-4000-8000-000000000001'
+
 describe('ApiTokenService', () => {
   describe('create', () => {
     it('should return a raw token with kukan_ prefix', async () => {
@@ -85,11 +87,11 @@ describe('ApiTokenService', () => {
   describe('revoke', () => {
     it('should delete the token and return success', async () => {
       const { db, addResult } = createMockDb()
-      addResult([{ id: 'tok-1', userId: 'user-1' }]) // select finds token
+      addResult([{ id: TOKEN_ID, userId: 'user-1' }]) // select finds token
       addResult([]) // delete succeeds
 
       const service = new ApiTokenService(db)
-      const result = await service.revoke('tok-1', 'user-1')
+      const result = await service.revoke(TOKEN_ID, 'user-1')
 
       expect(result).toEqual({ success: true })
     })
@@ -98,6 +100,15 @@ describe('ApiTokenService', () => {
       const { db, addResult } = createMockDb()
       addResult([]) // select returns empty
 
+      const service = new ApiTokenService(db)
+      await expect(
+        service.revoke('00000000-0000-4000-8000-000000000999', 'user-1')
+      ).rejects.toThrow(NotFoundError)
+    })
+
+    it('should refuse a non-uuid id as not found without querying', async () => {
+      const { db, addResult } = createMockDb()
+      addResult([{ id: 'tok-999', userId: 'user-1' }]) // would be found, were it asked
       const service = new ApiTokenService(db)
       await expect(service.revoke('tok-999', 'user-1')).rejects.toThrow(NotFoundError)
     })

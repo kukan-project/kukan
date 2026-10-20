@@ -5,14 +5,15 @@
 import { sql } from 'drizzle-orm'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError } from 'better-auth/api'
+import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { admin } from 'better-auth/plugins'
 import { adminAc } from 'better-auth/plugins/admin/access'
 import type { Database } from '@kukan/db'
 import { auditLog } from '@kukan/db'
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, type Env } from '@kukan/shared'
 import { claimBootstrapPromotion } from '../services/bootstrap'
-import { enforcePasswordPolicy } from './password-policy'
+import { checkPasswordPolicy } from './password-policy'
+import { enforceSignUpName } from './sign-up-name'
 
 export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']) {
   // Links the before-hook promotion decision to the after-hook audit write.
@@ -31,7 +32,10 @@ export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']
       maxPasswordLength: PASSWORD_MAX_LENGTH,
     },
     hooks: {
-      before: enforcePasswordPolicy,
+      before: createAuthMiddleware(async (ctx) => {
+        enforceSignUpName(ctx.path, ctx.body)
+        await checkPasswordPolicy(ctx)
+      }),
     },
     user: {
       additionalFields: {

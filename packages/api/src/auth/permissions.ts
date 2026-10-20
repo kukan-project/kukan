@@ -317,6 +317,21 @@ export function makePackageAuthorize(db: Database, user: AuthUser, role: Members
 }
 
 /**
+ * The package read rule: who may see the package at all. Drafts — and
+ * 'purging' rows, drafts whose purge crashed — follow draft access (ADR-039);
+ * private and deleted packages need membership in the owner org.
+ */
+export async function canViewPackage(
+  db: Database,
+  pkg: PackageOwnership & { private: boolean },
+  viewer?: AuthUser
+): Promise<boolean> {
+  if (pkg.state === 'draft' || pkg.state === 'purging') return hasDraftAccess(db, pkg, viewer)
+  if (pkg.state === 'deleted' || pkg.private) return hasOrgMembership(db, pkg.ownerOrg, viewer)
+  return true
+}
+
+/**
  * Check if a user is the owner (creator) of a resource, or a sysadmin.
  */
 export function checkOwnerOrSysadmin(user: AuthUser, ownerId: string | null): void {

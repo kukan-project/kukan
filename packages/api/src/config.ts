@@ -137,6 +137,10 @@ export const QUERY_QUEUE_WAIT_MS = QUERY_TIMEOUT_MS
 /** Maximum length of a user-supplied SQL string. */
 export const QUERY_MAX_SQL_LENGTH = 10_000
 
+/** How much of a query's SQL the info log keeps — enough to tell queries apart,
+ *  not a copy of whatever a caller pasted into one. */
+export const QUERY_LOG_SQL_LENGTH = 200
+
 // --- OData feed for BI tools (ADR-055) ---
 //
 // In the order a page is decided: how big one may be, what its read costs, how

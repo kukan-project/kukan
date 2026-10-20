@@ -6,7 +6,17 @@ import {
   SEMANTIC_SEARCH_ENABLED_KEY,
   AI_SUGGEST_MODEL_KEY,
   AI_SUGGEST_ENABLED_KEY,
+  isSettingKey,
 } from '../../services/system-setting'
+
+describe('isSettingKey', () => {
+  it('accepts registered keys only, not ones inherited from Object.prototype', () => {
+    expect(isSettingKey(VECTOR_SIMILARITY_NOTCHES_KEY)).toBe(true)
+    for (const key of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'nope']) {
+      expect(isSettingKey(key)).toBe(false)
+    }
+  })
+})
 
 describe('SystemSettingService', () => {
   it('degrades to the default when the row is missing and caches the miss', async () => {

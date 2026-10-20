@@ -245,6 +245,17 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(404)
     })
 
+    it('should return 404 for an id that is not a uuid, on reads and writes alike', async () => {
+      expect((await app.request('/api/v1/resources/not-a-uuid')).status).toBe(404)
+      expect((await app.request('/api/v1/resources/not-a-uuid/text')).status).toBe(404)
+      const put = await app.request('/api/v1/resources/not-a-uuid', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'x' }),
+      })
+      expect(put.status).toBe(404)
+    })
+
     it('should return 404 for private package resource when unauthenticated', async () => {
       const pkg = await createPackage('private-res-pkg', { private: true })
       const resource = await createResource(pkg.id)
@@ -1106,6 +1117,36 @@ describe('Resources API Routes', () => {
 
       const body = await res.json()
       expect(body.name).toBe('still-updated')
+    })
+  })
+
+  describe('resource writes — visibility before role', () => {
+    it('should answer 404 to an outsider writing to a private package resource', async () => {
+      const pkg = await createPackage('private-write-res-pkg', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const put = await outsiderApp.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'renamed' }),
+      })
+      expect(put.status).toBe(404)
+      const del = await outsiderApp.request(`/api/v1/resources/${resource.id}`, {
+        method: 'DELETE',
+      })
+      expect(del.status).toBe(404)
+    })
+
+    it('should answer 403 to an outsider writing to a public package resource', async () => {
+      const pkg = await createPackage('public-write-res-pkg')
+      const resource = await createResource(pkg.id)
+
+      const put = await outsiderApp.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'renamed' }),
+      })
+      expect(put.status).toBe(403)
     })
   })
 

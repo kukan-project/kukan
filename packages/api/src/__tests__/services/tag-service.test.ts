@@ -32,6 +32,11 @@ describe('TagService', () => {
   })
 
   describe('getById', () => {
+    it('should return null for a non-uuid id without querying', async () => {
+      mock.addResult([{ ...createTagFixture(), packageCount: 1 }]) // would be found, were it asked
+      expect(await service.getById('not-a-uuid')).toBeNull()
+    })
+
     it('should return null when tag not found', async () => {
       mock.addResult([]) // empty result
 

@@ -64,6 +64,7 @@ import type { ColumnRolesView } from '@kukan/shared'
 import { MCP_SECTION_MAX_CHARS, MCP_SECTION_MAX_UNIT, QUERY_MAX_SQL_LENGTH } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
+  canViewPackage,
   canWritePackage,
   makePackageAuthorize,
   resolveUserOrgIds,
@@ -95,12 +96,14 @@ function parseVersionParam(raw: string): number {
  * Response headers for an attachment download. The filename is sent twice:
  * an ASCII-only form for old clients, and RFC 5987 UTF-8 for everyone else.
  */
-function downloadHeaders(
+export function downloadHeaders(
   filename: string,
   contentType: string,
   size: number | null
 ): Record<string, string> {
-  const ascii = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
+  // A backslash quotes the next character in a quoted-string, so `abc\"` would
+  // leave where the name ends to the reader
+  const ascii = filename.replace(/[^\x20-\x7E]/g, '_').replace(/[\\"]/g, '_')
   const headers: Record<string, string> = {
     'Content-Type': contentType,
     'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
@@ -219,6 +222,8 @@ async function checkResourcePermission(
 ) {
   const existing = await resourceService.getById(resourceId)
   const pkg = await new PackageService(db).getByNameOrId(existing.packageId, ['active', 'draft'])
+  // A resource the caller cannot see is not there, as the reads say
+  if (!(await canViewPackage(db, pkg, user))) throw new NotFoundError('Resource', resourceId)
   await makePackageAuthorize(db, user, 'editor')(pkg)
   return existing
 }

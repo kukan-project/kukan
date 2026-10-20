@@ -266,6 +266,39 @@ describe('errorHandler', () => {
     expect((await res.json()).detail).toBe('An unexpected error occurred')
   })
 
+  it('should leave any other invalid text representation (22P02) to the 500 fallback', async () => {
+    // A bad integer, boolean or jsonb cast is a bug, not a missing row
+    for (const routine of ['pg_strtoint32_safe', 'boolin', 'json_errsave_error']) {
+      const app = createTestApp(() => {
+        const pgError = Object.assign(new Error('invalid input syntax'), { code: '22P02', routine })
+        throw new Error('Failed query: select ...', { cause: pgError })
+      })
+
+      const res = await app.request('/test')
+      expect(res.status, routine).toBe(500)
+    }
+  })
+
+  it('should report a non-uuid reaching a uuid column as 404, without the driver text', async () => {
+    const app = createTestApp(() => {
+      const pgError = Object.assign(new Error('invalid input syntax for type uuid: "not-a-uuid"'), {
+        code: '22P02',
+        routine: 'string_to_uuid',
+      })
+      // Drizzle wraps the driver's error
+      throw new Error('Failed query: select ...', { cause: pgError })
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({
+      type: 'about:blank',
+      title: 'NOT_FOUND',
+      status: 404,
+      detail: 'Not found',
+    })
+  })
+
   it('should convert RequestAbandonedError to 408 without logging a fault', async () => {
     // A request its caller withdrew is answered by the class, not by reading
     // the request: a genuine crash that coincides with someone navigating away

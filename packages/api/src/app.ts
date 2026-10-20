@@ -20,6 +20,7 @@ import { limitBody } from './middleware/body-limit'
 import { cacheControl, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
+import { noSniff } from './middleware/no-sniff'
 import { retireConnection } from './middleware/retire-connection'
 import type { AppContext } from './context'
 
@@ -93,6 +94,7 @@ export async function createApp() {
   // Middleware
   app.use('*', logger)
   app.use('*', cacheControl)
+  app.use('*', noSniff)
   app.use('*', retireConnection)
   app.use('/api/*', limitBody)
   app.onError(errorHandler)

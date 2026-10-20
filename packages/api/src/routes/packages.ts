@@ -408,6 +408,10 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
   const nameOrId = c.req.param('nameOrId')
   const input = c.req.valid('json')
   const service = new PackageService(db)
+  // Resolved as a read first, on every write here: a package the caller cannot
+  // see is a 404 like one that does not exist, rather than a 403 that confirms
+  // the name — 403 is left for the role a visible package requires
+  await service.getByNameOrIdWithAccessCheck(nameOrId, user, ['active', 'draft'])
 
   let before: { private: boolean; ownerOrg: string | null } | undefined
   const pkg = await service.update(nameOrId, input, async (existing) => {
@@ -439,7 +443,11 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
 
-  const existing = await service.getByNameOrId(nameOrId, ['active', 'draft', 'purging'])
+  const existing = await service.getByNameOrIdWithAccessCheck(nameOrId, user, [
+    'active',
+    'draft',
+    'purging',
+  ])
   if (existing.state === 'draft' || existing.state === 'purging') {
     const purged = await service.purgeDraft(
       existing.id,
@@ -472,6 +480,7 @@ packagesRouter.post('/:nameOrId/publish', async (c) => {
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
+  await service.getByNameOrIdWithAccessCheck(nameOrId, user, ['draft', 'active'])
 
   const pkg = await service.publish(nameOrId, makePublishAuthorize(db, user))
 
@@ -527,6 +536,7 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
+  await service.getByNameOrIdWithAccessCheck(nameOrId, user, 'deleted')
 
   // Rows, search docs and every external trace — raw files, previews, retained
   // versions — all under the resources' claim (ADR-044). The DuckLake tables
@@ -548,6 +558,7 @@ packagesRouter.post('/:nameOrId/restore', zValidator('json', restorePackageSchem
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
+  await service.getByNameOrIdWithAccessCheck(nameOrId, user, ['deleted', 'active'])
 
   const pkg = await service.restore(
     nameOrId,
@@ -571,7 +582,10 @@ packagesRouter.put(
     const packageId = c.req.param('packageId')
 
     const packageService = new PackageService(db)
-    const pkg = await packageService.getByNameOrId(packageId, ['active', 'draft'])
+    const pkg = await packageService.getByNameOrIdWithAccessCheck(packageId, user, [
+      'active',
+      'draft',
+    ])
     await makePackageAuthorize(db, user, 'editor')(pkg)
 
     const { resourceIds, sections } = c.req.valid('json')
@@ -612,7 +626,10 @@ packagesRouter.post(
     const input = c.req.valid('json')
 
     const packageService = new PackageService(db)
-    const pkg = await packageService.getByNameOrId(packageId, ['active', 'draft'])
+    const pkg = await packageService.getByNameOrIdWithAccessCheck(packageId, user, [
+      'active',
+      'draft',
+    ])
     await makePackageAuthorize(db, user, 'editor')(pkg)
 
     const resourceService = new ResourceService(db)

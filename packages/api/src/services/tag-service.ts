@@ -114,6 +114,7 @@ export class TagService {
   }
 
   async getById(id: string, viewer?: AuthUser) {
+    if (!isUuid(id)) return null
     return this.getOne(eq(tag.id, id), viewer)
   }
 
