@@ -38,6 +38,56 @@ describe('assertReadOnlySql', () => {
   })
 
   it.each([
+    "SELECT $$'$$; CREATE TABLE evil AS SELECT 42",
+    'SELECT $tag$x$tag$; DROP TABLE data',
+    "SELECT E'\\''; CREATE TABLE evil2 AS SELECT 1",
+    "SELECT e'\\\\'; DROP TABLE data",
+  ])('rejects a second statement hidden by a string form DuckDB reads: %s', (sql) => {
+    expect(() => assertReadOnlySql(sql)).toThrow('Only a single SQL statement is allowed')
+  })
+
+  it.each([
+    'SELECT $tag$;$tag$',
+    'SELECT $$;$$ AS x FROM data',
+    'SELECT $a$ $b$ ; $a$', // only the opening tag closes
+    "SELECT E'it\\'s;' AS x",
+    "SELECT name FROM data WHERE name = E'DROP\\nTABLE'",
+  ])('reads a semicolon or keyword inside a DuckDB string form as text: %s', (sql) => {
+    expect(() => assertReadOnlySql(sql)).not.toThrow()
+  })
+
+  it.each([
+    'SELECT 1 /* /* */ $$ */; DROP TABLE data -- $$', // block comments nest
+    "SELECT E'a'\n'\\''; DROP TABLE data -- '", // an E string continues on the next line
+    "SELECT E'a' -- c\n  '\\''; DROP TABLE data -- '",
+  ])('rejects a second statement hidden by how DuckDB reads comments and strings: %j', (sql) => {
+    expect(() => assertReadOnlySql(sql)).toThrow('Only a single SQL statement is allowed')
+  })
+
+  it.each([
+    'SELECT 1 /* a /* ; */ b */ AS x',
+    "SELECT E'a'\n'b;' AS x",
+    "SELECT E'a' /* c */ AS x, 'b;' AS y", // no newline: two literals, nothing continues
+  ])('accepts nested comments and continued strings as one statement: %j', (sql) => {
+    expect(() => assertReadOnlySql(sql)).not.toThrow()
+  })
+
+  it('stays linear on a long run of dashes after an E string', () => {
+    const started = Date.now()
+    assertReadOnlySql(`SELECT E'a' ${'-'.repeat(100_000)}`)
+    expect(Date.now() - started).toBeLessThan(1000)
+  })
+
+  it.each([
+    'SELECT 1 AS a$$; DROP TABLE data', // `$` continues an identifier
+    'SELECT 1 AS a$b; DROP TABLE data',
+    'SELECT $1; DROP TABLE data', // a parameter, not a quote
+    "SELECT 1 AS abe'x\\'; DROP TABLE data", // `e` ends a name: a plain string, no escapes
+  ])('does not read a dollar or `e` outside a quote opener as one: %s', (sql) => {
+    expect(() => assertReadOnlySql(sql)).toThrow(ValidationError)
+  })
+
+  it.each([
     'DROP TABLE data',
     'INSERT INTO data VALUES (1)',
     'UPDATE data SET x = 1',

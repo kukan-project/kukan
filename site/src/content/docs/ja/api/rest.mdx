@@ -376,6 +376,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 
 - データは `data` という名前のテーブルとして参照します。列名に空白や非 ASCII を含む場合は二重引用符で囲みます。
 - 単一の `SELECT` / `WITH` 文のみ。`INSERT` / `UPDATE` / `DELETE` / `CREATE` / `DROP` / `ATTACH` / `COPY` / `PRAGMA` 等の書き込み・DDL は拒否されます。
+- `PIVOT` には、列にする値を `IN (…)` で明示してください（`PIVOT data ON col IN ('a', 'b') USING sum(v)`）。省くと DuckDB がクエリの前に型を作る文を足すため、2 文目として拒否されます。
 - 使い捨ての in-memory DuckDB 上で実行され、ファイル・URL・拡張ロード等の外部アクセスは全面的に禁止されます。
 - 整数は数値で返します。ただし、倍精度の浮動小数点数で正確に表せない値（絶対値が 2^53 以上）は、その値だけ文字列で返します。同じ列に数値と文字列が混ざりうるので、受け取る側は両方を扱えるようにしてください。DECIMAL は精度を保つため文字列、日付・時刻も文字列です。
 

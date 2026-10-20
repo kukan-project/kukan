@@ -21,7 +21,8 @@ import {
   sealDuckdb,
   sqlLiteral,
 } from '@kukan/lake'
-import { assertReadOnlySql } from './sql-guard'
+import type { DuckDBPreparedStatement } from '@duckdb/node-api'
+import { assertReadOnlySql, READ_ONLY_MESSAGE, SINGLE_STATEMENT_MESSAGE } from './sql-guard'
 
 export interface SandboxLimits {
   maxRows: number
@@ -35,6 +36,9 @@ export interface SandboxLimits {
 export function timeoutMessage(timeoutMs: number): string {
   return `Query exceeded the time limit of ${timeoutMs} ms`
 }
+
+export const PIVOT_IN_LIST_MESSAGE =
+  "PIVOT needs an explicit IN (…) list of values here, e.g. PIVOT data ON col IN ('a', 'b') USING sum(v)"
 
 export interface SandboxResult {
   columns: string[]
@@ -136,6 +140,7 @@ export async function runSandboxedQuery(
   })
   let timer: NodeJS.Timeout | undefined
   let timedOut = false
+  let prepared: DuckDBPreparedStatement | undefined
 
   try {
     // The timeout also covers materialization: a huge or pathological Parquet must not
@@ -161,9 +166,25 @@ export async function runSandboxedQuery(
 
     let reader
     try {
+      // DuckDB's own reading, not the guard's lexer: `conn.run*` executes every
+      // statement but the last before returning, and a CTE can lead a DELETE.
+      // Nothing is executed until there is one statement and it is a SELECT.
+      const statements = await conn.extractStatements(userSql)
+      if (statements.count !== 1) {
+        // A PIVOT without IN (…) is expanded into a CREATE TYPE ahead of the query.
+        throw new ValidationError(
+          /\bpivot\b/i.test(userSql) ? PIVOT_IN_LIST_MESSAGE : SINGLE_STATEMENT_MESSAGE
+        )
+      }
+      prepared = await statements.prepare(0)
+      const { StatementType } = await import('@duckdb/node-api')
+      if (prepared.statementType !== StatementType.SELECT) {
+        throw new ValidationError(READ_ONLY_MESSAGE)
+      }
       // Read one past the cap so truncation is detectable without scanning everything.
-      reader = await conn.runAndReadUntil(userSql, limits.maxRows + 1)
+      reader = await prepared.runAndReadUntil(limits.maxRows + 1)
     } catch (err) {
+      if (err instanceof ValidationError) throw err
       // An interrupted statement fails with a DuckDB error
       if (timedOut) throw new RequestTimeoutError(timeoutMessage(limits.timeoutMs))
       throw new ValidationError(`Query failed: ${firstLine(err)}`)
@@ -187,6 +208,7 @@ export async function runSandboxedQuery(
     return { columns, rows, rowCount: rows.length, truncated }
   } finally {
     if (timer) clearTimeout(timer)
+    prepared?.destroySync()
     await close()
   }
 }
