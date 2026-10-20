@@ -137,8 +137,9 @@ export interface VersionView {
    * cap, not about the version — persist it and a version settled under an old
    * cap keeps saying so after the cap moves. Of the ones the row does carry,
    * `out-of-memory` is about the task the interpretation ran on (a reprocess on
-   * a larger one reads it again), and the rest are facts about the bytes, which
-   * never change.
+   * a larger one reads it again), `timed-out` about the worker's time limit
+   * (read again only once that is raised), and the rest are facts about the
+   * bytes, which never change.
    */
   noTableReason: NoTableReason | null
   /**

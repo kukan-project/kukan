@@ -22,7 +22,7 @@ import {
   streamToTempFile,
   transcodeToUtf8,
 } from '../node-utils'
-import { HeavyTooLargeError, runHeavy } from '@/heavy'
+import { HeavyTimedOutError, HeavyTooLargeError, runHeavy } from '@/heavy'
 import type { HeavyRequest } from '@/heavy/protocol'
 import { countTitleRows } from './table/csv-title-rows'
 import { jsonStartsWithObject } from './table/json'
@@ -248,11 +248,16 @@ async function interpretOnDisk<T>(
   try {
     interpreted = (await runHeavy(
       request(parquetPath, profilePath),
-      ctx.assertHeld
+      ctx.keepHeld
     )) as InterpretedTableFile
   } catch (err) {
-    if (!(err instanceof HeavyTooLargeError)) throw err
-    return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
+    if (err instanceof HeavyTooLargeError) {
+      return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
+    }
+    if (err instanceof HeavyTimedOutError) {
+      return { encoding, schema: NO_TABLE, reason: 'timed-out' }
+    }
+    throw err
   }
   const { schema, reason, rowGroupRows, profile } = interpreted
   // And the source is dead once it has been interpreted. What the callback

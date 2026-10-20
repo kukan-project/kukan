@@ -69,7 +69,11 @@ import { executeFetch } from '../../pipeline/steps/fetch'
 import { executeInterpret } from '../../pipeline/steps/interpret'
 import { executeLake } from '../../pipeline/steps/lake'
 import { executeIndexContent } from '../../pipeline/steps/index-content'
-import { HeavyShortOfMemoryError, WorkerStoppingError } from '../../heavy/process'
+import {
+  HeavyShortOfMemoryError,
+  HeavyTimedOutError,
+  WorkerStoppingError,
+} from '../../heavy/process'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
@@ -602,6 +606,28 @@ describe('processResource', () => {
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', expect.any(String))
     expect(mockTracker.failOpenStep).toHaveBeenCalled()
     expect(executeIndexContent).not.toHaveBeenCalled()
+  })
+
+  it('records a document whose extraction ran out of time on the step, and completes the job', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'PDF',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    vi.mocked(executeInterpret).mockRejectedValue(new HeavyTimedOutError())
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    // Not thrown, so the queue does not run it again to stall the worker once more
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+    expect(mockTracker.failStep).toHaveBeenCalledWith(
+      expect.any(String),
+      new HeavyTimedOutError().message
+    )
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
   })
 
   it('should complete even if the interpretation fails', async () => {

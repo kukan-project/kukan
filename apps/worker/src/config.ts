@@ -162,6 +162,16 @@ export const HEAVY_IDLE_MS = 60_000
 export const HEAVY_CLAIM_POLL_MS = 5_000
 
 /**
+ * How long one heavy request may run before the process is killed and the
+ * request recorded as timed out (ADR-059 §3). Memory alone does not bound it:
+ * a PDF can keep pdf.js busy for hours within its budget, and every heavy
+ * request and lake ingest on the worker waits behind it. Far above what real
+ * files take, so only content that stalls the parser meets it.
+ */
+export const HEAVY_EXTRACT_TIMEOUT_MS = 10 * 60_000
+export const HEAVY_INTERPRET_TIMEOUT_MS = 15 * 60_000
+
+/**
  * How many columns one per-column statistics query covers (ADR-046).
  *
  * The bound above is on data, and the statistics pass does not spend it on

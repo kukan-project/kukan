@@ -1071,6 +1071,7 @@
         "too-many-columns": "Too many columns to preview",
         "too-large": "Too large to preview",
         "out-of-memory": "Ran out of memory interpreting it",
+        "timed-out": "Took too long to interpret",
         "ragged-rows": "rows do not split into the same columns",
         "not-records": "Not a list of records, so there is no table"
       },

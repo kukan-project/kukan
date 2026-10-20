@@ -5,6 +5,7 @@ import { ChildExitedError } from '@kukan/api/services/child/host'
 import {
   HeavyProcess,
   HeavyShortOfMemoryError,
+  HeavyTimedOutError,
   HeavyTooLargeError,
   WorkerStoppingError,
   type HeavyLimits,
@@ -19,6 +20,11 @@ const command = () => ({
   cwd: join(here, '../../..'),
 })
 
+/** A time limit for each of the fixture's kinds, `hang` overridable. */
+function within(ms: number, hang = ms): HeavyLimits['timeoutMs'] {
+  return { pid: ms, fail: ms, crash: ms, hang } as unknown as HeavyLimits['timeoutMs']
+}
+
 const LIMITS: HeavyLimits = {
   budgetMb: 10_000,
   headroomMb: 0,
@@ -26,6 +32,7 @@ const LIMITS: HeavyLimits = {
   restartMb: 10_000,
   idleMs: 60_000,
   checkMs: 20,
+  timeoutMs: within(60_000),
 }
 
 // The fixture's requests, which are not the worker's
@@ -177,6 +184,30 @@ describe('HeavyProcess', () => {
     await expect(ask(heavy, 'hang', byAttempt)).rejects.toThrow('done')
     expect(relieve).toHaveBeenCalledOnce()
     expect(started).toBe(3)
+  })
+
+  it('kills a request that runs past the time limit for its kind, without running it again', async () => {
+    let started = 0
+    heavy = new HeavyProcess(
+      () => {
+        started++
+        return command()
+      },
+      { ...LIMITS, timeoutMs: within(60_000, 200) }
+    )
+    const pid = (await ask(heavy, 'pid')) as number
+    await expect(ask(heavy, 'hang')).rejects.toThrow(HeavyTimedOutError)
+    expect(alive(pid)).toBe(false)
+    // Reused or not, the time is the request's: no fresh process for it
+    expect(started).toBe(1)
+    expect(await ask(heavy, 'pid')).not.toBe(pid)
+  })
+
+  it('does not time out a request that answered in time', async () => {
+    heavy = new HeavyProcess(command, { ...LIMITS, timeoutMs: within(200) })
+    const pid = await ask(heavy, 'pid')
+    await new Promise((r) => setTimeout(r, 300))
+    expect(await ask(heavy, 'pid')).toBe(pid)
   })
 
   it('kills the process when the check says the work is no longer wanted', async () => {

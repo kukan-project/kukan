@@ -21,6 +21,7 @@ import {
 } from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
 import { interruptsRun } from '../heavy/process'
+import { claimKeeper } from './run/held-context'
 import type { PipelineContext } from './run/types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
@@ -64,7 +65,7 @@ export async function retryLakeIngest(
     const result = await withInterpretedVersion(
       { storageKey: source.storageKey, size: source.size },
       source.format.toLowerCase(),
-      ctx,
+      claims[0] ? { ...ctx, keepHeld: claimKeeper(deps.db, claims[0]) } : ctx,
       (t) =>
         ctx.ingestLakeVersion({
           resourceId,

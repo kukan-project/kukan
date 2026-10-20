@@ -6,14 +6,19 @@
  * through the heavy process (ADR-059), and wrapping the whole read in one
  * would have it wait on itself.
  */
+import type { Database } from '@kukan/db'
 import type { LakeVersionReader } from '@kukan/api/services/lake/lake-rebuild'
 import { withInterpretedVersion } from './interpret/version'
 import { interruptsRun } from '../heavy/process'
+import { claimKeeper } from './run/held-context'
 import type { PipelineContext } from './run/types'
 import { heavySection } from '@/heavy-section'
 
-export function lakeVersionReader(ctx: PipelineContext): LakeVersionReader {
-  return async (file, use) => {
+export function lakeVersionReader(
+  ctx: PipelineContext,
+  db: Pick<Database, 'execute'>
+): LakeVersionReader {
+  return async (file, use, claim) => {
     // Whether the throw came out of the load rather than the reading: the
     // load's failures are the catalog's, the reading's are this version's
     let loading = false
@@ -22,7 +27,7 @@ export function lakeVersionReader(ctx: PipelineContext): LakeVersionReader {
       outcome = await withInterpretedVersion(
         { storageKey: file.storageKey, size: file.size ?? 0 },
         (file.format ?? '').toLowerCase(),
-        ctx,
+        claim ? { ...ctx, keepHeld: claimKeeper(db, claim) } : ctx,
         (table) => {
           loading = true
           return heavySection(() => use(table.parquetPath))

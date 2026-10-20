@@ -268,7 +268,7 @@ async function interpretDocument(
     // In the heavy process: parsing is where a document's memory goes
     const { bytes } = await runHeavy(
       { kind: 'extract-text', documentPath: tempPath, format: fmt, artifactPath },
-      ctx.assertHeld
+      ctx.keepHeld
     )
     const key = getPreviewKey(packageId, resourceId, 'text.ndjson.zst', writeToken)
     await ctx.putObject(key, createReadStream(artifactPath), {

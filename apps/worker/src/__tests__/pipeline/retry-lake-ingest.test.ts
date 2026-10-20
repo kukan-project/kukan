@@ -13,6 +13,7 @@ import {
 const claim = vi.hoisted(() => ({ answer: 'ran' as 'ran' | 'held' }))
 
 vi.mock('@kukan/api/services/pipeline/pipeline-claim', () => ({
+  touchResourceClaim: vi.fn(async () => {}),
   withResourceClaims: vi.fn(
     async (_db: unknown, ids: string[], fn: (claims: unknown[]) => Promise<unknown>) =>
       claim.answer === 'held'
@@ -75,6 +76,8 @@ vi.mock('../../pipeline/interpret/version', () => ({
 }))
 
 import { withInterpretedVersion } from '../../pipeline/interpret/version'
+import { touchResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+import type { PipelineContext } from '../../pipeline/run/types'
 import { recordLakeIngestFailure } from '@kukan/api/services/resource-version-service'
 
 const VERSION_KEY = 'resources/pkg-1/res-1.v2'
@@ -108,7 +111,7 @@ describe('retryLakeIngest', () => {
     expect(withInterpretedVersion).toHaveBeenCalledWith(
       { storageKey: VERSION_KEY },
       'csv',
-      deps.ctx,
+      expect.objectContaining({ ingestLakeVersion: deps.ctx.ingestLakeVersion }),
       expect.any(Function)
     )
     expect(deps.ctx.ingestLakeVersion).toHaveBeenCalledWith({
@@ -118,6 +121,17 @@ describe('retryLakeIngest', () => {
       claim: expect.anything(),
     })
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('keeps its claim alive while the version is interpreted', async () => {
+    await retryLakeIngest(job, deps)
+
+    const ctx = vi.mocked(withInterpretedVersion).mock.lastCall![2] as PipelineContext
+    await ctx.keepHeld!()
+    expect(touchResourceClaim).toHaveBeenCalledWith(
+      deps.db,
+      expect.objectContaining({ resourceId: 'res-1' })
+    )
   })
 
   it('queues the rebuild without interpreting anything when the resource is still to be moved', async () => {

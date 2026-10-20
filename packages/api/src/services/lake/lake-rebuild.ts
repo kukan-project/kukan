@@ -68,10 +68,15 @@ export type LakeVersionRead<T> =
  * Interpret a version's file and hand its table, as a local Parquet path, to
  * `use` — or say why it has none. Supplied by the worker, which owns
  * interpretation.
+ *
+ * `claim` is the one the caller holds the resource under, for the reader to
+ * keep alive while it interprets: one version can take longer than the claim
+ * stays fresh untouched.
  */
 export type LakeVersionReader = <T>(
   file: LakeVersionFile,
-  use: (parquetPath: string) => Promise<T>
+  use: (parquetPath: string) => Promise<T>,
+  claim?: ResourceClaim | null
 ) => Promise<LakeVersionRead<T>>
 
 export interface LakeRebuildDeps extends LakeCatalogDeps {
@@ -277,7 +282,8 @@ export async function rebuildResourceLake(
                 parquetPath,
                 keyColumns,
                 headKey,
-              })
+              }),
+            opts.claim
           )
           if (!read.table && 'failed' in read) {
             // Left out rather than holding up every version after it, and with

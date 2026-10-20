@@ -488,6 +488,10 @@ export interface OdataKey {
  * it ran on, where `too-large` is one about the size cap. Kept apart so that a
  * site that moves to larger tasks can find the versions worth reading again.
  *
+ * `timed-out` is the interpretation having run past the time limit the heavy
+ * process gives it (ADR-059) and been stopped. Recorded so the hourly sweep
+ * does not hand the version out to stall the worker again.
+ *
  * `not-records` is a JSON file in none of the shapes that read as a table — a
  * top-level array of objects, one array under a single key, a GeoJSON
  * FeatureCollection (ADR-063 extension) — or one that does not parse. A
@@ -495,7 +499,13 @@ export interface OdataKey {
  * file; the content index takes it as text.
  */
 export type NoTableReason =
-  'no-columns' | 'too-many-columns' | 'too-large' | 'out-of-memory' | 'ragged-rows' | 'not-records'
+  | 'no-columns'
+  | 'too-many-columns'
+  | 'too-large'
+  | 'out-of-memory'
+  | 'timed-out'
+  | 'ragged-rows'
+  | 'not-records'
 
 /**
  * Why a version was not loaded into layer 2, when the key is what stopped it

@@ -126,7 +126,13 @@ task stays up and the retry does not repeat it). The next request starts the chi
   sweep would hand out the same version and take the child down every time. It is kept apart from the
   size cap's `too-large` (never stored, derived from the cap each time): this one is a fact about the
   size of the task it ran on, so a site that moves to larger tasks can find the versions to read again
-- Text extraction: recorded as the Index step failing. What was indexed before stays as it was
+- Text extraction: recorded as the Interpret step failing. What was indexed before stays as it was
+- Time is bounded the same way (added after implementation): a request that runs past its kind's
+  limit (text extraction 10 minutes, CSV / JSON interpretation 15 minutes) has the child killed and
+  is recorded like "too large" — `timed-out` on the version for interpretation, the step's failure
+  for text extraction — and is not run again. Memory alone does not bound a parse: a PDF that keeps
+  pdf.js busy within its budget would hold every heavy request and layer-2 ingest on the worker
+  behind it
 
 ### 3. When the child is stopped or restarted
 
@@ -134,9 +140,10 @@ task stays up and the retry does not repeat it). The next request starts the chi
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Mid-request, the child's anonymous memory passes its budget     | Stop the child. A reused one is replaced and the request run once more; a fresh one over it means "too large"                                                                                                                                                      |
 | Mid-request, the container's memory nears its limit             | Stop the child, have the parent close the layer 2 instances no session is using, and run the request once more in a fresh child. Still short, it is a transient failure: not recorded on the version, and the job fails for the queue to run again after its delay |
+| Mid-request, the request passes its kind's time limit           | Stop the child and record the item as timed out; it is not run again. The next request starts a fresh one                                                                                                                                                          |
 | After an item, the child's anonymous memory is past a set value | Stop the child; the next request starts it (so what it kept is not carried on)                                                                                                                                                                                     |
 | No request for a while after the last (about a minute)          | Stop the child and give back what it loaded (~70–100 MB)                                                                                                                                                                                                           |
-| Mid-request, the run loses its claim                            | Stop the child (the parent checks the claim with the memory meanwhile)                                                                                                                                                                                             |
+| Mid-request, the run loses its claim                            | Stop the child (the parent checks the claim with the memory meanwhile, and touches it, so a long request is not taken for a stale claim)                                                                                                                           |
 | A waiting child has gone (the kernel's OOM kill, say)           | The next request starts a fresh one (not a failure of that request)                                                                                                                                                                                                |
 | The parent receives SIGTERM                                     | Stop the child as soon as the queue takes no more jobs, and refuse later requests. The item under way records nothing; the queue hands its job back uncounted for another task                                                                                     |
 | The parent dies outright                                        | The child sees the IPC channel close and exits on its own                                                                                                                                                                                                          |

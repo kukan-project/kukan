@@ -11,8 +11,10 @@ import { releaseIdleLakeInstances } from '@kukan/lake'
 import { createLogger } from '@kukan/shared'
 import {
   HEAVY_CLAIM_POLL_MS,
+  HEAVY_EXTRACT_TIMEOUT_MS,
   HEAVY_HEADROOM_MB,
   HEAVY_IDLE_MS,
+  HEAVY_INTERPRET_TIMEOUT_MS,
   HEAVY_PARENT_RESERVE_MB,
   HEAVY_POLL_MS,
   HEAVY_PROCESS_MB,
@@ -23,7 +25,7 @@ import { RunCancelledError } from '../pipeline/run/step-tracker'
 import { HeavyProcess } from './process'
 import type { HeavyRequest, HeavyResult } from './protocol'
 
-export { HeavyTooLargeError } from './process'
+export { HeavyTimedOutError, HeavyTooLargeError } from './process'
 
 /**
  * Where the child's code is. **Run from source** (tsx, vitest), the source
@@ -55,6 +57,11 @@ const heavy = new HeavyProcess(
     restartMb: HEAVY_RESTART_MB,
     idleMs: HEAVY_IDLE_MS,
     checkMs: HEAVY_CLAIM_POLL_MS,
+    timeoutMs: {
+      'extract-text': HEAVY_EXTRACT_TIMEOUT_MS,
+      'interpret-csv': HEAVY_INTERPRET_TIMEOUT_MS,
+      'interpret-json': HEAVY_INTERPRET_TIMEOUT_MS,
+    },
   },
   {
     // The lake ingest's instance stays open between loads, and what it keeps is
@@ -70,18 +77,18 @@ const heavy = new HeavyProcess(
 /**
  * Run `request` in the heavy process.
  *
- * @param assertHeld - the run's claim check (`heldContext`): a run that has
+ * @param keepHeld - the run's claim touch (`heldContext`): a run that has
  *   lost its resource has the process stopped under it. Any other failure of
- *   the check — the database, briefly — lets the work go on.
+ *   it — the database, briefly — lets the work go on.
  */
 export function runHeavy<R extends HeavyRequest>(
   request: R,
-  assertHeld?: () => Promise<void>
+  keepHeld?: () => Promise<void>
 ): Promise<HeavyResult<R>> {
   const check =
-    assertHeld &&
+    keepHeld &&
     (() =>
-      assertHeld().catch((err: unknown) => {
+      keepHeld().catch((err: unknown) => {
         if (err instanceof RunCancelledError) throw err
       }))
   return heavySection(() => heavy.ask(request, check))

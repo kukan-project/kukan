@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { lakeVersionReader } from '../../pipeline/lake-reader'
 import { WorkerStoppingError } from '../../heavy/process'
 import { createPipelineContextMock } from '../test-helpers/pipeline-context'
+import type { PipelineContext } from '../../pipeline/run/types'
 
 /** What the interpretation does with the file; the reader's own decisions are what is tested. */
 const interpretation = vi.hoisted(() => ({
@@ -17,8 +18,16 @@ vi.mock('../../pipeline/interpret/version', () => ({
   ),
 }))
 
+vi.mock('@kukan/api/services/pipeline/pipeline-claim', () => ({
+  touchResourceClaim: vi.fn(async () => {}),
+}))
+
+import { withInterpretedVersion } from '../../pipeline/interpret/version'
+import { touchResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+
+const db = { execute: vi.fn() }
 const file = { resourceId: 'r', version: 2, storageKey: 'k', size: 1, format: 'CSV' }
-const read = () => lakeVersionReader(createPipelineContextMock())(file, async () => 'loaded')
+const read = () => lakeVersionReader(createPipelineContextMock(), db)(file, async () => 'loaded')
 
 describe('lakeVersionReader', () => {
   it('hands the table to the load', async () => {
@@ -46,9 +55,20 @@ describe('lakeVersionReader', () => {
     interpretation.run = async (use) => ({ used: await use({ parquetPath: '/tmp/v.parquet' }) })
 
     await expect(
-      lakeVersionReader(createPipelineContextMock())(file, async () => {
+      lakeVersionReader(createPipelineContextMock(), db)(file, async () => {
         throw new Error('catalog write failed')
       })
     ).rejects.toThrow('catalog write failed')
+  })
+
+  it('keeps the claim it is read under alive while the version is interpreted', async () => {
+    interpretation.run = async (use) => ({ used: await use({ parquetPath: '/tmp/v.parquet' }) })
+    const claim = { id: 'c', resourceId: 'r', owner: 'o' }
+
+    await lakeVersionReader(createPipelineContextMock(), db)(file, async () => 'loaded', claim)
+
+    const ctx = vi.mocked(withInterpretedVersion).mock.lastCall![2] as PipelineContext
+    await ctx.keepHeld!()
+    expect(touchResourceClaim).toHaveBeenCalledWith(db, claim)
   })
 })

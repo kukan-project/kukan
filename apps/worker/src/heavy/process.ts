@@ -35,6 +35,18 @@ export class HeavyTooLargeError extends Error {
 }
 
 /**
+ * The request ran past its kind's time limit ({@link HeavyLimits.timeoutMs}),
+ * and the process went with it. Like {@link HeavyTooLargeError}, the request is
+ * the cause: run again, it takes as long.
+ */
+export class HeavyTimedOutError extends Error {
+  constructor() {
+    super('It took longer than this worker allows for it')
+    this.name = 'HeavyTimedOutError'
+  }
+}
+
+/**
  * The process was stopped because the container as a whole neared its limit,
  * which the worker's other jobs share in: nothing to hold against the request.
  */
@@ -81,6 +93,8 @@ export interface HeavyLimits {
   idleMs: number
   /** How often `check` is called during a request. */
   checkMs: number
+  /** How long a request of `kind` may run before the process is killed. */
+  timeoutMs: Record<HeavyRequest['kind'], number>
 }
 
 /** What a child gets of the worker's environment beyond the base keys. */
@@ -129,9 +143,11 @@ export class HeavyProcess {
     // a container that was short. Every rerun is in a fresh process
     let reused = this.child?.proc.connected === true
     let relieveOnce = this.options.relieve !== undefined
+    // One limit for the request, reruns included; starting a process isn't counted
+    const timeLeft = { ms: this.limits.timeoutMs[request.kind] }
     for (;;) {
       try {
-        return await this.attempt(request, check)
+        return await this.attempt(request, timeLeft, check)
       } catch (err) {
         const wasReused = reused
         reused = false
@@ -158,6 +174,7 @@ export class HeavyProcess {
 
   private async attempt<R extends HeavyRequest>(
     request: R,
+    timeLeft: { ms: number },
     check?: () => Promise<void>
   ): Promise<HeavyResult<R>> {
     if (this.closed) throw new WorkerStoppingError()
@@ -194,6 +211,8 @@ export class HeavyProcess {
           if (!stopped()) child.kill(err)
         })
       )
+    const runStarted = Date.now()
+    const timer = setTimeout(() => child.kill(new HeavyTimedOutError()), Math.max(0, timeLeft.ms))
 
     let reply: HeavyReply
     try {
@@ -218,6 +237,8 @@ export class HeavyProcess {
     } finally {
       stopWatch()
       stopCheck?.()
+      clearTimeout(timer)
+      timeLeft.ms -= Date.now() - runStarted
     }
     await this.rest(child)
     if (!reply.ok) throw new Error(reply.message)

@@ -61,7 +61,7 @@ export async function rebuildLakeCatalog(
     return {
       rebuilt: await rebuildResourceLake(
         db,
-        { ...catalogDeps, readVersion: lakeVersionReader(deps.ctx) },
+        { ...catalogDeps, readVersion: lakeVersionReader(deps.ctx, db) },
         resourceId,
         { claim }
       ),

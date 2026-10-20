@@ -212,9 +212,10 @@ export interface PipelineContext {
    */
   ingestLakeVersion(opts: LakeIngestRow): Promise<IngestResult | null>
   /**
-   * Throw `RunCancelledError` if the run no longer holds its resource. Set by
-   * `heldContext`; what work too long to check only at its writes polls
-   * (the heavy process, ADR-059).
+   * Say the run is still working under its claim, and throw `RunCancelledError`
+   * if it no longer holds its resource. Set by `heldContext`; what work too long
+   * to check only at its writes polls (the heavy process, ADR-059), which would
+   * otherwise read as stale and be taken over before its own time limit.
    */
-  assertHeld?(): Promise<void>
+  keepHeld?(): Promise<void>
 }

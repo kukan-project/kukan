@@ -28,9 +28,35 @@
  * inherits it.
  */
 import type { Database } from '@kukan/db'
-import { stillHolds, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+import {
+  stillHolds,
+  touchResourceClaim,
+  type ResourceClaim,
+} from '@kukan/api/services/pipeline/pipeline-claim'
+import { ConflictError } from '@kukan/shared'
 import { RunCancelledError } from './step-tracker'
 import type { PipelineContext } from './types'
+
+/**
+ * `PipelineContext.keepHeld` for a holder of `claim`: whatever runs heavy work
+ * under a claim — a run, the lake retry, a rebuild — hands this on, or the
+ * claim reads as stale before the work's own time limit.
+ */
+export function claimKeeper(
+  db: Pick<Database, 'execute'>,
+  claim: ResourceClaim
+): () => Promise<void> {
+  return async () => {
+    // Touched only from the live parent's poll: a holder that died stops
+    // touching, and its claim goes stale as before
+    try {
+      await touchResourceClaim(db, claim)
+    } catch (err) {
+      if (err instanceof ConflictError) throw new RunCancelledError(claim.resourceId)
+      throw err
+    }
+  }
+}
 
 export function heldContext(
   ctx: PipelineContext,
@@ -43,7 +69,7 @@ export function heldContext(
 
   return {
     ...ctx,
-    assertHeld,
+    keepHeld: claimKeeper(db, claim),
     async publishContent(id, content) {
       // The claim travels with the content rather than being asked about
       // first: this one write can carry the condition into its own statement,

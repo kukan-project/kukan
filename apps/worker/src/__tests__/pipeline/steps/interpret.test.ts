@@ -11,7 +11,7 @@ import {
   createPipelineContextMock,
   type UploadCapture,
 } from '../../test-helpers/pipeline-context'
-import { HeavyTooLargeError, runHeavy } from '@/heavy'
+import { HeavyTimedOutError, HeavyTooLargeError, runHeavy } from '@/heavy'
 import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline/pipeline-service'
 
 // The real heavy process, unless a test says how the request ends
@@ -530,6 +530,27 @@ describe('executeInterpret', () => {
       schema: { rowCount: 0, columns: [] },
       reason: 'out-of-memory',
     })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('records a CSV whose interpretation ran out of time without leaving it outstanding', async () => {
+    vi.mocked(runHeavy).mockRejectedValueOnce(new HeavyTimedOutError())
+    mockStorageDownload('a,b\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-slow',
+      'pkg-1',
+      version('resources/pkg-1/res-slow'),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toMatchObject({
+      previewKey: null,
+      schema: { rowCount: 0, columns: [] },
+      reason: 'timed-out',
+    })
+    expect(runHeavy).toHaveBeenCalledOnce()
     expect(ctx.putObject).not.toHaveBeenCalled()
   })
 

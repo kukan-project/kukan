@@ -611,7 +611,7 @@ await queue.process({
       queue,
       lake,
       // A tabular version's purge rebuilds its resource's layer 2 (ADR-067)
-      readVersion: lakeVersionReader(ctx),
+      readVersion: lakeVersionReader(ctx, db),
     })
     // The abstract the purge took off is still in the document and the vector
     // until these run; the rebuild that would queue them runs only when
