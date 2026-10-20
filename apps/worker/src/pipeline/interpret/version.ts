@@ -25,11 +25,11 @@ import {
 import { HeavyTimedOutError, HeavyTooLargeError, runHeavy } from '@/heavy'
 import type { HeavyRequest } from '@/heavy/protocol'
 import { countTitleRows } from './table/csv-title-rows'
-import { jsonStartsWithObject } from './table/json'
+import { jsonNestsDeeperThan, jsonStartsWithObject } from './table/json'
 import type { PipelineContext } from '../run/types'
 import type { InterpretedProfile } from './table/table-profile'
 import type { InterpretedTableFile } from './table/write-table'
-import { MAX_JSON_OBJECT_SIZE, MAX_TABLE_COLUMNS } from '@/config'
+import { MAX_JSON_DEPTH, MAX_JSON_OBJECT_SIZE, MAX_TABLE_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
 export interface InterpretedTable {
@@ -202,6 +202,11 @@ async function interpretJsonVersion<T>(
 
   const jsonPath = await streamToTempFile(await ctx.storage.download(source.storageKey), 'json')
   try {
+    // Settled before DuckDB sees it: nesting this deep is what crashes the
+    // heavy process, and a crash is not settled — it can be a passing fault
+    if (await jsonNestsDeeperThan(createReadStream(jsonPath), MAX_JSON_DEPTH)) {
+      return { encoding, schema: NO_TABLE, reason: 'not-records' }
+    }
     return await interpretOnDisk(
       jsonPath,
       encoding,

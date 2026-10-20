@@ -351,6 +351,7 @@ Interpret のみフォーマット別処理を行う。JSON/GeoJSON はレコー
 | 外部 URL 取得（Fetch）   | 100 MB | `apps/worker/src/config.ts`      |
 | CSV/TSV Parquet 生成対象 | 100 MB | `packages/shared/src/formats.ts` |
 | JSON（1 オブジェクト）   | 32 MB  | `apps/worker/src/config.ts`      |
+| JSON（入れ子の深さ）     | 64 段  | `apps/worker/src/config.ts`      |
 
 **関連ファイル:**
 

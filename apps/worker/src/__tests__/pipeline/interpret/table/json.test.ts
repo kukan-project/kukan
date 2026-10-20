@@ -9,7 +9,9 @@ import { DuckDBInstance } from '@duckdb/node-api'
 import {
   flatten,
   interpretJson,
+  jsonNestsDeeperThan,
   jsonStartsWithObject,
+  settledReason,
   structFields,
 } from '@/pipeline/interpret/table/json'
 
@@ -277,6 +279,12 @@ describe('interpretJson', () => {
     expect((await interpret(JSON.stringify(['hello', 'world']))).reason).toBe('not-records')
   })
 
+  it("settles DuckDB's own bound on expression depth as no records", async () => {
+    // Deeper than MAX_JSON_DEPTH, which the caller refuses first; this is what is left behind it
+    const deep = '[{"x":' + '{"a":'.repeat(1000) + '1' + '}'.repeat(1000) + '}]'
+    expect((await interpret(deep, false)).reason).toBe('not-records')
+  }, 20_000)
+
   it('settles an empty array as no columns, and a file of null as no records, without throwing', async () => {
     expect((await interpret('[]')).reason).toBe('no-columns')
     expect((await interpret('null')).reason).toBe('not-records')
@@ -394,6 +402,77 @@ describe('interpretJson', () => {
       true
     )
     expect(await head('   ')).toBe(false)
+  })
+})
+
+describe('jsonNestsDeeperThan', () => {
+  const deeper = (text: string | string[], max: number) =>
+    jsonNestsDeeperThan(Readable.from([text].flat().map((t) => Buffer.from(t))), max)
+
+  it('counts arrays, objects and the two mixed', async () => {
+    expect(await deeper('[[[1]]]', 2)).toBe(true)
+    expect(await deeper('[[[1]]]', 3)).toBe(false)
+    expect(await deeper('{"a":{"b":{"c":1}}}', 2)).toBe(true)
+    expect(await deeper('{"a":{"b":{"c":1}}}', 3)).toBe(false)
+    expect(await deeper('[{"a":[{"b":1}]}]', 3)).toBe(true)
+    expect(await deeper('[{"a":[{"b":1}]}]', 4)).toBe(false)
+    // Siblings are not nesting
+    expect(await deeper('[[1],[2],{"a":3},[4]]', 2)).toBe(false)
+  })
+
+  it('passes nesting exactly at the limit and refuses one level past it', async () => {
+    const nested = (n: number) => '['.repeat(n) + ']'.repeat(n)
+    expect(await deeper(nested(64), 64)).toBe(false)
+    expect(await deeper(nested(65), 64)).toBe(true)
+    // Stray closing brackets first do not lower the count below zero
+    expect(await deeper(']]]' + nested(65), 64)).toBe(true)
+  })
+
+  it('ignores brackets inside strings, escaped quotes included', async () => {
+    expect(await deeper('["[[[[{{{{"]', 1)).toBe(false)
+    expect(await deeper('[{"k\\"[[[": "\\"{{{\\\\"}]', 2)).toBe(false)
+    // An escaped backslash ends before the quote, which then closes the string
+    expect(await deeper('["\\\\", [[1]]]', 2)).toBe(true)
+    // UTF-8 text around the brackets
+    expect(await deeper('[{"名前":"「施設」[1]"}]', 2)).toBe(false)
+  })
+
+  it('keeps its place in a string across chunks', async () => {
+    expect(await deeper(['["abc\\', '"[[[[', '"]'], 1)).toBe(false)
+    expect(await deeper(['[[', '[1]]]'], 2)).toBe(true)
+  })
+
+  it('stops at the first bracket past the limit without reading the rest', async () => {
+    let pulled = 0
+    const chunks = function* () {
+      for (let i = 0; i < 100_000; i++) {
+        pulled++
+        yield Buffer.from('['.repeat(1024))
+      }
+    }
+    expect(await jsonNestsDeeperThan(Readable.from(chunks()), 64)).toBe(true)
+    expect(pulled).toBeLessThan(5)
+  })
+})
+
+describe('settledReason', () => {
+  it("settles DuckDB's own out-of-memory and expression depth, and nothing else", () => {
+    expect(
+      settledReason(new Error('Out of Memory Error: failed to allocate data of size 64.0 MiB'))
+    ).toBe('out-of-memory')
+    expect(
+      settledReason(new Error('Binder Error: Max expression depth limit of 1000 exceeded.'))
+    ).toBe('not-records')
+    // A full spill directory is the moment's, not the file's
+    expect(
+      settledReason(
+        new Error(
+          "Out of Memory Error: failed to offload data block of size 256.0 KiB (19.9 GiB/20.0 GiB used). This limit was set by the 'max_temp_directory_size' setting."
+        )
+      )
+    ).toBeNull()
+    expect(settledReason(new Error('IO Error: No files found'))).toBeNull()
+    expect(settledReason('Out of Memory Error')).toBeNull()
   })
 })
 

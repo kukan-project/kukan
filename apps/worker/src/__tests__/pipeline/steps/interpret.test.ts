@@ -5,7 +5,12 @@ import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeInterpret } from '../../../pipeline/steps/interpret'
 import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
-import { ENCODING_SCAN_LIMIT, MAX_TABLE_COLUMNS, MAX_JSON_OBJECT_SIZE } from '@/config'
+import {
+  ENCODING_SCAN_LIMIT,
+  MAX_JSON_DEPTH,
+  MAX_TABLE_COLUMNS,
+  MAX_JSON_OBJECT_SIZE,
+} from '@/config'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -715,6 +720,27 @@ describe('executeInterpret', () => {
       reason: 'not-records',
     })
     expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('settles a JSON nested past its depth limit as no records, without asking the heavy process', async () => {
+    const depth = MAX_JSON_DEPTH + 1
+    mockStorageDownload('['.repeat(depth) + ']'.repeat(depth))
+
+    const result = await executeInterpret(
+      'res-10f',
+      'pkg-1',
+      version('resources/pkg-1/res-10f'),
+      'JSON',
+      ctx
+    )
+
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: 'UTF8',
+      schema: { rowCount: 0, columns: [] },
+      reason: 'not-records',
+    })
+    expect(runHeavy).not.toHaveBeenCalled()
   })
 
   it('refuses a JSON that is one object past its own cap from its head, settled so the sweep passes it over', async () => {

@@ -93,6 +93,16 @@ export const MAX_TABLE_COLUMNS = 500
 export const MAX_JSON_OBJECT_SIZE = 32 * 1024 * 1024
 
 /**
+ * How deep a JSON file's arrays and objects may nest for an interpretation to
+ * read it. Records are shallow: a GeoJSON MultiPolygon's coordinates sit 8
+ * deep in a FeatureCollection, nested records a few levels more. DuckDB is not:
+ * a thousand levels cost it minutes and gigabytes, a few thousand more its own
+ * out-of-memory, and past that its stack. A file deeper than this is no table,
+ * and is refused before DuckDB reads it.
+ */
+export const MAX_JSON_DEPTH = 64
+
+/**
  * Rows examined at the end of a CSV when looking for footer rows (合計, 注 …).
  * A footer has to run to the bottom of the file to be one, so only the tail can
  * qualify — and reading the whole table back to check would cost more than the

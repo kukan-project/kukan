@@ -256,6 +256,9 @@ exception for being JSON.
   with an empty schema — the sweep checks only the 100MB cap, and would otherwise hand the version out
   every hour — so a raised cap is reached by reprocessing. Reading the properties without the
   coordinates comes later
+- **Nesting has a cap too** (`MAX_JSON_DEPTH`, 64 levels). Counted in one pass before DuckDB reads the
+  file; past it, `not-records` is recorded with an empty schema. A thousand levels cost DuckDB minutes and
+  gigabytes, and deeper still it crashes, which is not settled — so the file is refused before it is read
 - **Layer 2 and the primary key as for a CSV.** A version that made a table is loaded into layer 2
   (ADR-043) whatever its format, and a primary key can be chosen. The sweep's formats share
   `TABLE_SOURCE_FORMATS`, so they cannot drift from what the interpretation reads. A JSON array tends to

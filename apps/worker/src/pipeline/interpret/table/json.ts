@@ -53,6 +53,31 @@ const NOT_RECORDS = /Malformed JSON|JSON transform error|Could not convert|Dupli
 const TOO_LARGE = /maximum_object_size/
 
 /**
+ * What DuckDB raises of its own on a file nested too deep to lay out, anywhere
+ * from the read to the flat table: its own memory limit, and the binder's bound
+ * on how deep one expression goes. Settled, as the heavy process's bounds are —
+ * reading the same file again ends the same way. A crash of DuckDB is not among
+ * them: it can also be a passing fault, and `MAX_JSON_DEPTH` keeps the nesting
+ * that causes one from reaching the reader at all.
+ */
+const OUT_OF_MEMORY = /Out of Memory Error/
+const TOO_DEEP = /Max expression depth/
+
+/**
+ * The out-of-memory DuckDB raises when it cannot spill: the temp directory is
+ * shared with other jobs' downloads, so full is a passing state, not the file's.
+ */
+const SPILL_FULL = /offload|max_temp_directory_size/
+
+/** The reason an error raised while interpreting settles the file with, if it does. */
+export function settledReason(err: unknown): NoTableReason | null {
+  if (!(err instanceof Error)) return null
+  if (OUT_OF_MEMORY.test(err.message)) return SPILL_FULL.test(err.message) ? null : 'out-of-memory'
+  if (TOO_DEEP.test(err.message)) return 'not-records'
+  return null
+}
+
+/**
  * How the reader settles the columns: over every record, as a CSV's are
  * (`sample_size = -1`) — by default it looks at the first 20,480, and a key or
  * a type that first appears after them is silently dropped. And an object of
@@ -85,6 +110,42 @@ export async function jsonStartsWithObject(stream: Readable): Promise<boolean> {
 }
 
 const BOM = Buffer.from([0xef, 0xbb, 0xbf])
+
+/**
+ * Whether a JSON text nests arrays and objects deeper than `maxDepth`, in one
+ * pass that stops at the first bracket past it. Brackets inside strings do not
+ * count. Read byte by byte: every byte that matters is ASCII, which UTF-8 never
+ * uses inside a multi-byte character. Malformed text is not this function's to
+ * judge — the reader refuses it — except that a stray closing bracket buys no
+ * depth: the count never goes below zero.
+ */
+export async function jsonNestsDeeperThan(stream: Readable, maxDepth: number): Promise<boolean> {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  try {
+    for await (const chunk of stream) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      for (let i = 0; i < buf.length; i++) {
+        const b = buf[i]
+        if (inString) {
+          if (escaped) escaped = false
+          else if (b === BACKSLASH) escaped = true
+          else if (b === QUOTE) inString = false
+        } else if (b === QUOTE) inString = true
+        else if (b === 0x5b || b === 0x7b) {
+          if (++depth > maxDepth) return true
+        } else if ((b === 0x5d || b === 0x7d) && depth > 0) depth--
+      }
+    }
+    return false
+  } finally {
+    stream.destroy()
+  }
+}
+
+const QUOTE = 0x22
+const BACKSLASH = 0x5c
 
 /** Space, tab, line feed and carriage return: the whitespace JSON allows (RFC 8259 §2). */
 const JSON_WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d])
@@ -156,6 +217,10 @@ export async function interpretJson(
         ...(records.geometryTypes && { geometryTypes: records.geometryTypes }),
       },
     }
+  } catch (err) {
+    const reason = settledReason(err)
+    if (reason) return refused(reason)
+    throw err
   } finally {
     await close()
   }
