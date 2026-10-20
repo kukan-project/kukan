@@ -1,5 +1,40 @@
+import { Writable } from 'node:stream'
 import { describe, it, expect } from 'vitest'
-import { createLogger } from '../logger'
+import pino from 'pino'
+import { createLogger, LOG_REDACT_PATHS } from '../logger'
+
+describe('LOG_REDACT_PATHS', () => {
+  it('censors credentials at the top level, one level down and in request headers', () => {
+    const lines: string[] = []
+    const log = pino(
+      { redact: LOG_REDACT_PATHS },
+      new Writable({
+        write(chunk, _encoding, callback) {
+          lines.push(String(chunk))
+          callback()
+        },
+      })
+    )
+    log.info({
+      password: 'secret-password-0',
+      user: { email: 'a@example.com', password: 'secret-password-1' },
+      headers: { authorization: 'Bearer secret-token-0', cookie: 'secret-cookie-0' },
+      req: {
+        method: 'GET',
+        headers: { authorization: 'Bearer secret-token-1', cookie: 'secret-cookie-1' },
+      },
+    })
+    const line = JSON.parse(lines[0])
+    expect(line.password).toBe('[Redacted]')
+    expect(line.user).toEqual({ email: 'a@example.com', password: '[Redacted]' })
+    expect(line.headers).toEqual({ authorization: '[Redacted]', cookie: '[Redacted]' })
+    expect(line.req).toEqual({
+      method: 'GET',
+      headers: { authorization: '[Redacted]', cookie: '[Redacted]' },
+    })
+    expect(lines[0]).not.toContain('secret-')
+  })
+})
 
 describe('createLogger', () => {
   it('should create a logger with expected methods', () => {

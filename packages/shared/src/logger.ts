@@ -22,6 +22,22 @@ const PRETTY_OPTS = {
   ignore: 'pid,hostname',
 }
 
+/**
+ * Fields no log line should carry in clear, wherever a caller passes them.
+ * Nothing logs these today; this is the net for the day something does.
+ * A `*` stands for exactly one level, so the top-level names are listed too.
+ */
+export const LOG_REDACT_PATHS = [
+  'password',
+  '*.password',
+  'authorization',
+  '*.authorization',
+  'cookie',
+  '*.cookie',
+  'req.headers.cookie',
+  'req.headers.authorization',
+]
+
 /** One pino-pretty worker thread, shared by every logger in the process. */
 let prettyTransport: pino.DestinationStream | null | undefined
 function sharedPrettyTransport(): pino.DestinationStream | null {
@@ -44,7 +60,7 @@ function sharedPrettyTransport(): pino.DestinationStream | null {
  */
 export function createLogger(options: CreateLoggerOptions): Logger {
   const level = options.level ?? process.env.LOG_LEVEL ?? 'info'
-  const baseOpts: pino.LoggerOptions = { name: options.name, level }
+  const baseOpts: pino.LoggerOptions = { name: options.name, level, redact: LOG_REDACT_PATHS }
 
   // `next dev` hands its server's output to the parent over a socket, not a TTY
   const pretty = process.stdout?.isTTY || process.env.NODE_ENV === 'development'

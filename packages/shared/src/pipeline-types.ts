@@ -846,5 +846,7 @@ export interface ZipManifest {
   totalSize: number
   totalCompressed: number
   truncated: boolean
+  /** The archive's own claim of its entries, folders included — only when truncated */
+  totalEntries?: number
   entries: ZipEntry[]
 }

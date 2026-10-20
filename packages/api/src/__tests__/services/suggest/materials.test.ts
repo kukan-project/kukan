@@ -189,3 +189,63 @@ describe('loadMaterial, document', () => {
     expect(await readDocumentTextHead(storage, 'k', 4)).toBe('abc\n')
   })
 })
+
+describe('loadMaterial, zip', () => {
+  const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger
+  const manifestStorage = (manifest: object) =>
+    ({
+      download: vi.fn(async () => Readable.from([Buffer.from(JSON.stringify(manifest))])),
+    }) as unknown as StorageAdapter
+  const entry = (path: string, isDirectory = false) => ({
+    path,
+    size: 1,
+    compressedSize: 1,
+    lastModified: '2026-01-01',
+    isDirectory,
+  })
+
+  it('gives the file count of a complete listing', async () => {
+    const storage = manifestStorage({
+      totalFiles: 2,
+      truncated: false,
+      entries: [entry('a/', true), entry('a/x.csv'), entry('y.txt')],
+    })
+    const material = await loadMaterial('zip', { id: 'r', format: 'ZIP' }, settled, {
+      db: {} as Database,
+      storage,
+      log,
+    })
+    expect(material.fileList).toEqual(['a/x.csv', 'y.txt'])
+    expect(material.fileCount).toBe(2)
+  })
+
+  it('keeps the file count of a listing an earlier worker cut short', async () => {
+    const storage = manifestStorage({
+      totalFiles: 12_345,
+      truncated: true,
+      entries: [entry('x.csv')],
+    })
+    const material = await loadMaterial('zip', { id: 'r', format: 'ZIP' }, settled, {
+      db: {} as Database,
+      storage,
+      log,
+    })
+    expect(material.fileCount).toBe(12_345)
+  })
+
+  it('states no file count when the listing was cut short', async () => {
+    const storage = manifestStorage({
+      totalFiles: 1,
+      totalEntries: 2_000_000,
+      truncated: true,
+      entries: [entry('x.csv')],
+    })
+    const material = await loadMaterial('zip', { id: 'r', format: 'ZIP' }, settled, {
+      db: {} as Database,
+      storage,
+      log,
+    })
+    expect(material.fileList).toEqual(['x.csv'])
+    expect(material.fileCount).toBeNull()
+  })
+})

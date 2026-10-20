@@ -37,6 +37,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'db-scripts',
+          root: './packages/db',
+          include: ['scripts/__tests__/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'tooling',
           root: './eslint-rules',
           include: ['__tests__/**/*.test.js'],

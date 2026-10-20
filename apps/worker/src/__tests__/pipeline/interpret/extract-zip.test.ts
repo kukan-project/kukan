@@ -115,6 +115,31 @@ describe('extractZipManifest', () => {
     expect(dirEntry!.isDirectory).toBe(true)
   })
 
+  it('stops walking the central directory at the entry cap', async () => {
+    const files = Array.from({ length: 10_002 }, (_, i) => ({ name: `f${i}.txt` }))
+    const buffer = await createTestZip(files)
+    // Break the last central directory header: reading that far fails the
+    // whole manifest, so a manifest coming back proves the walk stopped first
+    const cdSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02])
+    buffer.writeUInt32LE(0xdeadbeef, buffer.lastIndexOf(cdSignature))
+
+    const manifest = await extractZipManifest(buffer)
+
+    expect(manifest).not.toBeNull()
+    expect(manifest!.truncated).toBe(true)
+    expect(manifest!.entries).toHaveLength(10_000)
+    expect(manifest!.totalFiles).toBe(10_000)
+    expect(manifest!.totalEntries).toBe(10_002)
+  })
+
+  it('lists exactly the cap without calling it truncated', async () => {
+    const files = Array.from({ length: 10_000 }, (_, i) => ({ name: `f${i}.txt` }))
+    const manifest = await extractZipManifest(await createTestZip(files))
+
+    expect(manifest!.truncated).toBe(false)
+    expect(manifest!.entries).toHaveLength(10_000)
+  })
+
   it('should handle empty ZIP', async () => {
     const buffer = await createTestZip([])
 

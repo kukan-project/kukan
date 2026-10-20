@@ -176,11 +176,22 @@ export function ZipPreview({ resourceId }: ZipPreviewProps) {
             <TableFooter>
               <TableRow>
                 <TableCell colSpan={4} className="text-xs">
-                  {t('zipTotalFiles', { count: manifest.totalFiles })}
-                  {' · '}
-                  {t('zipTotalSize', { size: formatBytes(manifest.totalSize) ?? '0 B' })}
-                  {manifest.truncated && (
-                    <span className="ml-2 text-muted-foreground">{t('zipTruncated')}</span>
+                  {manifest.totalEntries !== undefined ? (
+                    <>
+                      {t('zipTotalEntries', { count: manifest.totalEntries })}
+                      <span className="ml-2 text-muted-foreground">{t('zipTruncated')}</span>
+                    </>
+                  ) : (
+                    // Complete, or cut short by a worker that still walked every
+                    // entry: either way the counts cover the whole archive
+                    <>
+                      {t('zipTotalFiles', { count: manifest.totalFiles })}
+                      {' · '}
+                      {t('zipTotalSize', { size: formatBytes(manifest.totalSize) ?? '0 B' })}
+                      {manifest.truncated && (
+                        <span className="ml-2 text-muted-foreground">{t('zipTruncated')}</span>
+                      )}
+                    </>
                   )}
                 </TableCell>
               </TableRow>

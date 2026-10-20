@@ -13,6 +13,7 @@ import {
   ValidationError,
   getStorageKey,
   normalizeHostname,
+  urlForLog,
 } from '@kukan/shared'
 import { HopRefusedError, discardBody, safeFetch } from '@/safe-fetch'
 import { HASH_PREFIX, digestStream } from '@kukan/shared/hash-node'
@@ -145,7 +146,11 @@ async function downloadToStorage(
   // shared Agent cannot hand to anyone else.
   if (!response.ok || !response.body) {
     await discardBody(response)
-    throw new KukanError(`Failed to fetch ${url}: ${response.status}`, 'BAD_GATEWAY', 502)
+    throw new KukanError(
+      `Failed to fetch ${urlForLog(url)}: ${response.status}`,
+      'BAD_GATEWAY',
+      502
+    )
   }
 
   const contentLength = response.headers.get('content-length')

@@ -7,7 +7,7 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "__tests__/*.ts"],
   // Gitignored local seed scripts: checking them would fail on one machine and
   // pass in CI, which never sees them.
   "exclude": ["seed-sample-*.ts"]

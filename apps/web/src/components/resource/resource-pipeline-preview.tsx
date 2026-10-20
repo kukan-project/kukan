@@ -33,6 +33,7 @@ interface ResourcePipelinePreviewProps {
   /** Dataset name, for the link into this resource's row in the dashboard */
   packageName?: string
   canManage?: boolean
+  notPublic?: boolean
 }
 
 /**
@@ -47,6 +48,7 @@ export function ResourcePipelinePreview({
   size,
   packageName,
   canManage,
+  notPublic,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
   const router = useRouter()
@@ -149,6 +151,7 @@ export function ResourcePipelinePreview({
         format={format}
         url={url}
         size={size}
+        notPublic={notPublic}
         schema={schemaData?.schema}
         primaryKey={schemaData?.primaryKey}
       />

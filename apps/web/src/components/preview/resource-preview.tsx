@@ -44,6 +44,13 @@ interface ResourcePreviewProps {
   url?: string | null
   /** File size in bytes (checked against OFFICE_PREVIEW_LIMIT) */
   size?: number | null
+  /**
+   * Whether the dataset is private or a draft. Office Online Viewer is not
+   * offered then: it would hand the resource's ID and URL to Microsoft's
+   * servers, and on a closed network make the browser try to reach them, all
+   * to show nothing (the viewer cannot read a file that is not public).
+   */
+  notPublic?: boolean
   /** The version's column schema, fetched once by the owner (tabular formats only) */
   schema?: ResourceSchema | null
   /** The resource's settled primary key, from the same read */
@@ -63,6 +70,7 @@ export function ResourcePreview({
   format,
   url,
   size,
+  notPublic,
   schema,
   primaryKey,
 }: ResourcePreviewProps) {
@@ -105,7 +113,9 @@ export function ResourcePreview({
     )
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (isOfficeFormat(f))
-    return (
+    return notPublic ? (
+      <DocumentTextPreview resourceId={resourceId} />
+    ) : (
       <DocumentPreview
         key={resourceId}
         resourceId={resourceId}

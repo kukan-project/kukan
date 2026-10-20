@@ -14,7 +14,7 @@ import type { Database, HealthCheckState } from '@kukan/db'
 import { resource, scrubbedExtras } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import type { Logger } from '@kukan/shared'
-import { PIPELINE_JOB_TYPE, checkUrlSafety, normalizeHostname } from '@kukan/shared'
+import { PIPELINE_JOB_TYPE, checkUrlSafety, normalizeHostname, urlForLog } from '@kukan/shared'
 import {
   HEALTH_CHECK_BATCH_BUDGET_MS,
   HEALTH_CHECK_BATCH_SIZE,
@@ -326,7 +326,10 @@ export async function checkBatch(
       summary.checked++
       if (recorded) {
         summary.error++
-        log.warn({ resourceId: row.id, url: row.url, error: unsafe.message }, 'Health check failed')
+        log.warn(
+          { resourceId: row.id, url: urlForLog(row.url!), error: unsafe.message },
+          'Health check failed'
+        )
       } else summary.discarded++
       return
     }
@@ -374,7 +377,10 @@ export async function checkBatch(
       // it was about may have been edited while the request was in flight.
       if (!(await updateHealthStatus(db, res, result.healthStatus, state))) {
         summary.discarded++
-        log.info({ resourceId: res.id, url: res.url }, 'Resource URL changed mid-check, discarded')
+        log.info(
+          { resourceId: res.id, url: urlForLog(res.url) },
+          'Resource URL changed mid-check, discarded'
+        )
         return true
       }
 
@@ -387,7 +393,7 @@ export async function checkBatch(
         log.warn(
           {
             resourceId: res.id,
-            url: res.url,
+            url: urlForLog(res.url),
             httpStatus: result.httpStatus ?? undefined,
             error: result.errorMessage,
             detail: result.errorDetail ?? undefined,

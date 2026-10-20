@@ -17,6 +17,9 @@ var LOCALE_HEADER = ''
 var CLIENT_IP_HEADER = ''
 
 function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
   // --- Access control: IP allowlist OR Basic auth ---
   if (ALLOWED.length || BASIC_AUTH) {
     var passIp = false

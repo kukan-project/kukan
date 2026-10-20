@@ -274,3 +274,17 @@ export function checkUrlSafety(url: string): UrlSafetyProblem | null {
 
   return null
 }
+
+/**
+ * A URL as it may appear in an error, a log line or a pipeline row: origin and
+ * path only. Query strings and fragments are where signed URLs and API keys
+ * ride, and `origin` already leaves out any `user:password@`.
+ */
+export function urlForLog(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return `${parsed.origin}${parsed.pathname}`
+  } catch {
+    return '(invalid URL)'
+  }
+}

@@ -49,6 +49,8 @@ interface ResourceExplorerProps {
   sectionTitle?: string
   initialResourceId?: string
   canManage?: boolean
+  /** Private or draft: its files are kept away from third-party viewers */
+  notPublic?: boolean
 }
 
 /**
@@ -81,6 +83,7 @@ export function ResourceExplorer({
   sectionTitle,
   initialResourceId,
   canManage,
+  notPublic,
 }: ResourceExplorerProps) {
   const t = useTranslations('resource')
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -289,6 +292,7 @@ export function ResourceExplorer({
                   size={r.size}
                   packageName={packageName}
                   canManage={canManage}
+                  notPublic={notPublic}
                 />
                 <VersionHistory resourceId={r.id} />
               </div>

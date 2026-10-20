@@ -262,7 +262,7 @@ export function textHeadWasCapped(text: string): boolean {
 export async function readZipFileList(
   previewKey: string,
   deps: MaterialDeps
-): Promise<{ fileList: string[]; fileCount: number }> {
+): Promise<{ fileList: string[]; fileCount: number | null }> {
   const buffer = await readAll(
     await deps.storage.download(previewKey),
     SUGGEST_ZIP_MANIFEST_MAX_BYTES
@@ -272,6 +272,9 @@ export async function readZipFileList(
     .filter((entry) => !entry.isDirectory)
     .slice(0, SUGGEST_ZIP_MANIFEST_ENTRIES)
     .map((entry) => entry.path.slice(0, MAX_PATH_CHARS))
+  // A listing cut short counted only what it listed: no file count to state.
+  // One from an earlier worker, which walked every entry, still has the count
+  if (manifest.totalEntries !== undefined) return { fileList, fileCount: null }
   return { fileList, fileCount: manifest.totalFiles ?? fileList.length }
 }
 

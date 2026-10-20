@@ -990,6 +990,7 @@
     "zipLastModified": "Last Modified",
     "zipTotalFiles": "{count} files",
     "zipTotalSize": "Total: {size}",
+    "zipTotalEntries": "{count, number} entries, folders included",
     "zipTruncated": "Showing first 10,000 entries",
     "previewGeneratedAt": "Generated: {date}",
     "previewLoading": "Loading preview…",

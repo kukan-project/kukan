@@ -86,7 +86,7 @@ pnpm dev
 CLI で作成することもできます（`--role` 省略時はデフォルトで `user`）。
 
 ```bash
-pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+pnpm db:create-user --email admin@example.com --name admin --role sysadmin
 ```
 
-パスワードは 15 文字以上で、推測されにくいものが必要です（例: `'harbor-lantern-quiet-42'`）。
+パスワードは実行時に入力を求められます。15 文字以上で、推測されにくいものが必要です（例: `harbor-lantern-quiet-42`）。

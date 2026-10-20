@@ -8,7 +8,7 @@
  * call, is what stops that happening again.
  */
 import { describe, it, expect } from 'vitest'
-import { isBlockedAddress, checkUrlSafety } from '../url'
+import { isBlockedAddress, checkUrlSafety, urlForLog } from '../url'
 
 describe('isBlockedAddress', () => {
   describe('IPv4', () => {
@@ -146,5 +146,21 @@ describe('checkUrlSafety', () => {
 
   it('should carry a message for logs alongside the reason', () => {
     expect(checkUrlSafety('ftp://example.com/')?.message).toContain('Unsupported protocol')
+  })
+})
+
+describe('urlForLog', () => {
+  it('keeps origin and path, and drops the query, fragment and credentials', () => {
+    expect(urlForLog('https://user:secret@example.com:8443/a/b.csv?sig=abc&key=k#frag')).toBe(
+      'https://example.com:8443/a/b.csv'
+    )
+  })
+
+  it('leaves a plain URL as it is', () => {
+    expect(urlForLog('https://example.com/data.csv')).toBe('https://example.com/data.csv')
+  })
+
+  it('says nothing of a string that is not a URL', () => {
+    expect(urlForLog('not a url?token=t')).toBe('(invalid URL)')
   })
 })

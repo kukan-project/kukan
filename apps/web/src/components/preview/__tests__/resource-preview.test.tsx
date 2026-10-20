@@ -210,6 +210,23 @@ describe('ResourcePreview', () => {
       expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')
     })
 
+    it('offers only the extracted text of a non-public dataset’s Office file, never the viewer', async () => {
+      mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
+      render(
+        <ResourcePreview
+          resourceId="r1"
+          format="XLSX"
+          url="https://example.com/data.xlsx"
+          notPublic
+        />
+      )
+      await waitFor(() =>
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/document-text')
+      )
+      expect(document.querySelector('iframe')).toBeNull()
+      expect(screen.queryByText('Original')).not.toBeInTheDocument()
+    })
+
     it('should route XLS to Office Online preview (not generic not-available)', () => {
       render(<ResourcePreview resourceId="r1" format="XLS" />)
       expect(screen.queryByText('Preview is not available for this format')).not.toBeInTheDocument()

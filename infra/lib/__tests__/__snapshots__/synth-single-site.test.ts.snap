@@ -170,6 +170,53 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
     },
+    "CDNAccessLogBucketPolicy2D0066B8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "CDNAccessLogBucketD072627D",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CDNAccessLogBucketD072627D",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CDNAccessLogBucketD072627D",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
     "CDNAccessLogDatabase63DF0BA5": {
       "Properties": {
         "CatalogId": "123456789012",
@@ -697,6 +744,9 @@ var LOCALE_HEADER = "x-kukan-locale"
 var CLIENT_IP_HEADER = "x-kukan-client-ip"
 
 function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
   // --- Access control: IP allowlist OR Basic auth ---
   if (ALLOWED.length || BASIC_AUTH) {
     var passIp = false
@@ -1958,6 +2008,53 @@ function expandV6(addr) {
       },
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
+    },
+    "StorageResourceBucketPolicyD82FEAA9": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageResourceBucketD8B2FEFB",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
     },
     "WebService5EA589E6": {
       "DependsOn": [
@@ -3822,6 +3919,53 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
     },
+    "CDNAccessLogBucketPolicy2D0066B8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "CDNAccessLogBucketD072627D",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CDNAccessLogBucketD072627D",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CDNAccessLogBucketD072627D",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
     "CDNAccessLogDatabase63DF0BA5": {
       "Properties": {
         "CatalogId": "123456789012",
@@ -4358,6 +4502,9 @@ var LOCALE_HEADER = "x-kukan-locale"
 var CLIENT_IP_HEADER = "x-kukan-client-ip"
 
 function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
   // --- Access control: IP allowlist OR Basic auth ---
   if (ALLOWED.length || BASIC_AUTH) {
     var passIp = false
@@ -5762,6 +5909,53 @@ function expandV6(addr) {
       },
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
+    },
+    "StorageResourceBucketPolicyD82FEAA9": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageResourceBucketD8B2FEFB",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
     },
     "WebService5EA589E6": {
       "DependsOn": [
@@ -7489,6 +7683,53 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
     },
+    "CDNAccessLogBucketPolicy2D0066B8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "CDNAccessLogBucketD072627D",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CDNAccessLogBucketD072627D",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CDNAccessLogBucketD072627D",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
     "CDNAccessLogDatabase63DF0BA5": {
       "Properties": {
         "CatalogId": "123456789012",
@@ -8022,6 +8263,9 @@ var LOCALE_HEADER = "x-kukan-locale"
 var CLIENT_IP_HEADER = "x-kukan-client-ip"
 
 function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
   // --- Access control: IP allowlist OR Basic auth ---
   if (ALLOWED.length || BASIC_AUTH) {
     var passIp = false
@@ -9184,6 +9428,53 @@ function expandV6(addr) {
       },
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
+    },
+    "StorageResourceBucketPolicyD82FEAA9": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageResourceBucketD8B2FEFB",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
     },
     "WebService5EA589E6": {
       "DependsOn": [
@@ -10985,6 +11276,53 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
     },
+    "CDNAccessLogBucketPolicy2D0066B8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "CDNAccessLogBucketD072627D",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CDNAccessLogBucketD072627D",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CDNAccessLogBucketD072627D",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
     "CDNAccessLogDatabase63DF0BA5": {
       "Properties": {
         "CatalogId": "123456789012",
@@ -11531,6 +11869,9 @@ var LOCALE_HEADER = "x-kukan-locale"
 var CLIENT_IP_HEADER = "x-kukan-client-ip"
 
 function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
   // --- Access control: IP allowlist OR Basic auth ---
   if (ALLOWED.length || BASIC_AUTH) {
     var passIp = false
@@ -12937,6 +13278,53 @@ function expandV6(addr) {
       },
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
+    },
+    "StorageResourceBucketPolicyD82FEAA9": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageResourceBucketD8B2FEFB",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
     },
     "WebService5EA589E6": {
       "DependsOn": [
@@ -14612,6 +15000,53 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
     },
+    "CDNAccessLogBucketPolicy2D0066B8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "CDNAccessLogBucketD072627D",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CDNAccessLogBucketD072627D",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CDNAccessLogBucketD072627D",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
     "CDNAccessLogDatabase63DF0BA5": {
       "Properties": {
         "CatalogId": "123456789012",
@@ -15145,6 +15580,9 @@ var LOCALE_HEADER = "x-kukan-locale"
 var CLIENT_IP_HEADER = "x-kukan-client-ip"
 
 function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
   // --- Access control: IP allowlist OR Basic auth ---
   if (ALLOWED.length || BASIC_AUTH) {
     var passIp = false
@@ -16534,6 +16972,53 @@ function expandV6(addr) {
       },
       "Type": "AWS::S3::Bucket",
       "UpdateReplacePolicy": "Retain",
+    },
+    "StorageResourceBucketPolicyD82FEAA9": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageResourceBucketD8B2FEFB",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
     },
     "WebService5EA589E6": {
       "DependsOn": [

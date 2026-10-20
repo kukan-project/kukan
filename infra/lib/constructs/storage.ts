@@ -26,6 +26,7 @@ export class StorageConstruct extends Construct {
       bucketName: config.bucketName,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
       versioned: config.backup.s3Versioning,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       cors: [

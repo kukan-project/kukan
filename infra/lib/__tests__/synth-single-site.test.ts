@@ -376,6 +376,31 @@ function expectLogExpiration(template: Template, days: number): void {
   })
 }
 
+describe('S3 buckets', () => {
+  it('refuse requests not made over TLS, on the resource bucket and the log bucket', () => {
+    const template = stackTemplate(synthStage({}), 'KukanStack')
+    const buckets = Object.keys(template.findResources('AWS::S3::Bucket'))
+    expect(buckets).toHaveLength(2)
+    const policies = template.findResources('AWS::S3::BucketPolicy', {
+      Properties: {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Deny',
+              Action: 's3:*',
+              Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+            }),
+          ]),
+        },
+      },
+    })
+    const guarded = Object.values(policies).map(
+      (p) => (p.Properties as { Bucket: { Ref: string } }).Bucket.Ref
+    )
+    expect(guarded.sort()).toEqual(buckets.sort())
+  })
+})
+
 describe('CloudFront access logs', () => {
   it('takes the retention from cdnLogRetentionDays', () => {
     expectLogExpiration(stackTemplate(synthStage({ cdnLogRetentionDays: 30 }), 'KukanStack'), 30)

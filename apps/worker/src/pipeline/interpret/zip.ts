@@ -118,14 +118,28 @@ export async function extractZipManifest(input: Buffer | string): Promise<ZipMan
           const isDirectory = fileName.endsWith('/')
           if (!isDirectory) totalFiles++
 
-          if (entries.length < MAX_ZIP_ENTRIES) {
-            entries.push({
-              path: fileName,
-              size: entry.uncompressedSize,
-              compressedSize: entry.compressedSize,
-              lastModified: formatLocalDate(entry.getLastModDate()),
-              isDirectory,
+          entries.push({
+            path: fileName,
+            size: entry.uncompressedSize,
+            compressedSize: entry.compressedSize,
+            lastModified: formatLocalDate(entry.getLastModDate()),
+            isDirectory,
+          })
+
+          // The central directory may claim millions of entries in a small
+          // file; walking the rest only to add up totals is unbounded work.
+          // The counts and sizes then cover only the entries listed, with the
+          // archive's own claim, folders included, beside them.
+          if (entries.length >= MAX_ZIP_ENTRIES && zipFile.entryCount > MAX_ZIP_ENTRIES) {
+            finish({
+              totalFiles,
+              totalEntries: zipFile.entryCount,
+              totalSize,
+              totalCompressed,
+              truncated: true,
+              entries,
             })
+            return
           }
 
           zipFile.readEntry()
@@ -139,7 +153,7 @@ export async function extractZipManifest(input: Buffer | string): Promise<ZipMan
           totalFiles,
           totalSize,
           totalCompressed,
-          truncated: zipFile.entryCount > MAX_ZIP_ENTRIES,
+          truncated: false,
           entries,
         })
       })

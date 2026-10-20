@@ -774,7 +774,8 @@ npx cdk deploy -c env=dev 'Dev/**'
 #    ブラウザでサインアップページを開いて登録する。ユーザーが1人もいない間は
 #    自己登録が有効で、最初の登録者が自動的に sysadmin になる（ADR-038）。
 #    ヘッドレスで作成する場合は CLI も使える（DB 接続情報は環境変数から取得）:
-#      pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+#      pnpm db:create-user --email admin@example.com --name admin --role sysadmin
+#    パスワードは入力を求められる（端末がなければ環境変数 KUKAN_USER_PASSWORD）。
 
 # 6. 確認
 # - CloudFront ドメイン（またはカスタムドメイン）でアクセス
@@ -1053,6 +1054,7 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 #    ブラウザでサインアップページを開いて登録する。ユーザーが1人もいない間は
 #    自己登録が有効で、最初の登録者が自動的に sysadmin になる（ADR-038）。
 #    ヘッドレスで作成する場合: pnpm db:create-user --email ... --role sysadmin
+#    （パスワードは入力を求められる。端末がなければ環境変数 KUKAN_USER_PASSWORD）
 
 # 4. 動作確認
 curl http://localhost/api/health

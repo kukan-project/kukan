@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
 import { Building2, Calendar, FolderOpen, Scale, Tag } from 'lucide-react'
 import { Badge, Separator } from '@kukan/ui'
-import { resolveLicenseLabel } from '@kukan/shared'
+import { resolveLicenseLabel, type PackageState } from '@kukan/shared'
 import { serverFetch, getCurrentUser } from '@/lib/server-api'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
@@ -31,6 +31,7 @@ export interface Package {
   maintainerEmail?: string | null
   ownerOrg?: string | null
   private: boolean
+  state?: PackageState
   created: string
   updated: string
   extras?: Record<string, unknown> | null
@@ -167,6 +168,7 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
               sectionTitle={`${t('resources')} (${pkg.resources.length})`}
               initialResourceId={initialResourceId}
               canManage={canManage}
+              notPublic={pkg.private || pkg.state === 'draft'}
             />
           )}
         </section>

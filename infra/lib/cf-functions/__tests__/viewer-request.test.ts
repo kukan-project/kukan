@@ -121,6 +121,19 @@ describe('viewer-request access control', () => {
       const r = h(event('8.8.8.8', { cookies: { other: { value: 'x' } } }))
       expect(r.headers?.['x-cache-bypass']).toBeUndefined()
     })
+    it('drops a viewer-sent x-cache-bypass from a request without a session', () => {
+      const r = h(event('8.8.8.8', { headers: { 'x-cache-bypass': 'mine' } }))
+      expect(r.headers?.['x-cache-bypass']).toBeUndefined()
+    })
+    it('replaces a viewer-sent x-cache-bypass with its own for a session', () => {
+      const r = h(
+        event('8.8.8.8', {
+          cookies: { 'better-auth.session_token': { value: 'x' } },
+          headers: { 'x-cache-bypass': 'mine' },
+        })
+      )
+      expect(r.headers?.['x-cache-bypass']?.value).toMatch(/^\d+$/)
+    })
   })
 
   describe('locale header', () => {

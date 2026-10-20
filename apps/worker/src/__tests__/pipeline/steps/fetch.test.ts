@@ -249,6 +249,22 @@ describe('executeFetch', () => {
     fetchSpy.mockRestore()
   })
 
+  it('names the URL in its error without the query or fragment', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 403 }))
+
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv?X-Amz-Signature=secret#frag' })
+    )
+
+    const err = await executeFetch('res-1', ctx).catch((e: unknown) => e)
+    expect((err as Error).message).toBe('Failed to fetch https://example.com/data.csv: 403')
+
+    fetchSpy.mockRestore()
+  })
+
   it('should throw when Content-Length exceeds limit', async () => {
     const mockResponse = new Response('x', {
       status: 200,

@@ -1,6 +1,7 @@
 /**
  * KUKAN CLI: Create User
- * Run with: pnpm db:create-user --email <email> --name <name> --password <password> [--role sysadmin]
+ * Run with: pnpm db:create-user --email <email> --name <name> [--role sysadmin]
+ * The password is prompted for, or read from KUKAN_USER_PASSWORD.
  */
 
 import { parseArgs } from 'node:util'
@@ -11,6 +12,7 @@ import { loadEnv, checkPasswordGuessability, normalizePassword } from '@kukan/sh
 import { createUserSchema, userRoleSchema, type UserRole } from '@kukan/shared/validators/user'
 import { createDb, closePool } from '../src/client'
 import { user, account } from '../src/schema'
+import { PASSWORD_ENV, PasswordInputError, promptHidden, readPassword } from './read-password'
 
 const CREDENTIAL_PROVIDER_ID = 'credential'
 
@@ -28,28 +30,32 @@ interface CreateUserArgs {
 
 function printUsage(): void {
   console.log(`
-Usage: pnpm db:create-user --email <email> --name <name> --password <password> [--role sysadmin]
+Usage: pnpm db:create-user --email <email> --name <name> [--role sysadmin]
 
 Options:
   --email     User email address (required)
   --name      Username, lowercase alphanumeric with hyphens/underscores/periods (required)
-  --password  Password, minimum 15 characters and hard enough to guess (required)
   --role      User role: 'user' or 'sysadmin' (default: 'user')
   --help      Show this help message
 
+The password (minimum 15 characters and hard enough to guess) is prompted for
+without echo. Without a terminal, it is read from ${PASSWORD_ENV}.
+
 Examples:
-  pnpm db:create-user --email admin@example.com --name admin --password 'harbor-lantern-quiet-42' --role sysadmin
-  pnpm db:create-user --email user@example.com --name taro --password 'harbor-lantern-quiet-42'
+  pnpm db:create-user --email admin@example.com --name admin --role sysadmin
+  pnpm db:create-user --email user@example.com --name taro
 `)
 }
 
-function parseArguments(): CreateUserArgs {
+async function parseArguments(): Promise<CreateUserArgs> {
   const rawArgs = process.argv.slice(2).filter((a) => a !== '--')
   const { values } = parseArgs({
     args: rawArgs,
     options: {
       email: { type: 'string' },
       name: { type: 'string' },
+      // Still parsed, so that the old form gets an answer rather than a bare
+      // "unknown option"
       password: { type: 'string' },
       role: { type: 'string', default: 'user' },
       help: { type: 'boolean', default: false },
@@ -62,19 +68,17 @@ function parseArguments(): CreateUserArgs {
     process.exit(0)
   }
 
-  if (!values.email || !values.name || !values.password) {
-    console.error('Error: --email, --name, and --password are required.')
-    printUsage()
+  if (values.password !== undefined) {
+    console.error(
+      `Error: --password is no longer accepted: a password on the command line stays in the shell history and shows in ps.\n` +
+        `Leave it out to be prompted for it, or set ${PASSWORD_ENV} when there is no terminal.`
+    )
     process.exit(1)
   }
 
-  const userResult = createUserSchema
-    .extend({ password: createUserSchema.shape.password.unwrap() })
-    .safeParse({ email: values.email, name: values.name, password: values.password })
-  if (!userResult.success) {
-    for (const issue of userResult.error.issues) {
-      console.error(`Error: ${issue.path.join('.')} — ${issue.message}`)
-    }
+  if (!values.email || !values.name) {
+    console.error('Error: --email and --name are required.')
+    printUsage()
     process.exit(1)
   }
 
@@ -84,12 +88,35 @@ function parseArguments(): CreateUserArgs {
     process.exit(1)
   }
 
-  return {
-    email: userResult.data.email,
-    name: userResult.data.name,
-    password: userResult.data.password,
-    role: roleResult.data,
+  // Before the prompt, so a mistyped address does not cost the password typed twice
+  const userResult = createUserSchema
+    .pick({ email: true, name: true })
+    .safeParse({ email: values.email, name: values.name })
+  if (!userResult.success) exitWithIssues(userResult.error.issues)
+
+  let password: string
+  try {
+    password = await readPassword({
+      env: process.env,
+      interactive: Boolean(process.stdin.isTTY),
+      prompt: promptHidden,
+    })
+  } catch (err) {
+    if (!(err instanceof PasswordInputError)) throw err
+    console.error(`Error: ${err.message}`)
+    process.exit(1)
   }
+  const passwordResult = createUserSchema.shape.password.unwrap().safeParse(password)
+  if (!passwordResult.success) exitWithIssues(passwordResult.error.issues, 'password')
+
+  return { ...userResult.data, password: passwordResult.data, role: roleResult.data }
+}
+
+function exitWithIssues(issues: { path: PropertyKey[]; message: string }[], field?: string): never {
+  for (const issue of issues) {
+    console.error(`Error: ${field ?? issue.path.join('.')} — ${issue.message}`)
+  }
+  process.exit(1)
 }
 
 /** Generate a random alphanumeric ID (same format as Better Auth's generateId) */
@@ -196,8 +223,9 @@ async function createUser(args: CreateUserArgs): Promise<void> {
   }
 }
 
-const args = parseArguments()
-createUser(args).catch((err) => {
-  console.error('Failed to create user:', err.message)
-  process.exit(1)
-})
+parseArguments()
+  .then(createUser)
+  .catch((err) => {
+    console.error('Failed to create user:', err.message)
+    process.exit(1)
+  })

@@ -815,7 +815,8 @@ npx cdk deploy -c env=dev 'Dev/**'
 #    Open the sign-up page in a browser and register. While there are no users at all,
 #    self-registration is enabled and the first registrant automatically becomes a sysadmin (ADR-038).
 #    To create one headlessly there is also a CLI (DB connection details come from env vars):
-#      pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+#      pnpm db:create-user --email admin@example.com --name admin --role sysadmin
+#    It prompts for the password (KUKAN_USER_PASSWORD when there is no terminal).
 
 # 6. Verify
 # - Access via the CloudFront domain (or your custom domain)
@@ -1132,6 +1133,7 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 #    Open the sign-up page in a browser and register. While there are no users at all,
 #    self-registration is enabled and the first registrant automatically becomes a sysadmin (ADR-038).
 #    To create one headlessly: pnpm db:create-user --email ... --role sysadmin
+#    (it prompts for the password; KUKAN_USER_PASSWORD when there is no terminal)
 
 # 4. Check it works
 curl http://localhost/api/health

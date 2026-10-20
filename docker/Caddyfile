@@ -45,7 +45,16 @@
 	# than left to compress everything: the bulk of what this site serves by
 	# volume is file downloads — Parquet written with ZSTD, images, archives —
 	# and running those through another codec costs CPU to no end.
-	encode {
+	#
+	# Sign-in and session responses are left as they are: they carry secrets
+	# beside text a request can echo, which is what a compression side channel
+	# (BREACH) needs, and they are too small to gain anything from it. Next
+	# compresses on its own when asked, so the request reaches it asking for
+	# identity — removed outright, the proxy transport would add gzip back.
+	@auth path /api/auth/*
+	request_header @auth Accept-Encoding identity
+	@compressible not path /api/auth/*
+	encode @compressible {
 		zstd
 		gzip
 		match {

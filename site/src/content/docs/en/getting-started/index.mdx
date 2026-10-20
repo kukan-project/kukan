@@ -87,7 +87,7 @@ You can also create users via the CLI (`--role` defaults to `user` when
 omitted).
 
 ```bash
-pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+pnpm db:create-user --email admin@example.com --name admin --role sysadmin
 ```
 
-Passwords need at least 15 characters and must be hard to guess (e.g. `'harbor-lantern-quiet-42'`).
+The command prompts for the password. It needs at least 15 characters and must be hard to guess (e.g. `harbor-lantern-quiet-42`).

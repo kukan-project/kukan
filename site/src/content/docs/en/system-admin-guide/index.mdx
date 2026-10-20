@@ -316,15 +316,21 @@ For headless initialization, or to recover when no sysadmin is left, use
 the CLI.
 
 ```bash
-pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+pnpm db:create-user --email admin@example.com --name admin --role sysadmin
 ```
 
-| Option       | Description                                                                                                   | Required |
-| ------------ | ------------------------------------------------------------------------------------------------------------- | -------- |
-| `--email`    | Email address                                                                                                 | Yes      |
-| `--name`     | Username (lowercase alphanumeric, hyphens, underscores, periods)                                              | Yes      |
-| `--password` | Password (15+ characters and hard to guess — see [Password strength policy](#password-strength-policy) below) | Yes      |
-| `--role`     | `user` or `sysadmin` (default: `user`)                                                                        | No       |
+| Option    | Description                                                      | Required |
+| --------- | ---------------------------------------------------------------- | -------- |
+| `--email` | Email address                                                    | Yes      |
+| `--name`  | Username (lowercase alphanumeric, hyphens, underscores, periods) | Yes      |
+| `--role`  | `user` or `sysadmin` (default: `user`)                           | No       |
+
+The command prompts for the password (it is not shown, and is asked twice to
+confirm). It needs 15+ characters and must be hard to guess — see
+[Password strength policy](#password-strength-policy) below. It is not taken
+as a command-line argument, which would stay in the shell history and show in
+`ps`. Where there is no terminal (a script, for instance), pass it in the
+`KUKAN_USER_PASSWORD` environment variable.
 
 ## User management
 
