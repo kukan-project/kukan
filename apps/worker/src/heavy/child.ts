@@ -1,6 +1,7 @@
 /**
- * The worker's heavy process (ADR-059): interprets CSVs and extracts the text
- * of documents, one request at a time, for as long as the worker keeps it.
+ * The worker's heavy process (ADR-059): interprets CSVs, extracts the text of
+ * documents, and reads an abstract's PDFs and images, one request at a time,
+ * for as long as the worker keeps it.
  */
 
 import { becomeExpendable, serve } from '@kukan/api/services/child/serve'

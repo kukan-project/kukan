@@ -2,7 +2,9 @@
 import { describe, it, expect } from 'vitest'
 import { Readable } from 'node:stream'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   streamToBuffer,
@@ -63,6 +65,25 @@ describe('streamToTempFile + cleanupTempFile', () => {
 
     await cleanupTempFile(filePath)
     expect(existsSync(filePath)).toBe(false)
+  })
+
+  it('leaves nothing behind when the stream fails', async () => {
+    // tmpdir() reads TMPDIR on every call, so the temp dir lands somewhere only this test looks
+    const root = await mkdtemp(join(tmpdir(), 'kukan-test-'))
+    const saved = process.env.TMPDIR
+    process.env.TMPDIR = root
+    try {
+      const failing = new Readable({
+        read() {
+          this.destroy(new Error('broken download'))
+        },
+      })
+      await expect(streamToTempFile(failing)).rejects.toThrow('broken download')
+      expect(await readdir(root)).toEqual([])
+    } finally {
+      process.env.TMPDIR = saved
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

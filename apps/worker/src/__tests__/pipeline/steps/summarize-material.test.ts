@@ -15,6 +15,17 @@ import {
 } from '../../../pipeline/steps/summarize'
 import { artifactOf } from '../../test-helpers/document-text'
 import { SUMMARY_MAX_PDF_PAGES } from '@kukan/shared'
+import type { ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+import { ChildExitedError } from '@kukan/api/services/child/host'
+import { HeavyTimedOutError, HeavyTooLargeError, runHeavy } from '@/heavy'
+import { HeavyShortOfMemoryError, WorkerStoppingError } from '../../../heavy/process'
+import { RunCancelledError } from '../../../pipeline/run/step-tracker'
+
+// The real heavy process, unless a test says how the request ends
+vi.mock('@/heavy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/heavy')>()
+  return { ...actual, runHeavy: vi.fn(actual.runHeavy) }
+})
 
 /** A real PDF, because the routing reads its page count */
 async function pdfOf(pages: number): Promise<Buffer> {
@@ -583,5 +594,149 @@ describe('each kind is gated on the step that wrote what it reads', () => {
     )
 
     expect(plan).toEqual({ reason: 'no-material' })
+  })
+})
+
+describe('the parsing runs in the heavy process (ADR-059)', () => {
+  /** An image over the byte limit, which has to be downscaled */
+  async function oversizedPng(): Promise<Buffer> {
+    return sharp({ create: { width: 3200, height: 100, channels: 3, background: '#808080' } })
+      .png()
+      .toBuffer()
+  }
+
+  const pngPlan = async () => {
+    const bytes = await oversizedPng()
+    return planMaterial(
+      input({ format: 'PNG', size: bytes.byteLength }),
+      noArtifacts,
+      INTERPRETED,
+      deps({ bytes, maxImageBytes: 16 })
+    )
+  }
+
+  it('counts and cuts the PDF in one request, touching the claim the run holds', async () => {
+    const claim = { id: 'c', resourceId: 'r', runId: 'run' } as unknown as ResourceClaim
+    vi.mocked(runHeavy).mockClear()
+    await planMaterial(input({ claim }), noArtifacts, INTERPRETED, deps({ bytes: await pdfOf(60) }))
+
+    expect(vi.mocked(runHeavy).mock.calls.map(([request]) => request.kind)).toEqual(['read-pdf'])
+    expect(vi.mocked(runHeavy).mock.calls[0][1]).toEqual(expect.any(Function))
+  })
+
+  // What the file did to the process: the answer for this run
+  const fileDefeatedIt = [
+    ['outgrew the process', () => new HeavyTooLargeError()],
+    ['ran out of time', () => new HeavyTimedOutError()],
+    ['crashed it', () => new ChildExitedError('SIGSEGV')],
+  ] as const
+
+  it.each(fileDefeatedIt)('takes the text of a PDF that %s', async (_, error) => {
+    vi.mocked(runHeavy).mockRejectedValueOnce(error())
+    const plan = await planMaterial(
+      input(),
+      withTextHead,
+      INTERPRETED,
+      deps({ bytes: await pdfOf(5), textHead: 'あ'.repeat(50) })
+    )
+    expect(plan).toMatchObject({ kind: 'text-head' })
+  })
+
+  it.each(fileDefeatedIt)(
+    'never sends the original of a PDF that %s, whose pages nothing bounds',
+    async (_, error) => {
+      vi.mocked(runHeavy).mockRejectedValueOnce(error())
+      const plan = await planMaterial(
+        input(),
+        noArtifacts,
+        INTERPRETED,
+        deps({ bytes: await pdfOf(60) })
+      )
+      expect(plan).toEqual({ reason: 'too-large' })
+    }
+  )
+
+  it.each(fileDefeatedIt)('refuses an image whose downscale %s as too large', async (_, error) => {
+    vi.mocked(runHeavy).mockRejectedValueOnce(error())
+    expect(await pngPlan()).toEqual({ reason: 'too-large' })
+  })
+
+  // Nothing about the file: the run is cut short, or the step fails, and
+  // nothing is recorded against it
+  it.each([
+    ['the worker stopping', () => new WorkerStoppingError()],
+    ['the container short of memory', () => new HeavyShortOfMemoryError()],
+    ['the claim lost', () => new RunCancelledError('r')],
+    ['a process that exited of itself', () => new ChildExitedError(1)],
+    // A Ctrl-C reaching the process group, or a stop from outside
+    ['a process interrupted', () => new ChildExitedError('SIGINT')],
+    ['a process terminated', () => new ChildExitedError('SIGTERM')],
+    ['a failure the parser did not answer', () => new Error('Cannot find module')],
+  ])('lets %s through', async (_, error) => {
+    const err = error()
+    vi.mocked(runHeavy).mockRejectedValueOnce(err)
+    await expect(
+      planMaterial(input(), noArtifacts, INTERPRETED, deps({ bytes: await pdfOf(3) }))
+    ).rejects.toBe(err)
+
+    vi.mocked(runHeavy).mockRejectedValueOnce(err)
+    await expect(pngPlan()).rejects.toBe(err)
+  })
+
+  // Answers that need no page count are given without a turn there: every
+  // interpretation on the worker waits behind it
+  describe('is not asked where the PDF would not be sent', () => {
+    it.each([
+      ['a capped text head', { textHead: '下'.repeat(6000) }, true, 'text-head'],
+      [
+        'text, and a provider that takes no PDFs',
+        { textHead: 'あ'.repeat(50) },
+        false,
+        'text-head',
+      ],
+    ] as const)('%s', async (_, opts, documents, kind) => {
+      vi.mocked(runHeavy).mockClear()
+      const plan = await planMaterial(
+        input(),
+        withTextHead,
+        INTERPRETED,
+        deps({ bytes: await pdfOf(60), textHead: opts.textHead, documents })
+      )
+      expect(plan).toMatchObject({ kind })
+      expect(runHeavy).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a PDF', () => pdfOf(3), { reason: 'unsupported-format' }],
+      ['an error page', async () => Buffer.from('<!doctype html>'), { reason: 'format-mismatch' }],
+    ])('nor for %s with no text and a provider that takes no PDFs', async (_, bytes, expected) => {
+      vi.mocked(runHeavy).mockClear()
+      const plan = await planMaterial(
+        input(),
+        noArtifacts,
+        INTERPRETED,
+        deps({ bytes: await bytes(), documents: false })
+      )
+      expect(plan).toEqual(expected)
+      expect(runHeavy).not.toHaveBeenCalled()
+    })
+
+    it('counts, but does not cut, a long document whose text layer is thick', async () => {
+      // 6,100 characters over 60 pages: about 100 a page, not thin, and short of the cap
+      vi.mocked(runHeavy).mockClear()
+      const plan = await planMaterial(
+        input(),
+        withTextHead,
+        INTERPRETED,
+        deps({ bytes: await pdfOf(60), textHead: 'a'.repeat(6100) })
+      )
+      expect(plan).toMatchObject({ kind: 'text-head' })
+      const [request] = vi.mocked(runHeavy).mock.calls[0]
+      expect(request).toMatchObject({ kind: 'read-pdf', cutPast: 61 })
+      expect(await vi.mocked(runHeavy).mock.results[0].value).toMatchObject({
+        pages: 60,
+        cut: false,
+      })
+    })
   })
 })

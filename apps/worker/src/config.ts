@@ -180,6 +180,13 @@ export const HEAVY_CLAIM_POLL_MS = 5_000
  */
 export const HEAVY_EXTRACT_TIMEOUT_MS = 10 * 60_000
 export const HEAVY_INTERPRET_TIMEOUT_MS = 15 * 60_000
+/**
+ * The abstract's PDF read (page count and cut) and image downscale (ADR-053):
+ * seconds for any file inside their limits — 16 MB of PDF, 50M pixels — and
+ * the abstract is best-effort, so a file that needs more is not worth the
+ * queue behind it.
+ */
+export const HEAVY_SUMMARY_TIMEOUT_MS = 2 * 60_000
 
 /**
  * How many columns one per-column statistics query covers (ADR-046).
@@ -520,7 +527,7 @@ export const LAKE_THREADS = 2
 export const SUMMARY_MAX_TOKENS = 700
 /** One completion measured 3–11s; the ceiling covers a slow original. */
 export const SUMMARY_TIMEOUT_MS = 120_000
-/** Pixels an over-limit image may claim before it is downscaled in the worker
+/** Pixels an over-limit image may claim before it is downscaled in the heavy
  *  process. sharp's default (~268M) is about 1GB of RGBA for one PNG. */
 export const SUMMARY_IMAGE_MAX_INPUT_PIXELS = 50_000_000
 /** Bytes of the extracted-text artifact used as material. Matches the suggest

@@ -6,6 +6,7 @@
 
 import type { InterpretedTableFile } from '../pipeline/interpret/table/write-table'
 import type { ExtractedText } from '../pipeline/interpret/document/document-text'
+import type { ReadPdf } from '../summary/material-files'
 
 /** Files in, files and JSON out: the process holds no connection of any kind. */
 export type HeavyRequest =
@@ -18,11 +19,16 @@ export type HeavyRequest =
     }
   | { kind: 'interpret-json'; jsonPath: string; parquetPath: string; profilePath?: string }
   | { kind: 'extract-text'; documentPath: string; format: string; artifactPath: string }
+  | { kind: 'read-pdf'; pdfPath: string; cutTo: number; cutPast: number; outPath: string }
+  | { kind: 'downscale-image'; imagePath: string; outPath: string }
 
 interface HeavyResults {
   'interpret-csv': InterpretedTableFile
   'interpret-json': InterpretedTableFile
   'extract-text': ExtractedText
+  'read-pdf': ReadPdf
+  /** False for an image whose header claims more pixels than the limit */
+  'downscale-image': { written: boolean }
 }
 
 export type HeavyResult<R extends HeavyRequest> = HeavyResults[R['kind']]

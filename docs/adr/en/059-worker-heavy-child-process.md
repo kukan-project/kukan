@@ -98,6 +98,10 @@ The worker keeps one child process for heavy processing and reuses it while it r
 
 - Text extraction (officeparser, PDF, the XLSX streaming reader) and CSV/TSV interpretation
   (DuckDB)
+- The parsing an abstract (ADR-053) needs when it sends an original (added after implementation):
+  a PDF's page count and the cut to its first pages (pdf-lib, in one parse), and the downscale of an image over the
+  API's limit (sharp). They read up to 16 MB of PDF whole and decode an image even within the pixel
+  limit, so run in the parent one file could take the worker down
 - Pure computation: it takes local files and returns files and JSON. The parent holds the DB,
   storage, OpenSearch and the claim
 - One item at a time. The same limit as the heavy section today (one at a time); the request to the
@@ -133,6 +137,21 @@ task stays up and the retry does not repeat it). The next request starts the chi
   for text extraction — and is not run again. Memory alone does not bound a parse: a PDF that keeps
   pdf.js busy within its budget would hold every heavy request and layer-2 ingest on the worker
   behind it
+- The abstract's parsing (added after implementation): two kinds (a PDF's page count and cut to its
+  first pages in one parse, and an image's downscale), 2 minutes each (a file within the limits takes
+  seconds, and the abstract is best-effort, so a file that needs longer is not worth the requests
+  behind it). Where the PDF is already known not to be sent (the extracted text reached its read cap,
+  or the provider takes no PDFs) the child is not asked, and the cut is made only where it would be
+  sent. A child that goes for being too large, past its time, or by a crash signal (SIGSEGV, SIGBUS,
+  SIGILL, SIGFPE) is the file's answer: for a PDF the extracted text, else `too-large` — an original whose
+  pages are unknown is never sent, as the page limit would no longer bind — and for an image
+  `too-large`, like one over the pixel limit. It is not tried again within that run (`too-large` is
+  written as the reason but not stamped with the version and generation, so a later run reads it
+  again). A PDF pdf-lib cannot parse comes back as the
+  child's result rather than an error, and is handled as before. A child that exits with a code of
+  its own or by another signal (SIGINT or SIGTERM from outside), or an error the child returns (a module that would not load, say), is not about the file
+  and fails the step. A lost claim, the worker stopping or the container short ends the run as for
+  any other request
 
 ### 3. When the child is stopped or restarted
 

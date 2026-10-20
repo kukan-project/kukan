@@ -1,7 +1,8 @@
 /**
  * The worker's heavy work, run in a process of its own (ADR-059): CSV
- * interpretation and document text extraction. One request at a time, in the
- * same turn as the lake ingest that stays in this process (`heavySection`).
+ * interpretation, document text extraction, and the parsing of an abstract's
+ * PDF or image (ADR-053). One request at a time, in the same turn as the lake
+ * ingest that stays in this process (`heavySection`).
  */
 
 import { dirname, join } from 'node:path'
@@ -19,6 +20,7 @@ import {
   HEAVY_POLL_MS,
   HEAVY_PROCESS_MB,
   HEAVY_RESTART_MB,
+  HEAVY_SUMMARY_TIMEOUT_MS,
 } from '@/config'
 import { heavySection } from '@/heavy-section'
 import { RunCancelledError } from '../pipeline/run/step-tracker'
@@ -61,6 +63,8 @@ const heavy = new HeavyProcess(
       'extract-text': HEAVY_EXTRACT_TIMEOUT_MS,
       'interpret-csv': HEAVY_INTERPRET_TIMEOUT_MS,
       'interpret-json': HEAVY_INTERPRET_TIMEOUT_MS,
+      'read-pdf': HEAVY_SUMMARY_TIMEOUT_MS,
+      'downscale-image': HEAVY_SUMMARY_TIMEOUT_MS,
     },
   },
   {

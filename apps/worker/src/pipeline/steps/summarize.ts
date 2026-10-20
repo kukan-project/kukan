@@ -15,9 +15,8 @@
  * primary key, no header row is decided here (ADR-053 §2).
  */
 
+import { readFile, stat } from 'node:fs/promises'
 import { and, eq, sql } from 'drizzle-orm'
-import { PDFDocument } from '@cantoo/pdf-lib'
-import sharp from 'sharp'
 import type { Database } from '@kukan/db'
 import {
   organization,
@@ -39,7 +38,6 @@ import {
   generationKey,
   PDF_TEXT_LAYER_MIN_CHARS_PER_PAGE,
   SUMMARY_CONTEXT_NOTES_CHARS,
-  SUMMARY_IMAGE_RESIZE_PX,
   SUMMARY_MAX_DOC_BYTES,
   SUMMARY_MAX_OFFICE_BYTES,
   SUMMARY_MAX_PDF_PAGES,
@@ -52,6 +50,7 @@ import {
   type SummarySkipReason,
   contentFormat,
   declaredFormatMismatch,
+  FORMAT_SIGNATURE_BYTES,
 } from '@kukan/shared'
 import { stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { embeddingDueIf } from '@kukan/api/services/search/resource-embedding'
@@ -75,7 +74,12 @@ import {
   SUMMARY_OUTPUT_JSON_SCHEMA,
   type SummaryDatasetContext,
 } from '@kukan/api/services/suggest/summary-prompt'
-import { SUMMARY_IMAGE_MAX_INPUT_PIXELS, SUMMARY_MAX_TOKENS, SUMMARY_TIMEOUT_MS } from '@/config'
+import { SUMMARY_MAX_TOKENS, SUMMARY_TIMEOUT_MS } from '@/config'
+import { ChildExitedError } from '@kukan/api/services/child/host'
+import { HeavyTimedOutError, HeavyTooLargeError, runHeavy } from '@/heavy'
+import type { HeavyRequest, HeavyResult } from '../../heavy/protocol'
+import { cleanupTempFile, readHead, siblingTempPath, streamToTempFile } from '../node-utils'
+import { claimKeeper } from '../run/held-context'
 
 export interface SummaryDeps {
   db: Database
@@ -407,10 +411,11 @@ async function planPdf(
     return asText ?? { reason: 'too-large' }
   }
 
-  const bytes = await readAll(await deps.storage.download(input.storageKey))
-  const pages = await pageCount(bytes, deps)
-
-  // Two things make the ratio meaningless, and both mean take the text.
+  // Two things make the characters-per-page ratio meaningless, and both mean
+  // take the text. Each answer below that needs no page count is given before
+  // the file is read: the parse runs in the heavy process, one request at a
+  // time, and a turn spent there on a PDF that will not be sent is a turn every
+  // interpretation behind it waits for.
   //
   // A head that hit its cap measures the budget, not the document: 16KB of
   // Japanese over a 467-page yearbook reads as 11 characters a page whatever
@@ -418,94 +423,134 @@ async function planPdf(
   // the original for every PDF past about fifty pages — and the original is
   // not the path that reads everything, as that yearbook showed when the model
   // reported it could extract nothing from it.
-  //
-  // A page count we could not read is a different thing again. It means our own
-  // parser could not open the file, which is poor evidence that the provider
-  // will make more of the whole of it — so where text was extracted, that is
-  // the surer path as well as the cheaper one.
-  const thinLayer = (text: string, pageCount: number) =>
-    !textHeadWasCapped(text) && text.length / pageCount < PDF_TEXT_LAYER_MIN_CHARS_PER_PAGE
-  if (asText && (pages === null || !thinLayer(textHead!, pages))) return asText
-  // Not a PDF at all — a dead link the publisher answered with a page, which
-  // is what this catalogue's 44KB「PDF」holding `<!doctype html>` turned out to
-  // be (ADR-047). Distinct from a PDF we could not parse: the signature is
-  // absent, not merely unreadable. A fact about these bytes, so it is recorded
-  // as standing rather than re-asked on every run.
-  if (pages === null && declaredFormatMismatch(input.format, bytes)) {
-    return { reason: 'format-mismatch' }
-  }
+  if (asText && textHeadWasCapped(textHead!)) return asText
+  const takesPdf = documentInfo?.documentFormats.includes('pdf') === true
+  // No provider for the original: a text layer, thin or not, is all there is,
+  // and below the floor it describes nothing.
+  if (!takesPdf && asText) return asText
 
-  if (!documentInfo?.documentFormats.includes('pdf')) {
-    // No provider for the original: a thin text layer is all there is, and
-    // below the floor it describes nothing.
-    return asText ?? { reason: 'unsupported-format' }
-  }
-  // Tokens follow pages, not bytes — 1,985 to 3,078 a page whether the page
-  // holds 1,559 characters or none — so the page count is the limit that binds.
-  //
-  // Past it the front of the document goes rather than nothing. A statistical
-  // yearbook is exactly the file an abstract is worth most on, and refusing it
-  // outright bought nothing: the ceiling on what one PDF can cost is the same
-  // either way, because that ceiling *is* this limit. What the reader is owed
-  // is knowing it happened, and the notice says so from the coverage below.
-  if (pages !== null && pages > SUMMARY_MAX_PDF_PAGES) {
-    const front = await firstPages(bytes, SUMMARY_MAX_PDF_PAGES, deps)
-    // A file we cannot cut is one pdf-lib could count but not copy — untested,
-    // because a document that parses far enough for the first and not the
-    // second is not something we could construct. The text layer is the only
-    // path left, and below the floor there is none.
-    if (!front) return asText ?? { reason: 'too-large' }
+  const pdfPath = await streamToTempFile(await deps.storage.download(input.storageKey), 'pdf')
+  try {
+    // Not a PDF at all — a dead link the publisher answered with a page, which
+    // is what this catalogue's 44KB「PDF」holding `<!doctype html>` turned out to
+    // be (ADR-047). Distinct from a PDF we could not parse: the signature is
+    // absent, not merely unreadable. A fact about these bytes, so it is recorded
+    // as standing rather than re-asked on every run.
+    const mismatch = async () =>
+      declaredFormatMismatch(input.format, await readHead(pdfPath, FORMAT_SIGNATURE_BYTES))
+    if (!takesPdf)
+      return (await mismatch()) ? { reason: 'format-mismatch' } : { reason: 'unsupported-format' }
+
+    // The text layer is thin past this many pages; with no text, at any count
+    const thinPast = asText ? Math.floor(textHead!.length / PDF_TEXT_LAYER_MIN_CHARS_PER_PAGE) : 0
+    const outPath = siblingTempPath(pdfPath, 'front.pdf')
+    const read = await inHeavyProcess(
+      {
+        kind: 'read-pdf',
+        pdfPath,
+        cutTo: SUMMARY_MAX_PDF_PAGES,
+        // Cut only where the cut would be sent: a thick layer is taken instead
+        cutPast: thinPast,
+        outPath,
+      },
+      input,
+      deps
+    )
+    // Outgrew the heavy process, outlasted its limit or crashed it: the original
+    // is the one thing not to send, as nothing bounds its pages — the files that
+    // get here are the very ones the page limit is for.
+    if (!read) return asText ?? { reason: 'too-large' }
+    const { pages } = read
+    if (pages === null) {
+      deps.log.warn({ component: 'summarize', why: read.why }, 'could not read the PDF page count')
+    }
+
+    // A page count we could not read is the other. It means our own parser
+    // could not open the file, which is poor evidence that the provider will
+    // make more of the whole of it — so where text was extracted, that is the
+    // surer path as well as the cheaper one.
+    if (asText && (pages === null || pages <= thinPast)) return asText
+    if (pages === null && (await mismatch())) return { reason: 'format-mismatch' }
+
+    // Tokens follow pages, not bytes — 1,985 to 3,078 a page whether the page
+    // holds 1,559 characters or none — so the page count is the limit that binds.
+    //
+    // Past it the front of the document goes rather than nothing. A statistical
+    // yearbook is exactly the file an abstract is worth most on, and refusing it
+    // outright bought nothing: the ceiling on what one PDF can cost is the same
+    // either way, because that ceiling *is* this limit. What the reader is owed
+    // is knowing it happened, and the notice says so from the coverage below.
+    if (pages !== null && pages > SUMMARY_MAX_PDF_PAGES) {
+      // A file we cannot cut is one that is encrypted, or one pdf-lib could
+      // count but not copy — the latter untested, because a document that
+      // parses far enough for the first and not the second is not something we
+      // could construct. The text layer is the only path left, and below the
+      // floor there is none.
+      if (!read.cut) {
+        if (read.encrypted) {
+          deps.log.info(
+            { component: 'summarize' },
+            'an encrypted PDF cannot be cut; sending nothing'
+          )
+        } else {
+          deps.log.warn(
+            { component: 'summarize', why: read.why },
+            'could not cut the PDF down to its first pages'
+          )
+        }
+        return asText ?? { reason: 'too-large' }
+      }
+      return {
+        kind: 'original',
+        material: EMPTY_MATERIAL,
+        attachment: {
+          kind: 'document',
+          format: 'pdf',
+          name: 'pdf',
+          bytes: await readFile(outPath),
+        },
+        coverage: { read: SUMMARY_MAX_PDF_PAGES, total: pages },
+      }
+    }
     return {
       kind: 'original',
       material: EMPTY_MATERIAL,
-      attachment: { kind: 'document', format: 'pdf', name: 'pdf', bytes: front },
-      coverage: { read: SUMMARY_MAX_PDF_PAGES, total: pages },
+      attachment: { kind: 'document', format: 'pdf', name: 'pdf', bytes: await readFile(pdfPath) },
     }
-  }
-  return {
-    kind: 'original',
-    material: EMPTY_MATERIAL,
-    attachment: { kind: 'document', format: 'pdf', name: 'pdf', bytes },
+  } finally {
+    await cleanupTempFile(pdfPath)
   }
 }
+
+/** How a parser's crash ends a process; a stop asked from outside does not count */
+const CRASH_SIGNALS = new Set<NodeJS.Signals>(['SIGSEGV', 'SIGBUS', 'SIGILL', 'SIGFPE'])
 
 /**
- * The first `count` pages as a PDF of their own, or null where the document
- * will not give them up.
+ * `request` in the heavy process (ADR-059), where a hostile file takes that
+ * process rather than the worker and every other job on it, touching the run's
+ * claim meanwhile as Interpret's requests do.
  *
- * Copying rather than deleting the rest: `copyPages` builds a new document from
- * the pages it is given, so what a damaged page further in does to the file
- * cannot reach this one.
+ * Null where the file was the end of it — the process outgrown, its time limit
+ * passed, or the process killed by a crash in the parser — logged, and the
+ * file's answer for this run: it is not asked again within it.
+ * Anything else goes up: the run cut short (the claim lost, the worker
+ * stopping, the container short), or a process that failed without the file's
+ * help — one that exited of itself, or a module that would not load.
  */
-async function firstPages(bytes: Buffer, count: number, deps: SummaryDeps): Promise<Buffer | null> {
+async function inHeavyProcess<R extends HeavyRequest>(
+  request: R,
+  input: SummaryInput,
+  deps: SummaryDeps
+): Promise<HeavyResult<R> | null> {
   try {
-    const src = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
-    // Counting the pages of an encrypted document is safe; taking them out is
-    // not. `ignoreEncryption` parses the structure without decrypting it, so
-    // the content streams cross into a document with no key and every page
-    // arrives blank — 50 of them, from a yearbook holding 575,761 characters.
-    if (src.isEncrypted) {
-      deps.log.info({ component: 'summarize' }, 'an encrypted PDF cannot be cut; sending nothing')
-      return null
-    }
-    const cut = await PDFDocument.create()
-    const copied = await cut.copyPages(src, [...Array(count).keys()])
-    for (const page of copied) cut.addPage(page)
-    return Buffer.from(await cut.save())
+    return await runHeavy(request, input.claim && claimKeeper(deps.db, input.claim))
   } catch (err) {
-    deps.log.warn({ component: 'summarize', err }, 'could not cut the PDF down to its first pages')
-    return null
-  }
-}
-
-async function pageCount(bytes: Buffer, deps: SummaryDeps): Promise<number | null> {
-  try {
-    // An encrypted PDF still parses far enough to be counted; anything else
-    // that throws here is a file we would not have described anyway.
-    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
-    return doc.getPageCount()
-  } catch (err) {
-    deps.log.warn({ component: 'summarize', err }, 'could not read the PDF page count')
+    const fileDefeatedIt =
+      err instanceof HeavyTooLargeError ||
+      err instanceof HeavyTimedOutError ||
+      (err instanceof ChildExitedError && CRASH_SIGNALS.has(err.exit as NodeJS.Signals))
+    if (!fileDefeatedIt) throw err
+    deps.log.warn({ component: 'summarize', kind: request.kind, err }, 'heavy request failed')
     return null
   }
 }
@@ -520,32 +565,35 @@ async function pageCount(bytes: Buffer, deps: SummaryDeps): Promise<number | nul
  *
  * But the header cannot say whether a JPEG will take it: a progressive one, or
  * a baseline one in several scans, has libjpeg hold every coefficient at full
- * size however far it scales, and PNG, WebP and GIF decode whole. All of it is
- * in this process, so every format is held to one pixel limit, read from the
- * header before any pixel is, and a very large photo is skipped with the rest.
- * Null for an image over it, left unstamped like the other size refusals, so a
- * later run re-reads the header and a raised limit takes effect.
+ * size however far it scales, and PNG, WebP and GIF decode whole. So every
+ * format is held to one pixel limit, read from the header before any pixel is,
+ * and the decode runs in the heavy process, where an image that still outgrows
+ * it, stalls it or crashes it takes that process alone. Null for any of those,
+ * left unstamped like the other size refusals, so a later run re-reads the
+ * header and a raised limit takes effect.
  */
 async function downloadImage(
   input: SummaryInput,
   maxBytes: number,
   deps: SummaryDeps
 ): Promise<Buffer | null> {
-  const bytes = await readAll(await deps.storage.download(input.storageKey))
-  if (bytes.byteLength <= maxBytes) return bytes
+  const imagePath = await streamToTempFile(await deps.storage.download(input.storageKey))
   try {
-    return await sharp(bytes, { limitInputPixels: SUMMARY_IMAGE_MAX_INPUT_PIXELS })
-      .resize({
-        width: SUMMARY_IMAGE_RESIZE_PX,
-        height: SUMMARY_IMAGE_RESIZE_PX,
-        fit: 'inside',
-        withoutEnlargement: true,
-      })
-      .toBuffer()
-  } catch (err) {
-    if (!(err instanceof Error && /pixel limit/i.test(err.message))) throw err
-    deps.log.warn({ component: 'summarize', err }, 'image exceeds the pixel limit')
-    return null
+    if ((await stat(imagePath)).size <= maxBytes) return await readFile(imagePath)
+    const outPath = siblingTempPath(imagePath, 'downscaled')
+    const downscaled = await inHeavyProcess(
+      { kind: 'downscale-image', imagePath, outPath },
+      input,
+      deps
+    )
+    if (!downscaled) return null
+    if (!downscaled.written) {
+      deps.log.warn({ component: 'summarize' }, 'image exceeds the pixel limit')
+      return null
+    }
+    return await readFile(outPath)
+  } finally {
+    await cleanupTempFile(imagePath)
   }
 }
 

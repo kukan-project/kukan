@@ -146,7 +146,12 @@ export async function streamToTempFile(stream: Readable, ext?: string): Promise<
   const dir = await mkdtemp(join(tmpdir(), 'kukan-'))
   const safeExt = ext?.replace(/[^a-zA-Z0-9]/g, '')
   const filePath = join(dir, safeExt ? `data.${safeExt}` : 'data')
-  await pipelineAsync(stream, createWriteStream(filePath))
+  try {
+    await pipelineAsync(stream, createWriteStream(filePath))
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+    throw err
+  }
   return filePath
 }
 
