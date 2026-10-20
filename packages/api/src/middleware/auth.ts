@@ -48,15 +48,14 @@ export function optionalAuth(auth: Auth) {
 
         if (session?.user) {
           // Block deleted/inactive users even if session exists
-          const state = (session.user as Record<string, unknown>).state
-          if (state && state !== 'active') {
+          if (session.user.state !== 'active') {
             return next()
           }
           c.set('user', {
             id: session.user.id,
             email: session.user.email,
             name: session.user.name || session.user.email,
-            displayName: (session.user as Record<string, unknown>).displayName as string | null,
+            displayName: session.user.displayName ?? null,
             sysadmin: session.user.role === 'sysadmin',
           })
           return next()

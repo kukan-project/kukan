@@ -13,18 +13,19 @@ export class UserService {
 
   /** Soft-delete a user: set state='deleted' and revoke sessions/tokens */
   async delete(userId: string) {
-    const [deleted] = await this.db
-      .update(user)
-      .set({ state: 'deleted', updatedAt: new Date() })
-      .where(eq(user.id, userId))
-      .returning({ id: user.id })
+    // One transaction, so a user is never left deleted with sessions that still sign in
+    await this.db.transaction(async (tx) => {
+      const [deleted] = await tx
+        .update(user)
+        .set({ state: 'deleted', updatedAt: new Date() })
+        .where(eq(user.id, userId))
+        .returning({ id: user.id })
 
-    if (!deleted) throw new NotFoundError('User', userId)
+      if (!deleted) throw new NotFoundError('User', userId)
 
-    await Promise.all([
-      this.db.delete(session).where(eq(session.userId, userId)),
-      this.db.delete(apiToken).where(eq(apiToken.userId, userId)),
-    ])
+      await tx.delete(session).where(eq(session.userId, userId))
+      await tx.delete(apiToken).where(eq(apiToken.userId, userId))
+    })
   }
 
   /** Restore a soft-deleted user back to active state */

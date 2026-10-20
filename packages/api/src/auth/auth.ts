@@ -14,6 +14,7 @@ import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, type Env } from '@kukan/share
 import { claimBootstrapPromotion } from '../services/bootstrap'
 import { checkPasswordPolicy } from './password-policy'
 import { enforceSignUpName } from './sign-up-name'
+import { inactiveUser } from './inactive-user'
 
 export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']) {
   // Links the before-hook promotion decision to the after-hook audit write.
@@ -46,6 +47,10 @@ export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']
         // KUKAN's own admin API decides who may set it. Server-side creation is
         // unaffected.
         displayName: { type: 'string', required: false, input: false },
+        // Declared so sessions carry it, for inactiveUser() and optionalAuth to
+        // refuse a user no longer active; an undeclared column reads as
+        // undefined. `input: false` keeps sign-up from setting it.
+        state: { type: 'string', required: false, input: false },
       },
     },
     databaseHooks: {
@@ -118,6 +123,7 @@ export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']
           sysadmin: adminAc,
         },
       }),
+      inactiveUser(),
     ],
   })
 }
