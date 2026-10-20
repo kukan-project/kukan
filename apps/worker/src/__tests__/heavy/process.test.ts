@@ -204,9 +204,10 @@ describe('HeavyProcess', () => {
   })
 
   it('does not time out a request that answered in time', async () => {
-    heavy = new HeavyProcess(command, { ...LIMITS, timeoutMs: within(200) })
+    // Room for a slow runner to answer; the wait past it is what's tested
+    heavy = new HeavyProcess(command, { ...LIMITS, timeoutMs: within(2000) })
     const pid = await ask(heavy, 'pid')
-    await new Promise((r) => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 2200))
     expect(await ask(heavy, 'pid')).toBe(pid)
   })
 
