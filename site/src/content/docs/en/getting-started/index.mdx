@@ -29,7 +29,17 @@ See [GitHub Releases](https://github.com/kukan-project/kukan/releases) for the l
 pnpm install
 ```
 
-### 3. Start infrastructure
+### 3. Environment variables
+
+```bash
+cp .env.example .env
+# Generate the auth secret
+sed -i.bak "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
+```
+
+`BETTER_AUTH_SECRET` (the auth secret, 32 characters or more) must be set; Docker Compose refuses to start without it.
+
+### 4. Start infrastructure
 
 Start PostgreSQL, MinIO, OpenSearch, OpenSearch Dashboards, and Ollama with Docker Compose.
 
@@ -52,12 +62,6 @@ The bundled `ollama` service (used for vector search and AI metadata suggestions
 
 - **macOS**: Docker Desktop cannot pass the Apple GPU into Linux containers, so the containerized `ollama` stays CPU-only. For Metal GPU acceleration, run [Ollama natively](https://ollama.com/download) and point KUKAN at it with `OLLAMA_URL=http://localhost:11434` in `.env`.
   :::
-
-### 4. Environment variables
-
-```bash
-cp .env.example .env
-```
 
 ### 5. Run database migrations
 

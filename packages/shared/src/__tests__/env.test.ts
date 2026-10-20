@@ -76,6 +76,30 @@ describe('envSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('should reject the published example BETTER_AUTH_SECRETs in production only', () => {
+    const examples = [
+      'change-this-to-at-least-32-characters-secret-key',
+      'change-this-to-at-least-32-characters-secret',
+      'test-secret-that-is-at-least-32-characters-long!',
+    ]
+    for (const BETTER_AUTH_SECRET of examples) {
+      const production = envSchema.safeParse({ NODE_ENV: 'production', BETTER_AUTH_SECRET })
+      expect(production.error?.issues).toEqual([
+        expect.objectContaining({
+          path: ['BETTER_AUTH_SECRET'],
+          message: expect.stringContaining('openssl rand -base64 32'),
+        }),
+      ])
+      for (const NODE_ENV of ['development', 'test']) {
+        expect(envSchema.safeParse({ NODE_ENV, BETTER_AUTH_SECRET }).success).toBe(true)
+      }
+    }
+    const generated = 'q3J8vXr0LmZ2bT7wYk5nHc1sPdE9uGf4'
+    expect(
+      envSchema.safeParse({ NODE_ENV: 'production', BETTER_AUTH_SECRET: generated }).success
+    ).toBe(true)
+  })
+
   it('should coerce string numbers to numbers', () => {
     const result = envSchema.safeParse({
       BETTER_AUTH_SECRET: 'a'.repeat(32),

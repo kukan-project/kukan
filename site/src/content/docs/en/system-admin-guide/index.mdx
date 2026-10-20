@@ -17,6 +17,9 @@ For production use, we recommend the latest [release](https://github.com/kukan-p
 
 ```bash
 git checkout vX.Y.Z   # latest release
+cp .env.example .env
+# Generate the auth secret
+sed -i.bak "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
 cp .env.prod.example .env.prod
 # Edit .env.prod
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
@@ -762,7 +765,7 @@ Key environment variables are listed below. See `.env.example` for the full list
 | `WORKER_DB_POOL_MAX`                     | Upper bound of the worker's DB connection pool. The default concurrency is derived from it                                                | `5`                                                                                                             |
 | `WORKER_CONCURRENCY`                     | Jobs the worker runs at once. Unset: `WORKER_DB_POOL_MAX − 2` (at most 4). Raise it where memory allows                                   | unset (3 with a pool of `5`)                                                                                    |
 | `WEB_DB_POOL_MAX`                        | Upper bound of the web's DB connection pool                                                                                               | `5`                                                                                                             |
-| `BETTER_AUTH_SECRET`                     | Auth session secret (32+ characters)                                                                                                      | -                                                                                                               |
+| `BETTER_AUTH_SECRET`                     | Auth session secret (required, 32+ characters; generate with `openssl rand -base64 32`)                                                   | -                                                                                                               |
 | `BETTER_AUTH_URL`                        | Public URL                                                                                                                                | `http://localhost:3000`                                                                                         |
 | `PASSWORD_MIN_SCORE`                     | Password strength floor (zxcvbn score 0–4) — see below                                                                                    | `3`                                                                                                             |
 | `CLIENT_IP_HEADER`                       | Header the sign-in rate limit reads the client IP from; `x-kukan-client-ip` only behind CloudFront                                        | `x-forwarded-for`                                                                                               |

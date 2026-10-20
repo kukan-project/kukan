@@ -45,7 +45,7 @@ x-app-environment: &app-environment
   AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-}
   USER_AGENT_URL: ${USER_AGENT_URL:-}
   OLLAMA_URL: http://kukan-shared-ollama:11434
-  BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET}
+  BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET:?set SITE_AUTH_SECRET}
   BETTER_AUTH_URL: ${SITE_URL}
 
 services:

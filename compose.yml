@@ -44,7 +44,7 @@ x-app-environment: &app-environment
   # Reachable from the worker without authentication, and not a service it uses
   FETCH_DENY_HOSTS: ${FETCH_DENY_HOSTS:-opensearch-dashboards}
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost}
-  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
 
 services:
   # ===== Infrastructure (always started) =====

@@ -29,7 +29,17 @@ git checkout vX.Y.Z   # 最新リリースを指定（開発版を試す場合�
 pnpm install
 ```
 
-### 3. インフラ起動
+### 3. 環境変数
+
+```bash
+cp .env.example .env
+# 認証用の秘密鍵を生成
+sed -i.bak "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
+```
+
+`BETTER_AUTH_SECRET`（認証用の秘密鍵、32 文字以上）は必ず設定します。未設定のままでは Docker Compose が起動しません。
+
+### 4. インフラ起動
 
 PostgreSQL、MinIO、OpenSearch、OpenSearch Dashboards、Ollama を Docker Compose で起動します。
 
@@ -52,12 +62,6 @@ docker compose up -d
 
 - **macOS**: Docker Desktop は Apple GPU をコンテナに渡せないため、コンテナ内 `ollama` は CPU のみです。Metal で高速化するには [Ollama をネイティブ実行](https://ollama.com/download)し、`.env` の `OLLAMA_URL=http://localhost:11434` でネイティブ側を参照します。
   :::
-
-### 4. 環境変数
-
-```bash
-cp .env.example .env
-```
 
 ### 5. データベースマイグレーション
 

@@ -46,7 +46,52 @@ CKAN 互換の読み取り API を備え、既存の CKAN クライアントを�
 pnpm install
 ```
 
-### 2. Start infrastructure / インフラ起動
+### 2. Environment variables / 環境変数
+
+```bash
+cp .env.example .env
+# Generate the auth secret / 認証用の秘密鍵を生成
+sed -i.bak "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
+```
+
+Default values connect to the Docker Compose services.
+Only `BETTER_AUTH_SECRET` has to be set, and Docker Compose refuses to start until it is:
+
+デフォルト値で Docker Compose のサービスに接続できる。
+設定が必要なのは `BETTER_AUTH_SECRET` だけで、未設定のままでは Docker Compose が起動しない。
+
+#### Environment variable reference / 環境変数一覧
+
+| Variable                          | Default                 | Description                                                                           |
+| --------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `POSTGRES_HOST`                   | `localhost`             | PostgreSQL hostname                                                                   |
+| `POSTGRES_PORT`                   | `5432`                  | PostgreSQL port                                                                       |
+| `POSTGRES_DB`                     | `kukan`                 | PostgreSQL database name                                                              |
+| `POSTGRES_USER`                   | `kukan`                 | PostgreSQL user                                                                       |
+| `POSTGRES_PASSWORD`               | `kukan`                 | PostgreSQL password                                                                   |
+| `POSTGRES_SSLMODE`                | `disable`               | `verify-full` for RDS/Aurora, `require` (no CA check), `disable`                      |
+| `POSTGRES_SSLROOTCERT`            | _(none)_                | CA bundle for `verify-full` (CDK: the images' RDS bundle); unset → Node's trust store |
+| `BETTER_AUTH_SECRET`              | _(must set)_            | Auth session secret (min 32 chars)                                                    |
+| `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                                                |
+| `S3_ENDPOINT`                     | _(omit for AWS)_        | S3-compatible endpoint (MinIO: `http://localhost:9000`)                               |
+| `S3_BUCKET`                       | `kukan-dev`             | S3 bucket name                                                                        |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_   | S3 credentials (MinIO: `minioadmin`)                                                  |
+| `SEARCH_TYPE`                     | `opensearch`            | `opensearch` or `postgres` (fallback)                                                 |
+| `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                                                   |
+| `WORKER_WAKE_URL`                 | _(dev: localhost:8080)_ | Where the web tells the worker a job is waiting (worker's `/wake`)                    |
+| `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                                              |
+| `AI_COMPLETION_MODELS`            | _(provider default)_    | Allow-list of generation models (comma-separated); first is default                   |
+| `AI_SUMMARY_MODEL`                | _(off)_                 | Model writing AI resource descriptions; unset = off, and not billed                   |
+| `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                                         |
+| `WORKER_DB_POOL_MAX`              | `5`                     | DB connection pool size (worker)                                                      |
+| `WORKER_CONCURRENCY`              | _(pool − 2, at most 4)_ | Jobs one worker runs at once                                                          |
+| `LOG_LEVEL`                       | `info`                  | Pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`)                        |
+| `TIME_ZONE`                       | `Asia/Tokyo`            | IANA zone times are prerendered in (browser then shows the viewer's)                  |
+
+See [.env.example](.env.example) for all options including pool tuning.
+プールチューニング等の全オプションは上記ファイルを参照。
+
+### 3. Start infrastructure / インフラ起動
 
 ```bash
 docker compose up -d
@@ -86,54 +131,6 @@ The bundled `ollama` service runs on **CPU by default**. To use a GPU:
   # .env — point at the native instance instead of the compose service (:11435)
   OLLAMA_URL=http://localhost:11434
   ```
-
-### 3. Environment variables / 環境変数
-
-```bash
-cp .env.example .env
-```
-
-Default values connect to the Docker Compose services.
-Only `BETTER_AUTH_SECRET` needs to be changed:
-
-デフォルト値で Docker Compose のサービスに接続できる。
-`BETTER_AUTH_SECRET` のみ変更を推奨:
-
-```bash
-# .env
-BETTER_AUTH_SECRET=$(openssl rand -base64 32)
-```
-
-#### Environment variable reference / 環境変数一覧
-
-| Variable                          | Default                 | Description                                                                           |
-| --------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
-| `POSTGRES_HOST`                   | `localhost`             | PostgreSQL hostname                                                                   |
-| `POSTGRES_PORT`                   | `5432`                  | PostgreSQL port                                                                       |
-| `POSTGRES_DB`                     | `kukan`                 | PostgreSQL database name                                                              |
-| `POSTGRES_USER`                   | `kukan`                 | PostgreSQL user                                                                       |
-| `POSTGRES_PASSWORD`               | `kukan`                 | PostgreSQL password                                                                   |
-| `POSTGRES_SSLMODE`                | `disable`               | `verify-full` for RDS/Aurora, `require` (no CA check), `disable`                      |
-| `POSTGRES_SSLROOTCERT`            | _(none)_                | CA bundle for `verify-full` (CDK: the images' RDS bundle); unset → Node's trust store |
-| `BETTER_AUTH_SECRET`              | _(must set)_            | Auth session secret (min 32 chars)                                                    |
-| `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                                                |
-| `S3_ENDPOINT`                     | _(omit for AWS)_        | S3-compatible endpoint (MinIO: `http://localhost:9000`)                               |
-| `S3_BUCKET`                       | `kukan-dev`             | S3 bucket name                                                                        |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_   | S3 credentials (MinIO: `minioadmin`)                                                  |
-| `SEARCH_TYPE`                     | `opensearch`            | `opensearch` or `postgres` (fallback)                                                 |
-| `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                                                   |
-| `WORKER_WAKE_URL`                 | _(dev: localhost:8080)_ | Where the web tells the worker a job is waiting (worker's `/wake`)                    |
-| `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                                              |
-| `AI_COMPLETION_MODELS`            | _(provider default)_    | Allow-list of generation models (comma-separated); first is default                   |
-| `AI_SUMMARY_MODEL`                | _(off)_                 | Model writing AI resource descriptions; unset = off, and not billed                   |
-| `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                                         |
-| `WORKER_DB_POOL_MAX`              | `5`                     | DB connection pool size (worker)                                                      |
-| `WORKER_CONCURRENCY`              | _(pool − 2, at most 4)_ | Jobs one worker runs at once                                                          |
-| `LOG_LEVEL`                       | `info`                  | Pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`)                        |
-| `TIME_ZONE`                       | `Asia/Tokyo`            | IANA zone times are prerendered in (browser then shows the viewer's)                  |
-
-See [.env.example](.env.example) for all options including pool tuning.
-プールチューニング等の全オプションは上記ファイルを参照。
 
 ### 4. Start dev server / 開発サーバー起動
 
@@ -316,7 +313,8 @@ Docker Compose でオンプレミス・閉域網環境にデプロイ。
 
 ```bash
 # 1. Configure environment / 環境変数を設定
-cp .env.example .env        # Set BETTER_AUTH_SECRET / BETTER_AUTH_SECRET を設定
+cp .env.example .env
+sed -i.bak "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
 cp .env.prod.example .env.prod  # Set BETTER_AUTH_URL etc. / BETTER_AUTH_URL 等を設定
 
 # 2. Build and start all services / ビルド＆全サービス起動

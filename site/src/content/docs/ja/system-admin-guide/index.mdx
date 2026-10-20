@@ -17,6 +17,9 @@ Docker Compose を使ったオンプレミス・閉域網デプロイに対応�
 
 ```bash
 git checkout vX.Y.Z   # 最新リリース
+cp .env.example .env
+# 認証用の秘密鍵を生成
+sed -i.bak "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
 cp .env.prod.example .env.prod
 # .env.prod を編集
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
@@ -651,7 +654,7 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 | `WORKER_DB_POOL_MAX`                     | worker の DB 接続プールの上限。並行数の既定値もここから決まる                                                             | `5`                                                                                                        |
 | `WORKER_CONCURRENCY`                     | worker が同時に処理するジョブの数。未設定なら `WORKER_DB_POOL_MAX − 2`（最大 4）。メモリに余裕がある環境で増やす          | 未設定（`5` なら 3）                                                                                       |
 | `WEB_DB_POOL_MAX`                        | web の DB 接続プールの上限                                                                                                | `5`                                                                                                        |
-| `BETTER_AUTH_SECRET`                     | 認証セッション秘密鍵（32 文字以上）                                                                                       | -                                                                                                          |
+| `BETTER_AUTH_SECRET`                     | 認証セッション秘密鍵（必須、32 文字以上。`openssl rand -base64 32` で生成）                                               | -                                                                                                          |
 | `BETTER_AUTH_URL`                        | 公開 URL                                                                                                                  | `http://localhost:3000`                                                                                    |
 | `PASSWORD_MIN_SCORE`                     | パスワード強度の下限（zxcvbn スコア 0〜4）— 下記                                                                          | `3`                                                                                                        |
 | `CLIENT_IP_HEADER`                       | ログイン試行の回数制限がクライアントの IP を読むヘッダー。`x-kukan-client-ip` は CloudFront の後ろでのみ         | `x-forwarded-for`                                                                                          |

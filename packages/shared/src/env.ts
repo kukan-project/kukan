@@ -61,7 +61,18 @@ export const timeZoneSchema = z.preprocess(
   z.string().refine(isTimeZone, 'must be an IANA time zone name').default(DEFAULT_TIME_ZONE)
 )
 
-export const envSchema = z.object({
+/**
+ * Auth secrets that have appeared in this repository as examples or test
+ * fixtures. Each is long enough for `min(32)`, so a copied `.env` would boot a
+ * production server that signs sessions with a value anyone can read.
+ */
+const PLACEHOLDER_AUTH_SECRETS: ReadonlySet<string> = new Set([
+  'change-this-to-at-least-32-characters-secret-key',
+  'change-this-to-at-least-32-characters-secret',
+  'test-secret-that-is-at-least-32-characters-long!',
+])
+
+const envObject = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   ...postgresSchema.shape,
@@ -188,6 +199,18 @@ export const envSchema = z.object({
   GA4_PROPERTY_ID: z.string().optional(),
   GA4_CLIENT_EMAIL: z.string().optional(),
   GA4_PRIVATE_KEY: z.string().optional(),
+})
+
+// Production only: development and the tests keep using the examples
+export const envSchema = envObject.superRefine((env, ctx) => {
+  if (env.NODE_ENV === 'production' && PLACEHOLDER_AUTH_SECRETS.has(env.BETTER_AUTH_SECRET)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['BETTER_AUTH_SECRET'],
+      message:
+        'BETTER_AUTH_SECRET is a published example value; generate one with `openssl rand -base64 32`',
+    })
+  }
 })
 
 export type Env = z.infer<typeof envSchema> & {
