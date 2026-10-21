@@ -23,6 +23,7 @@ import { pascal } from '../naming.js'
 import { KukanPipelineStack } from '../stacks/pipeline-stack.js'
 import {
   CDN_LOG_BUCKET,
+  execChannelGrants,
   normalize,
   stackTemplate,
   synthStage,
@@ -238,6 +239,47 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     const deps = (s: cdk.Stack) => s.dependencies.map((d) => d.node.id)
     expect(deps(stacks.KukanSiteStackCitya)).toEqual(['KukanSharedStack'])
     expect(deps(stacks.KukanSiteStackCityb)).toEqual(['KukanSiteStackCitya'])
+  })
+
+  describe('enableExecuteCommand', () => {
+    /** Per site: services allowing ECS Exec, and task-role policies granting it. */
+    const exec = (config: Pick<EnvironmentConfig, 'enableExecuteCommand' | 'sites'>) => {
+      const synthesized = synthStage({ ...MULTI_SITE, ...config })
+      return Object.fromEntries(
+        ['Citya', 'Cityb'].map((site) => {
+          const template = stackTemplate(synthesized, `KukanSiteStack${site}`)
+          const services = Object.values(template.findResources('AWS::ECS::Service'))
+          return [
+            site,
+            {
+              on: services.filter((s) => s.Properties.EnableExecuteCommand === true).length,
+              grants: execChannelGrants(template).length,
+            },
+          ]
+        })
+      )
+    }
+    const [citya, cityb] = MULTI_SITE.sites!
+
+    it('keeps it off on every site by default', () => {
+      expect(exec({})).toEqual({ Citya: { on: 0, grants: 0 }, Cityb: { on: 0, grants: 0 } })
+    })
+
+    it('opens only the site that asks for it', () => {
+      expect(exec({ sites: [citya, { ...cityb, enableExecuteCommand: true }] })).toEqual({
+        Citya: { on: 0, grants: 0 },
+        Cityb: { on: 2, grants: 2 },
+      })
+    })
+
+    it('takes the environment value as the default, which a site overrides', () => {
+      expect(
+        exec({
+          enableExecuteCommand: true,
+          sites: [{ ...citya, enableExecuteCommand: false }, cityb],
+        })
+      ).toEqual({ Citya: { on: 0, grants: 0 }, Cityb: { on: 2, grants: 2 } })
+    })
   })
 
   it('deploys sites after the canary in waves of deployConcurrency', () => {

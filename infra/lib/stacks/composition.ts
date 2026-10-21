@@ -111,6 +111,9 @@ export function composeShared(scope: Construct, config: KukanConfig): SharedReso
   const cluster = new ecs.Cluster(scope, 'Cluster', {
     vpc: network.vpc,
     clusterName: envPrefix(scope),
+    // Left unset, ECS Exec logs sessions through the containers' awslogs
+    // driver: what a shell prints would land beside the application logs
+    executeCommandConfiguration: { logging: ecs.ExecuteCommandLogging.NONE },
   })
 
   // Not a box: an account/region-wide side effect (lifecycle policy on the

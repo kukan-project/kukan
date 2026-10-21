@@ -264,6 +264,9 @@ export function loadConfig(
     'cdnLogRetentionDays',
     env.cdnLogRetentionDays ?? DEFAULT_CDN_LOG_RETENTION_DAYS
   )
+  // No ctx: the pipeline never sees a -c, so a shell into the tasks stays
+  // visible in the committed entry rather than one deploy's flags
+  const enableExecuteCommand = env.enableExecuteCommand ?? false
   // env-only (no ctx): structured value, awkward to pass via -c. Default ON —
   // hybrid search is the flagship behaviour and Titan v2 costs are usage-based.
   const bedrock = resolveBedrock(env.bedrock ?? {})
@@ -321,6 +324,7 @@ export function loadConfig(
     bedrock,
     ecrImageRetention,
     cdnLogRetentionDays,
+    enableExecuteCommand,
     ...computed,
   }
 }

@@ -45,12 +45,13 @@ const SITE_BACKUP_KEYS = Object.keys({
  * silently discarded, worst for the security gates allowedIpRanges/basicAuth)
  * and resolveSiteConfig (copy them from the site). The `satisfies` makes a new
  * site-scoped field fail to compile until both consumers pick it up.
- * `name`/`brand`/`albPriority` have no env-level counterpart; `overrides` and
- * `bedrock` deliberately deep-merge instead (shared setting + per-site tweaks).
+ * `name`/`brand`/`albPriority` have no env-level counterpart; `overrides`,
+ * `bedrock` and `enableExecuteCommand` deliberately inherit the environment's
+ * value instead (shared setting + per-site tweaks).
  */
 type SiteScopedKey = Exclude<
   keyof SiteConfig,
-  'name' | 'brand' | 'albPriority' | 'overrides' | 'bedrock'
+  'name' | 'brand' | 'albPriority' | 'overrides' | 'bedrock' | 'enableExecuteCommand'
 >
 
 const SITE_SCOPED_FIELDS = Object.keys({
@@ -435,6 +436,7 @@ export function resolveSiteConfig(
       SiteScopedKey
     >),
     bedrock: resolveSiteBedrock(env.bedrock, site.bedrock),
+    enableExecuteCommand: site.enableExecuteCommand ?? env.enableExecuteCommand,
     overrides: deepMerge(env.overrides ?? {}, site.overrides ?? {}),
   }
   return loadConfig(scope, merged, SITE_SCOPED_FIELDS)

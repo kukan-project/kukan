@@ -160,7 +160,7 @@ export class WorkerServiceConstruct extends Construct {
       securityGroups: [workerSecurityGroup],
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       assignPublicIp: true,
-      enableExecuteCommand: true,
+      enableExecuteCommand: config.enableExecuteCommand,
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
       // An A record per task in the environment's namespace, for the web's

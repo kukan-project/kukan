@@ -74,6 +74,13 @@ export const CDN_LOG_BUCKET = {
   'Fn::GetAtt': [Match.stringLikeRegexp('^CDNAccessLogBucket'), 'RegionalDomainName'],
 }
 
+/** Task-role policies holding the ECS Exec channel grants CDK adds with exec on. */
+export function execChannelGrants(template: Template): unknown[] {
+  return Object.values(template.findResources('AWS::IAM::Policy')).filter((policy) =>
+    JSON.stringify(policy).includes('ssmmessages:CreateControlChannel')
+  )
+}
+
 /** Replace 64-hex asset hashes so app-source changes don't churn infra snapshots. */
 export function normalize(template: Template): unknown {
   return JSON.parse(JSON.stringify(template.toJSON()).replace(/[0-9a-f]{64}/g, 'ASSET_HASH'))

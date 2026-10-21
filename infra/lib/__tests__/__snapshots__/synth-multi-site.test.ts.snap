@@ -78,6 +78,11 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ClusterEB0386A7": {
       "Properties": {
         "ClusterName": "kukan-dev",
+        "Configuration": {
+          "ExecuteCommandConfiguration": {
+            "Logging": "NONE",
+          },
+        },
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -3031,7 +3036,7 @@ function expandV6(addr) {
         },
         "DesiredCount": 1,
         "EnableECSManagedTags": false,
-        "EnableExecuteCommand": true,
+        "EnableExecuteCommand": false,
         "HealthCheckGracePeriodSeconds": 60,
         "LaunchType": "FARGATE",
         "LoadBalancers": [
@@ -3764,30 +3769,6 @@ function expandV6(addr) {
                 ],
               },
             },
-            {
-              "Action": [
-                "ssmmessages:CreateControlChannel",
-                "ssmmessages:CreateDataChannel",
-                "ssmmessages:OpenControlChannel",
-                "ssmmessages:OpenDataChannel",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": "logs:DescribeLogGroups",
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": [
-                "logs:CreateLogStream",
-                "logs:DescribeLogStreams",
-                "logs:PutLogEvents",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
           ],
           "Version": "2012-10-17",
         },
@@ -3845,7 +3826,7 @@ function expandV6(addr) {
         },
         "DesiredCount": 1,
         "EnableECSManagedTags": false,
-        "EnableExecuteCommand": true,
+        "EnableExecuteCommand": false,
         "LaunchType": "FARGATE",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
@@ -4513,30 +4494,6 @@ function expandV6(addr) {
                   ],
                 ],
               },
-            },
-            {
-              "Action": [
-                "ssmmessages:CreateControlChannel",
-                "ssmmessages:CreateDataChannel",
-                "ssmmessages:OpenControlChannel",
-                "ssmmessages:OpenDataChannel",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": "logs:DescribeLogGroups",
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": [
-                "logs:CreateLogStream",
-                "logs:DescribeLogStreams",
-                "logs:PutLogEvents",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
             },
           ],
           "Version": "2012-10-17",
@@ -5952,7 +5909,7 @@ function expandV6(addr) {
         },
         "DesiredCount": 1,
         "EnableECSManagedTags": false,
-        "EnableExecuteCommand": true,
+        "EnableExecuteCommand": false,
         "HealthCheckGracePeriodSeconds": 60,
         "LaunchType": "FARGATE",
         "LoadBalancers": [
@@ -6650,30 +6607,6 @@ function expandV6(addr) {
                 ],
               },
             },
-            {
-              "Action": [
-                "ssmmessages:CreateControlChannel",
-                "ssmmessages:CreateDataChannel",
-                "ssmmessages:OpenControlChannel",
-                "ssmmessages:OpenDataChannel",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": "logs:DescribeLogGroups",
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": [
-                "logs:CreateLogStream",
-                "logs:DescribeLogStreams",
-                "logs:PutLogEvents",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
           ],
           "Version": "2012-10-17",
         },
@@ -6731,7 +6664,7 @@ function expandV6(addr) {
         },
         "DesiredCount": 1,
         "EnableECSManagedTags": false,
-        "EnableExecuteCommand": true,
+        "EnableExecuteCommand": false,
         "LaunchType": "FARGATE",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
@@ -7412,30 +7345,6 @@ function expandV6(addr) {
                   ],
                 ],
               },
-            },
-            {
-              "Action": [
-                "ssmmessages:CreateControlChannel",
-                "ssmmessages:CreateDataChannel",
-                "ssmmessages:OpenControlChannel",
-                "ssmmessages:OpenDataChannel",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": "logs:DescribeLogGroups",
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": [
-                "logs:CreateLogStream",
-                "logs:DescribeLogStreams",
-                "logs:PutLogEvents",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
             },
           ],
           "Version": "2012-10-17",

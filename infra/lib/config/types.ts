@@ -218,6 +218,19 @@ export interface EnvironmentConfig {
    */
   cdnLogRetentionDays?: number
   /**
+   * Allow ECS Exec (`aws ecs execute-command`) into the web and worker tasks.
+   * A shell there reads the secrets injected as environment variables, and
+   * session contents are not logged — CloudTrail records only who opened one,
+   * when, and into which task. Turn it on only where operators investigate in
+   * place. A deploy changes only the service setting and the task role, not
+   * the task definition: tasks running already keep what they started with
+   * until replaced (`update-service --force-new-deployment`), while turning
+   * it off drops the role's grant and so stops new sessions at once. The
+   * default for every site, which `sites[].enableExecuteCommand` overrides.
+   * Omit → off.
+   */
+  enableExecuteCommand?: boolean
+  /**
    * Sites hosted by this environment (ADR-041). Presence (non-empty) opts the
    * environment into the SharedStack/SiteStack split; absence keeps the
    * all-in-one KukanStack with unchanged logical IDs. Existing single-site
@@ -291,6 +304,12 @@ export interface SiteConfig {
    */
   albPriority?: number
   /**
+   * ECS Exec into this site's web and worker tasks — only this site's task
+   * roles get the exec channel permissions. Omit → the environment's
+   * `enableExecuteCommand` (off unless set there).
+   */
+  enableExecuteCommand?: boolean
+  /**
    * Per-site AI on top of the environment's `bedrock`. An object deep-merges
    * onto it (arrays replace, so `completionModels` is given whole or not at
    * all), which is how one site gets a different `summaryModel` — or none, with
@@ -345,4 +364,6 @@ export interface KukanConfig extends ScaleComputed {
   ecrImageRetention: number
   /** Days CloudFront access logs are kept (lifecycle expiration on the log bucket). */
   cdnLogRetentionDays: number
+  /** Whether the web and worker services allow ECS Exec. */
+  enableExecuteCommand: boolean
 }

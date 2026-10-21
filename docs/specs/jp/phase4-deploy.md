@@ -335,8 +335,9 @@ prd: {
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth /
   enableIpv6Dns / bucketName / enableGa4DataApi / nameSiteInUserAgent / timeZone は `sites` 内でのみ宣言する（env 側に書くと
   synth 時に validateSites が拒否。黙って無視されるより安全）。例外は
-  `overrides` のみで、env の値の上にサイトの値が deep-merge される（全サイト
-  共通のチューニング + サイト個別上書き）。全サイトに同じゲートを掛けたい
+  `bedrock` / `overrides` / `enableExecuteCommand` で、env の値が全サイトの既定になり、
+  その上にサイトの値が重なる（`bedrock` と `overrides` は deep-merge、
+  `enableExecuteCommand` はサイトの値が優先。全サイト共通の設定 + サイト個別上書き）。全サイトに同じゲートを掛けたい
   場合は TypeScript の変数として定義し各サイトへスプレッドする
 - **AWS Backup**: マルチサイトでもそのまま使える（scale `large` の既定で有効）。
   DB プランは SharedStack（vault `kukan-<env>-backup`、共有クラスタを 1 回だけ

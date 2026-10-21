@@ -38,6 +38,8 @@
  *       (the type still accepts these on the environment entry, but ONLY as
  *       the legacy single-site shape without `sites`. Mixing the shapes —
  *       `sites` plus env-level site fields — is invalid and rejected at synth)
+ *   - BOTH: `enableExecuteCommand` — the environment value is every site's
+ *     default, and a site entry's value wins.
  *   - BOTH: `overrides` — the environment level tunes every section (including
  *     the shared db/opensearch and the backup schedule); a site may only tune
  *     its own sections (web / worker / dbPool / backup S3 settings), deep-merged
@@ -174,6 +176,10 @@ export const environments = {
         // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
         // enableGa4DataApi: false,
         // nameSiteInUserAgent: true, // worker's User-Agent carries this site's URL; public, indexable sites only
+        // ECS Exec into this site's web and worker (only its task roles get the grant); off by
+        // default because a shell reads the injected secrets and sessions are not logged.
+        // Set on the environment entry instead to make it every site's default:
+        // enableExecuteCommand: true,
         // timeZone: 'Asia/Tokyo', // IANA zone times are prerendered in (env TIME_ZONE); omit → Asia/Tokyo
         // overrides: { web: { maxSize: 2 }, dbPool: { webMax: 5 } }, // site-owned sections only
         // Per-site AI over the environment's `bedrock` above: an object deep-merges

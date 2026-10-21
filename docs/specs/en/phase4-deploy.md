@@ -348,9 +348,10 @@ prd: {
 - **Site-scoped fields cannot be written at the env level**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth / enableIpv6Dns /
   bucketName / enableGa4DataApi / nameSiteInUserAgent and timeZone are declared only inside `sites` (writing them at the env level is rejected by
-  validateSites at synth time — safer than being silently ignored). The one exception is
-  `overrides`, where the site's values are deep-merged on top of the env's (tuning shared by all
-  sites plus per-site overrides). To apply the same gate to every site, define it as a TypeScript
+  validateSites at synth time — safer than being silently ignored). The exceptions are
+  `bedrock`, `overrides` and `enableExecuteCommand`: the env value is every site's default and
+  the site's value goes on top (`bedrock` and `overrides` deep-merge, a site's
+  `enableExecuteCommand` wins) — settings shared by all sites plus per-site overrides. To apply the same gate to every site, define it as a TypeScript
   variable and spread it into each site
 - **AWS Backup**: works as-is with multi-site (enabled by default at scale `large`). The DB plan
   lives in the SharedStack (vault `kukan-<env>-backup`, snapshotting the shared cluster once) while

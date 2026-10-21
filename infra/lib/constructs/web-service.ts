@@ -188,7 +188,7 @@ export class WebServiceConstruct extends Construct {
       securityGroups: [webSecurityGroup],
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       assignPublicIp: true,
-      enableExecuteCommand: true,
+      enableExecuteCommand: config.enableExecuteCommand,
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
     })

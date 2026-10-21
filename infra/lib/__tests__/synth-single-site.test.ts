@@ -12,7 +12,14 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { Annotations, Match, type Template } from 'aws-cdk-lib/assertions'
 import * as cxapi from 'aws-cdk-lib/cx-api'
-import { CDN_LOG_BUCKET, normalize, stackOf, stackTemplate, synthStage } from './helpers/synth.js'
+import {
+  CDN_LOG_BUCKET,
+  execChannelGrants,
+  normalize,
+  stackOf,
+  stackTemplate,
+  synthStage,
+} from './helpers/synth.js'
 import { validateEcrImageRetention } from '../config.js'
 import { supportsLegacyCdnLogging } from '../constructs/access-log.js'
 import { POSTGRES_TLS_ENVIRONMENT } from '../constructs/database.js'
@@ -468,6 +475,30 @@ describe('cpuArchitecture', () => {
     expect(() => synthStage({ cpuArchitecture: 'amd64' as unknown as 'x86_64' })).toThrow(
       /cpuArchitecture must be "x86_64" or "arm64" \(got "amd64"\)/
     )
+  })
+})
+
+describe('enableExecuteCommand', () => {
+  const synth = (enableExecuteCommand?: boolean) =>
+    stackTemplate(
+      synthStage({ enableOpenSearch: false, bedrock: false, enableExecuteCommand }),
+      'KukanStack'
+    )
+
+  it('keeps ECS Exec off on both services by default', () => {
+    const template = synth()
+    template.resourcePropertiesCountIs('AWS::ECS::Service', { EnableExecuteCommand: false }, 2)
+    expect(execChannelGrants(template)).toHaveLength(0)
+  })
+
+  it('turns it on for both services when the environment asks for it', () => {
+    const template = synth(true)
+    template.resourcePropertiesCountIs('AWS::ECS::Service', { EnableExecuteCommand: true }, 2)
+    expect(execChannelGrants(template)).toHaveLength(2)
+    // Sessions are not logged: unset, they would go to the application logs
+    template.hasResourceProperties('AWS::ECS::Cluster', {
+      Configuration: { ExecuteCommandConfiguration: { Logging: 'NONE' } },
+    })
   })
 })
 
