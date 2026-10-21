@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect } from 'react'
+import type { StaticImageData } from 'next/image'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
@@ -10,11 +11,16 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 // Leaflet guesses its marker image paths from the stylesheet, which bundling
 // breaks. Served from our own origin rather than a CDN, so a closed network
 // still shows the markers and no viewer's address goes to a third party.
+// Turbopack hands an image from node_modules over as the bare URL string, not
+// the StaticImageData the type declares, so `.src` alone would be undefined.
+function assetUrl(image: StaticImageData | string): string {
+  return typeof image === 'string' ? image : image.src
+}
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x.src,
-  iconUrl: markerIcon.src,
-  shadowUrl: markerShadow.src,
+  iconRetinaUrl: assetUrl(markerIcon2x),
+  iconUrl: assetUrl(markerIcon),
+  shadowUrl: assetUrl(markerShadow),
 })
 
 /** Default center: Japan */
