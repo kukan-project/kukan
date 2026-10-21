@@ -128,6 +128,15 @@ export interface JobQueue {
   retryDead(id: string): Promise<boolean>
 
   /**
+   * {@link retryDead} for every dead job of `type` whose payload contains one
+   * of `payloads` — for a sweep that finds work a job gave up on, where the
+   * job is still there to be run again rather than queued twice. Returns the
+   * payloads of the jobs put back. Given `tx`, written in it, and woken after
+   * the commit as for {@link enqueue}.
+   */
+  reviveDead<T>(type: string, payloads: T[], options?: Pick<EnqueueOptions, 'tx'>): Promise<T[]>
+
+  /**
    * Delete a dead job. False when there is no such dead job.
    */
   deleteDead(id: string): Promise<boolean>

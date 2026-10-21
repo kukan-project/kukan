@@ -268,17 +268,58 @@ describe('queueStrandedPurges', () => {
     const queue = new PostgresJobQueue({ db })
     await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
 
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
-    // Given up on, it is the admin screen's to retry
-    await db.update(job).set({ state: 'dead' })
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 0 })
 
     await db.delete(job)
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 1 })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 1, revived: 0 })
     expect(await db.select({ payload: job.payload, state: job.state }).from(job)).toEqual([
       { payload: { resourceId, version: 1 }, state: 'ready' },
     ])
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 0 })
+  })
+
+  it('puts a job that gave up back, rather than leaving the version purging', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const queue = new PostgresJobQueue({ db })
+    await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
+    // Its retries spent while the search index was down
+    await db.update(job).set({ state: 'dead', attempts: 3, runAt: sql`NOW() + INTERVAL '1 day'` })
+
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 1 })
+    const [revived] = await db
+      .select({
+        payload: job.payload,
+        state: job.state,
+        attempts: job.attempts,
+        due: sql<boolean>`${job.runAt} <= NOW()`,
+      })
+      .from(job)
+    // The same job, not a second one beside it
+    expect(revived).toEqual({
+      payload: { resourceId, version: 1 },
+      state: 'ready',
+      attempts: 0,
+      due: true,
+    })
+    expect(await db.$count(job)).toBe(1)
+    // Ready again, it stands behind the version
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 0 })
+  })
+
+  it('leaves a dead job alone once its version is no longer purging', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const queue = new PostgresJobQueue({ db })
+    await service.claimPurge(resourceId, 1, userId, 'contains PII', queue)
+    await db.update(job).set({ state: 'dead' })
+    await db
+      .update(resourceVersion)
+      .set({ state: 'active' })
+      .where(eq(resourceVersion.resourceId, resourceId))
+
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 0 })
+    expect(await db.select({ state: job.state }).from(job)).toEqual([{ state: 'dead' }])
   })
 })
 
@@ -1339,6 +1380,8 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(result.cleared).toBe(false)
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v1')
+    // Marked, so the content sweep removes what the index kept
+    expect(res.contentIndexDueAt).not.toBeNull()
   })
 
   it('reports a completed revert whose rebuild could not be queued', async () => {

@@ -390,3 +390,69 @@ describe('the run record', () => {
     expect(step.status).toBe('running')
   })
 })
+
+describe('the content index mark', () => {
+  async function mark(): Promise<Date | null> {
+    const [row] = await db
+      .select({ dueAt: resource.contentIndexDueAt })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+    return row.dueAt
+  }
+
+  it('raises it, and lowers the one it read', async () => {
+    const tracker = new StepTracker(db, claim)
+    expect(await tracker.contentIndexMark()).toBeNull()
+
+    await tracker.raiseContentIndexMark()
+    expect(await mark()).not.toBeNull()
+
+    await tracker.lowerContentIndexMark(await tracker.contentIndexMark())
+    expect(await mark()).toBeNull()
+  })
+
+  it('keeps a mark raised after the one it read', async () => {
+    const tracker = new StepTracker(db, claim)
+    await db
+      .update(resource)
+      .set({ contentIndexDueAt: sql`NOW() - INTERVAL '1 hour'` })
+      .where(eq(resource.id, resourceId))
+    const read = await tracker.contentIndexMark()
+    // A delete while the step was writing
+    await db
+      .update(resource)
+      .set({ contentIndexDueAt: sql`NOW()` })
+      .where(eq(resource.id, resourceId))
+
+    await tracker.lowerContentIndexMark(read)
+
+    expect(await mark()).not.toBeNull()
+  })
+
+  it('leaves the mark of a resource deleted during the run to the sweep', async () => {
+    const tracker = new StepTracker(db, claim)
+    // The delete raises it; the Index step then finds no active row and skips
+    await db
+      .update(resource)
+      .set({ state: 'deleted', contentIndexDueAt: sql`NOW()` })
+      .where(eq(resource.id, resourceId))
+
+    await tracker.lowerContentIndexMark(await tracker.contentIndexMark())
+
+    expect(await mark()).not.toBeNull()
+  })
+
+  it('writes nothing once the claim is gone', async () => {
+    const tracker = new StepTracker(db, claim)
+    await tracker.raiseContentIndexMark()
+    const read = await tracker.contentIndexMark()
+    await releaseResourceClaims(db, [claim.id], claim.owner)
+
+    await tracker.lowerContentIndexMark(read)
+    expect(await mark()).not.toBeNull()
+
+    await db.update(resource).set({ contentIndexDueAt: null }).where(eq(resource.id, resourceId))
+    await tracker.raiseContentIndexMark()
+    expect(await mark()).toBeNull()
+  })
+})

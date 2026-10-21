@@ -489,7 +489,13 @@ export const RESOURCE_DOC_SWEEP_CRON = '47 * * * *'
 export const RESOURCE_EMBED_SWEEP_CRON = '52 * * * *'
 
 /**
- * When both mark sweeps run once after the worker starts. Long enough for a
+ * Index again, or remove, the content documents a failed write left disagreeing
+ * with their rows; off the others, as above
+ */
+export const CONTENT_INDEX_SWEEP_CRON = '57 * * * *'
+
+/**
+ * When the mark sweeps run once after the worker starts. Long enough for a
  * rolling deploy to have stopped the previous version's tasks, which would
  * take a job of a type they do not know and delete it.
  */

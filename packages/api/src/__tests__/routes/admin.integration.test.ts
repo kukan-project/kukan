@@ -2006,4 +2006,47 @@ describe('Admin API Routes', () => {
       expect(changes.purgedUserId).toBe(userId)
     })
   })
+
+  describe('DELETE /api/v1/admin/data', () => {
+    async function seedPackage(name: string) {
+      await db.insert(packageTable).values({ name, state: 'active' })
+    }
+
+    it('clears every kind of search document, content included', async () => {
+      await seedPackage('data-delete-all')
+      const search = {
+        ...mockSearch,
+        deleteAllPackages: vi.fn().mockResolvedValue(undefined),
+        deleteAllResources: vi.fn().mockResolvedValue(undefined),
+        deleteAllContents: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const res = await createTestApp(db, { search }).request('/api/v1/admin/data', {
+        method: 'DELETE',
+      })
+
+      expect(res.status).toBe(200)
+      expect(search.deleteAllPackages).toHaveBeenCalledOnce()
+      expect(search.deleteAllResources).toHaveBeenCalledOnce()
+      expect(search.deleteAllContents).toHaveBeenCalledOnce()
+    })
+
+    it('says so when the data is gone but the search index was not cleared', async () => {
+      await seedPackage('data-delete-search-down')
+      const search = {
+        ...mockSearch,
+        deleteAllContents: vi.fn().mockRejectedValue(new Error('search unavailable')),
+      }
+
+      const res = await createTestApp(db, { search }).request('/api/v1/admin/data', {
+        method: 'DELETE',
+      })
+
+      expect(res.status).toBe(503)
+      const body = await res.json()
+      expect(body.detail).toMatch(/search index could not be cleared/)
+      // Deleted all the same; running it again clears the index
+      expect(await db.$count(packageTable)).toBe(0)
+    })
+  })
 })

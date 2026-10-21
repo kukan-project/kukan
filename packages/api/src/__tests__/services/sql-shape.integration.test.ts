@@ -19,6 +19,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { packageTable, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createTestApp, mockTransaction } from '../test-helpers/test-app'
 import { PackageService } from '../../services/package-service'
+import { OrganizationService } from '../../services/organization-service'
+import { sweepContentIndexMarks } from '../../services/search/content-index-sweep'
 import {
   readBeforeFirstVersion,
   ResourceVersionService,
@@ -293,6 +295,44 @@ describe('emitted SQL shape', () => {
         deleteMany: async (keys: string[]) => keys,
       } as never)
       expect(recorded()).toMatchSnapshot()
+    })
+  })
+
+  // Asserted rather than snapshotted: what has to hold is the one correlation,
+  // in the predicate, to the row being read. Lost, the subquery compares a job
+  // to itself, finds no job behind any mark, and queues a run beside every one
+  // already waiting.
+  describe('sweepContentIndexMarks', () => {
+    it('correlates the waiting-run check to the marked row', async () => {
+      await sweepContentIndexMarks(recorder, {} as never, {} as never, { minAgeMs: 0 })
+      const [scan] = recorded()
+      expect(scan).toContain(`"job"."payload" ->> 'resourceId' = "resource"."id"::text`)
+      expect(scan).toContain('"resource"."content_index_due_at" is not null')
+    })
+  })
+
+  describe('queueStrandedPurges', () => {
+    const queue = {
+      transaction: mockTransaction(),
+      reviveDead: async () => [],
+      enqueueMany: async () => [],
+    } as never
+
+    it('correlates the version purge to the version being read', async () => {
+      await new ResourceVersionService(recorder).queueStrandedPurges(queue)
+      const scan = recorded().find((q) => q.includes('from "resource_version"'))
+      expect(scan).toContain(
+        `"job"."payload" @> jsonb_build_object('resourceId', "resource_version"."resource_id"::text, 'version', "resource_version"."version")`
+      )
+      expect(scan).toContain(`"job"."state" = $`)
+    })
+
+    it('correlates the organization purge to the organization being read', async () => {
+      await new OrganizationService(recorder).queueStrandedPurges(queue)
+      const scan = recorded().find((q) => q.includes('from "organization"'))
+      expect(scan).toContain(
+        `"job"."payload" @> jsonb_build_object('organizationId', "organization"."id"::text)`
+      )
     })
   })
 

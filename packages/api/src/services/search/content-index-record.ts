@@ -41,3 +41,21 @@ export async function markContentUnindexed(db: Database, scope: ContentIndexScop
     ${where}
   `)
 }
+
+/**
+ * Raise the resource's content index mark: its content documents may disagree
+ * with the row, and nothing is on its way to fix that — a delete whose cleanup
+ * of the chunks failed, or is yet to run. The hourly sweep runs the resource
+ * again or removes its chunks, whichever the row then calls for, and lowers it.
+ *
+ * Takes a transaction too, so a write can raise it in the same commit as the
+ * change it records.
+ */
+export async function markContentIndexDue(
+  db: Pick<Database, 'execute'>,
+  scope: { resourceId: string }
+): Promise<void> {
+  await db.execute(
+    sql`UPDATE ${resource} SET content_index_due_at = NOW() WHERE id = ${scope.resourceId}`
+  )
+}

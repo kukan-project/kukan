@@ -65,6 +65,7 @@ import {
   JOB_STATUSES,
   SysadminRequiredError,
   NotFoundError,
+  ServiceUnavailableError,
 } from '@kukan/shared'
 import type { JobKind } from '@kukan/queue'
 import { PipelineService, reprocessAllPending } from '../services/pipeline/pipeline-service'
@@ -911,11 +912,15 @@ adminRouter.delete('/data', async (c) => {
     }
   })
 
-  // 2. Clear search index (best-effort)
-  await Promise.all([
-    search.deleteAllPackages().catch(() => {}),
-    search.deleteAllResources().catch(() => {}),
+  // 2. Clear the search index. Not best-effort: nothing is left to say the
+  // index still holds the deleted data, so a failure is reported (below, once
+  // the rest is cleared too) for the administrator to run this again
+  const searchCleared = await Promise.allSettled([
+    search.deleteAllPackages(),
+    search.deleteAllResources(),
+    search.deleteAllContents(),
   ])
+  const searchFailure = searchCleared.find((r) => r.status === 'rejected')
 
   // 3. Clear storage files (best-effort)
   let storageObjects = 0
@@ -939,6 +944,12 @@ adminRouter.delete('/data', async (c) => {
     // Catalog cleanup is best-effort
   }
 
+  if (searchFailure) {
+    c.get('logger').error({ err: searchFailure.reason }, 'Data deleted, search index not cleared')
+    throw new ServiceUnavailableError(
+      'All data was deleted, but the search index could not be cleared. Run this again to clear it.'
+    )
+  }
   return c.json({ deleted: { ...counts, storageObjects } })
 })
 

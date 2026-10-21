@@ -19,6 +19,7 @@ import {
   rootCauseMessage,
   type PipelineJobPayload,
 } from '@kukan/shared'
+import { isSearchWriteUnavailable } from '@kukan/search-adapter'
 import { withResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { HeavyShortOfMemoryError, WorkerStoppingError, interruptsRun } from '../heavy/process'
 import { RunCancelledError, StepTracker } from './run/step-tracker'
@@ -361,6 +362,12 @@ async function runPipeline(
  * run carries on. `contentIndexed` is written for anything that did not index,
  * so the row says which of the two it was rather than leaving the previous
  * run's answer standing.
+ *
+ * A failure because the search backend was unavailable raises the resource's
+ * content index mark, which the hourly sweep turns into another run: the job
+ * itself succeeds, and an uploaded resource is never fetched again, so nothing
+ * else would come back for it. A failure that is the file's is not marked — it
+ * would fail the same way on every run.
  */
 async function runIndexStep(
   resourceId: string,
@@ -370,6 +377,18 @@ async function runIndexStep(
   interpretResult: Awaited<ReturnType<typeof executeInterpret>>
 ): Promise<void> {
   const stepId = await tracker.startStep('index')
+  const mark = await tracker.contentIndexMark()
+  let owed = false
+  // Whether the content documents were replaced or removed: every path that
+  // writes them, or leaves none, removes what was there first
+  let replaced = false
+  const indexCtx: PipelineContext = {
+    ...ctx,
+    async deleteContent(id) {
+      await ctx.deleteContent(id)
+      replaced = true
+    },
+  }
   try {
     const indexResult = await executeIndexContent(
       resourceId,
@@ -377,19 +396,41 @@ async function runIndexStep(
       fetchResult.storageKey,
       fetchResult.format,
       interpretResult,
-      ctx
+      indexCtx
     )
     if (indexResult) {
       await tracker.completeStep(stepId)
       await tracker.mergeMetadata({ ...indexResult })
-      return
+    } else {
+      await tracker.skipStep(stepId)
+      await tracker.mergeMetadata({ contentIndexed: false })
     }
-    await tracker.skipStep(stepId)
   } catch (err) {
     if (abandonsRun(err)) throw err
     await tracker.failStep(stepId, (err as Error).message)
+    await tracker.mergeMetadata({ contentIndexed: false })
+    owed = isSearchWriteUnavailable(err)
   }
-  await tracker.mergeMetadata({ contentIndexed: false })
+  if (owed) {
+    await tracker.raiseContentIndexMark()
+    return
+  }
+  // A marked resource whose step kept the content as it was — a document that
+  // read as no text, a dataset no longer active — may be keeping what a revert
+  // or a delete failed to remove. Removed here; after a failed interpretation
+  // nothing says what the content should be, so the mark waits for a run that
+  // reads it.
+  if (!replaced && mark !== null && interpretResult !== null) {
+    try {
+      await indexCtx.deleteContent(resourceId)
+    } catch (err) {
+      if (abandonsRun(err)) throw err
+      // Left marked either way; raised afresh only when the backend was down
+      if (isSearchWriteUnavailable(err)) await tracker.raiseContentIndexMark()
+      return
+    }
+  }
+  if (replaced) await tracker.lowerContentIndexMark(mark)
 }
 
 /**

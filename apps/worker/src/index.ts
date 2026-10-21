@@ -81,7 +81,11 @@ import { rebuildLakeCatalog } from './pipeline/rebuild-lake-catalog'
 import { lakeVersionReader } from './pipeline/lake-reader'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
-import { sweepSearchDocs, sweepResourceEmbeds } from './cron/sweep-resource-marks'
+import {
+  sweepContentIndex,
+  sweepSearchDocs,
+  sweepResourceEmbeds,
+} from './cron/sweep-resource-marks'
 import {
   expirePendingUploads,
   markUploadsThatNeverArrived,
@@ -97,6 +101,7 @@ import {
   PENDING_UPLOAD_TTL_MS,
   RESOURCE_DOC_SWEEP_CRON,
   RESOURCE_EMBED_SWEEP_CRON,
+  CONTENT_INDEX_SWEEP_CRON,
   START_SWEEP_DELAY_MS,
 } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
@@ -268,10 +273,10 @@ const orphanCleanupJob = startCronJob({
     // After the prune, which is one way a purge loses its job
     const versions = await new ResourceVersionService(db).queueStrandedPurges(queue)
     const orgs = await new OrganizationService(db).queueStrandedPurges(queue)
-    if (versions.queued + orgs.queued > 0) {
+    if (versions.queued + versions.revived + orgs.queued + orgs.revived > 0) {
       orphanSweepLog.info(
-        { versions: versions.queued, organizations: orgs.queued },
-        'Queued purges left with no job'
+        { versions, organizations: orgs },
+        'Queued purges left with no job, and put back the ones whose job gave up'
       )
     }
     // Expire first: a key parked now still waits out the orphan retention
@@ -356,7 +361,21 @@ const resourceEmbedSweepJob = startCronJob({
   },
 })
 
-// Both sweeps once after start, without the grace period: a job queued for
+// --- Content documents a failed write left behind ---
+// A run whose index write met the search backend down succeeds all the same,
+// and a delete whose cleanup failed has already answered: neither is the
+// queue's to retry. Per resource, so a row with a run on its way is left to it.
+const contentIndexSweepLog = log.child({ component: 'content-index-sweep' })
+const contentIndexSweepJob = startCronJob({
+  name: 'Content index marks',
+  cronExpression: CONTENT_INDEX_SWEEP_CRON,
+  log: contentIndexSweepLog,
+  run: async () => {
+    await sweepContentIndex(db, queue, docSearch, contentIndexSweepLog)
+  },
+})
+
+// The sweeps once after start, without the grace period: a job queued for
 // marks can be lost across a deploy — taken by a worker of the previous
 // version, which has no handler for it and deletes it — and a migration that
 // leaves marks leaves them to this. After the rollout rather than at once:
@@ -365,6 +384,7 @@ const startSweep = setTimeout(() => {
   void Promise.all([
     sweepSearchDocs(db, queue, resourceDocSweepLog, 0),
     sweepResourceEmbeds(db, queue, ai, resourceEmbedSweepLog, 0),
+    sweepContentIndex(db, queue, docSearch, contentIndexSweepLog, 0),
   ]).catch((err) => log.warn({ err }, 'Post-start sweep failed; the hourly one will retry'))
 }, START_SWEEP_DELAY_MS)
 startSweep.unref()
@@ -749,6 +769,7 @@ const shutdown = async () => {
   lakeIngestSweepJob.stop()
   resourceDocSweepJob.stop()
   resourceEmbedSweepJob.stop()
+  contentIndexSweepJob.stop()
   clearTimeout(startSweep)
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   if (waitingMetricTimer) clearInterval(waitingMetricTimer)

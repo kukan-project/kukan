@@ -14,8 +14,10 @@ import { sql } from 'drizzle-orm'
 import { job, organization, resource, resourcePipeline } from '@kukan/db'
 import { PostgresJobQueue } from '@kukan/queue'
 import { PURGE_ORG_JOB_TYPE } from '@kukan/shared'
+import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { PackageService } from '../../services/package-service'
+import { purgePackagesSearchDocs } from '../../services/package-cleanup'
 import { OrganizationService } from '../../services/organization-service'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline/pipeline-claim'
 import {
@@ -163,6 +165,73 @@ describe('PackageService.purge', () => {
 
     expect(await queuedLakeDrops()).toEqual([])
   })
+
+  it('removes the search documents while the rows still say what they were', async () => {
+    // Afterwards nothing would record that the index still holds the package
+    const service = new PackageService(db)
+    const pkg = await service.create(createInput('pkg-search-first'))
+    await addResource(pkg.id)
+    await service.delete(pkg.id)
+    let rowsAtRemoval = -1
+    const search = {
+      deletePackage: vi.fn(async () => {
+        rowsAtRemoval = (
+          await db.execute(sql`SELECT 1 FROM package WHERE id = ${pkg.id} AND state = 'deleted'`)
+        ).rows.length
+      }),
+    } as unknown as SearchAdapter
+
+    await service.purge(pkg.id, { search, storage: watchingStorage().storage, queue })
+
+    expect(search.deletePackage).toHaveBeenCalledWith(pkg.id)
+    expect(rowsAtRemoval).toBe(1)
+  })
+
+  it('leaves the package in the trash when the index refuses the removal', async () => {
+    const service = new PackageService(db)
+    const pkg = await service.create(createInput('pkg-search-down'))
+    const resourceId = await addResource(pkg.id)
+    await service.delete(pkg.id)
+    const { storage } = watchingStorage()
+    const search = {
+      deletePackage: vi.fn(async () => {
+        throw new Error('search unavailable')
+      }),
+    } as unknown as SearchAdapter
+
+    await expect(service.purge(pkg.id, { search, storage, queue })).rejects.toThrow(
+      'search unavailable'
+    )
+
+    // As it was, so purging it again finishes the job
+    expect(await service.getByNameOrId(pkg.id, 'deleted')).toBeTruthy()
+    expect(
+      (await db.execute(sql`SELECT 1 FROM resource WHERE id = ${resourceId}`)).rows
+    ).toHaveLength(1)
+    expect(storage.deleteByPrefix).not.toHaveBeenCalled()
+    expect(await queuedLakeDrops()).toEqual([])
+    // The claims went back with the refusal
+    const pipelines = await db.select().from(resourcePipeline)
+    expect(pipelines.every((p) => p.claimOwner === null)).toBe(true)
+
+    vi.mocked(search.deletePackage).mockResolvedValue(undefined)
+    await expect(service.purge(pkg.id, { search, storage, queue })).resolves.toMatchObject({
+      id: pkg.id,
+    })
+  })
+
+  it('does not remove the documents of a package restored before the purge got to them', async () => {
+    const service = new PackageService(db)
+    const pkg = await service.create(createInput('pkg-restored'))
+    await service.delete(pkg.id)
+    await db.execute(sql`UPDATE package SET state = 'active' WHERE id = ${pkg.id}`)
+    const search = { deletePackage: vi.fn() } as unknown as SearchAdapter
+
+    await expect(
+      purgePackagesSearchDocs(db, [pkg.id], search, { whileState: 'deleted' })
+    ).rejects.toThrow(/no longer deleted/)
+    expect(search.deletePackage).not.toHaveBeenCalled()
+  })
 })
 
 describe('PackageService.purgeDraft', () => {
@@ -265,15 +334,27 @@ describe('OrganizationService.queueStrandedPurges', () => {
     const queue = new PostgresJobQueue({ db })
     await queue.enqueue(PURGE_ORG_JOB_TYPE, { organizationId: orgId })
 
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
-    await db.update(job).set({ state: 'dead' })
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0 })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 0 })
 
     await db.delete(job)
-    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 1 })
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 1, revived: 0 })
     expect(await db.select({ payload: job.payload }).from(job)).toEqual([
       { payload: { organizationId: orgId } },
     ])
+  })
+
+  it('puts a job that gave up back, rather than leaving the organization purging', async () => {
+    await db.update(organization).set({ state: 'purging' })
+    const service = new OrganizationService(db)
+    const queue = new PostgresJobQueue({ db })
+    await queue.enqueue(PURGE_ORG_JOB_TYPE, { organizationId: orgId })
+    await db.update(job).set({ state: 'dead', attempts: 3 })
+
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 1 })
+    expect(await db.select({ state: job.state, attempts: job.attempts }).from(job)).toEqual([
+      { state: 'ready', attempts: 0 },
+    ])
+    expect(await service.queueStrandedPurges(queue)).toEqual({ queued: 0, revived: 0 })
   })
 })
 

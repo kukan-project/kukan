@@ -32,7 +32,7 @@ import type {
   CreateOrganizationInput,
   UpdateOrganizationInput,
 } from '@kukan/shared'
-import { jobsFor, type JobQueue } from '@kukan/queue'
+import { readyJobsMatching, type JobQueue } from '@kukan/queue'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import {
@@ -297,13 +297,13 @@ export class OrganizationService {
   }
 
   /**
-   * Queue the purge again for every organization left `purging` with no job
-   * behind it. The claim is the job's own, so once taken nothing else asks for
-   * it: the purge route accepts only a `deleted` organization. A dead job still
-   * there is left alone for the admin screen.
+   * Run the purge again for every organization left `purging` with no job on
+   * its way: a job that gave up is put back, and one that is gone is queued
+   * anew. The claim is the job's own, so once taken nothing else asks for it:
+   * the purge route accepts only a `deleted` organization.
    */
-  async queueStrandedPurges(queue: JobQueue): Promise<{ queued: number }> {
-    const rows = await queue.transaction(this.db, async (tx) => {
+  async queueStrandedPurges(queue: JobQueue): Promise<{ queued: number; revived: number }> {
+    return queue.transaction(this.db, async (tx) => {
       const stranded = await tx
         .select({ organizationId: organization.id })
         .from(organization)
@@ -311,7 +311,7 @@ export class OrganizationService {
           and(
             eq(organization.state, 'purging'),
             notExists(
-              jobsFor(
+              readyJobsMatching(
                 tx,
                 PURGE_ORG_JOB_TYPE,
                 sql`jsonb_build_object('organizationId', ${organization.id}::text)`
@@ -320,10 +320,13 @@ export class OrganizationService {
           )
         )
         .for('update', { skipLocked: true })
-      await queue.enqueueMany(PURGE_ORG_JOB_TYPE, stranded, { tx })
-      return stranded
+      const revived = new Set(
+        (await queue.reviveDead(PURGE_ORG_JOB_TYPE, stranded, { tx })).map((r) => r.organizationId)
+      )
+      const queued = stranded.filter((s) => !revived.has(s.organizationId))
+      await queue.enqueueMany(PURGE_ORG_JOB_TYPE, queued, { tx })
+      return { queued: queued.length, revived: stranded.length - queued.length }
     })
-    return { queued: rows.length }
   }
 
   /**

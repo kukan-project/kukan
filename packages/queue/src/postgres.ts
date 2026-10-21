@@ -146,9 +146,10 @@ end`
 /**
  * The ready jobs of `type` whose payload names this resource, for an
  * `exists()`. Kept here so the table's shape stays with the queue; the index
- * `idx_job_ready_resource` serves it.
+ * `idx_job_ready_resource` serves it. `resourceId` may be a column of the
+ * outer query, as text, to correlate to the row it is reading.
  */
-export function readyJobsFor(db: Database | Transaction, type: string, resourceId: string) {
+export function readyJobsFor(db: Database | Transaction, type: string, resourceId: string | SQL) {
   return db
     .select({})
     .from(jobTable)
@@ -159,18 +160,6 @@ export function readyJobsFor(db: Database | Transaction, type: string, resourceI
         sql`${jobTable.payload} ->> 'resourceId' = ${resourceId}`
       )
     )
-}
-
-/**
- * The jobs of `type`, dead ones included, whose payload contains `match` (a
- * jsonb), for an `exists()`: whether anything, even given up on, stands behind
- * a claim.
- */
-export function jobsFor(db: Database | Transaction, type: string, match: SQL) {
-  return db
-    .select({})
-    .from(jobTable)
-    .where(and(eq(jobTable.type, type), sql`${jobTable.payload} @> ${match}`))
 }
 
 /**
@@ -457,6 +446,30 @@ export class PostgresJobQueue implements JobQueue {
       .returning({ id: jobTable.id })
     if (rows.length > 0) this.wake()
     return rows.length > 0
+  }
+
+  async reviveDead<T>(
+    type: string,
+    payloads: T[],
+    options?: Pick<EnqueueOptions, 'tx'>
+  ): Promise<T[]> {
+    if (payloads.length === 0) return []
+    const rows = await (options?.tx ?? this.db)
+      .update(jobTable)
+      .set({ state: 'ready', attempts: 0, runAt: sql`now()`, updated: sql`now()` })
+      .where(
+        and(
+          eq(jobTable.type, type),
+          eq(jobTable.state, 'dead'),
+          sql`${jobTable.payload} @> ANY(${sql.param(payloads.map((p) => JSON.stringify(p)))}::jsonb[])`
+        )
+      )
+      .returning({ payload: jobTable.payload })
+    if (rows.length > 0) {
+      if (options?.tx) this.written.add(options.tx)
+      else this.wake()
+    }
+    return rows.map((r) => r.payload as T)
   }
 
   async deleteDead(id: string): Promise<boolean> {

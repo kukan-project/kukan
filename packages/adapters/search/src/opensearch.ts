@@ -211,6 +211,24 @@ function isNotFoundError(err: unknown): boolean {
 }
 
 /**
+ * Whether a failed write met the search backend unavailable — down, overloaded,
+ * or refusing this client's credentials — rather than refusing what was sent.
+ *
+ * The first kind passes: the same write succeeds once the cluster is back (an
+ * expired or rotating credential included, which a deploy produces for a few
+ * minutes), so the writer keeps a record that it is owed. The second fails the
+ * same way every time, and retrying it would never end.
+ */
+export function isSearchWriteUnavailable(err: unknown): boolean {
+  if (isBackendUnavailable(err)) return true
+  if (err instanceof osErrors.ResponseError) {
+    const status = err.statusCode ?? 0
+    return status === 401 || status === 403
+  }
+  return false
+}
+
+/**
  * Whether an error means the OpenSearch backend is unreachable or overloaded
  * (timeout, lost connection, 5xx, or 429 circuit breaker) rather than a bad request.
  * Used to map only these to a 503 — a 4xx (e.g. a malformed query) or any non-client
@@ -468,6 +486,8 @@ function contentMatch(text: string): Record<string, unknown> {
 const REINDEX_BATCH_DOCS = 10
 /** Between polls of the copy task */
 const REINDEX_POLL_MS = 5_000
+/** How long a refused mapping update waits before it is asked again */
+const MAPPING_RETRY_MS = 60_000
 const REINDEX_TIMEOUT_MS = 60 * 60_000
 
 export class OpenSearchAdapter implements SearchAdapter {
@@ -485,6 +505,8 @@ export class OpenSearchAdapter implements SearchAdapter {
   private initializedAt = 0
   /** The mapping brought up to date, once per process (see ensureWritableIndex) */
   private mapping: Promise<void> | null = null
+  /** Not asked again before this, after a refusal (epoch ms) */
+  private mappingRetryAt = 0
 
   constructor(config: OpenSearchConfig) {
     this.client = new Client({
@@ -931,19 +953,31 @@ export class OpenSearchAdapter implements SearchAdapter {
    * once is enough; a refusal (a write block, an analyzer or a field the index
    * already has another way) is logged and the write goes ahead with the
    * mapping the index has. Readers call ensureIndex and never come here.
+   *
+   * A refusal is not kept for the life of the process — one met while the
+   * cluster was down would otherwise hold the new fields back until a restart —
+   * but neither is it asked again on the next write: one the index will always
+   * refuse would cost a request per write. So it is asked again a minute later.
    */
   private async ensureWritableIndex(): Promise<void> {
     await this.ensureIndex()
-    this.mapping ??= this.client.indices
-      .putMapping({ index: this.searchIndex, body: { properties: ADDITIVE_PROPERTIES } })
-      .then(
-        () => undefined,
-        (err: unknown) =>
-          this.log.warn(
-            { err },
-            'Search index mapping not updated; fields added since the index was created keep the mapping the index gives them'
-          )
-      )
+    if (!this.mapping && Date.now() >= this.mappingRetryAt) {
+      const attempt: Promise<void> = this.client.indices
+        .putMapping({ index: this.searchIndex, body: { properties: ADDITIVE_PROPERTIES } })
+        .then(
+          () => undefined,
+          (err: unknown) => {
+            this.log.warn(
+              { err },
+              'Search index mapping not updated; fields added since the index was created keep the mapping the index gives them'
+            )
+            this.mappingRetryAt = Date.now() + MAPPING_RETRY_MS
+            // Unless an index created meanwhile has already settled it
+            if (this.mapping === attempt) this.mapping = null
+          }
+        )
+      this.mapping = attempt
+    }
     await this.mapping
   }
 

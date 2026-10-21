@@ -66,7 +66,7 @@ import type { Logger, ResourceColumn, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-import { jobsFor, readyJobsFor, type JobQueue } from '@kukan/queue'
+import { readyJobsFor, readyJobsMatching, type JobQueue } from '@kukan/queue'
 import {
   lakeLoadable,
   rebuildResourceLake,
@@ -94,7 +94,7 @@ import {
 } from './pipeline/storage-pointer'
 import { PipelineService, schemaDescribesLiveContent } from './pipeline/pipeline-service'
 import { scanBucket } from './query/lake-scan'
-import { markContentUnindexed } from './search/content-index-record'
+import { markContentIndexDue, markContentUnindexed } from './search/content-index-record'
 
 /** The row creating a version adds, minus everything the table fills in. */
 export interface CreatedVersion {
@@ -1632,14 +1632,16 @@ export class ResourceVersionService {
   }
 
   /**
-   * Queue the purge again for every version left `purging` with no job behind
-   * it — one deleted from the admin screen, or pruned after it gave up. Nothing
-   * else would: a repeat request finds the version claimed and queues nothing.
-   * A dead job still there is left alone; it is on the admin screen to retry.
-   * Rows another pass has locked are skipped, so two workers queue one job.
+   * Run the purge again for every version left `purging` with no job on its
+   * way: one whose job gave up is put back (its retries had run out while the
+   * search index or the storage was down, and the version's content stays
+   * searchable until it runs), and one whose job is gone — deleted from the
+   * admin screen, or pruned after it gave up — is queued anew. Nothing else
+   * would: a repeat request finds the version claimed and queues nothing.
+   * Rows another pass has locked are skipped, so two workers act once.
    */
-  async queueStrandedPurges(queue: JobQueue): Promise<{ queued: number }> {
-    const rows = await queue.transaction(this.db, async (tx) => {
+  async queueStrandedPurges(queue: JobQueue): Promise<{ queued: number; revived: number }> {
+    return queue.transaction(this.db, async (tx) => {
       const stranded = await tx
         .select({ resourceId: resourceVersion.resourceId, version: resourceVersion.version })
         .from(resourceVersion)
@@ -1647,7 +1649,7 @@ export class ResourceVersionService {
           and(
             eq(resourceVersion.state, 'purging'),
             notExists(
-              jobsFor(
+              readyJobsMatching(
                 tx,
                 PURGE_VERSION_JOB_TYPE,
                 sql`jsonb_build_object('resourceId', ${resourceVersion.resourceId}::text, 'version', ${resourceVersion.version})`
@@ -1656,10 +1658,13 @@ export class ResourceVersionService {
           )
         )
         .for('update', { skipLocked: true })
-      await queue.enqueueMany(PURGE_VERSION_JOB_TYPE, stranded, { tx })
-      return stranded
+      const revived = await queue.reviveDead(PURGE_VERSION_JOB_TYPE, stranded, { tx })
+      const queued = stranded.filter(
+        (s) => !revived.some((r) => r.resourceId === s.resourceId && r.version === s.version)
+      )
+      await queue.enqueueMany(PURGE_VERSION_JOB_TYPE, queued, { tx })
+      return { queued: queued.length, revived: stranded.length - queued.length }
     })
-    return { queued: rows.length }
   }
 
   /**
@@ -2701,6 +2706,13 @@ export class ResourceVersionService {
       } catch (err) {
         ok = false
         log.error({ err, resourceId }, `Content reverted, but its ${what} outlived it`)
+        // The content sweep removes what the index kept, or indexes again what
+        // the resource serves now, whichever the row then calls for
+        if (what === 'indexed content') {
+          await markContentIndexDue(this.db, { resourceId }).catch((markErr: unknown) =>
+            log.error({ err: markErr, resourceId }, 'Could not mark the content index as owed')
+          )
+        }
       }
     }
     return ok

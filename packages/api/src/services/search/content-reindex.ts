@@ -96,7 +96,7 @@ export async function requestContentReindex(
  * published dataset, with an object to read, of a format the index takes
  * something from.
  */
-async function reindexable(q: Database | Transaction, where: SQL): Promise<string[]> {
+export async function reindexable(q: Database | Transaction, where: SQL): Promise<string[]> {
   const rows = await q
     .select({ id: resource.id, format: resource.format })
     .from(resource)

@@ -39,6 +39,7 @@ function mockQueue() {
     countJobs: vi.fn(),
     listJobs: vi.fn(),
     retryDead: vi.fn(),
+    reviveDead: vi.fn(),
     deleteDead: vi.fn(),
     pruneDead: vi.fn(),
     process: vi.fn(),

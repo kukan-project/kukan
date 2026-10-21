@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { errors as osErrors } from '@opensearch-project/opensearch'
-import { OpenSearchAdapter, extrasPair } from '../opensearch'
+import { OpenSearchAdapter, extrasPair, isSearchWriteUnavailable } from '../opensearch'
 import { BulkIndexError, extrasMatchValues } from '../adapter'
 
 // Mock only the OpenSearch client; keep the real `errors` export so error-type
@@ -382,7 +382,7 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.bulk).toHaveBeenCalledTimes(2)
     })
 
-    it('writes even when the index refuses the mapping, and does not ask again', async () => {
+    it('writes even when the index refuses the mapping, and does not ask again within a minute', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
       mockClient.indices.putMapping.mockRejectedValue(new Error('cluster_block_exception'))
       mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
@@ -392,6 +392,36 @@ describe('OpenSearchAdapter', () => {
 
       expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(1)
       expect(mockClient.bulk).toHaveBeenCalledTimes(2)
+    })
+
+    it('asks for the mapping again a minute after a refusal, and once more only after it succeeds', async () => {
+      const start = Date.now()
+      const now = vi.spyOn(Date, 'now').mockReturnValue(start)
+      try {
+        mockClient.indices.exists.mockResolvedValue({ body: true })
+        // Refused while the cluster was down, accepted once it is back
+        mockClient.indices.putMapping
+          .mockRejectedValueOnce(new Error('connection refused'))
+          .mockResolvedValue({ body: {} })
+        mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
+
+        await adapter.bulkIndexResources([{ id: 'res-1', packageId: 'pkg-1' }])
+        now.mockReturnValue(start + 59_000)
+        await adapter.bulkIndexResources([{ id: 'res-2', packageId: 'pkg-1' }])
+        expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(1)
+
+        now.mockReturnValue(start + 60_000)
+        await adapter.bulkIndexResources([{ id: 'res-3', packageId: 'pkg-1' }])
+        expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(2)
+
+        // Settled now, for the life of the process
+        now.mockReturnValue(start + 600_000)
+        await adapter.bulkIndexResources([{ id: 'res-4', packageId: 'pkg-1' }])
+        expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(2)
+        expect(mockClient.bulk).toHaveBeenCalledTimes(4)
+      } finally {
+        now.mockRestore()
+      }
     })
 
     it('does not touch the mapping of an index it just created', async () => {
@@ -588,6 +618,29 @@ describe('OpenSearchAdapter', () => {
         )
         await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({ status: 503 })
         expect(mockClient.search).not.toHaveBeenCalled()
+      })
+
+      it('reads a write as owed again when the backend was down or refused the credentials', () => {
+        for (const err of [
+          new osErrors.TimeoutError('timed out', meta(0)),
+          new osErrors.ConnectionError('connection refused', meta(0)),
+          new osErrors.NoLivingConnectionsError('none', meta(0)),
+          new osErrors.ResponseError(meta(503)),
+          new osErrors.ResponseError(meta(429)),
+          new osErrors.ResponseError(meta(401)),
+          new osErrors.ResponseError(meta(403)),
+        ]) {
+          expect(isSearchWriteUnavailable(err)).toBe(true)
+        }
+        // What was sent is refused, and would be every time
+        for (const err of [
+          new osErrors.ResponseError(meta(400)),
+          new osErrors.ResponseError(meta(404)),
+          new TypeError('cannot read property of undefined'),
+          new Error('storage read failed'),
+        ]) {
+          expect(isSearchWriteUnavailable(err)).toBe(false)
+        }
       })
     })
 

@@ -4,7 +4,10 @@ import {
   dropIndexedWithoutRow,
   rebuildMetadataIndex,
 } from '@kukan/api/services/search/search-index'
-import { markContentUnindexed } from '@kukan/api/services/search/content-index-record'
+import {
+  markContentIndexDue,
+  markContentUnindexed,
+} from '@kukan/api/services/search/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline/pipeline-service'
 import type { Logger } from '@kukan/shared'
 import type { JobQueue } from '@kukan/queue'
@@ -127,6 +130,11 @@ async function rewriteContentWrittenDuringTheCopy(
     // a backlog clears — or for good, if that message reaches the dead-letter
     // queue — is the thing this repair exists to prevent. A gap is recoverable;
     // serving what someone removed is not.
+    //
+    // Marked first: a job that dies between this delete and the queueing
+    // below leaves the resource with neither its content nor a run, and the
+    // content sweep comes back for it
+    await markContentIndexDue(db, { resourceId })
     await search.deleteContent(resourceId)
     await markContentUnindexed(db, { resourceId })
   }

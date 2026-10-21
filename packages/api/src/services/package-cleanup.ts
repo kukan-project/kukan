@@ -16,10 +16,10 @@
  * (`queueResourceLakesDeletion`) where they run in the web.
  */
 
-import { inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource } from '@kukan/db'
-import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
+import { packageTable, resource } from '@kukan/db'
+import { ConflictError, RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { SEARCH_DOC_SYNC_LOCK, withGlobalAdvisoryLock } from './concurrency/advisory-lock'
@@ -57,14 +57,34 @@ export async function purgePackageExternals(
  * configured (nothing indexed). Under the sync's lock, taken once for them
  * all: a writer that read a dataset before its row went cannot land the
  * document after this, and nothing is left marked to undo it.
+ *
+ * `whileState`, for a caller that removes the documents before the rows: the
+ * packages are asked, under the lock, whether they are still in that state. A
+ * restore committed before the check refuses the purge here, rather than
+ * having its documents removed; one committed after it finds the lock held, and
+ * writes them after this has finished.
  */
 export async function purgePackagesSearchDocs(
   db: Database,
   packageIds: string[],
-  search: SearchAdapter | undefined
+  search: SearchAdapter | undefined,
+  opts: { whileState?: 'deleted' } = {}
 ): Promise<void> {
   if (!search || packageIds.length === 0) return
-  await withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, async () => {
+  await withGlobalAdvisoryLock(db, SEARCH_DOC_SYNC_LOCK, async (tx) => {
+    if (opts.whileState) {
+      const still = await tx
+        .select({ id: packageTable.id })
+        .from(packageTable)
+        .where(and(inArray(packageTable.id, packageIds), eq(packageTable.state, opts.whileState)))
+      if (still.length < packageIds.length) {
+        throw new ConflictError(
+          `Package is no longer ${opts.whileState}`,
+          undefined,
+          'package-state-changed'
+        )
+      }
+    }
     for (const id of packageIds) await search.deletePackage(id)
   })
 }

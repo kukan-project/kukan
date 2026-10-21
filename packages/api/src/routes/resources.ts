@@ -1237,7 +1237,14 @@ resourcesRouter.delete('/:id', async (c) => {
     // The delete marked the row: the document is removed under the sync's
     // lock, so a sync that read the row while it was live cannot restore it
     writeMarkedResourceDocs(db, c.var, { resourceIds: [id] }),
-    search.deleteContent(id),
+    // The resource is deleted whatever the index says: the delete marked the
+    // row, and the content sweep removes the chunks this could not
+    search.deleteContent(id).catch((err: unknown) => {
+      c.get('logger').warn(
+        { err, resourceId: id },
+        'Content of a deleted resource not removed from the search index; the sweep will retry'
+      )
+    }),
   ])
   return c.json(res)
 })

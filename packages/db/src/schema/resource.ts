@@ -172,6 +172,13 @@ export const resource = pgTable(
     // against, so a vector computed from text that has since moved on is never
     // written over the newer one's turn.
     embeddingDueAt: timestamp('embedding_due_at', { withTimezone: true }),
+    // When this row's content chunks stopped agreeing with it and nothing is
+    // on its way to fix them: a run whose index write met the search backend
+    // down, or a delete whose cleanup of the chunks failed. Null once a run
+    // indexes the resource again or the sweep removes its chunks. The same
+    // contract as `docSyncDueAt` — raised in the statement that knows, and the
+    // token the clear is compared against.
+    contentIndexDueAt: timestamp('content_index_due_at', { withTimezone: true }),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
@@ -198,6 +205,10 @@ export const resource = pgTable(
     index('idx_resource_embedding_due')
       .on(table.embeddingDueAt)
       .where(sql`${table.embeddingDueAt} IS NOT NULL`),
+    // Read by the content index sweep, for the same reason
+    index('idx_resource_content_index_due')
+      .on(table.contentIndexDueAt)
+      .where(sql`${table.contentIndexDueAt} IS NOT NULL`),
   ]
 )
 

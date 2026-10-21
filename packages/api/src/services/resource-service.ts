@@ -73,6 +73,7 @@ const {
   // Whether the search index has caught up is this deployment's business, not
   // a reader's — and a column added here is public the moment it is added
   docSyncDueAt: _docSyncDueAt,
+  contentIndexDueAt: _contentIndexDueAt,
   ...projectedResourceColumns
 } = getTableColumns(resource)
 
@@ -654,6 +655,9 @@ export class ResourceService {
         // The route removes the document, but a sync that read the row while it
         // was active can write it back; marked, the next sync removes it again
         docSyncDueAt: sql`NOW()`,
+        // And the content chunks, which the route removes too and nothing would
+        // remove again if it failed: the content sweep does
+        contentIndexDueAt: sql`NOW()`,
       })
       .where(eq(resource.id, existing.id))
       .returning(publicResourceColumns)

@@ -3,6 +3,7 @@ import { processResource } from '../../pipeline/process-resource'
 import type { Database } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import { getStorageKey } from '@kukan/shared'
+import { errors as osErrors } from '@opensearch-project/opensearch'
 import { executeSummarize, type SummaryDeps } from '../../pipeline/steps/summarize'
 
 // Mock all step modules
@@ -35,6 +36,9 @@ const mockTracker = {
   skipStep: vi.fn(),
   updateStatus: vi.fn(),
   updateInterpretResult: vi.fn(),
+  contentIndexMark: vi.fn(),
+  raiseContentIndexMark: vi.fn(),
+  lowerContentIndexMark: vi.fn(),
 }
 
 vi.mock('../../pipeline/run/step-tracker', () => ({
@@ -62,6 +66,8 @@ vi.mock('@kukan/api/services/pipeline/pipeline-claim', () => ({
       return { status: 'ran', result: await fn({ id: 'pipeline-1', resourceId, owner: 'run-1' }) }
     }
   ),
+  // The held context asks before each index write
+  stillHolds: vi.fn(async () => true),
 }))
 
 // Import mocked modules
@@ -124,6 +130,7 @@ function createMockQueue(): JobQueue {
     countJobs: vi.fn(),
     listJobs: vi.fn(),
     retryDead: vi.fn(),
+    reviveDead: vi.fn(),
     deleteDead: vi.fn(),
     pruneDead: vi.fn(),
     process: vi.fn(),
@@ -153,6 +160,9 @@ describe('processResource', () => {
     mockTracker.skipStep.mockResolvedValue(undefined)
     mockTracker.updateStatus.mockResolvedValue(undefined)
     mockTracker.updateInterpretResult.mockResolvedValue(null)
+    mockTracker.contentIndexMark.mockResolvedValue(null)
+    mockTracker.raiseContentIndexMark.mockResolvedValue(undefined)
+    mockTracker.lowerContentIndexMark.mockResolvedValue(undefined)
 
     // Version step defaults to creating a new version (v1).
     // Lake step defaults to a no-op (no DuckLake configured in these tests).
@@ -628,6 +638,151 @@ describe('processResource', () => {
       new HeavyTimedOutError().message
     )
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+  })
+
+  describe('the content index mark', () => {
+    const MARK = '2026-10-21 10:00:00.123456+00'
+    const indexed = {
+      contentIndexed: true,
+      contentType: 'text' as const,
+      contentOriginalSize: 10,
+      contentIndexedSize: 10,
+      contentTruncated: false,
+      contentChunks: 1,
+    }
+    const meta = (statusCode: number) =>
+      ({
+        body: {},
+        statusCode,
+        headers: {},
+        warnings: null,
+        meta: {},
+      }) as unknown as ConstructorParameters<typeof osErrors.ResponseError>[0]
+
+    beforeEach(() => {
+      vi.mocked(executeFetch).mockResolvedValue({
+        storageKey: 'resources/pkg-1/res-1',
+        format: 'TXT',
+        packageId: 'pkg-1',
+        hash: 'sha256:abc',
+        size: 42,
+        status: 'fetched',
+      })
+      vi.mocked(executeInterpret).mockResolvedValue(null)
+      mockTracker.contentIndexMark.mockResolvedValue(MARK)
+    })
+
+    /** What every writing path does first: remove the content that was there */
+    const replacing =
+      (result: Awaited<ReturnType<typeof executeIndexContent>>) =>
+      async (...args: Parameters<typeof executeIndexContent>) => {
+        await args[5].deleteContent(args[0])
+        return result
+      }
+    const interpreted = { previewKey: 'previews/pkg-1/res-1.parquet' }
+
+    it('lowers the mark it read once the content is indexed', async () => {
+      vi.mocked(executeIndexContent).mockImplementation(replacing(indexed))
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      // Read before anything is written, so a mark raised meanwhile is newer
+      expect(mockTracker.contentIndexMark.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(executeIndexContent).mock.invocationCallOrder[0]
+      )
+      expect(mockTracker.lowerContentIndexMark).toHaveBeenCalledWith(MARK)
+      expect(mockTracker.raiseContentIndexMark).not.toHaveBeenCalled()
+    })
+
+    it('lowers it when the content was removed, there being nothing to index', async () => {
+      vi.mocked(executeIndexContent).mockImplementation(replacing(null))
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(mockTracker.lowerContentIndexMark).toHaveBeenCalledWith(MARK)
+      expect(mockTracker.raiseContentIndexMark).not.toHaveBeenCalled()
+    })
+
+    it('removes the content a step kept before lowering the mark', async () => {
+      // A document read as no text keeps what was indexed — perhaps a reverted
+      // version's, whose removal failed
+      vi.mocked(executeInterpret).mockResolvedValue(interpreted)
+      vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+      expect(mockTracker.lowerContentIndexMark).toHaveBeenCalledWith(MARK)
+    })
+
+    it('leaves the mark and the content after a failed interpretation', async () => {
+      vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(ctx.deleteContent).not.toHaveBeenCalled()
+      expect(mockTracker.lowerContentIndexMark).not.toHaveBeenCalled()
+      expect(mockTracker.raiseContentIndexMark).not.toHaveBeenCalled()
+    })
+
+    it('raises it again when removing the kept content meets the backend down', async () => {
+      vi.mocked(executeInterpret).mockResolvedValue(interpreted)
+      vi.mocked(executeIndexContent).mockResolvedValue(null)
+      vi.mocked(ctx.deleteContent).mockRejectedValue(new osErrors.ResponseError(meta(503)))
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(mockTracker.raiseContentIndexMark).toHaveBeenCalledTimes(1)
+      expect(mockTracker.lowerContentIndexMark).not.toHaveBeenCalled()
+      expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+    })
+
+    it.each([
+      ['a timeout', () => new osErrors.TimeoutError('timed out', meta(0))],
+      ['a lost connection', () => new osErrors.ConnectionError('refused', meta(0))],
+      ['a 503', () => new osErrors.ResponseError(meta(503))],
+      ['a 429', () => new osErrors.ResponseError(meta(429))],
+      ['a refused credential', () => new osErrors.ResponseError(meta(403))],
+    ])('raises it when the search backend was unavailable (%s)', async (_name, error) => {
+      vi.mocked(executeIndexContent).mockRejectedValue(error())
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(mockTracker.failStep).toHaveBeenCalledWith(STEP.index, expect.any(String))
+      expect(mockTracker.mergeMetadata).toHaveBeenCalledWith({ contentIndexed: false })
+      expect(mockTracker.raiseContentIndexMark).toHaveBeenCalledTimes(1)
+      expect(mockTracker.lowerContentIndexMark).not.toHaveBeenCalled()
+      // The job is not what retries it: the mark is
+      expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+    })
+
+    it.each([
+      ['a refused document', () => new osErrors.ResponseError(meta(400))],
+      ['the file failing to read', () => new Error('Unexpected end of zstd frame')],
+    ])('does not raise it for a failure that is the file’s (%s)', async (_name, error) => {
+      vi.mocked(executeInterpret).mockResolvedValue(interpreted)
+      vi.mocked(executeIndexContent).mockRejectedValue(error())
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(mockTracker.failStep).toHaveBeenCalledWith(STEP.index, expect.any(String))
+      expect(mockTracker.raiseContentIndexMark).not.toHaveBeenCalled()
+      // Retrying it would fail the same way, so a mark that sent this run is
+      // settled — with whatever the step left removed
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+      expect(mockTracker.lowerContentIndexMark).toHaveBeenCalledWith(MARK)
+    })
+
+    it('leaves it alone when the run is abandoned', async () => {
+      vi.mocked(executeIndexContent).mockRejectedValue(new WorkerStoppingError())
+
+      await expect(processResource({ resourceId: 'res-1' }, ctx, db, queue)).rejects.toThrow(
+        WorkerStoppingError
+      )
+
+      expect(mockTracker.raiseContentIndexMark).not.toHaveBeenCalled()
+      expect(mockTracker.lowerContentIndexMark).not.toHaveBeenCalled()
+    })
   })
 
   it('should complete even if the interpretation fails', async () => {

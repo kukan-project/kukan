@@ -9,13 +9,17 @@ const rebuildMetadataIndex = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ packagesIndexed: 3, resourcesIndexed: 9 })
 )
 const markContentUnindexed = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const markContentIndexDue = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const enqueueMany = vi.hoisted(() => vi.fn())
 
 vi.mock('@kukan/api/services/search/search-index', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@kukan/api/services/search/search-index')>()),
   rebuildMetadataIndex,
 }))
-vi.mock('@kukan/api/services/search/content-index-record', () => ({ markContentUnindexed }))
+vi.mock('@kukan/api/services/search/content-index-record', () => ({
+  markContentUnindexed,
+  markContentIndexDue,
+}))
 vi.mock('@kukan/api/services/pipeline/pipeline-service', () => ({
   PipelineService: class {
     enqueueMany = enqueueMany
@@ -59,6 +63,7 @@ describe('reanalyseSearchIndex', () => {
   beforeEach(() => {
     rebuildMetadataIndex.mockClear()
     markContentUnindexed.mockClear()
+    markContentIndexDue.mockClear()
     enqueueMany.mockReset()
     enqueueMany.mockResolvedValue({ enqueued: 0, failed: [] })
   })
@@ -126,6 +131,11 @@ describe('reanalyseSearchIndex', () => {
     expect(search.deleteContent).toHaveBeenCalledWith('res-a')
     expect(search.deleteContent).toHaveBeenCalledWith('res-b')
     expect(markContentUnindexed).toHaveBeenCalledWith(expect.anything(), { resourceId: 'res-a' })
+    // Owed before it is deleted, so a job that dies between the two is come back for
+    expect(markContentIndexDue).toHaveBeenCalledWith(expect.anything(), { resourceId: 'res-a' })
+    expect(markContentIndexDue.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(search.deleteContent).mock.invocationCallOrder[0]
+    )
     expect(enqueueMany).toHaveBeenCalledWith([
       { id: 'res-a', rebuildOnly: true },
       { id: 'res-b', rebuildOnly: true },

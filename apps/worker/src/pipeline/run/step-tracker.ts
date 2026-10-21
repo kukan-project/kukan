@@ -10,16 +10,16 @@
  * the run's identity, and no call site should have to carry it.
  */
 
-import { sql, type SQL } from 'drizzle-orm'
+import { eq, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { pipelineObjectKeys, resourcePipeline, schemaColumnNames } from '@kukan/db'
+import { pipelineObjectKeys, resource, resourcePipeline, schemaColumnNames } from '@kukan/db'
 import type {
   PipelineStatus,
   PipelineStepStatus,
   PipelineStepName,
   TableProfile,
 } from '@kukan/shared'
-import { heldBy, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
+import { heldBy, stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { PARKED_UNTIL } from '@kukan/api/services/pipeline/storage-pointer'
 
 /**
@@ -173,6 +173,46 @@ export class StepTracker {
       -- so a run that lost the claim does not drop the record of an object its
       -- own row never came to reference.
       DELETE FROM orphaned_object o USING moved WHERE o.key = ANY (moved.current)
+    `)
+  }
+
+  /**
+   * The resource's content index mark as it stands, as the token
+   * {@link lowerContentIndexMark} compares against. Read before the Index step
+   * writes anything, so a mark raised while it works is a newer one.
+   */
+  async contentIndexMark(): Promise<string | null> {
+    const [row] = await this.db
+      .select({ dueAt: sql<string | null>`${resource.contentIndexDueAt}::text` })
+      .from(resource)
+      .where(eq(resource.id, this.claim.resourceId))
+    return row?.dueAt ?? null
+  }
+
+  /** Record that the resource's content index is owed another run. */
+  async raiseContentIndexMark() {
+    await this.db.execute(sql`
+      UPDATE resource SET content_index_due_at = NOW()
+      WHERE id = ${this.claim.resourceId} AND ${stillHeld(this.claim)}
+    `)
+  }
+
+  /**
+   * Lower the mark read by {@link contentIndexMark}, and only that one: a mark
+   * raised since — a delete while the step was writing — still has work.
+   *
+   * Only while the row is one the step indexes. For any other the step skips
+   * without removing anything (a resource deleted mid-run), and the mark is
+   * left for the sweep, which removes its content.
+   */
+  async lowerContentIndexMark(read: string | null) {
+    if (read === null) return
+    await this.db.execute(sql`
+      UPDATE resource SET content_index_due_at = NULL
+      WHERE id = ${this.claim.resourceId} AND content_index_due_at = ${read}::timestamptz
+        AND resource.state = 'active'
+        AND EXISTS (SELECT FROM package WHERE package.id = resource.package_id AND package.state = 'active')
+        AND ${stillHeld(this.claim)}
     `)
   }
 

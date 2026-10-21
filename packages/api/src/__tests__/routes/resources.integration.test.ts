@@ -1177,6 +1177,38 @@ describe('Resources API Routes', () => {
 
       await expectDocSettled(resource.id)
     })
+
+    it('marks the content as owed, for the sweep to remove whatever the route could not', async () => {
+      const pkg = await createPackage('delete-content-mark-pkg')
+      const resource = await createResource(pkg.id)
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+
+      const [row] = await db
+        .select({ dueAt: resourceTable.contentIndexDueAt })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row.dueAt).not.toBeNull()
+    })
+
+    it('deletes the resource when the index refuses to remove its content', async () => {
+      const pkg = await createPackage('delete-content-down-pkg')
+      const resource = await createResource(pkg.id)
+      vi.mocked(mockSearch.deleteContent).mockRejectedValueOnce(new Error('search unavailable'))
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, { method: 'DELETE' })
+      expect(res.status).toBe(200)
+      expect((await res.json()).state).toBe('deleted')
+
+      // Left marked, so the sweep finishes the removal
+      const [row] = await db
+        .select({ state: resourceTable.state, dueAt: resourceTable.contentIndexDueAt })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row.state).toBe('deleted')
+      expect(row.dueAt).not.toBeNull()
+    })
   })
 
   describe('Auto-position assignment', () => {

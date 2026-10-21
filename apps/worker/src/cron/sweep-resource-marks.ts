@@ -1,6 +1,7 @@
 /**
  * Re-queue the jobs for marks nobody heard about: stale search documents of
- * resources and datasets (ADR-053 §9.3) and stale vectors (ADR-054).
+ * resources and datasets (ADR-053 §9.3), stale vectors (ADR-054), and content
+ * documents a failed write left disagreeing with their rows.
  *
  * The write that makes a document or a vector stale cannot retry its own job:
  * the Summarize step is best-effort and completes, and a retried edit changes
@@ -19,7 +20,9 @@ import { packageTable, resource } from '@kukan/db'
 import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
+import type { SearchAdapter } from '@kukan/search-adapter'
 import { requestSearchDocSync } from '@kukan/api/services/search/search-index'
+import { sweepContentIndexMarks } from '@kukan/api/services/search/content-index-sweep'
 import { requestResourceEmbeds } from '@kukan/api/services/search/resource-embedding'
 
 /** Old enough that the job it was marked for has had its chance */
@@ -81,4 +84,26 @@ export async function sweepResourceEmbeds(
   await requestResourceEmbeds(queue, ai, { delaySeconds: 0 })
   log.info('Asked for the stale vectors to be built')
   return true
+}
+
+/**
+ * Act on the content index marks: a run for each resource a run would index
+ * again, a removal of the content documents for every other (see
+ * `sweepContentIndexMarks`). Unlike the two above, per resource — each mark
+ * stands for its own resource's chunks, and no job works through them all.
+ *
+ * With or without an index: `search` is then one that writes nothing, and the
+ * marks are lowered all the same.
+ */
+export async function sweepContentIndex(
+  db: Database,
+  queue: JobQueue,
+  search: SearchAdapter,
+  log: Logger,
+  minAgeMs = MIN_AGE_MS
+): Promise<void> {
+  const result = await sweepContentIndexMarks(db, search, queue, { minAgeMs })
+  if (result.queued + result.failed + result.removed + result.held > 0) {
+    log.info(result, 'Acted on content index marks')
+  }
 }

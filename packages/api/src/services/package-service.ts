@@ -21,6 +21,7 @@ import {
   NotFoundError,
   ValidationError,
   ConflictError,
+  ServiceUnavailableError,
   isUuid,
   escapeLike,
   draftPublishBlockers,
@@ -39,6 +40,7 @@ import type {
   MatchedResourcesCount,
   SearchAdapter,
 } from '@kukan/search-adapter'
+import { isSearchWriteUnavailable } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type {
   CreatePackageInput,
@@ -63,7 +65,12 @@ import { markPackageDocs } from './search/doc-marks'
 import type { JobQueue } from '@kukan/queue'
 import { queueResourceLakesDeletion } from './lake/lake-catalog'
 import { markPackageResourceEmbeddings } from './search/resource-embedding'
-import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
+import {
+  listPurgeTargets,
+  purgePackageExternals,
+  purgePackageStorage,
+  purgePackagesSearchDocs,
+} from './package-cleanup'
 import { withResourceClaimsOrConflict } from './pipeline/pipeline-claim'
 
 /** Random placeholder name for a draft (ADR-039) — replaced before publish */
@@ -858,10 +865,19 @@ export class PackageService {
   }
 
   /**
-   * Purge a soft-deleted package end-to-end: the DB rows, then every external
-   * trace of them (ADR-043). The same shape as {@link purgeDraft}, which is the
-   * point — a purge that left its storage sweep to the caller would be the one
-   * path where the claim below does not cover the whole erasure.
+   * Purge a soft-deleted package end-to-end: its search documents, the DB
+   * rows, then its storage (ADR-043). The same shape as {@link purgeDraft},
+   * which is the point — a purge that left its storage sweep to the caller
+   * would be the one path where the claim below does not cover the whole
+   * erasure.
+   *
+   * The search documents go first. Once the rows are gone nothing records
+   * that the index still holds the package — no mark survives the row — so a
+   * removal that failed afterwards would leave its content searchable for good.
+   * Failing before, it leaves the package in the trash as it was, and purging
+   * it again finishes the job. The storage still comes after the rows: what
+   * it holds is served only through them, so once they are gone nothing
+   * reaches it.
    *
    * The resources are claimed throughout (ADR-044): a pipeline run in flight
    * writes previews and version files to storage before the database hears of
@@ -879,6 +895,14 @@ export class PackageService {
     const { resourceIds } = await listPurgeTargets(this.db, [target.id])
 
     return withResourceClaimsOrConflict(this.db, resourceIds, async () => {
+      try {
+        await purgePackagesSearchDocs(this.db, [target.id], deps.search, { whileState: 'deleted' })
+      } catch (err) {
+        if (!isSearchWriteUnavailable(err)) throw err
+        throw new ServiceUnavailableError(
+          'The search index is unavailable, so the dataset was left in the trash. Purge it again later.'
+        )
+      }
       const row = await deps.queue.transaction(this.db, async (tx) => {
         // Atomic claim (ADR-028 shape): the state predicate re-checks 'deleted',
         // so a package restored since the read above is not purged anyway.
@@ -896,7 +920,7 @@ export class PackageService {
         await queueResourceLakesDeletion(deps.queue, tx, resourceIds)
         return deleted
       })
-      await purgePackageExternals(this.db, target.id, deps)
+      await purgePackageStorage(target.id, deps.storage)
       return row
     })
   }
