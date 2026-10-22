@@ -19,7 +19,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
-    "@hookform/resolvers": "^5.9.1",
+    "@hookform/resolvers": "^5.9.2",
     "@kukan/api": "workspace:*",
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
