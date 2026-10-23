@@ -132,6 +132,6 @@ describe('the sitemap (/internal/sitemap)', () => {
     const [t] = await db.insert(tag).values({ name: "a&b'<c>" }).returning({ id: tag.id })
     await db.insert(packageTag).values({ packageId: pkg.id, tagId: t.id })
     const xml = await (await createTestApp(db).request('/internal/sitemap/tags/0.xml')).text()
-    expect(locs(xml)).toEqual([`${ORIGIN}/tag/a%26b'%3Cc%3E`.replace("'", '&#39;')])
+    expect(locs(xml)).toEqual([`${ORIGIN}/tag/a%26b'%3Cc%3E`.replaceAll("'", '&#39;')])
   })
 })
