@@ -6,6 +6,134 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.37.0] - 2026-10-23
+
+**Breaking Changes**
+
+- Docker Compose: `BETTER_AUTH_SECRET` is required, and Compose refuses to start without it (#1006). The multi-site `compose.site.yml` requires `SITE_AUTH_SECRET` the same way, and `sites/*.env.example` no longer ships a value. In production the server also refuses the example secrets that have appeared in this repository. Generate one with `openssl rand -base64 32` and set it before upgrading.
+- `pnpm db:create-user` no longer takes `--password` (#1011): a password on the command line is left in the shell history and the process list. It asks twice at a terminal, or reads `KUKAN_USER_PASSWORD` when there is none; `--password` exits with an error.
+- Dataset search caps `q` at 500 characters and paging at the 10,000-result window (`offset + limit`; `start + rows` on the CKAN-compatible API) (#1009). This applies to `GET /api/v1/packages`, `POST /api/v1/packages/highlights`, MCP `search_datasets` and CKAN-compatible `package_search`. Beyond it the native API answers 400, MCP an error result and the CKAN-compatible API 409.
+
+**Upgrade Notes**
+
+- After deploying on AWS, invalidate `/dataset*` on CloudFront (#1001): search result pages cached before the upgrade can still hold the old highlight markup.
+- New worker settings `FETCH_DENY_PRIVATE_NETWORKS` and `FETCH_DENY_HOSTS` (#1002). The worker always refuses resource URLs that name or resolve to its own services (search, storage, AI, its wake address). `FETCH_DENY_PRIVATE_NETWORKS=true` refuses private networks outright; the CDK stack sets it, and Compose leaves it off so intranet resources keep working. `FETCH_DENY_HOSTS` lists more hosts to refuse; Compose defaults it to `opensearch-dashboards`.
+- AWS: ECS Exec is off unless asked for (#1027). Set `enableExecuteCommand: true` on the environment entry (the default for its sites) or on a site in `infra/config/environments.ts` where operators open shells in tasks. A deploy changes the service setting and the task role only, so running tasks pick it up when replaced (`aws ecs update-service --force-new-deployment`). Session contents are not logged; CloudTrail records who opened a session, when and into which task.
+- Docker Compose is supported behind the bundled Caddy only (#1013). If you use your own Caddyfile, carry over the new `request_header @auth Accept-Encoding identity` line for `/api/auth/*` (#1011), which keeps sign-in and session responses uncompressed.
+- The migration adds `resource.content_index_due_at` (#1032). Resources whose last content indexing failed are indexed again by the worker's first pass at minute 57 after the upgrade; a failure caused by the file itself is retried once and then left.
+- Tag names that are empty, `.` or `..`, or contain a comma (`,` or `、`) can no longer be registered (#976). An existing tag like that does not open its tag page, and editing its dataset asks to remove it.
+- The images are built on Node.js 24.22.1, and the web on Next.js 16.4.2 (#1036). Set `.node-version` 24.22.1 locally.
+
+**Highlights**
+
+- A round of security fixes across search, the worker, authentication and the edge (#1001–#1011, #1021, #1022, #1026, #1036). The most serious: a search highlight could carry script markup into the result page (stored XSS), and a resource URL could make the worker read internal services on its network (SSRF). Both are fixed, along with Next.js 16.4.2 for two critical advisories in the framework.
+- Each tag has its own page at `/tag/<name>` (#976).
+- Sites that are not `noindex` publish `/sitemap.xml`, a `robots.txt` that points to it, and schema.org `Dataset` JSON-LD on each dataset page, so dataset search engines can find the catalog (#982). The edge caches the sitemap and robots.txt for an hour (#983).
+
+**Features**
+
+- feat(web): give each tag its own page at `/tag/<name>` (#976) — `GET /api/v1/packages` now answers the `offset` and `limit` that were asked for, instead of always 0 and 20.
+- feat(web): give crawlers a sitemap, robots.txt and dataset JSON-LD, by the brand's noindex (#982) — robots.txt keeps crawlers off list queries, `/api/`, `/odata/`, `/dashboard` and `/auth/`.
+- feat(infra): cache the sitemap and robots.txt at the edge for an hour, keyed on nothing the viewer sends (#983).
+- feat(infra): make ECS Exec opt-in per site with `enableExecuteCommand` (#1027).
+
+**Security Fixes**
+
+- fix(search): escape highlight text whole and let back only bare `<mark>`, so stripping one tag cannot leave another (#1001).
+- fix(worker): refuse resource URLs that resolve to the worker's own services, and private networks outright on AWS (#1002).
+- fix(auth): refuse the published example auth secrets in production, and require one before Compose starts (#1006).
+- fix(api): refuse the sessions and sign-ins of users who are no longer active, and delete users in one transaction (#1005).
+- fix(api): run user SQL only when DuckDB counts one SELECT statement, and read dollar-quoted and `E''` strings as strings in the guard (#1007).
+- fix(api): cap a dataset search's `q` at 500 characters and its paging at the 10,000-result window (#1009).
+- fix(api): validate sign-up names, answer hidden packages' writes and malformed ids with 404, and mark responses `nosniff` (#1010).
+- fix: keep non-public Office files from the online viewer, bound ZIP walks, keep secrets out of logs, and harden the edge and Compose (#1011) — S3 buckets refuse plain HTTP, and `create-user` reads the password without echoing it.
+- fix(worker): refuse summary images whose header claims more than 50M pixels before decoding them (#1004), and parse summary PDFs and downscale summary images in the heavy child, not the worker (#1026).
+- fix(worker): stop a heavy request that runs past its time limit, and record it as `timed-out` rather than run it again (#1008) — a new reason a table could not be interpreted.
+- fix(worker): settle JSON nested deeper than 64 levels as not records before DuckDB reads it (#1021).
+- fix: escape backslashes in MCP query tables, and draw user ids without modulo bias (#1022).
+- fix(web): upgrade Next.js to 16.4.2 and Node.js to 24.22.1 for their security releases (#1036) — Next.js GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr.
+
+**Bug Fixes**
+
+- fix(search): bring the content index back after search writes fail (#1032) — a write that met the search backend down is retried by an hourly pass, purges whose job died are taken up again, and a dataset purge removes the search documents before the rows.
+- fix(web): render not-found only when the API answers 404, and an outage as an error (#973); scope loading skeletons to list pages, so a missing page answers 404 (#974).
+- fix(api): order the tag list (#977), every dataset search order (#979), and the admin, queue and announcement lists (#981) on the id at the end, so offset pages neither overlap nor skip.
+- fix(web): pass the Leaflet marker images as URLs whichever shape the bundler imports them in (#1031).
+
+**Documentation**
+
+- docs(site): support Compose only behind Caddy, and say private or deleted datasets can stay cached at the edge for a while (#1013).
+
+**Maintenance**
+
+- ci: keep deployment-local infra config out of PRs (#1003); leave the spike harnesses out of the CodeQL analysis (#1023).
+- test(worker): give a heavy-process timing test room for a slow runner (#1012).
+- build(deps): bump the GitHub Actions group (CodeQL action 4.39.0, create-github-app-token 3.3.0) (#1014), and `@hookform/resolvers` to 5.9.2 (#1019).
+
+---
+
+**破壊的変更**
+
+- Docker Compose：`BETTER_AUTH_SECRET` が必須になり、設定しないと Compose が起動しない（#1006）。マルチサイトの `compose.site.yml` も同じく `SITE_AUTH_SECRET` が必須になり、`sites/*.env.example` は値を持たなくなった。本番では、このリポジトリに例として載ったことのある秘密の値も断る。アップグレードの前に `openssl rand -base64 32` で作って設定すること。
+- `pnpm db:create-user` は `--password` を受けなくなった（#1011）。コマンドラインのパスワードはシェルの履歴とプロセスの一覧に残るため。端末があれば 2 回尋ね、なければ `KUKAN_USER_PASSWORD` を読む。`--password` を付けるとエラーで終了する。
+- データセット検索の `q` は 500 文字まで、ページングは 10,000 件の範囲まで（`offset + limit`、CKAN 互換は `start + rows`）になった（#1009）。対象は `GET /api/v1/packages`、`POST /api/v1/packages/highlights`、MCP の `search_datasets`、CKAN 互換の `package_search`。超えると、native は 400、MCP はエラーの結果、CKAN 互換は 409 を返す。
+
+**アップグレード時の注意**
+
+- AWS では、デプロイの後に CloudFront で `/dataset*` を無効化すること（#1001）。アップグレード前にキャッシュした検索結果のページは、古いハイライトのマークアップを持っていることがある。
+- worker の設定 `FETCH_DENY_PRIVATE_NETWORKS` と `FETCH_DENY_HOSTS` を追加した（#1002）。worker は、自分が使うサービス（検索、ストレージ、AI、起こすための番地）を名指しする、またはそこに解決されるリソースの URL を常に断る。`FETCH_DENY_PRIVATE_NETWORKS=true` はプライベートネットワークを丸ごと断る。CDK のスタックは有効にし、Compose はイントラネットのリソースが使えるよう無効のまま。`FETCH_DENY_HOSTS` は断るホストを足す。Compose の既定は `opensearch-dashboards`。
+- AWS：ECS Exec は、指定しないかぎり無効になった（#1027）。運用者がタスクに入る環境では、`infra/config/environments.ts` の環境の定義（そのサイトすべての既定）か、サイトに `enableExecuteCommand: true` を書く。デプロイで変わるのはサービスの設定とタスクロールだけなので、動いているタスクには入れ替えたときに反映される（`aws ecs update-service --force-new-deployment`）。セッションの中身は記録しない。誰が、いつ、どのタスクに入ったかは CloudTrail に残る。
+- Docker Compose は、同梱の Caddy を前に置く構成だけをサポートする（#1013）。独自の Caddyfile を使っている場合は、`/api/auth/*` に対する新しい `request_header @auth Accept-Encoding identity` の行を写すこと（#1011）。サインインとセッションの応答を圧縮しないためのもの。
+- マイグレーションで `resource.content_index_due_at` を足した（#1032）。本文の索引が失敗したままのリソースは、アップグレード後、worker の最初の毎時 57 分の処理で索引がやり直される。ファイルが原因の失敗は 1 回やり直して止まる。
+- 空・`.`・`..` と、カンマ（`,`・`、`）を含むタグ名は登録できなくなった（#976）。既存のそうしたタグはタグのページを開けず、そのデータセットは編集時にタグの削除を求められる。
+- イメージは Node.js 24.22.1 で、web は Next.js 16.4.2 でビルドする（#1036）。手元の `.node-version` も 24.22.1 にする。
+
+**ハイライト**
+
+- 検索・worker・認証・エッジにわたるセキュリティ修正（#1001〜#1011、#1021、#1022、#1026、#1036）。特に大きいのは、検索のハイライトから結果のページにスクリプトのマークアップを持ち込めた問題（格納型 XSS）と、リソースの URL で worker に同じネットワークの内部サービスを読ませられた問題（SSRF）で、どちらも直した。あわせて、フレームワークの critical な脆弱性 2 件に対応するため Next.js を 16.4.2 に上げた。
+- タグごとのページ `/tag/<名前>` を追加した（#976）。
+- `noindex` でないサイトは、`/sitemap.xml`、それを指す `robots.txt`、各データセットのページの schema.org `Dataset` JSON-LD を出すようになった。データセットの検索エンジンがカタログを見つけられる（#982）。sitemap と robots.txt はエッジで 1 時間キャッシュする（#983）。
+
+**機能**
+
+- feat(web)：タグごとのページ `/tag/<名前>`（#976）。`GET /api/v1/packages` の応答の `offset`・`limit` が、常に 0・20 ではなく要求した値を返すようになった。
+- feat(web)：sitemap・robots.txt・データセットの JSON-LD を、ブランドの noindex に従って出す（#982）。robots.txt は一覧のクエリ・`/api/`・`/odata/`・`/dashboard`・`/auth/` を断る。
+- feat(infra)：sitemap と robots.txt を、閲覧者が送るものをキーにせずエッジで 1 時間キャッシュする（#983）。
+- feat(infra)：ECS Exec をサイトごとの `enableExecuteCommand` で有効にする方式にした（#1027）。
+
+**セキュリティ修正**
+
+- fix(search)：ハイライトの文字列を丸ごとエスケープし、素の `<mark>` だけを戻す。タグを 1 つ取り除くと別のタグが残る、ということが起きない（#1001）。
+- fix(worker)：worker 自身のサービスに解決されるリソースの URL を断り、AWS ではプライベートネットワークを丸ごと断る（#1002）。
+- fix(auth)：本番では例として公開された認証の秘密を断り、Compose は秘密が無いと起動しない（#1006）。
+- fix(api)：有効でなくなったユーザーのセッションとサインインを断り、ユーザーの削除を 1 つのトランザクションで行う（#1005）。
+- fix(api)：利用者の SQL は、DuckDB が SELECT 文 1 つと数えたときだけ実行し、ガードはドル記号の引用と `E''` の文字列を文字列として読む（#1007）。
+- fix(api)：データセット検索の `q` を 500 文字、ページングを 10,000 件の範囲までにした（#1009）。
+- fix(api)：サインアップの名前を検証し、非公開のパッケージへの書き込みと不正な id には 404 を返し、応答に `nosniff` を付ける（#1010）。
+- fix：非公開の Office ファイルをオンラインビューアに渡さない、ZIP の走査に上限を設ける、ログに秘密を残さない、エッジと Compose を固める（#1011）。S3 のバケットは平文の HTTP を断り、`create-user` はパスワードを表示せずに読む。
+- fix(worker)：ヘッダーが 5,000 万画素を超えると言う抄録の画像を、デコードの前に断る（#1004）。抄録の PDF の解析と画像の縮小を、worker ではなく重い処理の子プロセスで行う（#1026）。
+- fix(worker)：制限時間を超えた重い処理を止め、やり直さずに `timed-out` として記録する（#1008）。表を解釈できない理由に加わった。
+- fix(worker)：64 段より深く入れ子になった JSON は、DuckDB が読む前にレコードではないと決める（#1021）。
+- fix：MCP のクエリ結果の表でバックスラッシュをエスケープし、ユーザー id を剰余の偏りなく引く（#1022）。
+- fix(web)：Next.js を 16.4.2、Node.js を 24.22.1 に上げた（セキュリティリリース）（#1036）。Next.js の GHSA-2464-fhr4-w9xw と GHSA-673q-mjm6-r5xr。
+
+**バグ修正**
+
+- fix(search)：検索への書き込みが失敗した後に、本文の索引を追いつかせる（#1032）。検索が止まっていて失敗した書き込みは毎時の処理がやり直し、ジョブが止まったパージは拾い直し、データセットのパージは行より先に検索の文書を消す。
+- fix(web)：API が 404 を返したときだけ「見つかりません」を表示し、障害はエラーとして表示する（#973）。読み込み中の骨組みを一覧のページに限り、無いページが 404 を返すようにした（#974）。
+- fix(api)：タグの一覧（#977）、データセット検索のすべての並び（#979）、管理・キュー・お知らせの一覧（#981）を、最後に id で並べる。オフセットでページを送っても、重なったり飛んだりしない。
+- fix(web)：Leaflet のマーカー画像を、バンドラーがどの形で読み込んでも URL として渡す（#1031）。
+
+**ドキュメント**
+
+- docs(site)：Compose は Caddy を前に置く構成だけをサポートすると明記し、非公開・削除したデータセットがしばらくエッジにキャッシュされうることを書いた（#1013）。
+
+**保守**
+
+- ci：デプロイごとの infra の設定を PR に入れない（#1003）。CodeQL の解析から spike のハーネスを外した（#1023）。
+- test(worker)：重い処理の時間を測るテストに、遅い実行環境の余裕を持たせた（#1012）。
+- build(deps)：GitHub Actions のまとめ（CodeQL action 4.39.0、create-github-app-token 3.3.0）（#1014）と、`@hookform/resolvers` 5.9.2（#1019）に更新した。
+
 ## [0.36.0] - 2026-10-18
 
 **Breaking Changes**
