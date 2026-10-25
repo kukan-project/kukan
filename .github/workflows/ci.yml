@@ -644,6 +644,10 @@ jobs:
       # with `429 Data limit exceeded` whatever this repository pulled. Here the
       # same digest comes from Google's Docker Hub mirror instead. The digest
       # pins the content, so the image is still the one the Dockerfile names.
+      #
+      # The mirror answers `not found` for a layer it has not cached yet, and
+      # serves it moments later, so a build is tried three times. The stages
+      # that finished stay in the builder's cache, so a retry redoes little.
       - name: Build the images
         if: steps.changes.outputs.code == 'true'
         run: |
@@ -654,8 +658,13 @@ jobs:
           done
           for arch in amd64 arm64; do
             for target in worker web; do
-              docker buildx build --platform "linux/$arch" --target "$target" \
-                "${contexts[@]}" --tag "kukan-$target:$arch" --load .
+              for attempt in 1 2 3; do
+                docker buildx build --platform "linux/$arch" --target "$target" \
+                  "${contexts[@]}" --tag "kukan-$target:$arch" --load . && break
+                [ "$attempt" = 3 ] && exit 1
+                echo "::warning::build of $target ($arch) failed, retrying"
+                sleep 10
+              done
             done
           done
 
