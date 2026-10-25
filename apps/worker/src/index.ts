@@ -327,6 +327,7 @@ const search =
         endpoint: env.OPENSEARCH_URL,
         indexPrefix: env.OPENSEARCH_INDEX_PREFIX,
         replicas: env.OPENSEARCH_REPLICAS,
+        awsRegion: env.OPENSEARCH_AWS_REGION,
         logger: osLogger,
       })
     : undefined

@@ -19,6 +19,7 @@ import { ARCHITECTURES } from '../cpu-architecture.js'
 import { resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
+import { connectSearch, type SearchDomainRef } from './search.js'
 import { createInternalAlb, SITE_ROUTING_HEADER } from './shared-alb.js'
 import { EDGE_CLIENT_IP_HEADER } from '@kukan/shared'
 
@@ -40,7 +41,7 @@ export interface WebServiceProps {
   database: DbAccess
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
-  searchDomainEndpoint?: string
+  searchDomain?: SearchDomainRef
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
   searchIndexPrefix?: string
   /** Docker build args for the web image (KUKAN_BRAND, ADR-042). */
@@ -76,7 +77,7 @@ export class WebServiceConstruct extends Construct {
       database,
       authSecret,
       bucket,
-      searchDomainEndpoint,
+      searchDomain,
       ga4PropertyIdSecret,
       ga4ClientEmailSecret,
       ga4PrivateKeySecret,
@@ -113,19 +114,15 @@ export class WebServiceConstruct extends Construct {
       ...database.buildPostgresEnvironment(),
       S3_BUCKET: bucket.bucketName,
       S3_REGION: cdk.Aws.REGION,
-      SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
+      SEARCH_TYPE: searchDomain ? 'opensearch' : 'postgres',
       WEB_DB_POOL_MAX: String(config.dbPool.webMax),
       // The viewer-request function sets it on every request (cdn.ts)
       CLIENT_IP_HEADER: EDGE_CLIENT_IP_HEADER,
     }
     configureBedrockEmbedding(config, taskDef, environment)
     configureBedrockCompletion(config, taskDef, environment)
-    if (searchDomainEndpoint) {
-      environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
-      environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
-      if (props.searchIndexPrefix) {
-        environment.OPENSEARCH_INDEX_PREFIX = props.searchIndexPrefix
-      }
+    if (searchDomain) {
+      connectSearch(config, searchDomain, taskDef, environment, props.searchIndexPrefix)
     }
     if (config.domainName) {
       environment.BETTER_AUTH_URL = `https://${config.domainName}`

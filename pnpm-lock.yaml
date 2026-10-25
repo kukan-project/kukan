@@ -366,6 +366,9 @@ importers:
 
   packages/adapters/search:
     dependencies:
+      '@aws-sdk/credential-provider-node':
+        specifier: ^3.972.86
+        version: 3.972.86
       '@kukan/db':
         specifier: workspace:*
         version: link:../../db

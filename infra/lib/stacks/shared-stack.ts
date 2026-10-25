@@ -102,7 +102,8 @@ export class KukanSharedStack extends cdk.Stack {
     param('db/port', cdk.Tokenization.stringifyNumber(shared.database.port))
     param('db/master-secret-arn', shared.database.secret.secretArn)
     if (shared.search) {
-      param('search/endpoint', shared.search.domainEndpoint)
+      param('search/endpoint', shared.search.ref.endpoint)
+      param('search/arn', shared.search.ref.arn)
     }
   }
 }

@@ -11,6 +11,8 @@
 
 import { randomBytes } from 'node:crypto'
 import { Client, errors as osErrors } from '@opensearch-project/opensearch'
+import { AwsSigv4Signer } from '@opensearch-project/opensearch/aws'
+import { defaultProvider } from '@aws-sdk/credential-provider-node'
 import { createLogger, ServiceUnavailableError, type Logger } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import type {
@@ -231,6 +233,8 @@ export function isSearchWriteUnavailable(err: unknown): boolean {
 /**
  * Whether an error means the OpenSearch backend is unreachable or overloaded
  * (timeout, lost connection, 5xx, or 429 circuit breaker) rather than a bad request.
+ * A 401/403 counts too: the domain refusing this task's credentials (unsigned
+ * while a deploy replaces the tasks, or a role not granted) is no fault of the query.
  * Used to map only these to a 503 — a 4xx (e.g. a malformed query) or any non-client
  * error (e.g. a response-parsing bug) must propagate as 500 so it stays visible.
  */
@@ -244,7 +248,7 @@ function isBackendUnavailable(err: unknown): boolean {
   }
   if (err instanceof osErrors.ResponseError) {
     const status = err.statusCode ?? 0
-    return status >= 500 || status === 429
+    return status >= 500 || status === 429 || status === 401 || status === 403
   }
   return false
 }
@@ -338,8 +342,19 @@ export interface OpenSearchConfig {
     username: string
     password: string
   }
+  /**
+   * Sign every request with SigV4 for this region, as the task's IAM role.
+   * Amazon OpenSearch Service only; unset for a self-hosted cluster.
+   */
+  awsRegion?: string
   /** Optional structured logger (pino). Falls back to no-op if omitted. */
   logger?: Logger
+}
+
+/** Passed in: the signer's default looks the AWS SDK up from the client's package, which lacks it. */
+function signedBy(region: string) {
+  const credentials = defaultProvider()
+  return AwsSigv4Signer({ region, service: 'es', getCredentials: () => credentials() })
 }
 
 /**
@@ -511,6 +526,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   constructor(config: OpenSearchConfig) {
     this.client = new Client({
       node: config.endpoint,
+      ...(config.awsRegion && signedBy(config.awsRegion)),
       ...(config.auth && {
         auth: { username: config.auth.username, password: config.auth.password },
       }),

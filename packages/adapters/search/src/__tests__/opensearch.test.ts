@@ -599,6 +599,11 @@ describe('OpenSearchAdapter', () => {
         await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({ status: 503 })
       })
 
+      it('maps the domain refusing the credentials (403) to ServiceUnavailableError (503)', async () => {
+        mockClient.search.mockRejectedValue(new osErrors.ResponseError(meta(403)))
+        await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({ status: 503 })
+      })
+
       it('does NOT mask a 4xx bad-query response (propagates as-is)', async () => {
         const badQuery = new osErrors.ResponseError(meta(400))
         mockClient.search.mockRejectedValue(badQuery)

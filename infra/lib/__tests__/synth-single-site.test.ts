@@ -173,6 +173,16 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
     })
   })
 
+  it('admits signed requests only, from the task roles it grants', () => {
+    // The policy reaches the domain as a JSON string inside the custom resource
+    const policy = JSON.stringify(template.findResources('Custom::OpenSearchAccessPolicy'))
+    expect(policy).toContain(':root')
+    expect(policy.replaceAll('\\', '')).not.toContain('"AWS":"*"')
+    expect(searchGrants(template)).toHaveLength(2)
+    expectContainerEnv(template, 'Web', { OPENSEARCH_AWS_REGION: { Ref: 'AWS::Region' } })
+    expectContainerEnv(template, 'Worker', { OPENSEARCH_AWS_REGION: { Ref: 'AWS::Region' } })
+  })
+
   it('keeps env-prefixed physical names', () => {
     template.hasResourceProperties('AWS::RDS::DBCluster', { DBClusterIdentifier: 'kukan-dev' })
     template.hasResourceProperties('AWS::OpenSearchService::Domain', {
@@ -554,10 +564,19 @@ describe('rdsCaCertificate', () => {
  * Assert a container's environment: a string is the value it must have,
  * `undefined` that the variable must be absent.
  */
+/** Task-role statements that let a task call the search domain. */
+function searchGrants(template: Template) {
+  return Object.values(template.findResources('AWS::IAM::Policy')).flatMap((r) =>
+    (
+      r as { Properties: { PolicyDocument: { Statement: { Action: unknown }[] } } }
+    ).Properties.PolicyDocument.Statement.filter((st) => st.Action === 'es:ESHttp*')
+  )
+}
+
 function expectContainerEnv(
   template: Template,
   container: string,
-  expected: Record<string, string | undefined>
+  expected: Record<string, unknown>
 ) {
   const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')).flatMap(
     (r) =>

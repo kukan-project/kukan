@@ -1086,6 +1086,19 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::SSM::Parameter",
     },
+    "Paramsearcharn3677C8C4": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/search/arn",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SearchDomain62FD613E",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
     "Paramsearchendpoint3E344AB8": {
       "Properties": {
         "Name": "/kukan/dev/shared/search/endpoint",
@@ -1282,7 +1295,11 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -1313,7 +1330,11 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -1695,6 +1716,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     },
     "SsmParameterValuekukandevsharedecsclusternameC96584B6F00A464EAD1953AFF4B05118Parameter": {
       "Default": "/kukan/dev/shared/ecs/cluster-name",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/search/arn",
       "Type": "AWS::SSM::Parameter::Value<String>",
     },
     "SsmParameterValuekukandevsharedsearchendpointC96584B6F00A464EAD1953AFF4B05118Parameter": {
@@ -3333,6 +3358,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -3769,6 +3800,21 @@ function expandV6(addr) {
                 ],
               },
             },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -4198,6 +4244,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -4495,6 +4547,21 @@ function expandV6(addr) {
                 ],
               },
             },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -4654,6 +4721,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     },
     "SsmParameterValuekukandevsharedecsclusternameC96584B6F00A464EAD1953AFF4B05118Parameter": {
       "Default": "/kukan/dev/shared/ecs/cluster-name",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/search/arn",
       "Type": "AWS::SSM::Parameter::Value<String>",
     },
     "SsmParameterValuekukandevsharedsearchendpointC96584B6F00A464EAD1953AFF4B05118Parameter": {
@@ -6206,6 +6277,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -6603,6 +6680,21 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -7036,6 +7128,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -7342,6 +7440,21 @@ function expandV6(addr) {
                       "Ref": "AWS::Region",
                     },
                     "::foundation-model/amazon.titan-embed-text-v2:0",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    "/*",
                   ],
                 ],
               },

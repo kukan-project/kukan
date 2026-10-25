@@ -1830,7 +1830,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -1861,7 +1865,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -2393,6 +2401,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -2763,6 +2777,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -3181,6 +3213,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -3446,6 +3484,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Region",
                     },
                     "::foundation-model/amazon.titan-embed-text-v2:0",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -5678,7 +5734,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -5709,7 +5769,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -6251,6 +6315,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "1",
               },
@@ -6656,6 +6726,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -7074,6 +7162,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "1",
               },
@@ -7343,6 +7437,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Region",
                     },
                     "::foundation-model/amazon.titan-embed-text-v2:0",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -12971,7 +13083,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -13002,7 +13118,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -13534,6 +13654,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -13891,6 +14017,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -14309,6 +14453,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -14574,6 +14724,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Region",
                     },
                     "::foundation-model/amazon.titan-embed-text-v2:0",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -16612,7 +16780,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -16643,7 +16815,11 @@ function expandV6(addr) {
               {
                 "Ref": "SearchDomain62FD613E",
               },
-              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"*\\"},\\"Resource\\":\\"arn:aws:es:",
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
               {
                 "Ref": "AWS::Region",
               },
@@ -17185,6 +17361,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -17555,6 +17737,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },
@@ -17973,6 +18173,12 @@ function expandV6(addr) {
                 },
               },
               {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "0",
               },
@@ -18238,6 +18444,24 @@ function expandV6(addr) {
                       "Ref": "AWS::Region",
                     },
                     "::foundation-model/amazon.titan-embed-text-v2:0",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
                   ],
                 ],
               },

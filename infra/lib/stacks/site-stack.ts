@@ -127,7 +127,9 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
         webSecurityGroup: importSg('WebSg', 'sg/web'),
         workerSecurityGroup: importSg('WorkerSg', 'sg/worker'),
         db: siteDatabase,
-        searchDomainEndpoint: config.enableOpenSearch ? read('search/endpoint') : undefined,
+        searchDomain: config.enableOpenSearch
+          ? { endpoint: read('search/endpoint'), arn: read('search/arn') }
+          : undefined,
         // kukan-<env>-<site> → index kukan-<env>-<site>-search on the shared domain
         searchIndexPrefix: envPrefix(this),
         // 'default' == unset: no build arg → resolved via the @/brand tsconfig path (ADR-042)

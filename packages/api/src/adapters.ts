@@ -115,6 +115,7 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
         endpoint: env.OPENSEARCH_URL,
         indexPrefix: env.OPENSEARCH_INDEX_PREFIX,
         replicas: env.OPENSEARCH_REPLICAS,
+        awsRegion: env.OPENSEARCH_AWS_REGION,
         logger: logger.child({ component: 'opensearch' }),
         // Auto-recovery (empty index detection) is handled by the Worker periodic check
       })

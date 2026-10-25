@@ -28,7 +28,7 @@ import { NetworkConstruct } from '../constructs/network.js'
 import { EcrAssetRetentionConstruct } from '../constructs/ecr-asset-retention.js'
 import { DatabaseConstruct, type DbAccess } from '../constructs/database.js'
 import { StorageConstruct } from '../constructs/storage.js'
-import { SearchConstruct } from '../constructs/search.js'
+import { SearchConstruct, type SearchDomainRef } from '../constructs/search.js'
 import { WebServiceConstruct } from '../constructs/web-service.js'
 import { WorkerServiceConstruct } from '../constructs/worker-service.js'
 import { CdnConstruct } from '../constructs/cdn.js'
@@ -66,7 +66,7 @@ export interface SiteSurface {
   webSecurityGroup: ec2.ISecurityGroup
   workerSecurityGroup: ec2.ISecurityGroup
   db: DbAccess
-  searchDomainEndpoint?: string
+  searchDomain?: SearchDomainRef
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → containers use the app default. */
   searchIndexPrefix?: string
   /** Per-site web image build args (KUKAN_BRAND, ADR-042). */
@@ -188,7 +188,7 @@ export function composeSite(
     database: surface.db,
     authSecret,
     bucket: storage.bucket,
-    searchDomainEndpoint: surface.searchDomainEndpoint,
+    searchDomain: surface.searchDomain,
     searchIndexPrefix: surface.searchIndexPrefix,
     imageBuildArgs: surface.webImageBuildArgs,
     sharedListener: sharedAlb && {
@@ -210,7 +210,7 @@ export function composeSite(
     authSecret,
     bucket: storage.bucket,
     serviceNamespace: surface.serviceNamespace,
-    searchDomainEndpoint: surface.searchDomainEndpoint,
+    searchDomain: surface.searchDomain,
     searchIndexPrefix: surface.searchIndexPrefix,
   })
   webService.addEnvironment('WORKER_WAKE_URL', workerService.wakeUrl)

@@ -102,6 +102,9 @@ const envObject = z.object({
   // Index name prefix (`<prefix>-search`). Per-site isolation on a shared
   // OpenSearch domain (ADR-041)
   OPENSEARCH_INDEX_PREFIX: z.string().default('kukan'),
+  // Sign requests with SigV4 for this region, as the task's IAM role (Amazon
+  // OpenSearch Service). Unset → unsigned, for a self-hosted cluster
+  OPENSEARCH_AWS_REGION: z.preprocess(emptyAsUndefined, z.string().optional()),
   // Minimum cosine similarity for vector-search hits. Omit → the embedding
   // model's measured recommendation (EmbeddingInfo.recommendedMinSimilarity),
   // falling back to 0.45 for unmeasured models

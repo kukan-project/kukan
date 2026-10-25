@@ -21,6 +21,7 @@ import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
+import { connectSearch, type SearchDomainRef } from './search.js'
 
 export interface WorkerServiceProps {
   config: KukanConfig
@@ -31,7 +32,7 @@ export interface WorkerServiceProps {
   bucket: s3.IBucket
   /** Where the worker takes its name, for the web to wake it (ADR-058 §3). */
   serviceNamespace: servicediscovery.IPrivateDnsNamespace
-  searchDomainEndpoint?: string
+  searchDomain?: SearchDomainRef
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
   searchIndexPrefix?: string
 }
@@ -58,7 +59,7 @@ export class WorkerServiceConstruct extends Construct {
       authSecret,
       bucket,
       serviceNamespace,
-      searchDomainEndpoint,
+      searchDomain,
     } = props
     const serviceName = resourceName(this, 'worker')
     // The Site dimension of the metric it scales on (ADR-058 §4)
@@ -94,11 +95,11 @@ export class WorkerServiceConstruct extends Construct {
       ...database.buildPostgresEnvironment(),
       S3_BUCKET: bucket.bucketName,
       S3_REGION: cdk.Aws.REGION,
-      SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
+      SEARCH_TYPE: searchDomain ? 'opensearch' : 'postgres',
       WORKER_DB_POOL_MAX: String(config.dbPool.workerMax),
       HEALTH_PORT: String(config.worker.healthPort),
       // Nothing a resource URL should name lives on a private network here,
-      // and the search domain does — reachable from this task, unauthenticated.
+      // and the search domain does, reachable from this task.
       FETCH_DENY_PRIVATE_NETWORKS: 'true',
       // Only where there is a policy to read it: a custom metric is billed
       ...(scales && { WORKER_METRIC_SITE: metricSite }),
@@ -110,12 +111,8 @@ export class WorkerServiceConstruct extends Construct {
     if (config.bedrock?.summaryModel) {
       configureBedrockCompletion(config, taskDef, environment)
     }
-    if (searchDomainEndpoint) {
-      environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
-      environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
-      if (props.searchIndexPrefix) {
-        environment.OPENSEARCH_INDEX_PREFIX = props.searchIndexPrefix
-      }
+    if (searchDomain) {
+      connectSearch(config, searchDomain, taskDef, environment, props.searchIndexPrefix)
     }
 
     // Container

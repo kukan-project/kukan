@@ -41,7 +41,7 @@ export class KukanStack extends cdk.Stack {
         webSecurityGroup: shared.network.webSecurityGroup,
         workerSecurityGroup: shared.network.workerSecurityGroup,
         db: shared.database,
-        searchDomainEndpoint: shared.search?.domainEndpoint,
+        searchDomain: shared.search?.ref,
       },
       {
         certificateArn: props.globalCertificateArn,

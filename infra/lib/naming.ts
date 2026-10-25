@@ -63,6 +63,7 @@ export type SharedParam =
   | 'db/port'
   | 'db/master-secret-arn'
   | 'search/endpoint'
+  | 'search/arn'
 
 /**
  * SSM parameter name for a shared-box value, e.g. `/kukan/dev/shared/vpc/id`
