@@ -6,6 +6,84 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.38.0] - 2026-10-25
+
+**Breaking Changes**
+
+- AWS: requests to the OpenSearch domain must be signed (#1030). The web and worker sign every request with SigV4 as their task role, and the domain policy admits only signed principals of the account (it admitted any principal before). Docker Compose and on-premises deployments do not sign and are unaffected: signing happens only when the new `OPENSEARCH_AWS_REGION` is set, which the CDK stack does.
+- AWS: the shared OpenSearch domain has fine-grained access control (FGAC) enabled, and each site's task roles may use only that site's indices, `<prefix>-search*` (#1034, ADR-069). **FGAC cannot be turned off once enabled.** The master user is the IAM role `kukan-<env>-search-admin`, and a custom resource maps each site's web and worker task roles to its own OpenSearch role.
+- AWS: the web and worker task roles now have fixed names, `kukan-<env>-<site>-web-task` and `-worker-task` (single-site: `kukan-<env>-web-task` and `kukan-<env>-worker-task`) (#1034). IAM names are unique across an account, so **an environment name must be unique within its AWS account, across regions too**: a deploy under a name already in use fails when it creates the roles. Environment names that differ only in case are refused at synth.
+
+**Upgrade Notes**
+
+- During the deploy that brings #1030 and #1034, public search fails until each site's tasks are replaced: the shared stack changes the domain first, and it refuses the old tasks, which answer those searches with 500 (the new tasks would answer such a refusal with 503, but they sign and are let through). Sites deployed in later waves wait longer. The dashboard and the dataset pages read the database and keep working.
+- Upgrading from 0.37.0, content indexing that fails while search refuses the old tasks catches up by itself: the worker marks the resource, and the new worker indexes it again when it starts and then hourly. Upgrading from a release before 0.37.0, the old workers do not mark what fails, so after the deploy, on each site, open Index Management → Rebuild the search index, check "Also rebuild the index of file content", and press Rebuild once.
+- After the first deploy, check that the OpenSearch role mapping `default_role` is gone (`GET _plugins/_security/api/rolesmapping`). Enabling FGAC on an existing domain maps every principal the domain policy admits to it, which would bypass the per-site roles; the custom resource removes it and fails the deploy if it cannot. The steps to inspect the domain by hand are in `docs/specs/en/phase4-deploy.md` ("OpenSearch access control").
+- If a deploy fails after FGAC was enabled, the shared stack is left in `UPDATE_ROLLBACK_FAILED`, because CloudFormation cannot turn FGAC back off. Continue the rollback skipping the domain (`aws cloudformation continue-update-rollback --stack-name <shared stack> --resources-to-skip SearchDomain<logical id>`), fix the cause and deploy again.
+- Deploying a multi-site environment by hand: deploy the shared stack before the site stacks. It now publishes the domain's ARN in an SSM parameter the site stacks read (the pipeline already deploys in that order).
+
+**Highlights**
+
+- Sites on a shared OpenSearch domain are isolated from each other (#1030, #1034, ADR-069). A request has to be signed by a task role of the account, and each site's roles can reach only that site's indices, where before anything inside the VPC could read and write every site's indices without credentials.
+- Every open dependency advisory is fixed (#1040, #1043, #1045, #1049), among them undici's denial of service on a response with too many content codings, reachable through the worker fetching resource URLs.
+
+**Security Fixes**
+
+- fix(search)!: sign OpenSearch requests with the task role and refuse unsigned ones (#1030) — a 401 or 403 from the search backend is answered as 503 (search briefly unavailable), not 500.
+- feat(infra)!: isolate each site's OpenSearch indices with fine-grained access control (#1034).
+- fix(deps): bump undici to 8.12.3 (#1045) — GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472.
+- fix(deps): bump fast-uri to 3.1.9 and body-parser to 2.4.0 (#1040), ip-address to 10.7.4 (#1039), and expressive-code to 0.44.3, which takes postcss-selector-parser to 7.1.7 (#1049).
+- build(deps-dev): bump happy-dom to 21.0.4 (#1043) — it no longer loads iframe pages or stylesheets by default, so the web tests stop fetching the URLs they render.
+
+**Documentation**
+
+- docs(adr): ADR-069, site isolation on the shared OpenSearch domain with FGAC (#1033).
+
+**Maintenance**
+
+- build(deps): bump the minor-and-patch group with 28 updates, including aws-cdk-lib 2.274.0, better-auth 1.7.12 and the AWS SDK (#1047), and tsup to 9.0.0 (#1018). The synthesized CloudFormation templates and the worker's built output are unchanged.
+- ci: pull the image build's base image from Google's Docker Hub mirror by its pinned digest, since ECR Public limits anonymous pulls by source IP (#1041); retry a build while the mirror has not cached a layer yet (#1042); build with the `docker` driver, which cuts the job from about 6 to about 4 minutes (#1048). Production images are still built from ECR Public.
+- test: give the API integration tests the 30s timeout the lake and infra tests already have (#1046).
+
+---
+
+**破壊的変更**
+
+- AWS：OpenSearch のドメインへのリクエストに署名が必要になった（#1030）。web と worker は、すべてのリクエストにタスクロールで SigV4 の署名を付け、ドメインポリシーはアカウントの署名付きのプリンシパルだけを通す（これまでは誰でも通した）。Docker Compose とオンプレミスは署名せず、影響を受けない。署名するのは新しい `OPENSEARCH_AWS_REGION` を設定したときだけで、CDK のスタックがそれを設定する。
+- AWS：共有の OpenSearch のドメインで FGAC（Fine-Grained Access Control）を有効にし、各サイトのタスクロールは、そのサイトのインデックス `<prefix>-search*` だけを使えるようにした（#1034、ADR-069）。**FGAC は一度有効にすると戻せない。** マスターユーザーは IAM ロール `kukan-<env>-search-admin` で、カスタムリソースが、各サイトの web と worker のタスクロールをそのサイトの OpenSearch のロールに割り当てる。
+- AWS：web と worker のタスクロールに、決まった名前 `kukan-<env>-<site>-web-task` / `-worker-task`（シングルサイトでは `kukan-<env>-web-task` / `kukan-<env>-worker-task`）を付けた（#1034）。IAM の名前はアカウント全体で一意なので、**環境名は AWS アカウントの中で一意にすること（リージョンが違っても同じ名前は使えない）**。使われている名前でデプロイすると、ロールの作成で失敗する。大文字と小文字だけが違う環境名は、synth で断る。
+
+**アップグレード時の注意**
+
+- #1030 と #1034 を入れるデプロイの間、各サイトのタスクが入れ替わるまで、公開側の検索は失敗する。共有スタックが先にドメインを変えて古いタスクを断り、古いタスクはその検索に 500 を返すため（新しいタスクは断られたら 503 を返すが、署名するので通る）。後の波のサイトほど長くなる。ダッシュボードとデータセットのページは DB を読むので、影響を受けない。
+- 0.37.0 から上げる場合、検索が古いタスクを断っている間に失敗した本文の索引は、自動で追いつく。worker がそのリソースに未反映フラグを立て、新しい worker が起動の後と毎時に索引し直す。0.37.0 より前の版から上げる場合は、古い worker が失敗したものにフラグを立てないので、デプロイの後に各サイトで「インデックス管理」→「検索インデックスの再構築」を開き、「ファイルの本文の索引も作り直す」に印を付けて「再構築」を 1 回押すこと。
+- 最初のデプロイの後、OpenSearch のロールの割り当て `default_role` が無いことを確かめること（`GET _plugins/_security/api/rolesmapping`）。既存のドメインで FGAC を有効にすると、AWS はドメインポリシーが通すすべてのプリンシパルをこれに割り当てる。残るとサイトごとのロールを素通りできてしまうので、カスタムリソースが消し、消せなければデプロイを失敗させる。ドメインを手で調べる手順は `docs/specs/jp/phase4-deploy.md`（「OpenSearch のアクセス制御」）にある。
+- FGAC を有効にした後にデプロイが失敗すると、CloudFormation は FGAC を戻せないため、共有スタックが `UPDATE_ROLLBACK_FAILED` で止まる。ドメインを飛ばして巻き戻しを続け（`aws cloudformation continue-update-rollback --stack-name <共有スタック> --resources-to-skip SearchDomain<論理 ID>`）、原因を直してからデプロイし直すこと。
+- マルチサイトの環境を手でデプロイする場合は、サイトのスタックより先に共有スタックをデプロイすること。サイトのスタックが読む SSM パラメータに、ドメインの ARN を出すようになった（パイプラインは元からその順で動く）。
+
+**ハイライト**
+
+- 共有の OpenSearch のドメインで、サイトどうしが分離された（#1030、#1034、ADR-069）。リクエストにはアカウントのタスクロールの署名が要り、各サイトのロールはそのサイトのインデックスにしか届かない。これまでは、VPC の中からなら認証なしで全サイトのインデックスを読み書きできた。
+- 未解決だった依存の脆弱性をすべて直した（#1040、#1043、#1045、#1049）。中でも undici の、content-encoding が多すぎる応答で落ちる DoS は、worker がリソースの URL を取得する経路から狙えた。
+
+**セキュリティ修正**
+
+- fix(search)!：OpenSearch へのリクエストにタスクロールで署名し、署名のないリクエストを断る（#1030）。検索のバックエンドが返す 401・403 は、500 ではなく 503（検索が一時的に使えない）として返す。
+- feat(infra)!：FGAC で、サイトごとに OpenSearch のインデックスを分離する（#1034）。
+- fix(deps)：undici を 8.12.3 に上げた（#1045）。GHSA-xjj6-f33q-929c、GHSA-4qv8-2p9j-2685、GHSA-f72v-6w45-q472。
+- fix(deps)：fast-uri を 3.1.9、body-parser を 2.4.0（#1040）、ip-address を 10.7.4（#1039）、expressive-code を 0.44.3 に上げた（#1049）。expressive-code の更新で postcss-selector-parser が 7.1.7 になる。
+- build(deps-dev)：happy-dom を 21.0.4 に上げた（#1043）。既定で iframe のページとスタイルシートを読み込まなくなり、web のテストが描いた URL を取りに行かなくなった。
+
+**ドキュメント**
+
+- docs(adr)：ADR-069、共有の OpenSearch のドメインで FGAC によりサイトを分離する（#1033）。
+
+**メンテナンス**
+
+- build(deps)：minor・patch の更新 28 件（aws-cdk-lib 2.274.0、better-auth 1.7.12、AWS SDK などを含む）（#1047）と、tsup 9.0.0（#1018）。合成される CloudFormation のテンプレートと、worker のビルドの出力は変わらない。
+- ci：イメージのビルドのベースイメージを、固定したダイジェストで Google の Docker Hub ミラーから取るようにした。ECR Public は認証なしの pull を送信元 IP ごとに制限するため（#1041）。ミラーがまだ層をキャッシュしていないときはビルドをやり直す（#1042）。`docker` ドライバーでビルドし、ジョブを約 6 分から約 4 分に縮めた（#1048）。本番のイメージは今までどおり ECR Public から作る。
+- test：API の結合テストに、lake と infra のテストと同じ 30 秒のタイムアウトを設定した（#1046）。
+
 ## [0.37.0] - 2026-10-23
 
 **Breaking Changes**
