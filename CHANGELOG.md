@@ -6,6 +6,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.38.1] - 2026-10-25
+
+**Upgrade Notes**
+
+- AWS: the OpenSearch master role `kukan-<env>-search-admin` can now send GET requests (#1057). In v0.38.0 it could only PUT and DELETE, so the documented way to inspect the domain by hand, and the check after the first FGAC deploy that the `default_role` mapping is gone, failed with 403. After this deploy, `GET _plugins/_security/api/rolesmapping` works as the deploy spec shows. Besides the new images every release brings, the deploy changes only that role's IAM policy, in the shared stack (single-site: KukanStack); the OpenSearch domain is not updated.
+
+**Bug Fixes**
+
+- fix(infra): let the OpenSearch master role GET, so the documented check of the domain works (#1057).
+
+**Documentation**
+
+- docs(readme): point to the official site, <https://kukan.dev>, and its guides (#1059), and show the OpenSSF Best Practices badge (#1055).
+
+**Maintenance**
+
+- test: measure test coverage on every push to develop, with one unfiltered run of every suite, and keep the report when a suite fails (#1058). A second copy of Vitest, which made the web suites fail under coverage, is gone. `pnpm test:coverage` runs it locally.
+- test(worker): property-test the compound file reader that the legacy Office formats and Ichitaro share, with fast-check (#1060).
+- test(worker): give the worker suites the 30-second timeout the coverage run needs (#1061).
+
+---
+
+**アップグレード時の注意**
+
+- AWS：OpenSearch のマスター用ロール `kukan-<env>-search-admin` が GET を送れるようになった（#1057）。v0.38.0 では PUT と DELETE しか送れず、ドメインを手で調べる手順と、FGAC を有効にする最初のデプロイの後に `default_role` の割り当てが無いことを確かめる作業が、403 で通らなかった。このデプロイの後は、仕様書のとおり `GET _plugins/_security/api/rolesmapping` で確かめられる。リリースのたびのイメージの更新のほかに、デプロイで変わるのは共有スタック（シングルサイトでは KukanStack）にあるこのロールの IAM のポリシーだけで、OpenSearch のドメインは更新されない。
+
+**バグ修正**
+
+- fix(infra)：OpenSearch のマスター用ロールに GET を許し、ドメインを手で調べる手順が書いてあるとおりに動くようにした（#1057）。
+
+**ドキュメント**
+
+- docs(readme)：公式サイト <https://kukan.dev> とそのガイドへのリンクを足した（#1059）。OpenSSF Best Practices のバッジを貼った（#1055）。
+
+**メンテナンス**
+
+- test：develop への push のたびに、全テストを絞らずに 1 回走らせてカバレッジを取る。テストが失敗してもレポートを残す（#1058）。カバレッジ付きで web のテストが落ちる原因だった、2 組目の Vitest を無くした。手元では `pnpm test:coverage` で取れる。
+- test(worker)：旧形式の Office と一太郎が共通で使う複合文書の読み取りを、fast-check で property-based test する（#1060）。
+- test(worker)：worker のテストに、カバレッジ付きの実行に要る 30 秒のタイムアウトを設定した（#1061）。
+
 ## [0.38.0] - 2026-10-25
 
 **Breaking Changes**
