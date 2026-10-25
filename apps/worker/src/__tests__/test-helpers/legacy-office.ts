@@ -37,7 +37,7 @@ interface DirNode {
  * A compound file of `streams`, each keyed by its path: `Storage/Stream`
  * puts it in a storage, made for it where no other stream has.
  */
-function compoundFile(streams: Record<string, Buffer>): Buffer {
+export function compoundFile(streams: Record<string, Buffer>): Buffer {
   const names = Object.keys(streams)
   const root: DirNode = { name: 'Root Entry', children: [] }
   for (const path of names) {

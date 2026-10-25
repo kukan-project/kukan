@@ -48,6 +48,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.23.1",
     "@types/yauzl": "^3.4.0",
+    "fast-check": "4.10.2",
     "jszip": "^3.10.2",
     "pino-pretty": "^13.2.0",
     "tsup": "^9.0.0",
