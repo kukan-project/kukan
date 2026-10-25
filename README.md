@@ -27,6 +27,8 @@
 Read, query, connect. A full-stack TypeScript data platform for people and AI.
 読めて、聞けて、つながる。人と AI のためのデータ基盤。
 
+Website / 公式サイト: **[kukan.dev](https://kukan.dev)** — guides, API reference and the development diary / 導入の手順・API の資料・開発記
+
 Cloud-native, yet deployable on-premises and in air-gapped networks (e.g. LGWAN).
 クラウドからオンプレミス・閉域網（LGWAN等）まで対応するハイブリッドデプロイ設計。
 
@@ -380,6 +382,16 @@ docker compose logs -f web worker
 ```
 
 ## Documentation / ドキュメント
+
+On the website / 公式サイト（[kukan.dev](https://kukan.dev)）:
+
+- Quick Start / クイックスタート: [English](https://kukan.dev/en/getting-started/) | [日本語](https://kukan.dev/ja/getting-started/)
+- User Guide / 利用者ガイド: [English](https://kukan.dev/en/user-guide/) | [日本語](https://kukan.dev/ja/user-guide/)
+- Data Admin Guide / データ管理者ガイド: [English](https://kukan.dev/en/data-admin-guide/) | [日本語](https://kukan.dev/ja/data-admin-guide/)
+- System Admin Guide / システム管理者ガイド: [English](https://kukan.dev/en/system-admin-guide/) | [日本語](https://kukan.dev/ja/system-admin-guide/)
+- API (REST, CKAN-compatible, MCP) / API 概要: [English](https://kukan.dev/en/api/) | [日本語](https://kukan.dev/ja/api/)
+
+In this repository, for design and development / このリポジトリ（設計と開発）:
 
 - [Design Document / 設計書](docs/design-v4.md)
 - AWS Deployment Spec / デプロイ仕様: [日本語 (正本)](docs/specs/jp/phase4-deploy.md) | [English](docs/specs/en/phase4-deploy.md)
