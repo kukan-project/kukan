@@ -39,7 +39,7 @@
     "pino": "^10.4.0",
     "saxes": "^6.0.0",
     "sharp": "^0.35.5",
-    "undici": "^8.11.2",
+    "undici": "^8.12.3",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
