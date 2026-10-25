@@ -581,7 +581,8 @@ The AWS OpenSearch domain has FGAC (Fine-Grained Access Control) enabled.
   another region). A deploy under a name already in use stops when it creates the roles. Environment
   names differing only in case are refused at synth
 - A principal without a mapping gets 403 even when it signs. In the deploy that enables FGAC,
-  public search returns 503 until the site's tasks are replaced by ones on the named roles. When the
+  public search fails until the site's tasks are replaced by ones on the named roles (tasks before
+  0.38.0 answer it with 500, since they do not turn a 403 into a 503). When the
   old tasks are 0.37.0 or later, content index writes that fail meanwhile are marked and indexed
   again by the new worker when it starts and then hourly. Workers before 0.37.0 do not mark them, so
   an upgrade from before 0.37.0 needs "Rebuild the search index" with the file content once on each

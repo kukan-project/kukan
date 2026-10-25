@@ -150,7 +150,7 @@ permissions inside it.
 - The shared stack deploy enables FGAC and runs the blue/green update. The mappings are created in
   the same deploy, so tasks running with the named task roles get through once the update finishes.
 - Until a site deploy replaces its tasks, the old tasks (unnamed roles) get 403 and public search
-  answers 503. This is the same kind of outage as the move to SigV4 signing, so the two **go in the
+  fails. Tasks before 0.38.0 do not turn a 403 into a 503, so users get 500. This is the same kind of outage as the move to SigV4 signing, so the two **go in the
   same release, and the outage happens once**.
 - Content index writes that fail meanwhile catch up by themselves when the old tasks are 0.37.0 or
   later: the worker reads a 401 or 403 as search being unavailable and marks the resource, and the
@@ -172,7 +172,7 @@ permissions inside it.
 - **Application**: no change (signing is already in place).
 - **Docker Compose**: no change (the security plugin stays disabled). As in ADR-041, isolation there
   stays convention-based.
-- **Release notes**: as breaking changes, the 503 during the deploy, the content reindex after it
+- **Release notes**: as breaking changes, search failing during the deploy (the old tasks answer 500), the content reindex after it
   for upgrades from before 0.37.0, and that FGAC cannot be turned off.
 
 ## Open issues
