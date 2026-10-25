@@ -1852,6 +1852,7 @@ function expandV6(addr) {
           "Statement": [
             {
               "Action": [
+                "es:ESHttpGet",
                 "es:ESHttpPut",
                 "es:ESHttpDelete",
               ],
@@ -6214,6 +6215,7 @@ function expandV6(addr) {
           "Statement": [
             {
               "Action": [
+                "es:ESHttpGet",
                 "es:ESHttpPut",
                 "es:ESHttpDelete",
               ],
@@ -14035,6 +14037,7 @@ function expandV6(addr) {
           "Statement": [
             {
               "Action": [
+                "es:ESHttpGet",
                 "es:ESHttpPut",
                 "es:ESHttpDelete",
               ],
@@ -18196,6 +18199,7 @@ function expandV6(addr) {
           "Statement": [
             {
               "Action": [
+                "es:ESHttpGet",
                 "es:ESHttpPut",
                 "es:ESHttpDelete",
               ],

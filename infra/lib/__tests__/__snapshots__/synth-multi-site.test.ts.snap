@@ -1317,6 +1317,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           "Statement": [
             {
               "Action": [
+                "es:ESHttpGet",
                 "es:ESHttpPut",
                 "es:ESHttpDelete",
               ],

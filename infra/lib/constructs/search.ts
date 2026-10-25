@@ -185,9 +185,11 @@ export class SearchConstruct extends Construct {
     const { vpc, searchSecurityGroup, tenants } = props
     const stack = cdk.Stack.of(this)
 
+    // PUT and DELETE are the handler's writes; GET is for the operator who
+    // assumes the role to check the domain by hand (the deploy spec's steps)
     adminRole.addToPolicy(
       new iam.PolicyStatement({
-        actions: ['es:ESHttpPut', 'es:ESHttpDelete'],
+        actions: ['es:ESHttpGet', 'es:ESHttpPut', 'es:ESHttpDelete'],
         resources: [`${this.domain.domainArn}/*`],
       })
     )

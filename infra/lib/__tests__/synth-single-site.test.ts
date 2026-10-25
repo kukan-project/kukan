@@ -255,6 +255,25 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
       })
     })
 
+    it("lets the master role read the domain as well as write the handler's roles", () => {
+      const statements = Object.values(template.findResources('AWS::IAM::Policy'))
+        .filter((p) =>
+          JSON.stringify((p as { Properties: { Roles: unknown } }).Properties.Roles).includes(
+            adminRoleId!
+          )
+        )
+        .flatMap(
+          (p) =>
+            (p as { Properties: { PolicyDocument: { Statement: { Action: unknown }[] } } })
+              .Properties.PolicyDocument.Statement
+        )
+        .filter((st) => JSON.stringify(st.Action).includes('es:'))
+      // GET for an operator checking the domain by hand (the deploy spec's steps)
+      expect(statements.map((st) => st.Action)).toEqual([
+        ['es:ESHttpGet', 'es:ESHttpPut', 'es:ESHttpDelete'],
+      ])
+    })
+
     it('writes the roles after every update of the domain', () => {
       const [siteRoles] = Object.values(template.findResources('Custom::KukanSearchSiteRoles'))
       const dependsOn = (siteRoles as { DependsOn: string[] }).DependsOn
