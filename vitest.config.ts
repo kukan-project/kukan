@@ -191,6 +191,12 @@ export default defineConfig({
           pool: 'forks',
           maxWorkers: INTEGRATION_FORKS,
           sequence: { groupOrder: INTEGRATION_GROUP },
+          // Raised like `lake` above, for the same reason: the lake services'
+          // cases run DuckDB against a real catalog and bucket, and
+          // `lake-rebuild` (29 cases) takes 9–13s in CI. A case near 5s went
+          // over it twice in a day, on a runner busy with the other jobs, and
+          // passed on rerun.
+          testTimeout: 30_000,
         },
       },
       {
