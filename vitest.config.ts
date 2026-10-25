@@ -144,6 +144,11 @@ export default defineConfig({
           include: ['src/__tests__/**/*.test.ts'],
           exclude: ['src/__tests__/**/*.integration.test.ts'],
           environment: 'node',
+          // Raised like `lake` and `infra`: the cases that stream megabytes
+          // through a decoder run fast alone, but the coverage run on develop
+          // wraps those loops and runs every project at once. One that takes
+          // 0.2s took 3.7s with coverage alone, and over 5s in that run.
+          testTimeout: 30_000,
         },
         resolve: {
           alias: {
