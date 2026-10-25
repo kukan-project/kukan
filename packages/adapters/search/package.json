@@ -22,7 +22,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@aws-sdk/credential-provider-node": "^3.972.86",
+    "@aws-sdk/credential-provider-node": "^3.972.88",
     "@kukan/db": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@opensearch-project/opensearch": "^3.6.0",
