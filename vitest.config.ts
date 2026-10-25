@@ -26,6 +26,27 @@ const INTEGRATION_GROUP = 1
 export default defineConfig({
   test: {
     exclude: ['**/node_modules/**', '**/cdk.out/**', '**/dist/**', '**/.next/**', 'site/**'],
+    // Off unless asked for: `pnpm test:coverage`, every project in one run.
+    // Measured over the source of every app and package, not only the files a
+    // run happened to load, so a module no test reaches counts as uncovered.
+    // A package read through another's `dist` (queue, db) is not attributed
+    // to its `src` and reads low. Under `--project` the patterns are read from
+    // that project's root and match nothing, so a filtered run reports none.
+    coverage: {
+      provider: 'v8',
+      include: [
+        'apps/*/src/**/*.{ts,tsx}',
+        'packages/*/src/**/*.{ts,tsx}',
+        'packages/adapters/*/src/**/*.{ts,tsx}',
+        'infra/lib/**/*.ts',
+      ],
+      exclude: ['**/__tests__/**', '**/*.d.ts'],
+      reporter: ['text-summary', 'json-summary', 'html'],
+      // A failing run still reports: the figure for the code that did run
+      reportOnFailure: true,
+      // The query and heavy children are forked, and run outside the test's process
+      autoAttachSubprocess: true,
+    },
     projects: [
       {
         test: {

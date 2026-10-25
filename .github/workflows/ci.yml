@@ -320,8 +320,11 @@ jobs:
             for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await conn.run('INSTALL ' + e)
           "
 
+      # Not on develop: `integration` runs these suites there, in its coverage
+      # run (a push to develop always runs it, whatever changed). The build
+      # above still runs, for the turbo entry pull requests restore.
       - name: Test (unit only)
-        if: steps.changes.outputs.code == 'true'
+        if: steps.changes.outputs.code == 'true' && github.ref != 'refs/heads/develop'
         run: pnpm test:unit
 
       # See `lint-typecheck` for why saving is limited to develop, and why the
@@ -428,7 +431,7 @@ jobs:
       # and never reads it directly, so setting it here said nothing. The
       # credentials have to stay in step with the service container above.
       - name: Test (integration)
-        if: steps.changes.outputs.code == 'true'
+        if: steps.changes.outputs.code == 'true' && github.ref != 'refs/heads/develop'
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -436,6 +439,67 @@ jobs:
           POSTGRES_USER: kukan
           POSTGRES_PASSWORD: kukan
         run: pnpm test:integration
+
+      # On develop, every suite runs here, with coverage: the figure needs one
+      # unfiltered run (see `coverage` in vitest.config.ts), and this is the job
+      # with the database. `unit` skips its own run then, so each suite runs
+      # once. Pull requests keep the split and its time. So the unit suites
+      # also need what `unit` prepares.
+      - name: Build what the unit suites import
+        if: steps.changes.outputs.code == 'true' && github.ref == 'refs/heads/develop'
+        run: pnpm build --filter='!@kukan/web' --filter='!@kukan/site'
+
+      - name: Cache DuckDB extensions
+        if: steps.changes.outputs.code == 'true' && github.ref == 'refs/heads/develop'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.duckdb/extensions
+          key: duckdb-ext-${{ runner.os }}-${{ hashFiles('packages/lake/package.json') }}-httpfs-aws-sqlite-ducklake
+
+      - name: Warm DuckDB extensions
+        if: steps.changes.outputs.code == 'true' && github.ref == 'refs/heads/develop'
+        working-directory: packages/lake
+        run: |
+          node --input-type=module -e "
+            const { DuckDBInstance } = await import('@duckdb/node-api')
+            const conn = await (await DuckDBInstance.create(':memory:')).connect()
+            for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await conn.run('INSTALL ' + e)
+          "
+
+      - name: Test (every suite, with coverage)
+        id: coverage
+        if: steps.changes.outputs.code == 'true' && github.ref == 'refs/heads/develop'
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: kukan
+          POSTGRES_USER: kukan
+          POSTGRES_PASSWORD: kukan
+        run: pnpm test:coverage
+
+      # After a failing run too: the report is written all the same
+      # (reportOnFailure), and it is when a suite fails that it is wanted
+      - name: Summarize the coverage
+        if: ${{ !cancelled() && steps.coverage.outcome != 'skipped' }}
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then
+            echo "### Coverage: no report (the run stopped before writing one)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node -e "
+            const t = require('./coverage/coverage-summary.json').total
+            const row = (k) => '| ' + k + ' | ' + t[k].pct + '% | ' + t[k].covered + ' / ' + t[k].total + ' |'
+            console.log(['### Coverage', '', '| | | |', '|---|---|---|', ...['branches', 'lines', 'statements', 'functions'].map(row)].join('\n'))
+          " >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage report
+        if: ${{ !cancelled() && steps.coverage.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 30
 
       # See `lint-typecheck` for why saving is limited to develop.
       - name: Prune turbo cache
