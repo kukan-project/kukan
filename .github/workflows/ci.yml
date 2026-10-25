@@ -636,14 +636,26 @@ jobs:
         if: steps.changes.outputs.code == 'true'
 
       # One builder for all four, so the second architecture reuses `deps` and
-      # `build` from the first
+      # `build` from the first.
+      #
+      # The base image is on ECR Public so that CodeBuild escapes Docker Hub's
+      # pull limit, but ECR Public meters anonymous pulls by source IP, and a
+      # hosted runner shares its IP with other people's jobs: the pull fails
+      # with `429 Data limit exceeded` whatever this repository pulled. Here the
+      # same digest comes from Google's Docker Hub mirror instead. The digest
+      # pins the content, so the image is still the one the Dockerfile names.
       - name: Build the images
         if: steps.changes.outputs.code == 'true'
         run: |
+          contexts=()
+          for ref in $(sed -nE 's/^FROM (--platform=[^ ]+ )?(public\.ecr\.aws\/docker\/library\/[^ ]+@sha256:[0-9a-f]+).*/\2/p' Dockerfile | sort -u); do
+            name=${ref#public.ecr.aws/docker/library/}
+            contexts+=(--build-context "$ref=docker-image://mirror.gcr.io/library/${name%%[:@]*}@${ref#*@}")
+          done
           for arch in amd64 arm64; do
             for target in worker web; do
               docker buildx build --platform "linux/$arch" --target "$target" \
-                --tag "kukan-$target:$arch" --load .
+                "${contexts[@]}" --tag "kukan-$target:$arch" --load .
             done
           done
 
