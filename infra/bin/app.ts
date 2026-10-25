@@ -25,6 +25,7 @@ import {
   resolveEnv,
   type EnvironmentConfig,
   validateEcrImageRetention,
+  validateEnvironmentNames,
 } from '../lib/config.js'
 import { pascal } from '../lib/naming.js'
 import { KukanStage } from '../lib/stacks/kukan-stage.js'
@@ -61,6 +62,7 @@ if (!account) {
 }
 
 const { environments, connectionArn, pipelineAccount } = await loadEnvironments()
+validateEnvironmentNames(environments)
 validateEcrImageRetention(environments)
 
 const standaloneEnv = app.node.tryGetContext('env') as string | undefined

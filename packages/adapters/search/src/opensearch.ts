@@ -13,7 +13,12 @@ import { randomBytes } from 'node:crypto'
 import { Client, errors as osErrors } from '@opensearch-project/opensearch'
 import { AwsSigv4Signer } from '@opensearch-project/opensearch/aws'
 import { defaultProvider } from '@aws-sdk/credential-provider-node'
-import { createLogger, ServiceUnavailableError, type Logger } from '@kukan/shared'
+import {
+  createLogger,
+  DEFAULT_OPENSEARCH_INDEX_PREFIX,
+  ServiceUnavailableError,
+  type Logger,
+} from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import type {
   ContentResourceFilter,
@@ -539,7 +544,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       requestTimeout: 10_000,
       resurrectStrategy: 'optimistic',
     })
-    const prefix = config.indexPrefix || 'kukan'
+    const prefix = config.indexPrefix || DEFAULT_OPENSEARCH_INDEX_PREFIX
     this.searchIndex = `${prefix}-search`
     this.replicas = config.replicas ?? 0
     this.log = config.logger ?? createLogger({ name: 'opensearch', level: 'silent' })
@@ -691,10 +696,13 @@ export class OpenSearchAdapter implements SearchAdapter {
    *  (a deployment created before this scheme) */
   private async concreteIndex(): Promise<string> {
     // Asked separately because `ignore: [404]` does not answer with an empty
-    // body — it hands back the 404 payload, whose first key is `error`
-    const alias = await this.client.indices.existsAlias({ name: this.searchIndex })
+    // body — it hands back the 404 payload, whose first key is `error`. Both
+    // name the indices to look in: without, the lookup spans every index, which
+    // a role scoped to this site's (AWS fine-grained access control) is refused
+    const index = `${this.searchIndex}*`
+    const alias = await this.client.indices.existsAlias({ name: this.searchIndex, index })
     if (!alias.body) return this.searchIndex
-    const got = await this.client.indices.getAlias({ name: this.searchIndex })
+    const got = await this.client.indices.getAlias({ name: this.searchIndex, index })
     const behind = Object.keys(got.body)
     if (behind.length !== 1) {
       // An alias over two indices takes no writes at all ("no write index is

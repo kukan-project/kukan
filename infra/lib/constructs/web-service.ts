@@ -10,13 +10,14 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as assets from 'aws-cdk-lib/aws-ecr-assets'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
+import * as iam from 'aws-cdk-lib/aws-iam'
 import * as logs from 'aws-cdk-lib/aws-logs'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { ARCHITECTURES } from '../cpu-architecture.js'
-import { resourceName } from '../naming.js'
+import { envPrefix, resourceName, taskRoleName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
 import { connectSearch, type SearchDomainRef } from './search.js'
@@ -98,11 +99,16 @@ export class WebServiceConstruct extends Construct {
       buildArgs: props.imageBuildArgs,
     })
 
-    // Task Definition
+    // Task Definition. The task role is named so the search domain's role
+    // mapping can name it before it exists (ADR-069).
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       cpu: config.web.cpu,
       memoryLimitMiB: config.web.memory,
       runtimePlatform: ARCHITECTURES[config.cpuArchitecture].taskRuntimePlatform,
+      taskRole: new iam.Role(this, 'TaskRole', {
+        roleName: taskRoleName(envPrefix(this), 'web'),
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      }),
     })
 
     // Grant permissions to task role

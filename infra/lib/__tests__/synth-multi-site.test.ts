@@ -25,8 +25,10 @@ import {
   CDN_LOG_BUCKET,
   execChannelGrants,
   normalize,
+  searchSiteRoles,
   stackTemplate,
   synthStage,
+  taskRoleNames,
   testApp,
   TEST_ACCOUNT,
   TEST_REGION,
@@ -210,6 +212,38 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
           }),
         ]),
       })
+    }
+  })
+
+  it('gives each site its own OpenSearch role on its own indexes, from the shared stack (ADR-069)', () => {
+    shared.hasResourceProperties('AWS::OpenSearchService::Domain', {
+      AdvancedSecurityOptions: Match.objectLike({
+        Enabled: true,
+        InternalUserDatabaseEnabled: false,
+      }),
+    })
+    shared.hasResourceProperties('AWS::IAM::Role', { RoleName: 'kukan-dev-search-admin' })
+    expect(searchSiteRoles(shared)).toEqual(
+      ['citya', 'cityb'].map((site) => ({
+        name: `kukan-dev-${site}`,
+        indexPatterns: [`kukan-dev-${site}-search*`],
+        backendRoles: [
+          `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-${site}-web-task`,
+          `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-${site}-worker-task`,
+        ],
+      }))
+    )
+    // The names the mappings expect are the names the sites give their roles
+    expect(taskRoleNames(siteA).sort()).toEqual([
+      'kukan-dev-citya-web-task',
+      'kukan-dev-citya-worker-task',
+    ])
+    expect(taskRoleNames(siteB).sort()).toEqual([
+      'kukan-dev-cityb-web-task',
+      'kukan-dev-cityb-worker-task',
+    ])
+    for (const site of [siteA, siteB]) {
+      expect(site.findResources('Custom::KukanSearchSiteRoles')).toEqual({})
     }
   })
 

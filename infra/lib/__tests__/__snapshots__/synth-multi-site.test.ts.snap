@@ -524,6 +524,27 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::EC2::SecurityGroupIngress",
     },
+    "NetworkSearchSgfromDevKukanSharedStackSearchSecurityHandlerSgECB870FE4430CD7E01B": {
+      "Properties": {
+        "Description": "Security role handler",
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "SearchSecurityHandlerSg15AADC3F",
+            "GroupId",
+          ],
+        },
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
     "NetworkVpc7FB7348F": {
       "Properties": {
         "CidrBlock": "10.0.0.0/16",
@@ -1222,6 +1243,111 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::SSM::Parameter",
     },
+    "SearchAdminRole39B48159": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":iam::123456789012:root",
+                    ],
+                  ],
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "RoleName": "kukan-dev-search-admin",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SearchAdminRoleDefaultPolicy42366AFD": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "es:ESHttpPut",
+                "es:ESHttpDelete",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SearchAdminRoleDefaultPolicy42366AFD",
+        "Roles": [
+          {
+            "Ref": "SearchAdminRole39B48159",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
     "SearchDomain62FD613E": {
       "DeletionPolicy": "Delete",
       "DependsOn": [
@@ -1229,6 +1355,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         "SearchOpensearchSlr62FA2C88",
       ],
       "Properties": {
+        "AdvancedSecurityOptions": {
+          "Enabled": true,
+          "InternalUserDatabaseEnabled": false,
+          "MasterUserOptions": {
+            "MasterUserARN": {
+              "Fn::GetAtt": [
+                "SearchAdminRole39B48159",
+                "Arn",
+              ],
+            },
+          },
+        },
         "ClusterConfig": {
           "DedicatedMasterEnabled": false,
           "InstanceCount": 1,
@@ -1422,6 +1560,376 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "SearchSecurityHandler7847E95E": {
+      "DependsOn": [
+        "NetworkVpcPrivateSubnet1RouteTableAssociation327CA62F",
+        "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8",
+        "SearchAdminRoleDefaultPolicy42366AFD",
+        "SearchAdminRole39B48159",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SearchSecurityHandlerLogs84C4F416",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "SearchAdminRole39B48159",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+        "Timeout": 900,
+        "VpcConfig": {
+          "SecurityGroupIds": [
+            {
+              "Fn::GetAtt": [
+                "SearchSecurityHandlerSg15AADC3F",
+                "GroupId",
+              ],
+            },
+          ],
+          "SubnetIds": [
+            {
+              "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+            },
+            {
+              "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+            },
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SearchSecurityHandlerLogs84C4F416": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SearchSecurityHandlerSg15AADC3F": {
+      "Properties": {
+        "GroupDescription": "OpenSearch security role handler (ADR-069)",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "SearchSecurityHandlerSgtoDevKukanSharedStackNetworkSearchSg9A53F68A4437CBA4883": {
+      "Properties": {
+        "Description": "Security role handler",
+        "DestinationSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "SearchSecurityHandlerSg15AADC3F",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupEgress",
+    },
+    "SearchSecurityProviderLogsAB135955": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SearchSecurityProviderframeworkonEvent194CDACF": {
+      "DependsOn": [
+        "SearchSecurityProviderframeworkonEventServiceRoleDefaultPolicy31EAD69A",
+        "SearchSecurityProviderframeworkonEventServiceRoleC436D92D",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": "AWS CDK resource provider framework - onEvent (Dev/KukanSharedStack/Search/SecurityProvider)",
+        "Environment": {
+          "Variables": {
+            "USER_ON_EVENT_FUNCTION_ARN": {
+              "Fn::GetAtt": [
+                "SearchSecurityHandler7847E95E",
+                "Arn",
+              ],
+            },
+          },
+        },
+        "Handler": "framework.onEvent",
+        "LoggingConfig": {
+          "ApplicationLogLevel": "FATAL",
+          "LogFormat": "JSON",
+          "LogGroup": {
+            "Ref": "SearchSecurityProviderLogsAB135955",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "SearchSecurityProviderframeworkonEventServiceRoleC436D92D",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SearchSecurityProviderframeworkonEventServiceRoleC436D92D": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SearchSecurityProviderframeworkonEventServiceRoleDefaultPolicy31EAD69A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SearchSecurityHandler7847E95E",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "SearchSecurityHandler7847E95E",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:GetFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SearchSecurityHandler7847E95E",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SearchSecurityProviderframeworkonEventServiceRoleDefaultPolicy31EAD69A",
+        "Roles": [
+          {
+            "Ref": "SearchSecurityProviderframeworkonEventServiceRoleC436D92D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SearchSiteRoles1FDCEB1A": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SearchDomainAccessPolicyCustomResourcePolicy703A4D4A",
+        "SearchDomainAccessPolicyAF72FFEB",
+        "SearchDomain62FD613E",
+      ],
+      "Properties": {
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "SearchDomain62FD613E",
+            "DomainEndpoint",
+          ],
+        },
+        "Roles": [
+          {
+            "BackendRoles": [
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-citya-web-task",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-citya-worker-task",
+                  ],
+                ],
+              },
+            ],
+            "Name": "kukan-dev-citya",
+            "Permissions": {
+              "cluster_permissions": [
+                "cluster_composite_ops",
+                "cluster_monitor",
+                "cluster:admin/tasks/cancel",
+              ],
+              "index_permissions": [
+                {
+                  "allowed_actions": [
+                    "indices_all",
+                  ],
+                  "index_patterns": [
+                    "kukan-dev-citya-search*",
+                  ],
+                },
+              ],
+            },
+          },
+          {
+            "BackendRoles": [
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-cityb-web-task",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-cityb-worker-task",
+                  ],
+                ],
+              },
+            ],
+            "Name": "kukan-dev-cityb",
+            "Permissions": {
+              "cluster_permissions": [
+                "cluster_composite_ops",
+                "cluster_monitor",
+                "cluster:admin/tasks/cancel",
+              ],
+              "index_permissions": [
+                {
+                  "allowed_actions": [
+                    "indices_all",
+                  ],
+                  "index_patterns": [
+                    "kukan-dev-cityb-search*",
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "SearchSecurityProviderframeworkonEvent194CDACF",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::KukanSearchSiteRoles",
+      "UpdateReplacePolicy": "Delete",
     },
     "SecretsManagerEndpoint5E83C66B": {
       "Properties": {
@@ -3036,8 +3544,8 @@ function expandV6(addr) {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
         "WebServiceSiteRule1F8DE3C0",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
+        "WebServiceTaskRoleDefaultPolicy5709FFD5",
+        "WebServiceTaskRoleFA40C2C9",
       ],
       "Properties": {
         "Cluster": {
@@ -3195,8 +3703,8 @@ function expandV6(addr) {
     "WebServiceTaskCountTargetCpuFAF59872": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
+        "WebServiceTaskRoleDefaultPolicy5709FFD5",
+        "WebServiceTaskRoleFA40C2C9",
       ],
       "Properties": {
         "PolicyName": "DevKukanSiteStackCityaWebServiceTaskCountTargetCpuCD5198EB",
@@ -3218,8 +3726,8 @@ function expandV6(addr) {
     "WebServiceTaskCountTargetD0215E6E": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
+        "WebServiceTaskRoleDefaultPolicy5709FFD5",
+        "WebServiceTaskRoleFA40C2C9",
       ],
       "Properties": {
         "MaxCapacity": 5,
@@ -3504,7 +4012,7 @@ function expandV6(addr) {
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
-            "WebServiceTaskDefTaskRole39B734D2",
+            "WebServiceTaskRoleFA40C2C9",
             "Arn",
           ],
         },
@@ -3644,33 +4152,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::IAM::Policy",
     },
-    "WebServiceTaskDefTaskRole39B734D2": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-      ],
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Statement": [
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "ecs-tasks.amazonaws.com",
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "web-service",
-          },
-        ],
-      },
-      "Type": "AWS::IAM::Role",
-    },
-    "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE": {
+    "WebServiceTaskRoleDefaultPolicy5709FFD5": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
@@ -3818,14 +4300,41 @@ function expandV6(addr) {
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
+        "PolicyName": "WebServiceTaskRoleDefaultPolicy5709FFD5",
         "Roles": [
           {
-            "Ref": "WebServiceTaskDefTaskRole39B734D2",
+            "Ref": "WebServiceTaskRoleFA40C2C9",
           },
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "WebServiceTaskRoleFA40C2C9": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "RoleName": "kukan-dev-citya-web-task",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
     },
     "WebServiceWebLogsD368BE0B": {
       "DeletionPolicy": "Retain",
@@ -3847,8 +4356,8 @@ function expandV6(addr) {
     "WorkerService2180CF14": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "Cluster": {
@@ -3938,8 +4447,8 @@ function expandV6(addr) {
     "WorkerServiceCloudmapService7AE9756B": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "DnsConfig": {
@@ -3973,8 +4482,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "MaxCapacity": 2,
@@ -4023,8 +4532,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "AlarmActions": [
@@ -4058,8 +4567,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "PolicyName": "DevKukanSiteStackCityaWorkerServiceTaskCountTargetJobsWaitingLowerPolicyC7FE2601",
@@ -4084,8 +4593,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "AlarmActions": [
@@ -4119,8 +4628,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "PolicyName": "DevKukanSiteStackCityaWorkerServiceTaskCountTargetJobsWaitingUpperPolicy3F3762F7",
@@ -4373,7 +4882,7 @@ function expandV6(addr) {
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
-            "WorkerServiceTaskDefTaskRoleF79140F1",
+            "WorkerServiceTaskRole09450576",
             "Arn",
           ],
         },
@@ -4483,7 +4992,34 @@ function expandV6(addr) {
       },
       "Type": "AWS::IAM::Role",
     },
-    "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7": {
+    "WorkerServiceTaskRole09450576": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "RoleName": "kukan-dev-citya-worker-task",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WorkerServiceTaskRoleDefaultPolicyACF3EF5D": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
@@ -4565,40 +5101,14 @@ function expandV6(addr) {
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "PolicyName": "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
         "Roles": [
           {
-            "Ref": "WorkerServiceTaskDefTaskRoleF79140F1",
+            "Ref": "WorkerServiceTaskRole09450576",
           },
         ],
       },
       "Type": "AWS::IAM::Policy",
-    },
-    "WorkerServiceTaskDefTaskRoleF79140F1": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-      ],
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Statement": [
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "ecs-tasks.amazonaws.com",
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "worker-service",
-          },
-        ],
-      },
-      "Type": "AWS::IAM::Role",
     },
     "WorkerServiceWorkerLogs78273405": {
       "DeletionPolicy": "Retain",
@@ -5955,8 +6465,8 @@ function expandV6(addr) {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
         "WebServiceSiteRule1F8DE3C0",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
+        "WebServiceTaskRoleDefaultPolicy5709FFD5",
+        "WebServiceTaskRoleFA40C2C9",
       ],
       "Properties": {
         "Cluster": {
@@ -6114,8 +6624,8 @@ function expandV6(addr) {
     "WebServiceTaskCountTargetCpuFAF59872": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
+        "WebServiceTaskRoleDefaultPolicy5709FFD5",
+        "WebServiceTaskRoleFA40C2C9",
       ],
       "Properties": {
         "PolicyName": "DevKukanSiteStackCitybWebServiceTaskCountTargetCpuA22DDA46",
@@ -6137,8 +6647,8 @@ function expandV6(addr) {
     "WebServiceTaskCountTargetD0215E6E": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
+        "WebServiceTaskRoleDefaultPolicy5709FFD5",
+        "WebServiceTaskRoleFA40C2C9",
       ],
       "Properties": {
         "MaxCapacity": 5,
@@ -6418,7 +6928,7 @@ function expandV6(addr) {
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
-            "WebServiceTaskDefTaskRole39B734D2",
+            "WebServiceTaskRoleFA40C2C9",
             "Arn",
           ],
         },
@@ -6528,33 +7038,7 @@ function expandV6(addr) {
       },
       "Type": "AWS::IAM::Policy",
     },
-    "WebServiceTaskDefTaskRole39B734D2": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-      ],
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Statement": [
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "ecs-tasks.amazonaws.com",
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "web-service",
-          },
-        ],
-      },
-      "Type": "AWS::IAM::Role",
-    },
-    "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE": {
+    "WebServiceTaskRoleDefaultPolicy5709FFD5": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
@@ -6702,14 +7186,41 @@ function expandV6(addr) {
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
+        "PolicyName": "WebServiceTaskRoleDefaultPolicy5709FFD5",
         "Roles": [
           {
-            "Ref": "WebServiceTaskDefTaskRole39B734D2",
+            "Ref": "WebServiceTaskRoleFA40C2C9",
           },
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "WebServiceTaskRoleFA40C2C9": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "RoleName": "kukan-dev-cityb-web-task",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
     },
     "WebServiceWebLogsD368BE0B": {
       "DeletionPolicy": "Retain",
@@ -6731,8 +7242,8 @@ function expandV6(addr) {
     "WorkerService2180CF14": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "Cluster": {
@@ -6822,8 +7333,8 @@ function expandV6(addr) {
     "WorkerServiceCloudmapService7AE9756B": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "DnsConfig": {
@@ -6857,8 +7368,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTarget88861093": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "MaxCapacity": 2,
@@ -6907,8 +7418,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "AlarmActions": [
@@ -6942,8 +7453,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "PolicyName": "DevKukanSiteStackCitybWorkerServiceTaskCountTargetJobsWaitingLowerPolicy27BBFBFA",
@@ -6968,8 +7479,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "AlarmActions": [
@@ -7003,8 +7514,8 @@ function expandV6(addr) {
     "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
-        "WorkerServiceTaskDefTaskRoleF79140F1",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
       ],
       "Properties": {
         "PolicyName": "DevKukanSiteStackCitybWorkerServiceTaskCountTargetJobsWaitingUpperPolicyF6880E26",
@@ -7270,7 +7781,7 @@ function expandV6(addr) {
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
-            "WorkerServiceTaskDefTaskRoleF79140F1",
+            "WorkerServiceTaskRole09450576",
             "Arn",
           ],
         },
@@ -7380,7 +7891,34 @@ function expandV6(addr) {
       },
       "Type": "AWS::IAM::Role",
     },
-    "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7": {
+    "WorkerServiceTaskRole09450576": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "RoleName": "kukan-dev-cityb-worker-task",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WorkerServiceTaskRoleDefaultPolicyACF3EF5D": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
@@ -7462,40 +8000,14 @@ function expandV6(addr) {
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "WorkerServiceTaskDefTaskRoleDefaultPolicy922D42D7",
+        "PolicyName": "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
         "Roles": [
           {
-            "Ref": "WorkerServiceTaskDefTaskRoleF79140F1",
+            "Ref": "WorkerServiceTaskRole09450576",
           },
         ],
       },
       "Type": "AWS::IAM::Policy",
-    },
-    "WorkerServiceTaskDefTaskRoleF79140F1": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-      ],
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Statement": [
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "ecs-tasks.amazonaws.com",
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "worker-service",
-          },
-        ],
-      },
-      "Type": "AWS::IAM::Role",
     },
     "WorkerServiceWorkerLogs78273405": {
       "DeletionPolicy": "Retain",

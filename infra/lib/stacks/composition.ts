@@ -28,7 +28,7 @@ import { NetworkConstruct } from '../constructs/network.js'
 import { EcrAssetRetentionConstruct } from '../constructs/ecr-asset-retention.js'
 import { DatabaseConstruct, type DbAccess } from '../constructs/database.js'
 import { StorageConstruct } from '../constructs/storage.js'
-import { SearchConstruct, type SearchDomainRef } from '../constructs/search.js'
+import { SearchConstruct, type SearchDomainRef, type SearchTenant } from '../constructs/search.js'
 import { WebServiceConstruct } from '../constructs/web-service.js'
 import { WorkerServiceConstruct } from '../constructs/worker-service.js'
 import { CdnConstruct } from '../constructs/cdn.js'
@@ -88,8 +88,15 @@ export interface EdgeArns {
   webAclArn?: string
 }
 
-/** Create the shared resources on `scope` (ids unchanged from the pre-split stack). */
-export function composeShared(scope: Construct, config: KukanConfig): SharedResources {
+/**
+ * Create the shared resources on `scope` (ids unchanged from the pre-split
+ * stack). `searchTenants` are the sites that get a role on the search domain.
+ */
+export function composeShared(
+  scope: Construct,
+  config: KukanConfig,
+  searchTenants: SearchTenant[]
+): SharedResources {
   const network = new NetworkConstruct(scope, 'Network', { config })
 
   const database = new DatabaseConstruct(scope, 'Database', {
@@ -104,6 +111,7 @@ export function composeShared(scope: Construct, config: KukanConfig): SharedReso
       config,
       vpc: network.vpc,
       searchSecurityGroup: network.searchSecurityGroup,
+      tenants: searchTenants,
     })
   }
 

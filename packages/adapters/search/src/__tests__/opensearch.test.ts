@@ -2294,6 +2294,16 @@ describe('OpenSearchAdapter', () => {
     /** The index a run created to copy into */
     const destinationOf = (calls: unknown[][]) => (calls.at(-1)![0] as { index: string }).index
 
+    it('looks the alias up among its own indices only', async () => {
+      await adapter.reanalyseIndex()
+
+      // Without an index the lookup spans every index, which a role scoped to
+      // one site's is refused under fine-grained access control
+      for (const call of [mockClient.indices.existsAlias, mockClient.indices.getAlias]) {
+        expect(call).toHaveBeenCalledWith({ name: 'kukan-search', index: 'kukan-search*' })
+      }
+    })
+
     it('copies into the next index and swaps the alias in one step', async () => {
       const result = await adapter.reanalyseIndex()
       const to = destinationOf(mockClient.indices.create.mock.calls)

@@ -462,7 +462,7 @@ SiteStack を削除（`cdk destroy` / sites から除去）した場合:
 | S3 バケット                      | **残る**（RETAIN）          | 空にしてから削除                                                                                                                                                  |
 | アクセスログのバケット           | **残る**（RETAIN）          | ログは `cdnLogRetentionDays` で消える。空になってから削除                                                                                                         |
 | Backup vault（awsBackup 有効時） | **残る**（RETAIN）          | リカバリポイントの失効（または手動削除）後に `kukan-<env>-<site>-backup` を削除。**同名サイトを再追加する場合は先に削除**（固定名のため衝突、ADR-037 と同じ規則） |
-| OpenSearch インデックス          | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                                                                                                                               |
+| OpenSearch インデックス          | **残る**（共有ドメイン内）  | マスターのロールで `DELETE /kukan-<env>-<site>-search`（ロールと割り当ては共有スタックの更新で消える）                                                            |
 | Secrets / ECS / CloudFront       | 削除される                  | —                                                                                                                                                                 |
 
 ### 既存シングルサイト環境の移行（ブルーグリーン）
@@ -541,6 +541,50 @@ WAF は CLOUDFRONT スコープで us-east-1（KukanGlobalStack）にデプロ�
 | AWSManagedRulesAmazonIpReputationList | AWS 脅威インテリジェンスによる悪意ある IP ブロック | $1/月 |
 
 WAF 費用合計: WebACL $5/月 + ルール $3/月 + リクエスト $0.60/百万 = **~$9/月**
+
+### OpenSearch のアクセス制御（FGAC、ADR-069）
+
+AWS の OpenSearch ドメインは FGAC（Fine-Grained Access Control）を有効にしている。
+**一度有効にすると無効に戻せない。** Docker Compose は security plugin 無効のまま。
+
+- マスターユーザーは IAM ロール `kukan-<env>-search-admin`。内部ユーザー（パスワード）は使わない。
+  ふだんこのロールで動くのは、下のカスタムリソースの Lambda だけである
+- サイトごとに OpenSearch のロール `kukan-<env>-<site>`（シングルサイトは `kukan-<env>`）を作り、
+  そのサイトのインデックス `<prefix>-search*` だけを許可する。接頭辞はマルチサイトなら
+  `kukan-<env>-<site>`、シングルサイトはアプリの既定値 `kukan`
+- 割り当て（backend_roles）は、web・worker のタスクロール `kukan-<env>-<site>-web-task` /
+  `-worker-task`（シングルサイトは `kukan-<env>-web-task` など）。名前が決まっているので、
+  共有スタック（シングルサイトは `KukanStack`）が `sites[]` から ARN を組み立て、VPC の中の
+  Lambda がセキュリティ API に書く。`sites[]` から外したサイトのロールと割り当ては消える
+- 権限の一覧は `infra/lib/constructs/search.ts` の `SITE_SEARCH_PERMISSIONS` にまとめてある
+- タスクロールとマスターのロールは名前が決まっていて、IAM の名前はアカウント全体で一意である。
+  そのため**環境名は AWS アカウントの中で一意にする**（リージョンが違っても同じ名前は使えない）。
+  使われている名前でデプロイすると、ロールの作成で失敗して止まる。大文字と小文字だけが違う環境名は
+  synth で止める
+- 割り当ての無いプリンシパルは、署名していても 403 になる。FGAC を有効にするデプロイでは、
+  サイトのタスクが名前の付いたロールに入れ替わるまで公開側の検索が 503 になる。デプロイの後、
+  各サイトで「コンテンツ再索引」を 1 回実行する
+- 既存のドメインで FGAC を有効にすると、AWS はドメインポリシーが通すプリンシパルを `default_role` に
+  割り当てる。これが残るとサイトの分離が効かないので、カスタムリソースが毎回その割り当てを消し、
+  消せなければデプロイを失敗させる（成功したカスタムリソースは、プロパティが変わるまで再実行されない
+  ため、残したまま成功にすると残り続ける）。最初のデプロイの後、`rolesmapping/default_role` が無いこと
+  を手で確かめる
+- FGAC を有効にしたデプロイが、ドメインの更新の後で失敗すると、CloudFormation は FGAC を無効に戻そうと
+  して失敗し、共有スタックが `UPDATE_ROLLBACK_FAILED` で止まる。その場合はドメインを飛ばして巻き戻しを
+  続ける（`aws cloudformation continue-update-rollback --stack-name <共有スタック>
+--resources-to-skip SearchDomain<論理 ID>`）。原因を直してから、もう一度デプロイする
+
+手で調べるときは、マスターのロールを引き受けて署名する。信頼ポリシーはアカウントも
+名指ししているので、自分の IAM ポリシーに、このロールへの `sts:AssumeRole` があれば引き受けられる。
+エンドポイントは VPC の中にしか無いので、リクエストは VPC の中から送る。
+
+```bash
+aws sts assume-role --role-session-name inspect \
+  --role-arn arn:aws:iam::<account>:role/kukan-<env>-search-admin
+# 得た認証情報を環境変数に入れて
+awscurl --service es --region <region> "https://<endpoint>/_cat/indices?v"
+awscurl --service es --region <region> "https://<endpoint>/_plugins/_security/api/rolesmapping"
+```
 
 ### アクセスログ（CloudFront）
 

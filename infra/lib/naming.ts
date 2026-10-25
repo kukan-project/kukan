@@ -27,11 +27,38 @@ export interface SiteScopedStack {
 
 /** Per-environment prefix, e.g. `kukan-dev` (with a site: `kukan-dev-<site>`). */
 export function envPrefix(scope: Construct): string {
-  const stageName = cdk.Stage.of(scope)?.stageName
-  const base = stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'
   const stack = scope.node.scopes.filter(cdk.Stack.isStack).pop() as
     (cdk.Stack & Partial<SiteScopedStack>) | undefined
-  return stack?.kukanSiteName ? `${base}-${stack.kukanSiteName}` : base
+  return sitePrefix(scope, stack?.kukanSiteName)
+}
+
+/**
+ * A site's prefix named from outside its stack, as the SharedStack names each
+ * site's task roles (ADR-069). envPrefix inside that SiteStack is this string.
+ */
+export function sitePrefix(scope: Construct, siteName: string | undefined): string {
+  const stageName = cdk.Stage.of(scope)?.stageName
+  const base = stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'
+  return siteName ? `${base}-${siteName}` : base
+}
+
+/** IAM's limit on a role name. */
+const MAX_ROLE_NAME_LENGTH = 64
+
+/**
+ * The fixed name of a site's web or worker task role, e.g.
+ * `kukan-dev-citya-web-task`. Fixed so the SharedStack can map it in
+ * OpenSearch from the site list alone, before the role exists (ADR-069).
+ */
+export function taskRoleName(prefix: string, service: 'web' | 'worker'): string {
+  const name = `${prefix}-${service}-task`
+  if (name.length > MAX_ROLE_NAME_LENGTH) {
+    throw new Error(
+      `Task role name "${name}" is longer than IAM allows (${MAX_ROLE_NAME_LENGTH}): ` +
+        'shorten the environment or site name'
+    )
+  }
+  return name
 }
 
 /** Env-prefixed resource name, e.g. `kukan-dev-web`. */

@@ -13,6 +13,8 @@ import type { Construct } from 'constructs'
 import { loadConfig, type EnvironmentConfig } from '../config.js'
 import { composeShared, composeSite } from './composition.js'
 import { BackupConstruct } from '../constructs/backup.js'
+import { envPrefix } from '../naming.js'
+import { DEFAULT_OPENSEARCH_INDEX_PREFIX } from '@kukan/shared/env'
 
 export interface KukanStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */
@@ -29,7 +31,10 @@ export class KukanStack extends cdk.Stack {
 
     const config = loadConfig(this, props.envConfig)
 
-    const shared = composeShared(this, config)
+    // The one site runs with the app's default index prefix
+    const shared = composeShared(this, config, [
+      { sitePrefix: envPrefix(this), indexPrefix: DEFAULT_OPENSEARCH_INDEX_PREFIX },
+    ])
 
     const site = composeSite(
       this,

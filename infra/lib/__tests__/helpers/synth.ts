@@ -81,6 +81,53 @@ export function execChannelGrants(template: Template): unknown[] {
   )
 }
 
+/** A site's OpenSearch role as the security custom resource writes it (ADR-069). */
+export interface SearchSiteRole {
+  name: string
+  indexPatterns: string[]
+  /** Backend role ARNs, partition token flattened to `aws`. */
+  backendRoles: string[]
+}
+
+/** The site roles the domain's security custom resource writes. */
+export function searchSiteRoles(template: Template): SearchSiteRole[] {
+  const resources = Object.values(template.findResources('Custom::KukanSearchSiteRoles'))
+  if (resources.length !== 1)
+    throw new Error(`Expected one site-roles resource, ${resources.length}`)
+  const flat = (value: unknown): string =>
+    typeof value === 'string'
+      ? value
+      : (value as { 'Fn::Join': [string, unknown[]] })['Fn::Join'][1]
+          .map((part) => (typeof part === 'string' ? part : 'aws'))
+          .join('')
+  const { Roles } = (
+    resources[0] as {
+      Properties: {
+        Roles: {
+          Name: string
+          Permissions: { index_permissions: { index_patterns: string[] }[] }
+          BackendRoles: unknown[]
+        }[]
+      }
+    }
+  ).Properties
+  return Roles.map((role) => ({
+    name: role.Name,
+    indexPatterns: role.Permissions.index_permissions.flatMap((p) => p.index_patterns),
+    backendRoles: role.BackendRoles.map(flat),
+  }))
+}
+
+/** Physical names of the task roles of the template's task definitions. */
+export function taskRoleNames(template: Template): string[] {
+  const roles = template.findResources('AWS::IAM::Role')
+  return Object.values(template.findResources('AWS::ECS::TaskDefinition')).map((def) => {
+    const ref = (def as { Properties: { TaskRoleArn: { 'Fn::GetAtt': [string, string] } } })
+      .Properties.TaskRoleArn['Fn::GetAtt'][0]
+    return (roles[ref] as { Properties: { RoleName: string } }).Properties.RoleName
+  })
+}
+
 /** Replace 64-hex asset hashes so app-source changes don't churn infra snapshots. */
 export function normalize(template: Template): unknown {
   return JSON.parse(JSON.stringify(template.toJSON()).replace(/[0-9a-f]{64}/g, 'ASSET_HASH'))

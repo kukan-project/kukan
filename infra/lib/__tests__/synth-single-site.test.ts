@@ -16,11 +16,15 @@ import {
   CDN_LOG_BUCKET,
   execChannelGrants,
   normalize,
+  searchSiteRoles,
   stackOf,
   stackTemplate,
   synthStage,
+  taskRoleNames,
+  TEST_ACCOUNT,
 } from './helpers/synth.js'
-import { validateEcrImageRetention } from '../config.js'
+import { validateEcrImageRetention, validateEnvironmentNames } from '../config.js'
+import { taskRoleName } from '../naming.js'
 import { supportsLegacyCdnLogging } from '../constructs/access-log.js'
 import { POSTGRES_TLS_ENVIRONMENT } from '../constructs/database.js'
 
@@ -189,6 +193,96 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
       DomainName: 'kukan-dev-search',
     })
   })
+
+  describe('fine-grained access control (ADR-069)', () => {
+    const adminRoleId = Object.entries(template.findResources('AWS::IAM::Role')).find(
+      ([, role]) =>
+        (role as { Properties: { RoleName?: string } }).Properties.RoleName ===
+        'kukan-dev-search-admin'
+    )?.[0]
+
+    it('turns it on with the admin role as master and no internal users', () => {
+      expect(adminRoleId).toBeDefined()
+      template.hasResourceProperties('AWS::OpenSearchService::Domain', {
+        AdvancedSecurityOptions: {
+          Enabled: true,
+          InternalUserDatabaseEnabled: false,
+          MasterUserOptions: { MasterUserARN: { 'Fn::GetAtt': [adminRoleId, 'Arn'] } },
+        },
+      })
+      // Signed requests from the account stay the domain policy's whole rule
+      const policy = JSON.stringify(template.findResources('Custom::OpenSearchAccessPolicy'))
+      expect(policy).toContain(':root')
+    })
+
+    it('gives the one site a role on the default index prefix, mapped to both task roles', () => {
+      expect(searchSiteRoles(template)).toEqual([
+        {
+          name: 'kukan-dev',
+          indexPatterns: ['kukan-search*'],
+          backendRoles: [
+            `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-web-task`,
+            `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-worker-task`,
+          ],
+        },
+      ])
+      expect(taskRoleNames(template).sort()).toEqual([
+        'kukan-dev-web-task',
+        'kukan-dev-worker-task',
+      ])
+    })
+
+    it('runs the master role as the security handler only', () => {
+      const users = Object.entries(template.findResources('AWS::Lambda::Function')).filter(
+        ([, fn]) =>
+          JSON.stringify((fn as { Properties: { Role: unknown } }).Properties.Role).includes(
+            adminRoleId!
+          )
+      )
+      expect(users).toHaveLength(1)
+      expect(users[0][0]).toMatch(/^SearchSecurityHandler/)
+      expect(JSON.stringify(template.findResources('AWS::ECS::TaskDefinition'))).not.toContain(
+        adminRoleId!
+      )
+      // In the VPC, let into the domain's SG on 443
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Role: { 'Fn::GetAtt': [adminRoleId, 'Arn'] },
+        VpcConfig: Match.objectLike({ SubnetIds: Match.anyValue() }),
+      })
+      template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+        FromPort: 443,
+        Description: 'Security role handler',
+      })
+    })
+
+    it('writes the roles after every update of the domain', () => {
+      const [siteRoles] = Object.values(template.findResources('Custom::KukanSearchSiteRoles'))
+      const dependsOn = (siteRoles as { DependsOn: string[] }).DependsOn
+      expect(dependsOn.some((id) => id.startsWith('SearchDomain') && !id.includes('Policy'))).toBe(
+        true
+      )
+      expect(dependsOn.some((id) => id.startsWith('SearchDomainAccessPolicy'))).toBe(true)
+    })
+  })
+})
+
+describe('task role names', () => {
+  it('names the task roles even without OpenSearch, and writes no search roles', () => {
+    const template = stackTemplate(
+      synthStage({ scale: 'small', dbEngine: 'rds', enableOpenSearch: false, bedrock: false }),
+      'KukanStack'
+    )
+    expect(taskRoleNames(template).sort()).toEqual(['kukan-dev-web-task', 'kukan-dev-worker-task'])
+    expect(template.findResources('Custom::KukanSearchSiteRoles')).toEqual({})
+  })
+
+  it('rejects a name longer than IAM allows', () => {
+    // The longest site name (16) under a 29-character environment fits exactly
+    expect(taskRoleName(`kukan-${'e'.repeat(29)}-${'s'.repeat(16)}`, 'worker')).toHaveLength(64)
+    expect(() => taskRoleName(`kukan-${'e'.repeat(30)}-${'s'.repeat(16)}`, 'worker')).toThrow(
+      /longer than IAM allows/
+    )
+  })
 })
 
 describe('full (large / domain with supplied ARNs / GA4 / AWS Backup)', () => {
@@ -355,6 +449,41 @@ describe('blank edge ARNs', () => {
     expect(() => synthStage({ domainName: 'data.example.jp', certificateArn: '' })).toThrow(
       /blank certificateArn/
     )
+  })
+})
+
+describe('environment names', () => {
+  const ACCOUNT = { account: '123456789012' }
+
+  it('rejects two that would share a construct id, whatever their accounts', () => {
+    // Both would be the Stage `Dev` and the pipeline `PipelineDev`
+    expect(() =>
+      validateEnvironmentNames({ dev: ACCOUNT, Dev: { account: '210987654321' } })
+    ).toThrow(/"dev" and "Dev" would share the construct id "Dev"/)
+  })
+
+  it('rejects two that would create the same IAM role in one account', () => {
+    // A single-site environment named like another's site, in another region
+    expect(() =>
+      validateEnvironmentNames({
+        dev: { ...ACCOUNT, sites: [{ name: 'citya' }] },
+        'dev-citya': { ...ACCOUNT, region: 'us-west-2' },
+      })
+    ).toThrow(/"kukan-dev-citya-web-task"/)
+  })
+
+  it('allows the same role names in another account, and distinct names in one', () => {
+    expect(() =>
+      validateEnvironmentNames({
+        dev: { ...ACCOUNT, sites: [{ name: 'citya' }] },
+        'dev-citya': { account: '210987654321' },
+      })
+    ).not.toThrow()
+    expect(() => validateEnvironmentNames({ dev: ACCOUNT, prd: ACCOUNT })).not.toThrow()
+  })
+
+  it('refuses a name the OpenSearch security API would refuse as a role', () => {
+    expect(() => validateEnvironmentNames({ dev_1: ACCOUNT })).toThrow(/"dev_1" must start/)
   })
 })
 

@@ -20,6 +20,10 @@
  * in one account near-simultaneously can hit an ECR asset-tag push conflict
  * (transient and retry-safe — see docs/specs/en/phase4-deploy.md).
  *
+ * An environment name is unique within its AWS account, across regions too:
+ * it names IAM roles (the task roles, the search master role), and IAM names
+ * are account-wide. A second deploy under a name already used fails on them.
+ *
  * This example presents the multi-site shape only (ADR-041): every environment
  * declares `sites`, starting with a single entry, because `sites` cannot be
  * added to an already-deployed single-site environment later (that path is a

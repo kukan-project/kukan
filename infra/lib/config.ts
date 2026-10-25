@@ -41,4 +41,5 @@ export {
   resolveEcrImageRetention,
   resolveEnv,
   validateEcrImageRetention,
+  validateEnvironmentNames,
 } from './config/load.js'

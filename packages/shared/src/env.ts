@@ -13,6 +13,12 @@ const booleanString = z.preprocess(
   z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1')
 )
 
+/**
+ * OPENSEARCH_INDEX_PREFIX when unset. The infra grants a single-site
+ * deployment's task roles `<this>-search*` in OpenSearch (ADR-069).
+ */
+export const DEFAULT_OPENSEARCH_INDEX_PREFIX = 'kukan'
+
 /** Optional value where '' means unset — compose `${VAR:-}` injects empty strings */
 const emptyAsUndefined = (v: unknown) => (v === '' ? undefined : v)
 
@@ -101,7 +107,7 @@ const envObject = z.object({
   OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).default(0),
   // Index name prefix (`<prefix>-search`). Per-site isolation on a shared
   // OpenSearch domain (ADR-041)
-  OPENSEARCH_INDEX_PREFIX: z.string().default('kukan'),
+  OPENSEARCH_INDEX_PREFIX: z.string().default(DEFAULT_OPENSEARCH_INDEX_PREFIX),
   // Sign requests with SigV4 for this region, as the task's IAM role (Amazon
   // OpenSearch Service). Unset → unsigned, for a self-hosted cluster
   OPENSEARCH_AWS_REGION: z.preprocess(emptyAsUndefined, z.string().optional()),

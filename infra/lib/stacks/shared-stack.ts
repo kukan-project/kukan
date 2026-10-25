@@ -13,7 +13,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm'
 import type { Construct } from 'constructs'
 import { loadConfig, type EnvironmentConfig } from '../config.js'
 import { composeShared } from './composition.js'
-import { sharedParamName, type SharedParam } from '../naming.js'
+import { sharedParamName, sitePrefix, type SharedParam } from '../naming.js'
 import { BackupConstruct } from '../constructs/backup.js'
 import { SharedAlbConstruct } from '../constructs/shared-alb.js'
 
@@ -29,7 +29,15 @@ export class KukanSharedStack extends cdk.Stack {
     // the environment entry alone.
     const config = loadConfig(this, props.envConfig)
 
-    const shared = composeShared(this, config)
+    // Each site's index prefix is its own prefix: KukanSiteStack's searchIndexPrefix
+    const shared = composeShared(
+      this,
+      config,
+      (props.envConfig.sites ?? []).map((site) => {
+        const prefix = sitePrefix(this, site.name)
+        return { sitePrefix: prefix, indexPrefix: prefix }
+      })
+    )
     const vpc = shared.network.vpc
 
     // One ALB + CloudFront VPC origin for every site (ADR-049). Sites add their

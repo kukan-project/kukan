@@ -20,6 +20,7 @@ import type {
 } from './types.js'
 import { computeScaled } from './scale.js'
 import { isEdgeGated } from './edge.js'
+import { pascal } from '../naming.js'
 
 /** Default region when an environment does not specify one. */
 export const DEFAULT_REGION = 'ap-northeast-1'
@@ -117,6 +118,51 @@ export function resolveEcrImageRetention(
   env: Pick<EnvironmentConfig, 'ecrImageRetention'>
 ): number {
   return positiveInt('ecrImageRetention', env.ecrImageRetention ?? DEFAULT_ECR_IMAGE_RETENTION)
+}
+
+/** What an environment name may be: it becomes OpenSearch role names too. */
+const ENVIRONMENT_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9-]*$/
+
+/**
+ * Environment names that would collide. Their construct ids (`pascal(name)`:
+ * the Stage, `Pipeline<Name>`) share one app whatever the account. And the
+ * fixed IAM role names they create (ADR-069) are account-wide, so a clash
+ * fails the second deploy whatever its region — after it has turned on
+ * fine-grained access control, which does not roll back. Refused here
+ * instead, along with names the security API refuses.
+ */
+export function validateEnvironmentNames(environments: Record<string, EnvironmentConfig>): void {
+  const ids = new Map<string, string>()
+  const seen = new Map<string, string>()
+  for (const [name, env] of Object.entries(environments)) {
+    if (!ENVIRONMENT_NAME_PATTERN.test(name)) {
+      throw new Error(
+        `Environment name "${name}" must start with a letter and hold only letters, digits and hyphens`
+      )
+    }
+    const id = pascal(name)
+    const sameId = ids.get(id)
+    if (sameId) {
+      throw new Error(`Environments "${sameId}" and "${name}" would share the construct id "${id}"`)
+    }
+    ids.set(id, name)
+    const base = `kukan-${name.toLowerCase()}`
+    const sites = env.sites?.map((site) => `${base}-${site.name}`) ?? [base]
+    const roles = [
+      `${base}-search-admin`,
+      ...sites.flatMap((p) => [`${p}-web-task`, `${p}-worker-task`]),
+    ]
+    const { account } = resolveEnv(env)
+    for (const role of roles) {
+      const prior = seen.get(`${account}/${role}`)
+      if (prior && prior !== name) {
+        throw new Error(
+          `Environments "${prior}" and "${name}" would both create the IAM role "${role}" in account ${account}`
+        )
+      }
+      seen.set(`${account}/${role}`, name)
+    }
+  }
 }
 
 /**

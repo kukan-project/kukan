@@ -478,7 +478,7 @@ When a SiteStack is deleted (`cdk destroy` / removed from sites):
 | S3 bucket                           | **remains** (RETAIN)                   | Empty it, then delete                                                                                                                                                                                 |
 | Access log bucket                   | **remains** (RETAIN)                   | Logs expire after `cdnLogRetentionDays`; delete it once empty                                                                                                                                         |
 | Backup vault (when awsBackup is on) | **remains** (RETAIN)                   | Delete `kukan-<env>-<site>-backup` after the recovery points expire (or are deleted manually). **Delete it first if re-adding a site with the same name** (fixed names collide, same rule as ADR-037) |
-| OpenSearch index                    | **remains** (inside the shared domain) | `DELETE /kukan-<env>-<site>-search`                                                                                                                                                                   |
+| OpenSearch index                    | **remains** (inside the shared domain) | As the master role: `DELETE /kukan-<env>-<site>-search` (its OpenSearch role and mapping go with the shared stack update)                                                                             |
 | Secrets / ECS / CloudFront          | deleted                                | —                                                                                                                                                                                                     |
 
 ### Migrating an existing single-site environment (blue-green)
@@ -560,6 +560,50 @@ The three managed rule groups:
 | AWSManagedRulesAmazonIpReputationList | Blocks malicious IPs using AWS threat intelligence          | $1/month |
 
 Total WAF cost: WebACL $5/month + rules $3/month + requests $0.60/million = **~$9/month**
+
+### OpenSearch access control (FGAC, ADR-069)
+
+The AWS OpenSearch domain has FGAC (Fine-Grained Access Control) enabled.
+**Once enabled, it cannot be turned off.** Docker Compose keeps the security plugin disabled.
+
+- The master user is the IAM role `kukan-<env>-search-admin`. No internal users (passwords).
+  In normal operation only the custom resource's Lambda below runs as this role
+- Each site gets an OpenSearch role `kukan-<env>-<site>` (single-site: `kukan-<env>`), allowed on
+  that site's indexes `<prefix>-search*` only. The prefix is `kukan-<env>-<site>` for multi-site,
+  and the app default `kukan` for single-site
+- The mapping (backend_roles) names the web and worker task roles `kukan-<env>-<site>-web-task` /
+  `-worker-task` (single-site: `kukan-<env>-web-task`, ...). Because the names are fixed, the shared
+  stack (single-site: `KukanStack`) builds the ARNs from `sites[]`, and a Lambda inside the VPC writes
+  them through the security API. A site removed from `sites[]` loses its role and mapping
+- The permission list is `SITE_SEARCH_PERMISSIONS` in `infra/lib/constructs/search.ts`
+- The task roles and the master role have fixed names, and IAM names are unique across the account.
+  So **an environment name is unique within its AWS account** (the same name cannot be reused in
+  another region). A deploy under a name already in use stops when it creates the roles. Environment
+  names differing only in case are refused at synth
+- A principal without a mapping gets 403 even when it signs. In the deploy that enables FGAC,
+  public search returns 503 until the site's tasks are replaced by ones on the named roles. After
+  the deploy, run "content reindex" once on each site
+- Enabling FGAC on an existing domain makes AWS map every principal the domain policy admits to
+  `default_role`. Left in place it defeats the site isolation, so the custom resource removes that
+  mapping on every run and fails the deploy if it cannot (a custom resource that succeeded is not run
+  again until its properties change, so a mapping left behind would stay). After the first deploy,
+  check by hand that `rolesmapping/default_role` is gone
+- If a deploy that enables FGAC fails after the domain update, CloudFormation tries to turn FGAC back
+  off, fails, and leaves the shared stack in `UPDATE_ROLLBACK_FAILED`. Continue the rollback skipping
+  the domain (`aws cloudformation continue-update-rollback --stack-name <shared stack>
+--resources-to-skip SearchDomain<logical id>`), fix the cause, and deploy again
+
+To inspect the domain by hand, assume the master role and sign. Its trust policy also names the
+account, so you can assume it if your own IAM policy grants `sts:AssumeRole` on it. The endpoint
+exists only inside the VPC, so requests must be sent from inside the VPC.
+
+```bash
+aws sts assume-role --role-session-name inspect \
+  --role-arn arn:aws:iam::<account>:role/kukan-<env>-search-admin
+# with the returned credentials in the environment
+awscurl --service es --region <region> "https://<endpoint>/_cat/indices?v"
+awscurl --service es --region <region> "https://<endpoint>/_plugins/_security/api/rolesmapping"
+```
 
 ### Access logs (CloudFront)
 
