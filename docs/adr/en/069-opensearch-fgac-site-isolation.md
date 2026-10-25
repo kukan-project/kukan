@@ -152,8 +152,11 @@ permissions inside it.
 - Until a site deploy replaces its tasks, the old tasks (unnamed roles) get 403 and public search
   answers 503. This is the same kind of outage as the move to SigV4 signing, so the two **go in the
   same release, and the outage happens once**.
-- After the deploy, run the content reindex once on each site: some content index writes that failed
-  meanwhile do not catch up by themselves.
+- Content index writes that fail meanwhile catch up by themselves when the old tasks are 0.37.0 or
+  later: the worker reads a 401 or 403 as search being unavailable and marks the resource, and the
+  new worker indexes it again when it starts and then hourly. Workers before 0.37.0 do not mark what
+  fails, and the sweeps read only marked rows, so an upgrade from before 0.37.0 needs the content
+  reindex once on each site after the deploy.
 - FGAC cannot be turned off. If something goes wrong, fix it by widening the role's permissions.
 - If the deploy fails after the domain update, CloudFormation tries to turn FGAC back off, fails, and
   leaves the shared stack in `UPDATE_ROLLBACK_FAILED`. The deploy spec describes continuing the
@@ -169,8 +172,8 @@ permissions inside it.
 - **Application**: no change (signing is already in place).
 - **Docker Compose**: no change (the security plugin stays disabled). As in ADR-041, isolation there
   stays convention-based.
-- **Release notes**: as breaking changes, the 503 during the deploy, the content reindex after it,
-  and that FGAC cannot be turned off.
+- **Release notes**: as breaking changes, the 503 during the deploy, the content reindex after it
+  for upgrades from before 0.37.0, and that FGAC cannot be turned off.
 
 ## Open issues
 
