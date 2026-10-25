@@ -5,6 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/kukan-project/kukan)](https://github.com/kukan-project/kukan/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/kukan-project/kukan/badge)](https://scorecard.dev/viewer/?uri=github.com/kukan-project/kukan)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15895/badge)](https://www.bestpractices.dev/projects/15895)
 
 > [!WARNING]
 > **Beta** — KUKAN is under active development. APIs, schemas, and configurations may change without notice.
