@@ -470,6 +470,9 @@
     },
     "adminSite": {
       "title": "Site Management",
+      "buildTitle": "Running version",
+      "buildVersion": "Version",
+      "buildNode": "Node",
       "registrationTitle": "User Self-Registration",
       "registrationDescription": "Whether new users can sign up from the sign-up page. While off, system administrators create users from the user management screen. Changes take effect within a minute.",
       "registrationLabel": "Allow self-registration",

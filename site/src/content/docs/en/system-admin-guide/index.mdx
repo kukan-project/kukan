@@ -55,6 +55,8 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 Database migrations are applied automatically when the worker starts. An older image cannot always be brought back against a migrated database.
 
+You can check that the update took effect in the dashboard ([Checking the running version](#checking-the-running-version)). It shows the release the web process is running.
+
 :::caution[Upgrading to the release that moves the job queue into PostgreSQL (v0.33.0)]
 From v0.33.0, jobs live in the `job` table of each site's database, and SQS / ElasticMQ are no longer used. Jobs left in the old queue are not carried over, so upgrade in this order:
 
@@ -331,6 +333,12 @@ confirm). It needs 15+ characters and must be hard to guess — see
 as a command-line argument, which would stay in the shell history and show in
 `ps`. Where there is no terminal (a script, for instance), pass it in the
 `KUKAN_USER_PASSWORD` environment variable.
+
+## Checking the running version
+
+"Running version" under Site Management gives the release and the Node version the site is on.
+
+AWS, Docker Compose and development (`pnpm dev`) all show the same value. There is nothing to configure.
 
 ## User management
 

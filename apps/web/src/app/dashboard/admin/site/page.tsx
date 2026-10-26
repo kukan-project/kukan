@@ -1,69 +1,34 @@
-'use client'
-
-import { useState } from 'react'
-import { useTranslations } from 'next-intl'
-import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
-import {
-  Alert,
-  AlertDescription,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Field,
-  FieldControl,
-  FieldLabel,
-  Input,
-} from '@kukan/ui'
+import { redirect } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { DataResetCard } from '@/components/dashboard/site/data-reset-card'
 import { RegistrationCard } from '@/components/dashboard/site/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/site/search-examples-card'
 import { SiteMetadataCard } from '@/components/dashboard/site/site-metadata-card'
-import { clientFetch } from '@/lib/client-api'
+import { SystemInfoCard } from '@/components/dashboard/site/system-info-card'
+import { buildInfo } from '@/lib/build-info'
+import { getCurrentUser } from '@/lib/server-api'
 
-interface ResetResult {
-  deleted: {
-    packages: number
-    organizations: number
-    groups: number
-    tags: number
-    storageObjects: number
-  }
-}
+export default async function AdminSitePage() {
+  const t = await getTranslations('dashboard.adminSite')
 
-export default function AdminSitePage() {
-  const t = useTranslations('dashboard.adminSite')
+  // Checked here, not left to the layout above. A layout is not re-rendered on
+  // every navigation, and the client says which layouts it already holds, so a
+  // request can be answered with this page alone. The check belongs next to
+  // what it protects. `getCurrentUser` is React-cached, so the layout's call
+  // and this one are one request.
+  const user = await getCurrentUser()
+  if (!user?.sysadmin) redirect('/dashboard')
 
-  const [confirmText, setConfirmText] = useState('')
-  const [executing, setExecuting] = useState(false)
-  const [result, setResult] = useState<ResetResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const confirmed = confirmText === 'RESET'
-
-  async function handleReset() {
-    setExecuting(true)
-    setError(null)
-    try {
-      const res = await clientFetch('/api/v1/admin/data', { method: 'DELETE' })
-      if (!res.ok) {
-        const body = await res.text()
-        setError(`${res.status}: ${body}`)
-        return
-      }
-      setResult(await res.json())
-      setConfirmText('')
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setExecuting(false)
-    }
-  }
+  // Read in the process the question is about (ADR-012 puts the API in it)
+  const build = buildInfo()
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')} />
+
+      {/* What this deployment is running — read, not set, so it comes first */}
+      <SystemInfoCard build={build} />
 
       {/* Site-wide values brands read by key (ADR-064) */}
       <SiteMetadataCard />
@@ -74,66 +39,7 @@ export default function AdminSitePage() {
       {/* Self-Registration */}
       <RegistrationCard />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('resetTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Alert variant="destructive">
-            <AlertTriangle />
-            <AlertDescription>{t('warning')}</AlertDescription>
-          </Alert>
-          <Field id="confirm-input">
-            <FieldLabel>{t('confirmLabel')}</FieldLabel>
-            <FieldControl>
-              <Input
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder={t('confirmPlaceholder')}
-                disabled={executing}
-                className="max-w-xs font-mono"
-              />
-            </FieldControl>
-          </Field>
-          <Button
-            variant="destructive"
-            onClick={handleReset}
-            disabled={!confirmed || executing}
-            className="w-fit"
-          >
-            {executing ? (
-              <>
-                <Loader2 className="mr-1 size-4 animate-spin" />
-                {t('executing')}
-              </>
-            ) : (
-              <>
-                <Trash2 className="mr-1 size-4" />
-                {t('execute')}
-              </>
-            )}
-          </Button>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {result && (
-            <div className="rounded-md border p-3">
-              <p className="mb-2 text-sm font-medium">{t('resultTitle')}</p>
-              <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-                <li>{t('resultPackages', { count: result.deleted.packages })}</li>
-                <li>{t('resultOrganizations', { count: result.deleted.organizations })}</li>
-                <li>{t('resultGroups', { count: result.deleted.groups })}</li>
-                <li>{t('resultTags', { count: result.deleted.tags })}</li>
-                <li>{t('resultStorage', { count: result.deleted.storageObjects })}</li>
-              </ul>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <DataResetCard />
     </div>
   )
 }

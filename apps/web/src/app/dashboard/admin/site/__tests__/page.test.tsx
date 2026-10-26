@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { clientFetch } from '@/lib/client-api'
-import AdminSitePage from '../page'
+import { render, screen } from '@testing-library/react'
 
 vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
@@ -10,105 +8,99 @@ vi.mock('@/lib/client-api', () => ({
 vi.mock('next/navigation', () => ({
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
+  // The real one throws to unwind the render; this stands in for that
+  redirect: vi.fn(() => {
+    throw new Error('NEXT_REDIRECT')
+  }),
+}))
+
+vi.mock('@/lib/server-api', () => ({
+  getCurrentUser: vi.fn(),
 }))
 
 vi.mock('@/components/dashboard/ai/ai-suggest-card', () => ({
   AiSuggestCard: () => <section>suggestions</section>,
 }))
 
-const mockClientFetch = vi.mocked(clientFetch)
+// Carries a card title like the real one, so the order assertion below can see
+// it move
+vi.mock('@/components/dashboard/site/data-reset-card', () => ({
+  DataResetCard: () => (
+    <section>
+      <div data-slot="card-title">Data Reset</div>
+    </section>
+  ),
+}))
 
-function mockFetchResponse(data: unknown) {
-  return { ok: true, json: async () => data } as Response
+import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/server-api'
+import { version } from '../../../../../../../../package.json'
+import AdminSitePage from '../page'
+
+const sysadmin = {
+  id: 'u1',
+  name: 'admin',
+  email: 'admin@example.com',
+  displayName: null,
+  sysadmin: true,
 }
 
 describe('AdminSitePage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.mocked(getCurrentUser).mockResolvedValue(sysadmin)
+    vi.mocked(redirect).mockClear()
   })
 
-  it('renders the page title', () => {
-    render(<AdminSitePage />)
+  it('renders the page title', async () => {
+    render(await AdminSitePage())
     expect(screen.getByText('Site Management')).toBeInTheDocument()
   })
 
-  it('leaves everything about AI to the AI page', () => {
-    render(<AdminSitePage />)
+  it('leaves everything about AI to the AI page', async () => {
+    render(await AdminSitePage())
     expect(screen.queryByText('Generate AI descriptions in bulk')).not.toBeInTheDocument()
     expect(screen.queryByText('Regenerate embeddings')).not.toBeInTheDocument()
     expect(screen.queryByText('suggestions')).not.toBeInTheDocument()
     expect(screen.queryByText('Semantic search')).not.toBeInTheDocument()
   })
 
-  it('renders the data reset card with warning', () => {
-    render(<AdminSitePage />)
-    expect(screen.getByText('Data Reset')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.'
-      )
-    ).toBeInTheDocument()
-  })
+  it('puts the running version above the cards that change something', async () => {
+    const { container } = render(await AdminSitePage())
 
-  it('has confirm input and disabled button by default', () => {
-    render(<AdminSitePage />)
-    const input = screen.getByPlaceholderText('RESET')
-    expect(input).toBeInTheDocument()
-
-    const button = screen.getByRole('button', { name: /Delete All Data/ })
-    expect(button).toBeDisabled()
-  })
-
-  it('enables button when RESET is typed', () => {
-    render(<AdminSitePage />)
-    const input = screen.getByPlaceholderText('RESET')
-    fireEvent.change(input, { target: { value: 'RESET' } })
-
-    const button = screen.getByRole('button', { name: /Delete All Data/ })
-    expect(button).toBeEnabled()
-  })
-
-  it('shows result after successful reset', async () => {
-    mockClientFetch.mockResolvedValue(
-      mockFetchResponse({
-        deleted: {
-          packages: 5,
-          organizations: 2,
-          groups: 3,
-          tags: 10,
-          storageObjects: 8,
-        },
-      })
+    const titles = [...container.querySelectorAll('[data-slot="card-title"]')].map(
+      (el) => el.textContent
     )
 
-    render(<AdminSitePage />)
-    const input = screen.getByPlaceholderText('RESET')
-    fireEvent.change(input, { target: { value: 'RESET' } })
-
-    const button = screen.getByRole('button', { name: /Delete All Data/ })
-    fireEvent.click(button)
-
-    await waitFor(() => {
-      expect(screen.getByText('Reset Complete')).toBeInTheDocument()
-    })
+    expect(titles[0]).toBe('Running version')
+    // And the one that deletes everything is somewhere below it
+    expect(titles.indexOf('Data Reset')).toBeGreaterThan(0)
   })
 
-  it('shows error on failed reset', async () => {
-    mockClientFetch.mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => 'Internal Server Error',
-    } as Response)
+  it('has the release and the Node version in the first render', async () => {
+    render(await AdminSitePage())
 
-    render(<AdminSitePage />)
-    const input = screen.getByPlaceholderText('RESET')
-    fireEvent.change(input, { target: { value: 'RESET' } })
+    // The release comes from the repository's package.json, which `next build`
+    // embeds (ADR-035), and Node's from the process
+    expect(screen.getByText(version)).toBeInTheDocument()
+    expect(screen.getByText(process.version.replace(/^v/, ''))).toBeInTheDocument()
+  })
 
-    const button = screen.getByRole('button', { name: /Delete All Data/ })
-    fireEvent.click(button)
+  // The page is rendered on the server and the version is in its payload, so
+  // it carries its own check rather than relying on the layout above it: a
+  // layout is not re-rendered on every navigation, and the client states which
+  // layouts it already holds.
+  it.each([
+    ['a user who is not sysadmin', { ...sysadmin, sysadmin: false }],
+    ['nobody signed in', null],
+  ])('sends %s to the dashboard instead of rendering', async (_label, user) => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user)
 
-    await waitFor(() => {
-      expect(screen.getByText('500: Internal Server Error')).toBeInTheDocument()
-    })
+    await expect(AdminSitePage()).rejects.toThrow('NEXT_REDIRECT')
+    expect(redirect).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('renders the data reset card', async () => {
+    render(await AdminSitePage())
+    expect(screen.getByText('Data Reset')).toBeInTheDocument()
   })
 })

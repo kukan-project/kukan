@@ -470,6 +470,9 @@
     },
     "adminSite": {
       "title": "サイト管理",
+      "buildTitle": "動作中のバージョン",
+      "buildVersion": "バージョン",
+      "buildNode": "Node",
       "registrationTitle": "ユーザー自己登録",
       "registrationDescription": "サインアップページからの新規ユーザー登録を許可するかどうかです。オフの間はシステム管理者がユーザー管理画面から作成します。反映まで最大1分かかります。",
       "registrationLabel": "自己登録を許可する",
