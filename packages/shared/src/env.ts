@@ -22,6 +22,14 @@ export const DEFAULT_OPENSEARCH_INDEX_PREFIX = 'kukan'
 /** Optional value where '' means unset — compose `${VAR:-}` injects empty strings */
 const emptyAsUndefined = (v: unknown) => (v === '' ? undefined : v)
 
+const parseJsonOr = (v: string): unknown => {
+  try {
+    return JSON.parse(v)
+  } catch {
+    return v
+  }
+}
+
 /** A number with a default, where '' (compose `${VAR:-}`) means unset rather than 0 */
 const numberOr = (fallback: number) =>
   z.preprocess(emptyAsUndefined, z.coerce.number().default(fallback))
@@ -164,6 +172,14 @@ const envObject = z.object({
   // model is money.
   AI_SUMMARY_MODEL: z.preprocess(emptyAsUndefined, z.string().optional()),
   BEDROCK_REGION: z.string().default('ap-northeast-1'),
+  // JSON of model ID → the site's application inference profile ARN, called in
+  // place of the model ID so the bill carries the site's cost allocation tags.
+  // Set by the CDK stack; unset → the model IDs are called.
+  BEDROCK_INFERENCE_PROFILES: z.preprocess(
+    // Malformed JSON stays a string, for the record check to refuse
+    (v) => (v === '' ? undefined : typeof v === 'string' ? parseJsonOr(v) : v),
+    z.record(z.string(), z.string().min(1)).optional()
+  ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   // Default matches the compose-mapped host port (11435 — avoids colliding

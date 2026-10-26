@@ -32,13 +32,20 @@ export function envPrefix(scope: Construct): string {
   return sitePrefix(scope, stack?.kukanSiteName)
 }
 
+/** The environment's name, e.g. `dev`: its Stage's, lowercased. */
+export function envName(scope: Construct): string | undefined {
+  // Stage.of a Stage is the one around it
+  const stage = cdk.Stage.isStage(scope) ? scope : cdk.Stage.of(scope)
+  return stage?.stageName.toLowerCase()
+}
+
 /**
  * A site's prefix named from outside its stack, as the SharedStack names each
  * site's task roles (ADR-069). envPrefix inside that SiteStack is this string.
  */
 export function sitePrefix(scope: Construct, siteName: string | undefined): string {
-  const stageName = cdk.Stage.of(scope)?.stageName
-  const base = stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'
+  const env = envName(scope)
+  const base = env ? `kukan-${env}` : 'kukan'
   return siteName ? `${base}-${siteName}` : base
 }
 
@@ -98,8 +105,7 @@ export type SharedParam =
  * context so SiteStacks read the same names SharedStack writes.
  */
 export function sharedParamName(scope: Construct, suffix: SharedParam): string {
-  const stageName = cdk.Stage.of(scope)?.stageName ?? 'kukan'
-  return `/kukan/${stageName.toLowerCase()}/shared/${suffix}`
+  return `/kukan/${envName(scope) ?? 'kukan'}/shared/${suffix}`
 }
 
 /**
@@ -107,8 +113,8 @@ export function sharedParamName(scope: Construct, suffix: SharedParam): string {
  * Stage only, like sharedParamName: every site of the environment names the same one.
  */
 export function athenaWorkGroupName(scope: Construct): string {
-  const stageName = cdk.Stage.of(scope)?.stageName
-  return `${stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'}-logs`
+  const env = envName(scope)
+  return `${env ? `kukan-${env}` : 'kukan'}-logs`
 }
 
 /** Capitalize the first letter (e.g. `dev` → `Dev`) for Stage / construct ids. */

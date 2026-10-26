@@ -22,12 +22,15 @@ import {
 import { pascal } from '../naming.js'
 import { KukanPipelineStack } from '../stacks/pipeline-stack.js'
 import {
+  bedrockProfiles,
   CDN_LOG_BUCKET,
+  containerEnvs,
   execChannelGrants,
   normalize,
   searchSiteRoles,
   stackTemplate,
   synthStage,
+  tagValues,
   taskRoleNames,
   testApp,
   TEST_ACCOUNT,
@@ -67,6 +70,29 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
   it('matches the golden site templates', () => {
     expect(normalize(siteA)).toMatchSnapshot()
     expect(normalize(siteB)).toMatchSnapshot()
+  })
+
+  it("tags every resource with its environment, and each site's with its site", () => {
+    expect(tagValues(shared, 'kukan:env')).toEqual(new Set(['dev']))
+    expect(tagValues(shared, 'kukan:site')).toEqual(new Set(['_shared']))
+    expect(tagValues(siteA, 'kukan:env')).toEqual(new Set(['dev']))
+    expect(tagValues(siteA, 'kukan:site')).toEqual(new Set(['citya']))
+    expect(tagValues(siteB, 'kukan:site')).toEqual(new Set(['cityb']))
+  })
+
+  it('gives each site its own Bedrock profiles, so its calls carry its tags', () => {
+    expect(bedrockProfiles(shared)).toEqual([])
+    for (const [site, template] of [
+      ['citya', siteA],
+      ['cityb', siteB],
+    ] as const) {
+      const profiles = bedrockProfiles(template)
+      expect(profiles.map((p) => p.model).sort()).toEqual([
+        'amazon.titan-embed-text-v2:0',
+        'jp.anthropic.claude-haiku-5-5',
+      ])
+      for (const { name } of profiles) expect(name).toMatch(`kukan-dev-${site}-ai-`)
+    }
   })
 
   it('keeps shared boxes on env-level names', () => {
@@ -584,20 +610,6 @@ describe('per-site Bedrock (ADR-040 suggestions / ADR-053 abstracts)', () => {
   const [siteA, siteB, siteC] = ['Citya', 'Cityb', 'Cityc'].map((name) =>
     stackTemplate(stage, `KukanSiteStack${name}`)
   )
-
-  /** Container env of each service in the stack, keyed by container name. */
-  const containerEnvs = (template: Template): Record<string, Record<string, unknown>> =>
-    Object.fromEntries(
-      Object.values(template.findResources('AWS::ECS::TaskDefinition')).flatMap((def) => {
-        const props = def.Properties as {
-          ContainerDefinitions: { Name: string; Environment: { Name: string; Value: unknown }[] }[]
-        }
-        return props.ContainerDefinitions.map((container) => [
-          container.Name,
-          Object.fromEntries(container.Environment.map((e) => [e.Name, e.Value])),
-        ])
-      })
-    )
 
   /** Task-role policies granting Bedrock InvokeModel, as searchable JSON. */
   const invokePolicies = (template: Template): string[] =>

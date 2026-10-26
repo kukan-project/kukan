@@ -59,6 +59,47 @@ export function synthStage(
   return new KukanStage(testApp(context), 'Dev', { config: { account: TEST_ACCOUNT, ...config } })
 }
 
+/** The values tag `key` takes across the resources of `template` that carry tags. */
+export function tagValues(template: Template, key: string): Set<string | undefined> {
+  const values = new Set<string | undefined>()
+  for (const resource of Object.values(template.toJSON().Resources ?? {})) {
+    const tags = (resource as { Properties?: { Tags?: unknown } }).Properties?.Tags
+    if (!tags) continue
+    values.add(
+      Array.isArray(tags)
+        ? (tags as { Key: string; Value: string }[]).find((t) => t.Key === key)?.Value
+        : (tags as Record<string, string>)[key]
+    )
+  }
+  return values
+}
+
+/** The Bedrock application inference profiles of `template`: logical id, name, model. */
+export function bedrockProfiles(template: Template): { id: string; name: string; model: string }[] {
+  type Props = { InferenceProfileName: string; Description: string }
+  return Object.entries(template.findResources('AWS::Bedrock::ApplicationInferenceProfile')).map(
+    ([id, r]) => {
+      const p = (r as { Properties: Props }).Properties
+      return { id, name: p.InferenceProfileName, model: p.Description }
+    }
+  )
+}
+
+/** Container env of each service in the stack, keyed by container name. */
+export function containerEnvs(template: Template): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(
+    Object.values(template.findResources('AWS::ECS::TaskDefinition')).flatMap((def) => {
+      const props = def.Properties as {
+        ContainerDefinitions: { Name: string; Environment?: { Name: string; Value: unknown }[] }[]
+      }
+      return props.ContainerDefinitions.map((container) => [
+        container.Name,
+        Object.fromEntries((container.Environment ?? []).map((e) => [e.Name, e.Value])),
+      ])
+    })
+  )
+}
+
 /** A stack inside the stage ('KukanStack' / 'KukanGlobalStack'). */
 export function stackOf(stage: cdk.Stage, id: string): cdk.Stack {
   return stage.node.findChild(id) as cdk.Stack

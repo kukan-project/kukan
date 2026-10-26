@@ -20,7 +20,11 @@ import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName, taskRoleName } from '../naming.js'
-import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
+import {
+  configureBedrockEmbedding,
+  configureBedrockCompletion,
+  type BedrockProfiles,
+} from './ai.js'
 import type { DbAccess } from './database.js'
 import { connectSearch, type SearchDomainRef } from './search.js'
 
@@ -34,6 +38,8 @@ export interface WorkerServiceProps {
   /** Where the worker takes its name, for the web to wake it (ADR-058 §3). */
   serviceNamespace: servicediscovery.IPrivateDnsNamespace
   searchDomain?: SearchDomainRef
+  /** The site's Bedrock application inference profiles, shared with the web. */
+  bedrockProfiles: BedrockProfiles
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
   searchIndexPrefix?: string
 }
@@ -109,12 +115,12 @@ export class WorkerServiceConstruct extends Construct {
       // Only where there is a policy to read it: a custom metric is billed
       ...(scales && { WORKER_METRIC_SITE: metricSite }),
     }
-    configureBedrockEmbedding(config, taskDef, environment)
+    configureBedrockEmbedding(config, props.bedrockProfiles, taskDef, environment)
     // Resource abstracts are written here, at the end of the pipeline (ADR-053).
     // Without a model to write them the worker generates no text at all, so it
     // is granted no generation models either.
     if (config.bedrock?.summaryModel) {
-      configureBedrockCompletion(config, taskDef, environment)
+      configureBedrockCompletion(config, props.bedrockProfiles, taskDef, environment)
     }
     if (searchDomain) {
       connectSearch(config, searchDomain, taskDef, environment, props.searchIndexPrefix)
@@ -163,6 +169,8 @@ export class WorkerServiceConstruct extends Construct {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       assignPublicIp: true,
       enableExecuteCommand: config.enableExecuteCommand,
+      // Fargate bills by task, so the tasks carry the cost allocation tags too
+      propagateTags: ecs.PropagatedTagSource.SERVICE,
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
       // An A record per task in the environment's namespace, for the web's

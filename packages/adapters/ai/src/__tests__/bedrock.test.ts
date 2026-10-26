@@ -246,6 +246,50 @@ describe('BedrockAIAdapter', () => {
     ])
   })
 
+  describe('inference profiles', () => {
+    const HAIKU = 'jp.anthropic.claude-haiku-5-5'
+    const HAIKU_PROFILE =
+      'arn:aws:bedrock:ap-northeast-1:123456789012:application-inference-profile/haiku'
+    const TITAN_PROFILE =
+      'arn:aws:bedrock:ap-northeast-1:123456789012:application-inference-profile/titan'
+    const adapter = () =>
+      new BedrockAIAdapter({
+        region: 'ap-northeast-1',
+        completionModels: [HAIKU, 'jp.amazon.nova-2-lite-v1:0'],
+        inferenceProfiles: {
+          [HAIKU]: HAIKU_PROFILE,
+          'amazon.titan-embed-text-v2:0': TITAN_PROFILE,
+        },
+      })
+
+    it('calls a model through its profile, for completions and embeddings', async () => {
+      mockSend.mockResolvedValueOnce(converseResponse('ok'))
+      mockSend.mockResolvedValueOnce(invokeResponse([0.1]))
+      const ai = adapter()
+
+      await ai.complete('x')
+      await ai.embed('x')
+
+      expect(mockSend.mock.calls[0][0].input.modelId).toBe(HAIKU_PROFILE)
+      expect(mockSend.mock.calls[1][0].input.modelId).toBe(TITAN_PROFILE)
+    })
+
+    it('calls a model without a profile by its ID', async () => {
+      mockSend.mockResolvedValueOnce(converseResponse('ok'))
+
+      await adapter().complete('x', { model: 'jp.amazon.nova-2-lite-v1:0' })
+
+      expect(mockSend.mock.calls[0][0].input.modelId).toBe('jp.amazon.nova-2-lite-v1:0')
+    })
+
+    it('still names the models by ID everywhere else', async () => {
+      const ai = adapter()
+      expect(ai.getCompletionInfo().defaultModel).toBe(HAIKU)
+      expect(await ai.listCompletionModels()).toEqual([HAIKU, 'jp.amazon.nova-2-lite-v1:0'])
+      expect(ai.getEmbeddingInfo().model).toBe('amazon.titan-embed-text-v2:0')
+    })
+  })
+
   describe('complete', () => {
     it('completes via Converse with the jp. Haiku 5.5 profile by default', async () => {
       mockSend.mockResolvedValueOnce(converseResponse('こんにちは'))

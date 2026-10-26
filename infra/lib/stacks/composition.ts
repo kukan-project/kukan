@@ -29,6 +29,7 @@ import { EcrAssetRetentionConstruct } from '../constructs/ecr-asset-retention.js
 import { DatabaseConstruct, type DbAccess } from '../constructs/database.js'
 import { StorageConstruct } from '../constructs/storage.js'
 import { SearchConstruct, type SearchDomainRef, type SearchTenant } from '../constructs/search.js'
+import { BedrockProfilesConstruct } from '../constructs/ai.js'
 import { WebServiceConstruct } from '../constructs/web-service.js'
 import { WorkerServiceConstruct } from '../constructs/worker-service.js'
 import { CdnConstruct } from '../constructs/cdn.js'
@@ -188,6 +189,7 @@ export function composeSite(
   // both sides of that contract are wired here.
   const siteKey = envPrefix(scope)
   const { sharedAlb } = surface
+  const bedrockProfiles = new BedrockProfilesConstruct(scope, 'BedrockProfiles', config).arns
   const webService = new WebServiceConstruct(scope, 'WebService', {
     config,
     cluster: surface.cluster,
@@ -198,6 +200,7 @@ export function composeSite(
     bucket: storage.bucket,
     searchDomain: surface.searchDomain,
     searchIndexPrefix: surface.searchIndexPrefix,
+    bedrockProfiles,
     imageBuildArgs: surface.webImageBuildArgs,
     sharedListener: sharedAlb && {
       listener: sharedAlb.listener,
@@ -220,6 +223,7 @@ export function composeSite(
     serviceNamespace: surface.serviceNamespace,
     searchDomain: surface.searchDomain,
     searchIndexPrefix: surface.searchIndexPrefix,
+    bedrockProfiles,
   })
   webService.addEnvironment('WORKER_WAKE_URL', workerService.wakeUrl)
 

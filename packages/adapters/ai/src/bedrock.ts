@@ -34,6 +34,10 @@ export interface BedrockConfig {
   secretAccessKey?: string
   /** IAM-granted completion models, offered as the picker options. Omit → default only */
   completionModels?: string[]
+  /** Model ID → the application inference profile to call it through, which
+   *  carries the deployment's cost allocation tags. Models keep their IDs
+   *  everywhere else — in usage records and the picker. */
+  inferenceProfiles?: Readonly<Record<string, string>>
 }
 
 const DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
@@ -66,6 +70,7 @@ export class BedrockAIAdapter implements AIAdapter {
   private embeddingDimensions: number
   private completionModels: string[]
   private defaultCompletionModel: string
+  private inferenceProfiles: Readonly<Record<string, string>>
 
   constructor(config: BedrockConfig) {
     this.client = new BedrockRuntimeClient({
@@ -83,11 +88,17 @@ export class BedrockAIAdapter implements AIAdapter {
     )
     // First granted entry, so the default never lands outside the IAM grants
     this.defaultCompletionModel = this.completionModels[0]
+    this.inferenceProfiles = config.inferenceProfiles ?? {}
+  }
+
+  /** What Bedrock is called with for `model`: its profile, if it has one. */
+  private target(model: string): string {
+    return this.inferenceProfiles[model] ?? model
   }
 
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
     const input: ConverseCommandInput = {
-      modelId: options?.model || this.defaultCompletionModel,
+      modelId: this.target(options?.model || this.defaultCompletionModel),
       // Originals first: the prompt reads as instructions about them, which is
       // the order Anthropic's models are trained on.
       messages: [
@@ -188,7 +199,7 @@ export class BedrockAIAdapter implements AIAdapter {
     timeoutMs?: number
   ): Promise<{ payload: T; inputTokens?: number }> {
     const command = new InvokeModelCommand({
-      modelId: this.embeddingModel,
+      modelId: this.target(this.embeddingModel),
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify(body),

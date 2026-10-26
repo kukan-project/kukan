@@ -20,7 +20,7 @@ import {
   type EnvironmentConfig,
   resolveDeployConcurrency,
 } from '../config.js'
-import { pascal } from '../naming.js'
+import { envName, pascal } from '../naming.js'
 import { KukanGlobalStack } from './global-stack.js'
 import { KukanStack } from './kukan-stack.js'
 import { KukanSharedStack } from './shared-stack.js'
@@ -48,6 +48,11 @@ export class KukanStage extends cdk.Stage {
 
     const { config } = props
     const { account, region } = resolveEnv(config)
+
+    // Cost allocation tags. `_shared` is every site's, and no site name starts
+    // with `_`; a site stack sets its own (phase4-deploy, cost allocation tags)
+    cdk.Tags.of(this).add('kukan:env', envName(this)!)
+    cdk.Tags.of(this).add('kukan:site', '_shared')
 
     // Runs before the shape branch so `sites: []` is rejected instead of
     // silently falling back to the single-site shape below.

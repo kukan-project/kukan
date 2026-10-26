@@ -18,7 +18,11 @@ import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName, taskRoleName } from '../naming.js'
-import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
+import {
+  configureBedrockEmbedding,
+  configureBedrockCompletion,
+  type BedrockProfiles,
+} from './ai.js'
 import type { DbAccess } from './database.js'
 import { connectSearch, type SearchDomainRef } from './search.js'
 import { createInternalAlb, SITE_ROUTING_HEADER } from './shared-alb.js'
@@ -43,6 +47,8 @@ export interface WebServiceProps {
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
   searchDomain?: SearchDomainRef
+  /** The site's Bedrock application inference profiles, shared with the worker. */
+  bedrockProfiles: BedrockProfiles
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
   searchIndexPrefix?: string
   /** Docker build args for the web image (KUKAN_BRAND, ADR-042). */
@@ -125,8 +131,8 @@ export class WebServiceConstruct extends Construct {
       // The viewer-request function sets it on every request (cdn.ts)
       CLIENT_IP_HEADER: EDGE_CLIENT_IP_HEADER,
     }
-    configureBedrockEmbedding(config, taskDef, environment)
-    configureBedrockCompletion(config, taskDef, environment)
+    configureBedrockEmbedding(config, props.bedrockProfiles, taskDef, environment)
+    configureBedrockCompletion(config, props.bedrockProfiles, taskDef, environment)
     if (searchDomain) {
       connectSearch(config, searchDomain, taskDef, environment, props.searchIndexPrefix)
     }
@@ -192,6 +198,8 @@ export class WebServiceConstruct extends Construct {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       assignPublicIp: true,
       enableExecuteCommand: config.enableExecuteCommand,
+      // Fargate bills by task, so the tasks carry the cost allocation tags too
+      propagateTags: ecs.PropagatedTagSource.SERVICE,
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
     })

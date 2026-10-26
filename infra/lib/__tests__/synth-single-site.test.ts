@@ -13,18 +13,23 @@ import { describe, it, expect } from 'vitest'
 import { Annotations, Match, type Template } from 'aws-cdk-lib/assertions'
 import * as cxapi from 'aws-cdk-lib/cx-api'
 import {
+  bedrockProfiles,
   CDN_LOG_BUCKET,
+  containerEnvs,
   execChannelGrants,
   normalize,
   searchSiteRoles,
   stackOf,
   stackTemplate,
   synthStage,
+  tagValues,
   taskRoleNames,
+  testApp,
   TEST_ACCOUNT,
 } from './helpers/synth.js'
 import { validateEcrImageRetention, validateEnvironmentNames } from '../config.js'
 import { taskRoleName } from '../naming.js'
+import { KukanStage } from '../stacks/kukan-stage.js'
 import { supportsLegacyCdnLogging } from '../constructs/access-log.js'
 import { POSTGRES_TLS_ENVIRONMENT } from '../constructs/database.js'
 
@@ -187,6 +192,64 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
     expectContainerEnv(template, 'Worker', { OPENSEARCH_AWS_REGION: { Ref: 'AWS::Region' } })
   })
 
+  it('tags every resource with its environment, and as shared: the environment is its site', () => {
+    expect(tagValues(template, 'kukan:env')).toEqual(new Set(['dev']))
+    expect(tagValues(template, 'kukan:site')).toEqual(new Set(['_shared']))
+  })
+
+  it('carries the tags on to the tasks, which Fargate bills', () => {
+    template.allResourcesProperties('AWS::ECS::Service', { PropagateTags: 'SERVICE' })
+  })
+
+  describe('Bedrock application inference profiles', () => {
+    const profiles = bedrockProfiles(template)
+
+    it('makes one per model, as the AI component', () => {
+      expect(profiles.map((p) => p.model).sort()).toEqual([
+        'amazon.titan-embed-text-v2:0',
+        'jp.anthropic.claude-haiku-5-5',
+      ])
+      for (const { name } of profiles) expect(name).toMatch(/^kukan-dev-ai-[0-9a-f]{8}$/)
+      template.allResourcesProperties('AWS::Bedrock::ApplicationInferenceProfile', {
+        Tags: Match.arrayWith([{ Key: 'kukan:component', Value: 'ai' }]),
+      })
+    })
+
+    it('hands both services the whole map', () => {
+      for (const env of Object.values(containerEnvs(template))) {
+        const map = JSON.stringify(env.BEDROCK_INFERENCE_PROFILES)
+        for (const { id, model } of profiles) {
+          expect(map).toContain(model)
+          expect(map).toContain(id)
+        }
+      }
+    })
+
+    it('lets each task role call through the profiles of the models it may call', () => {
+      const granted = (service: string) =>
+        Object.values(template.findResources('AWS::IAM::Policy'))
+          .filter((p) =>
+            JSON.stringify((p as { Properties: { Roles: unknown } }).Properties.Roles).includes(
+              service
+            )
+          )
+          .flatMap(
+            (p) =>
+              (p as { Properties: { PolicyDocument: { Statement: Record<string, unknown>[] } } })
+                .Properties.PolicyDocument.Statement
+          )
+          .filter((st) => st.Action === 'bedrock:InvokeModel' && !st.Condition)
+          .map((st) => JSON.stringify(st.Resource))
+          .join()
+      const idOf = (model: string) => profiles.find((p) => p.model === model)!.id
+      expect(granted('WebService')).toContain(idOf('amazon.titan-embed-text-v2:0'))
+      expect(granted('WebService')).toContain(idOf('jp.anthropic.claude-haiku-5-5'))
+      // No abstracts here, so the worker generates no text
+      expect(granted('WorkerService')).toContain(idOf('amazon.titan-embed-text-v2:0'))
+      expect(granted('WorkerService')).not.toContain(idOf('jp.anthropic.claude-haiku-5-5'))
+    })
+  })
+
   it('keeps env-prefixed physical names', () => {
     template.hasResourceProperties('AWS::RDS::DBCluster', { DBClusterIdentifier: 'kukan-dev' })
     template.hasResourceProperties('AWS::OpenSearchService::Domain', {
@@ -282,6 +345,29 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
       )
       expect(dependsOn.some((id) => id.startsWith('SearchDomainAccessPolicy'))).toBe(true)
     })
+  })
+})
+
+describe('Bedrock in another region', () => {
+  const template = stackTemplate(
+    synthStage({ scale: 'small', bedrock: { region: 'us-east-1' } }),
+    'KukanStack'
+  )
+
+  it('makes no profiles, as one only answers in its own region', () => {
+    expect(bedrockProfiles(template)).toEqual([])
+    expect(containerEnvs(template).Web.BEDROCK_INFERENCE_PROFILES).toBeUndefined()
+  })
+})
+
+describe('Bedrock profile names', () => {
+  it('collapse the hyphens an environment name may double, which a profile name may not hold', () => {
+    const stage = new KukanStage(testApp(), 'Dev--East', {
+      config: { account: TEST_ACCOUNT, scale: 'small', enableOpenSearch: false },
+    })
+    const names = bedrockProfiles(stackTemplate(stage, 'KukanStack')).map((p) => p.name)
+    expect(names).toHaveLength(2)
+    for (const name of names) expect(name).toMatch(/^kukan-dev-east-ai-[0-9a-f]{8}$/)
   })
 })
 
@@ -405,6 +491,12 @@ describe('self-created global stack (domain without certificateArn)', () => {
 
   it('matches the golden main template', () => {
     expect(normalize(stackTemplate(stage, 'KukanStack'))).toMatchSnapshot()
+  })
+
+  it('tags the global stack as shared', () => {
+    const global = stackTemplate(stage, 'KukanGlobalStack')
+    expect(tagValues(global, 'kukan:env')).toEqual(new Set(['dev']))
+    expect(tagValues(global, 'kukan:site')).toEqual(new Set(['_shared']))
   })
 
   it('matches the golden global template', () => {
@@ -726,21 +818,8 @@ function expectContainerEnv(
   container: string,
   expected: Record<string, unknown>
 ) {
-  const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')).flatMap(
-    (r) =>
-      (
-        r as {
-          Properties: {
-            ContainerDefinitions: {
-              Name: string
-              Environment?: { Name: string; Value: unknown }[]
-            }[]
-          }
-        }
-      ).Properties.ContainerDefinitions
-  )
-  const env = defs.find((d) => d.Name === container)?.Environment ?? []
+  const env = containerEnvs(template)[container] ?? {}
   for (const [name, value] of Object.entries(expected)) {
-    expect(env.find((e) => e.Name === name)?.Value, name).toEqual(value)
+    expect(env[name], name).toEqual(value)
   }
 }

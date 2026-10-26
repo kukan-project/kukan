@@ -44,6 +44,7 @@ function createAIAdapter(env: Env): AIAdapter {
       embeddingModel: env.AI_EMBEDDING_MODEL,
       embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
       completionModels,
+      inferenceProfiles: env.BEDROCK_INFERENCE_PROFILES,
     })
   }
   if (env.AI_TYPE === 'openai') {

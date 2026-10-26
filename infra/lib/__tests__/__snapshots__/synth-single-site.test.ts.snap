@@ -67,6 +67,16 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Timeout": 120,
       },
       "Type": "AWS::Lambda::Function",
@@ -99,6 +109,16 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -106,6 +126,16 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
       "Properties": {
         "Name": "kukan-dev-logs",
         "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "WorkGroupConfiguration": {
           "EnforceWorkGroupConfiguration": true,
           "ManagedQueryResultsConfiguration": {
@@ -122,9 +152,101 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
     },
     "CDNAccessLogBucketD072627D": {
       "DeletionPolicy": "Retain",
@@ -164,6 +286,14 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -644,6 +774,14 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -654,6 +792,14 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcOriginEndpointConfig": {
@@ -890,6 +1036,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -902,6 +1056,16 @@ function expandV6(addr) {
             "Logging": "NONE",
           },
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -954,6 +1118,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VPCSecurityGroups": [
           {
@@ -992,6 +1164,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::SecretsManager::Secret",
@@ -1024,6 +1204,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -1143,6 +1331,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -1182,6 +1378,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -1248,6 +1452,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -1331,6 +1543,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -1346,6 +1566,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -1359,6 +1587,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -1401,6 +1637,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet1",
           },
@@ -1430,6 +1674,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet2",
           },
@@ -1457,6 +1709,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -1490,6 +1750,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -1532,6 +1800,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PublicSubnet1",
           },
@@ -1563,6 +1839,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -1603,6 +1887,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -1649,6 +1941,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -1685,6 +1985,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -1728,6 +2036,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -1842,6 +2158,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -1932,6 +2256,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VPCOptions": {
@@ -2127,6 +2459,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
         "VpcConfig": {
@@ -2159,6 +2499,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::Logs::LogGroup",
@@ -2171,6 +2519,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -2208,6 +2564,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -2255,6 +2619,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
       },
@@ -2292,6 +2664,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -2424,6 +2804,16 @@ function expandV6(addr) {
     "ServiceNamespaceB29FC01B": {
       "Properties": {
         "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Vpc": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -2479,6 +2869,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -2594,11 +2992,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -2637,6 +3044,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Type": "application",
       },
@@ -2662,6 +3077,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
@@ -2678,6 +3101,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TargetGroupAttributes": [
@@ -2761,6 +3192,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -2841,6 +3280,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
@@ -2987,6 +3451,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -3015,6 +3487,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -3138,46 +3618,62 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -3202,6 +3698,12 @@ function expandV6(addr) {
                           },
                           ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
                       ],
                     },
                   ],
@@ -3271,6 +3773,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -3283,6 +3793,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -3339,6 +3857,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-worker",
         "ServiceRegistries": [
           {
@@ -3354,6 +3873,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -3397,6 +3924,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -3447,6 +3982,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -3479,6 +4022,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 0,
@@ -3538,6 +4089,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 5,
@@ -3658,6 +4217,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -3784,6 +4368,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -3887,6 +4479,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -3910,6 +4510,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -3959,22 +4567,30 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "es:ESHttp*",
@@ -4014,6 +4630,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -4128,6 +4752,16 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Timeout": 120,
       },
       "Type": "AWS::Lambda::Function",
@@ -4160,6 +4794,16 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -4167,6 +4811,16 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
       "Properties": {
         "Name": "kukan-dev-logs",
         "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "WorkGroupConfiguration": {
           "EnforceWorkGroupConfiguration": true,
           "ManagedQueryResultsConfiguration": {
@@ -4183,6 +4837,16 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -4222,6 +4886,8 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
         },
         "BackupPlanTags": {
           "kukan:component": "backup",
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
         },
       },
       "Type": "AWS::Backup::BackupPlan",
@@ -4338,6 +5004,14 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
             "Key": "kukan:component",
             "Value": "backup",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -4348,10 +5022,94 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
         "BackupVaultName": "kukan-dev-backup",
         "BackupVaultTags": {
           "kukan:component": "backup",
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
         },
       },
       "Type": "AWS::Backup::BackupVault",
       "UpdateReplacePolicy": "Retain",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
     },
     "CDNAccessLogBucketD072627D": {
       "DeletionPolicy": "Retain",
@@ -4391,6 +5149,14 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -4880,6 +5646,14 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -4890,6 +5664,14 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcOriginEndpointConfig": {
@@ -5126,6 +5908,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -5138,6 +5928,16 @@ function expandV6(addr) {
             "Logging": "NONE",
           },
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -5189,6 +5989,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcSecurityGroupIds": [
           {
@@ -5223,6 +6031,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::RDS::DBInstance",
@@ -5252,6 +6068,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -5286,6 +6110,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::RDS::DBSubnetGroup",
@@ -5309,6 +6141,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -5469,6 +6309,16 @@ function expandV6(addr) {
       "Properties": {
         "Description": "GA4 service account email",
         "GenerateSecretString": {},
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -5478,6 +6328,16 @@ function expandV6(addr) {
       "Properties": {
         "Description": "GA4 service account private key",
         "GenerateSecretString": {},
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -5487,6 +6347,16 @@ function expandV6(addr) {
       "Properties": {
         "Description": "GA4 property ID (numeric)",
         "GenerateSecretString": {},
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -5505,6 +6375,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -5545,6 +6423,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -5611,6 +6497,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -5694,6 +6588,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -5709,6 +6611,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -5722,6 +6632,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -5764,6 +6682,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet1",
           },
@@ -5793,6 +6719,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet2",
           },
@@ -5820,6 +6754,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -5853,6 +6795,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -5895,6 +6845,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PublicSubnet1",
           },
@@ -5926,6 +6884,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -5966,6 +6932,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -6012,6 +6986,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -6048,6 +7030,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -6091,6 +7081,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -6205,6 +7203,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -6298,6 +7304,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VPCOptions": {
@@ -6496,6 +7510,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
         "VpcConfig": {
@@ -6528,6 +7550,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::Logs::LogGroup",
@@ -6540,6 +7570,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -6577,6 +7615,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -6624,6 +7670,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
       },
@@ -6661,6 +7715,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -6793,6 +7855,16 @@ function expandV6(addr) {
     "ServiceNamespaceB29FC01B": {
       "Properties": {
         "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Vpc": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -6855,6 +7927,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VersioningConfiguration": {
@@ -6973,11 +8053,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -7016,6 +8105,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Type": "application",
       },
@@ -7041,6 +8138,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
@@ -7057,6 +8162,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TargetGroupAttributes": [
@@ -7140,6 +8253,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -7220,6 +8341,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
@@ -7371,6 +8517,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -7399,6 +8553,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -7552,46 +8714,62 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -7616,6 +8794,12 @@ function expandV6(addr) {
                           },
                           ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
                       ],
                     },
                   ],
@@ -7685,6 +8869,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -7697,6 +8889,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -7753,6 +8953,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-worker",
         "ServiceRegistries": [
           {
@@ -7768,6 +8969,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -7811,6 +9020,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -7861,6 +9078,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -7893,6 +9118,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 0,
@@ -7952,6 +9185,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 5,
@@ -8072,6 +9313,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -8202,6 +9468,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -8305,6 +9579,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -8328,6 +9610,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -8377,22 +9667,30 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "es:ESHttp*",
@@ -8432,6 +9730,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -8536,6 +9842,16 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Timeout": 120,
       },
       "Type": "AWS::Lambda::Function",
@@ -8568,6 +9884,16 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -8575,6 +9901,16 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
       "Properties": {
         "Name": "kukan-dev-logs",
         "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "WorkGroupConfiguration": {
           "EnforceWorkGroupConfiguration": true,
           "ManagedQueryResultsConfiguration": {
@@ -8591,6 +9927,16 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -8633,6 +9979,14 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -9119,6 +10473,14 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -9129,6 +10491,14 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcOriginEndpointConfig": {
@@ -9365,6 +10735,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -9377,6 +10755,16 @@ function expandV6(addr) {
             "Logging": "NONE",
           },
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -9503,6 +10891,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VPCSecurityGroups": [
           {
@@ -9541,6 +10937,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::SecretsManager::Secret",
@@ -9573,6 +10977,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -9712,6 +11124,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -9751,6 +11171,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -9818,6 +11246,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -9879,6 +11315,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -9894,6 +11338,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -9907,6 +11359,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -9949,6 +11409,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet1",
           },
@@ -9978,6 +11446,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet2",
           },
@@ -10005,6 +11481,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -10038,6 +11522,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -10080,6 +11572,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PublicSubnet1",
           },
@@ -10111,6 +11611,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -10151,6 +11659,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -10197,6 +11713,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -10233,6 +11757,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -10276,6 +11808,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -10329,6 +11869,16 @@ function expandV6(addr) {
     "ServiceNamespaceB29FC01B": {
       "Properties": {
         "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Vpc": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -10384,6 +11934,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -10499,11 +12057,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -10542,6 +12109,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Type": "application",
       },
@@ -10567,6 +12142,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
@@ -10583,6 +12166,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TargetGroupAttributes": [
@@ -10665,6 +12256,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -10851,6 +12450,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -10879,6 +12486,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -11031,6 +12646,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -11043,6 +12666,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -11099,6 +12730,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-worker",
         "ServiceRegistries": [
           {
@@ -11114,6 +12746,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -11157,6 +12797,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -11207,6 +12855,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -11239,6 +12895,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 0,
@@ -11298,6 +12962,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 5,
@@ -11507,6 +13179,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -11610,6 +13290,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -11633,6 +13321,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -11699,6 +13395,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -11777,6 +13481,14 @@ exports[`self-created global stack (domain without certificateArn) > matches the
           },
         ],
         "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
           {
             "Key": "kukan:stack",
             "Value": "global",
@@ -11967,6 +13679,14 @@ exports[`self-created global stack (domain without certificateArn) > matches the
             "Value": "waf",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "kukan:stack",
             "Value": "global",
           },
@@ -12088,6 +13808,16 @@ exports[`self-created global stack (domain without certificateArn) > matches the
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Timeout": 120,
       },
       "Type": "AWS::Lambda::Function",
@@ -12120,6 +13850,16 @@ exports[`self-created global stack (domain without certificateArn) > matches the
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -12127,6 +13867,16 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       "Properties": {
         "Name": "kukan-dev-logs",
         "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "WorkGroupConfiguration": {
           "EnforceWorkGroupConfiguration": true,
           "ManagedQueryResultsConfiguration": {
@@ -12143,9 +13893,101 @@ exports[`self-created global stack (domain without certificateArn) > matches the
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
     },
     "CDNAccessLogBucketD072627D": {
       "DeletionPolicy": "Retain",
@@ -12185,6 +14027,14 @@ exports[`self-created global stack (domain without certificateArn) > matches the
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -12684,6 +14534,14 @@ exports[`self-created global stack (domain without certificateArn) > matches the
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -12694,6 +14552,14 @@ exports[`self-created global stack (domain without certificateArn) > matches the
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcOriginEndpointConfig": {
@@ -12930,6 +14796,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -12942,6 +14816,16 @@ function expandV6(addr) {
             "Logging": "NONE",
           },
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -13068,6 +14952,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VPCSecurityGroups": [
           {
@@ -13106,6 +14998,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::SecretsManager::Secret",
@@ -13138,6 +15038,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -13328,6 +15236,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -13367,6 +15283,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -13433,6 +15357,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -13516,6 +15448,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -13531,6 +15471,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -13544,6 +15492,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -13586,6 +15542,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet1",
           },
@@ -13615,6 +15579,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet2",
           },
@@ -13642,6 +15614,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -13675,6 +15655,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -13717,6 +15705,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PublicSubnet1",
           },
@@ -13748,6 +15744,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -13788,6 +15792,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -13834,6 +15846,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -13870,6 +15890,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -13913,6 +15941,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -14027,6 +16063,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -14117,6 +16161,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VPCOptions": {
@@ -14312,6 +16364,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
         "VpcConfig": {
@@ -14344,6 +16404,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::Logs::LogGroup",
@@ -14356,6 +16424,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -14393,6 +16469,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -14440,6 +16524,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
       },
@@ -14477,6 +16569,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -14609,6 +16709,16 @@ function expandV6(addr) {
     "ServiceNamespaceB29FC01B": {
       "Properties": {
         "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Vpc": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -14664,6 +16774,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -14779,11 +16897,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -14822,6 +16949,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Type": "application",
       },
@@ -14847,6 +16982,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
@@ -14863,6 +17006,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TargetGroupAttributes": [
@@ -14946,6 +17097,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -15026,6 +17185,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
@@ -15159,6 +17343,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -15187,6 +17379,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -15310,46 +17510,62 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -15374,6 +17590,12 @@ function expandV6(addr) {
                           },
                           ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
                       ],
                     },
                   ],
@@ -15443,6 +17665,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -15455,6 +17685,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -15511,6 +17749,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-worker",
         "ServiceRegistries": [
           {
@@ -15526,6 +17765,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -15569,6 +17816,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -15619,6 +17874,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -15651,6 +17914,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 0,
@@ -15710,6 +17981,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 5,
@@ -15830,6 +18109,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -15956,6 +18260,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -16059,6 +18371,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -16082,6 +18402,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -16131,22 +18459,30 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "es:ESHttp*",
@@ -16186,6 +18522,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -16290,6 +18634,16 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Timeout": 120,
       },
       "Type": "AWS::Lambda::Function",
@@ -16322,6 +18676,16 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -16329,6 +18693,16 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
       "Properties": {
         "Name": "kukan-dev-logs",
         "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "WorkGroupConfiguration": {
           "EnforceWorkGroupConfiguration": true,
           "ManagedQueryResultsConfiguration": {
@@ -16345,9 +18719,101 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
     },
     "CDNAccessLogBucketD072627D": {
       "DeletionPolicy": "Retain",
@@ -16387,6 +18853,14 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -16873,6 +19347,14 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -16883,6 +19365,14 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcOriginEndpointConfig": {
@@ -17119,6 +19609,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -17131,6 +19629,16 @@ function expandV6(addr) {
             "Logging": "NONE",
           },
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -17256,6 +19764,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcSecurityGroupIds": [
           {
@@ -17294,6 +19810,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::SecretsManager::Secret",
@@ -17327,6 +19851,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::RDS::DBSubnetGroup",
@@ -17350,6 +19882,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -17490,6 +20030,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -17529,6 +20077,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -17595,6 +20151,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -17678,6 +20242,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -17693,6 +20265,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -17706,6 +20286,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -17748,6 +20336,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet1",
           },
@@ -17777,6 +20373,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PrivateSubnet2",
           },
@@ -17804,6 +20408,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -17837,6 +20449,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -17879,6 +20499,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc/PublicSubnet1",
           },
@@ -17910,6 +20538,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -17950,6 +20586,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -17996,6 +20640,14 @@ function expandV6(addr) {
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanStack/Network/Vpc",
           },
@@ -18032,6 +20684,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -18075,6 +20735,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -18189,6 +20857,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -18279,6 +20955,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VPCOptions": {
@@ -18474,6 +21158,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
         "VpcConfig": {
@@ -18506,6 +21198,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::Logs::LogGroup",
@@ -18518,6 +21218,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -18555,6 +21263,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -18602,6 +21318,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
       },
@@ -18639,6 +21363,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -18771,6 +21503,16 @@ function expandV6(addr) {
     "ServiceNamespaceB29FC01B": {
       "Properties": {
         "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Vpc": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -18833,6 +21575,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VersioningConfiguration": {
@@ -18951,11 +21701,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -18994,6 +21753,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Type": "application",
       },
@@ -19019,6 +21786,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
@@ -19035,6 +21810,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TargetGroupAttributes": [
@@ -19118,6 +21901,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -19198,6 +21989,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
@@ -19344,6 +22160,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -19372,6 +22196,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -19495,46 +22327,62 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -19559,6 +22407,12 @@ function expandV6(addr) {
                           },
                           ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
                       ],
                     },
                   ],
@@ -19628,6 +22482,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -19640,6 +22502,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -19696,6 +22566,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-worker",
         "ServiceRegistries": [
           {
@@ -19711,6 +22582,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "TaskDefinition": {
@@ -19754,6 +22633,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -19804,6 +22691,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -19836,6 +22731,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 0,
@@ -19895,6 +22798,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "Threshold": 5,
@@ -20015,6 +22926,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -20141,6 +23077,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -20244,6 +23188,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -20267,6 +23219,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -20316,22 +23276,30 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "es:ESHttp*",
@@ -20371,6 +23339,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },

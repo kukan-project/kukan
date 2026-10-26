@@ -27,6 +27,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Timeout": 120,
       },
       "Type": "AWS::Lambda::Function",
@@ -59,6 +69,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -66,6 +86,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       "Properties": {
         "Name": "kukan-dev-logs",
         "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "WorkGroupConfiguration": {
           "EnforceWorkGroupConfiguration": true,
           "ManagedQueryResultsConfiguration": {
@@ -83,6 +113,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Logging": "NONE",
           },
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
       },
       "Type": "AWS::ECS::Cluster",
     },
@@ -134,6 +174,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcSecurityGroupIds": [
           {
@@ -172,6 +220,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::SecretsManager::Secret",
@@ -205,6 +261,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "database",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::RDS::DBSubnetGroup",
@@ -228,6 +292,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -348,6 +420,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -387,6 +467,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -475,6 +563,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "network",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -557,6 +653,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanSharedStack/Network/Vpc",
           },
@@ -572,6 +676,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanSharedStack/Network/Vpc",
           },
@@ -585,6 +697,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -627,6 +747,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanSharedStack/Network/Vpc/PrivateSubnet1",
           },
@@ -656,6 +784,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanSharedStack/Network/Vpc/PrivateSubnet2",
           },
@@ -683,6 +819,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -716,6 +860,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -758,6 +910,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanSharedStack/Network/Vpc/PublicSubnet1",
           },
@@ -789,6 +949,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -829,6 +997,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "Name",
@@ -875,6 +1051,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Value": "network",
           },
           {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
             "Key": "Name",
             "Value": "Dev/KukanSharedStack/Network/Vpc",
           },
@@ -911,6 +1095,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -954,6 +1146,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -1007,6 +1207,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamalbdnsnameD6A6E898": {
       "Properties": {
         "Name": "/kukan/dev/shared/alb/dns-name",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1020,6 +1224,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamalblistenerarnB3C5B561": {
       "Properties": {
         "Name": "/kukan/dev/shared/alb/listener-arn",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Ref": "SharedAlbHttpListener180BA64A",
@@ -1030,6 +1238,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramcloudfrontvpcoriginid5AC743F0": {
       "Properties": {
         "Name": "/kukan/dev/shared/cloudfront/vpc-origin-id",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1043,6 +1255,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamcloudmapnamespaceidB56B4BFF": {
       "Properties": {
         "Name": "/kukan/dev/shared/cloudmap/namespace-id",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1056,6 +1272,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamcloudmapnamespacenameCEF1423F": {
       "Properties": {
         "Name": "/kukan/dev/shared/cloudmap/namespace-name",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": "kukan-dev.internal",
       },
@@ -1064,6 +1284,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamdbendpointBF29FC77": {
       "Properties": {
         "Name": "/kukan/dev/shared/db/endpoint",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1077,6 +1301,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramdbmastersecretarn46BF1296": {
       "Properties": {
         "Name": "/kukan/dev/shared/db/master-secret-arn",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Ref": "DatabaseAuroraClusterSecretAttachment4E843BB8",
@@ -1087,6 +1315,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamdbportAC891B60": {
       "Properties": {
         "Name": "/kukan/dev/shared/db/port",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1100,6 +1332,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamecsclusternameAEF2A7A8": {
       "Properties": {
         "Name": "/kukan/dev/shared/ecs/cluster-name",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Ref": "ClusterEB0386A7",
@@ -1110,6 +1346,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramsearcharn3677C8C4": {
       "Properties": {
         "Name": "/kukan/dev/shared/search/arn",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1123,6 +1363,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramsearchendpoint3E344AB8": {
       "Properties": {
         "Name": "/kukan/dev/shared/search/endpoint",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1136,6 +1380,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramsgalb55FCBDC1": {
       "Properties": {
         "Name": "/kukan/dev/shared/sg/alb",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1149,6 +1397,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramsgdbaccess212148E7": {
       "Properties": {
         "Name": "/kukan/dev/shared/sg/db-access",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1162,6 +1414,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamsgwebA2748016": {
       "Properties": {
         "Name": "/kukan/dev/shared/sg/web",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1175,6 +1431,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramsgworker04C26951": {
       "Properties": {
         "Name": "/kukan/dev/shared/sg/worker",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::GetAtt": [
@@ -1188,6 +1448,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramvpcazs2FF5B1A6": {
       "Properties": {
         "Name": "/kukan/dev/shared/vpc/azs",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": "ap-northeast-1a,ap-northeast-1c",
       },
@@ -1196,6 +1460,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramvpcid2A833A8E": {
       "Properties": {
         "Name": "/kukan/dev/shared/vpc/id",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Ref": "NetworkVpc7FB7348F",
@@ -1206,6 +1474,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ParamvpcisolatedsubnetidsC5FAE4D9": {
       "Properties": {
         "Name": "/kukan/dev/shared/vpc/isolated-subnet-ids",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::Join": [
@@ -1226,6 +1498,10 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "Paramvpcpublicsubnetids67994846": {
       "Properties": {
         "Name": "/kukan/dev/shared/vpc/public-subnet-ids",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
         "Type": "String",
         "Value": {
           "Fn::Join": [
@@ -1306,6 +1582,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -1397,6 +1681,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VPCOptions": {
@@ -1592,6 +1884,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
         "VpcConfig": {
@@ -1624,6 +1924,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::Logs::LogGroup",
@@ -1636,6 +1944,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -1673,6 +1989,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -1720,6 +2044,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "search",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Timeout": 900,
       },
@@ -1757,6 +2089,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
       },
@@ -1952,6 +2292,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "VpcEndpointType": "Interface",
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
@@ -1997,6 +2347,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "ToPort": 443,
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "VpcId": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -2006,6 +2366,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "ServiceNamespaceB29FC01B": {
       "Properties": {
         "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
         "Vpc": {
           "Ref": "NetworkVpc7FB7348F",
         },
@@ -2042,6 +2412,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "shared-alb",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
         "Type": "application",
       },
@@ -2069,6 +2447,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "shared-alb",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
@@ -2079,6 +2465,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "shared-alb",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcOriginEndpointConfig": {
@@ -2103,6 +2497,16 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "CidrIp": "0.0.0.0/0",
             "Description": "Allow all outbound traffic by default",
             "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
         ],
         "VpcId": {
@@ -2276,9 +2680,101 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-citya-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-citya-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
     },
     "CDNAccessLogBucketD072627D": {
       "DeletionPolicy": "Retain",
@@ -2318,6 +2814,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -2807,6 +3311,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -3031,6 +3543,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -3090,6 +3610,16 @@ function expandV6(addr) {
       "Properties": {
         "Description": "GA4 service account email",
         "GenerateSecretString": {},
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -3099,6 +3629,16 @@ function expandV6(addr) {
       "Properties": {
         "Description": "GA4 service account private key",
         "GenerateSecretString": {},
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -3108,6 +3648,16 @@ function expandV6(addr) {
       "Properties": {
         "Description": "GA4 property ID (numeric)",
         "GenerateSecretString": {},
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -3166,6 +3716,16 @@ function expandV6(addr) {
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
         "Timeout": 120,
         "VpcConfig": {
           "SecurityGroupIds": [
@@ -3209,6 +3769,16 @@ function expandV6(addr) {
       "DeletionPolicy": "Retain",
       "Properties": {
         "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Retain",
@@ -3281,6 +3851,16 @@ function expandV6(addr) {
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -3288,6 +3868,16 @@ function expandV6(addr) {
       "DeletionPolicy": "Retain",
       "Properties": {
         "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Retain",
@@ -3328,6 +3918,16 @@ function expandV6(addr) {
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
         "Timeout": 900,
       },
       "Type": "AWS::Lambda::Function",
@@ -3358,6 +3958,16 @@ function expandV6(addr) {
                 ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
               ],
             ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -3425,6 +4035,16 @@ function expandV6(addr) {
           "PasswordLength": 48,
           "SecretStringTemplate": "{"username":"kukan_citya","dbname":"kukan_citya"}",
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -3485,6 +4105,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
         "VersioningConfiguration": {
@@ -3620,11 +4248,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-citya-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
         "TaskDefinition": {
@@ -3666,6 +4303,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
@@ -3685,6 +4330,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
         "TargetGroupAttributes": [
@@ -3770,6 +4423,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -3847,6 +4508,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
@@ -4010,6 +4696,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -4041,6 +4735,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -4200,46 +4902,62 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -4264,6 +4982,12 @@ function expandV6(addr) {
                           },
                           ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
                       ],
                     },
                   ],
@@ -4333,6 +5057,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -4348,6 +5080,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -4422,6 +5162,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-citya-worker",
         "ServiceRegistries": [
           {
@@ -4437,6 +5178,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
         "TaskDefinition": {
@@ -4475,6 +5224,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -4526,6 +5283,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -4559,6 +5324,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
         "Threshold": 0,
@@ -4620,6 +5393,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
         "Threshold": 5,
@@ -4738,6 +5519,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -4880,6 +5686,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -4989,6 +5803,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -5015,6 +5837,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -5067,22 +5897,30 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "es:ESHttp*",
@@ -5122,6 +5960,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
           },
         ],
       },
@@ -5283,9 +6129,101 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           "ExcludePunctuation": true,
           "PasswordLength": 64,
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-cityb-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-cityb-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
     },
     "CDNAccessLogBucketD072627D": {
       "DeletionPolicy": "Retain",
@@ -5325,6 +6263,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           {
             "Key": "kukan:component",
             "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -5805,6 +6751,14 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
@@ -6029,6 +6983,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "cdn",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::CloudFront::Function",
@@ -6087,6 +7049,16 @@ function expandV6(addr) {
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
         "Timeout": 120,
         "VpcConfig": {
           "SecurityGroupIds": [
@@ -6130,6 +7102,16 @@ function expandV6(addr) {
       "DeletionPolicy": "Retain",
       "Properties": {
         "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
       },
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Retain",
@@ -6202,6 +7184,16 @@ function expandV6(addr) {
             ],
           },
         ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
       },
       "Type": "AWS::IAM::Role",
     },
@@ -6209,6 +7201,16 @@ function expandV6(addr) {
       "DeletionPolicy": "Retain",
       "Properties": {
         "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
       },
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Retain",
@@ -6249,6 +7251,16 @@ function expandV6(addr) {
           ],
         },
         "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
         "Timeout": 900,
       },
       "Type": "AWS::Lambda::Function",
@@ -6279,6 +7291,16 @@ function expandV6(addr) {
                 ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
               ],
             ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -6346,6 +7368,16 @@ function expandV6(addr) {
           "PasswordLength": 48,
           "SecretStringTemplate": "{"username":"kukan_cityb","dbname":"kukan_cityb"}",
         },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
+        ],
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
@@ -6406,6 +7438,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
         "VersioningConfiguration": {
@@ -6541,11 +7581,20 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-cityb-web",
         "Tags": [
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
         "TaskDefinition": {
@@ -6587,6 +7636,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
@@ -6606,6 +7663,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
         "TargetGroupAttributes": [
@@ -6691,6 +7756,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -6768,6 +7841,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "AI_COMPLETION_MODELS",
@@ -6926,6 +8024,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -6957,6 +8063,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -7086,46 +8200,62 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    ":",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "bedrock:InvokeModel",
@@ -7150,6 +8280,12 @@ function expandV6(addr) {
                           },
                           ":inference-profile/jp.anthropic.claude-haiku-5-5",
                         ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
                       ],
                     },
                   ],
@@ -7219,6 +8355,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "web-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -7234,6 +8378,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "web-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -7308,6 +8460,7 @@ function expandV6(addr) {
             ],
           },
         },
+        "PropagateTags": "SERVICE",
         "ServiceName": "kukan-dev-cityb-worker",
         "ServiceRegistries": [
           {
@@ -7323,6 +8476,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
         "TaskDefinition": {
@@ -7361,6 +8522,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -7412,6 +8581,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
@@ -7445,6 +8622,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
         "Threshold": 0,
@@ -7506,6 +8691,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
         "Threshold": 5,
@@ -7624,6 +8817,31 @@ function expandV6(addr) {
               {
                 "Name": "AI_EMBEDDING_MODEL",
                 "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
               },
               {
                 "Name": "OPENSEARCH_URL",
@@ -7779,6 +8997,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
         "TaskRoleArn": {
           "Fn::GetAtt": [
@@ -7888,6 +9114,14 @@ function expandV6(addr) {
             "Key": "kukan:component",
             "Value": "worker-service",
           },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
+          },
         ],
       },
       "Type": "AWS::IAM::Role",
@@ -7914,6 +9148,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -7966,22 +9208,30 @@ function expandV6(addr) {
             {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":bedrock:",
-                    {
-                      "Ref": "AWS::Region",
-                    },
-                    "::foundation-model/amazon.titan-embed-text-v2:0",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
             },
             {
               "Action": "es:ESHttp*",
@@ -8021,6 +9271,14 @@ function expandV6(addr) {
           {
             "Key": "kukan:component",
             "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "cityb",
           },
         ],
       },
@@ -8099,6 +9357,14 @@ exports[`multi-site global stack (auto-created cert/WAF, standalone mode) > matc
           },
         ],
         "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
           {
             "Key": "kukan:stack",
             "Value": "global",
@@ -8293,6 +9559,14 @@ exports[`multi-site global stack (auto-created cert/WAF, standalone mode) > matc
           {
             "Key": "kukan:component",
             "Value": "waf",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
           },
           {
             "Key": "kukan:stack",

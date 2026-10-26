@@ -43,6 +43,8 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
   constructor(scope: Construct, id: string, props: KukanSiteStackProps) {
     super(scope, id, props)
     this.kukanSiteName = props.site.name
+    // Over the stage's `_shared` (the tag nearer the resource wins)
+    cdk.Tags.of(this).add('kukan:site', props.site.name)
 
     const config = resolveSiteConfig(this, props.envConfig, props.site)
 

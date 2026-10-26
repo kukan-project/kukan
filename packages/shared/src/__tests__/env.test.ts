@@ -20,6 +20,25 @@ describe('envSchema', () => {
     expect(result.data.HEALTH_CHECK_ENABLED).toBe(true)
   })
 
+  it('should read BEDROCK_INFERENCE_PROFILES as JSON and refuse anything else', () => {
+    const base = { BETTER_AUTH_SECRET: 'a'.repeat(32) }
+    const arn = 'arn:aws:bedrock:ap-northeast-1:123456789012:application-inference-profile/abc'
+    const read = envSchema.safeParse({
+      ...base,
+      BEDROCK_INFERENCE_PROFILES: JSON.stringify({ 'jp.anthropic.claude-haiku-5-5': arn }),
+    })
+    expect(read.success && read.data.BEDROCK_INFERENCE_PROFILES).toEqual({
+      'jp.anthropic.claude-haiku-5-5': arn,
+    })
+    const blank = envSchema.safeParse({ ...base, BEDROCK_INFERENCE_PROFILES: '' })
+    expect(blank.success && blank.data.BEDROCK_INFERENCE_PROFILES).toBeUndefined()
+    for (const bad of ['model=arn', '{"model":""}', '["arn"]']) {
+      expect(envSchema.safeParse({ ...base, BEDROCK_INFERENCE_PROFILES: bad }).success, bad).toBe(
+        false
+      )
+    }
+  })
+
   it('should default TIME_ZONE to Asia/Tokyo and reject a name Intl does not know', () => {
     const base = {
       BETTER_AUTH_SECRET: 'a'.repeat(32),
