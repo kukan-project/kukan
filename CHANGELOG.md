@@ -6,6 +6,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.39.0] - 2026-10-26
+
+**Highlights**
+
+- AWS: the bill can be split by environment and by site (#1067). Resources that take tags carry `kukan:env` and `kukan:site`, the Fargate tasks included, and Bedrock is called through per-site inference profiles that carry them too. Some costs stay untagged: data transfer, the parts CDK makes for custom resources, and Bedrock called in another region. Activate the tags as cost allocation tags in Billing and group by them in Cost Explorer.
+
+**Upgrade Notes**
+
+- AWS: after the deploy, activate `kukan:env` and `kukan:site` (and `kukan:component` if wanted) in Billing and Cost Management → Cost allocation tags, in the account that manages billing (#1067). A tag can take up to 24 hours to appear there, and **costs are grouped only from the day the tags are activated**, not before. The steps are in `docs/specs/en/phase4-deploy.md` ("Cost allocation tags").
+- AWS: the deploy adds the tags to the existing resources in place; nothing is replaced. The task definitions change, so the web and worker tasks roll over, one by one as with every release.
+- AWS: each site stack (single-site: KukanStack) creates one Bedrock application inference profile per model it uses, named `kukan-<env>-<site>-ai-<8 hex digits>` (single-site: `kukan-<env>-ai-…`), and the tasks call the models through them. A profile can be created for a model whose Marketplace agreement has not been accepted yet, so such an account still deploys; only the calls to that model fail, as before. Usage records and the model picker keep showing model IDs. With `bedrock.region` set to a region other than the deployment's, no profiles are made and the models are called directly, untagged.
+
+**Features**
+
+- feat(infra): tag resources by environment and site, and call Bedrock through per-site inference profiles (#1067) — `kukan:site` is the site's name in its stack and `_shared` for what every site uses (the shared and global stacks, and all of a single-site environment). The ECS services pass the tags on to their tasks, which Fargate bills.
+
+**Documentation**
+
+- docs(site): list the sixth dev diary article on the official site (#1065).
+
+---
+
+**ハイライト**
+
+- AWS：請求を環境ごと・サイトごとに分けられるようになった（#1067）。タグを付けられるリソースには `kukan:env` と `kukan:site` が付き、Fargate のタスクにも付く。Bedrock も、このタグの付いたサイトごとの推論プロファイルを通して呼ぶ。データ転送、CDK がカスタムリソースのために作る部品、別リージョンで呼ぶ Bedrock の費用は、タグなしに残る。Billing でコスト配分タグとして有効にすれば、Cost Explorer でタグごとに分けて見られる。
+
+**アップグレード時の注意**
+
+- AWS：デプロイの後、請求を管理するアカウントの Billing and Cost Management → Cost allocation tags で、`kukan:env` と `kukan:site`（必要なら `kukan:component`）を有効にすること（#1067）。タグが一覧に出るまで最大 24 時間かかる。**費用は有効にした日からしか集計されず、さかのぼっては効かない。** 手順は `docs/specs/jp/phase4-deploy.md`（「コスト配分タグ」）にある。
+- AWS：タグはデプロイで既存のリソースにそのまま付き、置き換わるものは無い。タスク定義が変わるので、web と worker のタスクは、リリースのたびと同じく順に入れ替わる。
+- AWS：サイトのスタック（シングルサイトでは KukanStack）が、使うモデルごとに Bedrock のアプリケーション推論プロファイルを 1 つ作り（名前は `kukan-<env>-<site>-ai-<16 進 8 桁>`、シングルサイトでは `kukan-<env>-ai-…`）、タスクはそれを通してモデルを呼ぶ。Marketplace の規約にまだ同意していないモデルでもプロファイルは作れるので、そうしたアカウントでもデプロイは通り、今までどおりそのモデルの呼び出しだけが失敗する。使用量の記録とモデルの選択肢は、モデル ID のまま。`bedrock.region` をデプロイ先と別のリージョンにした環境では、プロファイルを作らず、モデルを直接呼ぶ（タグは付かない）。
+
+**新機能**
+
+- feat(infra)：リソースに環境とサイトのタグを付け、Bedrock をサイトごとの推論プロファイルを通して呼ぶ（#1067）。`kukan:site` は、サイトのスタックではサイト名、全サイトで使うもの（共有スタック・global スタック、シングルサイトの環境の全体）では `_shared`。ECS のサービスはタグをタスクへ伝える。Fargate はタスクごとに課金されるため。
+
+**ドキュメント**
+
+- docs(site)：公式サイトの開発記に 6 本目の記事を載せた（#1065）。
+
 ## [0.38.1] - 2026-10-25
 
 **Upgrade Notes**
