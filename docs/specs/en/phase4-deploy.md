@@ -148,11 +148,12 @@ Resources carry tags so that the bill can be split by environment and by site.
 - Grouped by `kukan:site`, the bill falls into each site, `_shared`, and untagged: what cannot be tagged (data transfer, ...), what lies outside the environment (the CDK Pipelines stack), and the parts CDK makes for custom resources (which have no tags field)
 - Fargate bills by task, so the ECS services pass the tags on to their tasks (`propagateTags: SERVICE`)
 - A value starting with `_` cannot be a site name (which starts with a lowercase letter)
-- **Cost allocation tags do not apply retroactively.** Costs are grouped from the day the tags are activated
-- Activating them is a manual step in the account that manages billing (the Organizations management account, or the account itself if it stands alone)
+- **Costs split by a tag only from when the resources carried it, never before.** Activating the tags late loses nothing that a backfill (up to 12 months) cannot bring back
+- Activating them is a manual step in the account that manages billing (the Organizations management account, or the account itself if it stands alone). A member account sees "Access denied" there
   1. After the first deploy, open Billing and Cost Management → **Cost allocation tags** (a tag can take up to 24 hours to appear)
-  2. Under user-defined cost allocation tags, select `kukan:env` and `kukan:site` (and `kukan:component` if wanted), then **Activate**
-  3. In Cost Explorer, group by the tag to split the costs by environment or site
+  2. Under user-defined cost allocation tags, select `kukan:env` and `kukan:site` (and `kukan:component` if wanted), then **Activate** (activation can take up to another 24 hours)
+  3. If they were activated after the deploy that added the tags, choose **Backfill tags** on the same page and start from that deploy's month. A backfill can be requested once every 24 hours
+  4. In Cost Explorer, group by the tag to split the costs by environment or site
 - Bedrock is called through per-site application inference profiles. The site stack (KukanStack for a single site) makes one for each model it uses (the embedding model and `completionModels`), named `kukan-<env>-<site>-ai-<8 hex digits of the model ID's hash>` (`kukan-<env>-ai-…` for a single site) with the model ID as its description and `kukan:component=ai`; it carries the stack's tags, so Bedrock is billed per site too
   - The app keeps working with model IDs and swaps in the profile only when it calls Bedrock, from `BEDROCK_INFERENCE_PROFILES` (JSON of model ID to profile ARN, set by CDK). `ai_usage` records and the admin model picker keep the model IDs
   - With `bedrock.region` set to a region other than the deployment's, no profiles are made (a profile answers only in its own region): the model IDs are called directly and Bedrock's cost lands in untagged
