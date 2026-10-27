@@ -203,7 +203,7 @@ datastore_info
 | オブジェクトストレージ | S3互換 (AWS S3 / MinIO)     | 原本保管 + プレビューキャッシュ                      |
 | フロントエンド         | React 19 + Next.js 16       | SSR/SSG・モダンUI                                    |
 | UI                     | shadcn/ui + Tailwind CSS    | 柔軟・カスタマイズ性                                 |
-| 認証                   | Better Auth + OIDC          | フレームワーク非依存・Drizzle ORM統合・SSO対応       |
+| 認証                   | Better Auth（OIDC は予定）  | フレームワーク非依存・Drizzle ORM統合・SSO対応       |
 | コンテナ               | Docker                      | 全環境共通のデプロイ単位                             |
 | API仕様                | OpenAPI 3.1                 | 自動生成・互換性                                     |
 | テスト                 | Vitest + Playwright         | モダンテスティング                                   |
@@ -331,7 +331,7 @@ ckan-modern/
 `packages/` 配下の独立パッケージとなり、Turborepoとの相性が非常に良い。
 各パッケージが独立してテスト・ビルド可能。
 
-### 3.5 認証基盤: Better Auth + OIDC
+### 3.5 認証基盤: Better Auth
 
 **Better Authを選定した理由:**
 
@@ -346,61 +346,74 @@ ckan-modern/
 
 **Drizzle ORM統合の意味:**
 
-認証ライブラリとアプリケーション本体が同じDBクライアントインスタンスを使い回せる。
+認証ライブラリとアプリケーション本体が同じ DB クライアントを使う。`createAuth(db, clientIpHeader)`
+（`packages/api/src/auth/auth.ts`）が、API と同じ `createDb()`（`packages/db/src/client.ts`）の接続を
+`drizzleAdapter` に渡す。
 
-```typescript
-// packages/db/client.ts
-export const db = drizzle({ connection: process.env.DATABASE_URL, schema })
+1. **スキーマ一元管理** — Better Auth の表（`user`、`session`、`account`、`verification`、`rate_limit`）も
+   `packages/db/src/schema/` に置き、他の表と同じマイグレーションで管理する（§6.2）
+2. **トランザクション跨ぎ可能** — ユーザーの削除とセッション・API トークンの失効を 1 トランザクションで行える
 
-// packages/api/auth.ts
-import { betterAuth } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { db } from '@kukan/db' // ← 同じインスタンス
+接続プールは web と worker で別に持つ（`WEB_DB_POOL_*` / `WORKER_DB_POOL_*`）。
 
-export const auth = betterAuth({
-  database: drizzleAdapter(db), // アプリと同じ接続をそのまま渡す
-  plugins: [oidcClient()], // OIDC外部IdP連携
-})
-```
+**現在の構成:**
 
-メリット:
+| 項目         | 内容                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 方式         | メールアドレスとパスワード。パスワードは強度を検査する（zxcvbn）                                                                     |
+| セッション   | Cookie。有効期間 7 日、1 日ごとに延長。`state` が `active` でないユーザーのセッションは使えない                                      |
+| sysadmin     | `user.role = 'sysadmin'`（admin プラグインの列を使う。admin プラグインの API は塞ぐ）                                                |
+| API トークン | `kukan_` + 乱数。保存するのは SHA-256 のハッシュだけ。`Authorization: Bearer` / `X-KUKAN-API-Key`（CKAN 互換は `X-CKAN-API-Key` も） |
+| 初回ユーザー | 最初の登録者を sysadmin にする。以後の自己登録は `registration-enabled` 設定（既定で無効）で切り替える（ADR-038）                    |
+| 回数制限     | Better Auth の回数制限を DB（`rate_limit`）に持ち、タスクが複数でも効く。クライアント IP は CDN が付けるヘッダーから読める           |
+| 掃除         | 期限切れのセッション・検証トークン・回数制限の行は worker が毎時消す                                                                 |
+| 秘密鍵       | `BETTER_AUTH_SECRET` が例示の値のままなら、本番（`NODE_ENV=production`）では起動しない                                               |
 
-1. **スキーマ一元管理** — `packages/db/schema.ts` にusersテーブルもdatasetsテーブルも一緒に定義。`drizzle-kit generate` 一発で全テーブルマイグレーション生成
-2. **コネクションプール1つ** — ECS Fargateスケールアウト時の接続数爆発を防ぐ
-3. **トランザクション跨ぎ可能** — ユーザー作成と組織作成を1トランザクションで実行可能
-
-**環境別認証構成:**
-
-| プロファイル        | 認証方式                         | IdP                                             |
-| ------------------- | -------------------------------- | ----------------------------------------------- |
-| development         | Better Auth（メール/パスワード） | 不要（ローカル認証）                            |
-| small               | Better Auth + OIDCプラグイン     | 任意の外部IdP                                   |
-| aws-standard        | Better Auth + OIDC               | Cognito or 外部IdP                              |
-| on-premise (閉域網) | Better Auth + OIDC               | **Keycloak**（LGWAN既存認証基盤統合、SAML対応） |
-
-アプリケーション層はBetter AuthでOIDCクライアント統一実装。
-IdP側だけ環境に応じて差し替える**二層構成**。
+**外部 IdP 連携（OIDC / SAML）は今後の予定**で、まだ入っていない。入れるときは Better Auth のプラグインで
+アプリケーション側の実装を 1 つにし、IdP 側（Cognito、Keycloak、既存の認証基盤）だけを環境に応じて差し替える二層構成とする。
 
 ### 3.6 権限モデル
 
 CKANの多態的`member`テーブルを廃止し、エンティティごとに専用の membership テーブルを設ける。
-ロールは `member` / `editor` / `admin` の3段階。`sysadmin` はシステム全体の管理者。
+ロールは `member` / `editor` / `admin` の3段階で、組織とグループのそれぞれにある。`sysadmin` はシステム全体の管理者で、
+すべての判定を通る。メンバーシップとデータセットの判定は `packages/api/src/auth/permissions.ts` にある。
+sysadmin だけに許す操作（組織・グループの作成・復活・完全削除など）は、ルートが `user.sysadmin` を直接確かめている。
 
-**組織メンバーの操作権限:**
+**データセットの操作権限（所属組織のロール）:**
 
-| 操作                               | 未ログイン | ログイン済（非メンバー） | member | editor | admin | sysadmin |
-| ---------------------------------- | :--------: | :----------------------: | :----: | :----: | :---: | :------: |
-| 公開データセット閲覧               |     ○      |            ○             |   ○    |   ○    |   ○   |    ○     |
-| 非公開データセット閲覧             |     -      |            -             |   ○    |   ○    |   ○   |    ○     |
-| 削除済みデータセット閲覧           |     -      |            -             |   ○    |   ○    |   ○   |    ○     |
-| データセット作成・編集             |     -      |            -             |   -    |   ○    |   ○   |    ○     |
-| データセット削除（ソフトデリート） |     -      |            -             |   -    |   ○    |   ○   |    ○     |
-| データセット復活・完全削除         |     -      |            -             |   -    |   -    |   ○   |    ○     |
-| メンバー管理                       |     -      |            -             |   -    |   -    |   ○   |    ○     |
+| 操作                             | 未ログイン | ログイン済（非メンバー） | member | editor | admin | sysadmin |
+| -------------------------------- | :--------: | :----------------------: | :----: | :----: | :---: | :------: |
+| 公開データセット閲覧             |     ○      |            ○             |   ○    |   ○    |   ○   |    ○     |
+| 非公開データセット閲覧           |     -      |            -             |   ○    |   ○    |   ○   |    ○     |
+| 削除済みデータセット閲覧（詳細） |     -      |            -             |   ○    |   ○    |   ○   |    ○     |
+| 組織の無い下書きの作成           |     -      |            ○             |   ○    |   ○    |   ○   |    ○     |
+| 組織の付いた下書きの作成         |     -      |            -             |   -    |   ○    |   ○   |    ○     |
+| 他人の下書きの閲覧・編集・公開   |     -      |            -             |   -    |   ○    |   ○   |    ○     |
+| データセット作成・編集・公開     |     -      |            -             |   -    |   ○    |   ○   |    ○     |
+| データセット削除（ゴミ箱へ）     |     -      |            -             |   -    |   ○    |   ○   |    ○     |
+| データセット復活・完全削除       |     -      |            -             |   -    |   -    |   ○   |    ○     |
+
+- 下書き（ADR-039）は作成者・sysadmin・所属組織の editor が扱える。パージの途中で止まった下書き（`purging`）も同じ
+- 組織の付いた下書きを公開するときは、作成者であっても公開の時点で所属組織の editor であることを確かめ直す。組織を抜けた作成者は、下書きの閲覧・編集・削除はできるが公開はできない
+- 組織の無いデータセットは sysadmin だけが変更できる。ただし下書きは除く（組織の無い下書きは作成者と sysadmin が扱える）
+- ダッシュボードの削除済み一覧は editor 以上
+
+**組織・グループの操作権限:**
+
+| 操作                                 | 必要なもの                                       |
+| ------------------------------------ | ------------------------------------------------ |
+| 組織・グループの作成、復活、完全削除 | sysadmin                                         |
+| 組織・グループの更新・削除           | その組織・グループの admin                       |
+| 組織・グループのメンバー管理         | その組織・グループの admin                       |
+| 組織・グループのメンバー一覧の閲覧   | その組織・グループの member 以上                 |
+| データセットをグループに入れる       | データセットの編集権限（グループのロールは不要） |
 
 **可視性ルール:**
 
+- 見えないデータセット（下書き・非公開・削除済み）は、**存在しないものと同じく 404** を返す。403 は「見えるが、操作に必要なロールが無い」ときだけ返す。
+  書き込み（PUT・DELETE）も、先に閲覧できるかを確かめてからロールを見る
 - 公開ページ（`/dataset`）: 公開・active のみ表示。ログイン済みの場合、所属 org の非公開も表示
+- 下書きは検索インデックスに入れない。非公開は入れるが、検索結果を DB で引き直して見えないものを除く
 - ダッシュボード: `my_org=true` で自組織のデータセットを管理。削除済みタブで soft-deleted を閲覧可能
 - 削除済みデータセットは公開ページには一切表示されない
 
@@ -412,6 +425,11 @@ CKANの多態的`member`テーブルを廃止し、エンティティごとに�
 | ユーザー削除（ソフトデリート） | セッション・APIトークン即時無効化                               |
 | ユーザー復活                   | ソフトデリート済みユーザーの再有効化                            |
 | ユーザー完全削除（パージ）     | パッケージにリンクがないことが条件。activity/audit_log は匿名化 |
+
+**エラー応答:** RFC 9457（旧 RFC 7807）の Problem Details で返す。`KukanError` からエラーハンドラーが組む応答では、`title` はエラーコード（`NOT_FOUND`、`VALIDATION_ERROR` 等）。
+ルートが本文を直接組んで `title` に文言（`Not Found` 等）を入れている箇所が一部に残っているので、クライアントは `title` ではなく `status` と `type` で判断する。
+画面が利用者の言語で理由を言い分ける必要があるものだけ、`type` に `https://kukan.dev/problems/<種別>` を入れる
+（一覧は `packages/shared/src/problem-types.ts`）。それ以外は `about:blank`。
 
 ---
 
@@ -599,7 +617,7 @@ Workerが落ちていてもジョブは `job` 表に残り、起動時に表を�
   - 外部アクセスなし: 事前ビルド済みイメージ使用
   - TLS証明書: 自己署名 or 内部CA
   - AI機能: ローカル LLM (Ollama) or 無効化
-  - 認証: Better Auth + OIDC（Keycloak IdP連携）
+  - 認証: Better Auth（予定: OIDC で Keycloak IdP 連携）
   - キャッシュ: lru-cache（インメモリ、全環境共通）
 ```
 
@@ -871,224 +889,124 @@ bucket/
 - `package_extra` / `group_extra` を廃止 → JSONB `extras` カラムに統合
 - `member` テーブルの多態性を解消 → 用途別テーブルに分離
 - DataStore関連テーブルを全廃
+- 論理削除フラグ（`deleted_at`）は使わず、`state` 列で状態を持つ（§6.3）
 
-### 6.2 コアスキーマ
+**列の正本は `packages/db/src/schema/` の Drizzle 定義**であり、本節は表の役割と規約だけを書く。
+マイグレーションは `packages/db/drizzle/` に Drizzle Kit で生成する（worker が起動時に適用。§4 / `docs/specs/jp/phase4-deploy.md`）。
+
+### 6.2 表の一覧
+
+| 区分                | 表                                                              | 定義ファイル           | 役割                                                                                  |
+| ------------------- | --------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
+| カタログ            | `organization`、`group`                                         | `organization.ts` 等   | 組織とグループ（分離）                                                                |
+|                     | `package`                                                       | `package.ts`           | データセット（= CKAN package）                                                        |
+|                     | `resource`                                                      | `resource.ts`          | リソース。ストレージキー、AI 抄録、埋め込み（pgvector）、品質の列、未反映フラグを持つ |
+|                     | `vocabulary`、`tag`、`package_tag`                              | `tag.ts`               | タグ                                                                                  |
+|                     | `user_org_membership`、`user_group_membership`、`package_group` | `membership.ts`        | メンバーシップとグループ所属（多態性を解消し用途別に分離）                            |
+| 認証（Better Auth） | `user`、`session`、`account`、`verification`、`rate_limit`      | `user.ts`・`auth.ts`   | ユーザー、セッション、資格情報、回数制限（§3.5）                                      |
+|                     | `api_token`                                                     | `api-token.ts`         | API トークン（SHA-256 のハッシュだけを保存）                                          |
+| パイプライン        | `job`                                                           | `job.ts`               | ジョブキュー（ADR-058）。終わったジョブは消す                                         |
+|                     | `resource_pipeline`、`resource_pipeline_step`                   | `resource-pipeline.ts` | パイプラインの実行記録                                                                |
+|                     | `resource_version`                                              | `resource-version.ts`  | 正本の版（ADR-043 層 1）                                                              |
+|                     | `orphaned_object`                                               | `orphaned-object.ts`   | ストレージオブジェクトの回収予約（ADR-045）                                           |
+|                     | `fetch_rate_limit`                                              | `fetch-rate-limit.ts`  | 外部 URL 取得のホストごとの間隔                                                       |
+| 記録                | `audit_log`                                                     | `audit.ts`             | 監査ログ（`*_revision` の代替）                                                       |
+|                     | `activity`                                                      | `activity.ts`          | アクティビティストリーム                                                              |
+|                     | `ai_usage`                                                      | `ai-usage.ts`          | AI の呼び出しと利用量                                                                 |
+| 設定                | `system_setting`                                                | `system-setting.ts`    | ランタイム設定（ADR-036）。サイトのメタデータ（ADR-064）もここのキー                  |
+|                     | `announcement`                                                  | `announcement.ts`      | お知らせ                                                                              |
+
+DuckLake のカタログ（ADR-043 層 2）は PostgreSQL ではなく、リソースごとの SQLite ファイルに置く（ADR-067）。
+
+### 6.3 列の規約と例外
+
+カタログの実体（`organization`、`group`、`package`、`resource` 等）は次の形をとる。
+
+- `id`: UUID（`gen_random_uuid()`）
+- `created` / `updated`: `TIMESTAMPTZ NOT NULL DEFAULT now()`。`updated` は DB では自動更新せず、更新する側が書く
+- `extras`: JSONB（`{}`）。型は TypeScript の側で付ける
+- 子・結合表への外部キーは `ON DELETE CASCADE`。それ以外の参照（`package.owner_org`、`audit_log.user_id`、`tag.vocabulary_id` 等）は指定せず NO ACTION なので、参照先の行を消すサービスは、その前に参照元を片付けておく必要がある（片付け忘れは外部キーの違反で失敗する）
+
+次は形が違う。理由があって違う。
+
+| 表                                                  | 形                                         | 理由                           |
+| --------------------------------------------------- | ------------------------------------------ | ------------------------------ |
+| `user`・`session`・`account`                        | text の id、`createdAt` / `updatedAt`      | Better Auth の表の形に合わせる |
+| `verification`                                      | UUID の id、`createdAt` / `updatedAt`      | 同上（id だけ UUID）           |
+| `rate_limit`                                        | text の id、時刻列なし                     | Better Auth が期限切れを消す   |
+| `fetch_rate_limit`、`orphaned_object`               | 自然キー（FQDN、オブジェクトキー）が主キー | 1 キー 1 行                    |
+| `audit_log`                                         | `BIGSERIAL`、`created_at` のみ             | 追記だけの記録                 |
+| `activity`、`api_token`、メンバーシップ             | `created`（`created_at`）のみ              | 更新しない                     |
+| `vocabulary`、`tag`、`package_tag`、`package_group` | 時刻列なし                                 | 更新しない                     |
+
+**`state` の値**（`varchar`。enum や CHECK 制約は使わない。値の型は `package` が `packages/shared/src/types.ts`、`resource_version` が `packages/shared/src/version-views.ts`、`job` が `packages/db/src/schema/job.ts` にあり、ほかは書き込むサービスのリテラル）:
+
+| 表                 | 値                              | 一時値・旧方式の値                                                                                      |
+| ------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `package`          | `draft` / `active` / `deleted`  | `purging`（パージの途中。ADR-039）                                                                      |
+| `organization`     | `active` / `deleted`            | `purging`（ADR-028）                                                                                    |
+| `group`            | `active` / `deleted`            | なし（パージは 1 トランザクション）                                                                     |
+| `resource`         | `active` / `deleted`            | なし                                                                                                    |
+| `resource_version` | `active` / `purging` / `purged` | 旧方式の巻き戻しが残した行だけ `superseded`（新しくは書かない。`packages/shared/src/version-views.ts`） |
+| `user`             | `active` / `deleted`            | なし                                                                                                    |
+| `job`              | `ready` / `dead`                | なし（終わったジョブは行ごと消す。ADR-058）                                                             |
+
+`deleted` は期限なく残る「ゴミ箱」で、パージ（完全削除）で行が消える。`purging` は外部の掃除を始める前に立てる印で、
+立っている間は復元も配下の新規作成もできない。途中で落ちても `purging` のまま残り、再実行が拾う（ADR-028）。
+同時に走るパージどうしの排他は、この印ではなくリソースの実行 claim が担う（ADR-044）。
+
+**未反映フラグ**: `package.doc_sync_due_at`、`resource.doc_sync_due_at` / `embedding_due_at` / `content_index_due_at` は、
+検索索引・埋め込みへの反映を待っていることを示す（立っていれば NULL でない）。書き込みと同じ文で立て、
+反映したジョブが下ろす（`docs/jobs.md`）。
+
+### 6.4 計画中の表（未実装）
+
+次の表は計画のみで、まだ作っていない。
+
+#### Quality Monitor
 
 ```sql
 -- ============================================================
--- 組織
+-- 品質チェック結果
 -- ============================================================
-CREATE TABLE organization (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          VARCHAR(100) UNIQUE NOT NULL,  -- slug
-  title         TEXT,
-  description   TEXT,
-  image_url     TEXT,
-  state         VARCHAR(20) DEFAULT 'active',
-  extras        JSONB DEFAULT '{}',
-  created       TIMESTAMPTZ DEFAULT NOW(),
-  updated       TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ============================================================
--- グループ（組織と分離）
--- ============================================================
-CREATE TABLE "group" (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          VARCHAR(100) UNIQUE NOT NULL,
-  title         TEXT,
-  description   TEXT,
-  image_url     TEXT,
-  state         VARCHAR(20) DEFAULT 'active',
-  extras        JSONB DEFAULT '{}',
-  created       TIMESTAMPTZ DEFAULT NOW(),
-  updated       TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ============================================================
--- ユーザー
--- ============================================================
-CREATE TABLE "user" (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          VARCHAR(100) UNIQUE NOT NULL,
-  email         VARCHAR(200) UNIQUE,
-  display_name  TEXT,
-  password_hash TEXT,
-  state         VARCHAR(20) DEFAULT 'active',
-  sysadmin      BOOLEAN DEFAULT FALSE,
-  created       TIMESTAMPTZ DEFAULT NOW(),
-  updated       TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE api_token (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-  name          VARCHAR(200),
-  token_hash    TEXT NOT NULL,
-  last_used     TIMESTAMPTZ,
-  expires_at    TIMESTAMPTZ,
-  created       TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ============================================================
--- データセット（= CKAN package）
--- ============================================================
-CREATE TABLE package (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name             VARCHAR(100) UNIQUE NOT NULL,
-  title            TEXT,
-  notes            TEXT,
-  url              TEXT,
-  version          VARCHAR(100),
-  license_id       VARCHAR(100),
-  author           TEXT,
-  author_email     TEXT,
-  maintainer       TEXT,
-  maintainer_email TEXT,
-  state            VARCHAR(20) DEFAULT 'active',
-  type             VARCHAR(100) DEFAULT 'dataset',
-  owner_org        UUID REFERENCES organization(id),
-  private          BOOLEAN DEFAULT FALSE,
-  creator_user_id  UUID REFERENCES "user"(id),
-  extras           JSONB DEFAULT '{}',
-
-  -- 新機能拡張フィールド
-  spatial_coverage   GEOMETRY(Geometry, 4326),
-  temporal_start     TIMESTAMPTZ,
-  temporal_end       TIMESTAMPTZ,
-  quality_score      FLOAT,
-  ai_summary         TEXT,
-  ai_tags            TEXT[],
-
-  created            TIMESTAMPTZ DEFAULT NOW(),
-  updated            TIMESTAMPTZ DEFAULT NOW(),
-
-  -- PostgreSQL全文検索（フォールバック用）
-  search_vector      TSVECTOR GENERATED ALWAYS AS (
-    setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-    setweight(to_tsvector('simple', coalesce(notes, '')), 'B') ||
-    setweight(to_tsvector('simple', coalesce(extras::text, '')), 'C')
-  ) STORED
-);
-CREATE INDEX idx_package_search ON package USING GIN(search_vector);
-CREATE INDEX idx_package_owner_org ON package(owner_org);
-CREATE INDEX idx_package_state ON package(state);
-CREATE INDEX idx_package_extras ON package USING GIN(extras);
-
--- ============================================================
--- リソース
--- ============================================================
-CREATE TABLE resource (
+CREATE TABLE quality_check (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  package_id      UUID NOT NULL REFERENCES package(id) ON DELETE CASCADE,
-  url             TEXT,
-  name            TEXT,
-  description     TEXT,
-  format          VARCHAR(100),
-  mimetype        VARCHAR(200),
-  size            BIGINT,
-  hash            TEXT,
-  position        INTEGER DEFAULT 0,
-  state           VARCHAR(20) DEFAULT 'active',
-  resource_type   VARCHAR(50),
-  extras          JSONB DEFAULT '{}',
-
-  -- 処理状態は resource_pipeline テーブルに分離（Phase 3 で移行済み）
-  -- AI 分析結果は Phase 5 で resource_pipeline.metadata に格納予定
-
-  -- Quality Monitor（品質監視）
-  health_status      VARCHAR(20) DEFAULT 'unknown',  -- 'ok' | 'warning' | 'error' | 'unknown'
-  health_checked_at  TIMESTAMPTZ,
-  health_check_state JSONB DEFAULT '{}',              -- チェッカーの作業状態（非公開、admin のみ）
-  quality_issues     JSONB DEFAULT '[]',              -- 最新の品質問題リスト
-
-  created         TIMESTAMPTZ DEFAULT NOW(),
-  updated         TIMESTAMPTZ DEFAULT NOW(),
-  last_modified   TIMESTAMPTZ
+  check_type      VARCHAR(50) NOT NULL,  -- 'health_check' | 'csv_validation' | 'metadata_audit' | 'pii_scan'
+  resource_id     UUID REFERENCES resource(id) ON DELETE CASCADE,
+  dataset_id      UUID REFERENCES package(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organization(id),
+  status          VARCHAR(20) NOT NULL,  -- 'ok' | 'warning' | 'error'
+  details         JSONB NOT NULL,        -- チェック種別ごとの詳細結果
+  checked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at     TIMESTAMPTZ,           -- 問題解決日時
+  resolved_by     TEXT REFERENCES "user"(id)
 );
-CREATE INDEX idx_resource_package ON resource(package_id);
-CREATE INDEX idx_resource_format ON resource(format);
+
+CREATE INDEX idx_quality_check_resource ON quality_check(resource_id, check_type);
+CREATE INDEX idx_quality_check_org ON quality_check(organization_id, status);
+CREATE INDEX idx_quality_check_date ON quality_check(checked_at DESC);
 
 -- ============================================================
--- タグ
+-- 品質スコア履歴（日次集計）
 -- ============================================================
-CREATE TABLE vocabulary (
+CREATE TABLE quality_score_history (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            VARCHAR(200) UNIQUE NOT NULL
+  organization_id UUID NOT NULL REFERENCES organization(id),
+  date            DATE NOT NULL,
+  total_resources INTEGER NOT NULL,
+  healthy_count   INTEGER NOT NULL,
+  broken_links    INTEGER NOT NULL,
+  csv_errors      INTEGER NOT NULL,
+  metadata_completeness NUMERIC(5,2),  -- 0.00〜100.00
+  pii_warnings    INTEGER NOT NULL,
+  overall_score   NUMERIC(5,2),        -- 0.00〜100.00
+  UNIQUE(organization_id, date)
 );
+```
 
-CREATE TABLE tag (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            VARCHAR(200) NOT NULL,
-  vocabulary_id   UUID REFERENCES vocabulary(id),
-  UNIQUE(name, vocabulary_id)
-);
+#### Harvest
 
-CREATE TABLE package_tag (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  package_id      UUID NOT NULL REFERENCES package(id) ON DELETE CASCADE,
-  tag_id          UUID NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
-  UNIQUE(package_id, tag_id)
-);
-
--- ============================================================
--- メンバーシップ（多態性を解消し用途別に分離）
--- ============================================================
-CREATE TABLE user_org_membership (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
-  role            VARCHAR(50) NOT NULL DEFAULT 'member',
-  created         TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, organization_id)
-);
-
-CREATE TABLE user_group_membership (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-  group_id        UUID NOT NULL REFERENCES "group"(id) ON DELETE CASCADE,
-  role            VARCHAR(50) NOT NULL DEFAULT 'member',
-  created         TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, group_id)
-);
-
-CREATE TABLE package_group (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  package_id      UUID NOT NULL REFERENCES package(id) ON DELETE CASCADE,
-  group_id        UUID NOT NULL REFERENCES "group"(id) ON DELETE CASCADE,
-  UNIQUE(package_id, group_id)
-);
-
--- ============================================================
--- 監査ログ（*_revision テーブル群の代替）
--- ============================================================
-CREATE TABLE audit_log (
-  id              BIGSERIAL PRIMARY KEY,
-  entity_type     VARCHAR(50) NOT NULL,
-  entity_id       UUID NOT NULL,
-  action          VARCHAR(20) NOT NULL,
-  user_id         UUID REFERENCES "user"(id),
-  changes         JSONB,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_audit_entity
-  ON audit_log(entity_type, entity_id, created_at DESC);
-
--- ============================================================
--- アクティビティストリーム
--- ============================================================
-CREATE TABLE activity (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID REFERENCES "user"(id),
-  object_id       UUID NOT NULL,
-  object_type     VARCHAR(50) NOT NULL,
-  activity_type   VARCHAR(100) NOT NULL,
-  data            JSONB,
-  created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_activity_object
-  ON activity(object_type, object_id, created_at DESC);
-
+```sql
 -- ============================================================
 -- Harvest
 -- ============================================================
@@ -1114,47 +1032,6 @@ CREATE TABLE harvest_job (
   import_finished TIMESTAMPTZ,
   stats           JSONB,
   created         TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### 6.3 Quality Monitor テーブル
-
-```sql
--- ============================================================
--- 品質チェック結果
--- ============================================================
-CREATE TABLE quality_check (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  check_type      VARCHAR(50) NOT NULL,  -- 'health_check' | 'csv_validation' | 'metadata_audit' | 'pii_scan'
-  resource_id     UUID REFERENCES resource(id) ON DELETE CASCADE,
-  dataset_id      UUID REFERENCES package(id) ON DELETE CASCADE,
-  organization_id UUID REFERENCES organization(id),
-  status          VARCHAR(20) NOT NULL,  -- 'ok' | 'warning' | 'error'
-  details         JSONB NOT NULL,        -- チェック種別ごとの詳細結果
-  checked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  resolved_at     TIMESTAMPTZ,           -- 問題解決日時
-  resolved_by     UUID REFERENCES "user"(id)
-);
-
-CREATE INDEX idx_quality_check_resource ON quality_check(resource_id, check_type);
-CREATE INDEX idx_quality_check_org ON quality_check(organization_id, status);
-CREATE INDEX idx_quality_check_date ON quality_check(checked_at DESC);
-
--- ============================================================
--- 品質スコア履歴（日次集計）
--- ============================================================
-CREATE TABLE quality_score_history (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL REFERENCES organization(id),
-  date            DATE NOT NULL,
-  total_resources INTEGER NOT NULL,
-  healthy_count   INTEGER NOT NULL,
-  broken_links    INTEGER NOT NULL,
-  csv_errors      INTEGER NOT NULL,
-  metadata_completeness NUMERIC(5,2),  -- 0.00〜100.00
-  pii_warnings    INTEGER NOT NULL,
-  overall_score   NUMERIC(5,2),        -- 0.00〜100.00
-  UNIQUE(organization_id, date)
 );
 ```
 
@@ -1762,8 +1639,9 @@ interface QualityReport {
 
 ### 10.6 DBスキーマ
 
-Quality Monitor関連テーブル（`quality_check`、`quality_score_history`）および
-`resource` テーブルへの品質カラム追加は **6.3節** に定義。
+Quality Monitor関連テーブル（`quality_check`、`quality_score_history`）は **6.4節**（計画・未実装）。
+`resource` テーブルの品質カラム（`health_status`、`health_checked_at`、`health_check_state`、`quality_issues`）は実装済み
+（`packages/db/src/schema/resource.ts`）。
 
 ---
 

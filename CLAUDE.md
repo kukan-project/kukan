@@ -146,17 +146,23 @@ pnpm format        # Prettier フォーマット
 
 - カスタムエラークラスを使う（`KukanError` を基底クラス）
 - エラーは発生箇所に最も近い場所でキャッチ
-- APIレスポンスは RFC 7807 Problem Details 形式
+- APIレスポンスは RFC 9457（旧 RFC 7807）Problem Details 形式。エラーは `KukanError` の派生を投げ、
+  エラーハンドラーに Problem Details を組ませる。そのとき `title` はエラーコードになる。
+  ルートが本文を直接組んで `title: 'Not Found'` 等の文言を返している箇所が一部に残るが、新しく書かない
   ```typescript
-  { type: 'about:blank', title: 'Not Found', status: 404, detail: '...' }
+  { type: 'about:blank', title: 'NOT_FOUND', status: 404, detail: '...' }
   ```
+- 画面が利用者の言語で理由を言い分けるエラーだけ、`type` に problem type の URI を入れる
+  （閉じた一覧は `packages/shared/src/problem-types.ts`）。画面は英語の `detail` ではなく `type` で分岐する
 
 ### データベース
 
-- すべてのテーブルに `id` (UUID), `created` (TIMESTAMPTZ), `updated` (TIMESTAMPTZ)
+- カタログの実体の表は `id` (UUID), `created` (TIMESTAMPTZ), `updated` (TIMESTAMPTZ) を持つ。`updated` は自動更新しない（書く側が更新する）。
+  例外: Better Auth の表（`createdAt` / `updatedAt`。id は `verification` だけ UUID で他は text）、自然キーの表（`fetch_rate_limit`、`orphaned_object`）、
+  追記だけの記録（`audit_log`、`activity`）、時刻列を持たない `vocabulary`・`tag` と結合表。一覧は `docs/design-v4.md` §6
 - 論理削除は使わない（`state` カラムで管理: package は `draft` / `active` / `deleted`、organization / group は `active` / `deleted`。
   package と organization は purge 遷移中に一時値 `purging` を取る — ADR-028 / ADR-039）
-- マイグレーションは Drizzle Kit で管理
+- マイグレーションは Drizzle Kit で管理。書き方（生成物、手で足す SQL、古いコードとの共存、戻さない）は `CONTRIBUTING.md` の Database Migrations
 - **投影内の相関サブクエリを生 SQL で書かない。** `exists()` / `db.$count()` を使い、
   相関は WHERE 側に置く。FROM が単一テーブルのとき、Drizzle は投影に置かれた裸のカラム
   参照からテーブル修飾を落とす。`WHERE rv.resource_id = ${resource.id}` は
@@ -321,7 +327,8 @@ pnpm format        # Prettier フォーマット
 パイプラインは Fetch → Version → Interpret → Lake → Index → Summarize の6ステップ
 （Summarize は `AI_SUMMARY_MODEL` を設定したサイトのみ、ADR-053）。
 Index ステップでリソースコンテンツの OpenSearch 投入を行う（ADR-021）。文書（PDF・Office・Markdown）のテキスト抽出は Interpret が行い、ページ・見出し・図の位置付きの成果物（`text.ndjson.zst`）を Index が読む。
-メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
+メタデータの検索インデックス更新は、サービスが書き込みと同じ文で未反映フラグ（`doc_sync_due_at`）を立て、
+ルートがその場で反映する。反映できなかった分は `sync-search-docs` ジョブと定期再投入が拾う（`docs/jobs.md`）。
 Interpret のみフォーマット別処理を行う。JSON/GeoJSON はレコードの一覧として読めるものだけ表になる
 （最上位の配列、1 キーの下の配列、FeatureCollection の properties。ADR-063 §決定 10）。
 

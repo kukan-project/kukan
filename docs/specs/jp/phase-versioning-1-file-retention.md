@@ -126,7 +126,7 @@ export const resourceVersion = pgTable(
   本体（S3）と DuckLake は cascade で消えない** → リソース purge 側で明示的に掃除する（残課題、
   Phase ii のリソース purge 拡張で扱う。本フェーズはリソース delete=論理削除のため版ファイルは残置）。
 - `ResourceSchema` は `@kukan/shared` の既存 Zod 型（ADR-032）を再利用。
-- マイグレーションは Drizzle Kit（`pnpm db:generate`）。DB スキーマ追加のみで、既存リソースへの
+- マイグレーションは Drizzle Kit（`pnpm --filter @kukan/db db:generate`）。DB スキーマ追加のみで、既存リソースへの
   版定義の自動作成（移行）はマイグレーションでは行わない。
 
 ### 4.1 既存リソースの移行（v1 付与）

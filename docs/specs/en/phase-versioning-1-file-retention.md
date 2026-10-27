@@ -144,7 +144,7 @@ export const resourceVersion = pgTable(
   purge extension in Phase ii. In this phase resource delete is a logical delete, so version files
   stay).
 - `ResourceSchema` reuses the existing Zod type in `@kukan/shared` (ADR-032).
-- Migrations via Drizzle Kit (`pnpm db:generate`). This only adds the DB schema; the migration
+- Migrations via Drizzle Kit (`pnpm --filter @kukan/db db:generate`). This only adds the DB schema; the migration
   does not automatically create version records (migrate) for existing resources.
 
 ### 4.1 Migrating existing resources (assigning v1)
