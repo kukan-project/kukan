@@ -64,7 +64,7 @@
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "better-auth": "1.7.12",
     "busboy": "^1.6.0",
     "dotenv": "^18.0.8",
