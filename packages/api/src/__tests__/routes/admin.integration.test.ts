@@ -189,7 +189,7 @@ describe('Admin API Routes', () => {
       expect(res.status).toBe(400)
 
       const body = await res.json()
-      expect(body.detail).toBe('OpenSearch not enabled')
+      expect(body).toMatchObject({ title: 'VALIDATION_ERROR', detail: 'OpenSearch not enabled' })
     })
   })
 
@@ -238,7 +238,10 @@ describe('Admin API Routes', () => {
       const res = await app.request('/api/v1/admin/reindex-embeddings', { method: 'POST' })
 
       expect(res.status).toBe(400)
-      expect((await res.json()).detail).toBe('Embedding is not configured')
+      expect(await res.json()).toMatchObject({
+        title: 'VALIDATION_ERROR',
+        detail: 'Embedding is not configured',
+      })
     })
   })
 
@@ -513,6 +516,10 @@ describe('Admin API Routes', () => {
       const res = await pgApp.request('/api/v1/admin/search/reanalyse', { method: 'POST' })
 
       expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({
+        title: 'VALIDATION_ERROR',
+        detail: 'OpenSearch not enabled',
+      })
     })
 
     it('queues anyway when the cluster is too busy to answer', async () => {
@@ -776,6 +783,7 @@ describe('Admin API Routes', () => {
     it('POST /test should return 400 when completion is unavailable', async () => {
       const res = await app.request(`${AI_SUGGEST_PATH}/test`, { method: 'POST' })
       expect(res.status).toBe(400)
+      expect((await res.json()).title).toBe('VALIDATION_ERROR')
     })
 
     it('POST /test should report success with model and latency', async () => {
@@ -882,6 +890,7 @@ describe('Admin API Routes', () => {
       ] as Array<[string, unknown]>) {
         const res = await put(key, value)
         expect(res.status).toBe(400)
+        expect((await res.json()).title).toBe('VALIDATION_ERROR')
       }
     })
 
@@ -889,12 +898,69 @@ describe('Admin API Routes', () => {
       for (const key of ['nope', 'vector-search']) {
         const res = await put(key, 1)
         expect(res.status).toBe(404)
+        expect(await res.json()).toMatchObject({
+          title: 'NOT_FOUND',
+          detail: `Unknown setting: ${key}`,
+        })
       }
     })
 
     it('should reject unauthenticated and non-sysadmin requests', async () => {
       expect((await unauthApp.request('/api/v1/admin/settings')).status).toBe(401)
       expect((await nonAdminApp.request('/api/v1/admin/settings')).status).toBe(403)
+    })
+  })
+
+  describe('search document inspection refusals', () => {
+    const noContentsApp = createTestApp(db, {
+      search: { ...mockSearch, browseContentsByResource: async () => null },
+    })
+
+    it.each([
+      [
+        'an unknown index (doc)',
+        app,
+        '/api/v1/admin/search/doc/nope/x',
+        400,
+        'VALIDATION_ERROR',
+        'Invalid index',
+      ],
+      [
+        'an unknown index (browse)',
+        app,
+        '/api/v1/admin/search/browse/nope',
+        400,
+        'VALIDATION_ERROR',
+        'Invalid index',
+      ],
+      [
+        'a missing document',
+        app,
+        '/api/v1/admin/search/doc/packages/x',
+        404,
+        'NOT_FOUND',
+        'Document not found',
+      ],
+      [
+        'no index to browse',
+        app,
+        '/api/v1/admin/search/browse/packages',
+        404,
+        'NOT_FOUND',
+        'OpenSearch not enabled',
+      ],
+      [
+        'no contents to browse',
+        noContentsApp,
+        '/api/v1/admin/search/browse/contents',
+        404,
+        'NOT_FOUND',
+        'OpenSearch not enabled',
+      ],
+    ] as const)('refuses %s', async (_, target, url, status, title, detail) => {
+      const res = await target.request(url)
+      expect(res.status).toBe(status)
+      expect(await res.json()).toMatchObject({ title, status, detail })
     })
   })
 
@@ -949,7 +1015,10 @@ describe('Admin API Routes', () => {
     it('refuses to start a generation on a site that has abstracts switched off', async () => {
       const res = await app.request('/api/v1/admin/generate-summaries', { method: 'POST' })
       expect(res.status).toBe(400)
-      expect((await res.json()).detail).toMatch(/not enabled/)
+      expect(await res.json()).toMatchObject({
+        title: 'VALIDATION_ERROR',
+        detail: expect.stringMatching(/not enabled/),
+      })
     })
 
     it('refuses a model the deployment never approved, rather than substituting one', async () => {
@@ -1855,6 +1924,7 @@ describe('Admin API Routes', () => {
       )
       expect(res.status).toBe(400)
       const body = await res.json()
+      expect(body.title).toBe('VALIDATION_ERROR')
       expect(body.detail).toContain('yourself')
     })
 
@@ -1966,6 +2036,7 @@ describe('Admin API Routes', () => {
       )
       expect(res.status).toBe(400)
       const body = await res.json()
+      expect(body.title).toBe('VALIDATION_ERROR')
       expect(body.detail).toContain('yourself')
     })
 

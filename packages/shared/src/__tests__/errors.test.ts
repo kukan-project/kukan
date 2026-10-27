@@ -52,6 +52,10 @@ describe('NotFoundError', () => {
     expect(error.status).toBe(404)
   })
 
+  it('should create with entity alone', () => {
+    expect(new NotFoundError('User').message).toBe('User not found')
+  })
+
   it('should be an instance of KukanError', () => {
     const error = new NotFoundError('User', '123')
     expect(error).toBeInstanceOf(KukanError)

@@ -365,6 +365,10 @@ describe('Admin Users API', () => {
         body: JSON.stringify(validBody),
       })
       expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({
+        title: 'VALIDATION_ERROR',
+        detail: 'Failed to create user',
+      })
     })
   })
 
@@ -416,6 +420,7 @@ describe('Admin Users API', () => {
       })
       expect(res.status).toBe(409)
       const body = await res.json()
+      expect(body.title).toBe('CONFLICT')
       expect(body.detail).toContain('already taken')
     })
 
@@ -463,7 +468,31 @@ describe('Admin Users API', () => {
       })
       expect(res.status).toBe(400)
       const body = await res.json()
+      expect(body.title).toBe('VALIDATION_ERROR')
       expect(body.detail).toContain('demote')
+    })
+
+    it('should refuse an update with no fields', async () => {
+      const res = await app.request(`/api/v1/admin/users/${targetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({
+        title: 'VALIDATION_ERROR',
+        detail: 'No fields to update',
+      })
+    })
+
+    it('should return 404 for a user that does not exist', async () => {
+      const res = await app.request('/api/v1/admin/users/00000000-0000-0000-0000-0000000000ff', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: 'nobody' }),
+      })
+      expect(res.status).toBe(404)
+      expect(await res.json()).toMatchObject({ title: 'NOT_FOUND', detail: 'User not found' })
     })
 
     it('should reject invalid name format', async () => {
@@ -536,6 +565,7 @@ describe('Admin Users API', () => {
       })
       expect(res.status).toBe(400)
       const body = await res.json()
+      expect(body.title).toBe('VALIDATION_ERROR')
       expect(body.detail).toContain('yourself')
     })
 

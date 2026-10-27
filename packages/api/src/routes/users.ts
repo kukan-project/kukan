@@ -8,7 +8,7 @@ import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { eq, and, sql, ilike, or, getTableColumns } from 'drizzle-orm'
 import { organization, userOrgMembership, group, userGroupMembership, user } from '@kukan/db'
-import { escapeLike, UnauthorizedError } from '@kukan/shared'
+import { escapeLike, NotFoundError, UnauthorizedError } from '@kukan/shared'
 import { orgPackageCount } from '../services/organization-service'
 import type { AppContext } from '../context'
 
@@ -19,15 +19,7 @@ usersRouter.get('/me', async (c) => {
   const currentUser = c.get('user')
 
   if (!currentUser) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'UNAUTHORIZED',
-        status: 401,
-        detail: 'Authentication required',
-      },
-      401
-    )
+    throw new UnauthorizedError()
   }
 
   // Fetch from DB to include displayName and other fields not in session
@@ -45,10 +37,7 @@ usersRouter.get('/me', async (c) => {
     .limit(1)
 
   if (!row) {
-    return c.json(
-      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
-      404
-    )
+    throw new NotFoundError('User')
   }
 
   return c.json(row)
@@ -59,15 +48,7 @@ usersRouter.get('/me/organizations', async (c) => {
   const user = c.get('user')
 
   if (!user) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'UNAUTHORIZED',
-        status: 401,
-        detail: 'Authentication required',
-      },
-      401
-    )
+    throw new UnauthorizedError()
   }
 
   const db = c.get('db')
@@ -150,15 +131,7 @@ usersRouter.get(
   async (c) => {
     const currentUser = c.get('user')
     if (!currentUser) {
-      return c.json(
-        {
-          type: 'about:blank',
-          title: 'UNAUTHORIZED',
-          status: 401,
-          detail: 'Authentication required',
-        },
-        401
-      )
+      throw new UnauthorizedError()
     }
 
     const db = c.get('db')

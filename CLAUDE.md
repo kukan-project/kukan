@@ -148,7 +148,7 @@ pnpm format        # Prettier フォーマット
 - エラーは発生箇所に最も近い場所でキャッチ
 - APIレスポンスは RFC 9457（旧 RFC 7807）Problem Details 形式。エラーは `KukanError` の派生を投げ、
   エラーハンドラーに Problem Details を組ませる。そのとき `title` はエラーコードになる。
-  ルートが本文を直接組んで `title: 'Not Found'` 等の文言を返している箇所が一部に残るが、新しく書かない
+  ルートで本文を直接組まない（やむを得ず組む所でも `title` はエラーコードの形にする）
   ```typescript
   { type: 'about:blank', title: 'NOT_FOUND', status: 404, detail: '...' }
   ```

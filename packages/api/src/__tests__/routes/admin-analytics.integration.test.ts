@@ -65,6 +65,7 @@ describe('Admin Analytics API Routes', () => {
       const res = await unconfiguredApp.request(url)
       expect(res.status).toBe(404)
       const body = await res.json()
+      expect(body.title).toBe('NOT_FOUND')
       expect(body.detail).toContain('GA4 analytics is not configured')
     })
   })

@@ -39,6 +39,7 @@ import {
   revertResourceSchema,
   versionNumberSchema,
   runPipelineSchema,
+  KukanError,
   UnauthorizedError,
   NotFoundError,
   ValidationError,
@@ -427,13 +428,9 @@ resourcesRouter.get('/:id/json', async (c) => {
   const resource = await new ResourceService(db).getByIdWithAccessCheck(id, user)
 
   if (!isJsonFormat(resource.format)) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'Unsupported Media Type',
-        status: 415,
-        detail: `Format "${resource.format ?? 'unknown'}" is not a JSON format`,
-      },
+    throw new KukanError(
+      `Format "${resource.format ?? 'unknown'}" is not a JSON format`,
+      'UNSUPPORTED_MEDIA_TYPE',
       415
     )
   }

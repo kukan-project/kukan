@@ -653,7 +653,11 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(415)
 
       const body = await res.json()
-      expect(body.title).toBe('Unsupported Media Type')
+      expect(body).toMatchObject({
+        title: 'UNSUPPORTED_MEDIA_TYPE',
+        status: 415,
+        detail: 'Format "CSV" is not a JSON format',
+      })
     })
   })
 

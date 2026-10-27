@@ -427,7 +427,7 @@ sysadmin だけに許す操作（組織・グループの作成・復活・完�
 | ユーザー完全削除（パージ）     | パッケージにリンクがないことが条件。activity/audit_log は匿名化 |
 
 **エラー応答:** RFC 9457（旧 RFC 7807）の Problem Details で返す。`KukanError` からエラーハンドラーが組む応答では、`title` はエラーコード（`NOT_FOUND`、`VALIDATION_ERROR` 等）。
-ルートが本文を直接組んで `title` に文言（`Not Found` 等）を入れている箇所が一部に残っているので、クライアントは `title` ではなく `status` と `type` で判断する。
+ルートが本文を直接組む箇所（`app.notFound`、MCP の 405 等）も `title` はエラーコードの形にそろえている。クライアントは `status` と `type` で判断する。
 画面が利用者の言語で理由を言い分ける必要があるものだけ、`type` に `https://kukan.dev/problems/<種別>` を入れる
 （一覧は `packages/shared/src/problem-types.ts`）。それ以外は `about:blank`。
 

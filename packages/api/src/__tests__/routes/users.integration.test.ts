@@ -78,6 +78,21 @@ describe('Users API', () => {
     it('should return 401 for unauthenticated request', async () => {
       const res = await unauthApp.request('/api/v1/users/me')
       expect(res.status).toBe(401)
+      expect((await res.json()).title).toBe('UNAUTHORIZED')
+    })
+
+    it('should return 404 when the session user has no row', async () => {
+      const ghostApp = createTestApp(db, {
+        user: {
+          id: '00000000-0000-0000-0000-0000000000ff',
+          email: 'ghost@example.com',
+          name: 'ghost',
+          sysadmin: false,
+        },
+      })
+      const res = await ghostApp.request('/api/v1/users/me')
+      expect(res.status).toBe(404)
+      expect(await res.json()).toMatchObject({ title: 'NOT_FOUND', detail: 'User not found' })
     })
   })
 

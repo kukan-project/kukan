@@ -66,6 +66,8 @@ import {
   SysadminRequiredError,
   NotFoundError,
   ServiceUnavailableError,
+  KukanError,
+  ValidationError,
 } from '@kukan/shared'
 import type { JobKind } from '@kukan/queue'
 import { PipelineService, reprocessAllPending } from '../services/pipeline/pipeline-service'
@@ -185,18 +187,11 @@ adminRouter.get('/search/stats', async (c) => {
 adminRouter.get('/search/doc/:index/:id', async (c) => {
   const index = c.req.param('index')
   if (index !== 'packages' && index !== 'resources' && index !== 'contents') {
-    return c.json(
-      { type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' },
-      400
-    )
+    throw new ValidationError('Invalid index')
   }
 
   const doc = await c.get('search').getDocument(index, c.req.param('id'))
-  if (!doc)
-    return c.json(
-      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'Document not found' },
-      404
-    )
+  if (!doc) throw new NotFoundError('Document')
   return c.json(doc)
 })
 
@@ -213,10 +208,7 @@ adminRouter.get('/search/chunks/:resourceId', async (c) => {
 adminRouter.get('/search/browse/:index', async (c) => {
   const index = c.req.param('index')
   if (index !== 'packages' && index !== 'resources' && index !== 'contents') {
-    return c.json(
-      { type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' },
-      400
-    )
+    throw new ValidationError('Invalid index')
   }
 
   const q = c.req.query('q') ?? ''
@@ -228,30 +220,12 @@ adminRouter.get('/search/browse/:index', async (c) => {
   // Contents tab uses a dedicated grouped-by-resource response
   if (index === 'contents') {
     const result = await search.browseContentsByResource({ q, offset, limit })
-    if (!result)
-      return c.json(
-        {
-          type: 'about:blank',
-          title: 'Not Available',
-          status: 404,
-          detail: 'OpenSearch not enabled',
-        },
-        404
-      )
+    if (!result) throw new KukanError('OpenSearch not enabled', 'NOT_FOUND', 404)
     return c.json(result)
   }
 
   const result = await search.browseDocuments(index, { q, offset, limit })
-  if (!result)
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'Not Available',
-        status: 404,
-        detail: 'OpenSearch not enabled',
-      },
-      404
-    )
+  if (!result) throw new KukanError('OpenSearch not enabled', 'NOT_FOUND', 404)
   return c.json(result)
 })
 
@@ -351,15 +325,7 @@ adminRouter.get('/settings/ai-suggest', async (c) => {
 adminRouter.post('/settings/ai-suggest/test', async (c) => {
   const context = await buildAiSuggestSettings(c)
   if (!context.enabled || !context.effectiveModel) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'Not Available',
-        status: 400,
-        detail: 'AI completion is not available (AI_TYPE=none)',
-      },
-      400
-    )
+    throw new ValidationError('AI completion is not available (AI_TYPE=none)')
   }
 
   const startedAt = Date.now()
@@ -423,17 +389,14 @@ adminRouter.put(
   async (c) => {
     const key = c.req.param('key')
     if (!isSettingKey(key)) {
-      return c.json(
-        { type: 'about:blank', title: 'Not Found', status: 404, detail: `Unknown setting: ${key}` },
-        404
-      )
+      throw new KukanError(`Unknown setting: ${key}`, 'NOT_FOUND', 404)
     }
 
     const parsed = parseSettingValue(key, c.req.valid('json').value)
     if (!parsed.success) {
       // Issue messages only — the raw ZodError JSON is unreadable in the admin UI
       const detail = parsed.error.issues.map((issue) => issue.message).join('; ')
-      return c.json({ type: 'about:blank', title: 'Bad Request', status: 400, detail }, 400)
+      throw new ValidationError(detail)
     }
 
     const write = await c.get('settings').setSetting(key, parsed.data)
@@ -469,15 +432,7 @@ adminRouter.post('/search/reanalyse', async (c) => {
     .getIndexStats()
     .catch(() => ({}) as const)
   if (!stats) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'Not Available',
-        status: 400,
-        detail: 'OpenSearch not enabled',
-      },
-      400
-    )
+    throw new ValidationError('OpenSearch not enabled')
   }
   await c.get('queue').enqueue(REANALYSE_INDEX_JOB_TYPE, {}, BULK)
   return c.json({ queued: true })
@@ -517,15 +472,7 @@ adminRouter.post(
     const search = c.get('search')
     const stats = await search.getIndexStats()
     if (!stats) {
-      return c.json(
-        {
-          type: 'about:blank',
-          title: 'Not Available',
-          status: 400,
-          detail: 'OpenSearch not enabled',
-        },
-        400
-      )
+      throw new ValidationError('OpenSearch not enabled')
     }
 
     const { includeContent, reindexContent } = c.req.valid('json')
@@ -575,15 +522,7 @@ adminRouter.get('/ai-usage', zValidator('query', aiUsageQuery), async (c) => {
 // costs nothing the second time.
 adminRouter.post('/generate-summaries', zValidator('json', generateSummariesSchema), async (c) => {
   if (!getSummaryModel(c.get('env'), c.get('ai'))) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'Not Available',
-        status: 400,
-        detail: 'Resource abstracts are not enabled for this site',
-      },
-      400
-    )
+    throw new ValidationError('Resource abstracts are not enabled for this site')
   }
   const refresh = c.req.valid('json')?.refresh ?? false
   await c.get('queue').enqueue(SUMMARIZE_ALL_JOB_TYPE, { refresh }, BULK)
@@ -599,15 +538,7 @@ adminRouter.post('/generate-summaries', zValidator('json', generateSummariesSche
 adminRouter.post('/reindex-embeddings', async (c) => {
   const ai = c.get('ai')
   if (!ai.getEmbeddingInfo()) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'Not Available',
-        status: 400,
-        detail: 'Embedding is not configured',
-      },
-      400
-    )
+    throw new ValidationError('Embedding is not configured')
   }
 
   await markAllResourceEmbeddings(c.get('db'))
@@ -1108,10 +1039,7 @@ adminRouter.post(
     })
 
     if (!result) {
-      return c.json(
-        { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Failed to create user' },
-        400
-      )
+      throw new ValidationError('Failed to create user')
     }
 
     const created = result.user
@@ -1140,15 +1068,7 @@ adminRouter.patch(
 
     // Prevent self-demotion (sysadmin lockout)
     if (userId === currentUser.id && body.role === 'user') {
-      return c.json(
-        {
-          type: 'about:blank',
-          title: 'BAD_REQUEST',
-          status: 400,
-          detail: 'Cannot demote yourself',
-        },
-        400
-      )
+      throw new ValidationError('Cannot demote yourself')
     }
 
     const db = c.get('db')
@@ -1161,15 +1081,7 @@ adminRouter.patch(
         .where(and(eq(user.name, body.name), ne(user.id, userId)))
         .limit(1)
       if (existing) {
-        return c.json(
-          {
-            type: 'about:blank',
-            title: 'CONFLICT',
-            status: 409,
-            detail: 'Username already taken',
-          },
-          409
-        )
+        throw new ConflictError('Username already taken')
       }
     }
 
@@ -1179,10 +1091,7 @@ adminRouter.patch(
     if (body.role !== undefined) updates.role = body.role
 
     if (Object.keys(updates).length === 0) {
-      return c.json(
-        { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'No fields to update' },
-        400
-      )
+      throw new ValidationError('No fields to update')
     }
 
     const [updated] = await db
@@ -1199,10 +1108,7 @@ adminRouter.patch(
       })
 
     if (!updated) {
-      return c.json(
-        { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
-        404
-      )
+      throw new NotFoundError('User')
     }
 
     return c.json(updated)
@@ -1214,10 +1120,7 @@ adminRouter.delete('/users/:userId', async (c) => {
   const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
-    return c.json(
-      { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot delete yourself' },
-      400
-    )
+    throw new ValidationError('Cannot delete yourself')
   }
 
   const service = new UserService(c.get('db'))
@@ -1230,10 +1133,7 @@ adminRouter.post('/users/:userId/restore', async (c) => {
   const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
-    return c.json(
-      { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot restore yourself' },
-      400
-    )
+    throw new ValidationError('Cannot restore yourself')
   }
 
   const service = new UserService(c.get('db'))
@@ -1246,10 +1146,7 @@ adminRouter.post('/users/:userId/purge', async (c) => {
   const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
-    return c.json(
-      { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot purge yourself' },
-      400
-    )
+    throw new ValidationError('Cannot purge yourself')
   }
 
   const service = new UserService(c.get('db'))
@@ -1261,13 +1158,13 @@ adminRouter.post('/users/:userId/purge', async (c) => {
 // Analytics (GA4 Data API)
 // ---------------------------------------------------------------------------
 
-const ANALYTICS_NOT_CONFIGURED = {
-  type: 'about:blank',
-  title: 'Not Configured',
-  status: 404,
-  detail:
+// 404, not 503: the analytics page reads this status as "not configured"
+const analyticsNotConfigured = () =>
+  new KukanError(
     'GA4 analytics is not configured. Set GA4_PROPERTY_ID and GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY environment variables.',
-} as const
+    'NOT_FOUND',
+    404
+  )
 
 /** Parse date range + pagination for analytics endpoints */
 function parseAnalyticsQuery(c: { req: { query: (k: string) => string | undefined } }) {
@@ -1280,7 +1177,7 @@ function parseAnalyticsQuery(c: { req: { query: (k: string) => string | undefine
 // GET /api/v1/admin/analytics/dataset-views
 adminRouter.get('/analytics/dataset-views', async (c) => {
   const analytics = c.get('analytics')
-  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+  if (!analytics) throw analyticsNotConfigured()
 
   const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
   const result = await analytics.getDatasetViews(startDate, endDate, offset, limit)
@@ -1290,7 +1187,7 @@ adminRouter.get('/analytics/dataset-views', async (c) => {
 // GET /api/v1/admin/analytics/resource-views
 adminRouter.get('/analytics/resource-views', async (c) => {
   const analytics = c.get('analytics')
-  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+  if (!analytics) throw analyticsNotConfigured()
 
   const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
   const result = await analytics.getResourceViews(startDate, endDate, offset, limit)
@@ -1300,7 +1197,7 @@ adminRouter.get('/analytics/resource-views', async (c) => {
 // GET /api/v1/admin/analytics/downloads
 adminRouter.get('/analytics/downloads', async (c) => {
   const analytics = c.get('analytics')
-  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+  if (!analytics) throw analyticsNotConfigured()
 
   const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
   const result = await analytics.getDownloads(startDate, endDate, offset, limit)
@@ -1310,7 +1207,7 @@ adminRouter.get('/analytics/downloads', async (c) => {
 // GET /api/v1/admin/analytics/search-terms
 adminRouter.get('/analytics/search-terms', async (c) => {
   const analytics = c.get('analytics')
-  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+  if (!analytics) throw analyticsNotConfigured()
 
   const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
   const result = await analytics.getSearchTerms(startDate, endDate, offset, limit)

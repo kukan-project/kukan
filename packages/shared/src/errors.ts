@@ -20,8 +20,8 @@ export class KukanError extends Error {
 }
 
 export class NotFoundError extends KukanError {
-  constructor(entity: string, id: string) {
-    super(`${entity} not found: ${id}`, 'NOT_FOUND', 404)
+  constructor(entity: string, id?: string) {
+    super(id === undefined ? `${entity} not found` : `${entity} not found: ${id}`, 'NOT_FOUND', 404)
   }
 }
 

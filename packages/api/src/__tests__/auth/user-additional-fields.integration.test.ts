@@ -16,6 +16,7 @@ import {
 } from '../test-helpers/test-db'
 import { createAuth, type Auth } from '../../auth/auth'
 import { optionalAuth } from '../../middleware/auth'
+import { errorHandler } from '../../middleware/error-handler'
 import { usersRouter } from '../../routes/users'
 import { resetBootstrapCache } from '../../services/bootstrap'
 import { UserService } from '../../services/user-service'
@@ -43,6 +44,7 @@ function createSessionApp(auth: Auth) {
     await next()
   })
   app.use('*', optionalAuth(auth))
+  app.onError(errorHandler)
   app.route('/api/v1/users', usersRouter)
   return app
 }
