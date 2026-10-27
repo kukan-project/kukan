@@ -109,7 +109,8 @@ sites by an origin custom header.**
    verification
 4. **Listener rule priorities are never numbered from the `sites[]` index** —
    removing or reordering sites would shift existing priorities and could
-   collide mid-way through the serial deploy (ADR-041), failing the deployment.
+   collide mid-way through the ordered site-stack deploy (ADR-041; waves after the canary),
+   failing the deployment.
    The default is a **stable hash of the site name (FNV-1a, 1000–49999)**,
    overridable per site with `SiteConfig.albPriority` (explicit values are
    confined to 1–999, so they can never collide with the derived band).
@@ -167,14 +168,14 @@ scale=small roughly 100 sites fit without any quota increase.
 What binds earlier is the following — none of which this ADR makes worse (the VPC
 origin case improves).
 
-| Constraint                                                                                                                                                                                           | Where it starts to bite                                           | Mitigation                                                                                                                                                                                                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **DB connections** (sum of `dbPool.webMax × web.maxSize + dbPool.workerMax × worker.maxTasks` vs `max_connections`)                                                                                  | **First to bind.** ADR-041 validates it at synth and warns/errors | Raise maxACU (a static parameter, so "change ACU → reboot all instances → add the site" in two stages), shrink pools, or split the shared cluster                                                                        |
-| **CloudFront per-account quotas**: 20 cache policies / 100 CloudFront Functions / 500 distributions (defaults, adjustable)                                                                           | Cache policies bind at roughly **20 sites**                       | `HtmlCachePolicy` holds no site-specific values, so it can be shared once per environment (open item 3). CF Functions differ per site (IP allowlist, basic auth) and cannot be shared — request an increase at 100 sites |
-| **Distributions associated with the same VPC origin: 50** (default, **no increase offered**) — every site uses the environment's shared VPC origin, so this is the **sites-per-environment ceiling** | **50 sites** (hard)                                               | `validateSites` fails synth at the 51st site. Beyond that, split into another environment (shared cluster)                                                                                                               |
-| **Shards and heap on the shared OpenSearch domain**                                                                                                                                                  | Worth revisiting in the tens of sites even at medium              | ADR-041's co-tenancy policy (share only across sites with similar SLAs; move a site to its own domain once it outgrows this)                                                                                             |
-| **Public subnet IPs** (/24 × 2 AZ ≈ 500, doubled during rolling updates)                                                                                                                             | Around 100 sites                                                  | Widen the subnet CIDR (requires recreating the VPC, so plan a blue/green once large scale is in sight)                                                                                                                   |
-| **Serial deploy duration** (ADR-041)                                                                                                                                                                 | Proportional to site count                                        | Trim the number of dev sites. Wave parallelism first requires the connection budget to account for several sites updating at once                                                                                        |
+| Constraint                                                                                                                                                                                           | Where it starts to bite                                                           | Mitigation                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DB connections** (sum of `dbPool.webMax × web.maxSize + dbPool.workerMax × worker.maxTasks` vs `max_connections`)                                                                                  | **First to bind.** ADR-041 validates it at synth and warns/errors                 | Raise maxACU (a static parameter, so "change ACU → reboot all instances → add the site" in two stages), shrink pools, or split the shared cluster                                                                                                                             |
+| **CloudFront per-account quotas**: 20 cache policies / 100 CloudFront Functions / 500 distributions (defaults, adjustable)                                                                           | Cache policies bind at roughly **20 sites**                                       | `HtmlCachePolicy` holds no site-specific values, so it can be shared once per environment (open item 3). CF Functions differ per site (IP allowlist, basic auth) and cannot be shared — request an increase at 100 sites                                                      |
+| **Distributions associated with the same VPC origin: 50** (default, **no increase offered**) — every site uses the environment's shared VPC origin, so this is the **sites-per-environment ceiling** | **50 sites** (hard)                                                               | `validateSites` fails synth at the 51st site. Beyond that, split into another environment (shared cluster)                                                                                                                                                                    |
+| **Shards and heap on the shared OpenSearch domain**                                                                                                                                                  | Worth revisiting in the tens of sites even at medium                              | ADR-041's co-tenancy policy (share only across sites with similar SLAs; move a site to its own domain once it outgrows this)                                                                                                                                                  |
+| **Public subnet IPs** (/24 × 2 AZ ≈ 500, doubled during rolling updates)                                                                                                                             | Around 100 sites                                                                  | Widen the subnet CIDR (requires recreating the VPC, so plan a blue/green once large scale is in sight)                                                                                                                                                                        |
+| **Deploy duration** (ADR-041)                                                                                                                                                                        | Proportional to site count (after the canary, waves of `deployConcurrency` sites) | Trim the number of dev sites. Raising `deployConcurrency` makes the connection budget count that many sites updating at once, failing synth if it does not fit (2026-10 note: at decision time deploys were serial and wave parallelism was future work; implemented 2026-09) |
 
 The ALB's LCU has a rule-evaluation dimension (1 LCU = 1000 evaluations/s). Rules
 are evaluated in priority order, so a request costs N/2 evaluations on average:
@@ -217,13 +218,13 @@ quota and ENI duplication stop scaling with the number of sites. In exchange,
 - **Priorities are a deploy-time resource on the shared listener**: `validateSites`
   only sees the configured end state, not the values live rules hold. **Reassigning
   a deployed site's priority to another deployed site's value** (a swap) makes the
-  first stack updated in the serial deploy fail with `PriorityInUse` and roll back.
+  first stack updated in the deploy fail with `PriorityInUse` and roll back.
   A site removed from `sites[]` whose stack was not destroyed keeps its rule on the
   shared listener and blocks any new site resolving to the same value (remove a
   site by destroying its stack first, then dropping it from the config)
 - **Replacing the shared ALB hits every site**: if the shared ALB (listener) is
   replaced, every site's rule is cascade-deleted and sites stay unreachable until
-  the SiteStacks are redeployed serially. Treat it, like the VPC and the cluster,
+  the SiteStacks are redeployed. Treat it, like the VPC and the cluster,
   as a box that is never replaced
 
 ## Migration
@@ -235,6 +236,9 @@ involved.
    Existing sites are untouched and stay up (the new ALB comes up with nothing
    pointed at it)
 2. **Cut sites over one at a time**, serially (as ADR-041 already requires).
+   (2026-10 note: site stacks now deploy in waves of `deployConcurrency` sites after the
+   canary (default 2; a standalone `cdk deploy` runs them in parallel only with
+   `--concurrency`); set `deployConcurrency: 1` to cut over one site at a time.)
    Validation sites first, then production sites
 
 **The cutover deploy carries a risk of a few minutes of 503s.** CloudFormation
@@ -289,7 +293,9 @@ Operational notes for the cutover (also in `docs/specs/jp/phase4-deploy.md`):
 ## Open items
 
 1. **Sharing the worker** (ADR-041's stated future optimization: tag SQS messages
-   with the site and resolve connections dynamically). Of the $25 marginal fixed
+   with the site and resolve connections dynamically). 2026-10 note: ADR-058
+   removed SQS, and jobs now live in each site database's `job` table; a shared
+   worker would watch the `job` tables of several site databases instead. Of the $25 marginal fixed
    cost per site left after this ADR, $13.3 is the worker task — the next lever
 2. **ALB access logs** are out of scope here. If enabled, assume one shared bucket
    with per-site separation via `target_group_arn`

@@ -174,9 +174,8 @@ KukanGlobalStack (us-east-1)          ※ crossRegionReferences で ARN を連�
 
 KukanStack (ap-northeast-1)
 ├── Network (VPC, SG)
-├── Database (RDS/Aurora)
+├── Database (RDS/Aurora、ジョブキューの job 表も)
 ├── Storage (S3)
-├── Queue (SQS)
 ├── Search (OpenSearch)
 ├── ECS Cluster
 ├── WebService (Fargate + internal ALB)
@@ -187,6 +186,8 @@ KukanStack (ap-northeast-1)
 │   └── Cache Policy / Origin Request Policy
 └── Route53 A / AAAA (Alias) → CloudFront
 ```
+
+（2026-10 補足: 決定時の図にあった `Queue (SQS)` は ADR-058 で廃止した。ジョブは PostgreSQL の `job` 表に積み、web が worker を HTTP の `POST /wake` で起こす。）
 
 ### オンプレ版への影響
 

@@ -158,14 +158,25 @@ CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万�
 
 ## CDK スタック構成
 
-2スタック構成。CloudFront 用のグローバルリソース（ACM 証明書・WAF WebACL）は us-east-1 にデプロイ。
+環境ごとに 1 つの CDK Stage（`KukanStage`）があり、その中のスタックは `sites` の有無で変わる
+（`infra/lib/stacks/kukan-stage.ts`）。CloudFront 用のグローバルリソース（ACM 証明書・WAF WebACL）は
+us-east-1 にデプロイ。
 
-| スタック         | リージョン     | 用途                                     |
-| ---------------- | -------------- | ---------------------------------------- |
-| KukanGlobalStack | us-east-1      | ACM 証明書 + WAF WebACL（CloudFront 用） |
-| KukanStack       | ap-northeast-1 | VPC, ECS, RDS, CloudFront 等             |
+| スタック               | リージョン                             | 用途                                                                                                         |
+| ---------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| KukanStack             | 環境の `region`（既定 ap-northeast-1） | シングルサイト（`sites` なし）: VPC, ECS, RDS, CloudFront 等を 1 つにまとめる                                |
+| KukanSharedStack       | 環境の `region`（既定 ap-northeast-1） | マルチサイト（ADR-041）: 全サイト共有の箱（VPC・SG・DB クラスター・OpenSearch・ECS クラスター・ALB 等）      |
+| KukanSiteStack\<Name\> | 環境の `region`（既定 ap-northeast-1） | マルチサイト: サイトごとの DB・バケット・web / worker・ALB のリスナールール・CloudFront 等（サイトの数だけ） |
+| KukanGlobalStack       | us-east-1                              | ACM 証明書 + WAF WebACL（CloudFront 用）                                                                     |
+| KukanPipeline          | ap-northeast-1（固定）                 | CDK Pipelines（pipeline モード、Stage の外のトップレベル。ADR-030）                                          |
 
-KukanGlobalStack はドメイン名指定時または WAF 有効時に自動作成される。
+- KukanGlobalStack は証明書か WAF を CDK が作る必要があるとき（ドメイン名指定時または WAF 有効時で、
+  ARN を渡していないとき）だけ作られる
+- 共有スタックの値（VPC・サブネット・SG など）は、SSM パラメータ `/kukan/<env>/shared/…` を通して
+  サイトスタックが読む（`infra/lib/naming.ts` の `sharedParamName`）
+- サイトスタックは、共有スタックの後に最初のサイト（カナリア）が単独で、残りが `deployConcurrency`
+  件ずつ（既定 2）の wave でデプロイされる（ADR-041）。wave の中が並列になるのは CDK Pipelines の場合で、
+  standalone の `cdk deploy` は既定で 1 スタックずつ。同じ並列にするには `--concurrency <deployConcurrency>` を付ける
 
 ```
 infra/
@@ -465,7 +476,7 @@ K の上限は「(推定 max_connections × 0.7 − 平常時の最大) ÷ 同�
 
 - 初回もデプロイ順は自動制御される: SharedStack → 先頭サイト（カナリア）→
   残りサイトを **`deployConcurrency` サイトずつの wave で並列デプロイ**（既定 2、
-  `1` で直列。各 wave は前 wave の完了を待つ）。ローリング更新中は ECS が新旧
+  `1` で直列。各 wave は前 wave の完了を待つ。standalone の `cdk deploy` では `--concurrency` を付けたときだけ並列）。ローリング更新中は ECS が新旧
   タスクを併走させるため、接続数バジェットは同時に更新されうるサイト数分の倍化を
   計上し、収まらなければ synth で止まる（`deployConcurrency: 1` に下げるか DB を
   上げる）。SharedStack が書く SSM パラメータ（`/kukan/<env>/shared/*`:
@@ -535,7 +546,7 @@ IPv6 を持てば IPv6 で来て許可リストに当たらず 403 になり、�
 
 - ALB: internal（CloudFront VPC Origin 経由のみ、マネージドプレフィックスリストで制限）
 - Web タスク SG: ALB からの 3000 番ポートのみ許可（直接アクセス不可）
-- Worker タスク SG: インバウンドなし
+- Worker タスク SG: web と worker からの `worker.healthPort`（既定 8080。環境の `overrides.worker.healthPort` で変えられ、SG を共有するのでサイト単位では変えられない）のみ許可。web がジョブを積んだことを `POST /wake` で知らせるため（ADR-058）。SG は環境の全サイトで共有なので、他サイトからの wake は、サイトごとの認証シークレットから導いた wake トークンで断る（`packages/queue/src/wake.ts`）
 
 ### WAF（オプション）
 
@@ -961,7 +972,18 @@ npx cdk deploy KukanPipeline
 # 7. 以降は対象ブランチへの push で自動デプロイ（パイプライン定義の変更も自己変異で反映）
 ```
 
-承認ゲート（例: prd は `ManualApprovalStep` で手動承認、dev は自動）はパイプライン定義で設定する。
+**パイプラインと承認**: パイプラインは環境ごとに 1 本（`kukan-<env>`、`infra/lib/stacks/pipeline-stack.ts`）で、
+その環境の `deployBranch` への push で動き、その環境の Stage だけをデプロイする。手動承認のステップは無い。
+本番に入る版はリリース（`develop` → `main` の ff とタグ、ADR-035）で決まり、これが本番への承認にあたる。
+それ以上に止めたいときは、CodePipeline のステージ間の遷移を無効にする（コンソールの操作。通知は出ない）か、
+フォークでパイプラインに `ManualApprovalStep` を足す。
+
+**パイプラインを置くアカウント**: 全環境のパイプラインが 1 つのスタック（`KukanPipeline`）に入るので、置き場所は
+1 アカウントになる。dev と prd が同じアカウントなら、そこに置けばよい。アカウントを分けるなら
+**CI/CD 専用アカウントを推奨**する（必須ではない）。prd のアカウントに置くと、dev 用パイプラインの synth
+（未リリースの `develop` のコード）が本番アカウントの CodeBuild で走る。dev のアカウントに置くと、dev が prd への
+デプロイ権限の起点になる。専用アカウントではパイプラインごとに成果物の KMS 鍵（`crossAccountKeys`）が付く
+（1 本あたり月 1 ドル程度）。`pipelineAccount` を設定しておくと、別アカウントの認証情報での誤デプロイを synth で止められる。
 
 > [!IMPORTANT]
 > **CDK Pipelines は cross-region 参照と非互換。** カスタムドメイン/WAF（us-east-1）を使う env は、
@@ -1067,7 +1089,7 @@ Client ─→ Caddy (:80/:443) ─→ web (:3000)
                      postgres   opensearch
                          ▲          ▲
                          │          │
-                      worker ──→ minio / elasticmq
+                      worker ──→ minio（S3 互換、pgsty/silo）
 ```
 
 ### プロファイル設計

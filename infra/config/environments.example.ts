@@ -197,8 +197,9 @@ export const environments = {
   },
 
   // `prd` shows a typical production environment. Add sites as they onboard —
-  // the first site is the deploy canary, sites deploy serially, and only sites
-  // whose image content changed actually roll.
+  // the first site is the deploy canary, the rest deploy `deployConcurrency` at a
+  // time (omit → 2; a standalone `cdk deploy` needs `--concurrency` for that),
+  // and only sites whose image content changed actually roll.
   prd: {
     account: '000000000000', // REQUIRED: target AWS account ID (misdeployment guard)
     scale: 'large',

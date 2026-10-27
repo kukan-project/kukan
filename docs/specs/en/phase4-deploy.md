@@ -160,15 +160,25 @@ Resources carry tags so that the bill can be split by environment and by site.
 
 ## CDK Stack Layout
 
-Two stacks. The global resources for CloudFront (the ACM certificate and the WAF WebACL) are
-deployed to us-east-1.
+Each environment is one CDK Stage (`KukanStage`), and the stacks inside it depend on whether
+`sites` is set (`infra/lib/stacks/kukan-stage.ts`). The global resources for CloudFront (the ACM
+certificate and the WAF WebACL) are deployed to us-east-1.
 
-| Stack            | Region         | Purpose                                       |
-| ---------------- | -------------- | --------------------------------------------- |
-| KukanGlobalStack | us-east-1      | ACM certificate + WAF WebACL (for CloudFront) |
-| KukanStack       | ap-northeast-1 | VPC, ECS, RDS, CloudFront etc.                |
+| Stack                  | Region                                              | Purpose                                                                                                  |
+| ---------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| KukanStack             | the environment's `region` (default ap-northeast-1) | Single site (no `sites`): VPC, ECS, RDS, CloudFront etc. in one stack                                    |
+| KukanSharedStack       | the environment's `region` (default ap-northeast-1) | Multi-site (ADR-041): the boxes every site shares (VPC, SGs, DB cluster, OpenSearch, ECS cluster, ALB …) |
+| KukanSiteStack\<Name\> | the environment's `region` (default ap-northeast-1) | Multi-site: one per site — its database, bucket, web / worker, ALB listener rule, CloudFront etc.        |
+| KukanGlobalStack       | us-east-1                                           | ACM certificate + WAF WebACL (for CloudFront)                                                            |
+| KukanPipeline          | ap-northeast-1 (fixed)                              | CDK Pipelines (pipeline mode; top level, outside the Stage — ADR-030)                                    |
 
-KukanGlobalStack is created automatically when a domain name is given or WAF is enabled.
+- KukanGlobalStack is created only when CDK has to create the certificate or the WAF (a domain name
+  is given or WAF is enabled, and no ARN is supplied)
+- The site stacks read the shared stack's values (VPC, subnets, SGs …) from SSM parameters
+  `/kukan/<env>/shared/…` (`sharedParamName` in `infra/lib/naming.ts`)
+- After the shared stack, the first site (the canary) deploys alone and the rest deploy in waves of
+  `deployConcurrency` (default 2) (ADR-041). A wave runs in parallel under CDK Pipelines; a
+  standalone `cdk deploy` deploys one stack at a time unless given `--concurrency <deployConcurrency>`
 
 ```
 infra/
@@ -481,7 +491,8 @@ Aurora's 5,000 ceiling, so the sites need more than one shared cluster (environm
 
 - Even on the first run the deployment order is controlled automatically: SharedStack → the first
   site (the canary) → the remaining sites **in waves of `deployConcurrency`** (default 2, `1`
-  serializes; each wave waits for the previous one). During a rolling update ECS runs old and new
+  serializes; each wave waits for the previous one; a standalone `cdk deploy` runs a wave in
+  parallel only with `--concurrency`). During a rolling update ECS runs old and new
   tasks side by side, so the connection budget counts that many sites' doubling and synth stops
   when it does not fit (lower `deployConcurrency` to 1, or size the database up). The SSM
   parameters the SharedStack
@@ -552,7 +563,7 @@ by the CDK) and keeps the counts in the DB table `rate_limit` (so several tasks 
 
 - ALB: internal (reachable only via the CloudFront VPC Origin, restricted by a managed prefix list)
 - Web task SG: allows only port 3000 from the ALB (no direct access)
-- Worker task SG: no inbound
+- Worker task SG: only `worker.healthPort` (8080 by default; the environment's `overrides.worker.healthPort` changes it, and a site cannot, since the SGs are shared) from the web and the workers, so the web can say a job is waiting with `POST /wake` (ADR-058). The SGs are shared by every site of the environment; a wake from another site is refused by the wake token derived from each site's own auth secret (`packages/queue/src/wake.ts`)
 
 ### WAF (optional)
 
@@ -1012,8 +1023,22 @@ npx cdk deploy KukanPipeline
 #    (changes to the pipeline definition are applied by self-mutation)
 ```
 
-Approval gates (e.g. prd requiring a `ManualApprovalStep` while dev is automatic) are configured in
-the pipeline definition.
+**Pipelines and approval**: there is one pipeline per environment (`kukan-<env>`,
+`infra/lib/stacks/pipeline-stack.ts`). It runs on a push to that environment's `deployBranch` and
+deploys that environment's Stage only. There is no manual approval step. What reaches production
+is decided by a release (the `develop` → `main` fast-forward and its tag, ADR-035), which serves as
+the approval for production. To hold it further, disable the transition between stages in
+CodePipeline (a console action; it sends no notification), or add a `ManualApprovalStep` to the
+pipeline in your fork.
+
+**The account that holds the pipelines**: every environment's pipeline lives in one stack
+(`KukanPipeline`), so they all sit in one account. If dev and prd share an account, put it there.
+If they are in separate accounts, **a dedicated CI/CD account is recommended** (not required). In
+the prd account, the dev pipeline's synth (unreleased `develop` code) would run in the production
+account's CodeBuild; in the dev account, dev would become the starting point of deploy rights into
+prd. In a dedicated account each pipeline gets a KMS key for its artifacts (`crossAccountKeys`),
+about USD 1 a month per pipeline. Setting `pipelineAccount` stops a deploy with another account's
+credentials at synth.
 
 > [!IMPORTANT]
 > **CDK Pipelines is incompatible with cross-region references.** For an env using a custom
@@ -1130,7 +1155,7 @@ Client ─→ Caddy (:80/:443) ─→ web (:3000)
                      postgres   opensearch
                          ▲          ▲
                          │          │
-                      worker ──→ minio / elasticmq
+                      worker ──→ minio (S3-compatible, pgsty/silo)
 ```
 
 ### Profile design

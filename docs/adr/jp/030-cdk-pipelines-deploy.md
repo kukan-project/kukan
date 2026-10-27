@@ -48,6 +48,7 @@ new CodePipeline(this, 'Pipeline', {
 - `KukanPipelineStack` に `CodePipeline` を定義
 - 各環境を Stage（ADR-031 の `KukanStage`）として `addStage()`。`pre`/`post` に `ManualApprovalStep` を挟み、prd は手動承認・dev は自動、といったゲートを設定可能
 - ブランチ戦略: `develop` → dev、`main` → prd。「1 パイプラインに複数 Stage（wave + 承認）」または「ブランチ別パイプライン」のいずれかを選ぶ
+  - （2026-10 補足）実装は**ブランチ別パイプライン**（環境ごとに 1 本、各環境の `deployBranch` で起動）を選んだ。本番に入る版を ADR-035 のリリース（`main` への ff とタグ）に揃えるためで、`ManualApprovalStep` は置いていない。1 本に Stage を並べると、`develop` への push のたびに本番の承認待ちが積まれ、本番の版とリリースが結びつかなくなる
 
 ### セットアップ手順（初回のみ手動）
 

@@ -50,6 +50,7 @@ new CodePipeline(this, 'Pipeline', {
 - Define `CodePipeline` in `KukanPipelineStack`
 - Add each environment as a Stage (ADR-031's `KukanStage`) via `addStage()`. Insert `ManualApprovalStep` in `pre`/`post` to set gates such as manual approval for prd and automatic for dev
 - Branch strategy: `develop` → dev, `main` → prd. Choose either "a single pipeline with multiple stages (waves + approvals)" or "a pipeline per branch"
+  - (2026-10 note) The implementation chose **a pipeline per branch** (one per environment, started by that environment's `deployBranch`), so that what reaches production matches an ADR-035 release (the fast-forward to `main` and its tag); no `ManualApprovalStep` is set. With one pipeline of several stages, every push to `develop` would queue a production approval, and the production version would no longer be tied to a release
 
 ### Setup steps (manual, first time only)
 

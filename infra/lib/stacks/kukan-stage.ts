@@ -1,8 +1,11 @@
 /**
  * KUKAN Stage — environment boundary (ADR-031).
- * Encapsulates the two stacks for one environment:
- *   - KukanGlobalStack (us-east-1) — ACM cert + WAF WebACL for CloudFront
- *   - KukanStack (target region)   — VPC, ECS, RDS, CloudFront, etc.
+ * Encapsulates the stacks for one environment:
+ *   - KukanGlobalStack (us-east-1)   — ACM cert + WAF WebACL for CloudFront, only
+ *     when CDK creates either
+ *   - KukanStack (target region)     — single site: VPC, ECS, RDS, CloudFront, etc.
+ *   - KukanSharedStack + one KukanSiteStack<Name> per site (target region) —
+ *     multi-site (ADR-041), sites deployed in waves after a canary
  *
  * Stack names are namespaced by the Stage name (e.g. "Dev/KukanStack"),
  * which gives per-environment uniqueness for auto-named resources.

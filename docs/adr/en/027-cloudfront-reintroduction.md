@@ -177,9 +177,8 @@ KukanGlobalStack (us-east-1)          * ARNs linked via crossRegionReferences
 
 KukanStack (ap-northeast-1)
 ├── Network (VPC, SG)
-├── Database (RDS/Aurora)
+├── Database (RDS/Aurora, including the job queue's `job` table)
 ├── Storage (S3)
-├── Queue (SQS)
 ├── Search (OpenSearch)
 ├── ECS Cluster
 ├── WebService (Fargate + internal ALB)
@@ -190,6 +189,8 @@ KukanStack (ap-northeast-1)
 │   └── Cache Policy / Origin Request Policy
 └── Route53 A / AAAA (Alias) → CloudFront
 ```
+
+(2026-10 note: the `Queue (SQS)` box in the diagram as decided was removed by ADR-058. Jobs go into the PostgreSQL `job` table, and the web wakes the worker over HTTP with `POST /wake`.)
 
 ### Impact on On-Premises Version
 
