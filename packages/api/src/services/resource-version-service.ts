@@ -1827,24 +1827,31 @@ export class ResourceVersionService {
       })
     }
 
-    await this.db
-      .update(resourceVersion)
-      .set({
-        state: 'purged',
-        purgedAt: sql`NOW()`,
-        updated: sql`NOW()`,
-        // The tombstone must not point at content. A rebuild has cleared this
-        // row's number already; without layer 2 configured there was none
-        lakeSnapshotId: null,
-      })
-      .where(eq(resourceVersion.id, row.id))
+    // One transaction, with the actor read back from the locked row rather than
+    // `row.purgedBy`: a user purge since the read has cleared it, and the
+    // cached id would fail the audit insert after the state had already moved,
+    // leaving a retry nothing to finish.
+    await this.db.transaction(async (tx) => {
+      const [done] = await tx
+        .update(resourceVersion)
+        .set({
+          state: 'purged',
+          purgedAt: sql`NOW()`,
+          updated: sql`NOW()`,
+          // The tombstone must not point at content. A rebuild has cleared this
+          // row's number already; without layer 2 configured there was none
+          lakeSnapshotId: null,
+        })
+        .where(eq(resourceVersion.id, row.id))
+        .returning({ purgedBy: resourceVersion.purgedBy })
 
-    await this.db.insert(auditLog).values({
-      entityType: 'resource_version',
-      entityId: resourceId,
-      action: 'purge',
-      userId: row.purgedBy,
-      changes: { version, reason: row.purgeReason, rolledBack },
+      await tx.insert(auditLog).values({
+        entityType: 'resource_version',
+        entityId: resourceId,
+        action: 'purge',
+        userId: done?.purgedBy ?? null,
+        changes: { version, reason: row.purgeReason, rolledBack },
+      })
     })
 
     return { purged: true, rolledBack }

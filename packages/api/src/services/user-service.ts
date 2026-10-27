@@ -5,7 +5,15 @@
 
 import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { user, session, apiToken, packageTable, activity, auditLog } from '@kukan/db'
+import {
+  user,
+  session,
+  apiToken,
+  packageTable,
+  activity,
+  auditLog,
+  resourceVersion,
+} from '@kukan/db'
 import { NotFoundError, ConflictError, ValidationError } from '@kukan/shared'
 
 export class UserService {
@@ -53,7 +61,8 @@ export class UserService {
 
   /**
    * Permanently delete a soft-deleted user.
-   * Rejects if packages are linked. Nullifies activity/auditLog references.
+   * Rejects if packages are linked. Nullifies the other references that don't
+   * cascade: activity, audit log, and who created or purged a version.
    * Records a purge entry in the audit log.
    */
   async purge(userId: string, performedBy: string) {
@@ -88,7 +97,17 @@ export class UserService {
         )
       }
 
-      // Nullify FK references that don't cascade
+      // Nullify FK references that don't cascade. Versions first: a version
+      // purge finishing concurrently then either commits its audit row before
+      // audit_log is nulled below, or waits on the version row and records no actor
+      await tx
+        .update(resourceVersion)
+        .set({ purgedBy: null, updated: sql`NOW()` })
+        .where(eq(resourceVersion.purgedBy, userId))
+      await tx
+        .update(resourceVersion)
+        .set({ createdBy: null, updated: sql`NOW()` })
+        .where(eq(resourceVersion.createdBy, userId))
       await tx.update(activity).set({ userId: null }).where(eq(activity.userId, userId))
       await tx.update(auditLog).set({ userId: null }).where(eq(auditLog.userId, userId))
 

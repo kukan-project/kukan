@@ -2005,6 +2005,88 @@ describe('Admin API Routes', () => {
       const changes = (auditCheck.rows[0] as { changes: Record<string, unknown> }).changes
       expect(changes.purgedUserId).toBe(userId)
     })
+
+    it('purges a user who created or purged a version, keeping the versions', async () => {
+      const creatorId = await createAndDeleteUser('version-creator')
+      const purgerId = await createAndDeleteUser('version-purger')
+      const orgId = await ensureOrg('purge-version-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: uniqueName('purge-version-pkg'), state: 'active', ownerOrg: orgId })
+        .returning({ id: packageTable.id })
+      const [res] = await db
+        .insert(resource)
+        .values({ packageId: pkg.id, url: 'https://example.com/a.csv' })
+        .returning({ id: resource.id })
+      const longAgo = new Date('2000-01-01T00:00:00Z')
+      await db.insert(resourceVersion).values([
+        {
+          resourceId: res.id,
+          version: 1,
+          storageKey: 'k1',
+          hash: 'h1',
+          origin: 'upload',
+          state: 'purged',
+          createdBy: creatorId,
+          purgedBy: purgerId,
+          purgedAt: new Date(),
+          updated: longAgo,
+        },
+        {
+          resourceId: res.id,
+          version: 2,
+          storageKey: 'k2',
+          hash: 'h2',
+          origin: 'upload',
+          state: 'active',
+          createdBy: creatorId,
+          updated: longAgo,
+        },
+      ])
+
+      for (const id of [creatorId, purgerId]) {
+        const purge = await app.request(`/api/v1/admin/users/${id}/purge`, { method: 'POST' })
+        expect(purge.status).toBe(200)
+      }
+
+      const versions = await db
+        .select({
+          version: resourceVersion.version,
+          createdBy: resourceVersion.createdBy,
+          purgedBy: resourceVersion.purgedBy,
+          updated: resourceVersion.updated,
+        })
+        .from(resourceVersion)
+        .where(eq(resourceVersion.resourceId, res.id))
+        .orderBy(resourceVersion.version)
+      expect(versions.map(({ updated: _, ...v }) => v)).toEqual([
+        { version: 1, createdBy: null, purgedBy: null },
+        { version: 2, createdBy: null, purgedBy: null },
+      ])
+      // Clearing an actor is a change to the row, like any other
+      for (const v of versions) expect(v.updated.getTime()).toBeGreaterThan(longAgo.getTime())
+    })
+
+    it('handles every non-cascading reference to a user', async () => {
+      // A new column referencing "user" without ON DELETE CASCADE / SET NULL
+      // makes purge fail on a foreign key unless UserService.purge clears it
+      // (or refuses, as for package creators). Update both together.
+      const refs = await db.execute(sql`
+        SELECT c.conrelid::regclass::text AS tbl, a.attname AS col
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.contype = 'f' AND c.confrelid = '"user"'::regclass
+          AND c.confdeltype NOT IN ('c', 'n')
+        ORDER BY 1, 2
+      `)
+      expect(refs.rows).toEqual([
+        { tbl: 'activity', col: 'user_id' },
+        { tbl: 'audit_log', col: 'user_id' },
+        { tbl: 'package', col: 'creator_user_id' },
+        { tbl: 'resource_version', col: 'created_by' },
+        { tbl: 'resource_version', col: 'purged_by' },
+      ])
+    })
   })
 
   describe('DELETE /api/v1/admin/data', () => {

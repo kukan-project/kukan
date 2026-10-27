@@ -24,6 +24,7 @@ import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
 } from '../../services/resource-version-service'
+import { UserService } from '../../services/user-service'
 import {
   CLAIM_STALE_AFTER_MS,
   cancelResourceRun,
@@ -602,6 +603,38 @@ describe('executePurge', () => {
     expect(deps.storage.delete).not.toHaveBeenCalledWith(liveKey)
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.storageKey).toBe(liveKey)
+  })
+
+  it('finishes and records it when the user who asked is purged while it runs', async () => {
+    // The completion reads the actor off the row it updates, not the one it
+    // read at the start: the user purge has cleared it in between, and the
+    // cached id would fail the audit insert after the state had moved
+    const purger = await db.execute(sql`
+      INSERT INTO "user" (id, name, email, "emailVerified", state, role, "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), 'purger', 'purger@example.com', false, 'deleted', 'user', NOW(), NOW())
+      RETURNING id
+    `)
+    const purgerId = (purger.rows[0] as { id: string }).id
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await service.claimPurge(resourceId, 1, purgerId, 'contains PII', purgeQueue)
+
+    const deps = mockDeps()
+    vi.mocked(deps.storage.delete).mockImplementation(async () => {
+      await new UserService(db).purge(purgerId, userId)
+    })
+    expect(await service.executePurge(resourceId, 1, deps)).toMatchObject({ purged: true })
+
+    const [row] = await db
+      .select({ state: resourceVersion.state, purgedBy: resourceVersion.purgedBy })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row).toEqual({ state: 'purged', purgedBy: null })
+    const logged = await db
+      .select({ userId: auditLog.userId })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityId, resourceId), eq(auditLog.action, 'purge')))
+    expect(logged).toEqual([{ userId: null }])
   })
 
   it('is idempotent — a version not in purging state is a no-op', async () => {
