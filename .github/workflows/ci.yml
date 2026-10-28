@@ -203,7 +203,7 @@ jobs:
         run: >-
           pnpm exec prettier --check --cache --cache-strategy content
           --cache-location "$RUNNER_TEMP/prettier-cache/.prettier-cache"
-          "**/*.{ts,tsx,js,jsx,json,md,astro}"
+          "**/*.{ts,tsx,js,jsx,json,md,mdx,astro}"
 
       - name: Save prettier cache
         if: github.ref == 'refs/heads/develop'

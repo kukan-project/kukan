@@ -27,6 +27,7 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 :::caution[公開は Caddy 経由のみ]
 サポートするのは、同梱の Caddy（`caddy` サービス）を通して公開する構成だけです。web コンテナ（ポート 3000）を直接公開したり、Caddy を外して別のプロキシに置き換えたりしないでください。
+
 - サインインの回数制限は `X-Forwarded-For` でクライアントを見分けます。Caddy はこれを付け直すので偽装できませんが、web を直接公開すると、任意の値を送って制限を逃れられます。
 - 認証の応答を圧縮しない設定（BREACH 対策）も、Caddy が持っています。
 
@@ -91,6 +92,7 @@ node apps/worker/dist/drop-shared-lake-catalog.js --commit   # 削除
 - **既定は報告のみ**です。削除の対象（スキーマの有無とファイルの数）を表示します
 - 移行は以前の形式のデータを読まないので、移行の完了を待たずに削除できます
 - v0.36.0 へ上げると、v0.35.x 以前へは戻せなくなります（マイグレーションで `resource_version.ducklake_snapshot_id` 列を外すため）
+
 :::
 
 オンプレミス構成では以下の代替サービスを使用します。
@@ -679,7 +681,7 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 | `BETTER_AUTH_SECRET`                     | 認証セッション秘密鍵（必須、32 文字以上。`openssl rand -base64 32` で生成）                                               | -                                                                                                          |
 | `BETTER_AUTH_URL`                        | 公開 URL                                                                                                                  | `http://localhost:3000`                                                                                    |
 | `PASSWORD_MIN_SCORE`                     | パスワード強度の下限（zxcvbn スコア 0〜4）— 下記                                                                          | `3`                                                                                                        |
-| `CLIENT_IP_HEADER`                       | ログイン試行の回数制限がクライアントの IP を読むヘッダー。`x-kukan-client-ip` は CloudFront の後ろでのみ         | `x-forwarded-for`                                                                                          |
+| `CLIENT_IP_HEADER`                       | ログイン試行の回数制限がクライアントの IP を読むヘッダー。`x-kukan-client-ip` は CloudFront の後ろでのみ                  | `x-forwarded-for`                                                                                          |
 | `AI_TYPE`                                | AI プロバイダ（`none` / `bedrock` / `openai` / `ollama`）                                                                 | `none`                                                                                                     |
 | `AI_EMBEDDING_MODEL`                     | 埋め込みモデル。変えたら埋め込みベクトルの再生成が要る                                                                    | プロバイダ既定（Bedrock: Titan Text Embeddings v2 / Ollama: bge-m3 / OpenAI 互換: text-embedding-3-small） |
 | `AI_EMBEDDING_DIMENSIONS`                | 埋め込みの次元数                                                                                                          | プロバイダ既定                                                                                             |

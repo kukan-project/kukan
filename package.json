@@ -27,7 +27,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:create-user": "pnpm --filter @kukan/db db:create-user --",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,astro}\"",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,astro}\"",
     "eval:search": "pnpm --filter @kukan/api run eval:search",
     "eval:passages": "pnpm --filter @kukan/api run eval:passages",
     "eval:mcp": "pnpm --filter @kukan/api run eval:mcp",
