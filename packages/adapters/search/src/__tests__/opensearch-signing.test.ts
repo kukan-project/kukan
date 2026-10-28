@@ -31,6 +31,8 @@ describe('OpenSearchAdapter request signing', () => {
     vi.stubEnv('AWS_ACCESS_KEY_ID', 'AKIAPROBE')
     vi.stubEnv('AWS_SECRET_ACCESS_KEY', 'probe-secret')
     vi.stubEnv('AWS_SESSION_TOKEN', 'probe-token')
+    // With a profile set, the default chain skips the environment keys and reads the profile.
+    vi.stubEnv('AWS_PROFILE', undefined)
     return () => {
       vi.unstubAllEnvs()
     }
