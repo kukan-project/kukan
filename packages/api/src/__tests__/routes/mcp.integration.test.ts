@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
-import { createTestApp, mockCompletionAi, rankingSearch } from '../test-helpers/test-app'
+import {
+  createTestApp,
+  mockCompletionAi,
+  mockStorage,
+  rankingSearch,
+} from '../test-helpers/test-app'
 import { artifactOf } from '../test-helpers/document-text'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PASSAGE_MARK, PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import { resource, resourceVersion } from '@kukan/db'
 import { Readable } from 'node:stream'
-import type { DocumentTextBlock } from '@kukan/shared'
+import { SEARCH_RESULT_WINDOW, type DocumentTextBlock } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { MCP_SERVER_VERSION } from '../../mcp/server'
 
@@ -260,6 +265,78 @@ describe('MCP Server', () => {
       expect(text).toContain('in its name or description')
       expect(text).not.toContain('unrelated.csv')
     })
+
+    it('refuses a page past the result window', async () => {
+      const app = mcpApp()
+
+      const result = await mcpToolCall(app, 'search_datasets', {
+        q: 'survey',
+        offset: SEARCH_RESULT_WINDOW,
+        limit: 1,
+      })
+
+      expect(result.result.isError).toBe(true)
+      expect(result.result.content[0].text).toContain(
+        `offset + limit must be at most ${SEARCH_RESULT_WINDOW}`
+      )
+    })
+
+    it('narrows by organization and by tags', async () => {
+      const app = mcpApp()
+      await createPackage(app, {
+        name: 'ds-water',
+        title: 'River Survey',
+        tags: [{ name: 'water' }],
+      })
+      await createPackage(app, { name: 'ds-air', title: 'Air Survey', tags: [{ name: 'air' }] })
+      const titles = async (args: Record<string, unknown>) =>
+        (await mcpToolCall(app, 'search_datasets', { q: 'survey', ...args })).result.content[0]
+          .text as string
+
+      expect(await titles({ organization: 'test-org' })).toContain('Total: 2 datasets')
+      expect(await titles({ organization: 'other-org' })).toContain('No datasets found')
+      const water = await titles({ tags: ['water'] })
+      expect(water).toContain('River Survey')
+      expect(water).not.toContain('Air Survey')
+    })
+
+    it('describes a dataset by its name where it has no title, with its description', async () => {
+      const app = mcpApp()
+      await createPackage(app, { name: 'ds-untitled', notes: `Survey ${'x'.repeat(300)}` })
+
+      const result = await mcpToolCall(app, 'search_datasets', { q: 'survey' })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('1. ds-untitled\n   Name: ds-untitled\n   Organization: test-org')
+      expect(text).toContain(`   Description: Survey ${'x'.repeat(193)}\n`)
+    })
+
+    it('says first that fewer words were required, and what each result lacks', async () => {
+      const owner = mcpApp()
+      const pkg = await createPackage(owner, { name: 'ds-relaxed', title: 'River Survey' })
+      // An index that counts words (OpenSearch): nothing holds both, one holds "river"
+      const relaxing: SearchAdapter = {
+        ...rankingSearch([]),
+        countsWords: true,
+        search: async ({ minWords, offset = 0, limit = 20 }) => ({
+          items: minWords ? [{ id: pkg.id, name: '', missingWords: ['dam'] }] : [],
+          total: minWords ? 1 : 0,
+          offset,
+          limit,
+          minWords,
+        }),
+      }
+      const app = createTestApp(db, { search: relaxing })
+
+      const result = await mcpToolCall(app, 'search_datasets', { q: 'river dam' })
+      const text = result.result.content[0].text as string
+
+      expect(text).toMatch(
+        /^Nothing matched every word of "river dam" at once, so fewer were required: the keyword matches below hold at least 1 of its 2 words/
+      )
+      expect(text).toContain('1. River Survey')
+      expect(text).toContain('   Lacks: dam')
+    })
   })
 
   describe('get_dataset', () => {
@@ -287,6 +364,62 @@ describe('MCP Server', () => {
       expect(text).toMatch(
         /^ {2}1\. test\.csv.*\n {2}\[docs\]\n {4}2\. readme\.md.*\n {4}\[spec\]\n {6}3\. schema\.md.*\n {2}4\. notes\.txt/m
       )
+    })
+
+    it('describes a dataset with no resources by its name, with its tags and groups', async () => {
+      const app = mcpApp()
+      for (const group of [{ name: 'g-titled', title: 'Water Group' }, { name: 'g-plain' }]) {
+        const res = await app.request('/api/v1/groups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(group),
+        })
+        expect(res.status).toBe(201)
+      }
+      await createPackage(app, {
+        name: 'ds-bare',
+        notes: 'Monthly readings.',
+        tags: [{ name: 'water' }, { name: 'river' }],
+        groups: [{ name: 'g-titled' }, { name: 'g-plain' }],
+      })
+
+      const result = await mcpToolCall(app, 'get_dataset', { nameOrId: 'ds-bare' })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Title: ds-bare\nName: ds-bare')
+      expect(text).toContain('Organization: test-org')
+      expect(text).toContain('Description: Monthly readings.')
+      expect(text).toMatch(/^Tags: (water, river|river, water)$/m)
+      expect(text).toMatch(/^Groups: (Water Group, g-plain|g-plain, Water Group)$/m)
+      expect(text).toContain('Private: false')
+      expect(text).toContain('Resources:\n  (none)')
+    })
+
+    it('lists a resource with neither name nor format as untitled, its description cut', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-unnamed', title: 'Unnamed' })
+      const res = await createResource(app, pkg.id, {
+        name: null,
+        format: null,
+        description: 'd'.repeat(150),
+      })
+
+      const result = await mcpToolCall(app, 'get_dataset', { nameOrId: pkg.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain(`  1. (untitled) (ID: ${res.id}) — ${'d'.repeat(100)}`)
+      expect(text).not.toContain('d'.repeat(101))
+      expect(text).not.toContain('[')
+    })
+
+    it('does not describe a private dataset to someone outside it', async () => {
+      const owner = mcpApp()
+      await createPackage(owner, { name: 'ds-private', title: 'Secret Survey', private: true })
+
+      const result = await mcpToolCall(mcpApp(null), 'get_dataset', { nameOrId: 'ds-private' })
+
+      expect(result.result.isError).toBe(true)
+      expect(JSON.stringify(result)).not.toContain('Secret Survey')
     })
   })
 
@@ -737,7 +870,8 @@ describe('MCP Server', () => {
     async function createDocument(
       app: ReturnType<typeof mcpApp>,
       pkgData: Record<string, unknown>,
-      metadata: Record<string, unknown> = { documentTextKey: KEY, documentTextBytes: 100 }
+      metadata: Record<string, unknown> = { documentTextKey: KEY, documentTextBytes: 100 },
+      resourceData: Record<string, unknown> = {}
     ) {
       const pkg = await createPackage(app, pkgData)
       const res = await createResource(app, pkg.id, {
@@ -745,6 +879,7 @@ describe('MCP Server', () => {
         format: 'PDF',
         url: 'plan.pdf',
         urlType: 'upload',
+        ...resourceData,
       })
       await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, res.id))
       const json = JSON.stringify({ sourceHash: 'sha256:live', ...metadata })
@@ -1115,6 +1250,154 @@ describe('MCP Server', () => {
       expect(text).not.toContain('Text from')
     })
 
+    it('labels a presentation by its slides, and offers no PDF page anchor', async () => {
+      const app = documentApp([
+        { loc: { slide: 1 }, headings: ['表紙'], text: '事業計画' },
+        { loc: { slide: 2 }, headings: ['概要'], text: '三つの柱' },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-deck', title: 'Deck' })
+
+      const section = await call(app, { id: res.id, from: 1, to: 2 })
+      const outline = (await mcpToolCall(app, 'get_document_outline', { id: res.id })).result
+        .content[0].text as string
+
+      expect(section).toContain('Showing: slides 1–2')
+      expect(section).toContain('--- slide 1 · 表紙\n事業計画\n\n--- slide 2 · 概要\n三つの柱')
+      expect(section).toContain(`File: http://localhost:3000/api/v1/resources/${res.id}/download\n`)
+      expect(section).not.toContain('#page=N')
+      expect(outline).toContain('Slides: 1–2')
+      expect(outline).toContain('Headings with the slides they span.')
+      expect(outline).toContain('slide 1  表紙\nslide 2  概要')
+    })
+
+    it('marks a figure, and labels a sheet with neither name nor rows by its number', async () => {
+      const app = documentApp([
+        { loc: { page: 1 }, text: '図1 位置図', figure: { ref: '9 0 R' } },
+        { loc: { sheet: 2 }, text: '本文' },
+      ])
+      const { res } = await createDocument(app, { name: 'ds-figure', title: 'Figure' })
+
+      const text = await call(app, { id: res.id })
+
+      expect(text).toContain('--- page 1 · figure\n図1 位置図')
+      expect(text).toContain('--- sheet 2\n本文')
+    })
+
+    it('says which pages it was asked for when nothing is on them', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-range-miss', title: 'Miss' })
+
+      const pages = await call(app, { id: res.id, from: 7, to: 8 })
+      const both = await call(app, { id: res.id, to: 2, heading: '財政' })
+
+      expect(pages).toContain('No text matches pages/slides/sheets 7–8.')
+      expect(pages).toContain("This document's pages, slides or sheets run 1–3.")
+      expect(both).toContain('No text matches pages/slides/sheets 1–2 and heading "財政".')
+    })
+
+    it('outlines part of a document, saying the pages are those shown', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-outline-part', title: 'Part' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id, from: 2, to: 3 })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('Pages shown: 2–3')
+      expect(text).toContain('page 2  第1章 現状')
+      expect(text).not.toContain('はじめに')
+    })
+
+    it('outlines a document of headings without pages, and cannot range over it', async () => {
+      // A Word file: headings, and no pages to give as from/to
+      const app = documentApp([
+        { loc: {}, headings: ['第1章 総則'], text: '目的' },
+        { loc: {}, headings: ['第1章 総則', '定義'], text: '用語' },
+      ])
+      const { res } = await createDocument(
+        app,
+        { name: 'ds-word', title: 'Word' },
+        { documentTextKey: KEY, documentTextBytes: 100 },
+        { name: 'rules.docx', format: 'DOCX', url: 'rules.docx' }
+      )
+
+      const whole = (await mcpToolCall(app, 'get_document_outline', { id: res.id })).result
+        .content[0].text as string
+      const ranged = (await mcpToolCall(app, 'get_document_outline', { id: res.id, to: 2 })).result
+        .content[0].text as string
+
+      expect(whole).toContain(
+        'Headings. Give one (or a path of them, `A > B`) as heading to get_document_section:\n第1章 総則\n  定義'
+      )
+      expect(whole).not.toMatch(/^Pages/m)
+      expect(ranged).toContain('Nothing is on pages, slides or sheets 1–2.')
+    })
+
+    it('says how to read the headings a long outline without pages leaves out', async () => {
+      const app = documentApp(
+        Array.from({ length: 200 }, (_, i) => ({
+          loc: {},
+          headings: [`${i + 1}`.padStart(3, '0') + '節'.repeat(100)],
+          text: 'x',
+        }))
+      )
+      const { res } = await createDocument(app, { name: 'ds-long-word', title: 'Long' })
+
+      const result = await mcpToolCall(app, 'get_document_outline', { id: res.id })
+
+      expect(result.result.content[0].text).toMatch(
+        /… and \d+ more headings, which cannot be listed; give get_document_section a heading/
+      )
+    })
+
+    it('cites a linked file by its own URL, and a resource without a name as untitled', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(
+        app,
+        { name: 'ds-linked' },
+        { documentTextKey: KEY, documentTextBytes: 100 },
+        { name: null, url: 'https://example.com/plan.pdf', urlType: null }
+      )
+
+      const text = await call(app, { id: res.id, from: 1, to: 1 })
+
+      expect(text).toContain('Source: (untitled)\n')
+      expect(text).toContain(
+        'File: https://example.com/plan.pdf (add #page=N to open a PDF at page N)'
+      )
+    })
+
+    it('says so for an outline of a resource with no text, or whose text has gone', async () => {
+      const app = documentApp(report)
+      const { res: csv } = await createDocument(app, { name: 'ds-outline-csv', title: 'CSV' }, {})
+      const { res: pdf } = await createDocument(app, { name: 'ds-outline-gone', title: 'Gone' })
+      const gone = createTestApp(db, { search, storage: mockStorage })
+
+      const none = await mcpToolCall(app, 'get_document_outline', { id: csv.id })
+      const missing = await mcpToolCall(gone, 'get_document_outline', { id: pdf.id })
+
+      expect(none.result.content[0].text).toContain('has no extracted document text')
+      expect(missing.result.content[0].text).toContain('not available just now')
+    })
+
+    it('fails the call, rather than calling the text gone, when storage cannot be read', async () => {
+      const app = documentApp(report)
+      const { res } = await createDocument(app, { name: 'ds-storage-down', title: 'Down' })
+      const down = createTestApp(db, {
+        search,
+        storage: {
+          download: async () => {
+            throw new Error('connect ECONNREFUSED')
+          },
+        } as unknown as StorageAdapter,
+      })
+
+      for (const tool of ['get_document_section', 'get_document_outline']) {
+        const result = await mcpToolCall(down, tool, { id: res.id })
+        expect(result.result.isError).toBe(true)
+        expect(JSON.stringify(result)).not.toContain('not available just now')
+      }
+    })
+
     it('does not read the text of a private dataset to someone outside it', async () => {
       const admin = documentApp(report)
       const { res } = await createDocument(admin, {
@@ -1235,6 +1518,118 @@ describe('MCP Server', () => {
       const text = await call(passageApp({ 'k/sewer': sewer }, { user: null }), { q: '下水道' })
 
       expect(text).toContain('No passages found for "下水道"')
+    })
+
+    it('narrows to the organization and the tags asked for', async () => {
+      const app = passageApp({ 'k/sewer': sewer })
+      await createPdf(
+        app,
+        { name: 'ds-sewer', title: '下水道', tags: [{ name: 'water' }] },
+        '下水道計画.pdf',
+        'k/sewer'
+      )
+      const found = async (args: Record<string, unknown>) => call(app, { q: '下水道', ...args })
+
+      expect(await found({ organization: 'test-org' })).toContain('Passages for "下水道": 1')
+      expect(await found({ organization: 'other-org' })).toContain('No passages found')
+      expect(await found({ tags: ['water'] })).toContain('Passages for "下水道": 1')
+      expect(await found({ tags: ['air'] })).toContain('No passages found')
+    })
+
+    describe('read from the documents a search names', () => {
+      /** A search that ranks `found`'s datasets, each naming its resource, and cuts no fragments */
+      function namingSearch(
+        found: { pkg: { id: string }; res: { id: string } }[],
+        minWords?: number
+      ): SearchAdapter {
+        return {
+          ...rankingSearch(found.map((f) => f.pkg.id)),
+          countsWords: true,
+          search: async ({ minWords: asked, offset = 0, limit = 10 }) => {
+            // Like an index that counts words: none hold them all, `minWords` of them some do
+            const hit = minWords === undefined || asked === minWords
+            return {
+              items: hit
+                ? found.map((f) => ({
+                    id: f.pkg.id,
+                    name: '',
+                    matchedResources: [{ id: f.res.id, matchSource: 'content' as const }],
+                  }))
+                : [],
+              total: hit ? found.length : 0,
+              offset,
+              limit,
+              ...(hit && asked !== undefined && { minWords: asked }),
+            }
+          },
+        }
+      }
+
+      it('says where a passage is on a slide, a sheet, across pages, and where there is no place', async () => {
+        const artifacts: Record<string, DocumentTextBlock[]> = {
+          'k/deck': [{ loc: { slide: 2 }, text: '汚泥の資料' }],
+          'k/book': [{ loc: { sheet: 1, sheetName: '集計', rows: [1] }, text: '汚泥\t10' }],
+          'k/plain': [{ loc: {}, text: '汚泥の記述' }],
+          'k/sheet': [{ loc: { sheet: 3 }, text: '汚泥の一覧' }],
+          'k/pages': [
+            { loc: { page: 5 }, text: '汚泥の' },
+            { loc: { page: 6 }, text: '処理' },
+          ],
+        }
+        const setup = passageApp(artifacts)
+        const found = [
+          await createPdf(setup, { name: 'ds-deck', title: 'Deck' }, 'deck.pptx', 'k/deck'),
+          await createPdf(setup, { name: 'ds-book', title: 'Book' }, 'book.xlsx', 'k/book'),
+          await createPdf(setup, { name: 'ds-plain', title: 'Plain' }, 'plain.docx', 'k/plain'),
+          await createPdf(setup, { name: 'ds-sheet', title: 'Sheet' }, 'sheet.jtd', 'k/sheet'),
+          await createPdf(setup, { name: 'ds-pages', title: 'Pages' }, 'pages.pdf', 'k/pages'),
+        ]
+        const app = passageApp(artifacts, { search: namingSearch(found) })
+
+        const text = await call(app, { q: '汚泥', k: 10 })
+
+        expect(text).toContain('Passages for "汚泥": 5, best first.')
+        expect(text).toMatch(/Source: deck\.pptx[\s\S]*?Where: slide 2\n/)
+        expect(text).toMatch(/Source: book\.xlsx[\s\S]*?Where: sheet 1 "集計"\n/)
+        expect(text).toMatch(
+          /Source: plain\.docx[\s\S]*?Where: the document has no pages or headings here\n/
+        )
+        expect(text).toMatch(/Source: pages\.pdf[\s\S]*?Where: pages 5–6\n/)
+        expect(text).toMatch(/Source: sheet\.jtd[\s\S]*?Where: sheet 3\n/)
+        expect(text).toContain('End of the passages.')
+      })
+
+      it('says when more passages matched than it was asked for', async () => {
+        const artifacts = {
+          'k/a': [{ loc: { page: 1 }, text: '汚泥' }],
+          'k/b': [{ loc: { page: 1 }, text: '汚泥' }],
+        }
+        const setup = passageApp(artifacts)
+        const found = [
+          await createPdf(setup, { name: 'ds-a', title: 'A' }, 'a.pdf', 'k/a'),
+          await createPdf(setup, { name: 'ds-b', title: 'B' }, 'b.pdf', 'k/b'),
+        ]
+        const app = passageApp(artifacts, { search: namingSearch(found) })
+
+        const text = await call(app, { q: '汚泥', k: 1 })
+
+        expect(text).toContain('Passages for "汚泥": 1, best first.')
+        expect(text).toContain('More passages matched than k (1); ask for more with k')
+      })
+
+      it('says the documents were found by fewer than all the words', async () => {
+        const artifacts = { 'k/a': [{ loc: { page: 1 }, text: '汚泥の処理' }] }
+        const setup = passageApp(artifacts)
+        const found = [await createPdf(setup, { name: 'ds-a', title: 'A' }, 'a.pdf', 'k/a')]
+        const app = passageApp(artifacts, { search: namingSearch(found, 1) })
+
+        const text = await call(app, { q: '汚泥 焼却' })
+
+        expect(text).toContain(
+          'Nothing matched every word of the query at once, so the documents were found by at least 1 of its 2 words, or by meaning.'
+        )
+        expect(text).toContain('Matched: 汚泥')
+      })
     })
 
     describe('with a search that indexes the text', () => {

@@ -11,9 +11,11 @@ import {
   resourceVersion,
 } from '@kukan/db'
 import {
+  detectContentType,
   getStorageKey,
   MAX_UPLOAD_SIZE,
   JSON_PREVIEW_LIMIT,
+  problemTypeUri,
   TEXT_PREVIEW_LIMIT,
 } from '@kukan/shared'
 import type { ResourceColumnType } from '@kukan/shared'
@@ -659,6 +661,16 @@ describe('Resources API Routes', () => {
         detail: 'Format "CSV" is not a JSON format',
       })
     })
+
+    it('should return 415 for a resource with no format', async () => {
+      const pkg = await createPackage('json-noformat-pkg')
+      const resource = await createResource(pkg.id, { format: null })
+
+      const res = await appWithJson.request(`/api/v1/resources/${resource.id}/json`)
+
+      expect(res.status).toBe(415)
+      expect((await res.json()).detail).toBe('Format "unknown" is not a JSON format')
+    })
   })
 
   describe('GET /api/v1/resources/:id/preview — private visibility', () => {
@@ -836,7 +848,12 @@ describe('Resources API Routes', () => {
     it('rejects malformed byte ranges with 416', async () => {
       // Includes numerals past 2^53: unguarded they reach the backend in
       // exponent notation, which S3 ignores — a full 200 mislabeled as 206.
-      for (const range of ['bytes=-', 'bytes=20-10', 'bytes=100000000000000000000000-']) {
+      for (const range of [
+        'bytes=-',
+        'bytes=20-10',
+        'bytes=100000000000000000000000-',
+        'bytes=0-100000000000000000000000',
+      ]) {
         const res = await rangeApp.request(previewUrl, { headers: { Range: range } })
         expect(res.status).toBe(416)
       }
@@ -3306,5 +3323,565 @@ describe('GET /api/v1/resources/:id/column-roles', () => {
     expect(
       (await outsiderApp.request(`/api/v1/resources/${resource.id}/column-roles`)).status
     ).toBe(403)
+  })
+})
+
+describe('GET /api/v1/resources/count', () => {
+  it('answers 0 to my_org for someone who may edit in no organization', async () => {
+    const pkg = await createPackage('count-outsider-pkg')
+    await createResource(pkg.id)
+
+    const res = await outsiderApp.request('/api/v1/resources/count?my_org=true')
+
+    expect(await res.json()).toEqual({ count: 0 })
+  })
+
+  it('counts my_org from the database, not the search index', async () => {
+    // The index the app is given knows nothing; the dashboard must not lag behind a write
+    const pkg = await createPackage('count-mine-pkg')
+    await createResource(pkg.id)
+    await createResource(pkg.id)
+
+    const res = await app.request('/api/v1/resources/count?my_org=true')
+
+    expect(await res.json()).toEqual({ count: 2 })
+  })
+
+  it('counts my_org over only the organizations the editor may write in', async () => {
+    const mine = await createPackage('count-editor-pkg')
+    await createResource(mine.id)
+    const otherOrg = await (
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'count-other-org' }),
+      })
+    ).json()
+    const theirs = await (
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'count-other-pkg', ownerOrg: otherOrg.id }),
+      })
+    ).json()
+    await createResource(theirs.id)
+    await app.request(`/api/v1/organizations/${testOrgId}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'editor' }),
+    })
+
+    const res = await outsiderApp.request('/api/v1/resources/count?my_org=true')
+
+    expect(await res.json()).toEqual({ count: 1 })
+  })
+
+  it('asks the search index for the public count, leaving out private datasets', async () => {
+    const sumResourceCount = vi.fn(async () => 7)
+    const anonymous = createTestApp(db, {
+      user: null,
+      search: { ...mockSearch, sumResourceCount },
+    })
+
+    const res = await anonymous.request('/api/v1/resources/count')
+
+    expect(await res.json()).toEqual({ count: 7 })
+    expect(sumResourceCount).toHaveBeenCalledWith({ filters: { excludePrivate: true } })
+  })
+})
+
+describe('GET /api/v1/resources/:id/text', () => {
+  const textStorage = (totalSize: number) => ({
+    ...mockStorage,
+    downloadRange: vi.fn(async () => ({
+      stream: Readable.from([Buffer.from('a,b\n1,2\n')]),
+      totalSize,
+      start: 0,
+      end: 7,
+      partial: true,
+    })),
+  })
+
+  it('names the charset the pipeline detected, and says when the text is cut', async () => {
+    const pkg = await createPackage('text-sjis-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId: resource.id, status: 'complete', metadata: { encoding: 'SJIS' } })
+      .onConflictDoUpdate({
+        target: resourcePipeline.resourceId,
+        set: { metadata: { encoding: 'SJIS' } },
+      })
+    const storage = textStorage(TEXT_PREVIEW_LIMIT + 1)
+
+    const res = await createTestApp(db, { storage }).request(
+      `/api/v1/resources/${resource.id}/text`
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=shift_jis')
+    expect(res.headers.get('X-Detected-Encoding')).toBe('SJIS')
+    expect(res.headers.get('X-Truncated')).toBe('true')
+    expect(storage.downloadRange).toHaveBeenCalledWith(
+      expect.any(String),
+      0,
+      TEXT_PREVIEW_LIMIT - 1
+    )
+  })
+
+  it('falls back to UTF-8 where no encoding was detected', async () => {
+    const pkg = await createPackage('text-unknown-pkg')
+    const resource = await createResource(pkg.id)
+
+    // Exactly at the limit: the whole file fits, so nothing is cut
+    const res = await createTestApp(db, { storage: textStorage(TEXT_PREVIEW_LIMIT) }).request(
+      `/api/v1/resources/${resource.id}/text`
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
+    expect(res.headers.get('X-Detected-Encoding')).toBe('UNKNOWN')
+    expect(res.headers.get('X-Truncated')).toBe('false')
+    expect(await res.text()).toBe('a,b\n1,2\n')
+  })
+
+  it('answers 404 for a resource with no stored content', async () => {
+    const pkg = await createPackage('text-nokey-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ storageKey: null })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await createTestApp(db, { storage: textStorage(8) }).request(
+      `/api/v1/resources/${resource.id}/text`
+    )
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).title).toBe('NOT_FOUND')
+  })
+})
+
+describe('GET /api/v1/resources/:id/download — uploaded content', () => {
+  const contentStorage = {
+    ...mockStorage,
+    download: async () => Readable.from([Buffer.from('a,b\n1,2\n')]),
+  }
+  const contentApp = createTestApp(db, { storage: contentStorage })
+
+  it('serves the file as an attachment under its uploaded name, with its size', async () => {
+    const pkg = await createPackage('download-upload-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ url: 'report.csv', urlType: 'upload', size: 8 })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await contentApp.request(`/api/v1/resources/${resource.id}/download`)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Disposition')).toBe(
+      `attachment; filename="report.csv"; filename*=UTF-8''report.csv`
+    )
+    expect(res.headers.get('Content-Type')).toBe('text/csv')
+    expect(res.headers.get('Content-Length')).toBe('8')
+    expect(await res.text()).toBe('a,b\n1,2\n')
+  })
+
+  it('names a file with no name by the resource, and types it by its recorded mimetype', async () => {
+    const pkg = await createPackage('download-noname-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ url: null, urlType: 'upload', mimetype: 'application/x-custom', size: null })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await contentApp.request(`/api/v1/resources/${resource.id}/download`)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Disposition')).toContain(`filename="${resource.id}"`)
+    expect(res.headers.get('Content-Type')).toBe('application/x-custom')
+    expect(res.headers.get('Content-Length')).toBeNull()
+  })
+
+  it('refuses to redirect to a link that is not http(s)', async () => {
+    const pkg = await createPackage('download-scheme-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ url: 'javascript:alert(1)', urlType: null })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await contentApp.request(`/api/v1/resources/${resource.id}/download`)
+
+    expect(res.status).toBe(400)
+    expect(res.headers.get('Location')).toBeNull()
+    expect((await res.json()).title).toBe('VALIDATION_ERROR')
+  })
+
+  it('reports a storage outage as a failure, not as a missing file', async () => {
+    const pkg = await createPackage('download-outage-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ url: 'report.csv', urlType: 'upload' })
+      .where(eq(resourceTable.id, resource.id))
+    const down = createTestApp(db, {
+      storage: {
+        ...mockStorage,
+        download: async () => {
+          throw new Error('connect ECONNREFUSED')
+        },
+      },
+    })
+
+    const res = await down.request(`/api/v1/resources/${resource.id}/download`)
+
+    expect(res.status).toBe(500)
+  })
+})
+
+describe('GET /api/v1/resources/:id/preview — what is served', () => {
+  it('serves the preview the pipeline wrote, typed by its key', async () => {
+    const download = vi.fn(async () => Readable.from([Buffer.from('PAR1')]))
+    const previewApp = createTestApp(db, { storage: { ...mockStorage, download } })
+    const pkg = await createPackage('preview-parquet-pkg')
+    const resource = await createResource(pkg.id, { format: 'CSV' })
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId: resource.id, status: 'complete', previewKey: 'previews/p/r.parquet' })
+      .onConflictDoUpdate({
+        target: resourcePipeline.resourceId,
+        set: { previewKey: 'previews/p/r.parquet' },
+      })
+
+    const res = await previewApp.request(`/api/v1/resources/${resource.id}/preview`)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe(detectContentType('previews/p/r.parquet'))
+    expect(download).toHaveBeenCalledWith('previews/p/r.parquet')
+  })
+
+  it('answers 404 for an image whose content was never stored', async () => {
+    const pkg = await createPackage('preview-nokey-pkg')
+    const resource = await createResource(pkg.id, { format: 'PNG' })
+    await db
+      .update(resourceTable)
+      .set({ storageKey: null })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await appWithStorage.request(`/api/v1/resources/${resource.id}/preview`)
+
+    expect(res.status).toBe(404)
+  })
+
+  describe('when the object is gone or cannot be ranged', () => {
+    let previewUrl: string
+
+    beforeEach(async () => {
+      const pkg = await createPackage('preview-gone-pkg')
+      const resource = await createResource(pkg.id, { format: 'PNG' })
+      previewUrl = `/api/v1/resources/${resource.id}/preview`
+    })
+
+    const goneStorage = { ...mockStorage, head: async () => null }
+
+    it('answers 404 to HEAD and to a range of an object that is not there', async () => {
+      const gone = createTestApp(db, { storage: goneStorage })
+
+      expect((await gone.request(previewUrl, { method: 'HEAD' })).status).toBe(404)
+      for (const range of ['bytes=-8', 'bytes=0-9']) {
+        expect((await gone.request(previewUrl, { headers: { Range: range } })).status).toBe(404)
+      }
+    })
+
+    it('answers 416 to an empty suffix, naming the size', async () => {
+      const sized = createTestApp(db, {
+        storage: { ...mockStorage, head: async () => ({ size: 10 }) },
+      })
+
+      const res = await sized.request(previewUrl, { headers: { Range: 'bytes=-0' } })
+
+      expect(res.status).toBe(416)
+      expect(res.headers.get('Content-Range')).toBe('bytes */10')
+    })
+
+    it('answers 416 to a range the backend refused by status, without a size it cannot know', async () => {
+      const refusing = createTestApp(db, {
+        storage: {
+          ...goneStorage,
+          downloadRange: async () => {
+            throw Object.assign(new Error('Range Not Satisfiable'), {
+              $metadata: { httpStatusCode: 416 },
+            })
+          },
+        },
+      })
+
+      const res = await refusing.request(previewUrl, { headers: { Range: 'bytes=50-' } })
+
+      expect(res.status).toBe(416)
+      expect(res.headers.get('Content-Range')).toBeNull()
+    })
+  })
+})
+
+describe('GET /api/v1/resources/:id/versions/:v/download', () => {
+  const download = vi.fn(async () => Readable.from([Buffer.from('v1-bytes')]))
+  const versionApp = createTestApp(db, { storage: { ...mockStorage, download } })
+
+  async function withVersion(name: string, url: string | null) {
+    const pkg = await createPackage(name)
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ url, urlType: 'upload' })
+      .where(eq(resourceTable.id, resource.id))
+    await db.insert(resourceVersion).values({
+      resourceId: resource.id,
+      version: 1,
+      storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
+      size: 8,
+      hash: 'sha256:v1',
+      origin: 'upload',
+    })
+    return { pkg, resource }
+  }
+
+  it("serves the version's own bytes under a name that says which version", async () => {
+    const { pkg, resource } = await withVersion('version-download-pkg', 'report.csv')
+
+    const res = await versionApp.request(`/api/v1/resources/${resource.id}/versions/1/download`)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Disposition')).toContain('filename="report.v1.csv"')
+    expect(res.headers.get('Content-Type')).toBe('text/csv')
+    expect(res.headers.get('Content-Length')).toBe('8')
+    expect(download).toHaveBeenCalledWith(getStorageKey(pkg.id, resource.id, 'v1'))
+    expect(await res.text()).toBe('v1-bytes')
+  })
+
+  it('names a version of a file with no name by the resource', async () => {
+    const { resource } = await withVersion('version-download-noname-pkg', null)
+
+    const res = await versionApp.request(`/api/v1/resources/${resource.id}/versions/1/download`)
+
+    expect(res.headers.get('Content-Disposition')).toContain(`filename="${resource.id}.v1"`)
+  })
+
+  it('answers 404 when the version object has gone from storage', async () => {
+    const { resource } = await withVersion('version-download-gone-pkg', 'report.csv')
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/versions/1/download`)
+
+    expect(res.status).toBe(404)
+  })
+
+  it('refuses a version number that is not one', async () => {
+    const { resource } = await withVersion('version-download-junk-pkg', 'report.csv')
+
+    const res = await versionApp.request(`/api/v1/resources/${resource.id}/versions/abc/download`)
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).detail).toBe('Invalid version number')
+  })
+})
+
+describe('GET /api/v1/resources/:id/versions/:v/diff — from', () => {
+  it('refuses a from that is not a version number', async () => {
+    const pkg = await createPackage('diff-from-junk-pkg')
+    const resource = await createResource(pkg.id)
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/versions/2/diff?from=x`)
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).detail).toBe('Invalid version number')
+  })
+})
+
+describe('POST /api/v1/resources/:id/versions/:v/purge', () => {
+  const purge = (id: string, via: typeof app) =>
+    via.request(`/api/v1/resources/${id}/versions/1/purge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'personal data' }),
+    })
+
+  it('claims the version for a sysadmin and answers before the content is destroyed', async () => {
+    const pkg = await createPackage('purge-ok-pkg')
+    const resource = await createResource(pkg.id)
+    await db.insert(resourceVersion).values(
+      [1, 2].map((version) => ({
+        resourceId: resource.id,
+        version,
+        storageKey: getStorageKey(pkg.id, resource.id, `v${version}`),
+        hash: `sha256:v${version}`,
+        origin: 'upload' as const,
+      }))
+    )
+
+    const res = await purge(resource.id, app)
+
+    expect(res.status).toBe(202)
+    expect(await res.json()).toMatchObject({ version: 1, state: 'purging' })
+  })
+
+  it('is refused to anyone but a sysadmin', async () => {
+    const pkg = await createPackage('purge-auth-pkg')
+    const resource = await createResource(pkg.id)
+
+    expect((await purge(resource.id, unauthApp)).status).toBe(401)
+    const outsider = await purge(resource.id, outsiderApp)
+    expect(outsider.status).toBe(403)
+    expect(await outsider.json()).toMatchObject({
+      title: 'FORBIDDEN',
+      type: problemTypeUri('sysadmin-required'),
+    })
+  })
+})
+
+describe('POST /api/v1/resources/:id/upload-complete — object missing', () => {
+  it('refuses to promote an upload whose object never reached storage', async () => {
+    const missingApp = createTestApp(db, { storage: { ...mockStorage, head: async () => null } })
+    const pkg = await createPackage('upload-complete-missing-pkg')
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({ pendingStorageKey: `resources/${pkg.id}/${resource.id}.pending` })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await missingApp.request(`/api/v1/resources/${resource.id}/upload-complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).detail).toBe('Uploaded object not found in storage')
+    const [row] = await db
+      .select({ pending: resourceTable.pendingStorageKey })
+      .from(resourceTable)
+      .where(eq(resourceTable.id, resource.id))
+    expect(row.pending).not.toBeNull()
+  })
+})
+
+describe('POST /api/v1/resources/:id/cancel-pipeline', () => {
+  const cancel = (id: string, via = app) =>
+    via.request(`/api/v1/resources/${id}/cancel-pipeline`, { method: 'POST' })
+
+  it('stops the run holding the resource', async () => {
+    const pkg = await createPackage('cancel-running-pkg')
+    const resource = await createResource(pkg.id)
+    const running = {
+      status: 'processing' as const,
+      claimOwner: randomUUID(),
+      claimKind: 'run' as const,
+      claimOwnerAt: new Date(),
+    }
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId: resource.id, ...running })
+      .onConflictDoUpdate({ target: resourcePipeline.resourceId, set: running })
+
+    const res = await cancel(resource.id)
+
+    expect(await res.json()).toEqual({ id: resource.id, cancelled: true })
+    const [row] = await db
+      .select({ status: resourcePipeline.status, owner: resourcePipeline.claimOwner })
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resource.id))
+    expect(row).toEqual({ status: 'cancelled', owner: null })
+  })
+
+  it('says nothing was stopped where nothing was running', async () => {
+    const pkg = await createPackage('cancel-idle-pkg')
+    const resource = await createResource(pkg.id)
+
+    const res = await cancel(resource.id)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ id: resource.id, cancelled: false })
+  })
+
+  it('is refused to the unauthenticated, and to someone who may not edit', async () => {
+    const pkg = await createPackage('cancel-auth-pkg')
+    const resource = await createResource(pkg.id)
+
+    expect((await cancel(resource.id, unauthApp)).status).toBe(401)
+    expect((await cancel(resource.id, outsiderApp)).status).toBe(403)
+  })
+})
+
+describe('POST /api/v1/resources/:id/revert', () => {
+  const revert = (id: string, restoreTo: number | null, via = app) =>
+    via.request(`/api/v1/resources/${id}/revert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreTo, ifLiveRevision: randomUUID() }),
+    })
+
+  it('refuses to restore a purged version', async () => {
+    const pkg = await createPackage('revert-purged-pkg')
+    const resource = await createResource(pkg.id)
+    await db.insert(resourceVersion).values({
+      resourceId: resource.id,
+      version: 1,
+      storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
+      hash: 'sha256:v1',
+      origin: 'upload',
+      state: 'purged',
+    })
+
+    const res = await revert(resource.id, 1)
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).title).toBe('CONFLICT')
+  })
+
+  it('answers 404 for a version the resource never had', async () => {
+    const pkg = await createPackage('revert-missing-pkg')
+    const resource = await createResource(pkg.id)
+
+    expect((await revert(resource.id, 3)).status).toBe(404)
+  })
+
+  it('is refused to the unauthenticated, and to someone who may not edit', async () => {
+    const pkg = await createPackage('revert-auth-pkg')
+    const resource = await createResource(pkg.id)
+
+    expect((await revert(resource.id, null, unauthApp)).status).toBe(401)
+    expect((await revert(resource.id, null, outsiderApp)).status).toBe(403)
+  })
+})
+
+describe('resource editor routes — unauthenticated', () => {
+  it('refuses each without a session, and changes nothing', async () => {
+    const pkg = await createPackage('unauth-writes-pkg')
+    const resource = await createResource(pkg.id)
+    const base = `/api/v1/resources/${resource.id}`
+    const json = (method: string, body: unknown) => ({
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    const answers = await Promise.all([
+      unauthApp.request(`${base}/column-settings/check`, json('POST', { primaryKey: ['id'] })),
+      unauthApp.request(`${base}/column-roles`),
+      unauthApp.request(`${base}/summary`, json('PUT', { hidden: true })),
+      unauthApp.request(base, json('PUT', { name: 'renamed' })),
+      unauthApp.request(base, { method: 'DELETE' }),
+    ])
+
+    for (const res of answers) {
+      expect(res.status).toBe(401)
+      expect((await res.json()).title).toBe('UNAUTHORIZED')
+    }
+    const [row] = await db
+      .select({ name: resourceTable.name, state: resourceTable.state })
+      .from(resourceTable)
+      .where(eq(resourceTable.id, resource.id))
+    expect(row).toEqual({ name: 'test-resource', state: 'active' })
   })
 })

@@ -191,7 +191,7 @@ describe('XLSX', () => {
     ])
   })
 
-  it.each(['./worksheets/', '../xl/worksheets/'])(
+  it.each(['./worksheets/', '../xl/worksheets/', '/xl/worksheets/'])(
     'finds the sheets through a relationship written as %s',
     async (target) => {
       const path = await file(
@@ -201,6 +201,45 @@ describe('XLSX', () => {
       expect(await lines(path, 'xlsx')).toEqual(['1\t2'])
     }
   )
+
+  it('numbers a row its writer left unnumbered one past the last', async () => {
+    const sheet =
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+      '<row r="2"><c><v>2</v></c></row><row><c><v>3</v></c></row><row r="x"><c><v>4</v></c></row>' +
+      '</sheetData></worksheet>'
+    const path = await file('unnumbered.xlsx', await xlsxBuffer({ sheets: {}, raw: { 1: sheet } }))
+
+    expect(await blocks(path, 'xlsx')).toEqual([
+      { loc: { sheet: 1, rows: [2, 3, 4] }, text: '2\n3\n4' },
+    ])
+  })
+
+  it('passes over a tab whose sheet is not in the archive, the others keeping their numbers', async () => {
+    const path = await file(
+      'missing.xlsx',
+      await xlsxBuffer({ sheets: { 2: [[2]] }, tabs: [1, 2] })
+    )
+
+    expect(await blocks(path, 'xlsx')).toEqual([
+      { loc: { sheet: 2, sheetName: 's2', rows: [1] }, text: '2' },
+    ])
+  })
+
+  it('reads the sheets by number where no tab of the workbook leads to one', async () => {
+    // A tab whose relationship the workbook's relationships do not have
+    const zip = await JSZip.loadAsync(await xlsxBuffer({ sheets: { 2: [[2]], 1: [[1]] } }))
+    zip.file(
+      'xl/workbook.xml',
+      '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="s" r:id="rId9"/></sheets></workbook>'
+    )
+    zip.file('xl/_rels/workbook.xml.rels', '<Relationships></Relationships>')
+    const path = await file('dangling.xlsx', await zip.generateAsync({ type: 'nodebuffer' }))
+
+    expect(await blocks(path, 'xlsx')).toEqual([
+      { loc: { sheet: 1, rows: [1] }, text: '1' },
+      { loc: { sheet: 2, rows: [1] }, text: '2' },
+    ])
+  })
 
   it('leaves out empty cells, and rows with none but those', async () => {
     const path = await file(
@@ -227,6 +266,18 @@ describe('XLSX', () => {
       })
     )
     expect(await lines(path, 'xlsx')).toEqual(['東京都'])
+  })
+
+  it("leaves an inline string's phonetic reading out", async () => {
+    const path = await file(
+      'inline.xlsx',
+      await xlsxBuffer({
+        sheets: {
+          1: [[{ inline: '東京都</t><rPh sb="0" eb="3"><t>トウキョウト</t></rPh><t>庁' }]],
+        },
+      })
+    )
+    expect(await lines(path, 'xlsx')).toEqual(['東京都庁'])
   })
 
   it('keeps characters whole across the chunks a large sheet arrives in', async () => {
@@ -1197,6 +1248,39 @@ describe('Office documents', () => {
     ])
   })
 
+  it('reads a document officeparser gives no structure for as one block', async () => {
+    parseOffice.mockResolvedValue(astOf([]))
+    const path = await file('flat.docx', Buffer.alloc(10))
+
+    expect(await blocks(path, 'docx')).toEqual([{ loc: {}, text: '' }])
+  })
+
+  it("finds a picture's part by its file name, the media folder's where two have it", async () => {
+    parseOffice.mockResolvedValue(
+      astOf([
+        node('paragraph', '', {}, [
+          node('text', 'body'),
+          node('image', '', { attachmentName: 'image1.png' }),
+          node('image', '', { attachmentName: 'image9.png', altText: 'gone' }),
+          // Nothing officeparser could name: not a figure anyone can be shown
+          node('image', '', { altText: 'unnamed' }),
+        ]),
+      ])
+    )
+    const pptx = new JSZip()
+    pptx.file('ppt/embeddings/image1.png', 'png')
+    pptx.file('ppt/media/image1.png', 'png')
+    const path = await file('figures.pptx', await pptx.generateAsync({ type: 'nodebuffer' }))
+
+    expect(await blocks(path, 'pptx')).toEqual([
+      { loc: {}, text: 'body' },
+      // No description, so no text of its own
+      { loc: {}, text: '', figure: { ref: 'ppt/media/image1.png' } },
+      // Not in the package: named as officeparser gave it
+      { loc: {}, text: 'gone', figure: { ref: 'image9.png' } },
+    ])
+  })
+
   it('reads a presentation a slide at a time, under its title', async () => {
     parseOffice.mockResolvedValue(
       astOf([
@@ -1873,6 +1957,43 @@ describe('the artifact', () => {
     // Each block whole on its own: the index joins them with newlines
     const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
     expect(texts.filter((t) => loneSurrogate.test(t))).toEqual([])
+  })
+
+  it('splits a line with no break in it where the block ends', async () => {
+    const text = 'x'.repeat(70_000)
+    parseOffice.mockResolvedValue(astOf([node('paragraph', text)]))
+    const path = await file('line.docx', Buffer.alloc(10))
+    const artifact = join(dir, 'text.ndjson.zst')
+
+    await extractDocumentText(path, 'docx', artifact)
+
+    const texts = (await artifactBlocks(await readFile(artifact))).map((b) => b.text)
+    expect(texts.map((t) => t.length)).toEqual([32_000, 32_000, 6_000])
+    expect(texts.join('')).toBe(text)
+  })
+
+  it('reads an XLSX the strict reader refuses through officeparser, a block a sheet', async () => {
+    parseOffice.mockResolvedValue(
+      astOf([node('sheet', '1\t2', { sheetName: '集計' }), node('sheet', '3', {})])
+    )
+    const path = await file('broken.xlsx', Buffer.from('not a zip archive'))
+    const artifact = join(dir, 'text.ndjson.zst')
+
+    await extractDocumentText(path, 'xlsx', artifact)
+
+    expect(parseOffice).toHaveBeenCalledWith(path)
+    expect(await artifactBlocks(await readFile(artifact))).toEqual([
+      { loc: { sheet: 1, sheetName: '集計' }, text: '1\t2' },
+      { loc: { sheet: 2 }, text: '3' },
+    ])
+  })
+
+  it('fails where another format cannot be read, there being no other way to read it', async () => {
+    parseOffice.mockRejectedValue(new Error('corrupt'))
+    const path = await file('broken.docx', Buffer.alloc(10))
+
+    await expect(extractDocumentText(path, 'docx', join(dir, 'out.zst'))).rejects.toThrow('corrupt')
+    expect(parseOffice).toHaveBeenCalledOnce()
   })
 
   it('writes a long run of text as blocks a line at most so long, split between lines', async () => {

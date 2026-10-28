@@ -4,7 +4,34 @@
  * names. Pin the shapes so a change to either is noticed here.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+const aws = vi.hoisted(() => ({
+  secret: vi.fn<() => Promise<{ SecretString?: string }>>(),
+  execution: vi.fn<(input: unknown) => Promise<unknown>>(),
+  pages: [] as { actionExecutionDetails?: unknown[] }[],
+  paginated: vi.fn<(input: unknown) => void>(),
+}))
+
+vi.mock('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: class {
+    send = () => aws.secret()
+  },
+  GetSecretValueCommand: class {},
+}))
+
+vi.mock('@aws-sdk/client-codepipeline', () => ({
+  CodePipelineClient: class {
+    send = (command: { input: unknown }) => aws.execution(command.input)
+  },
+  GetPipelineExecutionCommand: class {
+    constructor(readonly input: unknown) {}
+  },
+  paginateListActionExecutions: async function* (_config: unknown, input: unknown) {
+    aws.paginated(input)
+    yield* aws.pages
+  },
+}))
 
 // The module reads its environment once, at load.
 process.env.KUKAN_ENVIRONMENT = 'demo'
@@ -14,7 +41,8 @@ process.env.SITE_STACKS = JSON.stringify({
   KukanSiteStackAomori: { label: 'aomori' },
   KukanStack: { label: 'demo', url: 'https://demo.kukan.dev' },
 })
-const { lastAttempts, releaseTag, message } = await import('../lambda/deploy-notification/index.js')
+const { lastAttempts, releaseTag, message, handler } =
+  await import('../lambda/deploy-notification/index.js')
 
 // `aomori` carries no url: a site without a custom domain is named, not linked.
 const execution = {
@@ -131,5 +159,109 @@ describe('untrusted commit subjects', () => {
     expect(
       message({ ...execution, revision: { summary: 'chore(release): v9.9.9 & more' } })
     ).toContain('releases/tag/v9.9.9|release notes v9.9.9>')
+  })
+})
+
+describe('handler', () => {
+  const webhook = 'https://hooks.slack.com/services/T0/B0/xyz'
+  const fetchMock = vi.fn<typeof fetch>()
+
+  const notification = (detail: Record<string, string>) => ({
+    Records: [{ Sns: { Message: JSON.stringify({ detail }) } }],
+  })
+  const posted = () =>
+    (JSON.parse(fetchMock.mock.calls[0][1]!.body as string) as { text: string }).text
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockReset().mockResolvedValue(new Response('ok'))
+    aws.secret.mockReset().mockResolvedValue({ SecretString: `  ${webhook}\n` })
+    aws.execution.mockReset().mockResolvedValue({
+      pipelineExecution: {
+        artifactRevisions: [
+          { revisionId: '9aa974f7c0ffee00', revisionSummary: 'chore(release): v0.30.3\n\nbody' },
+        ],
+      },
+    })
+    aws.paginated.mockReset()
+    aws.pages = []
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('posts nothing while the secret still holds its generated value', async () => {
+    aws.secret.mockResolvedValue({ SecretString: 'generated-placeholder' })
+
+    await handler(notification({ pipeline: 'KukanPipeline', 'execution-id': 'e1' }))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(aws.execution).not.toHaveBeenCalled()
+  })
+
+  it('skips records that carry no execution to describe', async () => {
+    await handler({
+      Records: [
+        {},
+        { Sns: { Message: JSON.stringify({}) } },
+        { Sns: { Message: JSON.stringify({ detail: { pipeline: 'KukanPipeline' } }) } },
+      ],
+    })
+    await handler({})
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('reports the stacks from every page of the action history, and the commit built', async () => {
+    // Two pages: an environment near the site ceiling spills past the first
+    aws.pages = [
+      {
+        actionExecutionDetails: [{ actionName: 'KukanSiteStackMain.Deploy', status: 'Succeeded' }],
+      },
+      {},
+      {
+        actionExecutionDetails: [{ actionName: 'KukanSiteStackAomori.Deploy', status: 'Failed' }],
+      },
+    ]
+
+    await handler(
+      notification({ pipeline: 'KukanPipeline', 'execution-id': 'e1', state: 'FAILED' })
+    )
+
+    expect(aws.paginated).toHaveBeenCalledWith({
+      pipelineName: 'KukanPipeline',
+      filter: { pipelineExecutionId: 'e1' },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(webhook, expect.objectContaining({ method: 'POST' }))
+    const text = posted()
+    expect(text).toContain('❌ *demo* deploy failed')
+    // The first line of the summary, and the id cut to eight characters
+    expect(text).toContain('• chore(release): v0.30.3 (`9aa974f7`)')
+    expect(text).toContain('• sites: <https://demo.kukan.dev|main>, aomori (Failed)')
+  })
+
+  it('leaves out the commit and the sites when the pipeline recorded neither', async () => {
+    aws.execution.mockResolvedValue({})
+    aws.pages = [
+      { actionExecutionDetails: [{ actionName: 'KukanSharedStack.Deploy', status: 'Succeeded' }] },
+    ]
+
+    await handler(
+      notification({ pipeline: 'KukanPipeline', 'execution-id': 'e1', state: 'SUCCEEDED' })
+    )
+
+    expect(posted().split('\n')).toEqual([
+      '✅ *demo* deploy succeeded',
+      '• <https://ap-northeast-1.console.aws.amazon.com/codesuite/codepipeline/pipelines/KukanPipeline/executions/e1|pipeline execution>',
+    ])
+  })
+
+  it('fails the invocation when Slack refuses the message', async () => {
+    fetchMock.mockResolvedValue(new Response('invalid_payload', { status: 400 }))
+
+    await expect(
+      handler(notification({ pipeline: 'KukanPipeline', 'execution-id': 'e1' }))
+    ).rejects.toThrow('Slack rejected the message: 400 invalid_payload')
   })
 })

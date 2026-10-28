@@ -97,6 +97,14 @@ describe('matchedResourceLines', () => {
     expect(text).toContain('in its AI-written description')
   })
 
+  it('names a file with no name or format, matched by meaning with no score', () => {
+    const text = matchedResourceLines({
+      matchedResources: [{ id: 'r1', name: '', format: '', matchSource: 'semantic' }],
+    }).join('\n')
+
+    expect(text).toContain('     - (untitled) [unknown] (by meaning, ID: r1)')
+  })
+
   it('counts the remainder from the total, not from what was carried', () => {
     // The adapters carry at most MAX_MATCHED_RESOURCES_PER_PACKAGE and keep the
     // real total beside them. Subtracting from the array under-reports every

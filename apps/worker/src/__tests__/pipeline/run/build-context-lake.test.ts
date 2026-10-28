@@ -61,6 +61,13 @@ describe('ingestLakeVersion', () => {
     )
   })
 
+  it('loads nothing and asks for nothing where the site has no lake', async () => {
+    const ctx = buildPipelineContext({} as Database, {} as StorageAdapter)
+
+    expect(await ctx.ingestLakeVersion(row)).toBeNull()
+    expect(lake.ingest).not.toHaveBeenCalled()
+  })
+
   it('queues the clearing of what an earlier attempt left, when the load could not', async () => {
     lake.ingest.mockResolvedValue({ snapshotId: 7, uncleared: true })
 

@@ -207,6 +207,39 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
       vi.useRealTimers()
     })
+
+    it('finishes a creation another process got to first by putting the alias in front', async () => {
+      mockClient.indices.create.mockRejectedValue({
+        meta: { body: { error: { type: 'resource_already_exists_exception' } } },
+      })
+
+      await adapter.ensureIndex()
+
+      expect(mockClient.indices.putAlias).toHaveBeenCalledWith({
+        index: 'kukan-search-000001',
+        name: 'kukan-search',
+      })
+    })
+
+    it('raises any other refusal to create the index, and puts no alias in front', async () => {
+      const refused = { meta: { body: { error: { type: 'mapper_parsing_exception' } } } }
+      mockClient.indices.create.mockRejectedValue(refused)
+
+      await expect(adapter.ensureIndex()).rejects.toBe(refused)
+      expect(mockClient.indices.putAlias).not.toHaveBeenCalled()
+    })
+  })
+
+  it('passes basic-auth credentials to the client', async () => {
+    const { Client } = await import('@opensearch-project/opensearch')
+    new OpenSearchAdapter({
+      endpoint: 'http://localhost:9200',
+      auth: { username: 'kukan', password: 'secret' },
+    })
+
+    expect(vi.mocked(Client).mock.calls.at(-1)![0]).toMatchObject({
+      auth: { username: 'kukan', password: 'secret' },
+    })
   })
 
   describe('getPackagesDocCount', () => {
@@ -809,6 +842,51 @@ describe('OpenSearchAdapter', () => {
       expect(callArgs.body.query.bool.filter).toEqual(
         expect.arrayContaining([{ range: { updated: { gte: '2026-01-02T03:04:05.000Z' } } }])
       )
+
+      mockClient.search.mockClear()
+      await adapter.search({
+        q: '',
+        filters: { updatedTo: new Date('2026-02-03T04:05:06.000Z') },
+      })
+
+      expect(mockClient.search.mock.calls[0][0].body.query.bool.filter).toEqual(
+        expect.arrayContaining([{ range: { updated: { lte: '2026-02-03T04:05:06.000Z' } } }])
+      )
+    })
+
+    it('turns each remaining filter into its clause, one term per tag and group', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.search({
+        q: '',
+        filters: {
+          name: 'pop',
+          tags: ['a', 'b'],
+          licenses: ['cc-by'],
+          groups: ['g1', 'g2'],
+          ownerOrgIds: ['org-1'],
+          isPrivate: false,
+          creatorUserId: 'user-1',
+        },
+      })
+
+      const filter = mockClient.search.mock.calls[0][0].body.query.bool.filter
+      expect(filter).toEqual(
+        expect.arrayContaining([
+          { prefix: { 'name.keyword': 'pop' } },
+          { term: { tags: 'a' } },
+          { term: { tags: 'b' } },
+          { terms: { license_id: ['cc-by'] } },
+          { term: { groups: 'g1' } },
+          { term: { groups: 'g2' } },
+          { terms: { owner_org_id: ['org-1'] } },
+          // `false` is a filter, not an absent one
+          { term: { private: false } },
+          { term: { creator_user_id: 'user-1' } },
+        ])
+      )
     })
 
     it('filters formats through the resources, case-insensitively', async () => {
@@ -966,6 +1044,14 @@ describe('OpenSearchAdapter', () => {
         ])
       })
 
+      it('sorts descending when no order is given', async () => {
+        await adapter.search({ q: '', sortBy: 'created' })
+        expect(mockClient.search.mock.calls[0][0].body.sort).toEqual([
+          { created: { order: 'desc' } },
+          { id: { order: 'desc' } },
+        ])
+      })
+
       it('sorts by name on its keyword field', async () => {
         await adapter.search({ q: '', sortBy: 'name', sortOrder: 'asc' })
         const callArgs = mockClient.search.mock.calls[0][0]
@@ -1019,6 +1105,21 @@ describe('OpenSearchAdapter', () => {
       mockClient.deleteByQuery.mockRejectedValue({ statusCode: 404 })
       mockClient.delete.mockRejectedValue({ statusCode: 404 })
       await expect(adapter.deletePackage('nonexistent')).resolves.toBeUndefined()
+    })
+
+    it('keeps the package document when its children could not be deleted', async () => {
+      mockClient.deleteByQuery.mockRejectedValueOnce({ statusCode: 500 })
+
+      await expect(adapter.deletePackage('pkg-1')).rejects.toMatchObject({ statusCode: 500 })
+      // A package removed before its children would leave them unreachable
+      expect(mockClient.delete).not.toHaveBeenCalled()
+    })
+
+    it('raises a failure to delete the package document itself', async () => {
+      mockClient.deleteByQuery.mockResolvedValueOnce({ body: {} })
+      mockClient.delete.mockRejectedValueOnce({ statusCode: 500 })
+
+      await expect(adapter.deletePackage('pkg-1')).rejects.toMatchObject({ statusCode: 500 })
     })
   })
 
@@ -1341,6 +1442,49 @@ describe('OpenSearchAdapter', () => {
         '…高齢者（<mark>お年寄り</mark>）向けの福祉施設の一覧である。'
       )
     })
+
+    it('carries back the description and section fragments, sanitized', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                inner_hits: {
+                  resource: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'res-1',
+                          _source: { name: 'a.csv', description: 'd', section: 's' },
+                          highlight: {
+                            description: ['<mark>人口</mark><img src=x onerror=alert(1)>'],
+                            section: ['統計/<mark>人口</mark>'],
+                          },
+                        },
+                      ],
+                      total: { value: 1 },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: '人口' })
+
+      const matched = result.items[0].matchedResources![0]
+      // Falls back to the document id when the source carries none
+      expect(matched.id).toBe('res-1')
+      expect(matched.matchedOn).toEqual(['description', 'section'])
+      expect(matched.highlightedDescription).toContain('<mark>人口</mark>')
+      expect(matched.highlightedDescription).not.toContain('<img')
+      expect(matched.highlightedSection).toBe('統計/<mark>人口</mark>')
+    })
   })
 
   describe('getDocument', () => {
@@ -1377,6 +1521,16 @@ describe('OpenSearchAdapter', () => {
       const doc = await adapter.getDocument('resources', 'nonexistent')
 
       expect(doc).toBeNull()
+    })
+
+    it('answers null for a missing index, and raises anything else', async () => {
+      mockClient.search.mockRejectedValueOnce({ statusCode: 404 })
+      expect(await adapter.getDocument('packages', 'pkg-1')).toBeNull()
+
+      mockClient.search.mockRejectedValueOnce({ statusCode: 500 })
+      await expect(adapter.getDocument('packages', 'pkg-1')).rejects.toMatchObject({
+        statusCode: 500,
+      })
     })
 
     it('should use correct join_field type for each index', async () => {
@@ -1496,6 +1650,23 @@ describe('OpenSearchAdapter', () => {
       })
     })
 
+    it('does not wait for a refresh when the caller says so', async () => {
+      mockClient.index.mockResolvedValue({ body: {} })
+
+      await adapter.indexContent(
+        {
+          resourceId: 'res-1',
+          packageId: 'pkg-1',
+          extractedText: 'x',
+          contentType: 'text',
+          chunkIndex: 0,
+        },
+        { waitForRefresh: false }
+      )
+
+      expect(mockClient.index).toHaveBeenCalledWith(expect.objectContaining({ refresh: false }))
+    })
+
     it('should increment chunk index in doc id', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
@@ -1558,6 +1729,12 @@ describe('OpenSearchAdapter', () => {
       mockClient.deleteByQuery.mockRejectedValue({ statusCode: 404 })
 
       await expect(adapter.deleteAllPackages()).resolves.toBeUndefined()
+    })
+
+    it('raises any failure other than a missing index', async () => {
+      mockClient.deleteByQuery.mockRejectedValueOnce({ statusCode: 503 })
+
+      await expect(adapter.deleteAllPackages()).rejects.toMatchObject({ statusCode: 503 })
     })
   })
 
@@ -1701,6 +1878,38 @@ describe('OpenSearchAdapter', () => {
       expect(mr._contentDocId).toBe('chunk-res1-0')
     })
 
+    it('keeps a content match whose resource document is gone, without metadata', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'my-dataset', join_field: 'package' },
+                _score: 3,
+                inner_hits: {
+                  resource: { hits: { hits: [] } },
+                  content_hits: {
+                    hits: {
+                      hits: [{ _id: 'chunk-res1-0', _source: { resourceId: 'res-1' }, _score: 2 }],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+      mockClient.mget.mockResolvedValueOnce({ body: { docs: [{ _id: 'res-1', found: false }] } })
+
+      const result = await adapter.search({ q: 'keyword' })
+
+      const mr = result.items[0].matchedResources![0]
+      expect(mr).toMatchObject({ id: 'res-1', matchSource: 'content' })
+      expect(mr.name).toBeUndefined()
+    })
+
     it('should not duplicate resources matched by both metadata and content', async () => {
       mockClient.search.mockResolvedValue({
         body: {
@@ -1824,6 +2033,25 @@ describe('OpenSearchAdapter', () => {
       expect(await adapter.fetchContentPassages([], 'test', options)).toEqual([])
       expect(mockClient.search).not.toHaveBeenCalled()
     })
+
+    it('answers 503 when the cluster is unavailable, and raises anything else as it is', async () => {
+      mockClient.search.mockRejectedValueOnce(
+        new osErrors.ResponseError({
+          body: {},
+          statusCode: 502,
+          headers: {},
+          warnings: null,
+          meta: {},
+        } as unknown as ConstructorParameters<typeof osErrors.ResponseError>[0])
+      )
+      await expect(adapter.fetchContentPassages(['res-1'], 'x', options)).rejects.toMatchObject({
+        status: 503,
+      })
+
+      // A parsing bug must not pass for an outage
+      mockClient.search.mockRejectedValueOnce(new TypeError('cannot read hits'))
+      await expect(adapter.fetchContentPassages(['res-1'], 'x', options)).rejects.toThrow(TypeError)
+    })
   })
 
   describe('fetchContentHighlights', () => {
@@ -1885,6 +2113,18 @@ describe('OpenSearchAdapter', () => {
         'chunk-1': `…${'あ'.repeat(60)}<mark>子育て</mark>支援`,
         'chunk-2': '…名称: 東<mark>子育て</mark>広場',
       })
+    })
+
+    it('does not start a snippet between the halves of a surrogate pair', async () => {
+      // The cut 60 characters before the match lands on the low half of 𠮷
+      const fragment = `${'x'.repeat(100)}𠮷${'y'.repeat(59)}<mark>a</mark>`
+      mockClient.search.mockResolvedValueOnce({
+        body: { hits: { hits: [{ _id: 'chunk-1', highlight: { extractedText: [fragment] } }] } },
+      })
+
+      const result = await adapter.fetchContentHighlights(['chunk-1'], 'a')
+
+      expect(result['chunk-1']).toBe(`…${'y'.repeat(59)}<mark>a</mark>`)
     })
 
     it('should return empty object for empty input', async () => {
@@ -2222,6 +2462,66 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
+  describe('getIndexStats', () => {
+    beforeEach(() => {
+      const counts: Record<string, number> = { package: 3, resource: 5, content: 8 }
+      mockClient.count.mockImplementation(
+        async ({ body }: { body: { query: { term: { join_field: string } } } }) => ({
+          body: { count: counts[body.query.term.join_field] },
+        })
+      )
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            {
+              hits: {
+                hits: [
+                  { _id: 'pkg-1', _source: { name: 'p1', title: 'Title', updated: '2026-01-01' } },
+                  { _id: 'pkg-2', _source: { name: 'p2' } },
+                ],
+              },
+            },
+            { hits: { hits: [{ _id: 'res-1', _source: { name: 'a.csv', packageId: 'pkg-1' } }] } },
+            { hits: { hits: [{ _id: 'res-1_chunk_0', _source: { contentType: 'tabular' } }] } },
+          ],
+        },
+      })
+    })
+
+    it('reads the size the cluster prints and counts each document type', async () => {
+      mockClient.cat.indices.mockResolvedValue({
+        // The concrete index behind the alias, not the name asked for
+        body: [{ index: 'kukan-search-000001', 'docs.count': '16', 'store.size': '1.5mb' }],
+      })
+
+      const stats = await adapter.getIndexStats()
+
+      expect(stats.totalSizeBytes).toBe(1.5 * 1024 ** 2)
+      expect(stats.packages).toEqual({
+        docCount: 3,
+        recentDocs: [
+          { id: 'pkg-1', name: 'Title', updated: '2026-01-01' },
+          // A dataset without a title is shown by its name
+          { id: 'pkg-2', name: 'p2', updated: undefined },
+        ],
+      })
+      expect(stats.resources).toEqual({ docCount: 5, recentDocs: [{ id: 'res-1', name: 'a.csv' }] })
+      expect(stats.contents).toEqual({
+        docCount: 8,
+        recentDocs: [{ id: 'res-1_chunk_0', name: 'tabular' }],
+      })
+    })
+
+    it.each([
+      ['a size in a unit it does not know', [{ 'store.size': '2tb' }]],
+      ['no row at all', []],
+    ])('reports a size of 0 for %s', async (_, body) => {
+      mockClient.cat.indices.mockResolvedValue({ body })
+
+      expect((await adapter.getIndexStats()).totalSizeBytes).toBe(0)
+    })
+  })
+
   describe('reanalyseIndex', () => {
     /** The analysis the code defines */
     const liveAnalysis = () =>
@@ -2370,6 +2670,69 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
     })
 
+    it.each([
+      ['cancelled after copying everything it had reached', { canceled: 'by user request' }],
+      ['timed out on a batch', { timed_out: true }],
+      ['lost documents to version conflicts', { version_conflicts: 2 }],
+    ])('treats a copy that %s as a failed copy', async (_, outcome) => {
+      // Every document accounted for, so only the flag says the copy is short
+      mockClient.tasks.get.mockResolvedValue({
+        body: { completed: true, response: { total: 7, created: 7, failures: [], ...outcome } },
+      })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('1 failures')
+
+      expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
+    })
+
+    it('counts documents the copy updated, deleted or left as they were as copied', async () => {
+      mockClient.tasks.get.mockResolvedValue({
+        body: {
+          completed: true,
+          response: { total: 7, created: 3, updated: 2, deleted: 1, noops: 1, failures: [] },
+        },
+      })
+
+      expect((await adapter.reanalyseIndex()).documents).toBe(7)
+      expect(mockClient.indices.updateAliases).toHaveBeenCalled()
+    })
+
+    it('raises a copy the cluster reports as failed, and clears its destination', async () => {
+      mockClient.tasks.get.mockResolvedValue({
+        body: { completed: true, error: { type: 'search_phase_execution_exception' } },
+      })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('search_phase_execution_exception')
+
+      expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
+      expect(mockClient.indices.delete).toHaveBeenCalledWith(
+        { index: destinationOf(mockClient.indices.create.mock.calls) },
+        { ignore: [404] }
+      )
+    })
+
+    it('does not wait on a copy the cluster accepted without naming a task', async () => {
+      mockClient.reindex.mockResolvedValue({ body: {} })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('without naming a task')
+
+      expect(mockClient.tasks.get).not.toHaveBeenCalled()
+      expect(mockClient.indices.delete).toHaveBeenCalledWith(
+        { index: destinationOf(mockClient.indices.create.mock.calls) },
+        { ignore: [404] }
+      )
+    })
+
+    it('refuses to copy from an alias that covers two indices', async () => {
+      mockClient.indices.getAlias.mockResolvedValue({
+        body: { 'kukan-search-000001': {}, 'kukan-search-000002-abcdef01': {} },
+      })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('covers 2 indices')
+
+      expect(mockClient.indices.create).not.toHaveBeenCalled()
+    })
+
     it('follows the number of an index created before the suffix existed', async () => {
       // Re-using that number would collide with the index still holding it
       await adapter.reanalyseIndex()
@@ -2416,6 +2779,18 @@ describe('OpenSearchAdapter', () => {
       expect(await adapter.pendingRepair()).toEqual(new Date('2026-09-17T10:00:00.000Z'))
     })
 
+    it('owes nothing for a start time it cannot read', async () => {
+      mockClient.indices.getMapping.mockResolvedValue({
+        body: {
+          'kukan-search-000001': {
+            mappings: { _meta: { reanalyse: { copyStartedAt: 'not a date' } } },
+          },
+        },
+      })
+
+      expect(await adapter.pendingRepair()).toBeNull()
+    })
+
     it('owes nothing once the repair is recorded', async () => {
       mockClient.indices.getMapping.mockResolvedValue({
         body: {
@@ -2435,6 +2810,30 @@ describe('OpenSearchAdapter', () => {
       expect(await adapter.pendingRepair()).toBeNull()
       await adapter.markRepaired()
       expect(mockClient.indices.putMapping).not.toHaveBeenCalled()
+    })
+
+    it('records the repair beside the start time it was owed for', async () => {
+      mockClient.indices.getMapping.mockResolvedValue({
+        body: {
+          'kukan-search-000001': {
+            mappings: { _meta: { reanalyse: { copyStartedAt: '2026-09-17T10:00:00.000Z' } } },
+          },
+        },
+      })
+
+      await adapter.markRepaired()
+
+      expect(mockClient.indices.putMapping).toHaveBeenCalledWith({
+        index: 'kukan-search-000001',
+        body: {
+          _meta: {
+            reanalyse: {
+              copyStartedAt: '2026-09-17T10:00:00.000Z',
+              repairedAt: expect.any(String),
+            },
+          },
+        },
+      })
     })
 
     it('deletes an index no attempt could still be filling', async () => {
