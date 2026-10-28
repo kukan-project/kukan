@@ -1672,7 +1672,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         "EncryptionAtRestOptions": {
           "Enabled": true,
         },
-        "EngineVersion": "OpenSearch_3.5",
+        "EngineVersion": "OpenSearch_3.7",
         "LogPublishingOptions": {},
         "NodeToNodeEncryptionOptions": {
           "Enabled": true,
@@ -1708,6 +1708,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         },
       },
       "Type": "AWS::OpenSearchService::Domain",
+      "UpdatePolicy": {
+        "EnableVersionUpgrade": true,
+      },
       "UpdateReplacePolicy": "Delete",
     },
     "SearchDomainAccessPolicyAF72FFEB": {

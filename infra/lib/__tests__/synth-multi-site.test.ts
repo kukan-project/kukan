@@ -67,6 +67,12 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     expect(normalize(shared)).toMatchSnapshot()
   })
 
+  it('upgrades the shared OpenSearch domain in place, so a version bump never empties it', () => {
+    const domains = Object.values(shared.findResources('AWS::OpenSearchService::Domain'))
+    expect(domains).toHaveLength(1)
+    expect(domains[0].UpdatePolicy).toEqual({ EnableVersionUpgrade: true })
+  })
+
   it('matches the golden site templates', () => {
     expect(normalize(siteA)).toMatchSnapshot()
     expect(normalize(siteB)).toMatchSnapshot()

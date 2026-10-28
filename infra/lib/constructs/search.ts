@@ -121,7 +121,11 @@ export class SearchConstruct extends Construct {
     const domainName = resourceName(this, 'search')
     this.domain = new opensearch.Domain(this, 'Domain', {
       domainName,
-      version: opensearch.EngineVersion.openSearch('3.5'),
+      version: opensearch.EngineVersion.OPENSEARCH_3_7,
+      // A version change upgrades the domain in place (blue/green) instead of
+      // replacing it, which would empty every site's indices. It cannot be
+      // undone: OpenSearch never downgrades, nor restores a newer snapshot.
+      enableVersionUpgrade: true,
       vpc,
       vpcSubnets: [
         {
