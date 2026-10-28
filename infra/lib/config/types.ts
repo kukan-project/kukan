@@ -173,6 +173,12 @@ export interface EnvironmentConfig {
    */
   nameSiteInUserAgent?: boolean
   /**
+   * `<meta name="generator" content="KUKAN">` on the site's pages
+   * (GENERATOR_META_ENABLED, ADR-070): the product, never the release. Omit →
+   * on; `false` leaves the meta out.
+   */
+  generatorMeta?: boolean
+  /**
    * Bedrock embedding for semantic search (ADR-034). Omit → enabled with Titan v2
    * defaults; `false` → AI disabled (AI_TYPE=none). No console setup needed —
    * serverless foundation models auto-enable on first invocation; the task-role
@@ -294,6 +300,12 @@ export interface SiteConfig {
    */
   nameSiteInUserAgent?: boolean
   /**
+   * `<meta name="generator" content="KUKAN">` on the site's pages
+   * (GENERATOR_META_ENABLED, ADR-070): the product, never the release. Omit →
+   * on; `false` leaves the meta out.
+   */
+  generatorMeta?: boolean
+  /**
    * Listener rule priority on the environment's shared ALB (ADR-049). Omit →
    * derived from the site name (a stable hash in 1000–49999), so removing or
    * reordering sites never renumbers the others. Set it (1–999 — the derived
@@ -350,6 +362,8 @@ export interface KukanConfig extends ScaleComputed {
   enableIpv6Dns: boolean
   /** Whether the worker's User-Agent carries the site URL (USER_AGENT_URL). */
   nameSiteInUserAgent: boolean
+  /** Whether the pages carry the generator meta (GENERATOR_META_ENABLED). */
+  generatorMeta: boolean
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string

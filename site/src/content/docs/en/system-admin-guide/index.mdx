@@ -340,6 +340,8 @@ as a command-line argument, which would stay in the shell history and show in
 
 AWS, Docker Compose and development (`pnpm dev`) all show the same value. There is nothing to configure.
 
+This is the only place the release shows. Nothing an anonymous caller reaches (pages, the API, the CKAN-compatible API, MCP, headers) carries it, nor does the User-Agent the worker sends to other servers. The pages' `<meta name="generator" content="KUKAN">` names the product only, and `GENERATOR_META_ENABLED=false` (on AWS, the site's `generatorMeta: false`) removes it (ADR-070).
+
 ## User management
 
 System administrators (sysadmin) can manage users from the admin dashboard.
@@ -805,6 +807,7 @@ Key environment variables are listed below. See `.env.example` for the full list
 | `LOG_LEVEL`                              | Log level (`trace`–`fatal`)                                                                                                               | `info`                                                                                                          |
 | `TIME_ZONE`                              | IANA zone times are prerendered in; the browser then shows the viewer's                                                                   | `Asia/Tokyo`                                                                                                    |
 | `USER_AGENT_URL`                         | Contact the worker names to servers; public sites only (AWS: site's `nameSiteInUserAgent`)                                                | -                                                                                                               |
+| `GENERATOR_META_ENABLED`                 | Whether pages carry `<meta name="generator" content="KUKAN">`; never the version (AWS: site's `generatorMeta`)                            | `true`                                                                                                          |
 
 ### Password strength policy
 

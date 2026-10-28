@@ -67,6 +67,7 @@ const SITE_SCOPED_FIELDS = Object.keys({
   bucketName: true,
   enableGa4DataApi: true,
   nameSiteInUserAgent: true,
+  generatorMeta: true,
   timeZone: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 

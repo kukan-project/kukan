@@ -7931,6 +7931,10 @@ function expandV6(addr) {
                   ],
                 },
               },
+              {
+                "Name": "GENERATOR_META_ENABLED",
+                "Value": "false",
+              },
             ],
             "Essential": true,
             "HealthCheck": {

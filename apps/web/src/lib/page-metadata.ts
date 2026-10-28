@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getLocale, getTranslations } from 'next-intl/server'
+import { generatorMetaEnabledSchema } from '@kukan/shared'
 import { brandConfig } from '@/brand/brand-config'
 import { resolveBrandConfig } from '@/lib/resolved-brand'
 import type { Entity } from '@/lib/catalog-api'
@@ -21,6 +22,16 @@ export async function siteTitle(defaultTitle?: string): Promise<Metadata['title'
     default: defaultTitle ?? brand.siteName,
     template: `%s${TITLE_SEPARATOR}${brand.siteName}`,
   }
+}
+
+/**
+ * The page's `generator` meta: the product, so whoever surveys catalogs can
+ * tell this is one, and never the release, which would point at the sites
+ * behind on patches (ADR-070). Read per request, so a site turns it off with
+ * `GENERATOR_META_ENABLED=false` and no build of its own.
+ */
+export function generator(): string | null {
+  return generatorMetaEnabledSchema.parse(process.env.GENERATOR_META_ENABLED) ? 'KUKAN' : null
 }
 
 /** Stack title parts above the site name, e.g. "<resource> | <dataset>". */

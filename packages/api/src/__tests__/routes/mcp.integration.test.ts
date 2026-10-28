@@ -8,6 +8,7 @@ import { resource, resourceVersion } from '@kukan/db'
 import { Readable } from 'node:stream'
 import type { DocumentTextBlock } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
+import { MCP_SERVER_VERSION } from '../../mcp/server'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
@@ -137,7 +138,7 @@ describe('MCP Server', () => {
 
       expect(result.result).toMatchObject({
         protocolVersion: '2025-03-26',
-        serverInfo: { name: 'kukan', version: '1.0.0' },
+        serverInfo: { name: 'kukan', version: MCP_SERVER_VERSION },
         capabilities: { tools: { listChanged: true } },
       })
     })

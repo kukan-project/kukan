@@ -6,7 +6,7 @@ import { getLocale, getMessages } from 'next-intl/server'
 import { brandConfig } from '@/brand'
 import { siteOrigin } from '@/lib/site-origin'
 import { resolveBrandConfig } from '@/lib/resolved-brand'
-import { siteTitle } from '@/lib/page-metadata'
+import { generator, siteTitle } from '@/lib/page-metadata'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import './globals.css'
@@ -40,6 +40,7 @@ export async function generateMetadata(): Promise<Metadata> {
     // Pages set a bare title; the template appends the site name (CKAN-style "<page> | <site>")
     title: await siteTitle(),
     description: brand.siteDescription,
+    generator: generator(),
   }
 }
 

@@ -44,6 +44,8 @@ x-app-environment: &app-environment
   AI_COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-gemma4:e4b}
   AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-}
   USER_AGENT_URL: ${USER_AGENT_URL:-}
+  # false = no <meta name="generator" content="KUKAN"> on the pages (ADR-070)
+  GENERATOR_META_ENABLED: ${GENERATOR_META_ENABLED:-true}
   OLLAMA_URL: http://kukan-shared-ollama:11434
   BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET:?set SITE_AUTH_SECRET}
   BETTER_AUTH_URL: ${SITE_URL}

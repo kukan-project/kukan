@@ -369,7 +369,7 @@ prd: {
   手動で削除する
 - **サイトスコープのフィールドは env 側に書けない**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth /
-  enableIpv6Dns / bucketName / enableGa4DataApi / nameSiteInUserAgent / timeZone は `sites` 内でのみ宣言する（env 側に書くと
+  enableIpv6Dns / bucketName / enableGa4DataApi / nameSiteInUserAgent / generatorMeta / timeZone は `sites` 内でのみ宣言する（env 側に書くと
   synth 時に validateSites が拒否。黙って無視されるより安全）。例外は
   `bedrock` / `overrides` / `enableExecuteCommand` で、env の値が全サイトの既定になり、
   その上にサイトの値が重なる（`bedrock` と `overrides` は deep-merge、

@@ -53,7 +53,7 @@ const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
       enableGa4DataApi: true,
       nameSiteInUserAgent: true,
     },
-    { name: 'cityb', enableWaf: false, nameSiteInUserAgent: true },
+    { name: 'cityb', enableWaf: false, nameSiteInUserAgent: true, generatorMeta: false },
   ],
 }
 
@@ -70,6 +70,12 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
   it('matches the golden site templates', () => {
     expect(normalize(siteA)).toMatchSnapshot()
     expect(normalize(siteB)).toMatchSnapshot()
+  })
+
+  it('turns the generator meta off for the one site that asks, and sets nothing for the rest', () => {
+    expect(containerEnvs(siteA).Web).not.toHaveProperty('GENERATOR_META_ENABLED')
+    expect(containerEnvs(siteB).Web.GENERATOR_META_ENABLED).toBe('false')
+    expect(containerEnvs(siteB).Worker).not.toHaveProperty('GENERATOR_META_ENABLED')
   })
 
   it("tags every resource with its environment, and each site's with its site", () => {
@@ -1043,6 +1049,15 @@ describe('validateSites', () => {
         { name: 'citya', enableWaf: false, bedrock: { completionModels: [NOVA] } }
       )
     ).toThrow(/is not in bedrock\.completionModels/)
+  })
+
+  it('carries the generator meta unless the site turns it off', () => {
+    const app = new cdk.App()
+    const site = { name: 'citya', enableWaf: false }
+    expect(resolveSiteConfig(app, { ...base }, site).generatorMeta).toBe(true)
+    expect(
+      resolveSiteConfig(app, { ...base }, { ...site, generatorMeta: false }).generatorMeta
+    ).toBe(false)
   })
 
   it('names the site in the User-Agent only when asked', () => {

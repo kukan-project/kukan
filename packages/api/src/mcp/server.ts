@@ -18,6 +18,16 @@ import { registerDocumentTools } from './tools/documents'
 import { mcpInstructions } from './instructions'
 import type { CatalogLanguage } from '../services/catalog-language'
 
+/**
+ * The version `initialize` reports in `serverInfo`: the MCP surface's, not the
+ * release's. It moves when the tools change — a major for a tool removed or a
+ * result reshaped, a minor for one added — and stays put across releases that
+ * leave them alone, so a client can tell what it is talking to while an
+ * unauthenticated caller learns nothing about which release a site runs
+ * (ADR-070).
+ */
+export const MCP_SERVER_VERSION = '1.0.0'
+
 interface McpContext {
   db: Database
   search: SearchAdapter
@@ -34,7 +44,7 @@ interface McpContext {
 
 export function createMcpServer(ctx: McpContext, language: CatalogLanguage | null): McpServer {
   const server = new McpServer(
-    { name: 'kukan', version: '1.0.0' },
+    { name: 'kukan', version: MCP_SERVER_VERSION },
     { instructions: mcpInstructions(language) }
   )
 

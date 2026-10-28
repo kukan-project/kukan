@@ -38,6 +38,8 @@ x-app-environment: &app-environment
   AI_COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-}
   AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-}
   USER_AGENT_URL: ${USER_AGENT_URL:-}
+  # false = no <meta name="generator" content="KUKAN"> on the pages (ADR-070)
+  GENERATOR_META_ENABLED: ${GENERATOR_META_ENABLED:-true}
   OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
   # true = resource URLs on private networks are refused too (see .env.example)
   FETCH_DENY_PRIVATE_NETWORKS: ${FETCH_DENY_PRIVATE_NETWORKS:-false}

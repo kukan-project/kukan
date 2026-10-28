@@ -296,6 +296,7 @@ export function loadConfig(
         'an address the gate keeps from the public; drop one of the two'
     )
   }
+  const generatorMeta = flag('generatorMeta') ?? env.generatorMeta ?? true
   const domainName = ctx<string>('domainName') ?? env.domainName
   const hostedZoneId = ctx<string>('hostedZoneId') ?? env.hostedZoneId
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
@@ -361,6 +362,7 @@ export function loadConfig(
     basicAuth,
     enableIpv6Dns,
     nameSiteInUserAgent,
+    generatorMeta,
     domainName,
     timeZone,
     hostedZoneId,

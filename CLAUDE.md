@@ -285,6 +285,7 @@ pnpm format        # Prettier フォーマット
 - 層 2 のカタログをリソース単位の SQLite ファイルにし、パージを再構築で行う（バイト列消去を再び主張、ADR-043 §5 を改訂、実装済み） → `docs/adr/jp/067-per-resource-lake-catalog.md`
 - web を Lambda Web Functions で動かす（connector を DualStack にして IPv6 で出し NAT を置かない、Bedrock だけインターフェースエンドポイント、段階 1 実測済み・段階 2 で合否、提案） → `docs/adr/jp/068-lambda-web-functions.md`
 - 共有 OpenSearch のサイト間分離を FGAC で強制する（マスターは IAM ロール、ロールの割り当ては共有スタックがサイト一覧から作る、ADR-041 拡張、提案） → `docs/adr/jp/069-opensearch-fgac-site-isolation.md`
+- 製品名は名乗りバージョンは未認証に出さない（`<meta name="generator" content="KUKAN">` はサイト単位で無効化可、worker の User-Agent からも版を外す、MCP の版は機能面の版、版は管理画面だけ） → `docs/adr/jp/070-product-name-without-version.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

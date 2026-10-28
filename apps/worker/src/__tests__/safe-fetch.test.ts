@@ -531,15 +531,15 @@ describe('safeFetch', () => {
     const ok = () => new Response('ok', { status: 200 })
 
     it('names itself on every hop, across origins too', async () => {
-      setUserAgent('KUKAN/1.2.3 (+https://catalog.example)')
+      setUserAgent('KUKAN (+https://catalog.example)')
       mockUndiciFetch
         .mockResolvedValueOnce(redirect(302, 'https://mirror.example.org/data.csv'))
         .mockResolvedValueOnce(ok())
 
       await safeFetch('https://example.com/data.csv')
 
-      expect(headersOf(1).get('user-agent')).toBe('KUKAN/1.2.3 (+https://catalog.example)')
-      expect(headersOf(2).get('user-agent')).toBe('KUKAN/1.2.3 (+https://catalog.example)')
+      expect(headersOf(1).get('user-agent')).toBe('KUKAN (+https://catalog.example)')
+      expect(headersOf(2).get('user-agent')).toBe('KUKAN (+https://catalog.example)')
     })
 
     it("keeps a caller's own User-Agent", async () => {

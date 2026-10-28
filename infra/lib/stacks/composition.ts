@@ -252,6 +252,9 @@ export function composeSite(
     webService.addEnvironment('BETTER_AUTH_URL', `https://${cdn.distributionDomainName}`)
   }
 
+  // Set only to turn it off, so a site left on keeps the task definition it had
+  if (!config.generatorMeta) webService.addEnvironment('GENERATOR_META_ENABLED', 'false')
+
   if (config.nameSiteInUserAgent) {
     workerService.addEnvironment(
       'USER_AGENT_URL',

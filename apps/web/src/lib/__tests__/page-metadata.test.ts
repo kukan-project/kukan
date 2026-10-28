@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { metaDescription, queryRobots } from '../page-metadata'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { generator, metaDescription, queryRobots } from '../page-metadata'
 
 const brand = vi.hoisted(() => ({ brandConfig: { noindex: false } }))
 vi.mock('@/brand/brand-config', () => brand)
@@ -47,5 +47,26 @@ describe('queryRobots', () => {
   it('keeps a noindex brand at nofollow, which the page would otherwise replace', () => {
     brand.brandConfig.noindex = true
     expect(queryRobots({ q: 'x' })).toEqual({ robots: { index: false, follow: false } })
+  })
+})
+
+describe('generator', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('names the product, and not the release, when left unset', () => {
+    vi.stubEnv('GENERATOR_META_ENABLED', undefined)
+    expect(generator()).toBe('KUKAN')
+  })
+
+  it('is left out when the site turns it off', () => {
+    vi.stubEnv('GENERATOR_META_ENABLED', 'false')
+    expect(generator()).toBeNull()
+  })
+
+  it('refuses a value it cannot read rather than guessing', () => {
+    vi.stubEnv('GENERATOR_META_ENABLED', 'no')
+    expect(() => generator()).toThrow()
   })
 })

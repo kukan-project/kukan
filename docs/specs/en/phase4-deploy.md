@@ -382,7 +382,7 @@ prd: {
   incurring charges, so delete it manually once nothing references it
 - **Site-scoped fields cannot be written at the env level**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth / enableIpv6Dns /
-  bucketName / enableGa4DataApi / nameSiteInUserAgent and timeZone are declared only inside `sites` (writing them at the env level is rejected by
+  bucketName / enableGa4DataApi / nameSiteInUserAgent / generatorMeta and timeZone are declared only inside `sites` (writing them at the env level is rejected by
   validateSites at synth time — safer than being silently ignored). The exceptions are
   `bedrock`, `overrides` and `enableExecuteCommand`: the env value is every site's default and
   the site's value goes on top (`bedrock` and `overrides` deep-merge, a site's

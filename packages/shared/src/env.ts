@@ -14,6 +14,15 @@ const booleanString = z.preprocess(
 )
 
 /**
+ * Emit `<meta name="generator" content="KUKAN">` on every page, so whoever
+ * surveys catalogs can tell this is one. The product only, never the release
+ * (ADR-070). Exported for the web, which reads this one variable rather than
+ * `loadEnv()`: metadata is also rendered by `next build`, where the secrets the
+ * full schema demands are unset.
+ */
+export const generatorMetaEnabledSchema = booleanString.default(true)
+
+/**
  * OPENSEARCH_INDEX_PREFIX when unset. The infra grants a single-site
  * deployment's task roles `<this>-search*` in OpenSearch (ADR-069).
  */
@@ -219,6 +228,8 @@ const envObject = z.object({
       .transform((url) => new URL(url).href)
       .optional()
   ),
+
+  GENERATOR_META_ENABLED: generatorMetaEnabledSchema,
 
   // GA4 Analytics (optional — dashboard disabled when not set)
   GA4_PROPERTY_ID: z.string().optional(),

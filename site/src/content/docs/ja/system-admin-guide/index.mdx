@@ -330,6 +330,8 @@ pnpm db:create-user --email admin@example.com --name admin --role sysadmin
 
 AWS・Docker Compose・開発（`pnpm dev`）のいずれも同じ値を表示します。設定する項目はありません。
 
+版が見えるのはここだけです。未認証で届く応答（ページ、API、CKAN 互換 API、MCP、ヘッダー）と、worker が外部へ名乗る User-Agent には版を出しません。ページの `<meta name="generator" content="KUKAN">` は製品名だけで、`GENERATOR_META_ENABLED=false`（AWS はサイトの `generatorMeta: false`）で外せます（ADR-070）。
+
 ## ユーザー管理
 
 システム管理者（sysadmin）は管理画面からユーザーを管理できます。
@@ -692,6 +694,7 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 | `LOG_LEVEL`                              | ログレベル（`trace`〜`fatal`）                                                                                            | `info`                                                                                                     |
 | `TIME_ZONE`                              | 日時を事前描画するタイムゾーン（IANA 名）。ブラウザ側で閲覧者のゾーンに置き換わる                                         | `Asia/Tokyo`                                                                                               |
 | `USER_AGENT_URL`                         | 外部へ名乗る連絡先。公開サイトのみ（AWS はサイトの `nameSiteInUserAgent`）                                                | -                                                                                                          |
+| `GENERATOR_META_ENABLED`                 | ページに `<meta name="generator" content="KUKAN">` を出すか。バージョンは出さない（AWS はサイトの `generatorMeta`）       | `true`                                                                                                     |
 
 ### パスワード強度ポリシー
 

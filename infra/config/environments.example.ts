@@ -38,7 +38,7 @@
  *   - Site entries ONLY (rejected on the environment entry):
  *       name, brand, domainName, hostedZoneId, hostedZoneName, certificateArn,
  *       webAclArn, enableWaf, allowedIpRanges, basicAuth, enableIpv6Dns,
- *       bucketName, enableGa4DataApi, nameSiteInUserAgent, timeZone
+ *       bucketName, enableGa4DataApi, nameSiteInUserAgent, generatorMeta, timeZone
  *       (the type still accepts these on the environment entry, but ONLY as
  *       the legacy single-site shape without `sites`. Mixing the shapes —
  *       `sites` plus env-level site fields — is invalid and rejected at synth)
@@ -180,6 +180,7 @@ export const environments = {
         // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
         // enableGa4DataApi: false,
         // nameSiteInUserAgent: true, // worker's User-Agent carries this site's URL; public, indexable sites only
+        // generatorMeta: false, // leave out <meta name="generator" content="KUKAN">; omit → on (never the version, ADR-070)
         // ECS Exec into this site's web and worker (only its task roles get the grant); off by
         // default because a shell reads the injected secrets and sessions are not logged.
         // Set on the environment entry instead to make it every site's default:

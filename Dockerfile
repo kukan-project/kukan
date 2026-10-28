@@ -176,8 +176,6 @@ COPY --chown=appuser:appgroup --from=build /app/apps/worker/dist ./apps/worker/d
 # the bundle where the query service looks; @duckdb/node-api resolves from here
 COPY --chown=appuser:appgroup --from=build /app/packages/api/dist/services/query/query-child.mjs ./apps/worker/dist/query-child.mjs
 COPY --chown=appuser:appgroup --from=build /app/apps/worker/package.json ./apps/worker/
-# The release the worker names in its User-Agent (apps/worker/src/user-agent.ts)
-COPY --chown=appuser:appgroup --from=build /app/package.json ./
 COPY --chown=appuser:appgroup --from=build /app/packages/db/drizzle ./apps/worker/drizzle
 USER appuser
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
