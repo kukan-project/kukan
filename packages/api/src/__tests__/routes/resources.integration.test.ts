@@ -1828,6 +1828,59 @@ describe('Resources API Routes', () => {
       expect(row.pendingStorageKey).toBeNull()
     })
 
+    // Raw bodies, since FormData always sends a type
+    it.each([
+      ['a part with no type, by its name', null, 'data.csv', 'text/csv'],
+      [
+        'octet-stream, by its name',
+        'application/octet-stream',
+        'area.geojson',
+        'application/geo+json',
+      ],
+      ['text/plain, by its name', 'text/plain; charset=utf-8', 'data.csv', 'text/csv'],
+      [
+        'a part with no type, as text/plain when the name says nothing',
+        null,
+        'blob.bin',
+        'text/plain',
+      ],
+      [
+        'octet-stream when the name says nothing',
+        'application/octet-stream',
+        'blob.bin',
+        'application/octet-stream',
+      ],
+      [
+        'a type the client chose, over its name',
+        'application/json',
+        'data.csv',
+        'application/json',
+      ],
+    ])('records %s', async (label, partType, name, expected) => {
+      const pkg = await createPackage(`upload-type-${label.replace(/[^a-z]+/g, '-')}`)
+      const resource = await createResource(pkg.id)
+      const boundary = 'parttype'
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/upload`, {
+        method: 'POST',
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+        body:
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="file"; filename="${name}"\r\n` +
+          (partType ? `Content-Type: ${partType}\r\n` : '') +
+          '\r\n' +
+          'a,b\r\n' +
+          `--${boundary}--\r\n`,
+      })
+      expect(res.status).toBe(200)
+
+      const [row] = await db
+        .select({ mimetype: resourceTable.mimetype })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row.mimetype).toBe(expected)
+    })
+
     it('should reject unauthenticated requests', async () => {
       const pkg = await createPackage('upload-unauth-pkg')
       const resource = await createResource(pkg.id)

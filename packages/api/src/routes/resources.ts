@@ -124,6 +124,18 @@ function throwIfNotFound(err: unknown, resourceId: string, what = 'Resource file
 /** What either upload path says when the file is over the cap. */
 const UPLOAD_TOO_LARGE = `File exceeds the maximum upload size of ${MAX_UPLOAD_SIZE_MB}MB`
 
+/**
+ * The type to record for an uploaded part. busboy reports a part without a
+ * Content-Type as text/plain (RFC 7578 §4.4), indistinguishable from an
+ * explicit one; that and octet-stream say nothing of the file, so the
+ * extension decides when it is known, as it does for the browser's uploads.
+ */
+function uploadContentType(partType: string, filename: string): string {
+  if (partType !== 'text/plain' && partType !== 'application/octet-stream') return partType
+  const byName = detectContentType(filename)
+  return byName === 'application/octet-stream' ? partType : byName
+}
+
 /** Create pipeline record and enqueue processing job */
 async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
   const pipelineService = new PipelineService(c.get('db'), c.get('queue'))
@@ -902,7 +914,7 @@ resourcesRouter.post('/:id/upload', async (c) => {
       if (!filename.success) {
         throw new ValidationError('The file part needs a filename of 1 to 500 characters')
       }
-      const contentType = file.contentType || 'application/octet-stream'
+      const contentType = uploadContentType(file.contentType, filename.data)
       const pendingKey = await resourceService.prepareForUpload(
         id,
         { filename: filename.data, contentType },
