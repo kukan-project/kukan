@@ -23,15 +23,26 @@ const INTEGRATION_FORKS = Math.min(Math.max(availableParallelism() - 1, 1), 8)
  */
 const INTEGRATION_GROUP = 1
 
+/**
+ * The API's suites run the queue, but `@kukan/queue` resolves to its `dist`,
+ * which coverage does not count. Read from `src` there so it does. Not for the
+ * worker: it also reaches the queue through `@kukan/api`'s `dist`, and would
+ * load two copies.
+ */
+const QUEUE_FROM_SOURCE = {
+  '@kukan/queue': resolve(import.meta.dirname, 'packages/queue/src'),
+}
+
 export default defineConfig({
   test: {
     exclude: ['**/node_modules/**', '**/cdk.out/**', '**/dist/**', '**/.next/**', 'site/**'],
     // Off unless asked for: `pnpm test:coverage`, every project in one run.
     // Measured over the source of every app and package, not only the files a
     // run happened to load, so a module no test reaches counts as uncovered.
-    // A package read through another's `dist` (queue, db) is not attributed
-    // to its `src` and reads low. Under `--project` the patterns are read from
-    // that project's root and match nothing, so a filtered run reports none.
+    // A package read through another's `dist` (db) is not attributed to its
+    // `src` and reads low; the queue is read from `src` (QUEUE_FROM_SOURCE).
+    // Under `--project` the patterns are read from that project's root and
+    // match nothing, so a filtered run reports none.
     coverage: {
       provider: 'v8',
       include: [
@@ -205,6 +216,7 @@ export default defineConfig({
           exclude: ['src/__tests__/**/*.integration.test.ts'],
           environment: 'node',
         },
+        resolve: { alias: QUEUE_FROM_SOURCE },
       },
       {
         test: {
@@ -224,6 +236,7 @@ export default defineConfig({
           // passed on rerun.
           testTimeout: 30_000,
         },
+        resolve: { alias: QUEUE_FROM_SOURCE },
       },
       {
         plugins: [react()],
