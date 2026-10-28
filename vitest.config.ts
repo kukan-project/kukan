@@ -55,8 +55,10 @@ export default defineConfig({
       reporter: ['text-summary', 'json-summary', 'html'],
       // A failing run still reports: the figure for the code that did run
       reportOnFailure: true,
-      // The query and heavy children are forked, and run outside the test's process
-      autoAttachSubprocess: true,
+      // Not `autoAttachSubprocess`: the query and heavy children run their
+      // source through tsx, not vitest's transform, and their V8 ranges merged
+      // with this process's put the counts in the wrong places. What they run
+      // is counted by tests that call it here (`csv.test.ts`).
     },
     projects: [
       {
