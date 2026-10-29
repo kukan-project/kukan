@@ -126,6 +126,8 @@
     "createdShort": "作成日時",
     "updated": "データセット更新日時",
     "updatedShort": "更新日時",
+    "createdDate": "作成日",
+    "updatedDate": "更新日",
     "sourceUrl": "ソースURL",
     "editDataset": "データセット編集",
     "notFound": "データセットが見つかりません",

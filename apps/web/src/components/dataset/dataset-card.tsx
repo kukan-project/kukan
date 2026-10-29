@@ -99,12 +99,12 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                 <Calendar className="h-3 w-3" />
                 {pkg.updated && (
                   <span>
-                    {t('updatedShort')}: <CompactDate value={pkg.updated} />
+                    {t('updatedDate')}: <CompactDate value={pkg.updated} />
                   </span>
                 )}
                 {pkg.created && (
                   <span>
-                    {t('createdShort')}: <CompactDate value={pkg.created} />
+                    {t('createdDate')}: <CompactDate value={pkg.created} />
                   </span>
                 )}
               </span>

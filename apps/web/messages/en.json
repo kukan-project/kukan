@@ -126,6 +126,8 @@
     "createdShort": "Created",
     "updated": "Dataset Modified",
     "updatedShort": "Modified",
+    "createdDate": "Created",
+    "updatedDate": "Modified",
     "sourceUrl": "Source URL",
     "editDataset": "Edit Dataset",
     "notFound": "Dataset not found",
