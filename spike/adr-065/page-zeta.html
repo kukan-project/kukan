@@ -1,0 +1,88 @@
+<!doctype html>
+<!-- ZetaOffice (LibreOffice WASM from the public CDN) drawing documents into
+     its Qt canvas. Must be served under /iso/ (COOP/COEP) to get
+     SharedArrayBuffer; served plain it shows what happens without it.
+     The driver calls window.__open(i) per sample after window.__ready. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        background: #e5e7eb;
+      }
+      #qtcanvas {
+        width: 1100px;
+        height: 800px;
+        display: block;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="qtcanvas" contenteditable="true" oncontextmenu="event.preventDefault()"></canvas>
+    <script type="module">
+      import { ZetaHelperMain } from '/node_modules/zetajs/source/zetaHelper.js'
+
+      const t0 = performance.now()
+      window.__status = {
+        crossOriginIsolated: self.crossOriginIsolated,
+        sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
+        errors: [],
+      }
+      addEventListener('error', (e) => window.__status.errors.push(String(e.message)))
+      addEventListener('unhandledrejection', (e) => window.__status.errors.push(String(e.reason)))
+
+      const zHM = new ZetaHelperMain('/zeta-thread.js', { threadJsType: 'module', wasmPkg: 'free' })
+      const manifest = await (await fetch('/manifest.json')).json()
+      const pending = new Map()
+      let seq = 0
+
+      zHM.start(() => {
+        zHM.thrPort.onmessage = (e) => {
+          const { cmd, id } = e.data
+          if (cmd === 'started') {
+            window.__status.startupMs = Math.round(performance.now() - t0)
+            window.__ready = true
+            return
+          }
+          const p = pending.get(id)
+          if (!p) return
+          pending.delete(id)
+          if (cmd === 'opened') p.resolve(e.data)
+          else p.reject(new Error(e.data.error))
+        }
+      })
+
+      window.__open = (i) => {
+        const sample = manifest[i]
+        const id = seq++
+        return new Promise(async (resolve, reject) => {
+          try {
+            const buf = await (await fetch(`/sample/${i}`)).arrayBuffer()
+            const path = `/tmp/input-${id}.${sample.ext}`
+            zHM.FS.writeFile(path, new Uint8Array(buf))
+            pending.set(id, { resolve, reject })
+            const t = performance.now()
+            zHM.thrPort.postMessage({ cmd: 'open', id, path })
+            const r = await new Promise((res, rej) =>
+              pending.set(id, { resolve: res, reject: rej })
+            )
+            try {
+              zHM.FS.unlink(path)
+            } catch {}
+            resolve({
+              ...r,
+              openMs: Math.round(performance.now() - t),
+              name: sample.name,
+              ext: sample.ext,
+              size: sample.size,
+            })
+          } catch (err) {
+            reject(err)
+          }
+        })
+      }
+    </script>
+  </body>
+</html>

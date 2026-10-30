@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- Renders one sample with the light libraries: docx-preview for DOCX,
+     @aiden0z/pptx-renderer for PPTX. ?i=<sample index>. The outcome is left in
+     window.__result for the driver. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        background: #e5e7eb;
+        font-family: sans-serif;
+      }
+      #container {
+        width: 960px;
+        margin: 0 auto;
+      }
+    </style>
+    <script src="/node_modules/jszip/dist/jszip.min.js"></script>
+    <script src="/node_modules/docx-preview/dist/docx-preview.min.js"></script>
+  </head>
+  <body>
+    <div id="container"></div>
+    <script type="module">
+      import {
+        PptxViewer,
+        RECOMMENDED_ZIP_LIMITS,
+      } from '/node_modules/@aiden0z/pptx-renderer/dist/aiden0z-pptx-renderer.browser.es.js'
+
+      const errors = []
+      addEventListener('error', (e) => errors.push(String(e.message)))
+      addEventListener('unhandledrejection', (e) => errors.push(String(e.reason)))
+
+      const i = Number(new URLSearchParams(location.search).get('i'))
+      const manifest = await (await fetch('/manifest.json')).json()
+      const sample = manifest[i]
+      const container = document.getElementById('container')
+      const result = { i, name: sample.name, ext: sample.ext, size: sample.size, errors }
+      try {
+        const t0 = performance.now()
+        const buf = await (await fetch(`/sample/${i}`)).arrayBuffer()
+        result.fetchMs = Math.round(performance.now() - t0)
+        const t1 = performance.now()
+        if (sample.ext === 'docx') {
+          result.lib = 'docx-preview'
+          await docx.renderAsync(buf, container, null, {
+            ignoreLastRenderedPageBreak: false,
+            experimental: true,
+          })
+          result.pages = container.querySelectorAll('section.docx').length
+        } else if (sample.ext === 'pptx') {
+          result.lib = 'pptx-renderer'
+          const slideErrors = []
+          await PptxViewer.open(buf, container, {
+            zipLimits: RECOMMENDED_ZIP_LIMITS,
+            listOptions: { windowed: false },
+            pdfjs: false,
+            onSlideError: (index, err) => slideErrors.push(`${index}: ${err?.message ?? err}`),
+            onNodeError: (id, err) => slideErrors.push(`node ${id}: ${err?.message ?? err}`),
+          })
+          result.slides = container.querySelectorAll('[data-slide-index], .pptx-slide, svg').length
+          result.slideErrors = slideErrors
+        } else {
+          throw new Error(`no light library for ${sample.ext}`)
+        }
+        result.renderMs = Math.round(performance.now() - t1)
+        // Let fonts and images settle before the screenshot
+        await document.fonts.ready
+        await new Promise((r) => setTimeout(r, 300))
+        result.nodes = container.querySelectorAll('*').length
+        result.height = container.scrollHeight
+        result.ok = true
+      } catch (err) {
+        result.ok = false
+        errors.push(err instanceof Error ? `${err.name}: ${err.message}` : String(err))
+      }
+      window.__result = result
+    </script>
+  </body>
+</html>

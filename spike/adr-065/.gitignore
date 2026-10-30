@@ -1,0 +1,6 @@
+data/
+results/
+shots/
+node_modules/
+vendor/
+*.gz

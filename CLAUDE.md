@@ -282,6 +282,7 @@ pnpm format        # Prettier フォーマット
 - extras のキーと値で絞り込む（`extras_<key>` / `res_extras_<key>`、完全一致、`fq` も同名、ADR-060 拡張） → `docs/adr/jp/062-extras-search-filter.md`
 - 表形式のファイルは中身でなく「表のプロファイル」で索引（列名・カテゴリの値・範囲・自由記述の列は行の文脈付き、今の OpenSearch に先に入れる、ADR-032 拡張、提案） → `docs/adr/jp/063-table-profile-indexing.md`
 - サイト全体のカスタムメタデータ（値だけのフラットな key-value をランタイム設定に、数値・文字列・日付、意味は読む側が決める、本体とブランドで共用） → `docs/adr/jp/064-site-metadata.md`
+- Office 文書の原本を ibisOffice でブラウザに描く（WebGPU、無ければ WebGL2。サーバーで文書を開かず、ブラウザでも sandbox の iframe に文書を `postMessage` で渡す。既定で ibisOffice、`OFFICE_PREVIEW_VIEWER=office-online` のサイトは Office Online Viewer、DOC は抽出テキスト。worker の LibreOffice で PDF にする案は当初の仮の決定から外した。ZetaOffice・軽量ライブラリ・自前グリッド・HTML 書き出しは不採用、提案） → `docs/adr/jp/065-office-original-preview.md`
 - 層 2 のカタログをリソース単位の SQLite ファイルにし、パージを再構築で行う（バイト列消去を再び主張、ADR-043 §5 を改訂、実装済み） → `docs/adr/jp/067-per-resource-lake-catalog.md`
 - web を Lambda Web Functions で動かす（connector を DualStack にして IPv6 で出し NAT を置かない、Bedrock だけインターフェースエンドポイント、段階 1 実測済み・段階 2 で合否、提案） → `docs/adr/jp/068-lambda-web-functions.md`
 - 共有 OpenSearch のサイト間分離を FGAC で強制する（マスターは IAM ロール、ロールの割り当ては共有スタックがサイト一覧から作る、ADR-041 拡張、提案） → `docs/adr/jp/069-opensearch-fgac-site-isolation.md`

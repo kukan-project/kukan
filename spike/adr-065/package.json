@@ -1,0 +1,13 @@
+{
+  "name": "adr-065-spike",
+  "private": true,
+  "description": "Harness for ADR-065: Office originals in the browser (ibisOffice, docx-preview, pptx-renderer, ZetaOffice) measured with Playwright",
+  "type": "module",
+  "dependencies": {
+    "@aiden0z/pptx-renderer": "1.3.0",
+    "docx-preview": "0.4.1",
+    "jszip": "3.10.1",
+    "playwright": "1.63.0",
+    "zetajs": "1.2.0"
+  }
+}

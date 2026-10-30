@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>ibisOffice in a sandboxed iframe</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      iframe {
+        width: 1280px;
+        height: 860px;
+        border: 0;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- No allow-same-origin: the frame gets an opaque origin. -->
+    <iframe id="frame" sandbox="allow-scripts"></iframe>
+    <script type="module">
+      // A cookie the frame must not be able to read or send.
+      // ?cookie=none sets it SameSite=None (sent on cross-site requests), else Lax.
+      const params = new URLSearchParams(location.search)
+      document.cookie =
+        params.get('cookie') === 'none'
+          ? 'kukan_session=secret; path=/; SameSite=None; Secure'
+          : 'kukan_session=secret; path=/; SameSite=Lax'
+      const frame = document.getElementById('frame')
+      // ?connect=self (cookie test) and ?rtc= (WebRTC probe) frame the probe page,
+      // which this page's frame-src then allows instead of the boot page; the boot
+      // page itself takes no query.
+      const frameParams = new URLSearchParams()
+      if (params.get('connect') === 'self') frameParams.set('connect', 'self')
+      if (params.get('rtc')) frameParams.set('rtc', params.get('rtc'))
+      if (params.get('memMax')) frameParams.set('memMax', params.get('memMax'))
+      if (params.get('dns')) frameParams.set('dns', params.get('dns'))
+      if (params.get('dnsPrefetch')) frameParams.set('dnsPrefetch', params.get('dnsPrefetch'))
+      frame.src = frameParams.size
+        ? `/ibis-sandbox-probe/boot.html?${frameParams}`
+        : '/ibis-sandbox/boot.html'
+      const name = new URLSearchParams(location.search).get('open')
+      const leak = new URLSearchParams(location.search).get('leak')
+      let posted = false
+      const bytes = fetch(`/files/${encodeURIComponent(name)}`).then((r) => r.arrayBuffer())
+      addEventListener('message', async (e) => {
+        if (e.source !== frame.contentWindow) return
+        // The document goes to the frame once: a frame that navigates and says
+        // 'boot' again (a page reloaded by code inside it) gets nothing more.
+        if (e.data?.type === 'boot') {
+          if (posted) return
+          posted = true
+          const b = await bytes
+          frame.contentWindow.postMessage({ type: 'open', name, bytes: b, leak }, '*', [b])
+        } else {
+          window.__sandbox = e.data
+        }
+      })
+    </script>
+  </body>
+</html>

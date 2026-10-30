@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ibisOffice spike</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #fff;
+        --line: #dde1e7;
+        --text: #1d2330;
+        --muted: #6a7384;
+        --accent: #1a5fd6;
+        --bad: #c62828;
+        --good: #2e7d32;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          13px system-ui,
+          sans-serif;
+      }
+      body {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+      }
+      header {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        align-items: center;
+        padding: 8px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      header label {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        color: var(--muted);
+      }
+      #list {
+        overflow: auto;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+      }
+      #list input {
+        width: calc(100% - 16px);
+        margin: 8px;
+        padding: 4px 6px;
+      }
+      #list h3 {
+        margin: 10px 8px 2px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      #list button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: none;
+        padding: 4px 8px;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+      }
+      #list button:hover {
+        background: #eef2f8;
+      }
+      #list button[aria-current='true'] {
+        background: #dce7fb;
+      }
+      #list small {
+        color: var(--muted);
+      }
+      main {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-width: 0;
+        min-height: 0;
+      }
+      #metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        padding: 6px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        font-variant-numeric: tabular-nums;
+      }
+      #metrics span b {
+        font-weight: 600;
+      }
+      #metrics .bad {
+        color: var(--bad);
+      }
+      #metrics .good {
+        color: var(--good);
+      }
+      #panes {
+        display: grid;
+        grid-template-columns: 1fr;
+        min-height: 0;
+      }
+      #panes.split {
+        grid-template-columns: 1fr 1fr;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #fff;
+      }
+      #pdf {
+        border-left: 1px solid var(--line);
+        display: none;
+      }
+      #panes.split #pdf {
+        display: block;
+      }
+      #errors {
+        color: var(--bad);
+        white-space: pre-wrap;
+        flex-basis: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <b>ibisOffice spike（ADR-065 §I）</b>
+      <label
+        ><input type="checkbox" id="embed" checked />
+        埋め込み表示（view=1・menuBar=0・toolBar=0）</label
+      >
+      <label><input type="checkbox" id="split" /> LibreOffice の PDF と並べる</label>
+      <label><input type="checkbox" id="csp" /> 厳しい CSP（connect-src 'self'）</label>
+      <button id="reload">再読み込み</button>
+      <span id="note" style="color: var(--muted)"
+        >コールド起動は DevTools の「キャッシュを無効化」で</span
+      >
+    </header>
+    <nav id="list"><input id="filter" placeholder="絞り込み（例: xls）" /></nav>
+    <main>
+      <div id="metrics">サンプルを選んでください</div>
+      <div id="panes">
+        <iframe id="ibis" title="ibisOffice"></iframe>
+        <iframe id="pdf" title="LibreOffice PDF"></iframe>
+      </div>
+    </main>
+    <script type="module">
+      const $ = (id) => document.getElementById(id)
+      const samples = await (await fetch('/manifest.json')).json()
+      let current = null
+
+      function renderList() {
+        const q = $('filter').value.trim().toLowerCase()
+        $('list')
+          .querySelectorAll('h3, button')
+          .forEach((e) => e.remove())
+        for (const ext of ['xls', 'xlsx', 'doc', 'docx', 'ppt', 'pptx']) {
+          const items = samples.filter(
+            (s) => s.ext === ext && (!q || s.name.includes(q) || s.title.toLowerCase().includes(q))
+          )
+          if (!items.length) continue
+          const h = document.createElement('h3')
+          h.textContent = `${ext}（${items.length}）`
+          $('list').append(h)
+          for (const s of items) {
+            const b = document.createElement('button')
+            b.innerHTML = `${s.name.replace(/-[0-9a-f]{8}\.\w+$/, '')} <small>${(s.size / 1024).toFixed(0)} KB</small><br><small>${s.title || ''}</small>`
+            b.title = s.source
+            b.setAttribute('aria-current', String(current?.name === s.name))
+            b.onclick = () => open(s)
+            $('list').append(b)
+          }
+        }
+      }
+
+      function open(s) {
+        current = s
+        const params = new URLSearchParams({ open: `/files/${s.name}` })
+        if ($('embed').checked) {
+          params.set('view', '1')
+          params.set('menuBar', '0')
+          params.set('toolBar', '0')
+        }
+        $('ibis').src = `/${$('csp').checked ? 'ibis-csp' : 'ibis'}/?${params}`
+        $('pdf').src = s.pdf ? `/lo/${s.name.replace(/\.\w+$/, '.pdf')}` : 'about:blank'
+        renderList()
+      }
+
+      $('filter').oninput = renderList
+      $('split').onchange = () => $('panes').classList.toggle('split', $('split').checked)
+      for (const id of ['embed', 'csp', 'reload'])
+        $(id)[id === 'reload' ? 'onclick' : 'onchange'] = () => current && open(current)
+
+      const fmt = (v, unit = 'ms') => (v == null ? '—' : `${v.toLocaleString()} ${unit}`)
+      setInterval(() => {
+        if (!current) return
+        let st
+        try {
+          st = $('ibis').contentWindow.__ibis?.state
+        } catch {}
+        if (!st) return
+        const m = st.marks
+        const gaps = $('ibis').contentWindow.__ibis.gaps(60)
+        const recent = gaps.slice(-30)
+        const fps =
+          recent.length > 5
+            ? Math.round(1000 / (recent.reduce((a, b) => a + b, 0) / recent.length))
+            : null
+        const gpu = st.adapter
+          ? `${st.adapter.vendor} ${st.adapter.architecture}${st.adapter.fallback ? '（fallback）' : ''}`
+          : 'アダプタ無し'
+        $('metrics').innerHTML = [
+          `<span>${current.name}</span>`,
+          `<span>WASM 取得 <b>${fmt(st.wasmDownloadMs)}</b> ${st.wasmFromCache ? '<span class=good>キャッシュ</span>' : fmt(st.wasmTransferKb, 'KB')}</span>`,
+          `<span>起動 <b>${fmt(m.ready)}</b></span>`,
+          `<span>初回描画 <b>${fmt(m.firstFrame)}</b></span>`,
+          `<span>描き終わり <b>${fmt(m.drawn)}</b></span>`,
+          `<span>WASM メモリ <b>${fmt(st.wasmMb, 'MB')}</b></span>`,
+          `<span>JS ヒープ <b>${fmt(st.heapMb, 'MB')}</b></span>`,
+          `<span>長いタスク <b>${st.longTasks.count}</b> 件・計 ${fmt(st.longTasks.totalMs)}・最大 ${fmt(st.longTasks.maxMs)}</span>`,
+          `<span>直近の描画 <b>${fps ?? '—'}</b> fps</span>`,
+          `<span>GPU <b class="${st.adapter && st.adapter.architecture !== 'swiftshader' ? 'good' : 'bad'}">${gpu}</b></span>`,
+          `<span>外部通信 <b class="${st.external.length ? 'bad' : 'good'}">${st.external.length}</b></span>`,
+          m.failed ? `<span class=bad>${st.failure}</span>` : '',
+          st.errors.length ? `<div id=errors>${st.errors.slice(-5).join('\n')}</div>` : '',
+        ].join('')
+      }, 300)
+
+      renderList()
+    </script>
+  </body>
+</html>
