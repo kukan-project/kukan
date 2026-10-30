@@ -456,29 +456,35 @@ ibisOffice の Web 版（`pkg/` の JS と WASM、アイコンなどの資産）
 ビルド成果物は上流の `gh-pages` ブランチの `app/`（playground として公開しているもの）にしか
 無く、版を出すたびに上書きされ、上流が履歴を書き換えれば古いコミットは消える。ソースからの
 ビルドは Rust と wasm の環境が要り重い。そこで、gh-pages の固定したコミットの `app/` を、
-ファイルごとの SHA-256 で照合したうえで、**KUKAN の公開リポジトリの GitHub リリースに写しとして
-添付する**（版ごとのタグ、アーカイブとその SHA-256。認証なしで取れる）。同じリリースに、その
-成果物の元になった上流のソースのアーカイブ（0.8.4 なら `v0.8.4` のタグ）も置く。web の
-イメージのビルドはその写しを取り、SHA-256 を照合して `apps/web/public/vendor/ibis-office/<版>/`
-に置く（そのディレクトリは gitignore、turbo のキャッシュの出力にも含める）。取りに行くのは
-イメージを作るときだけで、動いているサービスは GitHub に行かない。63 MB の WASM はリポジトリ
-には入れない。閉域網でビルドするサイトは、この写しを取れる経路か、先に取ったアーカイブが要る
-（管理者ガイドに書く）。上流には Web 版をリリースに添付するよう要望した
-（ibisjp/ibis-office#76）。添付されるようになれば、取得元をそちらに移す。
+ファイルごとの SHA-256 で照合したうえで、上流の `LICENSE`・`NOTICE` と合わせて 1 つのアーカイブ
+（tar.gz、圧縮して約 23 MB）にし、**KUKAN のリポジトリの `apps/web/vendor/ibis-office/` に
+コミットする**。web の dev とビルドのスクリプトがそのアーカイブの SHA-256 を照合し、
+`apps/web/public/vendor/ibis-office/<版>/` に展開する（そのディレクトリは gitignore）。ビルドは
+ネットワークに出ないので、閉域網でもリポジトリがあればそのまま作れ、動いているサービスも
+GitHub に行かない。展開した 3,000 余りのファイル（WASM は 63 MB）はリポジトリにも turbo の
+キャッシュにも入れない。版を上げるとアーカイブが 1 つ増えるが、Git LFS の要る大きさではない。
 
-**配信**。CloudFront に `/vendor/*` の振る舞いを足し、長期のキャッシュで、Cookie とロケールを
+対応するソースとして案内するのは上流のタグ（0.8.4 なら `v0.8.4`）と、そのタグが固定する
+サブモジュール（gpui の 6 つ）のコミット。上流が消えたときの備えに、フォーク
+（https://github.com/kukan-project/ibis-office ）にも同じタグを置いておく。上流には Web 版を
+リリースに添付するよう要望した（ibisjp/ibis-office#76）。添付されるようになれば、アーカイブの
+元をそちらに移す。
+
+**配信**。CloudFront に `/vendor/ibis-office/*` の振る舞いを足し、長期のキャッシュで、Cookie とロケールを
 キーにしない（今は HTML の振る舞いに落ち、5 分で切れ、ログインした閲覧者は毎回 web まで
-取りに来る）。WASM はビルドのときに gzip と brotli で圧縮しておき、`Content-Encoding` 付きで
-返す（CloudFront は 10 MB を超えるものを圧縮しない）。Compose の Caddy の圧縮の対象にも
-wasm を足す。
+取りに来る）。WASM は前もって圧縮せず、Next がその場で gzip して返す（63 MB が 16.4 MB）。
+CloudFront は 10 MB を超えるものを自分では圧縮しないが、gzip された応答をエッジでキャッシュする。
+前もって圧縮すれば brotli で 10.1 MB まで減るが、`Accept-Encoding` で配るファイルを選ぶ仕組みが
+要り、減るのは閲覧者ごとの初回の取得だけ（1 年キャッシュされる）なので、今は入れない（残課題 5）。
+Compose の Caddy の圧縮の対象にも wasm を足す。
 
 **ライセンスと表記**。一太郎の EZPZ（ADR-051）と同じく、`LICENSE`・`NOTICE`・`SOURCE` を
-並べて置く。`SOURCE` には、写しの元の gh-pages のコミットと、その成果物の元になった上流の
-ソースのタグ（0.8.4 なら `v0.8.4`）、写しを置いたリリースを書く。ibisOffice は AGPL-3.0-only と
+並べて置く。`SOURCE` には、アーカイブの元の gh-pages のコミットと、対応するソース（上流のタグと
+サブモジュールのコミット）を書く。ibisOffice は AGPL-3.0-only と
 商用のデュアルライセンスで、KUKAN も AGPL-3.0 なので、改変せずに配り、上流の `LICENSE`・
 `NOTICE` を保ち、対応するソースを手に入れられるようにすれば条件を満たす。AGPL は、ソースが
-どこに置かれていても手に入る状態を保つ責任を配る側に課すので、上流のソースも写しと同じ
-リリースに置いておく。
+どこに置かれていても手に入る状態を保つ責任を配る側に課すので、上流が消えたら `SOURCE` の
+案内をフォークに移す。
 
 ibisOffice の `NOTICE` には AGPL-3.0 第 7 条(b) の追加の条件があり、ibisOffice を組み込んだ
 サービスは画面に「Powered by ibisOffice」と表示し、https://github.com/ibisjp/ibis-office への
@@ -489,7 +495,8 @@ ibisOffice の `NOTICE` には AGPL-3.0 第 7 条(b) の追加の条件があり
 
 ### 2. 隔離した iframe で起動し、文書はバイト列で渡す
 
-ibisOffice の `index.html`・`main.js` は使わない。web に小さな起動ページを置き、`pkg/` の
+ibisOffice の `index.html`・`main.js` は使わず、配りもしない（`?open=` の URL をそのまま開く
+playground を KUKAN のオリジンに置かないため）。web に小さな起動ページを置き、`pkg/` の
 `init`・`set_embed_options`・`run` を直接呼ぶ。起動ページは **`sandbox="allow-scripts"` の
 iframe**（`allow-same-origin` を付けない）に入れる。文書は信頼できない入力で、ibisOffice の
 解析に不具合があっても、iframe の中から KUKAN のオリジンの権限を使えないようにするため。
@@ -674,14 +681,14 @@ ibisOffice に変わる（公開の DOC は原本が見られなくなる）の�
   ビューアのそばの「Powered by ibisOffice」とリンク
 - **環境変数**: `OFFICE_PREVIEW_VIEWER`（web、`ibis-office` / `office-online`、既定
   `ibis-office`）を `packages/shared/src/env.ts` に定義し、Compose と CDK（サイトごと）から渡す
-- **ビルド**: 写しを取って照合し、WASM を前もって圧縮するスクリプト、turbo のキャッシュの出力、
-  Dockerfile の web ステージ（イメージ +63 MB）。写しと上流のソースを公開リポジトリのリリースに
-  置く手順（版を上げるたび）
-- **配信**: CloudFront の `/vendor/*` の振る舞い、Compose の Caddy の圧縮の対象に wasm。
+- **ビルド**: コミットしたアーカイブを照合して展開するスクリプト、
+  Dockerfile の web ステージ（イメージ +63 MB）。アーカイブを作り、フォークにタグを置く手順
+  （版を上げるたび）
+- **配信**: CloudFront の `/vendor/ibis-office/*` の振る舞い、Compose の Caddy の圧縮の対象に wasm。
   ADR-068（web を Lambda で動かす案）では、関数の zip が WASM の分だけ大きくなり、キャッシュに
   外れた取得は Lambda の応答になる
 - **api・worker**: 変更なし（`/preview` は今のまま）
-- **文書**: 管理者ガイド（`OFFICE_PREVIEW_VIEWER` の設定、閉域網でのビルド、対応ブラウザ）、
+- **文書**: 管理者ガイド（`OFFICE_PREVIEW_VIEWER` の設定、対応ブラウザ）、
   リリースノート（既定が ibisOffice に変わる、公開の DOC は原本が見られなくなる）、CLAUDE.md の
   マトリクス（プレビュー表示の列）、サードパーティの表記
 
@@ -701,9 +708,11 @@ ibisOffice に変わる（公開の DOC は原本が見られなくなる）の�
    落ちた文書の印で受け止める（決定 3）。落ちる文書が目立つなら、ほかの手を考える
 5. **開いた直後のコストと端末**: XLS が先頭のデータセットを開くだけで、16 MB の転送と数百
    MB のメモリを使う。スマートフォン（タブのメモリの上限）や通信量を節約する設定（Save-Data）
-   のときは、「原本」を押してから開く形にすることを考える。スマートフォンでは測っていない
-6. **版の追従**: Dependabot は追えないので、写し（gh-pages のコミット、SHA-256 の一覧、上流の
-   ソース）は手で上げる。上流の更新の頻度が高い（公開から 2 週間で 0.8.4）ので、手順を
+   のときは、「原本」を押してから開く形にすることを考える。スマートフォンでは測っていない。
+   初回の WASM の転送（gzip で 16.4 MB）が問題になれば、前もって圧縮する（brotli の品質 11 で
+   10.1 MB。CloudFront を通らない配置では zstd も。CloudFront は zstd を扱わない）
+6. **版の追従**: Dependabot は追えないので、アーカイブ（gh-pages のコミット、SHA-256 の一覧）と
+   `SOURCE`、フォークのタグは手で上げる。上流の更新の頻度が高い（公開から 2 週間で 0.8.4）ので、手順を
    スクリプトにする。上げるときは、メモリの上限の書き足しが効くか、`'unsafe-eval'` 無しで
    描けるか、消す WebRTC の関係のもので足りるかを確かめる
 7. **残る持ち出しの経路**: WASM を完全に乗っ取られた場合、取り込む関数の汎用の橋から JS の

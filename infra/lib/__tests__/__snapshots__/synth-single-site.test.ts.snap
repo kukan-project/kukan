@@ -577,6 +577,24 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               "ViewerProtocolPolicy": "redirect-to-https",
             },
             {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
               "AllowedMethods": [
                 "GET",
                 "HEAD",
@@ -5446,6 +5464,24 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               "ViewerProtocolPolicy": "redirect-to-https",
             },
             {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
               "AllowedMethods": [
                 "GET",
                 "HEAD",
@@ -10276,6 +10312,24 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               "ViewerProtocolPolicy": "redirect-to-https",
             },
             {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
               "AllowedMethods": [
                 "GET",
                 "HEAD",
@@ -14323,6 +14377,24 @@ exports[`self-created global stack (domain without certificateArn) > matches the
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19149,6 +19221,24 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },

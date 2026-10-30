@@ -1,2 +1,4 @@
 # Brand public assets (copied from the active brand by copy-brand-assets.mjs)
 public/brand/
+# ibisOffice web build (unpacked from vendor/ibis-office/ by unpack-ibis-office.mjs)
+public/vendor/ibis-office/

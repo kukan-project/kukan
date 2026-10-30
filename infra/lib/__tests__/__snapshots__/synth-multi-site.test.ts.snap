@@ -3111,6 +3111,24 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "ViewerProtocolPolicy": "redirect-to-https",
             },
             {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
               "AllowedMethods": [
                 "GET",
                 "HEAD",
@@ -6553,6 +6571,24 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },

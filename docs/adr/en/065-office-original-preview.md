@@ -478,29 +478,36 @@ CDN is involved, so it works the same in closed networks.
 build exists only as `app/` on the upstream `gh-pages` branch (published as the playground); it is
 overwritten with every release, and an old commit disappears if upstream rewrites history. Building
 from source needs a Rust and wasm toolchain and is heavy. So the `app/` of a pinned gh-pages commit,
-checked file by file against SHA-256, is **attached as a mirror to a GitHub release of KUKAN's public
-repository** (a tag per version, with the archive and its SHA-256; downloadable without
-authentication). The same release also carries the upstream source archive the build was made from
-(the `v0.8.4` tag for 0.8.4). Building the web image fetches that mirror, checks its SHA-256, and
-places it in `apps/web/public/vendor/ibis-office/<version>/` (gitignored, and included in turbo's
-cached outputs). Only building the image fetches it; the running service never goes to GitHub. The
-63 MB WASM is not committed. Sites that build in a closed network need a route to the mirror or an
-archive fetched beforehand (stated in the administrator guide). Upstream has been asked to attach
-the web build to releases (ibisjp/ibis-office#76); once it does, the source moves there.
+checked file by file against SHA-256, is packed with upstream's `LICENSE` and `NOTICE` into a
+single archive (tar.gz, about 23 MB compressed) and **committed to KUKAN's repository under
+`apps/web/vendor/ibis-office/`**. The web dev and build scripts check the archive's SHA-256 and
+unpack it into `apps/web/public/vendor/ibis-office/<version>/` (gitignored). The build makes no
+network request, so a closed network can build it from the repository alone, and the running
+service never goes to GitHub. The 3,000-odd unpacked files (the WASM is 63 MB) go neither into the
+repository nor into turbo's cache. Each upgrade adds one archive, well short of needing Git LFS.
 
-**Delivery.** CloudFront gets a `/vendor/*` behaviour with long-lived caching that does not key on
+The corresponding source pointed to is upstream's tag (`v0.8.4` for 0.8.4) and the commits of
+the submodules it pins (the six gpui ones). In case upstream disappears, a fork
+(https://github.com/kukan-project/ibis-office ) keeps the same tag. Upstream has been asked to
+attach the web build to releases (ibisjp/ibis-office#76); once it does, the archive is taken from
+there.
+
+**Delivery.** CloudFront gets a `/vendor/ibis-office/*` behaviour with long-lived caching that does not key on
 cookies or locale (today these files fall into the HTML behaviour, expire after five minutes, and
-signed-in viewers fetch them from the web task every time). The WASM is precompressed with gzip and
-brotli at build time and served with `Content-Encoding` (CloudFront does not compress objects over
-10 MB). Compose's Caddy also gets wasm in its compression list.
+signed-in viewers fetch them from the web task every time). The WASM is not precompressed: Next
+gzips it on the fly (63 MB to 16.4 MB). CloudFront does not compress objects over 10 MB itself, but
+caches the gzipped response at the edge. Precompressing would bring it to 10.1 MB with brotli, but
+needs a way to pick the file by `Accept-Encoding`, and saves only each viewer's first fetch (it is
+cached for a year), so it is left out for now (open question 5). Compose's Caddy also gets wasm in
+its compression list.
 
 **Licence and attribution.** As with EZPZ for Ichitaro (ADR-051), `LICENSE`, `NOTICE` and `SOURCE`
-sit beside it. `SOURCE` records the gh-pages commit the mirror was taken from, the upstream source
-tag the build was made from (`v0.8.4` for 0.8.4), and the release holding the mirror. ibisOffice is
+sit beside it. `SOURCE` records the gh-pages commit the archive was taken from and the corresponding
+source (upstream's tag and the submodule commits). ibisOffice is
 dual-licensed AGPL-3.0-only and commercial; KUKAN is AGPL-3.0 too, so serving it unmodified,
 keeping upstream's `LICENSE` and `NOTICE`, and making the corresponding source obtainable meets the
 terms. The AGPL leaves it to whoever conveys the code to keep the source available wherever it is
-hosted, so the upstream source sits in the same release as the mirror.
+hosted, so if upstream disappears, `SOURCE` is pointed at the fork.
 
 ibisOffice's `NOTICE` carries an additional term under AGPL-3.0 section 7(b): a service that
 includes ibisOffice must display "Powered by ibisOffice" with a link to
@@ -512,7 +519,8 @@ ibisOffice's logo (the name and logo are trademarks).
 
 ### 2. Boot in an isolated iframe, handing over bytes
 
-ibisOffice's `index.html` and `main.js` are not used. The web app has a small boot page that calls
+ibisOffice's `index.html` and `main.js` are neither used nor served (so the playground, which
+opens whatever `?open=` URL it is given, is not on KUKAN's origin). The web app has a small boot page that calls
 `init`, `set_embed_options` and `run` from `pkg/` directly. The boot page goes in **an iframe with
 `sandbox="allow-scripts"`** (no `allow-same-origin`). Documents are untrusted input; even if
 ibisOffice's parsing has a flaw, nothing inside the iframe can use the authority of KUKAN's origin.
@@ -709,15 +717,15 @@ LibreOffice is not added to the worker image, and the implementation that assume
 - **Environment variable**: `OFFICE_PREVIEW_VIEWER` (web, `ibis-office` or `office-online`,
   `ibis-office` by default), defined in `packages/shared/src/env.ts` and passed from Compose and
   CDK (per site)
-- **Build**: a script that fetches and checks the mirror and precompresses the WASM, turbo's cached
-  outputs, the Dockerfile's web stage (image +63 MB), and the steps to put the mirror and the
-  upstream source on the public repository's release (on every upgrade)
-- **Delivery**: a `/vendor/*` behaviour on CloudFront, wasm in Compose's Caddy compression list.
+- **Build**: a script that checks and unpacks the committed archive, the
+  Dockerfile's web stage (image +63 MB), and the steps to make the archive and put a tag on the
+  fork (on every upgrade)
+- **Delivery**: a `/vendor/ibis-office/*` behaviour on CloudFront, wasm in Compose's Caddy compression list.
   Under ADR-068 (running web on Lambda), the function zip grows by the WASM and a cache miss becomes
   a Lambda response
 - **api, worker**: no change (`/preview` stays as it is)
-- **Docs**: the administrator guide (setting `OFFICE_PREVIEW_VIEWER`, building in a closed network,
-  supported browsers), the release notes (the default becomes ibisOffice; public DOC files lose
+- **Docs**: the administrator guide (setting `OFFICE_PREVIEW_VIEWER`, supported
+  browsers), the release notes (the default becomes ibisOffice; public DOC files lose
   their original view), the matrix in CLAUDE.md (the preview column), third-party notices
 
 ## Open questions
@@ -739,9 +747,11 @@ LibreOffice is not added to the worker image, and the implementation that assume
 5. **Cost on opening, and devices**: opening a dataset whose first resource is an XLS already costs
    a 16 MB transfer and hundreds of MB of memory. On smartphones (per-tab memory limits) or with
    data saving on (Save-Data), consider opening the original only when "Original" is pressed.
-   Smartphones were not measured
-6. **Keeping up**: Dependabot cannot track it, so the mirror (the gh-pages commit, the SHA-256 list,
-   the upstream source) is raised by hand. Upstream moves fast (0.8.4 two weeks after release), so
+   Smartphones were not measured. If the first WASM transfer (16.4 MB gzipped) becomes a problem,
+   precompress it (10.1 MB with brotli at quality 11; zstd too where CloudFront is not in front, as
+   CloudFront does not handle zstd)
+6. **Keeping up**: Dependabot cannot track it, so the archive (the gh-pages commit, the SHA-256
+   list), `SOURCE` and the fork's tag are raised by hand. Upstream moves fast (0.8.4 two weeks after release), so
    script it. On each upgrade, check that the memory ceiling still takes, that it draws without
    `'unsafe-eval'`, and that the WebRTC names removed are still enough
 7. **Remaining ways out**: a fully compromised WASM reaches most JS APIs through the generic bridge

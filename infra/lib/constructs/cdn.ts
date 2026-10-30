@@ -188,6 +188,8 @@ export class CdnConstruct extends Construct {
       defaultBehavior: htmlPages,
       additionalBehaviors: {
         '/_next/static/*': staticAssets,
+        // The ibisOffice build, versioned by directory (ADR-065)
+        '/vendor/ibis-office/*': staticAssets,
         '/auth/*': passthrough,
         '/api/*': passthrough,
         '/odata/*': odataFeed,

@@ -19,3 +19,5 @@ docs
 !pnpm-workspace.yaml
 # Rust build output of the Ichitaro viewer; its build is committed under apps/web/public/vendor
 apps/web/wasm/*/target
+# ibisOffice unpacked by the dev script; the build unpacks it again from the committed archive
+apps/web/public/vendor/ibis-office
