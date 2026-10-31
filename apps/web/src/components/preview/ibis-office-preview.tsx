@@ -6,18 +6,24 @@ import { Card, CardContent } from '@kukan/ui'
 import { COMPOUND_FILE_SIGNATURE, hasSignature, ZIP_SIGNATURE } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { IBIS_OFFICE_BOOT, IBIS_OFFICE_HOME, IBIS_OFFICE_WASM } from '@/lib/ibis-office'
+import { openDocument } from '@/lib/office-draw-marks'
+import type { PackageCheckRequest, PackageVerdict } from './office-package-check'
 
+/** The largest file fetched (ADR-065 decision 3) */
+const IBIS_OFFICE_LIMIT = 64 * 1024 * 1024
 /**
- * The largest file drawn (ADR-065 decision 3): ibisOffice's memory grew about
- * fifteen-fold over a document's unpacked size, so this keeps it near the
- * 1 GiB ceiling the boot page puts on it.
+ * The most a package may unpack to: this stops a ZIP bomb, and the memory ceiling
+ * catches the rest. A public 70 MB one took ibisOffice 590 MB of its 1 GiB, a 16 MB
+ * one 223 MB.
  */
-const IBIS_OFFICE_LIMIT_MB = 64
-const IBIS_OFFICE_LIMIT = IBIS_OFFICE_LIMIT_MB * 1024 * 1024
+const IBIS_OFFICE_UNPACKED_LIMIT = 128 * 1024 * 1024
 
 /** How long the frame has in sight to boot, and then to draw the document it is given */
 const FRAME_TIMEOUT_MS = 30_000
 const FRAME_CHECK_MS = 1_000
+
+/** How long a package has to unpack, before the worker doing it is ended */
+const PACKAGE_CHECK_TIMEOUT_MS = 10_000
 
 type Failure = 'too-large' | 'unreadable'
 
@@ -35,10 +41,13 @@ type Failure = 'too-large' | 'unreadable'
  */
 export function IbisOfficePreview({
   resourceId,
+  doc,
   format,
   size,
 }: {
   resourceId: string
+  /** Names this version of the file, for the mark a crash leaves */
+  doc: string
   format: string
   size?: number | null
 }) {
@@ -57,6 +66,7 @@ export function IbisOfficePreview({
     const abort = new AbortController()
     let posted = false
     let timer: ReturnType<typeof setInterval> | undefined
+    let closeDocument = () => {}
     const fail = (why: Failure) => {
       if (!abort.signal.aborted) setFailure(why)
     }
@@ -82,13 +92,13 @@ export function IbisOfficePreview({
           posted = true
           clearInterval(timer)
           try {
-            const [doc, wasm] = await Promise.all([
-              fetchDocument(resourceId, format, abort.signal),
-              fetchWasm(abort.signal),
-            ])
+            // The document first: one that fails costs no fetch of the app
+            const file = await fetchDocument(resourceId, format, abort.signal)
+            const wasm = await fetchWasm(abort.signal)
             if (abort.signal.aborted) return
-            target.postMessage({ type: 'open', name: doc.name, bytes: doc.bytes, wasm }, '*', [
-              doc.bytes,
+            closeDocument = openDocument(doc)
+            target.postMessage({ type: 'open', name: file.name, bytes: file.bytes, wasm }, '*', [
+              file.bytes,
               wasm,
             ])
             waitForFrame()
@@ -111,16 +121,17 @@ export function IbisOfficePreview({
     return () => {
       abort.abort()
       clearInterval(timer)
+      closeDocument()
       removeEventListener('message', onMessage)
     }
-  }, [shown, failure, resourceId, format])
+  }, [shown, failure, resourceId, doc, format])
 
   if (failure) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
           {failure === 'too-large'
-            ? t('previewOfficeOriginalTooLarge', { mb: IBIS_OFFICE_LIMIT_MB })
+            ? t('previewOfficeOriginalTooLarge')
             : t('previewOfficeOriginal')}
         </CardContent>
       </Card>
@@ -221,7 +232,44 @@ async function fetchDocument(
     chunks.push(value)
   }
   const bytes = await new Blob(chunks).arrayBuffer()
-  return { name: documentName(format, new Uint8Array(bytes)), bytes }
+  const head = new Uint8Array(bytes)
+  const name = documentName(format, head)
+  // A compound document is not looked into: what is odd in one meets the ceiling
+  // on ibisOffice's memory
+  if (hasSignature(head, ZIP_SIGNATURE)) {
+    const verdict = await checkPackageInWorker(bytes, signal)
+    if (verdict === 'too-large') throw new TooLarge()
+    if (verdict !== 'ok') throw new Error('a package not plainly built')
+  }
+  return { name, bytes }
+}
+
+/**
+ * The verdict of a worker of its own, on a copy of the bytes (the frame gets
+ * these); 'refused' for one that takes too long.
+ */
+function checkPackageInWorker(bytes: ArrayBuffer, signal: AbortSignal): Promise<PackageVerdict> {
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL('./office-package-check.worker.ts', import.meta.url), {
+      type: 'module',
+    })
+    const finish = (verdict: PackageVerdict) => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', refuse)
+      worker.terminate()
+      resolve(verdict)
+    }
+    const refuse = () => finish('refused')
+    const timer = setTimeout(refuse, PACKAGE_CHECK_TIMEOUT_MS)
+    signal.addEventListener('abort', refuse)
+    worker.onmessage = ({ data }: MessageEvent<PackageVerdict>) => finish(data)
+    worker.onerror = refuse
+    const copy = bytes.slice(0)
+    worker.postMessage(
+      { bytes: copy, limit: IBIS_OFFICE_UNPACKED_LIMIT } satisfies PackageCheckRequest,
+      [copy]
+    )
+  })
 }
 
 /**

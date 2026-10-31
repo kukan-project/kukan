@@ -211,6 +211,30 @@ describe('ResourcePreview', () => {
       expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
     })
 
+    it('opens on the extracted text of a file that took a tab down, the original a tab away', async () => {
+      mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
+      // What a tab that died drawing version 3 of the file left behind
+      localStorage.setItem('kukan:ibis-office-draw:r1:3:gone', String(Date.now() - 60_000))
+      render(<ResourcePreview resourceId="r1" format="XLSX" version={3} />)
+
+      expect(screen.getByText('Original')).toBeInTheDocument()
+      expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
+      await waitFor(() =>
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/document-text')
+      )
+
+      screen.getByText('Original').click()
+      expect(await screen.findByTestId('ibis-office-preview')).toBeInTheDocument()
+      localStorage.clear()
+    })
+
+    it('draws a later version of a file that crashed a tab', () => {
+      localStorage.setItem('kukan:ibis-office-draw:r1:3:gone', String(Date.now() - 60_000))
+      render(<ResourcePreview resourceId="r1" format="XLSX" version={4} />)
+      expect(screen.getByTestId('ibis-office-preview')).toBeInTheDocument()
+      localStorage.clear()
+    })
+
     it('never hands a file to Microsoft’s viewer', () => {
       render(<ResourcePreview resourceId="r1" format="XLSX" url="https://example.com/data.xlsx" />)
       expect(document.querySelector('iframe')).toBeNull()

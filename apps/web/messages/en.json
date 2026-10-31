@@ -1004,7 +1004,7 @@
     "previewOfficeLocalUnavailable": "Office preview is not available in local environments. Download the file to view it.",
     "previewOfficeTooLarge": "This file exceeds the {mb} MB limit for Office Online preview. Download the file to view it.",
     "previewOfficeOriginal": "The original of this document could not be shown in the browser (not an Office file, broken, or too much to draw, for instance). Download it to open it. Its text can be read under Extracted text.",
-    "previewOfficeOriginalTooLarge": "This document is larger than the {mb} MB the browser shows originals up to. Download it to open it. Its text can be read under Extracted text.",
+    "previewOfficeOriginalTooLarge": "This document is too large to show its original in the browser. Download it to open it. Its text can be read under Extracted text.",
     "explorerSearch": "Search all columns...",
     "explorerClearFilters": "Clear filters",
     "explorerFilteredRows": "Filtered: {filtered, number} / {total, number} total rows",

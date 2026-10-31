@@ -60,7 +60,7 @@ addEventListener('message', async (e) => {
       e.data.name,
       new Uint8Array(e.data.bytes)
     )
-    // After the frame that follows the first one drawn
+    // Shortly after: ibisOffice opens its window and draws once this has returned
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         drawn = true

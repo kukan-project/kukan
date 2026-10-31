@@ -297,6 +297,7 @@ export function ResourceExplorer({
                   canManage={canManage}
                   notPublic={notPublic}
                   officePreviewViewer={officePreviewViewer}
+                  latestVersion={r.latestVersion}
                 />
                 <VersionHistory resourceId={r.id} />
               </div>

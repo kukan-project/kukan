@@ -1004,7 +1004,7 @@
     "previewOfficeLocalUnavailable": "ローカル環境では Office プレビューを利用できません。ファイルをダウンロードしてご確認ください。",
     "previewOfficeTooLarge": "このファイルは Office Online プレビューの上限（{mb} MB）を超えています。ファイルをダウンロードしてご確認ください。",
     "previewOfficeOriginal": "この文書の原本はブラウザで表示できませんでした（Office の形式でない、壊れている、描き切れないなど）。ダウンロードして開いてください。本文は「抽出テキスト」で読めます。",
-    "previewOfficeOriginalTooLarge": "この文書は、原本をブラウザで表示できる大きさ（{mb} MB）を超えています。ダウンロードして開いてください。本文は「抽出テキスト」で読めます。",
+    "previewOfficeOriginalTooLarge": "この文書は、原本をブラウザで表示するには大きすぎます。ダウンロードして開いてください。本文は「抽出テキスト」で読めます。",
     "explorerSearch": "全列を検索...",
     "explorerClearFilters": "フィルター解除",
     "explorerFilteredRows": "フィルター後: {filtered, number} / 全 {total, number} 行",

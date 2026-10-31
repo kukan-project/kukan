@@ -40,6 +40,7 @@ interface ResourcePipelinePreviewProps {
   canManage?: boolean
   notPublic?: boolean
   officePreviewViewer?: OfficePreviewViewer
+  latestVersion?: number | null
 }
 
 /**
@@ -56,6 +57,7 @@ export function ResourcePipelinePreview({
   canManage,
   notPublic,
   officePreviewViewer,
+  latestVersion,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
   const router = useRouter()
@@ -160,6 +162,7 @@ export function ResourcePipelinePreview({
         size={size}
         notPublic={notPublic}
         officePreviewViewer={officePreviewViewer}
+        version={latestVersion}
         schema={schemaData?.schema}
         primaryKey={schemaData?.primaryKey}
       />

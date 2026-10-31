@@ -649,20 +649,24 @@ upgrade (public DOC files lose their original view), which the release notes mus
     often published with legacy extensions, and `formats.ts` accepts the ZIP signature for XLS and
     PPT). Anything that is neither a ZIP (`PK\x03\x04`) nor a compound file (`D0 CF 11 E0`) is not
     handed over
-  - Only plainly laid-out ZIPs pass: exactly one end of central directory (EOCD), at the end of the
-    file, with an empty comment; local headers contiguous from the start and matching the
-    directory; no encrypted entries and no duplicate names; at most 10,000 entries. This keeps out
-    tricks that look different to different readers (two directories, bytes before or after)
+  - Only a plainly built ZIP passes: the end of central directory record (EOCD) at the very end of
+    the file with an empty comment, local headers running from the start with no gaps and agreeing
+    with the directory (name bytes, method, size, encryption flag), no encrypted entry, no duplicate
+    name, at most 10,000 entries. This keeps out tricks that read differently from one reader to the
+    next (bytes before or after, headers disagreeing with the directory). Of 82 public Office
+    documents, none was refused by this
   - A ZIP is decompressed entry by entry as a stream in a Web Worker (`DecompressionStream`),
-    counting the output and discarding it, and stops once the expanded total exceeds 64 MB or 10 s
+    counting the output and discarding it, and stops once the expanded total exceeds 128 MB or 10 s
     pass. Sizes written in the directory are not trusted
   - A compound file gets no check beyond its size and signature; tricks in its structure are caught
     by the WASM memory ceiling
-- **Why 64 MB.** Tables and documents are mostly XML, and WASM memory grew at about 15 times the
-  expanded size (16 MB to 223 MB for a 430k-cell sheet, 3.2 MB to 52 MB for a document,
-  §Measurements). At 64 MB that is expected to stay around 1 GB of WASM memory, with four times the
-  largest public sample (16 MB) as headroom. The ratio is estimated from two samples, so it is
-  measured again on larger public XLSX files during implementation
+- **Why 128 MB.** Tables and documents are mostly XML, and WASM memory grew at 8 to 16 times the
+  expanded size (16 MB to 223 MB for a 430k-cell sheet, 3.2 MB to 52 MB for a document, 70.4 MB to
+  590 MB for a large public sheet, §Measurements). About 70 to 120 MB expanded fits in 1 GiB, and the
+  first choice of 64 MB refused a public document (70.4 MB) that opens. What this stops is a ZIP
+  bomb; a document that is merely heavy is stopped by the memory ceiling, so 128 MB leaves room. The
+  64 MB on the file itself is there to avoid a useless fetch, four times the largest public sample
+  (16 MB)
 - **Beyond that, nothing is bounded.** Memory used outside the WASM — what ibisOffice hands to the
   browser's own image decoder, and GPU memory — is not covered by the ceiling. If memory runs out
   the viewer's tab goes down, and since the GPU process is shared between tabs, drawing in other
@@ -670,28 +674,28 @@ upgrade (public DOC files lose their original view), which the release notes mus
   authority are out of reach. Only people with publishing rights can put files up, and a crashed
   document is not opened again thanks to the mark in the next item, so this is accepted
 - **A document that crashed is not opened again**
-  - Before drawing, a mark for the document's **version** goes into localStorage and is removed once
-    drawing finishes. If the mark is still there next time (the tab went down before drawing
-    finished), the page opens on the extracted-text tab. The "Original" tab stays, to try again by
-    pressing it
-  - The boot page reports the end of drawing to the parent when it sees the first frame after
-    `run()`. If no report comes within a set time (around 30 s), the parent removes the iframe and
-    points to the extracted text, leaving no mark (nothing crashed)
-  - That time is counted only while the iframe is in sight. The browser stops drawing in a hidden
-    tab or a frame scrolled away, so a missing report there says nothing about the document
-  - The mark is also removed when KUKAN itself removes the iframe before drawing finishes (moving
-    to another resource or tab) and when the page is left (`pagehide`); neither happens on a crash
-  - So that two tabs showing the same document do not confuse each other, each tab keeps its own
-    mark (keyed by the version and a tab ID) and refreshes a timestamp in it every few seconds while
-    drawing (a sign of life), and removes only its own mark. A mark from another tab with a fresh
-    timestamp means drawing is under way; only a mark whose timestamp has gone stale counts as a
-    crash
-  - A hidden tab (opened in the background, for one) stops drawing and timers, so its sign of life
-    looks stale. Marks are set only while the tab is visible, and drawing waits while it is hidden
-  - It is not sessionStorage because closing the crashed tab and opening the page again would lose
-    it. The mark expires after a day, after which the original is tried again. A browser without
-    usable storage works without marks. The mark lives only in that viewer's browser; nothing is
-    recorded on the server
+  - Before the document goes to the iframe, a mark for its **version** goes into localStorage, and is
+    removed when the iframe is removed and when the page goes away (`pagehide`); a crash does
+    neither. If the mark is still there next time, the page opens on the extracted-text tab. The
+    "Original" tab stays, to try again by pressing it
+  - It is not removed when drawing finishes. ibisOffice opens its window, draws for the first time
+    and uploads to the GPU after `run()` has returned, and running out of memory outside the WASM
+    takes the tab down after that
+  - The boot page reports when `run()` returns. If no report comes within a set time (around 30 s,
+    counted only while in sight), the parent removes the iframe and points to the extracted text.
+    The browser stops drawing in a hidden tab or a frame scrolled away, so a missing report there
+    says nothing about the document
+  - So that two tabs on one document are not confused, each tab keeps its own key (version and tab
+    ID) and adds the time every few seconds while the document is open (a heartbeat). Another tab's
+    mark with a recent time is taken as open; only a mark that has gone stale counts as a crash
+  - The tab ID is kept in sessionStorage. Reloading a crashed tab straight away finds its own mark
+    still there, even while a mark from another tab would still look recent
+  - A hidden tab's timers slow until its heartbeat looks stopped, so it holds no mark while hidden. A
+    document that crashes a hidden tab leaves none, but does when it next crashes one in view
+  - sessionStorage alone would not do: closing a crashed tab and opening it again loses it. The mark
+    expires after one day, and then the original is tried again. Pressing "Original" replaces stale
+    marks. A browser without storage works without marks. The mark stays in that viewer's browser and
+    nothing is recorded on the server
 - The WASM is loaded only when the "Original" tab comes into view (16 MB the first time, then from
   the parent's cache), and after the boot page has reported, so not for a frame the CSP blocked
 - **Only one ibisOffice runs at a time.** The dataset page keeps every resource preview and every

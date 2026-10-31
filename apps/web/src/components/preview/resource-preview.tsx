@@ -32,6 +32,7 @@ import { ImagePreview } from './image-preview'
 import { DocumentTextPreview } from './document-text-preview'
 import { IchitaroPreview } from './ichitaro-preview'
 import { IbisOfficePreview } from './ibis-office-preview'
+import { crashedBefore } from '@/lib/office-draw-marks'
 
 const MarkdownDocument = dynamic(() => import('./markdown-document'), {
   ssr: false,
@@ -54,6 +55,8 @@ interface ResourcePreviewProps {
   notPublic?: boolean
   /** What draws an Office file's original; omitted → ibisOffice (ADR-065) */
   officePreviewViewer?: OfficePreviewViewer
+  /** The file's version, to tell it from the one that crashed a tab, if one did */
+  version?: number | null
   /** The version's column schema, fetched once by the owner (tabular formats only) */
   schema?: ResourceSchema | null
   /** The resource's settled primary key, from the same read */
@@ -75,6 +78,7 @@ export function ResourcePreview({
   size,
   notPublic,
   officePreviewViewer = 'ibis-office',
+  version,
   schema,
   primaryKey,
 }: ResourcePreviewProps) {
@@ -120,19 +124,22 @@ export function ResourcePreview({
     // ibisOffice draws in the visitor's browser, from the file the visitor may
     // read, so a private dataset's files are drawn too; it does not read DOC
     const ibisOffice = officePreviewViewer === 'ibis-office'
+    const doc = `${resourceId}:${version ?? 0}`
     if (ibisOffice ? f.toLowerCase() === 'doc' : notPublic)
       return <DocumentTextPreview resourceId={resourceId} />
-    return (
+    return ibisOffice ? (
+      <IbisOfficeDocument
+        key={`${doc}:${f}`}
+        resourceId={resourceId}
+        doc={doc}
+        format={f}
+        size={size}
+      />
+    ) : (
       <DocumentPreview
         key={resourceId}
         resourceId={resourceId}
-        original={
-          ibisOffice ? (
-            <IbisOfficePreview key={f} resourceId={resourceId} format={f} size={size} />
-          ) : (
-            <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
-          )
-        }
+        original={<OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />}
       />
     )
   }
@@ -159,11 +166,19 @@ export function ResourcePreview({
  * A document as itself, where the browser can show it, or as the text
  * extracted from it — the second is what search and AI see of the file.
  */
-function DocumentPreview({ resourceId, original }: { resourceId: string; original: ReactNode }) {
+function DocumentPreview({
+  resourceId,
+  original,
+  initial = 'original',
+}: {
+  resourceId: string
+  original: ReactNode
+  initial?: 'original' | 'text'
+}) {
   const t = useTranslations('resource')
   return (
     <KeptViews
-      initial="original"
+      initial={initial}
       views={[
         { key: 'original', label: t('previewSourceOriginal'), node: original },
         {
@@ -172,6 +187,34 @@ function DocumentPreview({ resourceId, original }: { resourceId: string; origina
           node: <DocumentTextPreview resourceId={resourceId} />,
         },
       ]}
+    />
+  )
+}
+
+/**
+ * An Office file as ibisOffice draws it, opening on its extracted text if that
+ * took a tab down last time. The original stays a tab away, to try again. Known
+ * only in the browser, so the choice waits for the first effect.
+ */
+function IbisOfficeDocument({
+  resourceId,
+  doc,
+  format,
+  size,
+}: {
+  resourceId: string
+  doc: string
+  format: string
+  size?: number | null
+}) {
+  const [opensOn, setOpensOn] = useState<'original' | 'text'>()
+  useEffect(() => setOpensOn(crashedBefore(doc) ? 'text' : 'original'), [doc])
+  if (!opensOn) return <PreviewSkeleton />
+  return (
+    <DocumentPreview
+      resourceId={resourceId}
+      initial={opensOn}
+      original={<IbisOfficePreview resourceId={resourceId} doc={doc} format={format} size={size} />}
     />
   )
 }
