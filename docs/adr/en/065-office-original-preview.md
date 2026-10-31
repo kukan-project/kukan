@@ -474,40 +474,43 @@ on the same origin as KUKAN's web app, under a path that includes the version
 `Access-Control-Allow-Origin: *` (so the isolated iframe can read it, decision 2). At runtime no
 CDN is involved, so it works the same in closed networks.
 
-**Source and mirror.** Upstream attaches no web build to its releases (desktop builds only). The web
-build exists only as `app/` on the upstream `gh-pages` branch (published as the playground); it is
-overwritten with every release, and an old commit disappears if upstream rewrites history. Building
-from source needs a Rust and wasm toolchain and is heavy. So the `app/` of a pinned gh-pages commit,
-checked file by file against SHA-256, is packed with upstream's `LICENSE` and `NOTICE` into a
-single archive (tar.gz, about 23 MB compressed) and **committed to KUKAN's repository under
-`apps/web/vendor/ibis-office/`**. The web dev and build scripts check the archive's SHA-256 and
-unpack it into `apps/web/public/vendor/ibis-office/<version>/` (gitignored). The build makes no
-network request, so a closed network can build it from the repository alone, and the running
-service never goes to GitHub. The 3,000-odd unpacked files (the WASM is 63 MB) go neither into the
-repository nor into turbo's cache. Each upgrade adds one archive, well short of needing Git LFS.
+**Source.** The web build attached to upstream's releases (`ibisOffice-<version>-Web.zip`, from
+0.8.5 on, added in response to ibisjp/ibis-office#76) is used. KUKAN's repository holds not the zip but
+`apps/web/vendor/ibis-office/manifest.json`, with the version and SHA-256; the web dev and build
+scripts fetch the zip, check it, and unpack it into `apps/web/public/vendor/ibis-office/<version>/`
+(both gitignored). Upstream says a published release's files do not change, but the SHA-256 is
+checked rather than relying on that. The running service never goes to GitHub. The 3,000-odd
+unpacked files (the WASM is 65 MB) go neither into the repository nor into turbo's cache.
 
-The corresponding source pointed to is upstream's tag (`v0.8.4` for 0.8.4) and the commits of
-the submodules it pins (the six gpui ones). In case upstream disappears, a fork
-(https://github.com/kukan-project/ibis-office ) keeps the same tag. Upstream has been asked to
-attach the web build to releases (ibisjp/ibis-office#76); once it does, the archive is taken from
-there.
+The zip is not committed because upstream moves fast (0.8.5 a little over two weeks after release),
+and each upgrade would leave about 32 MB in the history for good (0.8.4 alone, when releases had no
+web build, was committed as a tar.gz for a time and remains in the history). In exchange, the build
+has to reach GitHub. On a closed network that cannot, putting the same zip in
+`apps/web/vendor/ibis-office/` beforehand means it is not fetched.
+
+Nothing is kept against upstream removing its releases or repository. It is unlikely, and if it
+happens, running sites and built images keep working, and a zip at hand can rebuild them. The
+corresponding source could no longer be pointed to, so unless another source is arranged, the
+default viewer goes back to Office Online Viewer. A site can avoid it at any time with
+`OFFICE_PREVIEW_VIEWER=office-online`. Keeping a copy (of the six gpui submodules as well as the
+main repository) would not be worth the upkeep.
 
 **Delivery.** CloudFront gets a `/vendor/ibis-office/*` behaviour with long-lived caching that does not key on
 cookies or locale (today these files fall into the HTML behaviour, expire after five minutes, and
 signed-in viewers fetch them from the web task every time). The WASM is not precompressed: Next
-gzips it on the fly (63 MB to 16.4 MB). CloudFront does not compress objects over 10 MB itself, but
+gzips it on the fly (63 MB to 16.4 MB, measured on 0.8.4). CloudFront does not compress objects over 10 MB itself, but
 caches the gzipped response at the edge. Precompressing would bring it to 10.1 MB with brotli, but
 needs a way to pick the file by `Accept-Encoding`, and saves only each viewer's first fetch (it is
 cached for a year), so it is left out for now (open question 5). Compose's Caddy also gets wasm in
 its compression list.
 
 **Licence and attribution.** As with EZPZ for Ichitaro (ADR-051), `LICENSE`, `NOTICE` and `SOURCE`
-sit beside it. `SOURCE` records the gh-pages commit the archive was taken from and the corresponding
-source (upstream's tag and the submodule commits). ibisOffice is
+sit beside it; the zip holds none of them, so they live in the repository. `SOURCE` records the zip
+it comes from and the corresponding source (upstream's tag and the submodule commits). ibisOffice is
 dual-licensed AGPL-3.0-only and commercial; KUKAN is AGPL-3.0 too, so serving it unmodified,
 keeping upstream's `LICENSE` and `NOTICE`, and making the corresponding source obtainable meets the
 terms. The AGPL leaves it to whoever conveys the code to keep the source available wherever it is
-hosted, so if upstream disappears, `SOURCE` is pointed at the fork.
+hosted; what happens if upstream disappears is in the Source paragraph above.
 
 ibisOffice's `NOTICE` carries an additional term under AGPL-3.0 section 7(b): a service that
 includes ibisOffice must display "Powered by ibisOffice" with a link to
@@ -717,9 +720,8 @@ LibreOffice is not added to the worker image, and the implementation that assume
 - **Environment variable**: `OFFICE_PREVIEW_VIEWER` (web, `ibis-office` or `office-online`,
   `ibis-office` by default), defined in `packages/shared/src/env.ts` and passed from Compose and
   CDK (per site)
-- **Build**: a script that checks and unpacks the committed archive, the
-  Dockerfile's web stage (image +63 MB), and the steps to make the archive and put a tag on the
-  fork (on every upgrade)
+- **Build**: a script that fetches, checks and unpacks upstream's zip, the Dockerfile's web stage
+  (image +65 MB)
 - **Delivery**: a `/vendor/ibis-office/*` behaviour on CloudFront, wasm in Compose's Caddy compression list.
   Under ADR-068 (running web on Lambda), the function zip grows by the WASM and a cache miss becomes
   a Lambda response
@@ -732,8 +734,8 @@ LibreOffice is not added to the worker image, and the implementation that assume
 
 1. **Upstream gaps**: DOC does not open (ibisjp/ibis-office#71); DOCX shows the viewing-mode info
    bar even with `view=1` (ibisjp/ibis-office#72); half-width letters and digits come out in IBM
-   Plex Sans (ibisjp/ibis-office#73); distributed alignment has no effect (ibisjp/ibis-office#75);
-   the web build is not attached to releases (ibisjp/ibis-office#76). Raise the version as they are
+   Plex Sans (ibisjp/ibis-office#73); distributed alignment has no effect (ibisjp/ibis-office#75).
+   Raise the version as they are
    fixed; once #71 lands, move DOC to the "Original" tab too
 2. **View-only polish**: even with `view=1`, the spreadsheet's "+" (add sheet) and the slides'
    notes pane show. A view-only build (a smaller WASM without the editing features) would also cut
@@ -750,8 +752,8 @@ LibreOffice is not added to the worker image, and the implementation that assume
    Smartphones were not measured. If the first WASM transfer (16.4 MB gzipped) becomes a problem,
    precompress it (10.1 MB with brotli at quality 11; zstd too where CloudFront is not in front, as
    CloudFront does not handle zstd)
-6. **Keeping up**: Dependabot cannot track it, so the archive (the gh-pages commit, the SHA-256
-   list), `SOURCE` and the fork's tag are raised by hand. Upstream moves fast (0.8.4 two weeks after release), so
+6. **Keeping up**: Dependabot cannot track it, so `manifest.json` (version and SHA-256), `LICENSE`,
+   `NOTICE` and `SOURCE` are raised by hand. Upstream moves fast (0.8.4 two weeks after release), so
    script it. On each upgrade, check that the memory ceiling still takes, that it draws without
    `'unsafe-eval'`, and that the WebRTC names removed are still enough
 7. **Remaining ways out**: a fully compromised WASM reaches most JS APIs through the generic bridge

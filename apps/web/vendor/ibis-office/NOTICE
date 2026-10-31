@@ -1,0 +1,53 @@
+ibisOffice
+Copyright (c) ibis inc.
+
+[English]
+
+ibisOffice is provided under AGPL-3.0-only (LICENSE), or under a commercial
+license (COMMERCIAL-LICENSE.md). Copyright (c) ibis inc.
+
+Additional terms under AGPL-3.0 section 7(b)
+--------------------------------------------
+When you distribute or provide a modified version of ibisOffice, or a product
+or service that includes ibisOffice (a "derivative"), you must preserve this
+attribution: display "Powered by ibisOffice", with a link to
+https://github.com/ibisjp/ibis-office, in the derivative's user interface (its
+"About" screen, or the equivalent place). The details are in docs/TRADEMARK.md.
+
+Name and logo
+-------------
+The ibisOffice name and logo are trademarks of ibis inc. Neither license
+grants any right to use them. How they may be used is described in
+docs/TRADEMARK.md.
+
+Language
+--------
+This notice is written in English and Japanese. If the two differ, the
+Japanese version prevails.
+
+------------------------------------------------------------------------
+
+[日本語]
+
+ibisOffice は、AGPL-3.0-only（LICENSE）または商用ライセンス
+（COMMERCIAL-LICENSE.md）で提供します。Copyright (c) ibis inc.（株式会社アイビス）
+
+AGPL-3.0 第 7 条(b) の追加の条件
+--------------------------------
+ibisOffice を改変したもの、または ibisOffice を組み込んだ製品・サービス
+（以下「派生物」）を配布・提供するときは、次の表示（作者の表示）を保たなければ
+なりません。派生物の画面（「このアプリについて」の画面、またはそれに当たる
+場所）に、「Powered by ibisOffice」と表示し、
+https://github.com/ibisjp/ibis-office へのリンクを付けなければなりません。詳しくは
+docs/TRADEMARK.md にあります。
+
+名前とロゴ
+----------
+「ibisOffice」の名前とロゴは、株式会社アイビスの商標です。どちらの
+ライセンスも、これらを使う権利までは与えていません。使い方は
+docs/TRADEMARK.md に書いてあります。
+
+言語
+----
+この文書は英語と日本語で書いています。両者の内容が異なる場合は、日本語版が
+優先します。

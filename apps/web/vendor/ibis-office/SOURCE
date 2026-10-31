@@ -1,13 +1,13 @@
-ibisOffice 0.8.4 web build, unmodified
+ibisOffice 0.8.5 web build, unmodified
 Copyright (c) ibis inc. AGPL-3.0-only (see LICENSE); additional terms in NOTICE.
 
-Corresponding source: https://github.com/ibisjp/ibis-office/tree/v0.8.4
-  (commit 50287728b005ceb0ed8a4a8f7d825ac4824224ef), with its submodules:
-  forks/gpui-pre          https://github.com/ibisjp/gpui-pre          e6639333675c3063527340d6b8681f163cbb5f75
+Corresponding source: https://github.com/ibisjp/ibis-office/tree/v0.8.5
+  (commit 48f132d06f6e370f6f4fe59c0007c8f4d9c1f855), with its submodules:
+  forks/gpui-pre          https://github.com/ibisjp/gpui-pre          150819b7e4800a6ac3dc564f45b7ccfc6098e34f
   forks/gpui-pre-linux    https://github.com/ibisjp/gpui-pre-linux    7387ecbda23b2d1480e6ee532dd244e3ede222f4
-  forks/gpui-pre-macos    https://github.com/ibisjp/gpui-pre-macos    7cf4f515a3fd73216410b2815699012ecf4c9d26
+  forks/gpui-pre-macos    https://github.com/ibisjp/gpui-pre-macos    a5c35305b6f3099b17899f4324be300e57461b1b
   forks/gpui-pre-web      https://github.com/ibisjp/gpui-pre-web      f3d756653acd656cdb254c09c26ed97c4a9f6a77
   forks/gpui-pre-wgpu     https://github.com/ibisjp/gpui-pre-wgpu     bca747d853d13204ec815a71a8dd1a6149adfb1d
-  forks/gpui-pre-windows  https://github.com/ibisjp/gpui-pre-windows  3bf5b06dd65309ad30d2d3a0852d7de7aa0475da
-Build: upstream gh-pages commit f48b9b428fa51b6837e58638e73fd77a4514a722, directory app/
+  forks/gpui-pre-windows  https://github.com/ibisjp/gpui-pre-windows  c2e6518336c9cd2f9264967d1f3c6e37cb8d1c97
+Build: https://github.com/ibisjp/ibis-office/releases/download/v0.8.5/ibisOffice-0.8.5-Web.zip
   (pkg/, assets/ and license.md are served; the playground's index.html and main.js are not)

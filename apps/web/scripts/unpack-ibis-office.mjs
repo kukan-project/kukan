@@ -1,47 +1,100 @@
-/* global console */
+/* global console, fetch, Buffer */
 /**
- * Unpack the vendored ibisOffice web build into public/vendor/ibis-office/<version>/
- * (ADR-065 decision 1). The archive under vendor/ibis-office/ holds upstream's
- * LICENSE and NOTICE and the playground build's app/ directory, unmodified, and is
- * checked against its SHA-256 before anything is written. Only the app's pkg/,
- * assets/ and license.md are unpacked: the playground's index.html and main.js
- * would open any `?open=` URL on this origin, outside the sandbox. SOURCE comes
- * from vendor/ibis-office/. public/vendor/ibis-office/ is a generated directory
- * (gitignored), reset on each run. Run via the dev/build scripts.
+ * Unpack the ibisOffice web build into public/vendor/ibis-office/<version>/
+ * (ADR-065 decision 1). The archive is upstream's release asset, fetched into
+ * vendor/ibis-office/ (gitignored) unless it is already there, as on a closed
+ * network, and checked against the SHA-256 in manifest.json before anything is
+ * written. Only the app's pkg/, assets/ and license.md are unpacked: the
+ * playground's index.html and main.js would open any `?open=` URL on this
+ * origin, outside the sandbox. LICENSE, NOTICE and SOURCE, which the archive
+ * does not hold, go beside them. public/vendor/ibis-office/ is a generated
+ * directory (gitignored), reset on each run. Run via the dev/build scripts.
  */
 
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import {
+  createWriteStream,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
+import yauzl from 'yauzl'
 
-const VERSION = '0.8.4'
-const ARCHIVE_SHA256 = '712b0631d355530a1e5b4766f1beeea32f5d8921b9af9601147181ca5a9605aa'
+const SERVED = ['pkg/', 'assets/', 'license.md']
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const srcDir = join(webRoot, 'vendor', 'ibis-office')
-const archiveName = `ibis-office-web-${VERSION}.tar.gz`
+const { version, sha256 } = JSON.parse(readFileSync(join(srcDir, 'manifest.json'), 'utf8'))
+const archiveName = `ibisOffice-${version}-Web.zip`
+const archivePath = join(srcDir, archiveName)
 const vendorDir = join(webRoot, 'public', 'vendor', 'ibis-office')
-const dest = join(vendorDir, VERSION)
+const dest = join(vendorDir, version)
 
-const sha256 = createHash('sha256')
-  .update(readFileSync(join(srcDir, archiveName)))
-  .digest('hex')
-if (sha256 !== ARCHIVE_SHA256) {
+async function download() {
+  const url = `https://github.com/ibisjp/ibis-office/releases/download/v${version}/${archiveName}`
+  console.log(`Fetching ${url}`)
+  try {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return Buffer.from(await response.arrayBuffer())
+  } catch (cause) {
+    throw new Error(
+      `Could not fetch ${url}. Where the build cannot reach it, put the file at ${archivePath}`,
+      { cause }
+    )
+  }
+}
+
+function unpack(archive) {
+  return new Promise((resolve, reject) => {
+    yauzl.fromBuffer(archive, { lazyEntries: true }, (openError, zip) => {
+      if (openError) return reject(openError)
+      zip.on('error', reject)
+      zip.on('end', resolve)
+      zip.on('entry', (entry) => {
+        const { fileName } = entry
+        if (fileName.endsWith('/') || !SERVED.some((served) => fileName.startsWith(served))) {
+          return zip.readEntry()
+        }
+        const target = join(dest, fileName)
+        mkdirSync(dirname(target), { recursive: true })
+        zip.openReadStream(entry, (readError, stream) => {
+          if (readError) return reject(readError)
+          pipeline(stream, createWriteStream(target)).then(() => zip.readEntry(), reject)
+        })
+      })
+      zip.readEntry()
+    })
+  })
+}
+
+const present = existsSync(archivePath)
+const archive = present ? readFileSync(archivePath) : await download()
+const actual = createHash('sha256').update(archive).digest('hex')
+if (actual !== sha256) {
   throw new Error(
-    `apps/web/vendor/ibis-office/${archiveName} has SHA-256 ${sha256}, not ${ARCHIVE_SHA256}: ` +
-      'the archive is not the one this script was written for (ADR-065)'
+    `${archiveName} has SHA-256 ${actual}, not the ${sha256} in manifest.json` +
+      (present ? `: replace ${archivePath}` : '')
   )
+}
+if (!present) writeFileSync(archivePath, archive)
+// An upgrade's leftovers
+for (const name of readdirSync(srcDir)) {
+  if (name.endsWith('-Web.zip') && name !== archiveName) rmSync(join(srcDir, name))
 }
 
 rmSync(vendorDir, { recursive: true, force: true })
 mkdirSync(dest, { recursive: true })
-// A relative archive name: Git Bash's GNU tar reads `C:\...` as a remote host.
-const tar = (...args) =>
-  execFileSync('tar', ['-xzf', archiveName, '-C', dest, ...args], { cwd: srcDir })
-tar('--strip-components=1', 'app/pkg', 'app/assets', 'app/license.md')
-tar('LICENSE', 'NOTICE')
-cpSync(join(srcDir, 'SOURCE'), join(dest, 'SOURCE'))
+await unpack(archive)
+for (const name of ['LICENSE', 'NOTICE', 'SOURCE']) {
+  cpSync(join(srcDir, name), join(dest, name))
+}
 
-console.log(`Unpacked ibisOffice ${VERSION} to ${dest}`)
+console.log(`Unpacked ibisOffice ${version} to ${dest}`)
