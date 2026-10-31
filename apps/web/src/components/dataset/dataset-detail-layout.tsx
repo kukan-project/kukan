@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
 import { Building2, Calendar, FolderOpen, Scale, Tag } from 'lucide-react'
 import { Badge, Separator } from '@kukan/ui'
-import { resolveLicenseLabel, type PackageState } from '@kukan/shared'
+import { officePreviewViewerSchema, resolveLicenseLabel, type PackageState } from '@kukan/shared'
 import { serverFetch, getCurrentUser } from '@/lib/server-api'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
@@ -169,6 +169,9 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
               initialResourceId={initialResourceId}
               canManage={canManage}
               notPublic={pkg.private || pkg.state === 'draft'}
+              officePreviewViewer={officePreviewViewerSchema.parse(
+                process.env.OFFICE_PREVIEW_VIEWER
+              )}
             />
           )}
         </section>

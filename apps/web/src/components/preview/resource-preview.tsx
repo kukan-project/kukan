@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import type { CsvDialect, ResourceSchema } from '@kukan/shared'
+import type { CsvDialect, OfficePreviewViewer, ResourceSchema } from '@kukan/shared'
 import {
   csvRecordLabels,
   dialectOf,
@@ -31,6 +31,7 @@ import { ZipPreview } from './zip-preview'
 import { ImagePreview } from './image-preview'
 import { DocumentTextPreview } from './document-text-preview'
 import { IchitaroPreview } from './ichitaro-preview'
+import { IbisOfficePreview } from './ibis-office-preview'
 
 const MarkdownDocument = dynamic(() => import('./markdown-document'), {
   ssr: false,
@@ -51,6 +52,8 @@ interface ResourcePreviewProps {
    * to show nothing (the viewer cannot read a file that is not public).
    */
   notPublic?: boolean
+  /** What draws an Office file's original; omitted → ibisOffice (ADR-065) */
+  officePreviewViewer?: OfficePreviewViewer
   /** The version's column schema, fetched once by the owner (tabular formats only) */
   schema?: ResourceSchema | null
   /** The resource's settled primary key, from the same read */
@@ -71,6 +74,7 @@ export function ResourcePreview({
   url,
   size,
   notPublic,
+  officePreviewViewer = 'ibis-office',
   schema,
   primaryKey,
 }: ResourcePreviewProps) {
@@ -112,16 +116,26 @@ export function ResourcePreview({
       <JsonPreview resourceId={resourceId} />
     )
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
-  if (isOfficeFormat(f))
-    return notPublic ? (
-      <DocumentTextPreview resourceId={resourceId} />
-    ) : (
+  if (f && isOfficeFormat(f)) {
+    // ibisOffice draws in the visitor's browser, from the file the visitor may
+    // read, so a private dataset's files are drawn too; it does not read DOC
+    const ibisOffice = officePreviewViewer === 'ibis-office'
+    if (ibisOffice ? f.toLowerCase() === 'doc' : notPublic)
+      return <DocumentTextPreview resourceId={resourceId} />
+    return (
       <DocumentPreview
         key={resourceId}
         resourceId={resourceId}
-        original={<OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />}
+        original={
+          ibisOffice ? (
+            <IbisOfficePreview key={f} resourceId={resourceId} format={f} size={size} />
+          ) : (
+            <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
+          )
+        }
       />
     )
+  }
   if (isIchitaroFormat(f))
     return (
       <DocumentPreview

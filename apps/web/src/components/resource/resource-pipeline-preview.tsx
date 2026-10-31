@@ -13,7 +13,12 @@ import {
   DialogTrigger,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isTableSourceFormat, type OdataKey, type ResourceSchema } from '@kukan/shared'
+import {
+  isTableSourceFormat,
+  type OdataKey,
+  type OfficePreviewViewer,
+  type ResourceSchema,
+} from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from '@/components/preview/resource-preview'
 import { ResourceFields, type ColumnRoleView } from './resource-fields'
@@ -34,6 +39,7 @@ interface ResourcePipelinePreviewProps {
   packageName?: string
   canManage?: boolean
   notPublic?: boolean
+  officePreviewViewer?: OfficePreviewViewer
 }
 
 /**
@@ -49,6 +55,7 @@ export function ResourcePipelinePreview({
   packageName,
   canManage,
   notPublic,
+  officePreviewViewer,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
   const router = useRouter()
@@ -152,6 +159,7 @@ export function ResourcePipelinePreview({
         url={url}
         size={size}
         notPublic={notPublic}
+        officePreviewViewer={officePreviewViewer}
         schema={schemaData?.schema}
         primaryKey={schemaData?.primaryKey}
       />

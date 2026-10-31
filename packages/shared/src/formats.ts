@@ -249,6 +249,11 @@ function startOf(head: Uint8Array): string {
   return String.fromCharCode(...head.subarray(0, FORMAT_SIGNATURE_BYTES))
 }
 
+/** Whether these bytes open with this signature. */
+export function hasSignature(head: Uint8Array, signature: string): boolean {
+  return startOf(head).startsWith(signature)
+}
+
 /**
  * Whether these bytes cannot be what the resource says they are.
  *

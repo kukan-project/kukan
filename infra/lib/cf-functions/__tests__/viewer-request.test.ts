@@ -26,14 +26,19 @@ function makeHandler(
 
 function event(
   ip: string,
-  opts: { auth?: string; cookies?: Record<string, unknown>; headers?: Record<string, string> } = {}
+  opts: {
+    auth?: string
+    cookies?: Record<string, unknown>
+    headers?: Record<string, string>
+    uri?: string
+  } = {}
 ): unknown {
   const headers: Record<string, { value: string }> = {}
   for (const [k, v] of Object.entries(opts.headers ?? {})) headers[k] = { value: v }
   if (opts.auth) headers.authorization = { value: opts.auth }
   return {
     viewer: { ip },
-    request: { cookies: opts.cookies ?? {}, headers },
+    request: { uri: opts.uri ?? '/', cookies: opts.cookies ?? {}, headers },
   }
 }
 
@@ -99,6 +104,26 @@ describe('viewer-request access control', () => {
     })
     it('returns 401 (not 403) for a denied IP without credentials', () => {
       expect(h(event('8.8.8.8')).statusCode).toBe(401)
+    })
+  })
+
+  describe('the ibisOffice app (ADR-065)', () => {
+    const h = makeHandler(['203.0.113.0/24'], { username: 'preview', password: 'secret' })
+    const app = '/vendor/ibis-office/1.2.3/pkg/ibis_office_app.js'
+
+    it('forwards it without credentials, as a sandboxed frame asks for it', () => {
+      expect(forwarded(h(event('8.8.8.8', { uri: app })))).toBe(true)
+    })
+    it.each([
+      '/vendor/ibis-office/../../api/v1/users',
+      '/vendor/ibis-office/%2e%2e/%2e%2e/api/v1/users',
+      '/vendor/ibis-office/..%2f..%2fapi/v1/users',
+      '/vendor/ibis-office/..\\..\\api/v1/users',
+    ])('gates %s, which the origin could resolve outside it', (uri) => {
+      expect(h(event('8.8.8.8', { uri })).statusCode).toBe(401)
+    })
+    it('gates the rest of the vendored files', () => {
+      expect(h(event('8.8.8.8', { uri: '/vendor/ezpzjtd/ezpz.wasm' })).statusCode).toBe(401)
     })
   })
 

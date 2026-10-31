@@ -7,8 +7,9 @@
  * written. Only the app's pkg/, assets/ and license.md are unpacked: the
  * playground's index.html and main.js would open any `?open=` URL on this
  * origin, outside the sandbox. LICENSE, NOTICE and SOURCE, which the archive
- * does not hold, go beside them. public/vendor/ibis-office/ is a generated
- * directory (gitignored), reset on each run. Run via the dev/build scripts.
+ * does not hold, and KUKAN's boot page (boot/, decision 2) go beside them.
+ * public/vendor/ibis-office/ is a generated directory (gitignored), reset on
+ * each run. Run via the dev/build scripts.
  */
 
 import { createHash } from 'node:crypto'
@@ -96,5 +97,6 @@ await unpack(archive)
 for (const name of ['LICENSE', 'NOTICE', 'SOURCE']) {
   cpSync(join(srcDir, name), join(dest, name))
 }
+cpSync(join(srcDir, 'boot'), dest, { recursive: true })
 
 console.log(`Unpacked ibisOffice ${version} to ${dest}`)

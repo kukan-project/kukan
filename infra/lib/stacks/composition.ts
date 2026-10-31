@@ -254,6 +254,10 @@ export function composeSite(
 
   // Set only to turn it off, so a site left on keeps the task definition it had
   if (!config.generatorMeta) webService.addEnvironment('GENERATOR_META_ENABLED', 'false')
+  // Likewise set only away from the default
+  if (config.officePreviewViewer !== 'ibis-office') {
+    webService.addEnvironment('OFFICE_PREVIEW_VIEWER', config.officePreviewViewer)
+  }
 
   if (config.nameSiteInUserAgent) {
     workerService.addEnvironment(

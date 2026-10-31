@@ -31,6 +31,21 @@ export const DEFAULT_OPENSEARCH_INDEX_PREFIX = 'kukan'
 /** Optional value where '' means unset — compose `${VAR:-}` injects empty strings */
 const emptyAsUndefined = (v: unknown) => (v === '' ? undefined : v)
 
+/** What draws an Office file's original on its resource page (ADR-065). */
+export const OFFICE_PREVIEW_VIEWERS = ['ibis-office', 'office-online'] as const
+export type OfficePreviewViewer = (typeof OFFICE_PREVIEW_VIEWERS)[number]
+
+/**
+ * `ibis-office` draws it in the viewer's browser, so a private file and a
+ * closed network are no obstacle; `office-online` hands the file's URL to
+ * Microsoft's viewer. Exported for the web, which reads this one
+ * variable rather than `loadEnv()`, as with the generator meta.
+ */
+export const officePreviewViewerSchema = z.preprocess(
+  emptyAsUndefined,
+  z.enum(OFFICE_PREVIEW_VIEWERS).default('ibis-office')
+)
+
 const parseJsonOr = (v: string): unknown => {
   try {
     return JSON.parse(v)
@@ -230,6 +245,7 @@ const envObject = z.object({
   ),
 
   GENERATOR_META_ENABLED: generatorMetaEnabledSchema,
+  OFFICE_PREVIEW_VIEWER: officePreviewViewerSchema,
 
   // GA4 Analytics (optional — dashboard disabled when not set)
   GA4_PROPERTY_ID: z.string().optional(),

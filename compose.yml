@@ -40,6 +40,8 @@ x-app-environment: &app-environment
   USER_AGENT_URL: ${USER_AGENT_URL:-}
   # false = no <meta name="generator" content="KUKAN"> on the pages (ADR-070)
   GENERATOR_META_ENABLED: ${GENERATOR_META_ENABLED:-true}
+  # office-online = Office originals in Microsoft's viewer instead of ibisOffice (ADR-065)
+  OFFICE_PREVIEW_VIEWER: ${OFFICE_PREVIEW_VIEWER:-ibis-office}
   OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
   # true = resource URLs on private networks are refused too (see .env.example)
   FETCH_DENY_PRIVATE_NETWORKS: ${FETCH_DENY_PRIVATE_NETWORKS:-false}

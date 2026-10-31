@@ -52,15 +52,17 @@ const nextConfig: NextConfig = {
   ],
   headers: () => [
     { source: '/(.*)', headers: securityHeaders },
-    // The ibisOffice app (ADR-065), under a directory named by its version, so a file
-    // there never changes (SOURCE beside it may). It is loaded by a sandboxed frame,
+    // The ibisOffice app and its boot page (ADR-065) are loaded by a sandboxed frame,
     // whose origin is opaque: its requests are cross-origin and need the CORS header.
     {
+      source: '/vendor/ibis-office/:path*',
+      headers: [{ key: 'Access-Control-Allow-Origin', value: '*' }],
+    },
+    // The app's own files sit under a directory named by its version, so they never
+    // change (KUKAN's boot page and SOURCE beside them may)
+    {
       source: '/vendor/ibis-office/:version/:dir(pkg|assets)/:path*',
-      headers: [
-        { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        { key: 'Access-Control-Allow-Origin', value: '*' },
-      ],
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
     },
   ],
   // Brand alias for both bundlers (ADR-042). Empty for the default brand.

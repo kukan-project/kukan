@@ -11,7 +11,7 @@ with the web app and draw the original in the viewer's browser**, through WebGPU
 that is unavailable. The server opens no document, and nothing is added to the worker or to the
 artifacts. The web app hands the bytes from `/preview` to ibisOffice, which runs in a sandboxed
 iframe (an opaque origin) so that it cannot reach KUKAN's cookies, API or the parent page. A document too heavy to draw is
-stopped inside ibisOffice by a ceiling on its WASM memory, and the page falls back to extracted
+stopped inside ibisOffice by a ceiling on its WASM memory, and the page points to the extracted
 text. The "Original" tab of the five Office formats is ibisOffice by default; only a site that sets the
 environment variable `OFFICE_PREVIEW_VIEWER` (`ibis-office` by default) to `office-online` keeps
 Office Online Viewer as today. DOC, which ibisOffice cannot open, gets extracted text and the
@@ -550,8 +550,11 @@ without `eval`. The defence therefore rests not on a short import list but on th
   `'self'`. CORS only stops the response being read; the request still reaches KUKAN, with the
   session cookie if that cookie is SameSite=None (§Measurements). KUKAN's session cookie is Better
   Auth's default Lax today, but this does not rely on it. DNS prefetching is turned off too
-  (`X-DNS-Prefetch-Control: off`). `<A>` stands for the boot page's path and
-  `/vendor/ibis-office/<version>/`
+  (`X-DNS-Prefetch-Control: off`). `<A>` stands for `/vendor/ibis-office/<version>/` (the boot
+  page sits in the same directory as ibisOffice). A CSP source needs the host, so it is written
+  with the site's public origin (`BETTER_AUTH_URL`) and the request's `Host` (for a site opened
+  directly under another name, such as its address). `X-Forwarded-Host` is not used: CloudFront
+  passes a viewer's value on, which would put someone else's host in the HTML cache
 
   ```
   sandbox allow-scripts; default-src 'none'; script-src <A> 'wasm-unsafe-eval';
@@ -591,7 +594,11 @@ without `eval`. The defence therefore rests not on a short import list but on th
   Downloads use KUKAN's resource page
 - `main.js`'s WebGPU check (stopping when `navigator.gpu` is absent) is not carried over.
   ibisOffice switches to WebGL2 by itself when WebGPU is unavailable. If neither works and `run()`
-  fails, the boot page tells its parent, which switches to the extracted-text tab
+  fails, the boot page tells its parent, which says in the "Original" tab that it could not be
+  drawn and points to the extracted text (as the Ichitaro original does; switching tabs silently
+  would leave no reason for the original's disappearance). Once it has drawn, only a WASM trap
+  (out of memory, a panic) counts as failure: copying fails, as the iframe has no clipboard
+  permission, and must not take away an original already drawn
 - **What remains.** WebRTC is removed, and fetching it again from a child iframe's fresh realm is
   blocked by SecurityError in Chrome (§Measurements). Other browsers' behaviour and channels not yet
   known are accepted, since they presuppose a full compromise of the WASM; what could leave is the
@@ -630,7 +637,7 @@ upgrade (public DOC files lose their original view), which the release notes mus
   Counting all of that before drawing is not possible, so KUKAN does not try. Instead, before
   assembling the WASM, the boot page writes a maximum into its memory declaration (it is wasm32 and
   declares none). Whatever the cause — images, fonts, content weight — the heap cannot grow past it;
-  ibisOffice fails inside and the parent falls back to extracted text. In §Measurements, a 64 MiB
+  ibisOffice fails inside and the parent points to the extracted text. In §Measurements, a 64 MiB
   ceiling stopped a 430k-cell sheet with a `RuntimeError` without taking the tab down, and at
   256 MiB the heavy slide deck (545 MB without a ceiling) still fitted and drew. The ceiling is set
   around 1 GiB, measured during implementation, and is a code constant
@@ -669,7 +676,9 @@ upgrade (public DOC files lose their original view), which the release notes mus
     pressing it
   - The boot page reports the end of drawing to the parent when it sees the first frame after
     `run()`. If no report comes within a set time (around 30 s), the parent removes the iframe and
-    switches to extracted text, leaving no mark (nothing crashed)
+    points to the extracted text, leaving no mark (nothing crashed)
+  - That time is counted only while the iframe is in sight. The browser stops drawing in a hidden
+    tab or a frame scrolled away, so a missing report there says nothing about the document
   - The mark is also removed when KUKAN itself removes the iframe before drawing finishes (moving
     to another resource or tab) and when the page is left (`pagehide`); neither happens on a crash
   - So that two tabs showing the same document do not confuse each other, each tab keeps its own
@@ -683,8 +692,8 @@ upgrade (public DOC files lose their original view), which the release notes mus
     it. The mark expires after a day, after which the original is tried again. A browser without
     usable storage works without marks. The mark lives only in that viewer's browser; nothing is
     recorded on the server
-- The WASM is loaded only when the "Original" tab is opened (16 MB the first time, then from the
-  parent's cache)
+- The WASM is loaded only when the "Original" tab comes into view (16 MB the first time, then from
+  the parent's cache), and after the boot page has reported, so not for a frame the CSP blocked
 - **Only one ibisOffice runs at a time.** The dataset page keeps every resource preview and every
   tab once opened (so as not to reload Office Online Viewer). ibisOffice uses hundreds of MB to
   1 GB each, so it is the exception: moving to another resource or tab removes its iframe and
@@ -746,8 +755,8 @@ LibreOffice is not added to the worker image, and the implementation that assume
    measurement during implementation. What ibisOffice hands to the browser's image decoder and GPU
    memory are not covered and fall to the crash marks (decision 3). If crashing documents become
    noticeable, look for another means
-5. **Cost on opening, and devices**: opening a dataset whose first resource is an XLS already costs
-   a 16 MB transfer and hundreds of MB of memory. On smartphones (per-tab memory limits) or with
+5. **Cost on opening, and devices**: reaching the original of a dataset whose first resource is an
+   XLS costs a 16 MB transfer and hundreds of MB of memory. On smartphones (per-tab memory limits) or with
    data saving on (Save-Data), consider opening the original only when "Original" is pressed.
    Smartphones were not measured. If the first WASM transfer (16.4 MB gzipped) becomes a problem,
    precompress it (10.1 MB with brotli at quality 11; zstd too where CloudFront is not in front, as

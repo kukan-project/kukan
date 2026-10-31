@@ -14,7 +14,7 @@ import { DateTime, useFormattedDateTime } from '@/components/date-time'
 import { VersionHistory } from './version-history'
 import { externalHttpUrl } from '@/lib/safe-url'
 import { LinkHealthWarning } from './link-health-warning'
-import { sectionLayout, type ResourceSummaryMeta } from '@kukan/shared'
+import { sectionLayout, type OfficePreviewViewer, type ResourceSummaryMeta } from '@kukan/shared'
 import { ResourceAbstract } from './resource-abstract'
 import { indentClass, headingTag } from '@/lib/resource-sections'
 
@@ -51,6 +51,8 @@ interface ResourceExplorerProps {
   canManage?: boolean
   /** Private or draft: its files are kept away from third-party viewers */
   notPublic?: boolean
+  /** What draws an Office file's original (OFFICE_PREVIEW_VIEWER, ADR-065) */
+  officePreviewViewer?: OfficePreviewViewer
 }
 
 /**
@@ -84,6 +86,7 @@ export function ResourceExplorer({
   initialResourceId,
   canManage,
   notPublic,
+  officePreviewViewer,
 }: ResourceExplorerProps) {
   const t = useTranslations('resource')
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -293,6 +296,7 @@ export function ResourceExplorer({
                   packageName={packageName}
                   canManage={canManage}
                   notPublic={notPublic}
+                  officePreviewViewer={officePreviewViewer}
                 />
                 <VersionHistory resourceId={r.id} />
               </div>

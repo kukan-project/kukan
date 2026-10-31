@@ -20,6 +20,15 @@ vi.mock('@/components/data-explorer/data-explorer', () => ({
   ),
 }))
 
+// ibisOffice runs in a sandboxed frame a browser draws; its own tests cover it
+vi.mock('../ibis-office-preview', () => ({
+  IbisOfficePreview: ({ resourceId, format }: { resourceId: string; format: string }) => (
+    <div data-testid="ibis-office-preview">
+      ibisOffice {format} {resourceId}
+    </div>
+  ),
+}))
+
 // Mock JsonPreview to avoid fetch dependency in tests
 vi.mock('../json-preview', () => ({
   JsonPreview: ({ resourceId }: { resourceId: string }) => (
@@ -174,9 +183,43 @@ describe('ResourcePreview', () => {
     })
   })
 
+  describe('ibisOffice preview (the default, ADR-065)', () => {
+    it('draws the original of each format ibisOffice reads, beside its extracted text', () => {
+      for (const format of ['XLSX', 'XLS', 'DOCX', 'PPTX', 'PPT']) {
+        const { unmount } = render(<ResourcePreview resourceId="r1" format={format} />)
+        expect(screen.getByText('Original')).toBeInTheDocument()
+        expect(screen.getByText('Extracted text')).toBeInTheDocument()
+        expect(screen.getByTestId('ibis-office-preview')).toHaveTextContent(
+          `ibisOffice ${format} r1`
+        )
+        unmount()
+      }
+    })
+
+    it('draws a non-public dataset’s file too: it never leaves the visitor’s browser', () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" notPublic />)
+      expect(screen.getByTestId('ibis-office-preview')).toBeInTheDocument()
+    })
+
+    it('offers only the extracted text of a DOC, which ibisOffice does not read', async () => {
+      mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
+      render(<ResourcePreview resourceId="r1" format="DOC" />)
+      await waitFor(() =>
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/document-text')
+      )
+      expect(screen.queryByText('Original')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
+    })
+
+    it('never hands a file to Microsoft’s viewer', () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" url="https://example.com/data.xlsx" />)
+      expect(document.querySelector('iframe')).toBeNull()
+    })
+  })
+
   describe('Office Online preview', () => {
     it('should show local-unavailable for uploaded XLSX on localhost', () => {
-      render(<ResourcePreview resourceId="r1" format="XLSX" />)
+      render(<ResourcePreview resourceId="r1" format="XLSX" officePreviewViewer="office-online" />)
       expect(
         screen.getByText(
           'Office preview is not available in local environments. Download the file to view it.'
@@ -185,7 +228,7 @@ describe('ResourcePreview', () => {
     })
 
     it('should show local-unavailable for uploaded DOCX on localhost', () => {
-      render(<ResourcePreview resourceId="r1" format="DOCX" />)
+      render(<ResourcePreview resourceId="r1" format="DOCX" officePreviewViewer="office-online" />)
       expect(
         screen.getByText(
           'Office preview is not available in local environments. Download the file to view it.'
@@ -194,7 +237,14 @@ describe('ResourcePreview', () => {
     })
 
     it('should render Office Online iframe when external URL is provided', () => {
-      render(<ResourcePreview resourceId="r1" format="XLSX" url="https://example.com/data.xlsx" />)
+      render(
+        <ResourcePreview
+          resourceId="r1"
+          format="XLSX"
+          url="https://example.com/data.xlsx"
+          officePreviewViewer="office-online"
+        />
+      )
       const iframe = document.querySelector('iframe')
       expect(iframe).not.toBeNull()
       expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')
@@ -204,7 +254,14 @@ describe('ResourcePreview', () => {
     })
 
     it('should render Office Online iframe for DOC with external URL', () => {
-      render(<ResourcePreview resourceId="r1" format="DOC" url="https://example.com/report.doc" />)
+      render(
+        <ResourcePreview
+          resourceId="r1"
+          format="DOC"
+          url="https://example.com/report.doc"
+          officePreviewViewer="office-online"
+        />
+      )
       const iframe = document.querySelector('iframe')
       expect(iframe).not.toBeNull()
       expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')
@@ -218,6 +275,7 @@ describe('ResourcePreview', () => {
           format="XLSX"
           url="https://example.com/data.xlsx"
           notPublic
+          officePreviewViewer="office-online"
         />
       )
       await waitFor(() =>
@@ -228,7 +286,7 @@ describe('ResourcePreview', () => {
     })
 
     it('should route XLS to Office Online preview (not generic not-available)', () => {
-      render(<ResourcePreview resourceId="r1" format="XLS" />)
+      render(<ResourcePreview resourceId="r1" format="XLS" officePreviewViewer="office-online" />)
       expect(screen.queryByText('Preview is not available for this format')).not.toBeInTheDocument()
     })
 
@@ -247,7 +305,9 @@ describe('ResourcePreview', () => {
 
     it('offers the extracted text of the formats before 2007, as of the ones after', () => {
       for (const format of ['XLS', 'DOC', 'PPT']) {
-        const { unmount } = render(<ResourcePreview resourceId="r1" format={format} />)
+        const { unmount } = render(
+          <ResourcePreview resourceId="r1" format={format} officePreviewViewer="office-online" />
+        )
         expect(screen.getByText('Original')).toBeInTheDocument()
         expect(screen.getByText('Extracted text')).toBeInTheDocument()
         unmount()

@@ -7,7 +7,7 @@ import type { Construct } from 'constructs'
 // Resolves to dist/ — the cdk.json app command builds @kukan/shared first so
 // synth works on a clean checkout (the pipeline runs no workspace build)
 import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
-import { isTimeZone } from '@kukan/shared/env'
+import { OFFICE_PREVIEW_VIEWERS, isTimeZone, type OfficePreviewViewer } from '@kukan/shared/env'
 import { RDS_CA_CERTIFICATES } from './types.js'
 import type {
   BedrockConfig,
@@ -297,6 +297,13 @@ export function loadConfig(
     )
   }
   const generatorMeta = flag('generatorMeta') ?? env.generatorMeta ?? true
+  const officePreviewViewer =
+    ctx<OfficePreviewViewer>('officePreviewViewer') ?? env.officePreviewViewer ?? 'ibis-office'
+  if (!OFFICE_PREVIEW_VIEWERS.includes(officePreviewViewer)) {
+    throw new Error(
+      `officePreviewViewer "${officePreviewViewer}" is not one of ${OFFICE_PREVIEW_VIEWERS.join(', ')}`
+    )
+  }
   const domainName = ctx<string>('domainName') ?? env.domainName
   const hostedZoneId = ctx<string>('hostedZoneId') ?? env.hostedZoneId
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
@@ -363,6 +370,7 @@ export function loadConfig(
     enableIpv6Dns,
     nameSiteInUserAgent,
     generatorMeta,
+    officePreviewViewer,
     domainName,
     timeZone,
     hostedZoneId,

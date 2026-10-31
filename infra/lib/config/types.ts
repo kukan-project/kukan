@@ -1,3 +1,5 @@
+import type { OfficePreviewViewer } from '@kukan/shared/env'
+
 /**
  * The shapes of an environment entry (config/environments.ts, ADR-031), a site
  * entry (ADR-041), and the fully resolved configuration the stacks consume.
@@ -179,6 +181,12 @@ export interface EnvironmentConfig {
    */
   generatorMeta?: boolean
   /**
+   * What draws an Office file's original on the site's resource pages
+   * (OFFICE_PREVIEW_VIEWER, ADR-065). Omit → `ibis-office`, in the viewer's
+   * browser; `office-online` → Microsoft's Office Online Viewer.
+   */
+  officePreviewViewer?: OfficePreviewViewer
+  /**
    * Bedrock embedding for semantic search (ADR-034). Omit → enabled with Titan v2
    * defaults; `false` → AI disabled (AI_TYPE=none). No console setup needed —
    * serverless foundation models auto-enable on first invocation; the task-role
@@ -306,6 +314,12 @@ export interface SiteConfig {
    */
   generatorMeta?: boolean
   /**
+   * What draws an Office file's original on the site's resource pages
+   * (OFFICE_PREVIEW_VIEWER, ADR-065). Omit → `ibis-office`, in the viewer's
+   * browser; `office-online` → Microsoft's Office Online Viewer.
+   */
+  officePreviewViewer?: OfficePreviewViewer
+  /**
    * Listener rule priority on the environment's shared ALB (ADR-049). Omit →
    * derived from the site name (a stable hash in 1000–49999), so removing or
    * reordering sites never renumbers the others. Set it (1–999 — the derived
@@ -364,6 +378,8 @@ export interface KukanConfig extends ScaleComputed {
   nameSiteInUserAgent: boolean
   /** Whether the pages carry the generator meta (GENERATOR_META_ENABLED). */
   generatorMeta: boolean
+  /** What draws an Office file's original (OFFICE_PREVIEW_VIEWER). */
+  officePreviewViewer: OfficePreviewViewer
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string

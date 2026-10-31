@@ -21,7 +21,7 @@ function handler(event) {
   delete event.request.headers['x-cache-bypass']
 
   // --- Access control: IP allowlist OR Basic auth ---
-  if (ALLOWED.length || BASIC_AUTH) {
+  if ((ALLOWED.length || BASIC_AUTH) && !isIbisOffice(event.request.uri)) {
     var passIp = false
     if (ALLOWED.length) {
       var ip = event.viewer.ip
@@ -102,6 +102,14 @@ function resolveLocale(req) {
     }
   }
   return DEFAULT_LOCALE
+}
+
+// The ibisOffice app (ADR-065): a sandboxed frame, whose origin is opaque,
+// loads it without the Basic auth credentials, and the files are upstream's
+// published build and a static page, the same for every site. No dot segment
+// or escape, which the origin could resolve to a path outside it.
+function isIbisOffice(uri) {
+  return uri.indexOf('/vendor/ibis-office/') === 0 && !/\.\.|%|\\/.test(uri)
 }
 
 // --- CIDR matching (IPv4 + IPv6) ---
