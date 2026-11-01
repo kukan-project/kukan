@@ -8,6 +8,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { AppContext } from '../context'
 import { createMcpServer } from '../mcp/server'
 import { catalogLanguage } from '../services/catalog-language'
+import { clientIp } from '../middleware/client-ip'
 
 export const mcpRouter = new Hono<{ Variables: AppContext }>()
 
@@ -31,7 +32,7 @@ mcpRouter.post('/', async (c) => {
     .catch(() => undefined)
   const language = initializes(body) ? await catalogLanguage(c.get('db')) : null
   // AppContext is a structural superset of McpContext
-  const server = createMcpServer(c.var, language)
+  const server = createMcpServer({ ...c.var, clientIp: clientIp(c) }, language)
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // Stateless mode

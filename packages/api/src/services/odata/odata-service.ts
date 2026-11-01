@@ -27,12 +27,14 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ResourceService } from '../resource-service'
 import { PipelineService, isQueryable } from '../pipeline/pipeline-service'
 import { Semaphore } from '../concurrency/semaphore'
+import { CallerLimit, callerKey } from '../concurrency/caller-limit'
 import type { EdmModel, EdmRefusal } from './edm'
 import { feedModel, feedRefusal, isEdmRefusal } from './feed-eligibility'
 import { capacity } from './capacity'
 import { createFeedPool, type FeedLease } from './feed-pool'
 import { prepareFeedInstance } from './session'
 import {
+  ODATA_CALLER_MAX,
   ODATA_INSTANCE_IDLE_MS,
   ODATA_INSTANCE_MAX_AGE_MS,
   ODATA_MEMORY_LIMIT_BYTES,
@@ -123,9 +125,22 @@ function timeoutError(): RequestTimeoutError {
  * affords (`capacity`) — bounded by the page, not by the file, which is why it
  * is given the smaller budget.
  */
+/**
+ * A refusal's Retry-After: a page holds a slot for at most ODATA_WRITE_TIMEOUT_MS
+ * and usually for a fraction of a second, so the wait is a back-off, not a bound.
+ */
+const ODATA_RETRY_AFTER_S = 5
+
 const odataSemaphore = new Semaphore(capacity.slots, ODATA_QUEUE_MAX, ODATA_QUEUE_WAIT_MS, {
   full: 'The feed is busy; please retry shortly',
+  retryAfterSeconds: ODATA_RETRY_AFTER_S,
 })
+
+/** Each address's share of the feed and its queue (config §ODATA_CALLER_MAX). */
+const odataCallerLimit = new CallerLimit(
+  'Too many pages are being read from this address at once; wait for them to finish',
+  ODATA_RETRY_AFTER_S
+)
 
 const feedPool = createFeedPool({
   prepare: prepareFeedInstance,
@@ -308,13 +323,25 @@ export class OdataService {
    * the caller has written a byte, so a failure is still a status code rather
    * than a truncated body. **The caller must call `close()`**: the slot and the
    * connection are held until it does.
+   *
+   * `ip` is where the request came from (`middleware/client-ip.ts`): the feed
+   * has no signed-in callers, so the address is what one caller's pages are
+   * counted under. Without one, the page is not counted.
    */
   async openPage(
     feed: Extract<OdataFeed, { ok: true }>,
-    opts: { skip: number; limit: number | null; signal?: AbortSignal }
+    opts: { skip: number; limit: number | null; signal?: AbortSignal; ip?: string }
   ): Promise<PageReader> {
     const previewKey = feed.previewKey
-    await odataSemaphore.acquire(opts.signal)
+    // Counted before the queue, so a caller's share covers its waiting pages
+    const key = callerKey({ ip: opts.ip })
+    const releaseCaller = key ? odataCallerLimit.acquire(key, ODATA_CALLER_MAX) : () => {}
+    try {
+      await odataSemaphore.acquire(opts.signal)
+    } catch (err) {
+      releaseCaller()
+      throw err
+    }
     const startedAt = Date.now()
     let lease: FeedLease | undefined
     let timer: NodeJS.Timeout | undefined
@@ -330,6 +357,7 @@ export class OdataService {
       // counted against the next page's memory limit.
       await lease?.release(drained && !timedOut)
       odataSemaphore.release()
+      releaseCaller()
       // One line per request, with no row content: a full extract comes
       // through here once per page (ADR-055 §6).
       this.log.info(

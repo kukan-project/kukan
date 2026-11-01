@@ -77,7 +77,11 @@ export class PayloadTooLargeError extends KukanError {
 }
 
 export class TooManyRequestsError extends KukanError {
-  constructor(message = 'Too many requests') {
+  constructor(
+    message = 'Too many requests',
+    /** Seconds the response's Retry-After advises, when the refusal is a momentary one. */
+    readonly retryAfterSeconds?: number
+  ) {
     super(message, 'TOO_MANY_REQUESTS', 429)
   }
 }

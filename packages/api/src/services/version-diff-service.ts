@@ -29,6 +29,7 @@ import {
 import { currentLakeCatalog } from './lake/lake-catalog'
 import { queueLakeRebuild } from './lake/lake-rebuild'
 import { scanCatalog } from './query/lake-scan'
+import type { Caller } from './query/duckdb-slot'
 
 /**
  * Catalogs a diff has downloaded, by key (ADR-067 §3). A key is never written
@@ -104,7 +105,8 @@ export class VersionDiffService {
     resourceId: string,
     toVersion: number,
     fromVersion?: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    caller?: Caller
   ): Promise<VersionDiffView> {
     // The two ends and the catalog they are numbered in, read as one: a purge
     // rebuilds the catalog and renumbers the versions in one commit, and
@@ -170,7 +172,8 @@ export class VersionDiffService {
         // **Only when both ends were loaded under the same key** (spec §7), through
         // the function the ingest asks the same question with.
         sharedKeyColumns(keyColumnsOf(from.keyColumns), keyColumnsOf(to.keyColumns)),
-        signal
+        signal,
+        caller
       )
     } catch (err) {
       // Stopped or turned away by this request's own bounds: nothing about the catalog
@@ -200,7 +203,8 @@ export class VersionDiffService {
     fromSnapshot: number,
     toSnapshot: number,
     key: string[] | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    caller?: Caller
   ): Promise<VersionDiff> {
     return scanCatalog(
       this.lake,
@@ -208,7 +212,8 @@ export class VersionDiffService {
       { catalogKey, cache: catalogCache },
       'Diff',
       (session) => diffVersions(session, { table, fromSnapshot, toSnapshot, key }),
-      signal
+      signal,
+      caller
     )
   }
 }

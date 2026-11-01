@@ -177,6 +177,7 @@ export const testEnv = {
   TIME_ZONE: 'Asia/Tokyo',
   BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long!',
   BETTER_AUTH_URL: 'http://localhost:3000',
+  CLIENT_IP_HEADER: 'x-forwarded-for',
 } as unknown as Env
 
 /** Default sysadmin user for tests. Set `user: null` to test unauthenticated access. */

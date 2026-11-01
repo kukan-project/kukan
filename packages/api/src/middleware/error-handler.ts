@@ -102,6 +102,13 @@ export const errorHandler: ErrorHandler = (err, c) => {
   }
 
   if (reported instanceof KukanError || isKukanShaped(reported)) {
+    // A 429 for a share taken for the moment — a slot, a queue, a caller's
+    // own request still running — says how soon to retry; one for a spent
+    // window (the AI suggestions) does not, and carries no such advice
+    const retryAfter = (reported as { retryAfterSeconds?: unknown }).retryAfterSeconds
+    if (reported.status === 429 && typeof retryAfter === 'number') {
+      c.header('Retry-After', String(retryAfter))
+    }
     return c.json(
       {
         type: reported.problem ? problemTypeUri(reported.problem) : 'about:blank',

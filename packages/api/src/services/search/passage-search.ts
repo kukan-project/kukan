@@ -132,6 +132,8 @@ const passageSemaphore = new Semaphore(
   {
     full: 'Too many passage searches at once; please retry shortly',
     timedOut: 'Timed out waiting to search passages; please retry shortly',
+    // A turn reads a handful of documents' text: seconds at most
+    retryAfterSeconds: 1,
   }
 )
 

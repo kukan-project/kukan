@@ -40,6 +40,8 @@ interface McpContext {
   /** Runtime settings the hybrid search reads (ADR-036) */
   settings?: SystemSettingService
   user?: { id: string; sysadmin: boolean }
+  /** Where an anonymous request came from, for the query path's per-caller share */
+  clientIp?: string
 }
 
 export function createMcpServer(ctx: McpContext, language: CatalogLanguage | null): McpServer {
@@ -51,7 +53,12 @@ export function createMcpServer(ctx: McpContext, language: CatalogLanguage | nul
   registerDatasetTools(server, ctx)
   registerResourceTools(server, { db: ctx.db, user: ctx.user, env: ctx.env, ai: ctx.ai })
   registerCatalogTools(server, { db: ctx.db, user: ctx.user })
-  registerQueryTools(server, { db: ctx.db, storage: ctx.storage, user: ctx.user })
+  registerQueryTools(server, {
+    db: ctx.db,
+    storage: ctx.storage,
+    user: ctx.user,
+    clientIp: ctx.clientIp,
+  })
   registerDocumentTools(server, ctx)
 
   return server

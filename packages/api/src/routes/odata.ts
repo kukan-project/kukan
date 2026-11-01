@@ -30,6 +30,7 @@ import {
   feedServiceRoot,
 } from '@kukan/shared'
 import { publicCache } from '../middleware/cache-control'
+import { clientIp } from '../middleware/client-ip'
 import { OdataService, type OdataFeed } from '../services/odata/odata-service'
 import { FEED_REFUSAL_REASON } from '../services/odata/feed-eligibility'
 import { buildMetadataXml, toEdmValue, type EdmModel } from '../services/odata/edm'
@@ -187,10 +188,11 @@ function odataHandler(
         // A handler may already have marked the response cacheable before the
         // failure — a refusal must never inherit that.
         c.header('Cache-Control', 'private, no-cache')
-        // A refusal for want of a slot is temporary, and says so: a page holds
-        // one for at most ODATA_WRITE_TIMEOUT_MS and usually for a fraction of
-        // a second, so the wait is a back-off rather than a bound.
-        if (err.status === 429) c.header('Retry-After', '5')
+        // A refusal for want of a slot or a share is temporary, and says so
+        const retryAfter = (err as { retryAfterSeconds?: unknown }).retryAfterSeconds
+        if (err.status === 429 && typeof retryAfter === 'number') {
+          c.header('Retry-After', String(retryAfter))
+        }
         return c.json(odataError(err.code, err.message), err.status as ContentfulStatusCode)
       }
       throw err
@@ -323,7 +325,12 @@ odataRouter.get(
     const page =
       top === 0
         ? null
-        : await service.openPage(feed, { skip: offset, limit: top, signal: c.req.raw.signal })
+        : await service.openPage(feed, {
+            skip: offset,
+            limit: top,
+            signal: c.req.raw.signal,
+            ip: clientIp(c),
+          })
 
     c.header('Content-Type', ODATA_JSON)
     // One timer for the whole response rather than one per write. A caller that

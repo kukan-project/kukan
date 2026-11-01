@@ -8,6 +8,7 @@ import { receiveMultipartFile } from '../streams/multipart-file'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { webLakeConfig } from '../services/query/lake-scan'
+import { callerOf, clientIp } from '../middleware/client-ip'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
@@ -734,7 +735,10 @@ resourcesRouter.post(
     const id = c.req.param('id')
     const { sql } = c.req.valid('json')
     const service = new QueryService(c.get('db'), c.get('storage'), c.get('logger'))
-    const result = await service.query(id, sql, c.get('user'), c.req.raw.signal)
+    const result = await service.query(id, sql, c.get('user'), {
+      signal: c.req.raw.signal,
+      ip: clientIp(c),
+    })
     return c.json({ id, ...result })
   }
 )
@@ -791,7 +795,7 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   // The request's own signal: a browser that hangs up (a page left, or dev's
   // double-fired fetch discarding its first attempt) must not keep scanning
   // both snapshots and holding the one DuckDB slot the live request needs.
-  const view = await service.diff(id, version, from, c.req.raw.signal)
+  const view = await service.diff(id, version, from, c.req.raw.signal, callerOf(c))
   // Held briefly, because this is the most expensive GET here and the UI
   // re-expands the same diff as the user works. Not `immutable` for a day, which
   // is what it was: a snapshot is written once and never changes, but purging a
@@ -1123,7 +1127,7 @@ resourcesRouter.post(
       // The caller's own abort, like a query and a diff: a picker that changes
       // re-fires this, and the abandoned scan must not hold the one slot the
       // live request needs.
-      { lake: webLakeConfig(c.get('env')), signal: c.req.raw.signal }
+      { lake: webLakeConfig(c.get('env')), signal: c.req.raw.signal, caller: callerOf(c) }
     )
     return c.json({ id, ...result })
   }

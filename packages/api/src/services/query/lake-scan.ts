@@ -23,7 +23,7 @@ import type {
 import { lakeConfigFromEnv, openBucketSession, openLakeCatalogReader } from '@kukan/lake'
 import type { Env } from '@kukan/shared'
 import { RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
-import { withDuckdbSlot } from './duckdb-slot'
+import { withDuckdbSlot, type Caller } from './duckdb-slot'
 import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../../config'
 
 /**
@@ -45,9 +45,10 @@ export function scanBucket<T>(
   lake: LakeConfig,
   what: string,
   scan: (session: BucketSession) => Promise<T>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  caller?: Caller
 ): Promise<T> {
-  return scanWith(() => openBucketSession(lake), what, scan, signal)
+  return scanWith(() => openBucketSession(lake), what, scan, signal, caller)
 }
 
 /**
@@ -61,9 +62,10 @@ export function scanCatalog<T>(
   catalog: LakeCatalogReaderOptions,
   what: string,
   scan: (session: LakeSession) => Promise<T>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  caller?: Caller
 ): Promise<T> {
-  return scanWith(() => openLakeCatalogReader(lake, store, catalog), what, scan, signal)
+  return scanWith(() => openLakeCatalogReader(lake, store, catalog), what, scan, signal, caller)
 }
 
 /**
@@ -72,7 +74,8 @@ export function scanCatalog<T>(
  * deadline and the caller giving up.
  *
  * `what` names the operation in the timeout message — the only thing a caller
- * needs to say about how it wants to be bounded.
+ * needs to say about how it wants to be bounded. `caller` is who is asking,
+ * for the slot's per-caller share and priority (`duckdb-slot.ts`).
  *
  * The slot is released in a `finally` that covers session setup too: with a cap
  * of one, a single failed ATTACH would otherwise wedge every later scan *and*
@@ -82,9 +85,10 @@ async function scanWith<S extends BucketSession, T>(
   open: () => Promise<S>,
   what: string,
   scan: (session: S) => Promise<T>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  caller?: Caller
 ): Promise<T> {
-  return withDuckdbSlot(async () => {
+  const run = async () => {
     let session: S | null = null
     let scanning: Promise<T> | null = null
 
@@ -139,5 +143,6 @@ async function scanWith<S extends BucketSession, T>(
         })
         .catch(() => {})
     }
-  }, signal)
+  }
+  return withDuckdbSlot(run, signal, caller)
 }

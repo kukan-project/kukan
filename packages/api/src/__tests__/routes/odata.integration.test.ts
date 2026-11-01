@@ -808,6 +808,45 @@ describe('when every slot is taken', () => {
   }, 120_000)
 })
 
+describe('pages from one address', () => {
+  it('refuses the fifth page in flight from an address while four are being read', async () => {
+    // The feed has no signed-in callers, so the address is the caller — and
+    // often several of them behind one NAT, each reading ahead a page, which is
+    // what four leaves room for (config §ODATA_CALLER_MAX). A fifth is refused
+    // at once, whatever room the feed itself has left.
+    const id = await createResource({ fixture: 'wide' })
+    const from = { headers: { 'x-forwarded-for': '203.0.113.5' } }
+    // Held open by not reading their bodies, like the queue case above. The
+    // later ones are not awaited: past the feed's slots they are queued, and
+    // queued counts as in flight.
+    const first = await app.request(`${base(id)}/Rows`, from)
+    expect(first.status).toBe(200)
+    const rest = [1, 2, 3].map((skip) => app.request(`${base(id)}/Rows?$skip=${skip}`, from))
+    await new Promise((r) => setTimeout(r, 300))
+
+    const fifth = await app.request(`${base(id)}/Rows?$skip=4`, from)
+    expect(fifth.status).toBe(429)
+    expect(fifth.headers.get('Retry-After')).toBe('5')
+    const refused = await fifth.json()
+    expect(refused.error.code).toBe('TOO_MANY_REQUESTS')
+    expect(refused.error.message).toContain('from this address')
+
+    // Another address is another caller
+    const elsewhere = app.request(`${base(id)}/Rows`, {
+      headers: { 'x-forwarded-for': '203.0.113.6' },
+    })
+
+    await first.text()
+    for (const res of await Promise.all(rest)) {
+      expect(res.status).toBe(200)
+      await res.text()
+    }
+    const elsewhereRes = await elsewhere
+    expect(elsewhereRes.status).toBe(200)
+    await elsewhereRes.text()
+  }, 60_000)
+})
+
 describe('GET /api/v1/resources/:id/schema', () => {
   it('reports whether the OData feed is available', async () => {
     // A feed is offered where the resource is queryable and no refusal comes

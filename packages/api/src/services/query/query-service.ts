@@ -56,15 +56,19 @@ export class QueryService {
    * Throws NotFoundError (visibility), ValidationError (not queryable / bad SQL /
    * timeout), or TooManyRequestsError (concurrency).
    *
-   * `signal` is the request's own, where there is one: a query whose caller hung
-   * up stops and gives up the shared DuckDB slot instead of running to the end
-   * for nobody.
+   * `opts.signal` is the request's own, where there is one: a query whose caller
+   * hung up stops and gives up the shared DuckDB slot instead of running to the
+   * end for nobody.
+   *
+   * `opts.ip` is where an anonymous request came from (`middleware/client-ip.ts`),
+   * and with `user` says who is asking: each caller gets a bounded share of the
+   * slot (`duckdb-slot.ts`). Without either, the request is not counted.
    */
   async query(
     resourceId: string,
     sql: string,
     user?: AuthUser,
-    signal?: AbortSignal
+    { signal, ip }: { signal?: AbortSignal; ip?: string } = {}
   ): Promise<QueryResult> {
     // Validate the SQL before any expensive work (the read and the materialize). The REST
     // route bounds length via zValidator, but the MCP tool does not — enforce both here.
@@ -87,7 +91,8 @@ export class QueryService {
     const previewKey = target.previewKey
 
     // Bound concurrency to keep total DuckDB memory within the container.
-    return withDuckdbSlot(async () => {
+    const caller = { userId: user?.id, ip }
+    const run = async () => {
       const startedAt = Date.now()
       // Read where it lives, through a signed URL rather than a copy on this
       // disk or `readUrl`'s `s3://`. The reasoning is on `materialize`. In a
@@ -118,6 +123,7 @@ export class QueryService {
         'resource query'
       )
       return { ...result, elapsedMs }
-    }, signal)
+    }
+    return withDuckdbSlot(run, signal, caller)
   }
 }

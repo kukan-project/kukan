@@ -134,6 +134,24 @@ export const QUERY_QUEUE_MAX = 16
  *  inside its own budget. */
 export const QUERY_QUEUE_WAIT_MS = QUERY_TIMEOUT_MS
 
+/**
+ * Queries one caller may have in flight — running or queued — before the next
+ * is refused with 429 at once. The queue bounds the backlog; this bounds one
+ * caller's share of it, because a caller that keeps a 15-second query running
+ * back to back holds the single slot without ever being "many requests".
+ *
+ * A signed-in caller is keyed by user, and two covers them: the dashboard's
+ * own reads — a diff, a key check — take the same slot as any query they run
+ * beside it. An anonymous caller is keyed by address (an IPv6 by its /64), and
+ * one address is often many people — an office NAT, an isolated-browsing
+ * gateway, the egress of a hosted MCP client — so the cap must leave room for
+ * a few of them to overlap. What it stops is one address stacking the queue;
+ * past that the FIFO interleaves the others. Four is half the anonymous share
+ * of the queue (QUERY_QUEUE_MAX 16, of which anonymous callers may fill 8).
+ */
+export const QUERY_CALLER_MAX_ANONYMOUS = 4
+export const QUERY_CALLER_MAX_SIGNED_IN = 2
+
 /** Maximum length of a user-supplied SQL string. */
 export const QUERY_MAX_SQL_LENGTH = 10_000
 
@@ -323,6 +341,16 @@ export const ODATA_QUEUE_MAX = 8
  * the time before this margin existed.
  */
 export const ODATA_QUEUE_WAIT_MS = ODATA_WRITE_TIMEOUT_MS + 5_000
+
+/**
+ * Pages one address may have in flight — running or queued — before the next
+ * is refused with 429 at once. The feed has no signed-in callers (ADR-055 §5),
+ * so the address is the only key, and one address is often many people — an
+ * office NAT, an isolated-browsing gateway — each of whose BI tools fetches the
+ * next page while still reading the last. Four leaves room for a few of them
+ * to overlap; what it stops is one address stacking the queue.
+ */
+export const ODATA_CALLER_MAX = 4
 
 /**
  * How long a feed's DuckDB instance is kept unused before it is closed (ms).

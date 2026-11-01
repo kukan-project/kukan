@@ -94,6 +94,7 @@ import {
 } from './pipeline/storage-pointer'
 import { PipelineService, schemaDescribesLiveContent } from './pipeline/pipeline-service'
 import { scanBucket } from './query/lake-scan'
+import type { Caller } from './query/duckdb-slot'
 import { markContentIndexDue, markContentUnindexed } from './search/content-index-record'
 
 /** The row creating a version adds, minus everything the table fills in. */
@@ -2396,7 +2397,7 @@ export class ResourceVersionService {
   async checkPrimaryKey(
     resourceId: string,
     settings: ColumnSettings,
-    deps: { lake: LakeConfig; signal?: AbortSignal }
+    deps: { lake: LakeConfig; signal?: AbortSignal; caller?: Caller }
   ): Promise<KeyCheck> {
     const key = primaryKeyOf(settings)
     // Taking the key off always applies: there is nothing left to identify rows
@@ -2435,7 +2436,7 @@ export class ResourceVersionService {
   private async checkKeyAgainstPreview(
     resourceId: string,
     key: string[],
-    deps: { lake: LakeConfig; signal?: AbortSignal }
+    deps: { lake: LakeConfig; signal?: AbortSignal; caller?: Caller }
   ): Promise<KeyCheck> {
     const preview = await this.livePreview(resourceId)
     if (typeof preview === 'string') return { checked: false, primaryKey: key, reason: preview }
@@ -2445,7 +2446,8 @@ export class ResourceVersionService {
       'Key check',
       (session) =>
         keyFault(session, { parquetUrl: lakeStorageUrl(deps.lake, preview.key), keys: key }),
-      deps.signal
+      deps.signal,
+      deps.caller
     )
     return { checked: true, primaryKey: key, fault }
   }

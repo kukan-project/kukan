@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { unlink } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
-import { resource as resourceTable, resourcePipeline } from '@kukan/db'
-import type { ResourceSchema } from '@kukan/shared'
 import { createTestApp, mockStorage } from '../test-helpers/test-app'
 import { writeParquet } from '../test-helpers/parquet'
+import {
+  createQueryableResource as createQueryable,
+  type QueryableResourceOptions,
+} from '../test-helpers/queryable-resource'
 import {
   getTestDb,
   cleanDatabase,
@@ -28,14 +28,6 @@ const outsiderApp = createTestApp(db, {
   storage: fixtureStorage,
   user: { id: OUTSIDER_USER_ID, email: 'outsider@example.com', name: 'outsider', sysadmin: false },
 })
-
-const SCHEMA: ResourceSchema = {
-  columns: [
-    { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
-    { name: 'name', type: 'string', nullable: false, nullCount: 0 },
-  ],
-  rowCount: 100,
-}
 
 async function makeFixtureParquet(): Promise<void> {
   fixturePath = await writeParquet(`SELECT i AS id, 'name' || i AS name FROM range(100) t(i)`)
@@ -70,55 +62,9 @@ async function ensureTestOrg() {
   return testOrgId
 }
 
-/**
- * Create a resource and attach a pipeline row. By default it is fully queryable
- * (previewKey + schema); `pipeline: false` attaches no row, and `noSchema` /
- * `noPreviewKey` attach a partial row (the not-yet-queryable states).
- */
-async function createQueryableResource(opts?: {
-  private?: boolean
-  pipeline?: false
-  noSchema?: boolean
-  noPreviewKey?: boolean
-  /** Preview left behind by a failed re-interpretation of replaced content. */
-  stale?: boolean
-}) {
-  const orgId = await ensureTestOrg()
-  const pkgRes = await app.request('/api/v1/packages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: `q-pkg-${randomUUID().slice(0, 8)}`,
-      ownerOrg: orgId,
-      private: opts?.private ?? false,
-    }),
-  })
-  const pkg = await pkgRes.json()
-  const resRes = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'data.csv', format: 'CSV' }),
-  })
-  const resource = await resRes.json()
-
-  if (opts?.pipeline !== false) {
-    // Queryable requires the preview to describe the current bytes: the
-    // resource's hash and the pipeline's sourceHash must match.
-    await db
-      .update(resourceTable)
-      .set({ hash: 'sha256:live' })
-      .where(eq(resourceTable.id, resource.id))
-    const sourceHash = opts?.stale ? 'sha256:old' : 'sha256:live'
-    await db.insert(resourcePipeline).values({
-      resourceId: resource.id,
-      status: 'success',
-      previewKey: opts?.noPreviewKey ? null : `preview/${resource.id}.parquet`,
-      metadata: opts?.noSchema
-        ? { encoding: 'utf-8', sourceHash }
-        : { encoding: 'utf-8', schema: SCHEMA, sourceHash },
-    })
-  }
-  return resource.id as string
+/** A resource under the suite's one organization (`test-helpers/queryable-resource.ts`). */
+async function createQueryableResource(opts?: Omit<QueryableResourceOptions, 'orgId'>) {
+  return createQueryable(app, db, { ...opts, orgId: await ensureTestOrg() })
 }
 
 function query(targetApp: typeof app, id: string, sql: string) {

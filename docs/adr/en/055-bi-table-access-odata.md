@@ -210,6 +210,19 @@ carries no user SQL; the shape of the query is ours. Therefore:
 Conflating the two would leave a BI tool's full extract hammering limits that were deliberately sized
 for one question from an agent, and break both requirements at once.
 
+**Supplement (2026-11): per-address concurrency.** The feed's queue bounds the backlog as a whole, but
+not one source's hold on the slots (for the same reason as ADR-032 Part B's supplement of the same
+date — counting requests does not stop the occupation; a per-caller bound on concurrency does). One
+address may therefore have four pages in flight (running or queued); the fifth is refused at once with
+`429` (`Retry-After: 5`, like the feed's other `429`s). Four, because a BI tool fetching the next page
+before it has finished reading the last is one extract, and one address — an office NAT, an
+isolated-browsing gateway — often has a few of those behind it; what the cap stops is one address
+stacking the queue. The feed has no signed-in callers (§5), so
+there is no priority and the address is the only key — an IPv4 whole, an IPv6 by its /64. The address
+is read from the first value of the header `CLIENT_IP_HEADER` names, and a request whose address cannot
+be determined is not capped. The queue depth (8) is unchanged. The constant is `ODATA_CALLER_MAX` in
+`packages/api/src/config.ts`.
+
 ### 3. Whole-table reads leave OData for the download route
 
 An entity set past a row threshold is not served whole through OData. ~~It is not paged (no endless

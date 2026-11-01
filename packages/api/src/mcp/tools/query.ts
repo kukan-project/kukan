@@ -13,6 +13,7 @@ interface QueryToolsContext {
   db: Database
   storage: StorageAdapter
   user?: AuthUser
+  clientIp?: string
 }
 
 /** Render query results as a Markdown table (cells escaped for `\`, `|` and newlines). */
@@ -32,7 +33,7 @@ export function toMarkdownTable(columns: string[], rows: Record<string, unknown>
 }
 
 export function registerQueryTools(server: McpServer, ctx: QueryToolsContext) {
-  const { db, storage, user } = ctx
+  const { db, storage, user, clientIp } = ctx
 
   server.registerTool(
     'query_resource',
@@ -55,7 +56,7 @@ export function registerQueryTools(server: McpServer, ctx: QueryToolsContext) {
       annotations: { readOnlyHint: true },
     },
     async ({ id, sql }) => {
-      const result = await new QueryService(db, storage).query(id, sql, user)
+      const result = await new QueryService(db, storage).query(id, sql, user, { ip: clientIp })
       const table = toMarkdownTable(result.columns, result.rows)
       const note = result.truncated
         ? `\n\n_Showing the first ${result.rowCount} rows (truncated)._`

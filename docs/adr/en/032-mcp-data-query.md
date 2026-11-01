@@ -193,6 +193,26 @@ preview directly** rather than loading data into dedicated tables.
    queue was deepened to 16; the wait cannot grow, since with the query's own timeout after it a caller
    would reach CloudFront's 30-second origin response timeout.
 
+   **Supplement (2026-11): per-caller concurrency, and priority for signed-in callers.** The queue
+   bounds the backlog as a whole, but not one caller's hold on the slot — a 15-second query four times a
+   minute keeps the single slot busy without touching any per-minute figure. Counting requests does not
+   stop the occupation; a per-caller bound on concurrency does. Two things were added. (1) A caller may
+   have two queries in flight (running or queued) when signed in, four when anonymous; the next is
+   refused at once with `429` (`Retry-After: 1`). The key is the user when signed in, otherwise the
+   source address — an IPv4 whole, an IPv6 by its /64, so one host rotating within it is still one key.
+   Four for anonymous callers because one address is often many people — an office NAT, an
+   isolated-browsing gateway, the egress of a hosted MCP client — and what the cap stops is one address
+   stacking the queue; four is half the anonymous share of the queue (8). The
+   address is read from the first value of the header `CLIENT_IP_HEADER` names, as the sign-in rate
+   limits read it. An anonymous request whose address cannot be determined (no header; a direct local
+   connection) is not capped — pooling them under one key would have them refuse each other. (2) The
+   semaphore keeps two queues by priority, and a freed slot goes to a signed-in waiter first. Anonymous
+   waiters may fill only half the queue (rounded up), so a signed-in caller can always enter it even
+   when anonymous requests have flooded it. The version diff and the key check (ADR-043) take the same
+   slot and sit under the same cap and priority. Request counting stays with the edge WAF and a later
+   shared middleware. The constants are `QUERY_CALLER_MAX_ANONYMOUS` / `QUERY_CALLER_MAX_SIGNED_IN` in
+   `packages/api/src/config.ts`.
+
 6. **Access control**: run through the same `getByIdWithAccessCheck` as preview (ADR-017). SQL validation
    (length + read-only) runs **before** the download/materialize, which also enforces the length limit on
    the MCP path.
