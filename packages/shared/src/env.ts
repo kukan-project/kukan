@@ -237,7 +237,8 @@ const envObject = z.object({
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'
     ),
 
-  // The header the sign-in rate limits read the client's IP from (client-ip.ts)
+  // The header the sign-in rate limits and the per-caller query limits read the
+  // client's IP from (client-ip.ts)
   // Lowercased: a header name is case-insensitive, and Better Auth looks it up as given
   CLIENT_IP_HEADER: z.preprocess(
     (v) => (typeof v === 'string' ? v.toLowerCase() : v),

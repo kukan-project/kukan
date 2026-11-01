@@ -404,19 +404,19 @@ Query rules:
 
 Limits and errors:
 
-| Item              | Value                                    |
-| ----------------- | ---------------------------------------- |
-| Max rows          | 10,000 (`truncated: true` when exceeded) |
-| Max result size   | 5 MB                                     |
-| Execution timeout | 15 s (`408`)                             |
-| Concurrency       | 1 (`429` when exceeded)                  |
+| Item              | Value                                                                                                                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Max rows          | 10,000 (`truncated: true` when exceeded)                                                                                                                                         |
+| Max result size   | 5 MB                                                                                                                                                                             |
+| Execution timeout | 15 s (`408`)                                                                                                                                                                     |
+| Concurrency       | Run one at a time per server. Per caller, running and queued together: 4 when anonymous (per source address, an IPv6 address by its /64), 2 when signed in (`429` when exceeded) |
 
-| Error | Condition                                                       |
-| ----- | --------------------------------------------------------------- |
-| `400` | Invalid SQL / non-SELECT / over length / non-queryable resource |
-| `404` | Resource not found / private without access                     |
-| `408` | Execution timeout                                               |
-| `429` | Concurrent query limit                                          |
+| Error | Condition                                                                                      |
+| ----- | ---------------------------------------------------------------------------------------------- |
+| `400` | Invalid SQL / non-SELECT / over length / non-queryable resource                                |
+| `404` | Resource not found / private without access                                                    |
+| `408` | Execution timeout                                                                              |
+| `429` | The caller's limit is exceeded, or the queue is full. Retry after the seconds in `Retry-After` |
 
 ### OData feed (for BI tools)
 
@@ -452,6 +452,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
   `/schema`'s `odataRefusal` says which headings
 - `$metadata` **revalidates on every request** (`public, no-cache`), so a stale declaration of the
   columns is never paired with rows read under a newer one
+- **Pages read at once** are limited to 4 per source address (an IPv6 address by its /64), running and queued together. Beyond that the feed answers `429`: retry after the seconds in `Retry-After`
 
 ### Versions and diffs
 
@@ -553,13 +554,13 @@ not a public endpoint.
 - Responses carry `Cache-Control: private, max-age=60, must-revalidate`. An unavailable answer is
   not cached at all
 
-| Error | Condition                                           |
-| ----- | --------------------------------------------------- |
-| `401` | Not authenticated                                   |
-| `403` | No editor permission on the owning dataset          |
-| `404` | Resource or version not found                       |
-| `408` | Diff timed out                                      |
-| `429` | DuckDB concurrency limit (shared with data queries) |
+| Error | Condition                                                                                                                 |
+| ----- | ------------------------------------------------------------------------------------------------------------------------- |
+| `401` | Not authenticated                                                                                                         |
+| `403` | No editor permission on the owning dataset                                                                                |
+| `404` | Resource or version not found                                                                                             |
+| `408` | Diff timed out                                                                                                            |
+| `429` | The caller's limit is exceeded, or the queue is full (shared with data queries). Retry after the seconds in `Retry-After` |
 
 **Purge a version** — `POST /resources/{id}/versions/{v}/purge` (sysadmin only):
 

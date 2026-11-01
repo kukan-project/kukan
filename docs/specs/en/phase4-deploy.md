@@ -561,7 +561,8 @@ Once the list holds the IPv6 prefixes of every place it admits, `enableIpv6Dns: 
 
 The same function overwrites `x-kukan-client-ip` with `event.viewer.ip` on every request (a value
 the viewer sent is never used). The web reads it for sign-in rate limits (`CLIENT_IP_HEADER`, set
-by the CDK) and keeps the counts in the DB table `rate_limit` (so several tasks count the same).
+by the CDK) and keeps the counts in the DB table `rate_limit` (so several tasks count the same). The per-caller limits on
+anonymous queries and OData key on the same IP (signed-in queries key on the user; both are per task).
 
 - ALB: internal (reachable only via the CloudFront VPC Origin, restricted by a managed prefix list)
 - Web task SG: allows only port 3000 from the ALB (no direct access)

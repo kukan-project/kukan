@@ -64,4 +64,4 @@ The response format is:
 
 ## Rate limits
 
-General API endpoints have no rate limit, but the sign-in endpoints (`/api/auth/*`) and AI metadata suggestions do (429 when exceeded). Contact operators before sending large bursts.
+General API endpoints have no request-count limit, but the sign-in endpoints (`/api/auth/*`) and AI metadata suggestions do (429 when exceeded). Table queries and OData limit how many requests one caller can run at once (429 with `Retry-After` when exceeded). On AWS, a site may also have its WAF block by requests per IP address. Contact operators before sending large bursts.

@@ -157,19 +157,20 @@ export const brandConfig: BrandConfig = {
 
 ### 各フィールドの説明
 
-| フィールド        | 説明                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                   |
-| `siteDescription` | meta description（検索エンジン向け）                                                                         |
-| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                          |
-| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                                             |
-| `logo`            | ヘッダーロゴの設定（後述）                                                                                   |
-| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                                             |
-| `footerLinks`     | フッターのリンク一覧                                                                                         |
-| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                                                       |
-| `faviconPath`     | ファビコンのパス                                                                                             |
-| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                            |
-| `gaMeasurementId` | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)） |
+| フィールド        | 説明                                                                                                                                                                                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                                                                                                                                                                                   |
+| `siteDescription` | meta description（検索エンジン向け）                                                                                                                                                                                                                                         |
+| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                                                                                                                                                                                          |
+| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                                                                                                                                                                                                             |
+| `logo`            | ヘッダーロゴの設定（後述）                                                                                                                                                                                                                                                   |
+| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                                                                                                                                                                                                             |
+| `footerLinks`     | フッターのリンク一覧                                                                                                                                                                                                                                                         |
+| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                                                                                                                                                                                                                       |
+| `faviconPath`     | ファビコンのパス                                                                                                                                                                                                                                                             |
+| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                                                                                                                                                                                            |
+| `gaMeasurementId` | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)）                                                                                                                                                                 |
+| `csp`             | ページの Content-Security-Policy に足すソース（ディレクティブ → ソースの配列。例: `{ 'img-src': ['https://cdn.example.jp'] }`）。自分のホストからスクリプトや CSS を読む、別のドメインの API を呼ぶブランドが使う。足すだけで、外せない（ADR-071）。GA4 のホストは自動で入る |
 
 テキスト系フィールド（`siteName`・`siteDescription`・`copyright`・`logo.alt`・`headerNavExtra[].label`・`footerLinks[].label`）は、文字列のほかにロケールマップ（例: `{ ja: '利用規約', en: 'Terms of Use' }`）を指定できます。文字列は全ロケール共通、マップは言語切替に追従します。指定のないロケールは英語（デフォルトロケール）→定義済みの値の順で補われます。
 

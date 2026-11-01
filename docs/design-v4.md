@@ -669,9 +669,9 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 | OpenSearch m6g.xlarge.search × 2 (200GB, AZ) | ~$510          |
 | CloudFront (VPC origin + 転送)               | ~$5            |
 | パブリック IPv4 (ECS タスク × 4)             | ~$15           |
-| WAF (optional)                               | ~$9            |
+| WAF (optional)                               | ~$11           |
 | S3 + Secrets + ECR + CW 等                   | ~$10           |
-| **合計（税別）**                             | **~$1,191/月** |
+| **合計（税別）**                             | **~$1,193/月** |
 
 ※ Fargate 料金: 東京リージョン vCPU $0.05056/h, メモリ $0.00553/h
 ※ ALB 固定料金 $0.0243/h ≒ $18/月（LCU 従量分は低トラフィック時ほぼゼロ）
