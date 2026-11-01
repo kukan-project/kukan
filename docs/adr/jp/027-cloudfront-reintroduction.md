@@ -293,6 +293,79 @@ Route 53 には A に並べて AAAA の Alias も作る（`enableIpv6Dns`、サ�
 有効だが、`allowedIpRanges` を設定した環境では無効にする。IPv4 の番地で許可していた閲覧者が IPv6 で来ると
 403 になり、ブラウザは IPv4 でやり直さないため。
 
+## 補足（2026-11）: レートベースルールとログ
+
+WebACL に、マネージドルールグループの後ろにレートベースルールを 2 つ足し、ルールが一致した
+リクエストだけのログを取るようにした。設定は環境エントリの `waf`。WebACL は環境のサイトで
+共有するので、サイト単位ではなく環境単位にする（サイトエントリに書くと synth で断る）。
+
+| ルール（優先度）      | 数えるもの                                                                      | 既定の上限（5 分） | メトリクス            |
+| --------------------- | ------------------------------------------------------------------------------- | ------------------ | --------------------- |
+| `RateLimitAll`（40）  | 閲覧者 IP ごとの全リクエスト。`/_next/static/` と `/vendor/ibis-office/` を除く | 2000               | `kukan-waf-rate-all`  |
+| `RateLimitAuth`（50） | `/api/auth/`（Better Auth）で始まるリクエスト                                   | 100                | `kukan-waf-rate-auth` |
+
+- **静的アセットを数えない理由。** CLOUDFRONT スコープの WAF はキャッシュヒットも検査する。
+  1 ページ表示が十数個の静的ファイルを取りに来るので、これを数えると上限がリクエスト数でなく
+  ページ数の予算になる。除外は生のパスで厳密に判定する。先頭一致に加えて `..`・`%`・`\` を
+  含まないこと（viewer-request の ibisOffice の判定と同じ）。`/vendor/ibis-office/../../api/auth/x`
+  のような綴りは生のまま転送されオリジンでサインインに解決されるので、曖昧なものは数える側に倒す。
+  `/api/auth/` は URL デコードだけの形と、さらにバックスラッシュと `..` を解決した形の両方で数える。
+  どちらか一方だと、もう一方の解釈で届く綴りが抜ける
+- **マネージドグループの後ろに置く理由。** マネージドルールが止めたリクエストは、その IP に
+  数えず、ログにも二重に残さない
+- **既定は `count`。** 上限を超えた IP をメトリクスとログに残すだけで、止めない。自治体の NAT や
+  分離ブラウザのゲートウェイのように 1 つの出口の後ろに多くの人がいる所では、1 人分の上限が
+  組織全体の上限になる。まず数えて、誰が超えているかを見てから `mode: 'block'` にする
+- **`exemptIpRanges`**: 数えない CIDR（庁内の出口など）。AWS の IP セットはアドレスの版を 1 つしか
+  持てないので、IPv4 と IPv6 に分けて作る（その版の範囲があるときだけ）。両ルールの絞り込みに
+  `NOT IPSet` として AND される
+- **`block` の応答は 429**、プレーンテキストの本文（WebACL の `customResponseBodies`、
+  キー `rate-limited`）と `Retry-After` ヘッダー付き。オリジンの 403 と見分けられ、クライアントに
+  待って再試行するよう伝える
+- **ログ**（`AWS::WAFv2::LoggingConfiguration`）: 既定 DROP、動作が COUNT か BLOCK の一致だけ
+  KEEP。`cookie` と `authorization` ヘッダーは伏せる。全リクエストのアクセスログは CloudFront の
+  ほう（配信無料）に既にあり、WAF のログは GB 単位で課金されるので、ここには「どのルールが何に
+  当たったか」だけを置く。保持は `waf.logging.retentionDays`、省略時は `cdnLogRetentionDays`。
+  `logging: false` で切る
+- **バケットは WebACL と同じ us-east-1 のスタックに置く。** 名前は `aws-waf-logs-kukan-<env>-<account>`
+  （AWS が `aws-waf-logs-` の接頭辞を要求する。アカウントを含めて一意にする）。CLOUDFRONT
+  スコープのログ設定は us-east-1 で構成するもので、作る前にバケットとその配信用ポリシー
+  （`delivery.logs.amazonaws.com` への PutObject / GetBucketAcl）が存在しなければならない —
+  ログ設定はポリシーに依存させてある。アクセスログのバケットと同じく RETAIN
+- **IP セットも WebACL と一緒に残す（RETAIN）。** ARN を貼る運用へ切り替えて WebACL だけが残ると、
+  参照されている IP セットを消せずデプロイが止まるため。`exemptIpRanges` からその版の範囲をなくすと
+  IP セットが参照されないまま残るので、気になれば手で消す
+- **残ったバケットがログの再開を阻む。** 名前が固定で RETAIN なので、`logging: false` を
+  デプロイしたあと（global スタックを消したあとも）バケットはスタックの外に残り、次にそれを
+  作るデプロイは名前の衝突で失敗する。ログを戻す前、スタックを作り直す前に、残ったバケットを
+  消すか名前を変える
+- **表のプレビューは小さなリクエストの束。** 表のプレビューは Parquet を Range で読み、
+  対話的なプレビューの裏の DuckDB-WASM は操作のたびに小さな GET を多数出す。どれもオリジンに
+  届くので全部を数えるルールが数える。count の期間に、1 人の重いプレビュー利用が上限に
+  近づいていないかを見る。近いなら除外を広げるのでなく `limit` を上げる（除外はオリジンに
+  届かないパスのためのもの）
+- 費用: ルール 2 本ぶん +$2 で WebACL あたり約 $11/月。ログは S3 の料金と配信量（GB 単位）
+
+**数えた IP を見て block に切り替える手順:**
+
+1. CloudWatch（us-east-1、名前空間 `AWS/WAFV2`）で `CountedRequests` を `Rule` =
+   `kukan-waf-rate-all` / `kukan-waf-rate-auth` ごとに見る。0 でなければ次へ
+2. 今まさに超えている IP を引く:
+   ```bash
+   aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1
+   aws wafv2 get-rate-based-statement-managed-keys --scope CLOUDFRONT --region us-east-1 \
+     --web-acl-name <Name> --web-acl-id <Id> --rule-name RateLimitAll
+   ```
+3. S3 のログ（スタック出力 `WafLogBucketName`、`AWSLogs/<account>/WAFLogs/` 以下）で、いつ・
+   どの IP・どの URI が当たったかを読む
+4. CloudFront のアクセスログ（`c_ip`・User-Agent・URI。システム管理ガイドの Athena の例）と、
+   `session` 表の `ipAddress`（その IP からサインインしている利用者がいるか）で照らす。共有の
+   出口なら `exemptIpRanges` に足し、そうでなければ `mode: 'block'`
+5. `waf` の変更は global スタックの standalone デプロイで反映する（pipeline は us-east-1 を
+   持たない、ADR-030）。ARN を貼った環境では、一時的に `webAclArn` を外して
+   `npx cdk deploy -c env=<env> <Env>/KukanGlobalStack` を流し、戻す。WebACL は同じ論理 ID で
+   更新されるので ARN は変わらない
+
 ## 関連
 
 - ADR-020（CloudFront 廃止の経緯）: `docs/adr/jp/020-ecs-fargate-alb-migration.md`

@@ -256,8 +256,37 @@ The only cost is S3 (storage and PUTs; delivery is free). At tens to a hundred b
 gzipped, a million requests a month comes to a few cents. Athena bills by data scanned
 ($5 / TB).
 
-WAF logs and CloudFront's additional metrics (cache hit rate etc., paid) are not enabled. The
-cache result and time taken are in the access log, and the hit rate can be counted from it.
+CloudFront's additional metrics (cache hit rate etc., paid) are not enabled. The cache result
+and time taken are in the access log, and the hit rate can be counted from it. The WAF log holds
+only the requests a rule counted or blocked, separately (next, "WAF rate limits").
+
+#### WAF rate limits
+
+A site with WAF on (how to turn it on is step 4 of "Setup" below: on a pipeline-managed
+environment the us-east-1 WebACL is created standalone and its ARN pasted in) gets two rules
+that count requests per viewer IP over 5 minutes: every request (static assets excepted,
+default 2000) and the sign-in API (default 100). **By default they only count, never block.**
+Where many people sit behind one exit, such as an office NAT, one person's limit would become
+the organization's.
+
+To read the counts and switch to blocking (`block`):
+
+1. In CloudWatch (region us-east-1, namespace `AWS/WAFV2`), read `CountedRequests` by `Rule` =
+   `kukan-waf-rate-all` / `kukan-waf-rate-auth`. If it stays at zero, there is nothing to do
+2. The IPs over the limit right now:
+   `aws wafv2 get-rate-based-statement-managed-keys --scope CLOUDFRONT --region us-east-1 --web-acl-name <name> --web-acl-id <id> --rule-name RateLimitAll`
+   (name and id from `aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1`)
+3. When, which IP and which URL matched is in the log in the bucket named by the stack output
+   `WafLogBucketName` (counted and blocked requests only, cookies redacted)
+4. Cross-check the IP against the access log above (`c_ip`, User-Agent, URL) and the
+   `ipAddress` column of the database's `session` table (is a signed-in user behind that IP?).
+   A shared address such as an office
+   exit goes into `waf.rateLimit.exemptIpRanges`; otherwise set `waf.rateLimit.mode: 'block'`
+5. A change to `waf` lands through a standalone deploy of the global stack
+   (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`; where `webAclArn` is pasted in, drop it
+   for the moment, deploy, and put it back — the ARN does not change)
+
+How to write the setting: [environment config reference, "WAF rate limits"](/en/system-admin-guide/environment-config/#waf-rate-limits).
 
 #### Setup (one-time manual; after that, pushes deploy automatically)
 

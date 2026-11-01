@@ -248,8 +248,34 @@ LIMIT 20;
 数十〜百バイト程度のため、月 100 万リクエストでも数セントです。Athena は読んだ量に応じた課金
 （$5 / TB）です。
 
-WAF のログと、CloudFront の追加メトリクス（キャッシュのヒット率など、有料）は有効にしていません。
-キャッシュの状態も応答時間もアクセスログにあり、ヒット率はそこから数えられます。
+CloudFront の追加メトリクス（キャッシュのヒット率など、有料）は有効にしていません。
+キャッシュの状態も応答時間もアクセスログにあり、ヒット率はそこから数えられます。WAF のログは、
+ルールが数えた・止めたリクエストだけを別に残します（次の「WAF のレート制限」）。
+
+#### WAF のレート制限
+
+WAF を有効にしたサイト（有効化の手順は下の「セットアップ」手順 4。pipeline で管理する環境では
+us-east-1 の WebACL を standalone で作り、ARN を貼ります）には、閲覧者の IP ごとに 5 分間の
+リクエスト数を数えるルールが 2 つ入ります。全リクエスト（静的アセットを除く、既定 2000 件）と
+サインイン API（既定 100 件）です。**既定では数えるだけで止めません。** 庁内の NAT のように
+1 つの出口の後ろに多くの人がいると、1 人分の上限が組織全体の上限になるためです。
+
+数えた結果を見て、止める（`block`）に切り替える手順:
+
+1. CloudWatch（リージョン us-east-1、名前空間 `AWS/WAFV2`）の `CountedRequests` を、
+   `Rule` = `kukan-waf-rate-all` / `kukan-waf-rate-auth` ごとに見ます。0 のままなら何もしません
+2. 今超えている IP は `aws wafv2 get-rate-based-statement-managed-keys --scope CLOUDFRONT --region us-east-1 --web-acl-name <名前> --web-acl-id <ID> --rule-name RateLimitAll`
+   で引けます（名前と ID は `aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1`）
+3. いつ・どの IP・どの URL が当たったかは、スタック出力 `WafLogBucketName` のバケットのログに
+   残ります（数えた・止めた分だけ、Cookie は伏せてあります）
+4. その IP を、上のアクセスログ（`c_ip`・User-Agent・URL）と、データベースの `session` 表の
+   `ipAddress`（その IP からサインインしている利用者がいるか）で照らします。庁内の出口など共有の IP なら
+   `waf.rateLimit.exemptIpRanges` に足し、そうでなければ `waf.rateLimit.mode: 'block'` にします
+5. `waf` の変更は global スタックの standalone デプロイで反映します
+   （`npx cdk deploy -c env=prd Prd/KukanGlobalStack`。`webAclArn` を貼った環境では、
+   一時的に外して流し、戻します。ARN は変わりません）
+
+設定の書き方は[環境設定リファレンスの「WAF のレート制限」](/ja/system-admin-guide/environment-config/#waf-のレート制限)を参照してください。
 
 #### セットアップ（初回のみ手動。以降は push で自動デプロイ）
 

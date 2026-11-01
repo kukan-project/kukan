@@ -41,6 +41,41 @@ export interface BedrockConfig {
   summaryModel?: string
 }
 
+/** What a WAF rate-based rule does to the requests over its limit. */
+export type WafRateLimitMode = 'count' | 'block'
+
+/**
+ * The environment's WAF WebACL beyond the managed rule groups (ADR-027
+ * supplement): two rate-based rules and the log of what the rules matched.
+ * Environment-level, never per site — the sites share one WebACL.
+ */
+export interface WafConfig {
+  rateLimit?: {
+    /** `count` (omit) only records the IPs over the limit, as CloudWatch
+     *  metrics and in the log; `block` answers them 429. Count first: a shared
+     *  exit (an office NAT, an isolated-browsing gateway) puts many people
+     *  behind one address, so read the counts before blocking. */
+    mode?: WafRateLimitMode
+    /** Requests per 5 minutes from one IP, static assets not counted. Omit →
+     *  2000. A table preview is many small GETs (Range reads of the Parquet,
+     *  the DuckDB-WASM reads behind an interactive preview), all counted as
+     *  they reach the origin: before `block`, see in the count period whether
+     *  one person's heavy preview use comes near, and raise this rather than
+     *  widen the exclusions. */
+    limit?: number
+    /** Requests per 5 minutes from one IP to the sign-in API. Omit → 100. */
+    authLimit?: number
+    /** CIDRs the rate rules never count (IPv4 and IPv6, e.g. an office exit). */
+    exemptIpRanges?: string[]
+  }
+  /** The log of counted and blocked requests, in an S3 bucket beside the
+   *  WebACL (us-east-1). `false` turns it off. Omit → on, kept
+   *  `cdnLogRetentionDays`. The bucket has a fixed name and is RETAINed, so
+   *  once `false` was deployed (or the global stack deleted), turning the log
+   *  back on collides with the leftover bucket: delete or rename it first. */
+  logging?: false | { retentionDays?: number }
+}
+
 /** Sections computed from `scale`. These are overridable per environment via `overrides`. */
 export interface ScaleComputed {
   web: {
@@ -243,6 +278,14 @@ export interface EnvironmentConfig {
    * they expire. Applies to every site of the environment. Omit → 90.
    */
   cdnLogRetentionDays?: number
+  /**
+   * The environment's WAF WebACL: rate-based rules (count by default) and
+   * the log of counted and blocked requests. Applies where the WebACL is
+   * created by this environment's global stack; a change to it is a
+   * standalone deploy of that stack, which the pipeline never redeploys
+   * (ADR-027 supplement). Omit → rules in count mode, logging on.
+   */
+  waf?: WafConfig
   /**
    * Allow ECS Exec (`aws ecs execute-command`) into the web and worker tasks.
    * A shell there reads the secrets injected as environment variables, and

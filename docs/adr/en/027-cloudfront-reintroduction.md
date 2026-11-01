@@ -297,6 +297,83 @@ Route 53 also gets an AAAA alias beside the A (`enableIpv6Dns`, overridable per 
 default, but off where `allowedIpRanges` is set: a viewer admitted by its IPv4 address would come
 over IPv6, get a 403, and browsers do not retry over IPv4.
 
+## Supplement (2026-11): rate-based rules and logging
+
+Two rate-based rules were added to the WebACL after the managed rule groups, along with a log
+of only the requests a rule matched. They are configured by `waf` on the environment entry: the
+WebACL is shared by the environment's sites, so this is an environment-level setting, never a
+per-site one (a site entry carrying it is refused at synth).
+
+| Rule (priority)      | What it counts                                                                              | Default limit (5 min) | Metric                |
+| -------------------- | ------------------------------------------------------------------------------------------- | --------------------- | --------------------- |
+| `RateLimitAll` (40)  | Every request per viewer IP, except paths under `/_next/static/` and `/vendor/ibis-office/` | 2000                  | `kukan-waf-rate-all`  |
+| `RateLimitAuth` (50) | Requests whose path starts with `/api/auth/` (Better Auth)                                  | 100                   | `kukan-waf-rate-auth` |
+
+- **Why static assets are not counted.** CloudFront-scope WAF inspects cache hits too. One page
+  view fetches a dozen static files, so counting them would turn the limit into a page budget
+  rather than a request budget. The exclusion is judged strictly on the raw path: the prefix, and
+  no `..`, `%` or `\` anywhere (the same test viewer-request applies to the ibisOffice files). A
+  spelling such as `/vendor/ibis-office/../../api/auth/x` is forwarded raw and resolves at the origin
+  to the sign-in route, so anything ambiguous stays counted. `/api/auth/` is counted in two forms,
+  URL-decoded alone and also with backslashes and `..` resolved, since either alone misses a spelling
+  that reaches the handler under the other reading.
+- **Why after the managed groups.** A request a managed rule blocked is neither counted against
+  its IP nor logged twice.
+- **Count by default.** The IPs over the limit are recorded in metrics and the log, not blocked.
+  Where many people sit behind one exit — a municipality's NAT, an isolated-browsing gateway —
+  one person's limit becomes the organization's. Count first, see who is over, then switch to
+  `mode: 'block'`.
+- **`exemptIpRanges`**: CIDRs never counted (an office exit, say). An AWS IP set holds one
+  address version, so IPv4 and IPv6 get separate sets (each only when the list has ranges of
+  that version), AND-ed onto both rules' scope-down as `NOT IPSet`.
+- **A block answers 429** with a plain-text body (the WebACL's `customResponseBodies`, key
+  `rate-limited`) and a `Retry-After` header, so it reads apart from an origin 403 and tells the
+  client to wait and retry.
+- **Logging** (`AWS::WAFv2::LoggingConfiguration`): default DROP, KEEP only matches whose action
+  is COUNT or BLOCK. The `cookie` and `authorization` headers are redacted. The full access log
+  already lives in CloudFront (delivery is free), and WAF logs are billed per GB, so this one
+  holds only which rule matched what. Retention is `waf.logging.retentionDays`, falling back to
+  `cdnLogRetentionDays`; `logging: false` turns it off.
+- **The bucket lives in the same us-east-1 stack as the WebACL.** Its name is
+  `aws-waf-logs-kukan-<env>-<account>` (AWS requires the `aws-waf-logs-` prefix; the account
+  makes it unique). A CloudFront-scope logging configuration is set up in us-east-1, and the
+  bucket with its delivery policy (`PutObject` / `GetBucketAcl` for
+  `delivery.logs.amazonaws.com`) must exist before the configuration is created — the
+  configuration depends on the policy explicitly. RETAIN, like the access log bucket.
+- **The IP sets are retained with the WebACL.** After a switch to a pasted ARN only the WebACL would
+  remain, and deleting an IP set it still references would stop the deploy. Removing every range of
+  one version from `exemptIpRanges` leaves its IP set unreferenced; delete it by hand if it matters.
+- **The leftover bucket blocks turning the log back on.** With a fixed name and RETAIN, the
+  bucket survives a deploy with `logging: false` (and the deletion of the global stack) outside
+  the stack, and the next deploy that creates it fails on the name. Delete or rename the leftover
+  bucket before turning the log back on or recreating the stack.
+- **Table previews are many small requests.** A table preview reads its Parquet by Range
+  requests, and the DuckDB-WASM reads behind an interactive preview are many small GETs per
+  interaction — all counted by the catch-all rule, since they reach the origin. In the count
+  period, look at whether a single person's heavy preview use approaches the limit; if so, raise
+  `limit` rather than widen the exclusions, which are for paths that never reach the origin.
+- Cost: two more rules, +$2, about $11/month per WebACL. The log costs S3 plus delivery per GB.
+
+**Reviewing the counted IPs and switching to block:**
+
+1. In CloudWatch (us-east-1, namespace `AWS/WAFV2`), read `CountedRequests` by `Rule` =
+   `kukan-waf-rate-all` / `kukan-waf-rate-auth`. Non-zero: go on.
+2. List the IPs over the limit right now:
+   ```bash
+   aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1
+   aws wafv2 get-rate-based-statement-managed-keys --scope CLOUDFRONT --region us-east-1 \
+     --web-acl-name <Name> --web-acl-id <Id> --rule-name RateLimitAll
+   ```
+3. Read the S3 log (stack output `WafLogBucketName`, under `AWSLogs/<account>/WAFLogs/`) for
+   when, which IP and which URI matched.
+4. Cross-check with the CloudFront access log (`c_ip`, User-Agent, URI; the Athena example in
+   the system admin guide) and the `session` table's `ipAddress` (is a signed-in user behind that
+   IP?). A shared exit goes into `exemptIpRanges`; otherwise set `mode: 'block'`.
+5. A change to `waf` lands through a standalone deploy of the global stack (the pipeline has no
+   us-east-1, ADR-030). Where the ARN is pasted in, drop `webAclArn` for the moment, run
+   `npx cdk deploy -c env=<env> <Env>/KukanGlobalStack`, and put it back. The WebACL is updated
+   under the same logical ID, so the ARN does not change.
+
 ## Related
 
 - ADR-020 (CloudFront removal history): `docs/adr/en/020-ecs-fargate-alb-migration.md`

@@ -101,7 +101,7 @@ default arm64 is about 20% cheaper (the same holds for the tables below).
 | ECR + CloudWatch etc. | minimal               | ~$2       |
 
 Without OpenSearch (SEARCH_TYPE=postgres): ~$77/month
-Adding WAF (enableWaf=true): +~$9/month
+Adding WAF (enableWaf=true): +~$11/month
 IP restriction is handled by a CloudFront Function (no extra cost)
 CloudFront access logs: S3 storage and PUTs only (a few cents/month at a million requests a month)
 Consumption tax (10% in the Japan region) is added on top
@@ -130,7 +130,7 @@ Consumption tax (10% in the Japan region) is added on top
 | OpenSearch                   | m6g.xlarge.search × 2 (200GB)     | ~$510     |
 | CloudFront                   | VPC origin + transfer             | ~$5       |
 | Public IPv4                  | 4 ECS tasks                       | ~$15      |
-| WAF (optional)               | managed rules                     | ~$9       |
+| WAF (optional)               | managed rules + rate rules        | ~$11      |
 | S3 + Secrets + ECR + CW etc. | —                                 | ~$10      |
 
 ### Cost allocation tags
@@ -514,6 +514,7 @@ When a SiteStack is deleted (`cdk destroy` / removed from sites):
 | Site DB + role                      | **remains** (the CR does not delete)   | On master: `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                                                      |
 | S3 bucket                           | **remains** (RETAIN)                   | Empty it, then delete                                                                                                                                                                                 |
 | Access log bucket                   | **remains** (RETAIN)                   | Logs expire after `cdnLogRetentionDays`; delete it once empty                                                                                                                                         |
+| WAF log bucket (global)             | **remains** (RETAIN)                   | Fixed name `aws-waf-logs-kukan-<env>-<account>`. Delete it once empty. **Delete it first when recreating an environment of the same name** (the name collides)                                        |
 | Backup vault (when awsBackup is on) | **remains** (RETAIN)                   | Delete `kukan-<env>-<site>-backup` after the recovery points expire (or are deleted manually). **Delete it first if re-adding a site with the same name** (fixed names collide, same rule as ADR-037) |
 | OpenSearch index                    | **remains** (inside the shared domain) | As the master role: `DELETE /kukan-<env>-<site>-search` (its OpenSearch role and mapping go with the shared stack update)                                                                             |
 | Secrets / ECS / CloudFront          | deleted                                | —                                                                                                                                                                                                     |
@@ -596,7 +597,37 @@ The three managed rule groups:
 | AWSManagedRulesKnownBadInputsRuleSet  | Known-vulnerability attacks such as Log4Shell, Spring4Shell | $1/month |
 | AWSManagedRulesAmazonIpReputationList | Blocks malicious IPs using AWS threat intelligence          | $1/month |
 
-Total WAF cost: WebACL $5/month + rules $3/month + requests $0.60/million = **~$9/month**
+Total WAF cost: WebACL $5/month + rules $5/month (3 managed + 2 rate) + requests $0.60/million = **~$11/month**
+
+#### Rate-based rules and logging (ADR-027 supplement)
+
+After the managed groups come two rules that count requests per viewer IP over 5 minutes:
+`RateLimitAll` (every request, `/_next/static/` and `/vendor/ibis-office/` not counted, default 2000) and `RateLimitAuth` (`/api/auth/` only, default 100). The default is `count` (record
+only); switch to `block` (429 + plain-text body + `Retry-After`) once the counted IPs have been
+checked. A log of only what a rule counted or blocked goes to an S3 bucket in the same us-east-1
+stack as the WebACL, `aws-waf-logs-kukan-<env>-<account>` (output `WafLogBucketName`), with
+`cookie` and `authorization` redacted. The reasoning and the switch-over procedure are in the
+ADR-027 supplement (2026-11).
+
+`waf` on the environment entry (environment-only: the WebACL is shared by the environment's
+sites, so a site entry carrying it is refused at synth; no `-c` override either):
+
+```ts
+waf: {
+  rateLimit: {
+    mode: 'count', // 'count' (omit) | 'block'
+    limit: 2000, // requests per IP per 5 minutes, static assets not counted; integer ≥ 10
+    authLimit: 100, // requests per IP per 5 minutes to /api/auth/; integer ≥ 10
+    exemptIpRanges: ['203.0.113.0/24', '2001:db8::/32'], // CIDRs never counted; IPv4 / IPv6 become separate IP sets
+  },
+  logging: { retentionDays: 90 }, // omit → on, kept cdnLogRetentionDays; false → off
+},
+```
+
+`waf` applies where this environment's global stack creates the WebACL. A change lands through a
+standalone deploy of that stack (the pipeline has no us-east-1). Where `webAclArn` is pasted in,
+drop it for the moment, run `npx cdk deploy -c env=<env> <Env>/KukanGlobalStack`, and put it
+back (the ARN does not change).
 
 ### OpenSearch access control (FGAC, ADR-069)
 
@@ -668,8 +699,9 @@ regions, so that a traffic burst can be traced to its source, its URLs, and why 
   know is treated as opt-in (every region added since 2019 has been)
 - Fields kept include `x-edge-result-type`, URI and query, `c-ip`, User-Agent, status, and
   `time-taken`
-- **WAF logs are not collected.** They lack the cache result, status and time taken; add them
-  only while tuning rules
+- **WAF logs hold only what a rule counted or blocked**, separately ("Rate-based rules and
+  logging" above). Allowed requests are not logged there — WAF logs lack the cache result,
+  status and time taken, and are billed per GB
 - **CloudFront additional metrics (paid) are not enabled.** The hit rate can be counted from
   the access log
 

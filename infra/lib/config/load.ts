@@ -3,6 +3,7 @@
  * environment-level defaults and checks, and loadConfig itself.
  */
 
+import { isIP } from 'node:net'
 import type { Construct } from 'constructs'
 // Resolves to dist/ — the cdk.json app command builds @kukan/shared first so
 // synth works on a clean checkout (the pipeline runs no workspace build)
@@ -24,6 +25,7 @@ import type {
   KukanConfig,
   RdsCaCertificate,
   Scale,
+  WafRateLimitMode,
 } from './types.js'
 import { computeScaled } from './scale.js'
 import { isEdgeGated } from './edge.js'
@@ -49,6 +51,92 @@ export const DEFAULT_RDS_CA_CERTIFICATE: RdsCaCertificate = 'rds-ca-rsa2048-g1'
 /** Days CloudFront access logs are kept when `cdnLogRetentionDays` is omitted:
  *  long enough to look back on a burst noticed weeks later. */
 export const DEFAULT_CDN_LOG_RETENTION_DAYS = 90
+
+/** Seconds a WAF rate-based rule counts over. AWS allows 60, 120, 300 or 600. */
+export const WAF_RATE_LIMIT_WINDOW_SEC = 300
+
+/** Requests per window from one IP before the catch-all rate rule matches,
+ *  static assets not counted: well above a person reading, below a scraper. */
+export const DEFAULT_WAF_RATE_LIMIT = 2000
+
+/** Requests per window from one IP to the sign-in API before its rate rule
+ *  matches: a credential-stuffing run, not a forgotten password. */
+export const DEFAULT_WAF_AUTH_RATE_LIMIT = 100
+
+/** The least limit AWS accepts on a rate-based rule. */
+export const WAF_RATE_LIMIT_MIN = 10
+
+/** The environment's WAF settings with the defaults filled in (see WafConfig). */
+export interface ResolvedWafConfig {
+  rateLimit: {
+    mode: WafRateLimitMode
+    limit: number
+    authLimit: number
+    exemptIpRanges: string[]
+  }
+  logging: false | { retentionDays: number }
+}
+
+/**
+ * Validated `waf` (rate rules and logging of the environment's WebACL).
+ * Checked at runtime because tsx strips types without type-checking; the
+ * exempt ranges must be CIDRs, which is what an IP set holds (a bare address
+ * would fail the deploy, after the rest of the stack).
+ */
+export function resolveWafConfig(
+  env: Pick<EnvironmentConfig, 'waf' | 'cdnLogRetentionDays'>
+): ResolvedWafConfig {
+  const { rateLimit: rate = {}, logging = {} } = env.waf ?? {}
+  const mode = rate.mode ?? 'count'
+  if (mode !== 'count' && mode !== 'block') {
+    throw new Error(`waf.rateLimit.mode must be "count" or "block" (got ${JSON.stringify(mode)})`)
+  }
+  const exemptIpRanges = rate.exemptIpRanges ?? []
+  for (const range of exemptIpRanges) {
+    if (typeof range !== 'string' || !isCidr(range)) {
+      throw new Error(
+        `waf.rateLimit.exemptIpRanges entry ${JSON.stringify(range)} is not a CIDR ` +
+          '(e.g. 203.0.113.0/24 or 2001:db8::/32; a single address is /32 or /128)'
+      )
+    }
+  }
+  return {
+    rateLimit: {
+      mode,
+      limit: positiveInt(
+        'waf.rateLimit.limit',
+        rate.limit ?? DEFAULT_WAF_RATE_LIMIT,
+        WAF_RATE_LIMIT_MIN
+      ),
+      authLimit: positiveInt(
+        'waf.rateLimit.authLimit',
+        rate.authLimit ?? DEFAULT_WAF_AUTH_RATE_LIMIT,
+        WAF_RATE_LIMIT_MIN
+      ),
+      exemptIpRanges,
+    },
+    logging:
+      logging === false
+        ? false
+        : {
+            retentionDays:
+              logging.retentionDays !== undefined
+                ? positiveInt('waf.logging.retentionDays', logging.retentionDays)
+                : resolveCdnLogRetentionDays(env),
+          },
+  }
+}
+
+/** `range` is an address with a prefix length an IP set accepts: /1 up to the
+ *  address width — a WAF IP set refuses /0, and the deploy would be where it said so. */
+function isCidr(range: string): boolean {
+  const [address, prefix, ...rest] = range.split('/')
+  if (rest.length > 0 || prefix === undefined || !/^\d+$/.test(prefix)) return false
+  const version = isIP(address)
+  if (version === 0) return false
+  const bits = Number(prefix)
+  return bits >= 1 && bits <= (version === 4 ? 32 : 128)
+}
 
 /** Resolve completionModels with a fail-fast guard, normalized to match runtime.
  *  The adapter trims+dedupes these IDs before invoking (adapters.ts), so the IAM
@@ -101,10 +189,10 @@ function resolveBedrock(bedrock: BedrockConfig | false): KukanConfig['bedrock'] 
   }
 }
 
-/** `value` checked to be an integer of 1 or more, named `field` in the error. */
-export function positiveInt(field: string, value: number): number {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`${field} must be an integer of 1 or more (got ${String(value)})`)
+/** `value` checked to be an integer of `min` or more, named `field` in the error. */
+export function positiveInt(field: string, value: number, min = 1): number {
+  if (!Number.isInteger(value) || value < min) {
+    throw new Error(`${field} must be an integer of ${min} or more (got ${String(value)})`)
   }
   return value
 }
@@ -125,6 +213,16 @@ export function resolveEcrImageRetention(
   env: Pick<EnvironmentConfig, 'ecrImageRetention'>
 ): number {
   return positiveInt('ecrImageRetention', env.ecrImageRetention ?? DEFAULT_ECR_IMAGE_RETENTION)
+}
+
+/** Validated `cdnLogRetentionDays` (days the CloudFront access logs are kept, ≥ 1). */
+export function resolveCdnLogRetentionDays(
+  env: Pick<EnvironmentConfig, 'cdnLogRetentionDays'>
+): number {
+  return positiveInt(
+    'cdnLogRetentionDays',
+    env.cdnLogRetentionDays ?? DEFAULT_CDN_LOG_RETENTION_DAYS
+  )
 }
 
 /** What an environment name may be: it becomes OpenSearch role names too. */
@@ -326,10 +424,7 @@ export function loadConfig(
   // checked for agreement across environments.ts (validateEcrImageRetention).
   const ecrImageRetention = resolveEcrImageRetention(env)
   // env-only (no ctx): applies to every site's log bucket
-  const cdnLogRetentionDays = positiveInt(
-    'cdnLogRetentionDays',
-    env.cdnLogRetentionDays ?? DEFAULT_CDN_LOG_RETENTION_DAYS
-  )
+  const cdnLogRetentionDays = resolveCdnLogRetentionDays(env)
   // No ctx: the pipeline never sees a -c, so a shell into the tasks stays
   // visible in the committed entry rather than one deploy's flags
   const enableExecuteCommand = env.enableExecuteCommand ?? false

@@ -707,6 +707,294 @@ describe('CloudFront access logs', () => {
   })
 })
 
+describe('WAF rate-based rules and log (ADR-027 supplement)', () => {
+  // The WebACL is created only with the global stack; a domain brings it in
+  const edge = {
+    domainName: 'data.example.jp',
+    hostedZoneId: 'Z0000000000000000000',
+    hostedZoneName: 'example.jp',
+  }
+  type Rule = { Name: string; Priority: number; Action: unknown; Statement: unknown }
+  /** The WebACL's rules by name, and the ACL's other properties. */
+  const webAcl = (template: Template) => {
+    const [acl] = Object.values(template.findResources('AWS::WAFv2::WebACL'))
+    const props = acl.Properties as { Rules: Rule[]; CustomResponseBodies?: unknown }
+    return { ...props, rules: Object.fromEntries(props.Rules.map((r) => [r.Name, r])) }
+  }
+  const globalOf = (config: Parameters<typeof synthStage>[0]) =>
+    stackTemplate(synthStage({ ...edge, ...config }), 'KukanGlobalStack')
+  /** The global stack with `waf` omitted, synthesized once (a synth costs about half a second). */
+  const defaults = globalOf({})
+
+  it('counts over the defaults, the sign-in API on a limit of its own, after the managed groups', () => {
+    const { rules, CustomResponseBodies } = webAcl(defaults)
+    expect(rules.RateLimitAll).toMatchObject({
+      Priority: 40,
+      Action: { Count: {} },
+      Statement: {
+        RateBasedStatement: { AggregateKeyType: 'IP', Limit: 2000, EvaluationWindowSec: 300 },
+      },
+      VisibilityConfig: { MetricName: 'kukan-waf-rate-all', SampledRequestsEnabled: true },
+    })
+    expect(rules.RateLimitAuth).toMatchObject({
+      Priority: 50,
+      Action: { Count: {} },
+      Statement: {
+        RateBasedStatement: { AggregateKeyType: 'IP', Limit: 100, EvaluationWindowSec: 300 },
+      },
+      VisibilityConfig: { MetricName: 'kukan-waf-rate-auth', SampledRequestsEnabled: true },
+    })
+    expect(Math.max(...Object.values(rules).map((r) => r.Priority))).toBe(50)
+    expect(CustomResponseBodies).toBeUndefined()
+  })
+
+  it('leaves the cached static assets out of the catch-all count, and counts only the sign-in API in the other', () => {
+    const { rules } = webAcl(defaults)
+    const scopeDown = (rule: Rule) =>
+      (rule.Statement as { RateBasedStatement: { ScopeDownStatement: unknown } }).RateBasedStatement
+        .ScopeDownStatement
+    const startsWith = (prefix: string, ...types: string[]) => ({
+      ByteMatchStatement: {
+        FieldToMatch: { UriPath: {} },
+        PositionalConstraint: 'STARTS_WITH',
+        SearchString: prefix,
+        TextTransformations: types.map((Type, Priority) => ({ Priority, Type })),
+      },
+    })
+    const lacks = (needle: string) => ({
+      NotStatement: {
+        Statement: {
+          ByteMatchStatement: {
+            FieldToMatch: { UriPath: {} },
+            PositionalConstraint: 'CONTAINS',
+            SearchString: needle,
+            TextTransformations: [{ Priority: 0, Type: 'NONE' }],
+          },
+        },
+      },
+    })
+    // Static only on the raw path with nothing ambiguous in it, so
+    // `/vendor/ibis-office/../../api/auth/x` stays counted
+    expect(scopeDown(rules.RateLimitAll)).toEqual({
+      NotStatement: {
+        Statement: {
+          AndStatement: {
+            Statements: [
+              {
+                OrStatement: {
+                  Statements: [
+                    startsWith('/_next/static/', 'NONE'),
+                    startsWith('/vendor/ibis-office/', 'NONE'),
+                  ],
+                },
+              },
+              lacks('..'),
+              lacks('%'),
+              lacks('\\'),
+            ],
+          },
+        },
+      },
+    })
+    expect(scopeDown(rules.RateLimitAuth)).toEqual({
+      OrStatement: {
+        Statements: [
+          startsWith('/api/auth/', 'URL_DECODE'),
+          startsWith('/api/auth/', 'URL_DECODE', 'NORMALIZE_PATH_WIN'),
+        ],
+      },
+    })
+  })
+
+  it('takes the limits from the environment', () => {
+    const { rules } = webAcl(globalOf({ waf: { rateLimit: { limit: 500, authLimit: 20 } } }))
+    expect(rules.RateLimitAll).toMatchObject({ Statement: { RateBasedStatement: { Limit: 500 } } })
+    expect(rules.RateLimitAuth).toMatchObject({ Statement: { RateBasedStatement: { Limit: 20 } } })
+  })
+
+  it('answers 429 with a plain-text body in block mode, so a rate block reads apart from an origin 403', () => {
+    const { rules, CustomResponseBodies } = webAcl(
+      globalOf({ waf: { rateLimit: { mode: 'block' } } })
+    )
+    const block = {
+      Block: {
+        CustomResponse: {
+          ResponseCode: 429,
+          CustomResponseBodyKey: 'rate-limited',
+          ResponseHeaders: [{ Name: 'Retry-After', Value: '300' }],
+        },
+      },
+    }
+    expect(rules.RateLimitAll.Action).toEqual(block)
+    expect(rules.RateLimitAuth.Action).toEqual(block)
+    expect(CustomResponseBodies).toEqual({
+      'rate-limited': { ContentType: 'TEXT_PLAIN', Content: expect.any(String) as string },
+    })
+    expect(
+      (CustomResponseBodies as { 'rate-limited': { Content: string } })['rate-limited'].Content
+    ).toMatch(/retry/i)
+  })
+
+  it('makes an IP set per address version of the exempt ranges, and none without them', () => {
+    defaults.resourceCountIs('AWS::WAFv2::IPSet', 0)
+
+    const mixed = globalOf({
+      waf: {
+        rateLimit: { exemptIpRanges: ['203.0.113.0/24', '2001:db8::/32', '198.51.100.7/32'] },
+      },
+    })
+    mixed.resourceCountIs('AWS::WAFv2::IPSet', 2)
+    // The retained WebACL references them: deleting one with the stack would fail
+    expect(
+      Object.values(mixed.findResources('AWS::WAFv2::IPSet')).map((r) => r.DeletionPolicy as string)
+    ).toEqual(['Retain', 'Retain'])
+    mixed.hasResourceProperties('AWS::WAFv2::IPSet', {
+      Scope: 'CLOUDFRONT',
+      IPAddressVersion: 'IPV4',
+      Addresses: ['203.0.113.0/24', '198.51.100.7/32'],
+    })
+    mixed.hasResourceProperties('AWS::WAFv2::IPSet', {
+      Scope: 'CLOUDFRONT',
+      IPAddressVersion: 'IPV6',
+      Addresses: ['2001:db8::/32'],
+    })
+    // Both rules skip both sets, AND-ed onto their own scope-down
+    const { rules } = webAcl(mixed)
+    for (const rule of [rules.RateLimitAll, rules.RateLimitAuth]) {
+      const statements = (
+        rule.Statement as {
+          RateBasedStatement: { ScopeDownStatement: { AndStatement: { Statements: unknown[] } } }
+        }
+      ).RateBasedStatement.ScopeDownStatement.AndStatement.Statements
+      expect(statements).toHaveLength(3)
+      const skipsIpSet = {
+        NotStatement: {
+          Statement: { IPSetReferenceStatement: { Arn: expect.anything() as unknown } },
+        },
+      }
+      expect(statements.slice(1)).toEqual([skipsIpSet, skipsIpSet])
+    }
+
+    const v4Only = globalOf({ waf: { rateLimit: { exemptIpRanges: ['203.0.113.0/24'] } } })
+    v4Only.resourceCountIs('AWS::WAFv2::IPSet', 1)
+    v4Only.hasResourceProperties('AWS::WAFv2::IPSet', { IPAddressVersion: 'IPV4' })
+  })
+
+  it('logs only what a rule counted or blocked, cookies and bearer tokens redacted, to a bucket named as AWS requires', () => {
+    const template = defaults
+    template.hasResourceProperties('AWS::WAFv2::LoggingConfiguration', {
+      LogDestinationConfigs: [{ 'Fn::GetAtt': [Match.stringLikeRegexp('^WafLogBucket'), 'Arn'] }],
+      LoggingFilter: {
+        DefaultBehavior: 'DROP',
+        Filters: [
+          {
+            Behavior: 'KEEP',
+            Requirement: 'MEETS_ANY',
+            Conditions: [
+              { ActionCondition: { Action: 'BLOCK' } },
+              { ActionCondition: { Action: 'COUNT' } },
+            ],
+          },
+        ],
+      },
+      RedactedFields: [
+        { SingleHeader: { Name: 'cookie' } },
+        { SingleHeader: { Name: 'authorization' } },
+      ],
+    })
+    template.hasResource('AWS::S3::Bucket', {
+      DeletionPolicy: 'Retain',
+      Properties: Match.objectLike({
+        BucketName: `aws-waf-logs-kukan-dev-${TEST_ACCOUNT}`,
+        LifecycleConfiguration: { Rules: [Match.objectLike({ ExpirationInDays: 90 })] },
+        PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true }),
+      }),
+    })
+    // The grants the log delivery service needs, and the configuration after them
+    template.hasResourceProperties('AWS::S3::BucketPolicy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Sid: 'AWSLogDeliveryWrite',
+            Principal: { Service: 'delivery.logs.amazonaws.com' },
+            Action: 's3:PutObject',
+            Condition: {
+              StringEquals: {
+                's3:x-amz-acl': 'bucket-owner-full-control',
+                'aws:SourceAccount': TEST_ACCOUNT,
+              },
+              ArnLike: { 'aws:SourceArn': Match.anyValue() },
+            },
+          }),
+          Match.objectLike({ Sid: 'AWSLogDeliveryAclCheck' }),
+        ]),
+      },
+    })
+    template.hasResource('AWS::WAFv2::LoggingConfiguration', {
+      DependsOn: [Match.stringLikeRegexp('^WafLogBucketPolicy')],
+    })
+    template.hasOutput('WafLogBucketName', {})
+  })
+
+  it('keeps the log as long as the CDN log unless told otherwise', () => {
+    const expiration = (template: Template) =>
+      Object.values(template.findResources('AWS::S3::Bucket')).map(
+        (b) =>
+          (b.Properties as { LifecycleConfiguration: { Rules: { ExpirationInDays: number }[] } })
+            .LifecycleConfiguration.Rules[0].ExpirationInDays
+      )
+    expect(expiration(globalOf({ cdnLogRetentionDays: 30 }))).toEqual([30])
+    expect(
+      expiration(globalOf({ cdnLogRetentionDays: 30, waf: { logging: { retentionDays: 7 } } }))
+    ).toEqual([7])
+  })
+
+  it('goes without the log when logging is off', () => {
+    const template = globalOf({ waf: { logging: false } })
+    template.resourceCountIs('AWS::WAFv2::LoggingConfiguration', 0)
+    template.resourceCountIs('AWS::S3::Bucket', 0)
+    expect(template.findOutputs('WafLogBucketName')).toEqual({})
+    template.resourceCountIs('AWS::WAFv2::WebACL', 1)
+  })
+
+  it('rejects at synth what AWS or the IP set would refuse at deploy', () => {
+    expect(() => synthStage({ ...edge, waf: { rateLimit: { limit: 5 } } })).toThrow(
+      /waf\.rateLimit\.limit must be an integer of 10 or more \(got 5\)/
+    )
+    expect(() => synthStage({ ...edge, waf: { rateLimit: { authLimit: 2.5 } } })).toThrow(
+      /waf\.rateLimit\.authLimit must be an integer/
+    )
+    expect(() => synthStage({ ...edge, waf: { rateLimit: { mode: 'drop' as 'count' } } })).toThrow(
+      /waf\.rateLimit\.mode must be "count" or "block"/
+    )
+    // A bare address, a prefix past the version's length, a short address, an octet over 255
+    for (const range of [
+      '203.0.113.5',
+      '203.0.113.0/33',
+      '0.0.0.0/0',
+      '::/0',
+      '2001:db8::/129',
+      '1.2.3/24',
+      '999.0.0.1/24',
+    ]) {
+      expect(() =>
+        synthStage({ ...edge, waf: { rateLimit: { exemptIpRanges: [range] } } })
+      ).toThrow(`exemptIpRanges entry "${range}" is not a CIDR`)
+    }
+    expect(() => synthStage({ ...edge, waf: { logging: { retentionDays: 0 } } })).toThrow(
+      /waf\.logging\.retentionDays must be/
+    )
+    // Even where the WebACL is pasted in: the standalone deploy that creates
+    // it reads the same entry, and the pipeline synth is where typos surface
+    expect(() =>
+      synthStage({
+        webAclArn: `arn:aws:wafv2:us-east-1:${TEST_ACCOUNT}:global/webacl/kukan/00000000-0000-0000-0000-000000000000`,
+        waf: { rateLimit: { limit: 5 } },
+      })
+    ).toThrow(/waf\.rateLimit\.limit/)
+  })
+})
+
 describe('cpuArchitecture', () => {
   /** The task definitions' architectures and the platforms the images are built for. */
   const platforms = (cpuArchitecture?: 'x86_64' | 'arm64') => {

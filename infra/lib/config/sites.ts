@@ -232,6 +232,13 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       )
     }
     rejectBlankEdgeArns(site, `Site "${site.name}"`)
+    // The type leaves it out; this is the gate for what tsx does not check
+    if ((site as { waf?: unknown }).waf !== undefined) {
+      throw new Error(
+        `Site "${site.name}" sets waf — the rate rules and the log belong to the WebACL, ` +
+          "which the environment's sites share, so declare waf on the environment entry"
+      )
+    }
     // Missing cert/WAF ARNs auto-create in the us-east-1 global stack, but a
     // DNS-validated cert needs the hosted zone — reject that gap here.
     if (site.domainName && !site.certificateArn && !(site.hostedZoneId && site.hostedZoneName)) {

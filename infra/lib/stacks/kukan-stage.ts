@@ -19,8 +19,10 @@ import {
   needsManagedWaf,
   rejectBlankEdgeArns,
   resolveEnv,
+  resolveWafConfig,
   validateSites,
   type EnvironmentConfig,
+  type ResolvedWafConfig,
   resolveDeployConcurrency,
 } from '../config.js'
 import { envName, pascal } from '../naming.js'
@@ -60,6 +62,10 @@ export class KukanStage extends cdk.Stage {
     // Runs before the shape branch so `sites: []` is rejected instead of
     // silently falling back to the single-site shape below.
     const warnings = validateSites(config, this)
+    // Whatever the shape, and whether or not this synth creates the WebACL:
+    // a pipeline-managed environment keeps `waf` beside its pasted ARN, and
+    // a typo there must fail here, not on the standalone deploy that reads it
+    const waf = resolveWafConfig(config)
 
     // Multi-site environments (ADR-041): shared boxes + one stack per site.
     // Environments without `sites` keep the all-in-one KukanStack below with
@@ -68,7 +74,7 @@ export class KukanStage extends cdk.Stage {
       for (const warning of warnings) {
         cdk.Annotations.of(this).addWarningV2(warning.key, warning.message)
       }
-      const globalStack = this.createGlobalStack(config, account)
+      const globalStack = this.createGlobalStack(config, waf, account)
       const shared = new KukanSharedStack(this, 'KukanSharedStack', {
         env: { account, region },
         envConfig: config,
@@ -103,7 +109,7 @@ export class KukanStage extends cdk.Stage {
     }
 
     rejectBlankEdgeArns(config, `Environment "${id}"`)
-    const globalStack = this.createGlobalStack(config, account)
+    const globalStack = this.createGlobalStack(config, waf, account)
 
     const mainStack = new KukanStack(this, MAIN_STACK_ID, {
       env: { account, region },
@@ -129,6 +135,7 @@ export class KukanStage extends cdk.Stage {
    */
   private createGlobalStack(
     config: EnvironmentConfig,
+    waf: ResolvedWafConfig,
     account: string
   ): KukanGlobalStack | undefined {
     if (!needsGlobalStack(config)) return undefined
@@ -136,6 +143,7 @@ export class KukanStage extends cdk.Stage {
       env: { account, region: 'us-east-1' },
       crossRegionReferences: true,
       envConfig: config,
+      waf,
     })
   }
 }

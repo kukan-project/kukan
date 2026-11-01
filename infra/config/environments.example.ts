@@ -34,7 +34,7 @@
  * Where each field goes:
  *   - Environment entry ONLY (the shared boxes + CI/CD):
  *       account, region, scale, dbEngine, enableOpenSearch, cpuArchitecture,
- *       rdsCaCertificate, bedrock, githubRepo, deployBranch
+ *       rdsCaCertificate, bedrock, waf, githubRepo, deployBranch
  *   - Site entries ONLY (rejected on the environment entry):
  *       name, brand, domainName, hostedZoneId, hostedZoneName, certificateArn,
  *       webAclArn, enableWaf, allowedIpRanges, basicAuth, enableIpv6Dns,
@@ -99,6 +99,26 @@ export const environments = {
     // deployConcurrency: 1, // sites deployed at once after the canary; omit → 2, 1 = serial (ADR-041)
     // ecrImageRetention: 100, // images kept in the bootstrap ECR repository; omit → 100
     // cdnLogRetentionDays: 90, // days CloudFront access logs are kept (every site); omit → 90
+
+    // --- WAF beyond the managed rules (the WebACL the sites share; ADR-027 supplement) ---
+    // Two rate-based rules count requests per IP over 5 minutes: all requests except
+    // the cached static assets, and the sign-in API. They only count by default —
+    // a shared exit (an office NAT, an isolated-browsing gateway) puts many people
+    // behind one address — so read the counts (CloudWatch kukan-waf-rate-all /
+    // kukan-waf-rate-auth, the S3 log) before switching to block. Applies where
+    // this environment's global stack creates the WebACL; after a change, redeploy
+    // that stack standalone (the pipeline never does — see the header).
+    // waf: {
+    //   rateLimit: {
+    //     mode: 'count', // 'count' (omit) records the IPs over the limit; 'block' answers them 429
+    //     limit: 2000, // requests per 5 minutes from one IP, static assets not counted; omit → 2000 (min 10)
+    //     authLimit: 100, // requests per 5 minutes from one IP to /api/auth/; omit → 100 (min 10)
+    //     exemptIpRanges: ['203.0.113.0/24', '2001:db8::/32'], // CIDRs never counted (an office exit)
+    //   },
+    //   // The log of counted and blocked requests (not the allowed ones — those are in the
+    //   // CloudFront access log), cookies redacted, in an S3 bucket beside the WebACL:
+    //   logging: { retentionDays: 90 }, // omit → on, kept cdnLogRetentionDays; `false` → off
+    // },
 
     // --- Fine-tuning (deep-merged onto the scale preset, then under each site's overrides) ---
     // overrides: {

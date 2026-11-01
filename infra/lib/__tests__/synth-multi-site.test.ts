@@ -471,6 +471,26 @@ describe('multi-site global stack (auto-created cert/WAF, standalone mode)', () 
     global.hasOutput('WebAclArn', {})
   })
 
+  it("reaches the shared WebACL with the environment's waf (the rules and the log are tested single-site)", () => {
+    const rate = stackTemplate(
+      synthStage({
+        scale: 'medium',
+        waf: { rateLimit: { limit: 300 } },
+        sites: [{ name: 'citya' }, { name: 'cityb' }],
+      }),
+      'KukanGlobalStack'
+    )
+    rate.hasResourceProperties('AWS::WAFv2::WebACL', {
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Name: 'RateLimitAll',
+          Statement: { RateBasedStatement: Match.objectLike({ Limit: 300 }) },
+        }),
+      ]),
+    })
+    rate.resourceCountIs('AWS::WAFv2::LoggingConfiguration', 1)
+  })
+
   it('retains cert/WAF so an external-ARN switchover never deletes in-use resources', () => {
     // Metadata forces the DeletionPolicy change to be a recognized update
     global.hasResource('AWS::CertificateManager::Certificate', {
@@ -733,6 +753,15 @@ describe('validateSites', () => {
     ).toEqual([])
     // Missing webAclArn is fine too — the global stack creates a shared ACL
     expect(validateSites({ ...base, sites: [{ name: 'citya' }] })).toEqual([])
+  })
+
+  it("rejects waf on a site entry — the WebACL, and so its rules, are the environment's", () => {
+    expect(() =>
+      validateSites({
+        ...base,
+        sites: [{ name: 'citya', waf: { rateLimit: { mode: 'block' } } } as SiteConfig],
+      })
+    ).toThrow(/Site "citya" sets waf.*declare waf on the environment entry/)
   })
 
   it('rejects blank cert/WAF ARNs (missing for needsGlobalStack, supplied for wiring)', () => {

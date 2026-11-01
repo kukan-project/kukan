@@ -99,7 +99,7 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 | ECR + CloudWatch 等 | 最小                 | ~$2      |
 
 OpenSearch なし（SEARCH_TYPE=postgres）: ~$77/月
-WAF 追加（enableWaf=true）: +~$9/月
+WAF 追加（enableWaf=true）: +~$11/月
 IP 制限は CloudFront Function で対応（追加コストなし）
 CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万リクエストで数セント）
 消費税（日本リージョン 10%）: 別途加算
@@ -128,7 +128,7 @@ CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万�
 | OpenSearch                 | m6g.xlarge.search × 2 (200GB)     | ~$510    |
 | CloudFront                 | VPC origin + 転送                 | ~$5      |
 | パブリック IPv4            | ECS タスク × 4                    | ~$15     |
-| WAF（オプション）          | マネージドルール                  | ~$9      |
+| WAF（オプション）          | マネージドルール + レートルール   | ~$11     |
 | S3 + Secrets + ECR + CW 等 | —                                 | ~$10     |
 
 ### コスト配分タグ
@@ -498,6 +498,7 @@ SiteStack を削除（`cdk destroy` / sites から除去）した場合:
 | サイト DB + ロール               | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                   |
 | S3 バケット                      | **残る**（RETAIN）          | 空にしてから削除                                                                                                                                                  |
 | アクセスログのバケット           | **残る**（RETAIN）          | ログは `cdnLogRetentionDays` で消える。空になってから削除                                                                                                         |
+| WAF ログのバケット（global）     | **残る**（RETAIN）          | 固定名 `aws-waf-logs-kukan-<env>-<account>`。空になってから削除。**同名環境を作り直す場合は先に削除**（名前が衝突する）                                           |
 | Backup vault（awsBackup 有効時） | **残る**（RETAIN）          | リカバリポイントの失効（または手動削除）後に `kukan-<env>-<site>-backup` を削除。**同名サイトを再追加する場合は先に削除**（固定名のため衝突、ADR-037 と同じ規則） |
 | OpenSearch インデックス          | **残る**（共有ドメイン内）  | マスターのロールで `DELETE /kukan-<env>-<site>-search`（ロールと割り当ては共有スタックの更新で消える）                                                            |
 | Secrets / ECS / CloudFront       | 削除される                  | —                                                                                                                                                                 |
@@ -577,7 +578,36 @@ WAF は CLOUDFRONT スコープで us-east-1（KukanGlobalStack）にデプロ�
 | AWSManagedRulesKnownBadInputsRuleSet  | Log4Shell, Spring4Shell 等の既知の脆弱性攻撃       | $1/月 |
 | AWSManagedRulesAmazonIpReputationList | AWS 脅威インテリジェンスによる悪意ある IP ブロック | $1/月 |
 
-WAF 費用合計: WebACL $5/月 + ルール $3/月 + リクエスト $0.60/百万 = **~$9/月**
+WAF 費用合計: WebACL $5/月 + ルール $5/月（マネージド 3 + レート 2） + リクエスト $0.60/百万 = **~$11/月**
+
+#### レートベースルールとログ（ADR-027 補足）
+
+マネージドグループの後ろに、閲覧者 IP ごとに 5 分間の件数を数えるルールを 2 つ置く:
+`RateLimitAll`（全リクエスト、`/_next/static/` と `/vendor/ibis-office/` は数えない、既定 2000）と
+`RateLimitAuth`（`/api/auth/` だけ、既定 100）。既定は `count`（数えるだけ）で、数えた IP を
+確かめてから `block`（429 + プレーンテキスト本文 + `Retry-After`）に切り替える。ルールが
+COUNT / BLOCK した分だけのログを、WebACL と同じ us-east-1 の S3 バケット
+`aws-waf-logs-kukan-<env>-<account>`（出力 `WafLogBucketName`）に残す（`cookie` と
+`authorization` は伏せる）。理由と切り替えの手順は ADR-027 の補足（2026-11）。
+
+環境エントリの `waf`（環境専用。WebACL は環境のサイトで共有するので、サイトエントリに書くと
+synth で断る。`-c` でも上書きしない）:
+
+```ts
+waf: {
+  rateLimit: {
+    mode: 'count', // 'count'（省略時）| 'block'
+    limit: 2000, // IP あたり 5 分の件数、静的アセットを除く。10 以上の整数
+    authLimit: 100, // /api/auth/ への IP あたり 5 分の件数。10 以上の整数
+    exemptIpRanges: ['203.0.113.0/24', '2001:db8::/32'], // 数えない CIDR。IPv4 / IPv6 は別の IP セットになる
+  },
+  logging: { retentionDays: 90 }, // 省略時は有効で cdnLogRetentionDays。false で無効
+},
+```
+
+`waf` は WebACL をこの環境の global スタックが作るときに効く。変更は global スタックの
+standalone デプロイで反映する（pipeline は us-east-1 を持たない）。`webAclArn` を貼った環境では、
+一時的に外して `npx cdk deploy -c env=<env> <Env>/KukanGlobalStack` を流し、戻す（ARN は変わらない）。
 
 ### OpenSearch のアクセス制御（FGAC、ADR-069）
 
@@ -646,8 +676,9 @@ CloudFront のアクセスログは、オプトインリージョンを除き全
   配信できない。デプロイを止めるほどではないため、synth の警告にとどめる。CDK が知らないリージョンも
   オプトインとして扱う（2019 年以降に追加されたリージョンはすべてオプトイン）
 - 残る項目: `x-edge-result-type`、URI とクエリ、`c-ip`、User-Agent、ステータス、`time-taken` ほか
-- **WAF のログは取らない。** WAF のログにはキャッシュの状態・ステータス・応答時間が残らない。
-  ルールを調整するときだけ足す
+- **WAF のログは、ルールが数えた・止めた分だけ別に取る**（上の「レートベースルールとログ」）。
+  許可したリクエストは残さない — WAF のログにはキャッシュの状態・ステータス・応答時間が残らず、
+  GB 単位で課金されるため
 - **CloudFront の追加メトリクス（有料）は有効にしない。** ヒット率はアクセスログから数えられる
 
 - **Athena からすぐ読めるようにする**（`AccessLogConstruct`）。サイトごとに Glue データベース

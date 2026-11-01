@@ -9,13 +9,21 @@ import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as route53 from 'aws-cdk-lib/aws-route53'
 import type { Construct } from 'constructs'
-import { loadConfig, needsManagedCert, needsManagedWaf, type EnvironmentConfig } from '../config.js'
+import {
+  loadConfig,
+  needsManagedCert,
+  needsManagedWaf,
+  type EnvironmentConfig,
+  type ResolvedWafConfig,
+} from '../config.js'
 import { pascal } from '../naming.js'
 import { WafConstruct } from '../constructs/waf.js'
 
 export interface KukanGlobalStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */
   envConfig?: EnvironmentConfig
+  /** The environment's `waf`, resolved once by the stage (resolveWafConfig). */
+  waf: ResolvedWafConfig
 }
 
 export class KukanGlobalStack extends cdk.Stack {
@@ -26,7 +34,7 @@ export class KukanGlobalStack extends cdk.Stack {
   /** Per-site certificate ARNs by site name (multi-site, ADR-041). */
   readonly siteCertificateArns: Record<string, string> = {}
 
-  constructor(scope: Construct, id: string, props: KukanGlobalStackProps = {}) {
+  constructor(scope: Construct, id: string, props: KukanGlobalStackProps) {
     super(scope, id, props)
 
     // Multi-site (ADR-041): one cert per site domain, one WebACL shared by the
@@ -52,7 +60,7 @@ export class KukanGlobalStack extends cdk.Stack {
         )
       }
       if (props.envConfig.sites.some(needsManagedWaf)) {
-        this.webAclArn = this.createWebAcl('Shared WAF WebACL ARN (sites[].webAclArn)')
+        this.webAclArn = this.createWebAcl(props.waf, 'Shared WAF WebACL ARN (sites[].webAclArn)')
       }
       cdk.Tags.of(this).add('kukan:stack', 'global')
       return
@@ -81,7 +89,7 @@ export class KukanGlobalStack extends cdk.Stack {
     }
 
     if (config.enableWaf && !props.envConfig?.webAclArn) {
-      this.webAclArn = this.createWebAcl('WAF WebACL ARN (webAclArn)')
+      this.webAclArn = this.createWebAcl(props.waf, 'WAF WebACL ARN (webAclArn)')
     }
 
     cdk.Tags.of(this).add('kukan:stack', 'global')
@@ -113,15 +121,24 @@ export class KukanGlobalStack extends cdk.Stack {
   }
 
   /** WAF WebACL (CLOUDFRONT scope) + its paste-target output. RETAINed (see
-   *  retainEdgeResource) — but an orphaned WebACL keeps billing (~$9/month),
-   *  so delete it once nothing references it. */
-  private createWebAcl(outputDescription: string): string {
-    const waf = new WafConstruct(this, 'Waf')
+   *  retainEdgeResource) — but an orphaned WebACL keeps billing (~$11/month),
+   *  so delete it once nothing references it. The log bucket's name is an
+   *  output too: the WebACL's rate rules write there, and reading it is how an
+   *  operator decides to switch them from count to block. */
+  private createWebAcl(config: ResolvedWafConfig, outputDescription: string): string {
+    const waf = new WafConstruct(this, 'Waf', config)
     this.retainEdgeResource(waf.webAcl)
+    waf.exemptIpSets.forEach((ipSet) => this.retainEdgeResource(ipSet))
     new cdk.CfnOutput(this, 'WebAclArn', {
       value: waf.webAcl.attrArn,
       description: outputDescription,
     })
+    if (waf.logBucket) {
+      new cdk.CfnOutput(this, 'WafLogBucketName', {
+        value: waf.logBucket.bucketName,
+        description: 'S3 bucket holding the WAF log of counted and blocked requests',
+      })
+    }
     return waf.webAcl.attrArn
   }
 

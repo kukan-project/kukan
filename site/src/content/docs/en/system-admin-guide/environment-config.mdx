@@ -64,25 +64,26 @@ customer-managed key (decided automatically), adding roughly $1 per month per ke
 Settings for the shared resources (database, OpenSearch, VPC, ECS cluster) and
 CI/CD.
 
-| Field                  | Type                                                             | Default                                          | Description                                                                                                                                                           |
-| ---------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `account`              | string                                                           | **required**                                     | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)                                                                        |
-| `region`               | string                                                           | `ap-northeast-1`                                 | Target region                                                                                                                                                         |
-| `scale`                | `small` \| `medium` \| `large`                                   | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                                |
-| `dbEngine`             | `rds` \| `aurora`                                                | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                       |
-| `enableOpenSearch`     | boolean                                                          | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                        |
-| `cpuArchitecture`      | `arm64` \| `x86_64`                                              | `arm64`                                          | CPU of the web and worker tasks (Graviton by default). The images are built for it (see "CPU architecture" below)                                                     |
-| `rdsCaCertificate`     | `rds-ca-rsa2048-g1` \| `rds-ca-rsa4096-g1` \| `rds-ca-ecc384-g1` | `rds-ca-rsa2048-g1`                              | CA that issues the database's server certificate, which the web and worker verify when they connect (see "Database certificate" below)                                |
-| `bedrock`              | object \| `false`                                                | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                       |
-| `githubRepo`           | string                                                           | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                     |
-| `deployBranch`         | string                                                           | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                         |
-| `deployNotification`   | boolean                                                          | none                                             | Post deploy outcomes to Slack (pipeline mode only). The webhook URL goes into a secret the stack creates                                                              |
-| `overrides`            | deep-partial                                                     | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                                                                                                    |
-| `sites`                | SiteConfig[]                                                     | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine)                                                                       |
-| `deployConcurrency`    | number                                                           | `2`                                              | Sites deployed at once after the canary. Their simultaneous rolling updates count against the database connection budget; synth fails when it does not fit            |
-| `ecrImageRetention`    | number                                                           | `100`                                            | Images kept (newest first) in the CDK bootstrap ECR repository. Environments in one account share the repository, so give them the same value (synth fails otherwise) |
-| `cdnLogRetentionDays`  | number                                                           | `90`                                             | Days CloudFront access logs are kept (applies to every site in the environment)                                                                                       |
-| `enableExecuteCommand` | boolean                                                          | `false`                                          | Every site's default for ECS Exec; a site's `enableExecuteCommand` wins (see "ECS Exec" below)                                                                        |
+| Field                  | Type                                                             | Default                                          | Description                                                                                                                                                                             |
+| ---------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `account`              | string                                                           | **required**                                     | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)                                                                                          |
+| `region`               | string                                                           | `ap-northeast-1`                                 | Target region                                                                                                                                                                           |
+| `scale`                | `small` \| `medium` \| `large`                                   | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                                                  |
+| `dbEngine`             | `rds` \| `aurora`                                                | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                                         |
+| `enableOpenSearch`     | boolean                                                          | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                                          |
+| `cpuArchitecture`      | `arm64` \| `x86_64`                                              | `arm64`                                          | CPU of the web and worker tasks (Graviton by default). The images are built for it (see "CPU architecture" below)                                                                       |
+| `rdsCaCertificate`     | `rds-ca-rsa2048-g1` \| `rds-ca-rsa4096-g1` \| `rds-ca-ecc384-g1` | `rds-ca-rsa2048-g1`                              | CA that issues the database's server certificate, which the web and worker verify when they connect (see "Database certificate" below)                                                  |
+| `bedrock`              | object \| `false`                                                | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                                         |
+| `githubRepo`           | string                                                           | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                                       |
+| `deployBranch`         | string                                                           | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                                           |
+| `deployNotification`   | boolean                                                          | none                                             | Post deploy outcomes to Slack (pipeline mode only). The webhook URL goes into a secret the stack creates                                                                                |
+| `overrides`            | deep-partial                                                     | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                                                                                                                      |
+| `sites`                | SiteConfig[]                                                     | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine)                                                                                         |
+| `deployConcurrency`    | number                                                           | `2`                                              | Sites deployed at once after the canary. Their simultaneous rolling updates count against the database connection budget; synth fails when it does not fit                              |
+| `ecrImageRetention`    | number                                                           | `100`                                            | Images kept (newest first) in the CDK bootstrap ECR repository. Environments in one account share the repository, so give them the same value (synth fails otherwise)                   |
+| `cdnLogRetentionDays`  | number                                                           | `90`                                             | Days CloudFront access logs are kept (applies to every site in the environment)                                                                                                         |
+| `waf`                  | object                                                           | count only, logging on                           | The shared WebACL's rate-based rules (`rateLimit.mode` / `limit` / `authLimit` / `exemptIpRanges`) and the log of what they counted or blocked (`logging`). See "WAF rate limits" below |
+| `enableExecuteCommand` | boolean                                                          | `false`                                          | Every site's default for ECS Exec; a site's `enableExecuteCommand` wins (see "ECS Exec" below)                                                                                          |
 
 ### `bedrock` fields
 
@@ -127,6 +128,34 @@ too (against the CAs bundled with the Lambda runtime).
 - It is an environment-level setting (the database is shared by the environment's sites);
   `-c` cannot override it
 
+### WAF rate limits
+
+Besides the managed rules, the WebACL shared by the sites with WAF on carries two rules that
+count requests per viewer IP over 5 minutes: every request (cached static assets excepted,
+default 2000) and the sign-in API `/api/auth/` (default 100).
+
+```ts
+waf: {
+  rateLimit: {
+    mode: 'count', // 'count' (omit: record only) | 'block' (answer 429)
+    limit: 2000, // limit for every request (integer ≥ 10)
+    authLimit: 100, // limit for the sign-in API (integer ≥ 10)
+    exemptIpRanges: ['203.0.113.0/24', '2001:db8::/32'], // CIDRs never counted (an office exit, say)
+  },
+  logging: { retentionDays: 90 }, // the log of counted and blocked requests; omit → on, kept cdnLogRetentionDays; false → off
+},
+```
+
+- The default only counts (`count`). Where many people sit behind one exit, one person's limit
+  becomes the organization's, so check who is over before switching to `block`. The procedure is
+  in the [system admin guide, "WAF rate limits"](/en/system-admin-guide/#waf-rate-limits)
+- The log goes to the bucket `aws-waf-logs-kukan-<env>-<account>` in us-east-1 beside the WebACL
+  (stack output `WafLogBucketName`): only the requests a rule counted or blocked, cookies
+  redacted. The log of every request is the CloudFront access log
+- It is an environment-level setting (the WebACL is shared by the environment's sites); `-c`
+  cannot override it. A change lands through a standalone deploy of the global stack (the
+  pipeline has no us-east-1)
+
 ## Site entry fields (`sites[]`)
 
 Site-specific settings. They cannot appear on the environment entry (synth
@@ -143,7 +172,7 @@ is every site's default, and the site's value goes on top of it.
 | `hostedZoneName`        | string                   | none                                              | Route53 hosted zone name (same)                                                                                                                                                                                                                                   |
 | `certificateArn`        | string                   | auto-created in standalone mode                   | us-east-1 ACM certificate ARN. **Required in pipeline mode when `domainName` is set**                                                                                                                                                                             |
 | `webAclArn`             | string                   | auto-created in standalone mode                   | us-east-1 WAF WebACL ARN (sharable across sites). **Required in pipeline mode when WAF is on**                                                                                                                                                                    |
-| `enableWaf`             | boolean                  | ON (OFF when `allowedIpRanges` / `basicAuth` set) | WAF managed rules on CloudFront (~$9/month)                                                                                                                                                                                                                       |
+| `enableWaf`             | boolean                  | ON (OFF when `allowedIpRanges` / `basicAuth` set) | WAF managed rules + rate-based rules on CloudFront (~$11/month)                                                                                                                                                                                                   |
 | `allowedIpRanges`       | string[]                 | none                                              | IP restriction (CloudFront Function, IPv4 CIDR + IPv6)                                                                                                                                                                                                            |
 | `basicAuth`             | `{ username, password }` | none                                              | Basic auth gate, OR-combined with `allowedIpRanges` (light gate only)                                                                                                                                                                                             |
 | `enableIpv6Dns`         | boolean                  | ON (OFF when `allowedIpRanges` set)               | An AAAA alias for the domain, so it is reached over IPv6 too. Behind `allowedIpRanges`, turn it on only once the list holds the IPv6 prefixes of every place it admits (a device admitted by IPv4 would come over IPv6 and get a 403)                             |

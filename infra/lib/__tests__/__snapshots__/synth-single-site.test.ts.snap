@@ -13653,6 +13653,12 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         "Ref": "Certificate4E7ABB08",
       },
     },
+    "WafLogBucketName": {
+      "Description": "S3 bucket holding the WAF log of counted and blocked requests",
+      "Value": {
+        "Ref": "WafLogBucket83D68255",
+      },
+    },
     "WebAclArn": {
       "Description": "WAF WebACL ARN (webAclArn)",
       "Value": {
@@ -13811,6 +13817,236 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       "Type": "Custom::CrossRegionExportWriter",
       "UpdateReplacePolicy": "Delete",
     },
+    "WafLogBucket83D68255": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "BucketName": "aws-waf-logs-kukan-dev-123456789012",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireWafLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "waf",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "kukan:stack",
+            "Value": "global",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "WafLogBucketPolicy4E0E522E": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "WafLogBucket83D68255",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "WafLogBucket83D68255",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "WafLogBucket83D68255",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:PutObject",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":logs:us-east-1:123456789012:*",
+                      ],
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "123456789012",
+                  "s3:x-amz-acl": "bucket-owner-full-control",
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "WafLogBucket83D68255",
+                        "Arn",
+                      ],
+                    },
+                    "/AWSLogs/123456789012/*",
+                  ],
+                ],
+              },
+              "Sid": "AWSLogDeliveryWrite",
+            },
+            {
+              "Action": [
+                "s3:GetBucketAcl",
+                "s3:ListBucket",
+              ],
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":logs:us-east-1:123456789012:*",
+                      ],
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "123456789012",
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WafLogBucket83D68255",
+                  "Arn",
+                ],
+              },
+              "Sid": "AWSLogDeliveryAclCheck",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "WafLoggingAE8B7F9A": {
+      "DependsOn": [
+        "WafLogBucketPolicy4E0E522E",
+      ],
+      "Properties": {
+        "LogDestinationConfigs": [
+          {
+            "Fn::GetAtt": [
+              "WafLogBucket83D68255",
+              "Arn",
+            ],
+          },
+        ],
+        "LoggingFilter": {
+          "DefaultBehavior": "DROP",
+          "Filters": [
+            {
+              "Behavior": "KEEP",
+              "Conditions": [
+                {
+                  "ActionCondition": {
+                    "Action": "BLOCK",
+                  },
+                },
+                {
+                  "ActionCondition": {
+                    "Action": "COUNT",
+                  },
+                },
+              ],
+              "Requirement": "MEETS_ANY",
+            },
+          ],
+        },
+        "RedactedFields": [
+          {
+            "SingleHeader": {
+              "Name": "cookie",
+            },
+          },
+          {
+            "SingleHeader": {
+              "Name": "authorization",
+            },
+          },
+        ],
+        "ResourceArn": {
+          "Fn::GetAtt": [
+            "WafWebAclBE24253C",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::WAFv2::LoggingConfiguration",
+    },
     "WafWebAclBE24253C": {
       "DeletionPolicy": "Retain",
       "Metadata": {
@@ -13872,6 +14108,187 @@ exports[`self-created global stack (domain without certificateArn) > matches the
             "VisibilityConfig": {
               "CloudWatchMetricsEnabled": true,
               "MetricName": "kukan-waf-ip-reputation",
+              "SampledRequestsEnabled": true,
+            },
+          },
+          {
+            "Action": {
+              "Count": {},
+            },
+            "Name": "RateLimitAll",
+            "Priority": 40,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "EvaluationWindowSec": 300,
+                "Limit": 2000,
+                "ScopeDownStatement": {
+                  "NotStatement": {
+                    "Statement": {
+                      "AndStatement": {
+                        "Statements": [
+                          {
+                            "OrStatement": {
+                              "Statements": [
+                                {
+                                  "ByteMatchStatement": {
+                                    "FieldToMatch": {
+                                      "UriPath": {},
+                                    },
+                                    "PositionalConstraint": "STARTS_WITH",
+                                    "SearchString": "/_next/static/",
+                                    "TextTransformations": [
+                                      {
+                                        "Priority": 0,
+                                        "Type": "NONE",
+                                      },
+                                    ],
+                                  },
+                                },
+                                {
+                                  "ByteMatchStatement": {
+                                    "FieldToMatch": {
+                                      "UriPath": {},
+                                    },
+                                    "PositionalConstraint": "STARTS_WITH",
+                                    "SearchString": "/vendor/ibis-office/",
+                                    "TextTransformations": [
+                                      {
+                                        "Priority": 0,
+                                        "Type": "NONE",
+                                      },
+                                    ],
+                                  },
+                                },
+                              ],
+                            },
+                          },
+                          {
+                            "NotStatement": {
+                              "Statement": {
+                                "ByteMatchStatement": {
+                                  "FieldToMatch": {
+                                    "UriPath": {},
+                                  },
+                                  "PositionalConstraint": "CONTAINS",
+                                  "SearchString": "..",
+                                  "TextTransformations": [
+                                    {
+                                      "Priority": 0,
+                                      "Type": "NONE",
+                                    },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                          {
+                            "NotStatement": {
+                              "Statement": {
+                                "ByteMatchStatement": {
+                                  "FieldToMatch": {
+                                    "UriPath": {},
+                                  },
+                                  "PositionalConstraint": "CONTAINS",
+                                  "SearchString": "%",
+                                  "TextTransformations": [
+                                    {
+                                      "Priority": 0,
+                                      "Type": "NONE",
+                                    },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                          {
+                            "NotStatement": {
+                              "Statement": {
+                                "ByteMatchStatement": {
+                                  "FieldToMatch": {
+                                    "UriPath": {},
+                                  },
+                                  "PositionalConstraint": "CONTAINS",
+                                  "SearchString": "\\",
+                                  "TextTransformations": [
+                                    {
+                                      "Priority": 0,
+                                      "Type": "NONE",
+                                    },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "kukan-waf-rate-all",
+              "SampledRequestsEnabled": true,
+            },
+          },
+          {
+            "Action": {
+              "Count": {},
+            },
+            "Name": "RateLimitAuth",
+            "Priority": 50,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "EvaluationWindowSec": 300,
+                "Limit": 100,
+                "ScopeDownStatement": {
+                  "OrStatement": {
+                    "Statements": [
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {},
+                          },
+                          "PositionalConstraint": "STARTS_WITH",
+                          "SearchString": "/api/auth/",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "URL_DECODE",
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        "ByteMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {},
+                          },
+                          "PositionalConstraint": "STARTS_WITH",
+                          "SearchString": "/api/auth/",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "URL_DECODE",
+                            },
+                            {
+                              "Priority": 1,
+                              "Type": "NORMALIZE_PATH_WIN",
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "kukan-waf-rate-auth",
               "SampledRequestsEnabled": true,
             },
           },
