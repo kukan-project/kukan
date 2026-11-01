@@ -573,6 +573,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -591,6 +594,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -619,6 +625,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -647,6 +656,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -673,6 +685,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -697,6 +712,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -721,6 +739,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -752,6 +773,9 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -885,6 +909,22 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {
@@ -5468,6 +5508,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5486,6 +5529,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5514,6 +5560,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5542,6 +5591,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5568,6 +5620,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5592,6 +5647,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5616,6 +5674,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -5647,6 +5708,9 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -5786,6 +5850,22 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {
@@ -10324,6 +10404,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10342,6 +10425,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10370,6 +10456,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10398,6 +10487,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10424,6 +10516,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10448,6 +10543,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10472,6 +10570,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -10503,6 +10604,9 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -10642,6 +10746,22 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {
@@ -14401,6 +14521,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14419,6 +14542,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14447,6 +14573,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14475,6 +14604,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14501,6 +14633,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14525,6 +14660,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14549,6 +14687,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -14580,6 +14721,9 @@ exports[`self-created global stack (domain without certificateArn) > matches the
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -14729,6 +14873,22 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {
@@ -19253,6 +19413,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19271,6 +19434,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19299,6 +19465,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19327,6 +19496,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19353,6 +19525,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19377,6 +19552,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19401,6 +19579,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -19432,6 +19613,9 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanStackCDNDistributionOrigin1D4703BC9",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -19571,6 +19755,22 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {

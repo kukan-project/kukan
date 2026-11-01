@@ -46,6 +46,8 @@ x-app-environment: &app-environment
   USER_AGENT_URL: ${USER_AGENT_URL:-}
   # false = no <meta name="generator" content="KUKAN"> on the pages (ADR-070)
   GENERATOR_META_ENABLED: ${GENERATOR_META_ENABLED:-true}
+  # enforce = the pages' Content-Security-Policy blocks instead of reporting (ADR-071)
+  CSP_MODE: ${CSP_MODE:-report-only}
   OLLAMA_URL: http://kukan-shared-ollama:11434
   BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET:?set SITE_AUTH_SECRET}
   BETTER_AUTH_URL: ${SITE_URL}

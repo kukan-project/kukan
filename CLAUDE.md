@@ -287,6 +287,7 @@ pnpm format        # Prettier フォーマット
 - web を Lambda Web Functions で動かす（connector を DualStack にして IPv6 で出し NAT を置かない、Bedrock だけインターフェースエンドポイント、段階 1 実測済み・段階 2 で合否、提案） → `docs/adr/jp/068-lambda-web-functions.md`
 - 共有 OpenSearch のサイト間分離を FGAC で強制する（マスターは IAM ロール、ロールの割り当ては共有スタックがサイト一覧から作る、ADR-041 拡張、提案） → `docs/adr/jp/069-opensearch-fgac-site-isolation.md`
 - 製品名は名乗りバージョンは未認証に出さない（`<meta name="generator" content="KUKAN">` はサイト単位で無効化可、worker の User-Agent からも版を外す、MCP の版は機能面の版、版は管理画面だけ） → `docs/adr/jp/070-product-name-without-version.md`
+- CSP を nonce なしで入れ、HSTS を TLS 終端で出す（`script-src 'unsafe-inline'`：App Router のインラインスクリプトはハッシュできず nonce は CDN の HTML キャッシュと両立しない。守るのは読み込み先と送信先。`CSP_MODE=report-only` で入れ後に enforce、`frame-src` は report-only 中も強制、違反報告先は置かない。HSTS は CloudFront のレスポンスヘッダーポリシーと Caddy の TLS ブロックだけ、`includeSubDomains` はサイト単位、preload なし） → `docs/adr/jp/071-csp-without-nonce-hsts-at-tls-edge.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

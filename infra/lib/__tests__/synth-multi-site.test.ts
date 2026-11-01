@@ -25,6 +25,7 @@ import {
   bedrockProfiles,
   CDN_LOG_BUCKET,
   containerEnvs,
+  hsts,
   execChannelGrants,
   normalize,
   searchSiteRoles,
@@ -52,8 +53,15 @@ const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
       webAclArn: `arn:aws:wafv2:us-east-1:${TEST_ACCOUNT}:global/webacl/kukan/00000000-0000-0000-0000-000000000000`,
       enableGa4DataApi: true,
       nameSiteInUserAgent: true,
+      hstsIncludeSubDomains: true,
     },
-    { name: 'cityb', enableWaf: false, nameSiteInUserAgent: true, generatorMeta: false },
+    {
+      name: 'cityb',
+      enableWaf: false,
+      nameSiteInUserAgent: true,
+      generatorMeta: false,
+      cspMode: 'enforce',
+    },
   ],
 }
 
@@ -82,6 +90,22 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     expect(containerEnvs(siteA).Web).not.toHaveProperty('GENERATOR_META_ENABLED')
     expect(containerEnvs(siteB).Web.GENERATOR_META_ENABLED).toBe('false')
     expect(containerEnvs(siteB).Worker).not.toHaveProperty('GENERATOR_META_ENABLED')
+  })
+
+  it('enforces the CSP on the one site that asks, and sets nothing for the rest (ADR-071)', () => {
+    expect(containerEnvs(siteA).Web).not.toHaveProperty('CSP_MODE')
+    expect(containerEnvs(siteB).Web.CSP_MODE).toBe('enforce')
+    expect(containerEnvs(siteB).Worker).not.toHaveProperty('CSP_MODE')
+  })
+
+  it('binds the subdomains to HTTPS only on the site that asks (ADR-071)', () => {
+    expect(hsts(siteA)).toEqual({
+      AccessControlMaxAgeSec: 31536000,
+      IncludeSubdomains: true,
+      Preload: false,
+      Override: true,
+    })
+    expect(hsts(siteB).IncludeSubdomains).toBe(false)
   })
 
   it("tags every resource with its environment, and each site's with its site", () => {

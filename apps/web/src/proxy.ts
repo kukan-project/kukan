@@ -1,23 +1,28 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { officePreviewViewerSchema } from '@kukan/shared'
+import { cspModeSchema, officePreviewViewerSchema } from '@kukan/shared'
+import { brandConfig } from '@/brand/brand-config'
 import { siteOrigin } from '@/lib/site-origin'
-import { IBIS_OFFICE_BOOT, IBIS_OFFICE_DIR, IBIS_OFFICE_ROOT } from '@/lib/ibis-office'
-
-const OFFICE_ONLINE_VIEWER = 'https://view.officeapps.live.com'
+import { buildContentSecurityPolicy, uploadOrigin } from '@/lib/csp'
+import { IBIS_OFFICE_DIR, IBIS_OFFICE_ROOT } from '@/lib/ibis-office'
 
 /**
- * The CSP that keeps the Office preview's sandboxed frame in (ADR-065
- * decision 2). A source that names a path must name the host too, and
- * OFFICE_PREVIEW_VIEWER is read at runtime, so both are set per request rather
- * than in next.config.ts. The host is the site's configured origin, which
- * CloudFront's viewers see (it does not pass their Host on), and the request's,
- * for a site reached directly under another name, as by its address.
+ * The pages' CSP (ADR-071), and the one that keeps the Office preview's
+ * sandboxed frame in (ADR-065 decision 2). A source that names a path must
+ * name the host too, and OFFICE_PREVIEW_VIEWER and CSP_MODE are read at
+ * runtime, so the headers are set per request rather than in next.config.ts.
+ * The host is the site's configured origin, which CloudFront's viewers see (it
+ * does not pass their Host on), and the request's, for a site reached directly
+ * under another name, as by its address.
  *
- * Every page gets `frame-src`, not just a dataset's: the App Router keeps the
+ * Every page gets the policy, not just a dataset's: the App Router keeps the
  * first document across client navigations, so only the CSP of the page a
- * visitor arrived on is in force. It limits frames to the boot page, the PDF
- * preview and, on an `office-online` site alone, Microsoft's viewer — which a
- * frame could otherwise be navigated to, carrying a document in its URL.
+ * visitor arrived on is in force. `frame-src` limits frames to the boot page,
+ * the PDF preview and, on an `office-online` site alone, Microsoft's viewer —
+ * which a frame could otherwise be navigated to, carrying a document in its URL.
+ *
+ * Under `report-only`, `frame-src` stays enforced as it was, and the full
+ * policy goes out beside it as Report-Only; under `enforce` the full policy,
+ * which holds `frame-src`, is the one header.
  */
 export function proxy(request: NextRequest) {
   const origins = [...new Set([siteOrigin(), requestOrigin(request)])]
@@ -27,15 +32,27 @@ export function proxy(request: NextRequest) {
   if (decoded(request.nextUrl.pathname).startsWith(IBIS_OFFICE_ROOT)) {
     response.headers.set('Content-Security-Policy', bootPolicy(origins))
     response.headers.set('X-DNS-Prefetch-Control', 'off')
+    return response
+  }
+  const officeOnline =
+    officePreviewViewerSchema.parse(process.env.OFFICE_PREVIEW_VIEWER) === 'office-online'
+  const { policy, frameSrc } = buildContentSecurityPolicy({
+    origins,
+    officeOnline,
+    ga: Boolean(brandConfig.gaMeasurementId),
+    dev: process.env.NODE_ENV === 'development',
+    storageOrigin: uploadOrigin({
+      S3_ENDPOINT: process.env.S3_ENDPOINT,
+      S3_BUCKET: process.env.S3_BUCKET,
+      S3_REGION: process.env.S3_REGION,
+    }),
+    brandExtra: brandConfig.csp,
+  })
+  if (cspModeSchema.parse(process.env.CSP_MODE) === 'enforce') {
+    response.headers.set('Content-Security-Policy', policy)
   } else {
-    const frames = origins.flatMap((origin) => [
-      `${origin}${IBIS_OFFICE_BOOT}`,
-      `${origin}/api/v1/resources/`,
-    ])
-    if (officePreviewViewerSchema.parse(process.env.OFFICE_PREVIEW_VIEWER) === 'office-online') {
-      frames.push(OFFICE_ONLINE_VIEWER)
-    }
-    response.headers.set('Content-Security-Policy', `frame-src ${frames.join(' ')}`)
+    response.headers.set('Content-Security-Policy', `frame-src ${frameSrc}`)
+    response.headers.set('Content-Security-Policy-Report-Only', policy)
   }
   return response
 }

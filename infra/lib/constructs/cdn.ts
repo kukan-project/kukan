@@ -108,6 +108,25 @@ export class CdnConstruct extends Construct {
       enableAcceptEncodingBrotli: true,
     })
 
+    // --- Response headers: HSTS (ADR-071) ---
+    // Set here, not by the origin: only the TLS terminator knows the viewer
+    // came over HTTPS, and a browser ignores the header over plain HTTP anyway.
+    // One year, no preload (a mistake could not be undone), and
+    // includeSubDomains only where the site asks — it binds every host under
+    // the domain. The other security headers stay with the origin (ADR-071
+    // decision 5).
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
+      responseHeadersPolicyName: resourceName(this, 'security-headers'),
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: cdk.Duration.days(365),
+          includeSubdomains: config.hstsIncludeSubDomains,
+          preload: false,
+          override: true,
+        },
+      },
+    })
+
     // --- Viewer certificate ---
     const viewerCertificate = certificateArn
       ? acm.Certificate.fromCertificateArn(this, 'ViewerCert', certificateArn)
@@ -125,6 +144,7 @@ export class CdnConstruct extends Construct {
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
       originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+      responseHeadersPolicy,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
       functionAssociations: fnAssociations,
     }
@@ -134,6 +154,7 @@ export class CdnConstruct extends Construct {
       origin: albOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      responseHeadersPolicy,
       functionAssociations: fnAssociations,
     }
 
@@ -143,6 +164,7 @@ export class CdnConstruct extends Construct {
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: htmlCachePolicy,
       originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+      responseHeadersPolicy,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
       functionAssociations: fnAssociations,
     }
@@ -153,6 +175,7 @@ export class CdnConstruct extends Construct {
       origin: albOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: crawlFilesCachePolicy,
+      responseHeadersPolicy,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
       functionAssociations: fnAssociations,
     }

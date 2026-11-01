@@ -22,6 +22,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
 import type { Construct } from 'constructs'
+import { DEFAULT_CSP_MODE } from '@kukan/shared/env'
 import type { KukanConfig } from '../config.js'
 import { athenaWorkGroupName, envPrefix } from '../naming.js'
 import { NetworkConstruct } from '../constructs/network.js'
@@ -258,6 +259,7 @@ export function composeSite(
   if (config.officePreviewViewer !== 'ibis-office') {
     webService.addEnvironment('OFFICE_PREVIEW_VIEWER', config.officePreviewViewer)
   }
+  if (config.cspMode !== DEFAULT_CSP_MODE) webService.addEnvironment('CSP_MODE', config.cspMode)
 
   if (config.nameSiteInUserAgent) {
     workerService.addEnvironment(

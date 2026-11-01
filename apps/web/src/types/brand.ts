@@ -29,6 +29,12 @@ export interface BrandConfig {
    * Crawling itself stays allowed — blocking it in robots.txt would hide the meta tag.
    */
   noindex?: boolean
+  /**
+   * Sources a brand adds to the pages' Content-Security-Policy (ADR-071),
+   * directive → sources, e.g. `{ 'img-src': ['https://cdn.example.jp'] }`.
+   * Appended to the directive's own; nothing is taken away.
+   */
+  csp?: Partial<Record<string, string[]>>
 }
 
 /** Component override slots */

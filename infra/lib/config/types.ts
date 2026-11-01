@@ -1,4 +1,4 @@
-import type { OfficePreviewViewer } from '@kukan/shared/env'
+import type { CspMode, OfficePreviewViewer } from '@kukan/shared/env'
 
 /**
  * The shapes of an environment entry (config/environments.ts, ADR-031), a site
@@ -187,6 +187,18 @@ export interface EnvironmentConfig {
    */
   officePreviewViewer?: OfficePreviewViewer
   /**
+   * How the pages' Content-Security-Policy goes out (CSP_MODE, ADR-071). Omit →
+   * `report-only`: the policy is reported, not enforced, beside the enforced
+   * `frame-src`; `enforce` → the policy blocks.
+   */
+  cspMode?: CspMode
+  /**
+   * `includeSubDomains` on the CloudFront Strict-Transport-Security header
+   * (ADR-071). Omit → off: it binds every host under the site's domain to
+   * HTTPS, which is the operator's call, not the catalog's.
+   */
+  hstsIncludeSubDomains?: boolean
+  /**
    * Bedrock embedding for semantic search (ADR-034). Omit → enabled with Titan v2
    * defaults; `false` → AI disabled (AI_TYPE=none). No console setup needed —
    * serverless foundation models auto-enable on first invocation; the task-role
@@ -320,6 +332,18 @@ export interface SiteConfig {
    */
   officePreviewViewer?: OfficePreviewViewer
   /**
+   * How the pages' Content-Security-Policy goes out (CSP_MODE, ADR-071). Omit →
+   * `report-only`: the policy is reported, not enforced, beside the enforced
+   * `frame-src`; `enforce` → the policy blocks.
+   */
+  cspMode?: CspMode
+  /**
+   * `includeSubDomains` on the CloudFront Strict-Transport-Security header
+   * (ADR-071). Omit → off: it binds every host under the site's domain to
+   * HTTPS, which is the operator's call, not the catalog's.
+   */
+  hstsIncludeSubDomains?: boolean
+  /**
    * Listener rule priority on the environment's shared ALB (ADR-049). Omit →
    * derived from the site name (a stable hash in 1000–49999), so removing or
    * reordering sites never renumbers the others. Set it (1–999 — the derived
@@ -380,6 +404,10 @@ export interface KukanConfig extends ScaleComputed {
   generatorMeta: boolean
   /** What draws an Office file's original (OFFICE_PREVIEW_VIEWER). */
   officePreviewViewer: OfficePreviewViewer
+  /** How the pages' CSP goes out (CSP_MODE). */
+  cspMode: CspMode
+  /** Whether the HSTS header carries includeSubDomains. */
+  hstsIncludeSubDomains: boolean
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string

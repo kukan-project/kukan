@@ -3,9 +3,22 @@
 # Default: HTTP proxy on port 80.
 # Edit this file to customize for your environment.
 #
+# --- HSTS (ADR-071) ---
+#
+#   Import into a TLS site block only. Browsers ignore Strict-Transport-Security
+#   received over plain HTTP, and the `:80` block below must never send it: an
+#   HTTP-only deployment on a non-public domain would tell browsers to insist
+#   on HTTPS it does not have. Add `; includeSubDomains` only if every host
+#   under the domain serves HTTPS; never `preload`.
+#
+#   (hsts) {
+#       header Strict-Transport-Security "max-age=31536000"
+#   }
+#
 # --- TLS with Let's Encrypt (automatic) ---
 #
 #   catalog.example.com {
+#       import hsts
 #       reverse_proxy web:3000
 #   }
 #
@@ -13,6 +26,7 @@
 #
 #   catalog.example.lg.jp {
 #       tls /certs/cert.pem /certs/key.pem
+#       import hsts
 #       reverse_proxy web:3000
 #   }
 #

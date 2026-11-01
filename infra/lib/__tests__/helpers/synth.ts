@@ -100,6 +100,30 @@ export function containerEnvs(template: Template): Record<string, Record<string,
   )
 }
 
+/** The one response headers policy (ADR-071): its logical id and its Strict-Transport-Security. */
+export function securityHeadersPolicy(template: Template): {
+  id: string
+  hsts: Record<string, unknown>
+} {
+  const policies = Object.entries(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'))
+  if (policies.length !== 1) throw new Error(`${policies.length} response headers policies`)
+  const [id, resource] = policies[0]
+  const props = resource.Properties as {
+    ResponseHeadersPolicyConfig: {
+      SecurityHeadersConfig: { StrictTransportSecurity: Record<string, unknown> }
+    }
+  }
+  return {
+    id,
+    hsts: props.ResponseHeadersPolicyConfig.SecurityHeadersConfig.StrictTransportSecurity,
+  }
+}
+
+/** The Strict-Transport-Security of the one response headers policy (ADR-071). */
+export function hsts(template: Template): Record<string, unknown> {
+  return securityHeadersPolicy(template).hsts
+}
+
 /** A stack inside the stage ('KukanStack' / 'KukanGlobalStack'). */
 export function stackOf(stage: cdk.Stage, id: string): cdk.Stack {
   return stage.node.findChild(id) as cdk.Stack

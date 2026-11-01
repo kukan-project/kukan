@@ -7,7 +7,14 @@ import type { Construct } from 'constructs'
 // Resolves to dist/ — the cdk.json app command builds @kukan/shared first so
 // synth works on a clean checkout (the pipeline runs no workspace build)
 import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
-import { OFFICE_PREVIEW_VIEWERS, isTimeZone, type OfficePreviewViewer } from '@kukan/shared/env'
+import {
+  CSP_MODES,
+  DEFAULT_CSP_MODE,
+  OFFICE_PREVIEW_VIEWERS,
+  isTimeZone,
+  type CspMode,
+  type OfficePreviewViewer,
+} from '@kukan/shared/env'
 import { RDS_CA_CERTIFICATES } from './types.js'
 import type {
   BedrockConfig,
@@ -304,6 +311,11 @@ export function loadConfig(
       `officePreviewViewer "${officePreviewViewer}" is not one of ${OFFICE_PREVIEW_VIEWERS.join(', ')}`
     )
   }
+  const cspMode = ctx<CspMode>('cspMode') ?? env.cspMode ?? DEFAULT_CSP_MODE
+  if (!CSP_MODES.includes(cspMode)) {
+    throw new Error(`cspMode "${cspMode}" is not one of ${CSP_MODES.join(', ')}`)
+  }
+  const hstsIncludeSubDomains = flag('hstsIncludeSubDomains') ?? env.hstsIncludeSubDomains ?? false
   const domainName = ctx<string>('domainName') ?? env.domainName
   const hostedZoneId = ctx<string>('hostedZoneId') ?? env.hostedZoneId
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
@@ -371,6 +383,8 @@ export function loadConfig(
     nameSiteInUserAgent,
     generatorMeta,
     officePreviewViewer,
+    cspMode,
+    hstsIncludeSubDomains,
     domainName,
     timeZone,
     hostedZoneId,

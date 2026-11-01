@@ -33,6 +33,7 @@ import { DocumentTextPreview } from './document-text-preview'
 import { IchitaroPreview } from './ichitaro-preview'
 import { IbisOfficePreview } from './ibis-office-preview'
 import { crashedBefore } from '@/lib/original-draw-marks'
+import { OFFICE_ONLINE_VIEWER } from '@/lib/csp'
 
 const MarkdownDocument = dynamic(() => import('./markdown-document'), {
   ssr: false,
@@ -583,7 +584,7 @@ function PdfPreview({ resourceId }: { resourceId: string }) {
 
 // --- Office Online Preview (Excel / Word) ---
 
-const OFFICE_VIEWER_BASE = 'https://view.officeapps.live.com/op/embed.aspx'
+const OFFICE_VIEWER_BASE = `${OFFICE_ONLINE_VIEWER}/op/embed.aspx`
 
 function OfficeOnlinePreview({
   resourceId,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { envSchema, loadEnv, databaseUrl, postgresSsl, timeZoneSchema } from '../env'
+import { envSchema, loadEnv, databaseUrl, postgresSsl, timeZoneSchema, cspModeSchema } from '../env'
 
 describe('envSchema', () => {
   it('should apply defaults for optional fields', () => {
@@ -240,6 +240,16 @@ describe('timeZoneSchema', () => {
     expect(timeZoneSchema.parse('')).toBe('Asia/Tokyo')
     expect(timeZoneSchema.parse('UTC')).toBe('UTC')
     expect(() => timeZoneSchema.parse('Tokyo')).toThrow()
+  })
+})
+
+describe('cspModeSchema', () => {
+  // Read by the web's proxy on its own, like timeZoneSchema
+  it('should default an unset or empty value to report-only and reject anything else', () => {
+    expect(cspModeSchema.parse(undefined)).toBe('report-only')
+    expect(cspModeSchema.parse('')).toBe('report-only')
+    expect(cspModeSchema.parse('enforce')).toBe('enforce')
+    expect(() => cspModeSchema.parse('on')).toThrow()
   })
 })
 

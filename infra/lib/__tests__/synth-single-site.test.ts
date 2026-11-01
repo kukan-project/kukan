@@ -19,6 +19,7 @@ import {
   execChannelGrants,
   normalize,
   searchSiteRoles,
+  securityHeadersPolicy,
   stackOf,
   stackTemplate,
   synthStage,
@@ -126,6 +127,26 @@ describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
       // No origin request policy: no cookie reaches the origin
       expect(behavior?.OriginRequestPolicyId).toBeUndefined()
     }
+  })
+
+  it('sends HSTS from the edge on every behavior, this host only (ADR-071)', () => {
+    const { id: policyId, hsts } = securityHeadersPolicy(template)
+    expect(hsts).toEqual({
+      AccessControlMaxAgeSec: 31536000,
+      IncludeSubdomains: false,
+      Preload: false,
+      Override: true,
+    })
+    const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0]
+      .Properties.DistributionConfig as {
+      DefaultCacheBehavior: { ResponseHeadersPolicyId?: unknown }
+      CacheBehaviors: { PathPattern: string; ResponseHeadersPolicyId?: unknown }[]
+    }
+    expect(distribution.DefaultCacheBehavior.ResponseHeadersPolicyId).toEqual({ Ref: policyId })
+    for (const behavior of distribution.CacheBehaviors) {
+      expect(behavior.ResponseHeadersPolicyId, behavior.PathPattern).toEqual({ Ref: policyId })
+    }
+    expect(containerEnvs(template).Web).not.toHaveProperty('CSP_MODE')
   })
 
   it('logs to the site log bucket without cookies, expiring after 90 days by default', () => {

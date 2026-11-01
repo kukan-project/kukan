@@ -46,6 +46,24 @@ export const officePreviewViewerSchema = z.preprocess(
   z.enum(OFFICE_PREVIEW_VIEWERS).default('ibis-office')
 )
 
+/** How the pages' Content-Security-Policy is sent (ADR-071). */
+export const CSP_MODES = ['report-only', 'enforce'] as const
+export type CspMode = (typeof CSP_MODES)[number]
+/** What an unset CSP_MODE means, in the web and in infra alike. */
+export const DEFAULT_CSP_MODE: CspMode = 'report-only'
+
+/**
+ * `report-only` sends the full policy as Content-Security-Policy-Report-Only
+ * beside the enforced `frame-src`, so a violation shows in the browser's
+ * console without blocking anything; `enforce` sends the full policy as
+ * Content-Security-Policy. Exported for the web, which reads this one variable
+ * rather than `loadEnv()`, as with the Office viewer.
+ */
+export const cspModeSchema = z.preprocess(
+  emptyAsUndefined,
+  z.enum(CSP_MODES).default(DEFAULT_CSP_MODE)
+)
+
 const parseJsonOr = (v: string): unknown => {
   try {
     return JSON.parse(v)
@@ -246,6 +264,7 @@ const envObject = z.object({
 
   GENERATOR_META_ENABLED: generatorMetaEnabledSchema,
   OFFICE_PREVIEW_VIEWER: officePreviewViewerSchema,
+  CSP_MODE: cspModeSchema,
 
   // GA4 Analytics (optional — dashboard disabled when not set)
   GA4_PROPERTY_ID: z.string().optional(),

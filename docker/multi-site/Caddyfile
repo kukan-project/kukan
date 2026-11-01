@@ -5,6 +5,14 @@
 # With public DNS, Caddy provisions Let's Encrypt automatically; for closed
 # networks use `tls /certs/cert.pem /certs/key.pem` (mount the certs volume
 # in compose.shared.yml) or plain :80 host matchers.
+#
+# HSTS (ADR-071) is imported into TLS host blocks only. A plain :80 host must
+# never send it: an HTTP-only deployment on a non-public domain would tell
+# browsers to insist on HTTPS it does not have. Add `; includeSubDomains` only
+# if every host under the domain serves HTTPS; never `preload`.
+(hsts) {
+	header Strict-Transport-Security "max-age=31536000"
+}
 
 # Sign-in and session responses reach the viewer uncompressed: they carry
 # secrets beside text a request can echo (BREACH). Next compresses on its own
@@ -17,10 +25,12 @@
 
 catalog.city-a.example.jp {
 	import kukan_auth_identity
+	import hsts
 	reverse_proxy kukan-citya-web:3000
 }
 
 catalog.city-b.example.jp {
 	import kukan_auth_identity
+	import hsts
 	reverse_proxy kukan-cityb-web:3000
 }

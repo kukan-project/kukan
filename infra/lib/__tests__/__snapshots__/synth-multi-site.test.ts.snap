@@ -3107,6 +3107,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3125,6 +3128,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3153,6 +3159,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3181,6 +3190,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3207,6 +3219,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3231,6 +3246,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3255,6 +3273,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -3286,6 +3307,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -3395,6 +3419,22 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-citya-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": true,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {
@@ -6579,6 +6619,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6597,6 +6640,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6625,6 +6671,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6653,6 +6702,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6679,6 +6731,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               ],
               "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6703,6 +6758,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6727,6 +6785,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                 },
               ],
               "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
@@ -6758,6 +6819,9 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               },
             ],
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
             "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
             "ViewerProtocolPolicy": "redirect-to-https",
           },
@@ -6861,6 +6925,22 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-cityb-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNViewerRequestFn5A9BA497": {
       "Properties": {
@@ -7989,6 +8069,10 @@ function expandV6(addr) {
               {
                 "Name": "GENERATOR_META_ENABLED",
                 "Value": "false",
+              },
+              {
+                "Name": "CSP_MODE",
+                "Value": "enforce",
               },
             ],
             "Essential": true,

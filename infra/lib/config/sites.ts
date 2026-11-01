@@ -69,6 +69,8 @@ const SITE_SCOPED_FIELDS = Object.keys({
   nameSiteInUserAgent: true,
   generatorMeta: true,
   officePreviewViewer: true,
+  cspMode: true,
+  hstsIncludeSubDomains: true,
   timeZone: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 
