@@ -63,18 +63,34 @@ shown on each dataset in search results. An organization or category name likewi
 
 The resource page provides format-specific previews:
 
-| Format                                                       | Preview                                                                                                |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| CSV / TSV                                                    | Table view + text view                                                                                 |
-| JSON                                                         | Table view + JSON view (where its records read as a table; otherwise JSON view alone)                  |
-| XML / TXT / HTML                                             | Text view                                                                                              |
-| Markdown                                                     | Formatted (headings, tables, links) + source + extracted text; its text is searched under its headings |
-| GeoJSON                                                      | Map view + attribute table + JSON view                                                                 |
-| PDF                                                          | PDF viewer + extracted text                                                                            |
-| Excel / Word / PowerPoint (the formats before 2007 included) | Office Online Viewer + extracted text                                                                  |
-| Ichitaro (JTD / JTT)                                         | Original (drawn in the browser, a sheet at a time) + extracted text                                    |
-| PNG / JPEG / GIF / WebP / SVG / BMP / TIFF                   | Image viewer                                                                                           |
-| ZIP                                                          | File list                                                                                              |
+| Format                                     | Preview                                                                                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| CSV / TSV                                  | Table view + text view                                                                                                             |
+| JSON                                       | Table view + JSON view (where its records read as a table; otherwise JSON view alone)                                              |
+| XML / TXT / HTML                           | Text view                                                                                                                          |
+| Markdown                                   | Formatted (headings, tables, links) + source + extracted text; its text is searched under its headings                             |
+| GeoJSON                                    | Map view + attribute table + JSON view                                                                                             |
+| PDF                                        | PDF viewer + extracted text                                                                                                        |
+| Excel / Word / PowerPoint                  | Original (by default, drawn in the browser) + extracted text. By default, Word files in the old format (.doc): extracted text only |
+| Ichitaro (JTD / JTT)                       | Original (drawn in the browser, a sheet at a time) + extracted text                                                                |
+| PNG / JPEG / GIF / WebP / SVG / BMP / TIFF | Image viewer                                                                                                                       |
+| ZIP                                        | File list                                                                                                                          |
+
+By default, the originals of Excel, Word and PowerPoint files are drawn inside your browser. The file is not sent
+anywhere else, so they also show for private datasets you are signed in to read. Drawing takes a lot of
+memory, so it starts when the "Original" tab comes into view. The original cannot be edited or copied
+from.
+
+A file over 64 MB (or that unpacks to over 128 MB), broken, not an Office file, or too much to draw gets
+a message in place of the original. If its text could be extracted, it can be read under "Extracted
+text". The file can be downloaded and opened.
+
+If this document took the browser tab down last time, for a day it opens on the extracted text. Press
+"Original" to try again.
+
+Depending on the site's settings, originals are shown with Microsoft's Office Online Viewer instead. Then
+Microsoft's servers fetch the file, only public datasets show originals, and Word files in the old format
+(.doc) show theirs too.
 
 A resource that gets a table view can also be opened straight from a BI tool such as Excel or
 Tableau ([Opening the table in a BI tool](#opening-the-table-in-a-bi-tool)).
