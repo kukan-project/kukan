@@ -87,11 +87,9 @@ type TextTransformation = 'NONE' | 'URL_DECODE' | 'NORMALIZE_PATH_WIN'
 /**
  * A static asset, judged on the raw path and strictly: the prefix, and no
  * dot segment, escape or backslash anywhere, the same test the viewer-request
- * function applies to the ibisOffice files. A spelling such as
- * `/vendor/ibis-office/../../api/auth/x` is forwarded raw and resolves at the
- * origin to the sign-in route, so it must stay on the counted side — as must
- * anything else ambiguous, since the exclusion is the one place a mistake
- * uncounts a request.
+ * function applies to the ibisOffice files. The path is forwarded raw and the
+ * origin may read it differently, so anything ambiguous stays on the counted
+ * side: the exclusion is the one place a mistake uncounts a request.
  */
 function isStaticAsset(): Statement {
   return {

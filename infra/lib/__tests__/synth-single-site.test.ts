@@ -773,8 +773,7 @@ describe('WAF rate-based rules and log (ADR-027 supplement)', () => {
         },
       },
     })
-    // Static only on the raw path with nothing ambiguous in it, so
-    // `/vendor/ibis-office/../../api/auth/x` stays counted
+    // Static only on the raw path with nothing ambiguous in it
     expect(scopeDown(rules.RateLimitAll)).toEqual({
       NotStatement: {
         Statement: {

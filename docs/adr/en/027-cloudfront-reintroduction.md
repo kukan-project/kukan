@@ -312,9 +312,8 @@ per-site one (a site entry carrying it is refused at synth).
 - **Why static assets are not counted.** CloudFront-scope WAF inspects cache hits too. One page
   view fetches a dozen static files, so counting them would turn the limit into a page budget
   rather than a request budget. The exclusion is judged strictly on the raw path: the prefix, and
-  no `..`, `%` or `\` anywhere (the same test viewer-request applies to the ibisOffice files). A
-  spelling such as `/vendor/ibis-office/../../api/auth/x` is forwarded raw and resolves at the origin
-  to the sign-in route, so anything ambiguous stays counted. `/api/auth/` is counted in two forms,
+  no `..`, `%` or `\` anywhere (the same test viewer-request applies to the ibisOffice files). The
+  path is forwarded raw and the origin may read it differently, so anything ambiguous stays counted. `/api/auth/` is counted in two forms,
   URL-decoded alone and also with backslashes and `..` resolved, since either alone misses a spelling
   that reaches the handler under the other reading.
 - **Why after the managed groups.** A request a managed rule blocked is neither counted against

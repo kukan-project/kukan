@@ -1,4 +1,4 @@
-/* global console, fetch, Buffer */
+/* global console, fetch, Buffer, AbortSignal */
 /**
  * Unpack the ibisOffice web build into public/vendor/ibis-office/<version>/
  * (ADR-065 decision 1). The archive is upstream's release asset, fetched into
@@ -38,11 +38,14 @@ const archivePath = join(srcDir, archiveName)
 const vendorDir = join(webRoot, 'public', 'vendor', 'ibis-office')
 const dest = join(vendorDir, version)
 
+/** The whole download, body included: a stalled connection has no limit of its own and would hold the image build. */
+const DOWNLOAD_TIMEOUT_MS = 5 * 60_000
+
 async function download() {
   const url = `https://github.com/ibisjp/ibis-office/releases/download/v${version}/${archiveName}`
   console.log(`Fetching ${url}`)
   try {
-    const response = await fetch(url)
+    const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return Buffer.from(await response.arrayBuffer())
   } catch (cause) {
