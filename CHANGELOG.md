@@ -6,6 +6,82 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.40.0] - 2026-11-01
+
+**Breaking Changes**
+
+- Excel, Word and PowerPoint files now open in the page without leaving your browser, instead of through Microsoft's online viewer (#1102, #1113, ADR-065). Files in the old Word format (DOC) no longer show the original on public datasets: you see the extracted text and can download the file. A site can keep Microsoft's viewer with `OFFICE_PREVIEW_VIEWER=office-online` (Compose) or `officePreviewViewer: 'office-online'` on the site (AWS).
+- When KUKAN fetches files from other sites, it no longer states its version: the User-Agent changes from `KUKAN/<version> (+<site>)` to `KUKAN (+<site>)` (#1087). Only a firewall or server rule that matches the version part needs changing.
+
+**Highlights**
+
+- **See Office documents without sending them anywhere.** XLSX, XLS, DOCX, PPTX and PPT files are drawn inside your browser (with ibisOffice), so they are neither opened on a server nor passed to Microsoft. This also works for private and draft datasets, and on closed networks such as LGWAN (#1099, #1100, #1102). Every file runs in an isolated frame under a memory limit. An XLSX, DOCX or PPTX whose package looks damaged or suspicious is refused before it is opened, and a file that once crashed the browser tab opens on its extracted text next time (#1103). Ichitaro documents have similar protection (#1105).
+- **A second line of defense for the site.** Every page now tells the browser what it may load and where it may send data (a Content-Security-Policy), which limits the harm if a malicious script ever got in. Sites on HTTPS also tell browsers to keep using HTTPS (HSTS) (#1109, ADR-071). In this release the policy only reports problems, apart from which pages may be embedded in a frame, so nothing should change for visitors on a standard site.
+- **One heavy user can no longer hold things up for everyone.** A single caller can run only a few table queries or OData reads at once, and signed-in users go ahead of anonymous ones in the queue (#1108).
+- **AWS: see excessive traffic at the edge.** The firewall (WAF) now counts requests per IP address and records those that go over a limit (#1107). It only counts for now, so an administrator can check who would be affected before blocking anyone.
+- **KUKAN names itself but not its version.** Pages say they run KUKAN, while the version is no longer shown to anonymous visitors, which is something security assessments often flag (#1087, ADR-070). System administrators can see it in the dashboard (#819).
+
+**Upgrade Notes** (for system administrators)
+
+- **Building the web image:** the build downloads about 32 MB from GitHub's releases (#1100). On a closed network, first place the same `ibisOffice-<version>-Web.zip` in `apps/web/vendor/ibis-office/`.
+- **AWS, OpenSearch:** the shared search domain goes from 3.5 to 3.7 (#1096). The SharedStack update can take over an hour, and search keeps working meanwhile. It **cannot be undone**: the domain cannot return to 3.5, and a 3.7 snapshot cannot be restored to 3.5.
+- **AWS, HSTS:** every CloudFront response now carries `Strict-Transport-Security: max-age=31536000` (#1109), so browsers will insist on HTTPS for that host for a year. `includeSubDomains` is added only if the site sets `hstsIncludeSubDomains`, and `preload` is never sent.
+- **Compose, HSTS:** the header is sent only from TLS site blocks. `docker/Caddyfile` has a commented `(hsts)` snippet to enable with your TLS block, and the multi-site Caddyfile already imports it (#1109). A plain `:80` site never sends it, so an HTTP-only site on a non-public domain is unaffected. Browsers would force such a site to HTTPS only if its parent domain sends `includeSubDomains`, which KUKAN cannot control.
+- **Content-Security-Policy:** `CSP_MODE` defaults to `report-only`, where violations appear in the browser console and are not blocked (#1109). The exception is `frame-src`, which is enforced in both modes: **a brand page that embeds an external iframe, such as a map or a video, is blocked now** unless its origin is in the brand's `csp`. A later release will make `enforce` the default, so also list any scripts or APIs a brand uses on its own hosts before then.
+- **AWS, WAF:** the rate rules and the log bucket `aws-waf-logs-kukan-<env>-<account>` belong to the global stack in us-east-1, which the pipeline does not deploy, so apply them with a standalone deploy of that stack on sites with WAF on (#1107). Settings live in the environment's `waf` field: every request except cached static files is limited to 2000 per 5 minutes per IP, and sign-in to 100. The WebACL costs about $2 more per month, plus the log's delivery and storage. Before switching to `block`, check whether a shared exit such as an office network, or heavy table-preview use from one address, nears the limit.
+- **Query limits:** when one caller has too many requests in flight, queries and OData answer 429 with `Retry-After` (#1108). The limit is four per anonymous address (an IPv6 address counts by its /64) for each, and two per signed-in user for queries. The address comes from `CLIENT_IP_HEADER`, and a request without one is not limited.
+- **Product name:** pages gain `<meta name="generator" content="KUKAN">`, and responses lose `X-Powered-By: Next.js` (#1087). To leave the meta out, set `GENERATOR_META_ENABLED=false` (Compose) or `generatorMeta: false` on the site (AWS).
+- **After changing a setting:** CloudFront keeps cached pages with their previous headers for up to 5 minutes after `OFFICE_PREVIEW_VIEWER`, `CSP_MODE` or `GENERATOR_META_ENABLED` changes.
+- **API error responses:** the `title` of some errors becomes an error code, for example `Not Found` to `NOT_FOUND` and `BAD_REQUEST` to `VALIDATION_ERROR` (#1077). Status codes and `detail` are unchanged. Only a client that matches on `title` needs updating.
+
+**Bug Fixes**
+
+- A user who had created or deleted a file version could not be permanently removed. They now can (#1076).
+- A file uploaded through the API without a stated type was recorded as plain text. Its type now comes from the file name when that tells (#1093).
+- Dataset cards labeled their dates "created at" and "updated at" though they show no time. The labels now say what is shown (#1097).
+
+**Maintenance**
+
+- Node.js 24.22.2 (#1101) and dependency updates (#1082, #1083, #1084), a time limit on the ibisOffice download so a stalled connection cannot hold up a build (#1110), wider test coverage and checks (#1085, #1086, #1088, #1089, #1094), and documentation brought up to date (#1063, #1069, #1071, #1075, #1080, #1104, #1111).
+
+---
+
+**破壊的変更**
+
+- Excel・Word・PowerPoint のファイルは、Microsoft のオンラインビューアを使わず、ブラウザの中だけで開くようになった（#1102、#1113、ADR-065）。公開データセットの旧形式の Word（DOC）は原本を表示しなくなり、抽出したテキストとダウンロードになる。Microsoft のビューアを使い続けるサイトは `OFFICE_PREVIEW_VIEWER=office-online`（Compose）かサイトの `officePreviewViewer: 'office-online'`（AWS）を設定する。
+- KUKAN が他のサイトからファイルを取得するとき、版を名乗らなくなった。User-Agent は `KUKAN/<version> (+<site>)` から `KUKAN (+<site>)` に変わる（#1087）。直す必要があるのは、版の部分に一致させているファイアウォールやサーバーの規則だけ。
+
+**ハイライト**
+
+- **Office 文書を、どこにも送らずに見られる。** XLSX・XLS・DOCX・PPTX・PPT をブラウザの中で描く（ibisOffice を使用）。サーバーで開くことも Microsoft に渡すこともないので、非公開・下書きのデータセットや、LGWAN などの閉域網でも原本を見られる（#1099、#1100、#1102）。どのファイルも隔離した枠の中でメモリの上限付きで動かす。XLSX・DOCX・PPTX は、作りが壊れている・不審なものを開く前に断り、ブラウザのタブを落としたファイルは次から抽出テキストで開く（#1103）。一太郎の文書にも同様の守りを入れた（#1105）。
+- **サイトを守る 2 つ目の備え。** 全ページで、読み込んでよいものとデータを送ってよい先をブラウザに伝えるようにした（Content-Security-Policy）。万一不正なスクリプトが入っても、被害を狭められる。HTTPS のサイトは、以後も HTTPS で接続するようブラウザに伝える（HSTS）（#1109、ADR-071）。このリリースでは、枠の中に埋め込めるページの制限を除いて問題を報告するだけなので、標準のサイトでは閲覧者に見える変化は無いはず。
+- **1 人の重い利用で、他の人を待たせない。** 表のクエリと OData の読み取りを 1 つの呼び出し元が同時に使える数を制限し、待ち行列ではサインイン済みの利用者を匿名より先に通す（#1108）。
+- **AWS：過剰なアクセスを入口で把握できる。** ファイアウォール（WAF）が IP アドレスごとにリクエストを数え、上限を超えた分を記録する（#1107）。今は数えるだけなので、管理者は誰が影響を受けるかを確かめてから止められる。
+- **KUKAN は名乗るが、版は名乗らない。** ページは KUKAN で動いていることを示す一方、未認証の閲覧者に版を見せなくした。脆弱性診断でよく指摘される点である（#1087、ADR-070）。版はシステム管理者が管理画面で確認できる（#819）。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **web イメージのビルド：** GitHub のリリースから約 32 MB を取得する（#1100）。閉域網では、同じ `ibisOffice-<版>-Web.zip` を先に `apps/web/vendor/ibis-office/` に置く。
+- **AWS の OpenSearch：** 共有の検索ドメインが 3.5 から 3.7 に上がる（#1096）。SharedStack の更新に 1 時間を超えることがあり、その間も検索は動く。**元に戻せない。** 3.5 には下げられず、3.7 のスナップショットも 3.5 には戻せない。
+- **AWS の HSTS：** CloudFront のすべての応答に `Strict-Transport-Security: max-age=31536000` が付く（#1109）。ブラウザはそのホストに 1 年間 HTTPS を求めるようになる。`includeSubDomains` はサイトの `hstsIncludeSubDomains` を設定したときだけ付き、`preload` は付けない。
+- **Compose の HSTS：** TLS のサイトブロックからだけ出す。`docker/Caddyfile` にはコメントの `(hsts)` スニペットがあるので TLS ブロックと一緒に有効にする。マルチサイトの Caddyfile は import 済み（#1109）。素の `:80` のサイトには付かないので、公開 DNS に無いドメインの HTTP 運用には影響しない。ブラウザがそのサイトに HTTPS を強いるのは親ドメインが `includeSubDomains` を出している場合だけで、これは KUKAN では制御できない。
+- **Content-Security-Policy：** `CSP_MODE` の既定は `report-only` で、違反はブラウザのコンソールに出るだけで止めない（#1109）。例外は `frame-src` で、どちらのモードでも強制する。**地図や動画など外部の iframe を埋め込んだブランドのページは、今回から止まる**ので、そのオリジンをブランドの `csp` に書く。後のリリースで既定を `enforce` にするので、ブランドが自分のホストのスクリプトや API を使うなら、それまでにあわせて書く。
+- **AWS の WAF：** レートルールとログのバケット `aws-waf-logs-kukan-<env>-<account>` は us-east-1 の global スタックに属し、pipeline はこのスタックをデプロイしない。WAF を有効にしたサイトでは、このスタックの standalone デプロイで反映する（#1107）。設定は環境の `waf` で、キャッシュされる静的ファイルを除く全リクエストが IP ごとに 5 分 2000 件、サインインが 100 件。WebACL の費用は月に約 $2 増え、ログの配信と保管の費用が加わる。`block` にする前に、庁舎のネットワークのような共有の出口や、1 つのアドレスからの重い表プレビューが上限に近づかないかを確かめる。
+- **クエリの制限：** 1 つの呼び出し元の同時実行が多すぎると、クエリと OData は `Retry-After` 付きの 429 を返す（#1108）。上限は匿名がアドレスごとに各 4（IPv6 は /64 単位）、サインイン済みのクエリが利用者ごとに 2。アドレスは `CLIENT_IP_HEADER` から読み、取れない要求には上限をかけない。
+- **製品名：** ページに `<meta name="generator" content="KUKAN">` が加わり、応答から `X-Powered-By: Next.js` がなくなる（#1087）。meta を出さないなら `GENERATOR_META_ENABLED=false`（Compose）かサイトの `generatorMeta: false`（AWS）。
+- **設定を変えたあと：** `OFFICE_PREVIEW_VIEWER`・`CSP_MODE`・`GENERATOR_META_ENABLED` を変えても、CloudFront にキャッシュされたページは最大 5 分、前のヘッダーのまま。
+- **API のエラー応答：** 一部のエラーの `title` がエラーコードになる。`Not Found` は `NOT_FOUND`、`BAD_REQUEST` は `VALIDATION_ERROR` など（#1077）。ステータスコードと `detail` は変わらない。直す必要があるのは `title` で判定しているクライアントだけ。
+
+**バグ修正**
+
+- ファイルの版を作成・削除したことのある利用者を完全に削除できなかった。できるようにした（#1076）。
+- API から種類を指定せずにアップロードしたファイルが、プレーンテキストとして記録されていた。ファイル名から分かるときはその種類にする（#1093）。
+- データセットカードは時刻を出していないのに、ラベルが「作成日時」「更新日時」だった。「作成日」「更新日」にした（#1097）。
+
+**保守**
+
+- Node.js 24.22.2（#1101）と依存関係の更新（#1082、#1083、#1084）、接続が止まってもビルドが止まり続けないよう ibisOffice の取得に時間の上限を設定（#1110）、テストと検査の拡充（#1085、#1086、#1088、#1089、#1094）、文書の更新（#1063、#1069、#1071、#1075、#1080、#1104、#1111）。
+
 ## [0.39.0] - 2026-10-26
 
 **Highlights**
