@@ -1,18 +1,18 @@
 /**
- * A mark in this browser that a document is open in ibisOffice (ADR-065 decision
- * 3). What takes a tab down leaves nothing but this behind: the mark outlives
+ * A mark in this browser that a document's original is open, in ibisOffice or
+ * EZPZ File JTD (ADR-065 decision 3). What takes a tab down leaves nothing but this behind: the mark outlives
  * the tab, stops being renewed, and tells the next visit to open on the extracted
  * text. It stays in the visitor's browser, and where storage is unavailable none
  * of this happens.
  */
 
-const PREFIX = 'kukan:ibis-office-draw:'
-const TAB_KEY = 'kukan:ibis-office-tab'
+const PREFIX = 'kukan:original-draw:'
+const TAB_KEY = 'kukan:original-draw-tab'
 /** How often a tab with a document open renews its mark */
 const RENEW_MS = 3_000
 /** Older than this, no tab is renewing it: a tab that hides removes its own */
 const STALE_MS = 10_000
-/** Older than this, the document is tried again: ibisOffice may have improved */
+/** Older than this, the document is tried again: the viewer may have improved */
 const EXPIRES_MS = 24 * 60 * 60 * 1000
 
 /** The documents this page has open, whose marks here say nothing of a crash */

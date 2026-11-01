@@ -658,8 +658,10 @@ upgrade (public DOC files lose their original view), which the release notes mus
   - A ZIP is decompressed entry by entry as a stream in a Web Worker (`DecompressionStream`),
     counting the output and discarding it, and stops once the expanded total exceeds 128 MB or 10 s
     pass. Sizes written in the directory are not trusted
-  - A compound file gets no check beyond its size and signature; tricks in its structure are caught
-    by the WASM memory ceiling
+  - An Office compound file gets no check beyond its size and signature; tricks in its structure are
+    caught by the WASM memory ceiling. The Ichitaro original uses the same parts (the fetch limit, the
+    signature, the memory ceiling, the crash mark, starting when in view), with its values in ADR-051
+    decision 7
 - **Why 128 MB.** Tables and documents are mostly XML, and WASM memory grew at 8 to 16 times the
   expanded size (16 MB to 223 MB for a 430k-cell sheet, 3.2 MB to 52 MB for a document, 70.4 MB to
   590 MB for a large public sheet, §Measurements). About 70 to 120 MB expanded fits in 1 GiB, and the

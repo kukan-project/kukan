@@ -52,4 +52,12 @@ describe('IchitaroViewer', () => {
     await expect(first).resolves.toEqual([{ w: 1, h: 1, items: [] }])
     viewer.close()
   })
+
+  it('ends the worker when told to while it is still opening', async () => {
+    const abort = new AbortController()
+    const opening = IchitaroViewer.open(new ArrayBuffer(8), abort.signal)
+    abort.abort()
+    await expect(opening).rejects.toThrow()
+    expect(StuckWorker.last!.terminated).toBe(true)
+  })
 })

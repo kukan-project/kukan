@@ -256,7 +256,7 @@ JustSystems) has been published to draw Ichitaro in the browser alone. It draws 
 character sizes, ruby and paper sizes, and opened all 21 test files; it does not draw figures,
 vertical writing, headers or footers. It is used for the "original" tab.
 
-- **Loading**: only when the tab opens, the file's bytes are fetched from the preview endpoint
+- **Loading**: when the original's tab comes into view, the file's bytes are fetched from the preview endpoint
   (`/preview`, the PDF's route) and read by the WASM in the browser. The server converts nothing.
   The WASM runs in a Web Worker, so laying pages out does not hold up the page
 - **When it does not end**: a request (opening, or laying out a sheet) that has not come back in 15
@@ -278,6 +278,14 @@ vertical writing, headers or footers. It is used for the "original" tab.
   it leaves (a document of many pages holds no pile of bitmaps)
 - **Text cannot be selected**: being canvases, the pages do not take selection or find-in-page;
   the text is read under "extracted text"
+- **Resource guards** (sharing their parts with ADR-065 decision 3): hidden, the worker is closed, and
+  opened anew when shown again (one at a time). A fetch stops at 64 MB, and what does not open with a
+  compound file's signature is not passed on. In the worker, a file whose streams' sizes together pass
+  its own is refused. The WASM memory has a ceiling of 256 MiB (public documents take under 10 MB). A document that took a
+  tab down opens on the extracted-text tab next time
+- **Imported functions**: the WASM imports only what raises an error, so that a document taking it over
+  reaches neither the network nor KUKAN's API. A test checks that an upgrade has not added any, along
+  with the SHA-256 list of the distribution (`SHA256SUMS`)
 - **When it cannot draw**: a compressed file, a broken one or an unsupported version falls back to
   the draft's guidance (download it and open it in Ichitaro or Ichitaro Viewer)
 - **Distribution**: it is not on npm, so a wrapper crate (`apps/web/wasm/ezpzjtd-viewer/`) takes
@@ -333,11 +341,11 @@ rules is true of every document's extracted text.
 - `CLAUDE.md`: a row in the pipeline per-format matrix
 - `apps/worker/src/pipeline/interpret/document/legacy/compound-file.ts`: reads streams by path,
   into nested storages (the sheets after the first)
-- `apps/web/src/components/ichitaro-preview.tsx` (new): the original's display and the list of
+- `apps/web/src/components/preview/ichitaro-preview.tsx` (new): the original's display and the list of
   sheets (decision 7)
-- `apps/web/src/components/ichitaro-paint.ts` (new): the page painting ported from EZPZ File
+- `apps/web/src/components/preview/ichitaro-paint.ts` (new): the page painting ported from EZPZ File
   JTD's editor
-- `apps/web/src/components/ichitaro-viewer.ts` and `ichitaro-viewer.worker.ts` (new): the Web Worker
+- `apps/web/src/components/preview/ichitaro-viewer.ts` and `ichitaro-viewer.worker.ts` (new): the Web Worker
   the WASM runs in, and the timeout on its requests
 - `apps/web/wasm/ezpzjtd-viewer/` (new): the wrapper crate exporting EZPZ File JTD's reading only,
   and its build script; the build goes to `apps/web/public/vendor/ezpzjtd/`

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { crashedBefore, openDocument } from '../office-draw-marks'
+import { crashedBefore, openDocument } from '../original-draw-marks'
 
 const SECOND = 1000
 const leftBy = (tab: string, age: number) =>
-  localStorage.setItem(`kukan:ibis-office-draw:r1:1:${tab}`, String(Date.now() - age))
+  localStorage.setItem(`kukan:original-draw:r1:1:${tab}`, String(Date.now() - age))
 
 function hide(hidden: boolean) {
   Object.defineProperty(document, 'hidden', { value: hidden, configurable: true })
@@ -74,10 +74,7 @@ describe('office draw marks (ADR-065 decision 3)', () => {
   })
 
   it('forgets an expired mark of any document, as of a version no one opens again', () => {
-    localStorage.setItem(
-      'kukan:ibis-office-draw:r9:1:gone',
-      String(Date.now() - 25 * 3600 * SECOND)
-    )
+    localStorage.setItem('kukan:original-draw:r9:1:gone', String(Date.now() - 25 * 3600 * SECOND))
     crashedBefore('r1:1')
     expect(localStorage.length).toBe(0)
   })
@@ -88,7 +85,7 @@ describe('office draw marks (ADR-065 decision 3)', () => {
     const stop = openDocument('r1:1')
     stop()
     expect(crashedBefore('r1:1')).toBe(false)
-    expect(localStorage.getItem('kukan:ibis-office-draw:r1:1:other')).not.toBeNull()
+    expect(localStorage.getItem('kukan:original-draw:r1:1:other')).not.toBeNull()
     expect(localStorage.length).toBe(1)
   })
 

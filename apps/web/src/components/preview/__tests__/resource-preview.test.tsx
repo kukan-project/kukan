@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import { stubObservers } from '@/__tests__/stub-observers'
 import { ResourcePreview, PreviewSkeleton } from '../resource-preview'
 
 vi.mock('@/lib/client-api', () => ({
@@ -44,6 +45,7 @@ const mockClientFetch = vi.mocked(clientFetch)
 beforeEach(() => {
   mockClientFetch.mockReset()
 })
+afterEach(() => vi.unstubAllGlobals())
 
 /** What the owner's `GET /resources/:id/schema` read carried down as a prop. */
 function schemaWith(droppedRows?: number, droppedLines?: number[]) {
@@ -214,7 +216,7 @@ describe('ResourcePreview', () => {
     it('opens on the extracted text of a file that took a tab down, the original a tab away', async () => {
       mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
       // What a tab that died drawing version 3 of the file left behind
-      localStorage.setItem('kukan:ibis-office-draw:r1:3:gone', String(Date.now() - 60_000))
+      localStorage.setItem('kukan:original-draw:r1:3:gone', String(Date.now() - 60_000))
       render(<ResourcePreview resourceId="r1" format="XLSX" version={3} />)
 
       expect(screen.getByText('Original')).toBeInTheDocument()
@@ -229,7 +231,7 @@ describe('ResourcePreview', () => {
     })
 
     it('draws a later version of a file that crashed a tab', () => {
-      localStorage.setItem('kukan:ibis-office-draw:r1:3:gone', String(Date.now() - 60_000))
+      localStorage.setItem('kukan:original-draw:r1:3:gone', String(Date.now() - 60_000))
       render(<ResourcePreview resourceId="r1" format="XLSX" version={4} />)
       expect(screen.getByTestId('ibis-office-preview')).toBeInTheDocument()
       localStorage.clear()
@@ -315,16 +317,20 @@ describe('ResourcePreview', () => {
     })
 
     it('says where to open an Ichitaro original it cannot draw, beside its extracted text', async () => {
+      stubObservers()
       mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
       render(<ResourcePreview resourceId="r1" format="JTD" />)
       expect(screen.getByText('Original')).toBeInTheDocument()
       expect(screen.getByText('Extracted text')).toBeInTheDocument()
       expect(
         await screen.findByText(
-          'This Ichitaro document could not be shown in the browser (a compressed or broken file, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). Its text can be read under Extracted text.'
+          'This Ichitaro document could not be shown in the browser (a compressed or broken file, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). If its text could be extracted, it can be read under Extracted text.'
         )
       ).toBeInTheDocument()
-      expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/preview')
+      expect(mockClientFetch).toHaveBeenCalledWith(
+        '/api/v1/resources/r1/preview',
+        expect.anything()
+      )
     })
 
     it('offers the extracted text of the formats before 2007, as of the ones after', () => {

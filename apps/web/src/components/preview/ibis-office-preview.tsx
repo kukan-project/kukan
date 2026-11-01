@@ -1,16 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent } from '@kukan/ui'
 import { COMPOUND_FILE_SIGNATURE, hasSignature, ZIP_SIGNATURE } from '@kukan/shared'
-import { clientFetch } from '@/lib/client-api'
+import { useShown } from '@/hooks/use-shown'
+import { fetchOriginal, overOriginalLimit } from '@/lib/fetch-original'
 import { IBIS_OFFICE_BOOT, IBIS_OFFICE_HOME, IBIS_OFFICE_WASM } from '@/lib/ibis-office'
-import { openDocument } from '@/lib/office-draw-marks'
+import { openDocument } from '@/lib/original-draw-marks'
+import { TooLarge } from '@/lib/read-up-to'
 import type { PackageCheckRequest, PackageVerdict } from './office-package-check'
 
-/** The largest file fetched (ADR-065 decision 3) */
-const IBIS_OFFICE_LIMIT = 64 * 1024 * 1024
 /**
  * The most a package may unpack to: this stops a ZIP bomb, and the memory ceiling
  * catches the rest. A public 70 MB one took ibisOffice 590 MB of its 1 GiB, a 16 MB
@@ -56,7 +56,7 @@ export function IbisOfficePreview({
   const frame = useRef<HTMLIFrameElement>(null)
   const shown = useShown(box)
   const [failure, setFailure] = useState<Failure | null>(
-    size && size > IBIS_OFFICE_LIMIT ? 'too-large' : null
+    overOriginalLimit(size) ? 'too-large' : null
   )
   const [drawn, setDrawn] = useState(false)
 
@@ -172,39 +172,11 @@ export function IbisOfficePreview({
   )
 }
 
-/**
- * Whether to run: from when the element is first scrolled to, until a `hidden`
- * ancestor takes its size away. Scrolling away keeps it running, to keep the
- * place in the document.
- */
-function useShown(ref: RefObject<HTMLElement | null>): boolean {
-  const [shown, setShown] = useState(false)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const scrolledTo = new IntersectionObserver(([entry]) => {
-      if (entry?.isIntersecting) setShown(true)
-    })
-    const hidden = new ResizeObserver(([entry]) => {
-      if (!entry?.contentRect.width) setShown(false)
-    })
-    scrolledTo.observe(el)
-    hidden.observe(el)
-    return () => {
-      scrolledTo.disconnect()
-      hidden.disconnect()
-    }
-  }, [ref])
-  return shown
-}
-
 function inSight(el: HTMLElement | null): boolean {
   if (!el || document.hidden) return false
   const { top, bottom } = el.getBoundingClientRect()
   return bottom > 0 && top < window.innerHeight
 }
-
-class TooLarge extends Error {}
 
 /** The resource's file, read up to the limit, and the name ibisOffice is given for it. */
 async function fetchDocument(
@@ -212,26 +184,7 @@ async function fetchDocument(
   format: string,
   signal: AbortSignal
 ): Promise<{ name: string; bytes: ArrayBuffer }> {
-  const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`, {
-    signal,
-  })
-  if (!res.ok || !res.body) throw new Error(`preview ${res.status}`)
-  if (Number(res.headers.get('content-length')) > IBIS_OFFICE_LIMIT) throw new TooLarge()
-
-  const chunks: Uint8Array<ArrayBuffer>[] = []
-  let total = 0
-  const reader = res.body.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.length
-    if (total > IBIS_OFFICE_LIMIT) {
-      await reader.cancel()
-      throw new TooLarge()
-    }
-    chunks.push(value)
-  }
-  const bytes = await new Blob(chunks).arrayBuffer()
+  const bytes = await fetchOriginal(resourceId, signal)
   const head = new Uint8Array(bytes)
   const name = documentName(format, head)
   // A compound document is not looked into: what is odd in one meets the ceiling

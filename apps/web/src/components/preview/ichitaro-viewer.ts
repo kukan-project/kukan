@@ -43,9 +43,16 @@ export class IchitaroViewer {
     this.worker.onerror = () => this.close()
   }
 
-  /** Open `bytes`, which go to the worker; with each sheet's name, empty where the file names it not. */
-  static async open(bytes: ArrayBuffer): Promise<{ viewer: IchitaroViewer; names: string[] }> {
+  /**
+   * Open `bytes`, which go to the worker; with each sheet's name, empty where the
+   * file names it not. `signal` ends the worker while it is still at it.
+   */
+  static async open(
+    bytes: ArrayBuffer,
+    signal?: AbortSignal
+  ): Promise<{ viewer: IchitaroViewer; names: string[] }> {
     const viewer = new IchitaroViewer()
+    signal?.addEventListener('abort', () => viewer.close(), { once: true })
     try {
       const reply = await viewer.request({ type: 'open', bytes }, [bytes])
       if (!('names' in reply)) throw new Error('The viewer gave no sheets')

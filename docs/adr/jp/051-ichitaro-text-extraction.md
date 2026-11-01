@@ -241,7 +241,7 @@ AI メタデータ提案の対象に自動的に入るのは**意図した効果
 検証用の 21 本はすべて開けた。図・縦書き・ヘッダー・フッターは描かない。これを「原本」タブに
 使う。
 
-- **読み込み**: タブを開いたときだけ、プレビュー配信（`/preview`、PDF と同じ経路）から
+- **読み込み**: 原本のタブが画面に入ったときに、プレビュー配信（`/preview`、PDF と同じ経路）から
   ファイルのバイト列を取り、ブラウザの WASM で読む。サーバー側では変換しない。WASM は Web Worker で
   動かし、ページを組む重い処理でページが固まらないようにする
 - **止まらないとき**: 1 回の問い合わせ（開く・1 シートを組む）が 15 秒で返らなければ Worker ごと止めて
@@ -259,6 +259,13 @@ AI メタデータ提案の対象に自動的に入るのは**意図した効果
   離れたら canvas を空にする（多ページの文書でも画素を溜めない）
 - **文字は選べない**: canvas なので文字の選択やページ内検索は効かない。本文は「抽出テキスト」で
   読む
+- **資源の守り**（ADR-065 決定 3 と部品を共有）: 隠れたら Worker を閉じ、戻ると開き直す（同時に
+  1 つだけ）。取得は 64 MB まで、先頭が複合文書の署名でなければ渡さない。Worker の中で、ストリームの
+  大きさの合計がファイルを超えるものを断る。WASM のメモリに 256 MiB の上限を掛ける（公開の文書は
+  10 MB に満たない）。タブを落とした文書は次から
+  抽出テキストのタブで開く
+- **取り込む関数**: WASM が取り込むのは例外を作る関数だけで、乗っ取られても通信も KUKAN の API にも
+  届かない。版を上げて増えていないことを、配布物の SHA-256 の一覧（`SHA256SUMS`）と一緒にテストで確かめる
 - **描けないとき**: 圧縮形式・壊れたファイル・未対応の版では、起案時の案内（ダウンロードして
   一太郎または一太郎ビューアで開く）に戻る
 - **配布**: npm に出ていないので、本家をコミット固定で取り込み、読み取りだけを公開する
@@ -313,9 +320,9 @@ AI メタデータ提案の対象に自動的に入るのは**意図した効果
 - `CLAUDE.md`: パイプライン フォーマット別処理マトリクスに行を足す
 - `apps/worker/src/pipeline/interpret/document/legacy/compound-file.ts`: 入れ子のストレージの
   ストリームまでパスで読む（2 枚目以降のシート）
-- `apps/web/src/components/ichitaro-preview.tsx`（新規）: 原本の表示とシート一覧（決定 7）
-- `apps/web/src/components/ichitaro-paint.ts`（新規）: EZPZ File JTD のエディタから移植したページの描画
-- `apps/web/src/components/ichitaro-viewer.ts`・`ichitaro-viewer.worker.ts`（新規）: WASM を動かす
+- `apps/web/src/components/preview/ichitaro-preview.tsx`（新規）: 原本の表示とシート一覧（決定 7）
+- `apps/web/src/components/preview/ichitaro-paint.ts`（新規）: EZPZ File JTD のエディタから移植したページの描画
+- `apps/web/src/components/preview/ichitaro-viewer.ts`・`ichitaro-viewer.worker.ts`（新規）: WASM を動かす
   Web Worker と、問い合わせの時間切れ
 - `apps/web/wasm/ezpzjtd-viewer/`（新規）: EZPZ File JTD の読み取りだけを公開するラッパー crate と
   ビルドスクリプト。成果物は `apps/web/public/vendor/ezpzjtd/`

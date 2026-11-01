@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslations } from 'next-intl'
 import { cn, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kukan/ui'
-import { clientFetch } from '@/lib/client-api'
+import { COMPOUND_FILE_SIGNATURE, hasSignature } from '@kukan/shared'
+import { useShown } from '@/hooks/use-shown'
+import { fetchOriginal, overOriginalLimit } from '@/lib/fetch-original'
+import { openDocument } from '@/lib/original-draw-marks'
 import { PreviewSkeleton } from './resource-preview'
 import { paintPage, PX_PER_PT, type JtdPage } from './ichitaro-paint'
 import { IchitaroViewer } from './ichitaro-viewer'
@@ -20,70 +23,92 @@ interface OpenDocument {
  * worker) lays each sheet out into pages on Ichitaro's character grid, as its
  * editor does, and the pages are painted on canvases: nothing of the file
  * reaches the page as markup. When it cannot be drawn — or takes too long to
- * lay out — `fallback` is shown instead.
+ * lay out — `fallback` is shown instead. It starts when scrolled to and closes
+ * when hidden, so one runs at a time; shown again, it opens anew.
  */
 export function IchitaroPreview({
   resourceId,
+  doc,
+  size,
   fallback,
 }: {
   resourceId: string
+  /** Names this version of the file, for the mark a crash leaves */
+  doc: string
+  size?: number | null
   fallback: ReactNode
 }) {
   const t = useTranslations('resource')
-  const [doc, setDoc] = useState<OpenDocument | 'loading' | 'failed'>('loading')
+  const box = useRef<HTMLDivElement>(null)
+  const running = useShown(box)
+  const [failed, setFailed] = useState(overOriginalLimit(size))
+  const [opened, setOpened] = useState<OpenDocument | null>(null)
   const [selected, setSelected] = useState(0)
   const [shown, setShown] = useState<{ sheet: number; pages: JtdPage[] }>()
 
   useEffect(() => {
-    let cancelled = false
-    let opened: IchitaroViewer | undefined
+    if (!running || failed) return
+    const abort = new AbortController()
+    let viewer: IchitaroViewer | undefined
+    let closeDocument = () => {}
     async function open() {
       try {
-        const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`)
-        if (!res.ok) throw new Error(`preview ${res.status}`)
-        const { viewer, names } = await IchitaroViewer.open(await res.arrayBuffer())
-        if (cancelled) {
+        const bytes = await fetchOriginal(resourceId, abort.signal)
+        if (!hasSignature(new Uint8Array(bytes), COMPOUND_FILE_SIGNATURE)) {
+          throw new Error('not a compound file')
+        }
+        if (abort.signal.aborted) return
+        closeDocument = openDocument(doc)
+        const document = await IchitaroViewer.open(bytes, abort.signal)
+        viewer = document.viewer
+        if (abort.signal.aborted) {
           viewer.close()
           return
         }
-        opened = viewer
-        if (names.length === 0) throw new Error('no sheets')
-        setDoc({ viewer, names })
+        if (document.names.length === 0) throw new Error('no sheets')
+        setOpened(document)
       } catch {
-        if (!cancelled) setDoc('failed')
+        if (!abort.signal.aborted) setFailed(true)
       }
     }
     open()
     return () => {
-      cancelled = true
-      opened?.close()
+      abort.abort()
+      viewer?.close()
+      closeDocument()
+      setOpened(null)
+      setShown(undefined)
     }
-  }, [resourceId])
+  }, [running, failed, resourceId, doc])
 
+  // `running` too, so that this lets go in the same pass that closes the viewer,
+  // whose closing fails what is waiting on it
   useEffect(() => {
-    if (typeof doc === 'string') return
+    if (!opened || !running) return
     let cancelled = false
-    doc.viewer.pages(selected).then(
+    opened.viewer.pages(selected).then(
       (pages) => {
         if (!cancelled) setShown({ sheet: selected, pages })
       },
       () => {
-        if (!cancelled) setDoc('failed')
+        if (!cancelled) setFailed(true)
       }
     )
     return () => {
       cancelled = true
     }
-  }, [doc, selected])
+  }, [opened, running, selected])
 
-  if (doc === 'loading') return <PreviewSkeleton />
-  if (doc === 'failed') return fallback
+  // The same element in every state, which useShown watches from the first
+  if (failed || !opened) {
+    return <div ref={box}>{failed ? fallback : <PreviewSkeleton />}</div>
+  }
 
-  const labels = doc.names.map((name, i) => name || t('previewSheet', { number: i + 1 }))
+  const labels = opened.names.map((name, i) => name || t('previewSheet', { number: i + 1 }))
   const several = labels.length > 1
 
   return (
-    <div className="flex flex-col gap-1">
+    <div ref={box} className="flex flex-col gap-1">
       <div className="overflow-hidden rounded-lg border">
         {several && (
           <div className="border-b p-1 md:hidden">

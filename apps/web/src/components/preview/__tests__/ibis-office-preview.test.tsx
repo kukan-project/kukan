@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { IbisOfficePreview } from '../ibis-office-preview'
 import { IBIS_OFFICE_BOOT, IBIS_OFFICE_HOME } from '@/lib/ibis-office'
+import { stubObservers as view } from '@/__tests__/stub-observers'
 
 vi.mock('@/lib/client-api', () => ({ clientFetch: vi.fn() }))
 import { clientFetch } from '@/lib/client-api'
@@ -23,30 +24,6 @@ class WorkerStub {
 const XLSX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3])
 const XLS = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 1])
 const WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d])
-
-/** What the observers report: scrolled to or not, and laid out or `hidden`. */
-function view({ scrolledTo = true, width = 800 }: { scrolledTo?: boolean; width?: number } = {}) {
-  vi.stubGlobal(
-    'IntersectionObserver',
-    class {
-      constructor(private callback: (entries: { isIntersecting: boolean }[]) => void) {}
-      observe() {
-        this.callback([{ isIntersecting: scrolledTo }])
-      }
-      disconnect() {}
-    }
-  )
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      constructor(private callback: (entries: { contentRect: { width: number } }[]) => void) {}
-      observe() {
-        this.callback([{ contentRect: { width } }])
-      }
-      disconnect() {}
-    }
-  )
-}
 
 /**
  * Stands in for the frame's window: happy-dom loads no frame's page, so the
