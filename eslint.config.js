@@ -75,6 +75,8 @@ export default tseslint.config(
       'node_modules',
       '.turbo',
       'drizzle',
+      // Third-party builds, wasm-bindgen's glue among them: not ours to edit
+      'apps/web/public/vendor/**',
       // A spike's vendored bundles and what its runs produce
       'spike/**/vendor/**',
       'spike/**/dist/**',

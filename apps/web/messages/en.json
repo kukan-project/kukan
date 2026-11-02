@@ -768,7 +768,7 @@
     "preview": "Preview",
     "previewPlaceholder": "Data preview is planned for a future phase",
     "previewNotAvailable": "Preview is not available for this format",
-    "previewIchitaroOriginal": "This Ichitaro document could not be shown in the browser (a compressed or broken file, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). If its text could be extracted, it can be read under Extracted text.",
+    "previewIchitaroOriginal": "This Ichitaro document could not be shown in the browser (a compressed or broken file, or one too long, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). If its text could be extracted, it can be read under Extracted text.",
     "previewIchitaroDrawn": "This preview does not show figures, vertical writing, headers or footers. Download the original for its exact layout.",
     "previewSheets": "Sheets",
     "previewSheet": "Sheet {number}",

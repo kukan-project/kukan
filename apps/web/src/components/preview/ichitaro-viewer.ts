@@ -10,7 +10,7 @@ export type ViewerReply =
 /**
  * How long the viewer may take over a request before its worker is ended.
  * Opening loads the WASM; laying out a sheet of tens of pages takes well
- * under a second, so only a layout that will not end runs this long.
+ * under a second, so only what is far from an ordinary document runs this long.
  */
 const REPLY_TIMEOUT_MS = 15_000
 

@@ -53,20 +53,27 @@ export class JtdViewer {
     /**
      * The sheet laid out on Ichitaro's character grid, as EZPZ File JTD's
      * editor lays it out: a JSON array of pages, each its size in points and
-     * the text and lines to draw on it. Empty past the last sheet.
+     * the text and lines to draw on it. Empty past the last sheet; an error
+     * where the sheet is too long to draw.
      * @param {number} index
      * @returns {string}
      */
     sheetPages(index) {
-        let deferred1_0;
-        let deferred1_1;
+        let deferred2_0;
+        let deferred2_1;
         try {
             const ret = wasm.jtdviewer_sheetPages(this.__wbg_ptr, index);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
         } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
         }
     }
 }

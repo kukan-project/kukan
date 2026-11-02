@@ -261,10 +261,11 @@ vertical writing, headers or footers. It is used for the "original" tab.
   The WASM runs in a Web Worker, so laying pages out does not hold up the page
 - **When it does not end**: a request (opening, or laying out a sheet) that has not come back in 15
   seconds ends the worker and falls back to the guidance, as EZPZ has only just begun and inputs it
-  cannot finish laying out may remain. The one known is avoided beforehand: where a file's margins
-  do not fit its paper EZPZ falls back to its default margins, which on a small paper do not fit
-  either; the line pitch goes negative and laying out never ends. A setup whose pitch would be under
-  1pt is replaced by the default A4
+  cannot finish laying out may remain
+- **Long sheets**: a sheet is drawn up to 1,000 pages and 32 MiB of laid-out JSON (the longest public
+  one has 39 pages and 2.1 MB). A longer sheet falls back to the guidance rather than showing its
+  start, which would pass for the whole sheet. Sheets are read up to EZPZ's default of 64; later ones
+  are not in the preview's list, though the extracted text has them
 - **Layout**: EZPZ's editor's layout engine sets each page on the grid of the document's style
   (paper, margins, characters × lines), and each page is painted on a canvas. The HTML export the
   upstream's simple viewer uses flows the text, so its line breaks and pages drift from the

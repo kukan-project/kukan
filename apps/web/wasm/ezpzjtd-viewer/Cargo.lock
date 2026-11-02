@@ -36,8 +36,8 @@ dependencies = [
 
 [[package]]
 name = "ezpzjtd-core"
-version = "0.3.0"
-source = "git+https://github.com/ezpzfile/ezpzfile-jtd?rev=f82feb92760879d60c65d202b73df3d35f6ba34e#f82feb92760879d60c65d202b73df3d35f6ba34e"
+version = "0.3.2"
+source = "git+https://github.com/ezpzfile/ezpzfile-jtd?rev=4c753922ed15bd04f845b36888a375d34af49e76#4c753922ed15bd04f845b36888a375d34af49e76"
 dependencies = [
  "encoding_rs",
  "serde",

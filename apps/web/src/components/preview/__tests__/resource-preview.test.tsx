@@ -324,7 +324,7 @@ describe('ResourcePreview', () => {
       expect(screen.getByText('Extracted text')).toBeInTheDocument()
       expect(
         await screen.findByText(
-          'This Ichitaro document could not be shown in the browser (a compressed or broken file, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). If its text could be extracted, it can be read under Extracted text.'
+          'This Ichitaro document could not be shown in the browser (a compressed or broken file, or one too long, for instance). Download it and open it in Ichitaro or Ichitaro Viewer (both for Windows). If its text could be extracted, it can be read under Extracted text.'
         )
       ).toBeInTheDocument()
       expect(mockClientFetch).toHaveBeenCalledWith(

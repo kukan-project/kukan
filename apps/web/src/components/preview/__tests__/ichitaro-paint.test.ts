@@ -33,6 +33,15 @@ const page = (items: JtdPage['items']): JtdPage => ({ w: 100, h: 200, items })
 const named = (calls: Call[], name: string) => calls.filter((c) => c[0] === name)
 
 describe('paintPage', () => {
+  it('stops a wavy line far past the page, its wave as wide as ever', () => {
+    const { g, calls } = recorder()
+    paintPage(g, page([{ t: 'Line', x1: 0, y1: 0, x2: 1e7, y2: 0, w: 1, k: 12 }]))
+    const lines = named(calls, 'lineTo')
+    expect(lines).toHaveLength(3100)
+    expect(lines[0]).toEqual(['lineTo', 2, 1.1])
+    expect(lines.at(-1)).toEqual(['lineTo', 6200, -1.1])
+  })
+
   it('whitens the page before drawing', () => {
     const { g, calls } = recorder()
     paintPage(g, page([]))

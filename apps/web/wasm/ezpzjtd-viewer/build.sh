@@ -7,7 +7,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 out=../../public/vendor/ezpzjtd
-cargo +1.90.0 build --release --locked --target wasm32-unknown-unknown
+# Panic messages name the sources: keep the builder's home directory out of them
+RUSTFLAGS="--remap-path-prefix=$HOME/.cargo=/cargo" \
+  cargo +1.90.0 build --release --locked --target wasm32-unknown-unknown
 rm -rf "$out"
 wasm-bindgen --target web --no-typescript --out-dir "$out" \
   target/wasm32-unknown-unknown/release/ezpzjtd_viewer.wasm

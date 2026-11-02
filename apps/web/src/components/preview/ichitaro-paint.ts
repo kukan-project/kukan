@@ -56,6 +56,9 @@ const LINE_DASH: Record<number, number[]> = {
   15: [1, 1],
 }
 
+/** Past this a wavy line has run off the largest paper: the rest of it is not drawn. */
+const MAX_WAVE_SEGMENTS = 3100
+
 /** Draw `page` on `g`, whose transform maps points to the canvas. */
 export function paintPage(g: CanvasRenderingContext2D, page: JtdPage): void {
   g.fillStyle = '#fff'
@@ -111,7 +114,7 @@ function drawLine(g: CanvasRenderingContext2D, it: Extract<JtdItem, { t: 'Line' 
   const wave = (o: number) => {
     const n = Math.max(1, Math.round(len / 2))
     g.beginPath()
-    for (let i = 0; i <= n; i++) {
+    for (let i = 0; i <= Math.min(n, MAX_WAVE_SEGMENTS); i++) {
       const t = i / n
       const a = (i % 2 ? 1.1 : -1.1) + o
       const x = it.x1 + dx * t + nx * a
