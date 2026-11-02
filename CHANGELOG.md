@@ -6,6 +6,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.40.1] - 2026-11-02
+
+**Highlights**
+
+- **Safer previews of Ichitaro documents.** The component that draws Ichitaro files in the browser, EZPZ File JTD, is updated to 0.3.2 (#1114). It now checks what a file says about its contents against what the file really holds, and refuses a damaged or crafted file that claims more than it holds, which could otherwise fill the memory of the browser tab viewing it. In the 119 public Ichitaro documents we compared, every page is drawn exactly as before.
+
+**Upgrade Notes** (for system administrators)
+
+- **Very long Ichitaro sheets:** a sheet is now drawn up to 1,000 pages and 32 MiB of layout data (#1114). A longer one is not cut short: the page says it cannot be shown, and the document can still be downloaded and read in the "Extracted text" tab. The longest public document we measured has 39 pages on a sheet. Sheets past the 64th of a document no longer appear in the preview's list, though the extracted text still has them.
+
+**Bug Fixes**
+
+- An Ichitaro document whose margins did not fit its small paper was drawn on A4. It now keeps a paper size close to its own (#1114).
+
+---
+
+**ハイライト**
+
+- **一太郎のプレビューをより安全に。** 一太郎のファイルをブラウザで描く EZPZ File JTD を 0.3.2 に更新しました（#1114）。ファイルが示す内容を実際の中身と照らすようになり、中身より多くを示す壊れたファイルや細工されたファイルは開かずに断ります。こうしたファイルは、閲覧者のブラウザのタブのメモリを使い尽くすおそれがありました。比較した公開の一太郎文書 119 件は、すべて今までと同じに描かれます。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **とても長い一太郎のシート:** 描くのは 1 シート 1,000 ページ、組み上がりのデータ 32 MiB までになりました（#1114）。超えるシートは途中で切らず、表示できない旨を案内します。ダウンロードと「抽出テキスト」のタブは使えます。測定した公開の文書では、1 シートの最大は 39 ページです。文書の 65 枚目以降のシートはプレビューの一覧に出なくなりますが、抽出テキストには含まれます。
+
+**バグ修正**
+
+- 余白が用紙に収まらない小さな用紙の一太郎文書が A4 で描かれていました。今後は文書の用紙に近い大きさで描きます（#1114）。
+
 ## [0.40.0] - 2026-11-01
 
 **Breaking Changes**
