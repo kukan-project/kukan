@@ -339,7 +339,7 @@ rules is true of every document's extracted text.
   compound files with the signature, length-delimited blocks, records, inlines and a style
   section pin the rules without committing third-party documents
 - `packages/shared/src/__tests__/formats.test.ts`: the added predicates
-- `CLAUDE.md`: a row in the pipeline per-format matrix
+- `docs/pipeline.md` §10: a row in the per-format processing table
 - `apps/worker/src/pipeline/interpret/document/legacy/compound-file.ts`: reads streams by path,
   into nested storages (the sheets after the first)
 - `apps/web/src/components/preview/ichitaro-preview.tsx` (new): the original's display and the list of

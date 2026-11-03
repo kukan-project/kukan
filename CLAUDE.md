@@ -34,49 +34,6 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | デプロイ       | CloudFront + ALB + ECS Fargate / Docker Compose       |
 | IaC            | AWS CDK (TypeScript)                                  |
 
-## モノレポ構成
-
-```
-KUKAN/
-├── CLAUDE.md               # ← このファイル
-├── apps/
-│   ├── worker/             # Pipeline Worker（ジョブキュー consumer、ECS Fargate） ※ Phase 3+
-│   ├── web/                # Next.js フロントエンド + Hono API（単一オリジン）    ※ Phase 2+
-│   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 7+
-├── packages/
-│   ├── api/                # Hono API サーバー + Better Auth（ライブラリ）
-│   ├── db/                 # Drizzle スキーマ + マイグレーション + Better Auth テーブル
-│   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
-│   ├── queue/              # @kukan/queue（PostgreSQL の job 表、ADR-058。環境差なし）
-│   ├── adapters/           # 環境差吸収アダプター（3つ）
-│   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
-│   │   ├── storage/        # @kukan/storage-adapter (S3互換: AWS S3 / MinIO)     ※ Phase 3+
-│   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 5+
-│   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
-│   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
-│   └── ui/                 # shadcn/ui 共有コンポーネント                        ※ Phase 2+
-├── site/                   # ドキュメントサイト（Astro + Starlight、日英対応）
-├── docs/
-│   ├── design-v4.md        # 設計書（全体像、参照用）
-│   ├── pipeline.md         # パイプライン実行時リファレンス（書き込みと条件の対応）
-│   ├── jobs.md             # ジョブ実行時リファレンス（依存関係・全件と個別・claim）
-│   ├── adr/                # Architecture Decision Records
-│   │   ├── jp/             # 日本語（正本）
-│   │   └── en/             # English（機械翻訳・参考）
-│   └── specs/              # Phase別 実装仕様書
-│       ├── jp/             # 日本語（正本）
-│       └── en/             # English（機械翻訳・参考）
-├── Dockerfile              # マルチターゲット Docker ビルド（web / worker）
-├── .dockerignore
-├── compose.yml             # Docker Compose（開発 / オンプレ本番）
-├── docker/                 # Caddyfile, OpenSearch 設定
-├── infra/                  # AWS CDK スタック（KukanStack）
-├── turbo.json
-├── pnpm-workspace.yaml
-├── package.json
-└── tsconfig.base.json
-```
-
 ## コーディング規約
 
 ### 命名規則
@@ -325,7 +282,7 @@ pnpm format        # Prettier フォーマット
 実装仕様書も ADR と同様に日本語を正本とし、`docs/specs/jp/` と `docs/specs/en/` の
 両方に置く（英語版は機械翻訳・参考）。仕様書を追加・更新したら両方を更新する。
 
-## パイプライン フォーマット別処理マトリクス
+## パイプライン
 
 パイプラインは Fetch → Version → Interpret → Lake → Index → Summarize の6ステップ
 （Summarize は `AI_SUMMARY_MODEL` を設定したサイトのみ、ADR-053）。
@@ -335,65 +292,18 @@ Index ステップでリソースコンテンツの OpenSearch 投入を行う�
 Interpret のみフォーマット別処理を行う。JSON/GeoJSON はレコードの一覧として読めるものだけ表になる
 （最上位の配列、1 キーの下の配列、FeatureCollection の properties。ADR-063 §決定 10）。
 
-| フォーマット                   | isTextFormat | エンコーディング検出                         |     Parquet 生成      |              プレビュー表示               |
-| ------------------------------ | :----------: | -------------------------------------------- | :-------------------: | :---------------------------------------: |
-| CSV                            |     Yes      | chardet（+ 日本語再検証）                    |          Yes          |           テーブル+テキスト切替           |
-| TSV                            |     Yes      | chardet（+ 日本語再検証）                    |          Yes          |           テーブル+テキスト切替           |
-| TXT                            |     Yes      | chardet（+ 日本語再検証）                    |           -           |                 テキスト                  |
-| HTML/HTM                       |     Yes      | chardet（+ 日本語再検証）                    |           -           |                 テキスト                  |
-| XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |           -           |                 テキスト                  |
-| JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |    レコードの配列     |       テーブル+JSON 切替（表なら）        |
-| GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       | properties+Point 座標 |        地図+属性テーブル+JSON 切替        |
-| MD                             |     Yes      | UTF-8 固定（見出し付き文書テキスト成果物も） |           -           |     整形表示+ソース+抽出テキスト切替      |
-| RDF                            |      No      | スキップ                                     |           -           |                  非対応                   |
-| PDF                            |      No      | スキップ                                     |           -           |      iframe（本体）+抽出テキスト切替      |
-| XLSX/XLS                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
-| DOC/DOCX                       |      No      | スキップ                                     |           -           |  DOCX は XLSX と同じ、DOC は抽出テキスト  |
-| PPT/PPTX                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
-| JTD/JTT（一太郎）              |      No      | スキップ                                     |           -           | 原本（EZPZ、シート一覧）+抽出テキスト切替 |
-| ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |           -           |               ファイル一覧                |
-| PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |           -           |                img（本体）                |
-
-Office の「原本」は ibisOffice がブラウザの sandbox の iframe で描く（ADR-065）。サイトの
-`OFFICE_PREVIEW_VIEWER=office-online` で Office Online Viewer（公開のデータセットのみ、DOC も原本）にできる。
-
-**サイズ制限:**
-
-| 項目                                  | 制限値 | 設定ファイル                                              |
-| ------------------------------------- | ------ | --------------------------------------------------------- |
-| ブラウザアップロード                  | 100 MB | `packages/shared/src/formats.ts`                          |
-| 外部 URL 取得（Fetch）                | 100 MB | `apps/worker/src/config.ts`                               |
-| CSV/TSV Parquet 生成対象              | 100 MB | `packages/shared/src/formats.ts`                          |
-| JSON（1 オブジェクト）                | 32 MB  | `apps/worker/src/config.ts`                               |
-| JSON（入れ子の深さ）                  | 64 段  | `apps/worker/src/config.ts`                               |
-| Office の原本（ibisOffice、ファイル） | 64 MB  | `apps/web/src/components/preview/ibis-office-preview.tsx` |
-| Office の原本（ibisOffice、展開後）   | 128 MB | `apps/web/src/components/preview/ibis-office-preview.tsx` |
-
-**関連ファイル:**
-
-- フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`, `isImageFormat`）
-- エンコーディング検出: `packages/shared/src/encoding-node.ts`（`detectEncoding`）
-- Interpret ステップ: `apps/worker/src/pipeline/steps/interpret.ts`
-- フロントエンド プレビュー: `apps/web/src/components/preview/resource-preview.tsx`
-- GeoJSON 地図プレビュー: `apps/web/src/components/preview/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）
-- 画像プレビュー: `apps/web/src/components/preview/image-preview.tsx`
-- Office の原本（ibisOffice）: `apps/web/src/components/preview/ibis-office-preview.tsx`、起動ページは `apps/web/vendor/ibis-office/boot/`、CSP は `apps/web/src/proxy.ts`
+フォーマット別の処理（エンコーディング検出・Parquet 生成・プレビュー表示）、サイズ制限、関連ファイルは
+`docs/pipeline.md` §10 にある。フォーマットを足す・変えるときはそこを更新する。
 
 ## よく使うコマンド（セットアップ後）
 
 ```bash
-pnpm install                    # 依存関係インストール
-pnpm dev                        # 全apps/packages の開発サーバー起動
-pnpm build                      # 全パッケージビルド
-pnpm test                       # 全テスト実行（ユニット + 統合）
 pnpm test:e2e                   # E2Eテスト実行（Playwright、要 dev サーバー）
 pnpm --filter @kukan/db db:generate   # Drizzle マイグレーション生成
 pnpm --filter @kukan/db db:migrate    # マイグレーション実行
 pnpm db:create-user             # ユーザー作成（初期 sysadmin 作成等）
 pnpm eval:search                # 検索品質評価（ゴールデンセット、要稼働環境。ADR-034）
 pnpm eval:suggest               # AI提案品質評価（ゴールデンセット、要稼働環境+KUKAN_TOKEN。ADR-040）
-pnpm lint                       # ESLint
-pnpm typecheck                  # TypeScript 型チェック
 ```
 
 ### AWS デプロイ

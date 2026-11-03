@@ -537,3 +537,51 @@ Version ステップに達した時点で設定を読むので、二重に積ん
 **版を消すのは版パージだけで、消えるのは版ファイルである。** 巻き戻しはどちらも消さず、版を 1 つ
 足すだけ（遷移は ADR-043 §1.1）。リソースそのものが消えるとき（リソース削除・パッケージ／組織
 パージ）は、FK CASCADE で版定義も一緒に消える — 墓標が残るのはそのリソースが生きている間である。
+
+## 10. フォーマット別処理
+
+Interpret だけがフォーマットで処理を分ける（流れは §1）。
+
+| フォーマット                   | isTextFormat | エンコーディング検出                         |     Parquet 生成      |              プレビュー表示               |
+| ------------------------------ | :----------: | -------------------------------------------- | :-------------------: | :---------------------------------------: |
+| CSV                            |     Yes      | chardet（+ 日本語再検証）                    |          Yes          |           テーブル+テキスト切替           |
+| TSV                            |     Yes      | chardet（+ 日本語再検証）                    |          Yes          |           テーブル+テキスト切替           |
+| TXT                            |     Yes      | chardet（+ 日本語再検証）                    |           -           |                 テキスト                  |
+| HTML/HTM                       |     Yes      | chardet（+ 日本語再検証）                    |           -           |                 テキスト                  |
+| XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |           -           |                 テキスト                  |
+| JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |    レコードの配列     |       テーブル+JSON 切替（表なら）        |
+| GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       | properties+Point 座標 |        地図+属性テーブル+JSON 切替        |
+| MD                             |     Yes      | UTF-8 固定（見出し付き文書テキスト成果物も） |           -           |     整形表示+ソース+抽出テキスト切替      |
+| RDF                            |      No      | スキップ                                     |           -           |                  非対応                   |
+| PDF                            |      No      | スキップ                                     |           -           |      iframe（本体）+抽出テキスト切替      |
+| XLSX/XLS                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
+| DOC/DOCX                       |      No      | スキップ                                     |           -           |  DOCX は XLSX と同じ、DOC は抽出テキスト  |
+| PPT/PPTX                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
+| JTD/JTT（一太郎）              |      No      | スキップ                                     |           -           | 原本（EZPZ、シート一覧）+抽出テキスト切替 |
+| ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |           -           |               ファイル一覧                |
+| PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |           -           |                img（本体）                |
+
+Office の「原本」は ibisOffice がブラウザの sandbox の iframe で描く（ADR-065）。サイトの
+`OFFICE_PREVIEW_VIEWER=office-online` で Office Online Viewer（公開のデータセットのみ、DOC も原本）にできる。
+
+**サイズ制限:**
+
+| 項目                                  | 制限値 | 設定ファイル                                              |
+| ------------------------------------- | ------ | --------------------------------------------------------- |
+| ブラウザアップロード                  | 100 MB | `packages/shared/src/formats.ts`                          |
+| 外部 URL 取得（Fetch）                | 100 MB | `apps/worker/src/config.ts`                               |
+| CSV/TSV Parquet 生成対象              | 100 MB | `packages/shared/src/formats.ts`                          |
+| JSON（1 オブジェクト）                | 32 MB  | `apps/worker/src/config.ts`                               |
+| JSON（入れ子の深さ）                  | 64 段  | `apps/worker/src/config.ts`                               |
+| Office の原本（ibisOffice、ファイル） | 64 MB  | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+| Office の原本（ibisOffice、展開後）   | 128 MB | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+
+**関連ファイル:**
+
+- フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`, `isImageFormat`）
+- エンコーディング検出: `packages/shared/src/encoding-node.ts`（`detectEncoding`）
+- Interpret ステップ: `apps/worker/src/pipeline/steps/interpret.ts`
+- フロントエンド プレビュー: `apps/web/src/components/preview/resource-preview.tsx`
+- GeoJSON 地図プレビュー: `apps/web/src/components/preview/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）
+- 画像プレビュー: `apps/web/src/components/preview/image-preview.tsx`
+- Office の原本（ibisOffice）: `apps/web/src/components/preview/ibis-office-preview.tsx`、起動ページは `apps/web/vendor/ibis-office/boot/`、CSP は `apps/web/src/proxy.ts`

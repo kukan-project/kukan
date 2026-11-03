@@ -318,7 +318,7 @@ AI メタデータ提案の対象に自動的に入るのは**意図した効果
   署名・長さ付き区画・レコード・差し込み・書式の区画を持つ複合文書を組み立てれば、
   第三者の文書をリポジトリに置かずに規則を固定できる
 - `packages/shared/src/__tests__/formats.test.ts`: 述語の追加分
-- `CLAUDE.md`: パイプライン フォーマット別処理マトリクスに行を足す
+- `docs/pipeline.md` §10: フォーマット別処理の表に行を足す
 - `apps/worker/src/pipeline/interpret/document/legacy/compound-file.ts`: 入れ子のストレージの
   ストリームまでパスで読む（2 枚目以降のシート）
 - `apps/web/src/components/preview/ichitaro-preview.tsx`（新規）: 原本の表示とシート一覧（決定 7）
