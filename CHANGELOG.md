@@ -6,6 +6,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.40.2] - 2026-11-04
+
+**Highlights**
+
+- **New AWS environments on Aurora can be created again.** The Aurora PostgreSQL version was pinned to 16.6, which AWS no longer offers, so the first deployment of a new `medium` or `large` environment (or one with `dbEngine: 'aurora'`) failed while creating the database and rolled back (#1123). It is now 16.13, the current default for PostgreSQL 16 on Aurora. Environments on RDS (`small`) were not affected.
+
+**Upgrade Notes** (for system administrators)
+
+- **Existing Aurora environments:** the next deployment asks Aurora to move the cluster to 16.13. A cluster still on an older 16.x is upgraded in place, with a short interruption while the database restarts; plan the deployment for a quiet time. A cluster that has already been upgraded past 16.13 (for example by hand) cannot be moved back, and the deployment fails; keep such an environment on 0.40.1 until a later release raises the version.
+
+**Bug Fixes**
+
+- Update the qs library to 6.17.1, which fixes a reported flaw (#1120). KUKAN does not use the affected function, so this is a precaution.
+
+**Documentation**
+
+- The table of what happens to each file format (encoding detection, Parquet conversion, preview, size limits) moved to the pipeline document (#1116).
+
+---
+
+**ハイライト**
+
+- **Aurora を使う AWS の環境を、また新しく作れるようにしました。** Aurora PostgreSQL の版が、AWS がもう提供していない 16.6 に固定されていました。そのため `medium`・`large`（または `dbEngine: 'aurora'`）の環境を新しく作ると、初回のデプロイがデータベースの作成で失敗し、ロールバックしていました（#1123）。版を、Aurora の PostgreSQL 16 で今の既定の 16.13 にしました。RDS（`small`）の環境には影響ありません。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **すでに Aurora で動いている環境:** 次のデプロイで、クラスターを 16.13 に上げる指示が Aurora に出ます。16 系の古い版のままのクラスターはその場でアップグレードされ、データベースの再起動で短い間つながらなくなります。利用の少ない時間にデプロイしてください。手作業などで 16.13 より新しい版にしてあるクラスターは版を下げられず、デプロイが失敗します。そうした環境は、後のリリースで版が上がるまで 0.40.1 のままにしてください。
+
+**バグ修正**
+
+- qs ライブラリを 6.17.1 に更新しました。報告された不具合の修正を含みます（#1120）。KUKAN は該当する関数を使っていないため、予防のための更新です。
+
+**ドキュメント**
+
+- ファイル形式ごとの扱い（エンコーディングの判定、Parquet への変換、プレビュー、サイズの上限）の表を、パイプラインの文書へ移しました（#1116）。
+
 ## [0.40.1] - 2026-11-02
 
 **Highlights**
