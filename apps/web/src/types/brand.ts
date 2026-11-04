@@ -31,8 +31,8 @@ export interface BrandConfig {
   noindex?: boolean
   /**
    * Sources a brand adds to the pages' Content-Security-Policy (ADR-071),
-   * directive → sources, e.g. `{ 'img-src': ['https://cdn.example.jp'] }`.
-   * Appended to the directive's own; nothing is taken away.
+   * directive → sources, e.g. `{ 'frame-src': ["'self'"] }`. Appended to the
+   * directive's own sources; a directive the policy lacks holds the brand's alone.
    */
   csp?: Partial<Record<string, string[]>>
 }

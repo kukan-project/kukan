@@ -157,20 +157,20 @@ export const brandConfig: BrandConfig = {
 
 ### 各フィールドの説明
 
-| フィールド        | 説明                                                                                                                                                                                                                                                                         |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                                                                                                                                                                                   |
-| `siteDescription` | meta description（検索エンジン向け）                                                                                                                                                                                                                                         |
-| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                                                                                                                                                                                          |
-| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                                                                                                                                                                                                             |
-| `logo`            | ヘッダーロゴの設定（後述）                                                                                                                                                                                                                                                   |
-| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                                                                                                                                                                                                             |
-| `footerLinks`     | フッターのリンク一覧                                                                                                                                                                                                                                                         |
-| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                                                                                                                                                                                                                       |
-| `faviconPath`     | ファビコンのパス                                                                                                                                                                                                                                                             |
-| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                                                                                                                                                                                            |
-| `gaMeasurementId` | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)）                                                                                                                                                                 |
-| `csp`             | ページの Content-Security-Policy に足すソース（ディレクティブ → ソースの配列。例: `{ 'img-src': ['https://cdn.example.jp'] }`）。自分のホストからスクリプトや CSS を読む、別のドメインの API を呼ぶブランドが使う。足すだけで、外せない（ADR-071）。GA4 のホストは自動で入る |
+| フィールド        | 説明                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                   |
+| `siteDescription` | meta description（検索エンジン向け）                                                                         |
+| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                          |
+| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                                             |
+| `logo`            | ヘッダーロゴの設定（後述）                                                                                   |
+| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                                             |
+| `footerLinks`     | フッターのリンク一覧                                                                                         |
+| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                                                       |
+| `faviconPath`     | ファビコンのパス                                                                                             |
+| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                            |
+| `gaMeasurementId` | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)） |
+| `csp`             | ページの CSP に足すソース。[外部のリソースと CSP](#外部のリソースと-cspcsp)                                  |
 
 テキスト系フィールド（`siteName`・`siteDescription`・`copyright`・`logo.alt`・`headerNavExtra[].label`・`footerLinks[].label`）は、文字列のほかにロケールマップ（例: `{ ja: '利用規約', en: 'Terms of Use' }`）を指定できます。文字列は全ロケール共通、マップは言語切替に追従します。指定のないロケールは英語（デフォルトロケール）→定義済みの値の順で補われます。
 
@@ -506,6 +506,60 @@ apps/web/brands/default/public/
 稼働中にファイルを追加・変更しても自動反映されません**。`pnpm build` を通すか、
 dev サーバーを再起動（コピーを再実行）してください。
 :::
+
+## 外部のリソースと CSP（`csp`）
+
+KUKAN のページは Content-Security-Policy（CSP）を出し、ページが読み込んでよい先と送ってよい先を絞っています（ADR-071）。既定で許していないものをブランドで使うときは、`brand-config.ts` の `csp` に足します。
+
+:::caution[iframe はもう止まる]
+`CSP_MODE` の既定は `report-only` で、ほとんどの違反はコンソールに出るだけです（[環境変数](/ja/system-admin-guide/#環境変数)）。ただし `frame-src` だけは常に強制され、既定では `'self'` も許していません。地図や動画だけでなく、サイト自身のページ（`/brand/` に置いた HTML など）を出す iframe も止まります。iframe を使うブランドは、下の表のとおり `frame-src` に足してください。
+:::
+
+### 足す必要がないもの
+
+- 同じオリジンのスクリプト・CSS・フォント（`/brand/` に置いたファイルなど）
+- 画像（どのホストからでも出せる。外部の CDN のロゴなど）
+- ページに直接書いたスクリプトとスタイル
+- GA4（`gaMeasurementId` を設定すると、必要なホストが自動で入る）
+- `OFFICE_PREVIEW_VIEWER=office-online` のときの Microsoft のビューアと、ファイルのアップロード先のストレージ（自動で入る）
+
+### 足す必要があるもの
+
+| ブランドでやること                                               | ディレクティブ          | 例                                                                                                                                                               |
+| ---------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iframe でページ・地図・動画を出す                                | `frame-src`             | `"'self'"`、`'https://www.google.com'`（Google マップ）、`'https://www.youtube.com'`（YouTube。プライバシー強化モードなら `'https://www.youtube-nocookie.com'`） |
+| 外部のホストのスクリプトを読む（ウィジェット、埋め込み用のタグ） | `script-src`            | `'https://widget.example.jp'`                                                                                                                                    |
+| 外部の CSS とフォントを読む（Google Fonts はホストが 2 つ）      | `style-src`・`font-src` | `'https://fonts.googleapis.com'`・`'https://fonts.gstatic.com'`                                                                                                  |
+| ブラウザから別のドメインの API を呼ぶ（`fetch`、WebSocket）      | `connect-src`           | `'https://api.example.jp'`、`'wss://ws.example.jp'`                                                                                                              |
+| ライブラリが Web Worker を使う（地図のライブラリなど）           | `worker-src`            | `'blob:'`                                                                                                                                                        |
+| 動画・音声を `<video>` / `<audio>` で再生する                    | `media-src`             | `"'self'"`、`'https://media.example.jp'`                                                                                                                         |
+| 外部へ送信するフォームを置く                                     | `form-action`           | `'https://forms.example.jp'`                                                                                                                                     |
+
+```typescript
+// apps/web/brands/default/brand-config.ts
+csp: {
+  'frame-src': ["'self'", 'https://www.youtube.com'],
+  'script-src': ['https://widget.example.jp'],
+},
+```
+
+- 足したソースは、KUKAN が既定で入れているソースに加わります。既定のソースは消えません
+- KUKAN が既定で設定していないディレクティブ（表では `media-src`）は、足したものだけになります。同じオリジンのものも使うなら `"'self'"` も入れてください。`script-src-elem` のような `-elem` / `-attr` のディレクティブは足さないでください。KUKAN のスクリプトやスタイルまで止まります
+- `script-src` と `style-src` に足すのはオリジンだけにします。ハッシュ（`'sha256-…'`）、nonce、`'strict-dynamic'` を足すと、ブラウザはページに直接書いたスクリプトを許さなくなり、KUKAN の画面が動かなくなります。ウィジェットの導入手順にそう書かれていても、オリジンだけを足してください
+- `frame-src` に `'self'` を足すと、同じオリジンのどのページも iframe に出せるようになり、Office プレビューの枠が移れる先も同じだけ広がります。出すページが決まっているなら、`'https://catalog.example.jp/brand/dashboards/'` のようにパスまで書くと狭くできます
+- `/brand/` に置いた HTML にも同じ CSP がかかるので、iframe の中のページが読む外部のものもここに足します
+- ディレクティブの名前は検査しません。綴りを間違えると、ブラウザが無視します
+
+### 足りないものの見つけ方
+
+ブランドで手を入れたページ（トップ、追加した静的ページ、ヘッダー・フッターのあるページ）を Chrome か Edge で開き、開発者ツールのコンソールを `Content Security Policy`（ハイフンなし）で絞り込みます。足りないと、次のようなメッセージが出ます。
+
+- `[Report Only] Refused to load the script 'https://widget.example.jp/...' because it violates ... "script-src ..."` — 今は止まっていないが、足すべきもの
+- `Refused to frame 'https://www.youtube.com/' because it violates ... "frame-src ..."` — iframe が実際に止まっている。同じ内容の `[Report Only]` のメッセージも並びますが、`frame-src` のものは止まっています
+
+メッセージに出たオリジンを、そのディレクティブに足します。後のリリースで `CSP_MODE` の既定を `enforce` にする予定で、そうなると `[Report Only]` のものも止まります。それまでに、CSP のメッセージが出なくなるまで足しておいてください。
+
+`pnpm dev` でもほぼ同じ CSP がかかりますが、開発時だけ `eval` を許しています。`eval` を使うスクリプトは、ビルドしたサイト（`pnpm build && pnpm --filter @kukan/web start`）か本番で確かめてください。
 
 ## 複数ブランド（1 フォークで複数サイト）
 

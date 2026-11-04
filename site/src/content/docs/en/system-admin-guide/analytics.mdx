@@ -107,7 +107,7 @@ No. GA4 requires internet access to send data to Google servers. In closed netwo
 
 ### Can I use Google Tag Manager instead?
 
-KUKAN uses gtag.js directly for simplicity and performance. GTM is not needed since the only tracking tag is GA4. If you have a specific need for GTM, leave `gaMeasurementId` as `null` and place the GTM snippet in a Header (or other) override component (see [Appearance Customization](/en/system-admin-guide/brand-customization/)).
+KUKAN uses gtag.js directly for simplicity and performance. GTM is not needed since the only tracking tag is GA4. If you have a specific need for GTM, leave `gaMeasurementId` as `null` and place only the `<script>` part of the GTM snippet in a Header (or other) override component (see [Appearance Customization](/en/system-admin-guide/brand-customization/)), leaving out its `<noscript>` part. The hosts of GTM and of the tags it loads are not added to the CSP automatically, so add them to the brand's `csp` under `script-src` and `connect-src` (see [External Resources and CSP](/en/system-admin-guide/brand-customization/#external-resources-and-csp-csp)).
 
 ### What about API access statistics?
 

@@ -157,20 +157,20 @@ export const brandConfig: BrandConfig = {
 
 ### Field Reference
 
-| Field             | Description                                                                                                                                                                                                                                                                                                             |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `siteName`        | Site title (browser tab, header, etc.)                                                                                                                                                                                                                                                                                  |
-| `siteDescription` | meta description (for search engines)                                                                                                                                                                                                                                                                                   |
-| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)                                                                                                                                                                                                                                                             |
-| `copyrightUrl`    | Link target for the site name in the footer (omit for no link)                                                                                                                                                                                                                                                          |
-| `logo`            | Header logo configuration (see below)                                                                                                                                                                                                                                                                                   |
-| `headerNavExtra`  | Additional navigation items for the header                                                                                                                                                                                                                                                                              |
-| `footerLinks`     | Footer link list                                                                                                                                                                                                                                                                                                        |
-| `ogImage`         | OGP image path (relative to `public/`)                                                                                                                                                                                                                                                                                  |
-| `faviconPath`     | Favicon path                                                                                                                                                                                                                                                                                                            |
-| `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none)                                                                                                                                                                                                                                  |
-| `gaMeasurementId` | GA4 Measurement ID (`G-XXXXXXXXXX`). `null` / omitted disables GA4 ([Access Analytics](/en/system-admin-guide/analytics/))                                                                                                                                                                                              |
-| `csp`             | Sources to add to the pages' Content-Security-Policy (directive → array of sources, e.g. `{ 'img-src': ['https://cdn.example.jp'] }`), for a brand that loads scripts or CSS from its own host or calls an API on another domain. It only adds; nothing is taken away (ADR-071). GA4's hosts are included automatically |
+| Field             | Description                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `siteName`        | Site title (browser tab, header, etc.)                                                                                     |
+| `siteDescription` | meta description (for search engines)                                                                                      |
+| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)                                                                |
+| `copyrightUrl`    | Link target for the site name in the footer (omit for no link)                                                             |
+| `logo`            | Header logo configuration (see below)                                                                                      |
+| `headerNavExtra`  | Additional navigation items for the header                                                                                 |
+| `footerLinks`     | Footer link list                                                                                                           |
+| `ogImage`         | OGP image path (relative to `public/`)                                                                                     |
+| `faviconPath`     | Favicon path                                                                                                               |
+| `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none)                                     |
+| `gaMeasurementId` | GA4 Measurement ID (`G-XXXXXXXXXX`). `null` / omitted disables GA4 ([Access Analytics](/en/system-admin-guide/analytics/)) |
+| `csp`             | Sources to add to the pages' CSP. See [External Resources and CSP](#external-resources-and-csp-csp)                        |
 
 Text fields (`siteName`, `siteDescription`, `copyright`, `logo.alt`, `headerNavExtra[].label`, `footerLinks[].label`) accept either a plain string or a locale map (e.g. `{ ja: '利用規約', en: 'Terms of Use' }`). A plain string applies to all locales; a map follows locale switching. Missing locales fall back to English (the default locale), then to any defined entry.
 
@@ -506,6 +506,60 @@ The contents of `brands/default/public/` are copied to `public/brand/` at the
 file while the dev server is running does not take effect automatically.** Run
 `pnpm build`, or restart the dev server (which re-runs the copy).
 :::
+
+## External Resources and CSP (`csp`)
+
+KUKAN pages send a Content-Security-Policy (CSP) that limits where a page may load from and send to (ADR-071). When a brand uses something the default does not allow, add it to `csp` in `brand-config.ts`.
+
+:::caution[iframes are already blocked]
+`CSP_MODE` defaults to `report-only`, where most violations only show in the console ([Environment Variables](/en/system-admin-guide/#environment-variables)). `frame-src`, though, is always enforced, and by default it does not allow even `'self'`. Any iframe is blocked, a map or a video as much as a page of the site's own (such as an HTML file under `/brand/`). A brand that uses iframes adds to `frame-src` as in the table below.
+:::
+
+### What needs no addition
+
+- Scripts, stylesheets and fonts from the same origin (files under `/brand/`, for instance)
+- Images, from any host (a logo on an external CDN, for instance)
+- Scripts and styles written in the page itself
+- GA4 (setting `gaMeasurementId` adds the hosts it needs)
+- Microsoft's viewer under `OFFICE_PREVIEW_VIEWER=office-online`, and the storage that file uploads go to (both added automatically)
+
+### What needs adding
+
+| What the brand does                                                      | Directive               | Example                                                                                                                                                    |
+| ------------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shows a page, a map or a video in an iframe                              | `frame-src`             | `"'self'"`, `'https://www.google.com'` (Google Maps), `'https://www.youtube.com'` (YouTube; `'https://www.youtube-nocookie.com'` in privacy-enhanced mode) |
+| Loads a script from an external host (a widget, an embed tag)            | `script-src`            | `'https://widget.example.jp'`                                                                                                                              |
+| Loads an external stylesheet and its fonts (Google Fonts uses two hosts) | `style-src`, `font-src` | `'https://fonts.googleapis.com'`, `'https://fonts.gstatic.com'`                                                                                            |
+| Calls an API on another domain from the browser (`fetch`, WebSocket)     | `connect-src`           | `'https://api.example.jp'`, `'wss://ws.example.jp'`                                                                                                        |
+| Uses a library that starts Web Workers (a map library, for instance)     | `worker-src`            | `'blob:'`                                                                                                                                                  |
+| Plays video or audio in `<video>` / `<audio>`                            | `media-src`             | `"'self'"`, `'https://media.example.jp'`                                                                                                                   |
+| Has a form that submits to another site                                  | `form-action`           | `'https://forms.example.jp'`                                                                                                                               |
+
+```typescript
+// apps/web/brands/default/brand-config.ts
+csp: {
+  'frame-src': ["'self'", 'https://www.youtube.com'],
+  'script-src': ['https://widget.example.jp'],
+},
+```
+
+- What you add joins the sources KUKAN sets by default; those stay
+- A directive KUKAN does not set by default (`media-src` in the table) holds only what you add, so include `"'self'"` if same-origin files are used too. Do not add `-elem` / `-attr` directives such as `script-src-elem`: they would block KUKAN's own scripts and styles
+- Add only origins to `script-src` and `style-src`. A hash (`'sha256-…'`), a nonce or `'strict-dynamic'` makes the browser stop allowing scripts written in the page, and KUKAN's screens stop working. Add only the origin even when a widget's install guide says otherwise
+- `'self'` in `frame-src` lets any same-origin page be shown in an iframe, and widens where the Office preview's frame can go by as much. When the pages are known, a path narrows it, as in `'https://catalog.example.jp/brand/dashboards/'`
+- HTML files under `/brand/` get the same CSP, so add what a page inside an iframe loads here too
+- Directive names are not checked; a misspelled one is ignored by the browser
+
+### Finding what is missing
+
+Open the pages the brand touches (the top page, added static pages, a page with the header and footer) in Chrome or Edge, and filter the developer tools console by `Content Security Policy` (no hyphens). A missing source shows up as a message like these:
+
+- `[Report Only] Refused to load the script 'https://widget.example.jp/...' because it violates ... "script-src ..."` — not blocked yet, but to be added
+- `Refused to frame 'https://www.youtube.com/' because it violates ... "frame-src ..."` — the iframe is actually blocked. A `[Report Only]` copy of the same message appears beside it, but a `frame-src` one is blocked
+
+Add the origin in the message to the directive it names. A later release will make `enforce` the default for `CSP_MODE`, which blocks the `[Report Only]` ones too, so add sources until no CSP message appears before then.
+
+`pnpm dev` sends nearly the same CSP, but allows `eval` in development only. Check a script that uses `eval` on a built site (`pnpm build && pnpm --filter @kukan/web start`) or in production.
 
 ## Multiple Brands (Multiple Sites in One Fork)
 

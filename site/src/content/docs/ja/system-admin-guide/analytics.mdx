@@ -107,7 +107,7 @@ AWS 環境では、`environments.ts` の環境（マルチサイトではサイ�
 
 ### Google Tag Manager を使うべきですか？
 
-KUKAN はシンプルさとパフォーマンスのため gtag.js を直接使用しています。GTM で管理するタグが GA4 のみのため、GTM は不要です。特別な理由で GTM が必要な場合は、`gaMeasurementId` を `null` のままにし、Header などのオーバーライドコンポーネントに GTM のスニペットを置いてください（[外観カスタマイズ](/ja/system-admin-guide/brand-customization/) を参照）。
+KUKAN はシンプルさとパフォーマンスのため gtag.js を直接使用しています。GTM で管理するタグが GA4 のみのため、GTM は不要です。特別な理由で GTM が必要な場合は、`gaMeasurementId` を `null` のままにし、Header などのオーバーライドコンポーネントに GTM のスニペットの `<script>` の部分だけを置いてください（[外観カスタマイズ](/ja/system-admin-guide/brand-customization/) を参照）。`<noscript>` の部分は置きません。GTM と、GTM が読み込むタグのホストは CSP に自動では入らないので、ブランドの `csp` の `script-src` と `connect-src` に足してください（[外部のリソースと CSP](/ja/system-admin-guide/brand-customization/#外部のリソースと-cspcsp)）。
 
 ### API アクセスの統計は取れますか？
 
