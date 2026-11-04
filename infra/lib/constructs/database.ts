@@ -57,7 +57,7 @@ export class DatabaseConstruct extends Construct {
       const cluster = new rds.DatabaseCluster(this, 'AuroraCluster', {
         clusterIdentifier: envPrefix(this),
         engine: rds.DatabaseClusterEngine.auroraPostgres({
-          version: rds.AuroraPostgresEngineVersion.VER_16_6,
+          version: rds.AuroraPostgresEngineVersion.VER_16_13,
         }),
         serverlessV2MinCapacity: config.db.minAcu ?? 0,
         serverlessV2MaxCapacity: config.db.maxAcu ?? 2,

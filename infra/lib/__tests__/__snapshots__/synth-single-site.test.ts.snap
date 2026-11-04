@@ -6088,7 +6088,7 @@ function expandV6(addr) {
         },
         "DatabaseName": "kukan",
         "Engine": "aurora-postgresql",
-        "EngineVersion": "16.6",
+        "EngineVersion": "16.13",
         "MasterUserPassword": {
           "Fn::Join": [
             "",
@@ -20484,7 +20484,7 @@ function expandV6(addr) {
         },
         "DatabaseName": "kukan",
         "Engine": "aurora-postgresql",
-        "EngineVersion": "16.6",
+        "EngineVersion": "16.13",
         "MasterUserPassword": {
           "Fn::Join": [
             "",
