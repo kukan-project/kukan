@@ -554,7 +554,9 @@ without `eval`. The defence therefore rests not on a short import list but on th
   page sits in the same directory as ibisOffice). A CSP source needs the host, so it is written
   with the site's public origin (`BETTER_AUTH_URL`) and the request's `Host` (for a site opened
   directly under another name, such as its address). `X-Forwarded-Host` is not used: CloudFront
-  passes a viewer's value on, which would put someone else's host in the HTML cache
+  passes a viewer's value on, which would put someone else's host in the HTML cache. Nor is `Host`
+  used for a request through CloudFront (one carrying `X-Amz-Cf-Id`): it is the internal ALB's
+  name, which would show the setup in an unauthenticated response (ADR-070)
 
   ```
   sandbox allow-scripts; default-src 'none'; script-src <A> 'wasm-unsafe-eval';

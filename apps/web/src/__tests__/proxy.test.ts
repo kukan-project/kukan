@@ -19,8 +19,8 @@ function cspFor(url: string, headers?: Record<string, string>): string {
 }
 
 /** As a server receives it: the test environment's Request drops a `host` it is given. */
-function cspForHost(url: string, host: string): string {
-  const request = new NextRequest(url)
+function cspForHost(url: string, host: string, headers?: Record<string, string>): string {
+  const request = new NextRequest(url, { headers })
   vi.spyOn(request.headers, 'get').mockImplementation((name) => (name === 'host' ? host : null))
   return proxy(request).headers.get('content-security-policy')!
 }
@@ -46,6 +46,15 @@ describe('proxy (ADR-065 decision 2)', () => {
       `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/ ` +
         `http://192.0.2.1:3000${IBIS_OFFICE_BOOT} http://192.0.2.1:3000/api/v1/resources/`
     )
+  })
+
+  it('leaves out the Host CloudFront sends, a load balancer’s name', () => {
+    const host = 'internal-kukan-alb-123456789.ap-northeast-1.elb.amazonaws.com'
+    const headers = { 'x-amz-cf-id': 'abc123' }
+    expect(cspForHost(`${ORIGIN}/`, host, headers)).toBe(
+      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/`
+    )
+    expect(cspForHost(`${ORIGIN}${IBIS_OFFICE_BOOT}`, host, headers)).not.toContain('elb')
   })
 
   it('takes no host from a header a viewer can send through CloudFront', () => {

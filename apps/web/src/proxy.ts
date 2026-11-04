@@ -25,7 +25,7 @@ import { IBIS_OFFICE_DIR, IBIS_OFFICE_ROOT } from '@/lib/ibis-office'
  * which holds `frame-src`, is the one header.
  */
 export function proxy(request: NextRequest) {
-  const origins = [...new Set([siteOrigin(), requestOrigin(request)])]
+  const origins = allowedOrigins(request)
   const response = NextResponse.next()
   // All of it, decoded: the boot page is served under other spellings of its
   // path too (`%62oot.html`), and a script or WASM response ignores the CSP
@@ -55,6 +55,17 @@ export function proxy(request: NextRequest) {
     response.headers.set('Content-Security-Policy-Report-Only', policy)
   }
   return response
+}
+
+/**
+ * Behind CloudFront the Host is the origin's, an internal load balancer's name,
+ * which a public response should not carry (ADR-070); CloudFront adds
+ * X-Amz-Cf-Id to every request it forwards. A visitor who sends that header
+ * directly only takes their own host out of their own page's policy.
+ */
+function allowedOrigins(request: NextRequest): string[] {
+  if (request.headers.has('x-amz-cf-id')) return [siteOrigin()]
+  return [...new Set([siteOrigin(), requestOrigin(request)])]
 }
 
 /**

@@ -527,7 +527,9 @@ iframe**（`allow-same-origin` を付けない）に入れる。文書は信頼�
   `<A>` は `/vendor/ibis-office/<版>/`（起動ページも ibisOffice と同じディレクトリに置く）。
   CSP の許可にはホストが要るので、サイトの公開のオリジン（`BETTER_AUTH_URL`）と、リクエストの
   `Host`（IP アドレスなど別の名前で直に開いたとき）で書く。`X-Forwarded-Host` は使わない —
-  CloudFront が閲覧者の値をそのまま渡すので、HTML のキャッシュに他人のホストが入る
+  CloudFront が閲覧者の値をそのまま渡すので、HTML のキャッシュに他人のホストが入る。CloudFront
+  経由の要求（`X-Amz-Cf-Id` が付く）では `Host` も使わない — 届くのは内部の ALB の名前で、
+  未認証の応答に構成を出すことになる（ADR-070）
 
   ```
   sandbox allow-scripts; default-src 'none'; script-src <A> 'wasm-unsafe-eval';
