@@ -748,6 +748,59 @@ describe('WAF rate-based rules and log (ADR-027 supplement)', () => {
     expect(CustomResponseBodies).toBeUndefined()
   })
 
+  it('only counts the common rules a catalog API trips in ordinary use, and blocks on the rest', () => {
+    const { rules } = webAcl(defaults)
+    const group = (name: string) =>
+      (rules[name].Statement as { ManagedRuleGroupStatement: Record<string, unknown> })
+        .ManagedRuleGroupStatement
+    expect(rules.AWSManagedRulesCommonRuleSet).toMatchObject({ OverrideAction: { None: {} } })
+    expect(group('AWSManagedRulesCommonRuleSet').RuleActionOverrides).toEqual([
+      { Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } },
+      { Name: 'GenericRFI_BODY', ActionToUse: { Count: {} } },
+    ])
+    expect(group('AWSManagedRulesKnownBadInputsRuleSet')).not.toHaveProperty('RuleActionOverrides')
+    expect(group('AWSManagedRulesAmazonIpReputationList')).not.toHaveProperty('RuleActionOverrides')
+  })
+
+  it('blocks a body past the inspection limit, before the managed groups read only its head, but a file to the upload route', () => {
+    const { rules } = webAcl(defaults)
+    expect(rules.BlockUninspectedBody).toEqual({
+      Name: 'BlockUninspectedBody',
+      Priority: 5,
+      Action: { Block: { CustomResponse: { ResponseCode: 413 } } },
+      Statement: {
+        AndStatement: {
+          Statements: [
+            {
+              SizeConstraintStatement: {
+                FieldToMatch: { Body: { OversizeHandling: 'MATCH' } },
+                ComparisonOperator: 'GT',
+                Size: 16384,
+                TextTransformations: [{ Priority: 0, Type: 'NONE' }],
+              },
+            },
+            {
+              NotStatement: {
+                Statement: {
+                  RegexMatchStatement: {
+                    FieldToMatch: { UriPath: {} },
+                    RegexString: '^/api/v1/resources/[0-9a-fA-F-]{36}/upload$',
+                    TextTransformations: [{ Priority: 0, Type: 'NONE' }],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+      VisibilityConfig: {
+        SampledRequestsEnabled: true,
+        CloudWatchMetricsEnabled: true,
+        MetricName: 'kukan-waf-body-size',
+      },
+    })
+  })
+
   it('leaves the cached static assets out of the catch-all count, and counts only the sign-in API in the other', () => {
     const { rules } = webAcl(defaults)
     const scopeDown = (rule: Rule) =>

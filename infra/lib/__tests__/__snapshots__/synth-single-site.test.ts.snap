@@ -14058,6 +14058,63 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         },
         "Rules": [
           {
+            "Action": {
+              "Block": {
+                "CustomResponse": {
+                  "ResponseCode": 413,
+                },
+              },
+            },
+            "Name": "BlockUninspectedBody",
+            "Priority": 5,
+            "Statement": {
+              "AndStatement": {
+                "Statements": [
+                  {
+                    "SizeConstraintStatement": {
+                      "ComparisonOperator": "GT",
+                      "FieldToMatch": {
+                        "Body": {
+                          "OversizeHandling": "MATCH",
+                        },
+                      },
+                      "Size": 16384,
+                      "TextTransformations": [
+                        {
+                          "Priority": 0,
+                          "Type": "NONE",
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    "NotStatement": {
+                      "Statement": {
+                        "RegexMatchStatement": {
+                          "FieldToMatch": {
+                            "UriPath": {},
+                          },
+                          "RegexString": "^/api/v1/resources/[0-9a-fA-F-]{36}/upload$",
+                          "TextTransformations": [
+                            {
+                              "Priority": 0,
+                              "Type": "NONE",
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "kukan-waf-body-size",
+              "SampledRequestsEnabled": true,
+            },
+          },
+          {
             "Name": "AWSManagedRulesCommonRuleSet",
             "OverrideAction": {
               "None": {},
@@ -14066,6 +14123,20 @@ exports[`self-created global stack (domain without certificateArn) > matches the
             "Statement": {
               "ManagedRuleGroupStatement": {
                 "Name": "AWSManagedRulesCommonRuleSet",
+                "RuleActionOverrides": [
+                  {
+                    "ActionToUse": {
+                      "Count": {},
+                    },
+                    "Name": "SizeRestrictions_BODY",
+                  },
+                  {
+                    "ActionToUse": {
+                      "Count": {},
+                    },
+                    "Name": "GenericRFI_BODY",
+                  },
+                ],
                 "VendorName": "AWS",
               },
             },

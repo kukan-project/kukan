@@ -101,7 +101,7 @@ default arm64 is about 20% cheaper (the same holds for the tables below).
 | ECR + CloudWatch etc. | minimal               | ~$2       |
 
 Without OpenSearch (SEARCH_TYPE=postgres): ~$77/month
-Adding WAF (enableWaf=true): +~$11/month
+Adding WAF (enableWaf=true): +~$12/month
 IP restriction is handled by a CloudFront Function (no extra cost)
 CloudFront access logs: S3 storage and PUTs only (a few cents/month at a million requests a month)
 Consumption tax (10% in the Japan region) is added on top
@@ -130,7 +130,7 @@ Consumption tax (10% in the Japan region) is added on top
 | OpenSearch                   | m6g.xlarge.search × 2 (200GB)     | ~$510     |
 | CloudFront                   | VPC origin + transfer             | ~$5       |
 | Public IPv4                  | 4 ECS tasks                       | ~$15      |
-| WAF (optional)               | managed rules + rate rules        | ~$11      |
+| WAF (optional)               | managed rules + rate rules        | ~$12      |
 | S3 + Secrets + ECR + CW etc. | —                                 | ~$10      |
 
 ### Cost allocation tags
@@ -592,13 +592,13 @@ WAF is deployed at CLOUDFRONT scope in us-east-1 (KukanGlobalStack).
 
 The three managed rule groups:
 
-| Rule group                            | Content                                                     | Cost     |
-| ------------------------------------- | ----------------------------------------------------------- | -------- |
-| AWSManagedRulesCommonRuleSet          | SQLi, XSS, SSRF, path traversal etc.                        | $1/month |
-| AWSManagedRulesKnownBadInputsRuleSet  | Known-vulnerability attacks such as Log4Shell, Spring4Shell | $1/month |
-| AWSManagedRulesAmazonIpReputationList | Blocks malicious IPs using AWS threat intelligence          | $1/month |
+| Rule group                            | Content                                                                                                                                                                | Cost     |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| AWSManagedRulesCommonRuleSet          | SQLi, XSS, SSRF, path traversal etc. (a body over 8 KB and an IP-address URL in a body only count, one over 16 KB is blocked by a rule of its own; ADR-027 supplement) | $1/month |
+| AWSManagedRulesKnownBadInputsRuleSet  | Known-vulnerability attacks such as Log4Shell, Spring4Shell                                                                                                            | $1/month |
+| AWSManagedRulesAmazonIpReputationList | Blocks malicious IPs using AWS threat intelligence                                                                                                                     | $1/month |
 
-Total WAF cost: WebACL $5/month + rules $5/month (3 managed + 2 rate) + requests $0.60/million = **~$11/month**
+Total WAF cost: WebACL $5/month + rules $6/month (3 managed + 2 rate + 1 body size) + requests $0.60/million = **~$12/month**
 
 #### Rate-based rules and logging (ADR-027 supplement)
 

@@ -318,6 +318,24 @@ per-site one (a site entry carrying it is refused at synth).
   that reaches the handler under the other reading.
 - **Why after the managed groups.** A request a managed rule blocked is neither counted against
   its IP nor logged twice.
+- **Two rules of the common rule set only count** (`ruleActionOverrides` to count).
+  `SizeRestrictions_BODY` blocks a body over 8 KB, so a dataset whose Japanese description runs past
+  about 2,700 characters could not be saved. `GenericRFI_BODY` blocks a body holding a URL written
+  with an IP address, so a resource with such a URL could not be registered. Both were measured on
+  demo. They hit requests a catalog's API takes in ordinary use, so they are logged rather than
+  blocked. The set's other rules (`CrossSiteScripting_BODY`, `NoUserAgent_HEADER` and so on) still
+  block. The former matches `<script>` and event attributes, not `<b>` or `<a href>`.
+- **A body past what is inspected is blocked** (`BlockUninspectedBody`, priority 5, 413).
+  CloudFront-scope WAF inspects only the first 16 KB of a body, and `CrossSiteScripting_BODY` and
+  the like read no further. With `SizeRestrictions_BODY` counting, a payload placed past 16 KB would
+  slip through (the API takes bodies up to 1 MiB), so a body over 16 KB is blocked whole. A Japanese
+  description of about 5,000 characters still saves. Raising the limit to 64 KB was not taken, as
+  inspecting past 16 KB is charged extra. The server-proxied upload (`POST /api/v1/resources/<UUID>/upload`) alone
+  is exempt: it takes a file up to its own cap, and its raw path is matched strictly on the UUID's
+  form, so no spelling the origin reads as another route matches. On a site with WAF on, other API bodies are thus capped
+  at 16 KB (the API itself takes 1 MiB, but WAF inspects at most 64 KB, so a line has to be drawn
+  somewhere). Create a dataset with many resources in several requests, or add the resources
+  afterwards.
 - **Count by default.** The IPs over the limit are recorded in metrics and the log, not blocked.
   Where many people sit behind one exit — a municipality's NAT, an isolated-browsing gateway —
   one person's limit becomes the organization's. Count first, see who is over, then switch to
@@ -351,7 +369,7 @@ per-site one (a site entry carrying it is refused at synth).
   interaction — all counted by the catch-all rule, since they reach the origin. In the count
   period, look at whether a single person's heavy preview use approaches the limit; if so, raise
   `limit` rather than widen the exclusions, which are for paths that never reach the origin.
-- Cost: two more rules, +$2, about $11/month per WebACL. The log costs S3 plus delivery per GB.
+- Cost: two rate rules and the body-size rule, +$3, about $12/month per WebACL. The log costs S3 plus delivery per GB.
 
 **Reviewing the counted IPs and switching to block:**
 

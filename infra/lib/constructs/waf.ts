@@ -35,20 +35,52 @@ const WAF_LOG_BUCKET_PREFIX = 'aws-waf-logs-'
 /** S3's limit on a bucket name. */
 const MAX_BUCKET_NAME_LENGTH = 63
 
+/**
+ * Rules of the common rule set that only count. A catalog's API takes them in
+ * ordinary use: SizeRestrictions_BODY blocks a body over 8 KB, which a dataset
+ * description of some 2,700 Japanese characters reaches, and GenericRFI_BODY
+ * blocks a URL written with an IP address, as a resource's URL may be.
+ */
+const COMMON_RULES_COUNTED = ['SizeRestrictions_BODY', 'GenericRFI_BODY']
+
+/**
+ * CloudFront-scope WAF's default body inspection limit. The body rules read no
+ * further, so with SizeRestrictions_BODY counting, a body past it is blocked
+ * whole rather than let a payload sit beyond what was inspected.
+ */
+const BODY_INSPECTION_LIMIT_BYTES = 16 * 1024
+
+/**
+ * The server-proxied upload (packages/api/src/routes/resources.ts), which
+ * streams a file up to its own cap. Matched on the raw path, a resource id
+ * being a UUID, so no spelling the origin reads as another route matches.
+ */
+const UPLOAD_PATH_PATTERN = '^/api/v1/resources/[0-9a-fA-F-]{36}/upload$'
+
 type Statement = wafv2.CfnWebACL.StatementProperty
 
-/** Create an AWS managed WAF rule group definition. */
+/** Create an AWS managed WAF rule group definition, `counted` rules only counting. */
 function managedRuleGroup(
   name: string,
   priority: number,
-  metricSuffix: string
+  metricSuffix: string,
+  counted: string[] = []
 ): wafv2.CfnWebACL.RuleProperty {
   return {
     name,
     priority,
     overrideAction: { none: {} },
     statement: {
-      managedRuleGroupStatement: { vendorName: 'AWS', name },
+      managedRuleGroupStatement: {
+        vendorName: 'AWS',
+        name,
+        ...(counted.length > 0 && {
+          ruleActionOverrides: counted.map((rule) => ({
+            name: rule,
+            actionToUse: { count: {} },
+          })),
+        }),
+      },
     },
     visibilityConfig: {
       sampledRequestsEnabled: true,
@@ -161,7 +193,8 @@ export class WafConstruct extends Construct {
       // The rate rules come after the managed groups, so a request a managed
       // rule blocked is neither counted against its IP nor logged twice
       rules: [
-        managedRuleGroup('AWSManagedRulesCommonRuleSet', 10, 'common'),
+        this.uninspectedBodyRule(5),
+        managedRuleGroup('AWSManagedRulesCommonRuleSet', 10, 'common', COMMON_RULES_COUNTED),
         managedRuleGroup('AWSManagedRulesKnownBadInputsRuleSet', 20, 'bad-inputs'),
         managedRuleGroup('AWSManagedRulesAmazonIpReputationList', 30, 'ip-reputation'),
         this.rateRule(
@@ -197,6 +230,37 @@ export class WafConstruct extends Construct {
     }
 
     cdk.Tags.of(this).add('kukan:component', 'waf')
+  }
+
+  /** Blocks, with 413, a body longer than the WAF inspects, except a file to the upload route. */
+  private uninspectedBodyRule(priority: number): wafv2.CfnWebACL.RuleProperty {
+    return {
+      name: 'BlockUninspectedBody',
+      priority,
+      action: { block: { customResponse: { responseCode: 413 } } },
+      statement: allOf([
+        {
+          sizeConstraintStatement: {
+            fieldToMatch: { body: { oversizeHandling: 'MATCH' } },
+            comparisonOperator: 'GT',
+            size: BODY_INSPECTION_LIMIT_BYTES,
+            textTransformations: [{ priority: 0, type: 'NONE' }],
+          },
+        },
+        not({
+          regexMatchStatement: {
+            fieldToMatch: { uriPath: {} },
+            regexString: UPLOAD_PATH_PATTERN,
+            textTransformations: [{ priority: 0, type: 'NONE' }],
+          },
+        }),
+      ]),
+      visibilityConfig: {
+        sampledRequestsEnabled: true,
+        cloudWatchMetricsEnabled: true,
+        metricName: 'kukan-waf-body-size',
+      },
+    }
   }
 
   /** A rate-based rule over the requests `scopeDown` admits, aggregated on the viewer IP. */

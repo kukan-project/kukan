@@ -99,7 +99,7 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 | ECR + CloudWatch 等 | 最小                 | ~$2      |
 
 OpenSearch なし（SEARCH_TYPE=postgres）: ~$77/月
-WAF 追加（enableWaf=true）: +~$11/月
+WAF 追加（enableWaf=true）: +~$12/月
 IP 制限は CloudFront Function で対応（追加コストなし）
 CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万リクエストで数セント）
 消費税（日本リージョン 10%）: 別途加算
@@ -128,7 +128,7 @@ CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万�
 | OpenSearch                 | m6g.xlarge.search × 2 (200GB)     | ~$510    |
 | CloudFront                 | VPC origin + 転送                 | ~$5      |
 | パブリック IPv4            | ECS タスク × 4                    | ~$15     |
-| WAF（オプション）          | マネージドルール + レートルール   | ~$11     |
+| WAF（オプション）          | マネージドルール + レートルール   | ~$12     |
 | S3 + Secrets + ECR + CW 等 | —                                 | ~$10     |
 
 ### コスト配分タグ
@@ -573,13 +573,13 @@ WAF は CLOUDFRONT スコープで us-east-1（KukanGlobalStack）にデプロ�
 
 マネージドルールグループ（3 つ）:
 
-| ルールグループ                        | 内容                                               | 費用  |
-| ------------------------------------- | -------------------------------------------------- | ----- |
-| AWSManagedRulesCommonRuleSet          | SQLi, XSS, SSRF, パストラバーサル等                | $1/月 |
-| AWSManagedRulesKnownBadInputsRuleSet  | Log4Shell, Spring4Shell 等の既知の脆弱性攻撃       | $1/月 |
-| AWSManagedRulesAmazonIpReputationList | AWS 脅威インテリジェンスによる悪意ある IP ブロック | $1/月 |
+| ルールグループ                        | 内容                                                                                                                             | 費用  |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| AWSManagedRulesCommonRuleSet          | SQLi, XSS, SSRF, パストラバーサル等（本文 8 KB 超と本文の IP 直書き URL は数えるだけ、16 KB 超は別ルールで止める、ADR-027 補足） | $1/月 |
+| AWSManagedRulesKnownBadInputsRuleSet  | Log4Shell, Spring4Shell 等の既知の脆弱性攻撃                                                                                     | $1/月 |
+| AWSManagedRulesAmazonIpReputationList | AWS 脅威インテリジェンスによる悪意ある IP ブロック                                                                               | $1/月 |
 
-WAF 費用合計: WebACL $5/月 + ルール $5/月（マネージド 3 + レート 2） + リクエスト $0.60/百万 = **~$11/月**
+WAF 費用合計: WebACL $5/月 + ルール $6/月（マネージド 3 + レート 2 + 本文サイズ 1） + リクエスト $0.60/百万 = **~$12/月**
 
 #### レートベースルールとログ（ADR-027 補足）
 
