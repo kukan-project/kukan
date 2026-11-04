@@ -6,6 +6,38 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.40.3] - 2026-11-04
+
+**Highlights**
+
+- **AWS WAF no longer blocks ordinary catalog edits.** With WAF on, two rules of the AWS common rule set answered 403 to requests the catalog takes in normal use (#1128): any request body over 8 KB, which a dataset whose Japanese description runs past about 2,700 characters reaches when saved, and any body holding a URL written with an IP address, such as a resource URL `http://192.0.2.10/data.csv`. Both rules now only count, and are still logged. Sites without WAF, and Compose sites, are unaffected.
+
+**Upgrade Notes** (for system administrators)
+
+- **AWS sites with WAF on: deploy the global stack.** The WebACL lives in the us-east-1 global stack, which the pipeline does not deploy. Where the site entry has `webAclArn` set (as pipeline-managed environments do), the global stack does not manage the WebACL, so remove `webAclArn` locally without committing, then from `infra/` run `npx cdk diff -c env=<env> '<Stage>/KukanGlobalStack'` and check that only the WebACL's rules change, run `npx cdk deploy -c env=<env> '<Stage>/KukanGlobalStack'`, then put `webAclArn` back. The ARN does not change. Without `webAclArn`, the usual standalone deploy (`'<Stage>/**'`) already includes the global stack. The same steps apply when switching the rate rules to `mode: 'block'`.
+- **A request body over 16 KB is now refused with 413 on WAF sites.** CloudFront's WAF inspects only the first 16 KB of a body, so with the size rule counting, a longer body is blocked whole rather than let content past the inspected part through. This is looser than before (8 KB, 403): a Japanese description of about 5,000 characters now saves. The file upload through the API (`POST /api/v1/resources/{id}/upload`) is exempt. Create a dataset with many resources in several requests, or add the resources afterwards.
+- WAF costs about $1 more per month for the new rule.
+
+**Documentation**
+
+- The 0.40.0 notes now say that `frame-src` also blocks a brand page's iframe of the site's own pages (such as `/brand/...`), not only external ones; add `'self'` to the brand's `csp` `frame-src` (#1127).
+
+---
+
+**ハイライト**
+
+- **AWS の WAF が、普段のカタログの編集を止めないようにしました。** WAF を有効にしたサイトでは、AWS の共通ルールセットのうち 2 つのルールが、カタログが普通に受ける要求を 403 にしていました（#1128）。1 つは本文が 8 KB を超える要求で、日本語の説明がおよそ 2,700 字を超えるデータセットを保存すると当たります。もう 1 つは IP アドレスで書いた URL を含む本文で、`http://192.0.2.10/data.csv` のようなリソース URL が当たります。どちらも止めずに数えるだけにしました（ログには残ります）。WAF を使っていないサイトと Compose のサイトには影響ありません。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **WAF を有効にした AWS のサイトは、global スタックをデプロイしてください。** WebACL は us-east-1 の global スタックにあり、pipeline はこのスタックをデプロイしません。サイトのエントリに `webAclArn` を設定している場合（pipeline 管理の環境はそうなっています）、global スタックは WebACL を扱わないので、次の手順で反映します。手元で `webAclArn` を外し（コミットはしない）、`infra/` ディレクトリで `npx cdk diff -c env=<env> '<Stage>/KukanGlobalStack'` を実行して WebACL のルールだけが変わることを確かめ、`npx cdk deploy -c env=<env> '<Stage>/KukanGlobalStack'` を実行して、`webAclArn` を戻します。ARN は変わりません。`webAclArn` を設定していない環境では、いつもの standalone のデプロイ（`'<Stage>/**'`）に global スタックが含まれます。レートルールを `mode: 'block'` に切り替えるときも同じ手順です。
+- **WAF を有効にしたサイトでは、16 KB を超える本文を 413 で断るようになります。** CloudFront の WAF は本文の先頭 16 KB しか検査しません。サイズのルールを数えるだけにしたので、それより長い本文は、検査していない部分を通さないよう丸ごと止めます。以前（8 KB で 403）より緩く、日本語の説明はおよそ 5,000 字まで保存できます。API からのファイルのアップロード（`POST /api/v1/resources/{id}/upload`）は対象外です。リソースを多数含むデータセットは、分けて作成するか、リソースを後から足してください。
+- 新しいルールの分、WAF の費用が月に約 $1 増えます。
+
+**ドキュメント**
+
+- 0.40.0 のリリースノートを直しました。`frame-src` が止めるのは外部の iframe だけでなく、サイト自身のページ（`/brand/...` など）を出す iframe も含みます。ブランドの `csp` の `frame-src` に `'self'` を書いてください（#1127）。
+
 ## [0.40.2] - 2026-11-04
 
 **Highlights**
