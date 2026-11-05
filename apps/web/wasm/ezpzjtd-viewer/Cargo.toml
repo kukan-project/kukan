@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # EZPZ File JTD (MIT), pinned: build.sh records this commit beside the build
-ezpzjtd-core = { git = "https://github.com/ezpzfile/ezpzfile-jtd", rev = "4c753922ed15bd04f845b36888a375d34af49e76" }
+ezpzjtd-core = { git = "https://github.com/ezpzfile/ezpzfile-jtd", rev = "8768613de1162898a4c56931bfe86bc827f0fd44" }
 serde_json = "1"
 # The same version as the wasm-bindgen CLI build.sh runs
 wasm-bindgen = "=0.2.129"
