@@ -56,8 +56,12 @@ export class DatabaseConstruct extends Construct {
     if (config.db.engine === 'aurora') {
       const cluster = new rds.DatabaseCluster(this, 'AuroraCluster', {
         clusterIdentifier: envPrefix(this),
+        // The major alone: Aurora creates a cluster on its current default minor,
+        // and a minor pinned here fails to create once AWS stops offering it. The
+        // template's value never changes, so a deployment never moves the version;
+        // the automatic minor upgrade does
         engine: rds.DatabaseClusterEngine.auroraPostgres({
-          version: rds.AuroraPostgresEngineVersion.VER_16_13,
+          version: rds.AuroraPostgresEngineVersion.of('16', '16'),
         }),
         serverlessV2MinCapacity: config.db.minAcu ?? 0,
         serverlessV2MaxCapacity: config.db.maxAcu ?? 2,

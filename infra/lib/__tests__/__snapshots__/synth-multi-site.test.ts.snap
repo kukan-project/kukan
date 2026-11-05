@@ -138,7 +138,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         },
         "DatabaseName": "kukan",
         "Engine": "aurora-postgresql",
-        "EngineVersion": "16.13",
+        "EngineVersion": "16",
         "MasterUserPassword": {
           "Fn::Join": [
             "",
