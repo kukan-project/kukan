@@ -3,6 +3,7 @@
  */
 
 import { QUERY_PROCESS_BASE_MB, duckdbSlotRssMb } from '@kukan/api/config'
+import { UPLOAD_WRITE_WINDOW_MS } from '@kukan/api/services/pipeline/storage-pointer'
 
 /** Maximum file size for external URL fetches (100 MB) */
 export const MAX_FETCH_SIZE = 100 * 1024 * 1024
@@ -504,9 +505,10 @@ export const START_SWEEP_DELAY_MS = 10 * 60_000
 /**
  * How long an upload URL's object is kept before the sweep reclaims it. Bounds
  * a slow client rather than an in-flight read, so far longer than the orphan
- * retention: reclaiming an upload still in progress would break it.
+ * retention: reclaiming an upload still in progress would break it. The window
+ * the API gives the same URL once the row has let go of its object.
  */
-export const PENDING_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
+export const PENDING_UPLOAD_TTL_MS = UPLOAD_WRITE_WINDOW_MS
 
 /**
  * Keys deleted per sweep; the rest wait for the next one. A pipeline run parks

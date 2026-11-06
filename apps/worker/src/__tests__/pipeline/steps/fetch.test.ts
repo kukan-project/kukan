@@ -154,6 +154,30 @@ describe('executeFetch', () => {
     )
   })
 
+  it('refuses an upload over the limit before reading it', async () => {
+    // `upload-complete` measured the object once; what storage holds now is
+    // what decides, and a hash would be a full pass over it.
+    const ctx = createMockCtx()
+    vi.mocked(ctx.storage.head).mockResolvedValue({ size: MAX_FETCH_SIZE + 1 })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ urlType: 'upload', storageKey: 'resources/pkg-1/res-1.upload' })
+    )
+
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow(/exceeds/)
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+    expect(ctx.publishContent).not.toHaveBeenCalled()
+  })
+
+  it('says there is no file when storage holds no object behind the key', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.storage.head).mockResolvedValue(null)
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ urlType: 'upload', storageKey: 'resources/pkg-1/res-1.upload' })
+    )
+
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('Resource has no uploaded file')
+  })
+
   it('reports superseded when another run moved the pointer first', async () => {
     // The pointer is the resource's identity: a run that lost it must not carry
     // on and attribute a version to bytes that are no longer the content.

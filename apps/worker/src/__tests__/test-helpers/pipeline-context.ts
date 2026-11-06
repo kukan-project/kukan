@@ -20,7 +20,7 @@ export function createPipelineContextMock(): PipelineContextMock {
   // `satisfies` is the point: a context member added or removed shows up here
   // rather than in whichever test happens to touch it.
   const ctx = {
-    storage: { download: vi.fn() },
+    storage: { download: vi.fn(), head: vi.fn().mockResolvedValue({ size: 1024 }) },
     getResource: vi.fn(),
     getPackageState: vi.fn(),
     publishContent: vi.fn().mockResolvedValue(true),

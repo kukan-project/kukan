@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { Readable } from 'stream'
 import { randomUUID } from 'node:crypto'
 import { zstdCompressSync } from 'node:zlib'
 import {
   job,
+  orphanedObject,
   resource as resourceTable,
   resourcePipeline,
   resourcePipelineStep,
@@ -21,6 +22,8 @@ import {
 import type { ResourceColumnType } from '@kukan/shared'
 import { PostgresJobQueue } from '@kukan/queue'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
+import { mapStorage } from '../test-helpers/fixtures'
+import type { StorageAdapter } from '@kukan/storage-adapter'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline/pipeline-claim'
 import { encodeSectionCursor } from '../../services/document-text'
 import {
@@ -2017,6 +2020,112 @@ describe('Resources API Routes', () => {
       })
       // The same refusal as the streamed path: one cap, one status.
       expect(res.status).toBe(413)
+    })
+
+    /** Ask for a URL and read back the key it was issued for. */
+    async function startUpload(uploadApp: typeof app, resourceId: string) {
+      await uploadApp.request(`/api/v1/resources/${resourceId}/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
+      })
+      const [row] = await db
+        .select({ key: resourceTable.storageKey, pendingKey: resourceTable.pendingStorageKey })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resourceId))
+      return { live: row.key, pendingKey: row.pendingKey! }
+    }
+    function completeUpload(uploadApp: typeof app, resourceId: string) {
+      return uploadApp.request(`/api/v1/resources/${resourceId}/upload-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size: 10 }),
+      })
+    }
+    const liveKey = async (resourceId: string) =>
+      (
+        await db
+          .select({ key: resourceTable.storageKey })
+          .from(resourceTable)
+          .where(eq(resourceTable.id, resourceId))
+      )[0].key
+
+    it('publishes a copy of the pending object, never the object the URL wrote', async () => {
+      // The presigned URL outlives this call and a version takes the live
+      // object as its own, so the key the URL can still write must not become
+      // the live one. The copy is what the row serves; the pending object is
+      // parked for the sweep, and the copy's write-ahead record is released.
+      const objects = new Map<string, Buffer>()
+      const storage = mapStorage(objects, {
+        head: async () => ({ size: 10 }),
+      }) as unknown as StorageAdapter
+      const copyingApp = createTestApp(db, { storage: { ...mockStorage, ...storage } })
+      const pkg = await createPackage('complete-copy-pkg')
+      const resource = await createResource(pkg.id)
+      const { pendingKey } = await startUpload(copyingApp, resource.id)
+      objects.set(pendingKey, Buffer.from('a,b\n'))
+
+      expect((await completeUpload(copyingApp, resource.id)).status).toBe(200)
+
+      const key = await liveKey(resource.id)
+      expect(key).not.toBe(pendingKey)
+      expect(objects.has(key!)).toBe(true)
+      const parked = await db
+        .select({ key: orphanedObject.key })
+        .from(orphanedObject)
+        .where(inArray(orphanedObject.key, [pendingKey, key!]))
+      expect(parked.map((p) => p.key)).toEqual([pendingKey])
+    })
+
+    it('answers 400 when the pending object is gone by the time it is copied', async () => {
+      // Nothing seeded: the copy finds no source
+      const goneApp = createTestApp(db, {
+        storage: {
+          ...mockStorage,
+          ...(mapStorage(new Map(), {
+            head: async () => ({ size: 10 }),
+          }) as unknown as StorageAdapter),
+          copy: async () => {
+            const err = new Error('The specified key does not exist.')
+            err.name = 'NoSuchKey'
+            throw err
+          },
+        },
+      })
+      const pkg = await createPackage('complete-gone-pkg')
+      const resource = await createResource(pkg.id)
+      await startUpload(goneApp, resource.id)
+
+      expect((await completeUpload(goneApp, resource.id)).status).toBe(400)
+    })
+
+    it('rejects a copy that came out over the limit, and removes both objects', async () => {
+      // A PUT that lands between the first head and the copy is what the copy
+      // holds; the size is measured again from the copy before anything is
+      // published.
+      const sizes = [10, MAX_UPLOAD_SIZE + 1]
+      const deleted: string[] = []
+      const racedApp = createTestApp(db, {
+        storage: {
+          ...mockStorage,
+          head: async () => ({ size: sizes.shift() ?? 10 }),
+          deleteMany: async (keys: string[]) => {
+            deleted.push(...keys)
+            return keys
+          },
+        },
+      })
+      const pkg = await createPackage('complete-raced-pkg')
+      const resource = await createResource(pkg.id)
+      const { live, pendingKey } = await startUpload(racedApp, resource.id)
+
+      expect((await completeUpload(racedApp, resource.id)).status).toBe(413)
+
+      // The content being served is untouched: neither object removed was it
+      expect(await liveKey(resource.id)).toBe(live)
+      expect(deleted).toHaveLength(2)
+      expect(deleted).toContain(pendingKey)
+      expect(deleted).not.toContain(live)
     })
 
     it('should reject if resource is not an upload', async () => {

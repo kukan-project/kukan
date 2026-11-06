@@ -167,7 +167,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | GET    | `/resources/{id}/pipeline-status`       | パイプライン処理状態                                                                                                                                | 公開        |
 | GET    | `/resources/{id}/schema`                | 列スキーマ（列名・型・行数・数値統計）。表形式のみ                                                                                                  | 公開        |
 | POST   | `/resources/{id}/query`                 | サーバーサイド DuckDB クエリ（SELECT 限定）。表形式のみ                                                                                             | 公開        |
-| POST   | `/resources/{id}/upload-url`            | プリサインドアップロード URL 発行                                                                                                                   | 組織 editor |
+| POST   | `/resources/{id}/upload-url`            | プリサインドアップロード URL 発行（PUT は 15 分以内に始める）                                                                                       | 組織 editor |
 | POST   | `/resources/{id}/upload`                | サーバー経由アップロード（multipart `file`、ストリーム処理、上限超過は 413、ファイル名が `upload-url` と同じ規則（1〜500 文字）に合わなければ 400） | 組織 editor |
 | POST   | `/resources/{id}/upload-complete`       | アップロード完了通知・パイプライン投入                                                                                                              | 組織 editor |
 | POST   | `/resources/{id}/run-pipeline`          | パイプライン手動実行                                                                                                                                | 組織 editor |

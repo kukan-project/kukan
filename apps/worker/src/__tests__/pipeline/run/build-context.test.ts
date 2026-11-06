@@ -54,6 +54,8 @@ vi.mock('@kukan/api/services/pipeline/storage-pointer', () => ({
   copyObject: vi.fn(),
   publishLiveContent: vi.fn(),
   reserveObject: vi.fn(),
+  // Read by the worker's config at import time
+  UPLOAD_WRITE_WINDOW_MS: 24 * 60 * 60 * 1000,
 }))
 
 beforeEach(() => {

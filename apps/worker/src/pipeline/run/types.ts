@@ -47,6 +47,8 @@ export interface PipelineContext {
    */
   storage: {
     download(key: string): Promise<Readable>
+    /** The object's size as storage holds it, or null when there is none. */
+    head(key: string): Promise<{ size: number } | null>
   }
   /** Get an active resource by ID */
   getResource(id: string): Promise<ResourceForPipeline | null>

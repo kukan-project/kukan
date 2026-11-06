@@ -28,6 +28,17 @@ export const QUERY_TIMEOUT_MS = 15_000
 export const QUERY_SOURCE_URL_EXPIRES_S = 60
 
 /**
+ * How long the presigned PUT URL `upload-url` hands out stays valid (seconds).
+ *
+ * The URL is a capability to write the pending object, and it outlives
+ * `upload-complete`: nothing revokes a signature. What it can reach after that
+ * is an object nothing points at (see `upload-complete`), so the window bounds
+ * only how long a client may wait before starting its PUT — the PUT itself may
+ * run past it. The worker's pending-upload TTL must stay above this.
+ */
+export const UPLOAD_URL_EXPIRES_S = 15 * 60
+
+/**
  * Per-query DuckDB memory limit — resource queries and version diffs alike.
  *
  * **What DuckDB holds to, not what the process spends** (that is

@@ -17,7 +17,10 @@ import {
 } from '@kukan/db'
 import {
   NotFoundError,
+  PayloadTooLargeError,
   ValidationError,
+  MAX_UPLOAD_SIZE,
+  MAX_UPLOAD_SIZE_MB,
   normalizeFormat,
   splitSection,
   detectFormat,
@@ -35,7 +38,14 @@ import { RESOURCE_POSITION_LOCK, lockInTransaction } from './concurrency/advisor
 import { cancelResourceRun } from './pipeline/pipeline-claim'
 import { lockedInIdOrder } from './search/doc-marks'
 import { embeddingDueIf } from './search/resource-embedding'
-import { PARKED_UNTIL, ownedByVersion } from './pipeline/storage-pointer'
+import type { StorageAdapter } from '@kukan/storage-adapter'
+import { isGone } from './document-text'
+import {
+  PARKED_UNTIL,
+  UPLOAD_PARKED_UNTIL,
+  copyObject,
+  ownedByVersion,
+} from './pipeline/storage-pointer'
 import {
   hasOrgMembership,
   hasDraftAccess,
@@ -182,6 +192,10 @@ export function omitStoragePointers<T extends object>(
   } = row as T & Record<string, unknown>
   return rest as Omit<T, 'storageKey' | 'pendingStorageKey' | 'pendingMetadata'>
 }
+
+/** One cap for every way in: the streamed upload and the presigned one answer alike. */
+export const UPLOAD_TOO_LARGE = `File exceeds the maximum upload size of ${MAX_UPLOAD_SIZE_MB}MB`
+const UPLOAD_OBJECT_MISSING = 'Uploaded object not found in storage'
 
 export class ResourceService {
   constructor(private db: Database) {}
@@ -719,9 +733,10 @@ export class ResourceService {
         WHERE r.id = b.id
         RETURNING b.pending_storage_key AS previous_key
       ),
+      -- Its URL may still be writing it (see UPLOAD_PARKED_UNTIL).
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)
-        SELECT previous_key, ${PARKED_UNTIL} FROM updated
+        SELECT previous_key, ${UPLOAD_PARKED_UNTIL} FROM updated
         WHERE previous_key IS NOT NULL
         ON CONFLICT (key) DO NOTHING
       )
@@ -760,15 +775,23 @@ export class ResourceService {
    * minted — an object nobody has written yet — and describe it with the size
    * measured from a different one.
    *
-   * Returns the promoted key, or null when that key is no longer the pending
-   * one: a duplicate `upload-complete`, or an upload a newer one replaced.
-   * Either way the live object must not be re-parked.
+   * `key` is the object the resource will serve: the pending one itself when
+   * the server wrote it, or {@link completeUpload}'s copy of it. A pending key
+   * that is not published is parked here, in the same statement as the move,
+   * and the published key's write-ahead record is released once the row names
+   * it (ADR-045).
+   *
+   * @returns whether the move applied — false when that key is no longer the
+   *   pending one: a duplicate `upload-complete`, or an upload a newer one
+   *   replaced. Either way the live object must not be re-parked.
    */
   async promoteUpload(
     id: string,
     expectedPendingKey: string,
-    input: { size: number }
-  ): Promise<string | null> {
+    input: { size: number; key: string }
+  ): Promise<boolean> {
+    const { key } = input
+    const copied = key !== expectedPendingKey
     const result = await this.db.execute(sql`
       WITH before AS (
         SELECT id, storage_key, pending_storage_key, pending_metadata
@@ -779,7 +802,7 @@ export class ResourceService {
       ),
       promoted AS (
         UPDATE resource r
-        SET storage_key = b.pending_storage_key,
+        SET storage_key = ${key}::text,
             pending_storage_key = NULL,
             pending_storage_key_at = NULL,
             -- The replacement's name and type land with its bytes, so the row
@@ -808,7 +831,7 @@ export class ResourceService {
             updated = NOW()
         FROM before b
         WHERE r.id = b.id
-        RETURNING b.storage_key AS previous_key, b.pending_storage_key AS new_key
+        RETURNING b.storage_key AS previous_key
       ),
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)
@@ -817,11 +840,79 @@ export class ResourceService {
           -- A version's object is not garbage (see above).
           AND NOT ${ownedByVersion(sql`promoted.previous_key`)}
         ON CONFLICT (key) DO NOTHING
+      ),
+      -- The pending object, when the row does not serve it: no version names
+      -- it, and its URL may still be writing it.
+      parked_pending AS (
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT ${expectedPendingKey}::text, ${UPLOAD_PARKED_UNTIL} FROM promoted
+        WHERE ${copied}::boolean
+        ON CONFLICT (key) DO NOTHING
+      ),
+      -- The write-ahead record of the published object has done its job (ADR-045).
+      released AS (
+        DELETE FROM orphaned_object o USING promoted WHERE o.key = ${key}::text
       )
-      SELECT new_key FROM promoted
+      SELECT 1 FROM promoted
     `)
 
-    const row = result.rows[0] as { new_key: string } | undefined
-    return row?.new_key ?? null
+    return result.rows.length > 0
+  }
+
+  /**
+   * Publish a presigned upload as the resource's content (ADR-043).
+   *
+   * The object the URL wrote is never published as it lies. The URL stays
+   * valid after this call, and a version takes the live object as its own
+   * rather than copying it (ADR-043 §1), so publishing the pending key would
+   * let the client rewrite a settled version's bytes for as long as the
+   * signature lasts. The bytes go to a key only this call names — recorded
+   * before the copy (ADR-045), so a promotion that loses, or a crash here,
+   * leaves the copy to the sweep — and the pending key is parked by the move.
+   *
+   * The size comes from storage, never from the client, and is measured from
+   * the copy: a PUT that lands between a measurement of the pending object and
+   * the copy is what the copy holds. Rejecting removes the objects, never the
+   * content the resource is still serving.
+   *
+   * @returns whether the copy became the live content — false when the key
+   *   the client uploaded to is no longer the pending one.
+   */
+  async completeUpload(
+    id: string,
+    storage: Pick<StorageAdapter, 'head' | 'copy' | 'delete' | 'deleteMany'>,
+    existing?: Awaited<ReturnType<ResourceService['getById']>>
+  ): Promise<boolean> {
+    existing ??= await this.getById(id)
+    const pendingKey = existing.pendingStorageKey
+    if (!pendingKey) {
+      throw new ValidationError(
+        'No upload is pending for this resource',
+        undefined,
+        'upload-not-pending'
+      )
+    }
+    // Asked before the copy, so an object over the cap is not copied first
+    const head = await storage.head(pendingKey)
+    if (!head) throw new ValidationError(UPLOAD_OBJECT_MISSING)
+    if (head.size > MAX_UPLOAD_SIZE) {
+      await storage.delete(pendingKey)
+      throw new PayloadTooLargeError(UPLOAD_TOO_LARGE)
+    }
+
+    const key = getStorageKey(existing.packageId, id, randomUUID())
+    try {
+      await copyObject(this.db, storage, pendingKey, key)
+    } catch (err) {
+      if (isGone(err)) throw new ValidationError(UPLOAD_OBJECT_MISSING)
+      throw err
+    }
+    const copied = await storage.head(key)
+    if (!copied) throw new ValidationError(UPLOAD_OBJECT_MISSING)
+    if (copied.size > MAX_UPLOAD_SIZE) {
+      await storage.deleteMany([key, pendingKey])
+      throw new PayloadTooLargeError(UPLOAD_TOO_LARGE)
+    }
+    return this.promoteUpload(id, pendingKey, { size: copied.size, key })
   }
 }

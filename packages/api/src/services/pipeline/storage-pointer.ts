@@ -299,6 +299,19 @@ export function ownedByVersion(key: SQL) {
 export const PARKED_UNTIL = sql`NOW() + INTERVAL '1 hour'`
 
 /**
+ * How long the object of a presigned upload URL may still be written once the
+ * row has stopped naming it (ms). The URL stays valid after `upload-complete`,
+ * and after `prepareForUpload` replaces it, and a PUT begun while it is may
+ * still be running — a deletion in the middle of which leaves an object
+ * nothing records. A day, for the slowest client the upload cap is reachable
+ * over; the worker's sweep gives an upload that never completed the same.
+ */
+export const UPLOAD_WRITE_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/** When such an object may be reclaimed: later than {@link PARKED_UNTIL}. */
+export const UPLOAD_PARKED_UNTIL = sql`NOW() + ${`${UPLOAD_WRITE_WINDOW_MS} milliseconds`}::interval`
+
+/**
  * When the sweep may delete a key whose object is about to be written: long
  * enough that the write has either finished — removing this record — or died
  * with it (ADR-045).
@@ -335,9 +348,10 @@ export async function reserveObject(
 /**
  * Server-side copy of an object, recorded before it exists (ADR-045).
  *
- * The counterpart to the pipeline's `putObject`, for the one writer that still
- * copies: creating a version out of an object another version already owns
- * (ADR-043 §1). Everything else names the object it was given. Here so that
+ * The counterpart to the pipeline's `putObject`, for the writers that copy:
+ * creating a version out of an object another version already owns (ADR-043
+ * §1), and `upload-complete` taking a presigned upload off the key its URL can
+ * still write. Everything else names the object it was given. Here so that
  * reaching for a copy reaches for the recording too — a caller doing it by hand
  * is a chance to forget, and the next one added would have nothing to copy
  * from.

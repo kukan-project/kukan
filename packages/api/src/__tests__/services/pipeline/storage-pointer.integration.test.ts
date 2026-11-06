@@ -297,9 +297,9 @@ describe('promoteUpload', () => {
     expect(pending).not.toBe(live)
     expect(await parkedKeys()).toEqual([])
 
-    const promoted = await service.promoteUpload(resourceId, pending, { size: 42 })
+    const promoted = await service.promoteUpload(resourceId, pending, { size: 42, key: pending })
 
-    expect(promoted).toBe(pending)
+    expect(promoted).toBe(true)
     const r = await row()
     expect(r.storageKey).toBe(pending)
     expect(r.pendingStorageKey).toBeNull()
@@ -316,12 +316,13 @@ describe('promoteUpload', () => {
       filename: 'data.csv',
       contentType: 'text/csv',
     })
-    const promoted = await service.promoteUpload(resourceId, pending, { size: 42 })
+    const promoted = await service.promoteUpload(resourceId, pending, { size: 42, key: pending })
 
-    expect(await service.promoteUpload(resourceId, pending, { size: 42 })).toBeNull()
+    expect(await service.promoteUpload(resourceId, pending, { size: 42, key: pending })).toBe(false)
     // The second call must not park the object the first one just published.
     expect(await parkedKeys()).toEqual([])
-    expect((await row()).storageKey).toBe(promoted)
+    expect(promoted).toBe(true)
+    expect((await row()).storageKey).toBe(pending)
   })
 
   it('parks an upload URL that is reissued before it was used', async () => {
@@ -399,7 +400,7 @@ describe('promoteUpload', () => {
       filename: 'data.csv',
       contentType: 'text/csv',
     })
-    await service.promoteUpload(resourceId, first, { size: 42 })
+    await service.promoteUpload(resourceId, first, { size: 42, key: first })
     await ageOutResource()
 
     expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
@@ -415,7 +416,7 @@ describe('promoteUpload', () => {
       filename: 'data.csv',
       contentType: 'text/csv',
     })
-    await service.promoteUpload(resourceId, key, { size: 42 })
+    await service.promoteUpload(resourceId, key, { size: 42, key: key })
     await db.insert(resourceVersion).values({
       resourceId,
       version: 1,
@@ -516,7 +517,7 @@ describe('promoteUpload', () => {
 
     expect((await row()).pendingStorageKeyAt).toBeInstanceOf(Date)
 
-    await service.promoteUpload(resourceId, pending, { size: 42 })
+    await service.promoteUpload(resourceId, pending, { size: 42, key: pending })
     expect((await row()).pendingStorageKeyAt).toBeNull()
   })
 
@@ -535,7 +536,7 @@ describe('promoteUpload', () => {
       contentType: 'text/csv',
     })
 
-    expect(await service.promoteUpload(resourceId, first, { size: 42 })).toBeNull()
+    expect(await service.promoteUpload(resourceId, first, { size: 42, key: first })).toBe(false)
 
     const r = await row()
     expect(r.storageKey).toBeNull()
@@ -565,7 +566,7 @@ describe('promoteUpload', () => {
     expect(held.format).toBe(before.format)
     expect(held.mimetype).toBe(before.mimetype)
 
-    await service.promoteUpload(resourceId, pending, { size: 42 })
+    await service.promoteUpload(resourceId, pending, { size: 42, key: pending })
 
     // Format resolution is explicit > filename > whatever the resource had.
     const after = await row()
@@ -582,7 +583,7 @@ describe('promoteUpload', () => {
       filename: 'report.xlsx',
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
-    await service.promoteUpload(resourceId, pending, { size: 42 })
+    await service.promoteUpload(resourceId, pending, { size: 42, key: pending })
 
     expect((await row()).format).toBe('XLSX')
   })

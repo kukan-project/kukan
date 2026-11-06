@@ -59,22 +59,28 @@ describe('ResourceService upload methods', () => {
   })
 
   describe('promoteUpload', () => {
-    it('returns the key it promoted', async () => {
-      mock.addResult([{ new_key: 'resources/pkg-1/res-1.tok' }])
+    it('resolves true when the row was promoted', async () => {
+      mock.addResult([{ '?column?': 1 }])
 
       expect(
-        await service.promoteUpload('res-1', 'resources/pkg-1/res-1.tok', { size: 2048 })
-      ).toBe('resources/pkg-1/res-1.tok')
+        await service.promoteUpload('res-1', 'resources/pkg-1/res-1.tok', {
+          size: 2048,
+          key: 'resources/pkg-1/res-1.tok',
+        })
+      ).toBe(true)
     })
 
-    it('returns null when that key is no longer the pending one', async () => {
+    it('resolves false when that key is no longer the pending one', async () => {
       // A duplicate upload-complete, or an upload a newer one replaced.
       // Promoting anyway would park the live object.
       mock.addResult([])
 
       expect(
-        await service.promoteUpload('res-1', 'resources/pkg-1/res-1.tok', { size: 2048 })
-      ).toBeNull()
+        await service.promoteUpload('res-1', 'resources/pkg-1/res-1.tok', {
+          size: 2048,
+          key: 'resources/pkg-1/res-1.copy',
+        })
+      ).toBe(false)
     })
   })
 })

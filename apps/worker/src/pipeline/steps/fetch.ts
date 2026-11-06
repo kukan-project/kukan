@@ -66,7 +66,11 @@ export async function executeFetch(
     // rather than trusting the value the call carried. Version create records
     // this hash against the bytes it copies (ADR-043), so a client-supplied one
     // would decide what a version claims to hold.
-    if (!res.storageKey) {
+    // Asked of storage before the read, as the URL branch asks Content-Length:
+    // `upload-complete` measured the object when it promoted it, but the row
+    // is not what is about to be read, and a hash is a full pass over the file.
+    const head = res.storageKey ? await ctx.storage.head(res.storageKey) : null
+    if (!res.storageKey || !head) {
       // Says only what is true from here. Whether nothing ever arrived or the
       // content was taken back is a question about the version history, which
       // the sweep asks and this does not — and it puts its answer back on the
@@ -76,6 +80,9 @@ export async function executeFetch(
       )
     }
     key = res.storageKey
+    if (head.size > MAX_FETCH_SIZE) {
+      throw new PayloadTooLargeError(SIZE_LIMIT_MSG)
+    }
     measured = await digestStream(await ctx.storage.download(key))
   } else {
     if (!res.url) {

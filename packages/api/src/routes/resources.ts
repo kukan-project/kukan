@@ -9,7 +9,11 @@ import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { webLakeConfig } from '../services/query/lake-scan'
 import { callerOf, clientIp } from '../middleware/client-ip'
-import { ResourceService, omitStoragePointers } from '../services/resource-service'
+import {
+  ResourceService,
+  UPLOAD_TOO_LARGE,
+  omitStoragePointers,
+} from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
 import {
@@ -56,14 +60,18 @@ import {
   isPdfFormat,
   isJsonFormat,
   MAX_UPLOAD_SIZE,
-  MAX_UPLOAD_SIZE_MB,
   primaryKeyOf,
   SysadminRequiredError,
   JSON_PREVIEW_LIMIT,
   TEXT_PREVIEW_LIMIT,
 } from '@kukan/shared'
 import type { ColumnRolesView } from '@kukan/shared'
-import { MCP_SECTION_MAX_CHARS, MCP_SECTION_MAX_UNIT, QUERY_MAX_SQL_LENGTH } from '../config'
+import {
+  MCP_SECTION_MAX_CHARS,
+  MCP_SECTION_MAX_UNIT,
+  QUERY_MAX_SQL_LENGTH,
+  UPLOAD_URL_EXPIRES_S,
+} from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
   canViewPackage,
@@ -123,7 +131,6 @@ function throwIfNotFound(err: unknown, resourceId: string, what = 'Resource file
 }
 
 /** What either upload path says when the file is over the cap. */
-const UPLOAD_TOO_LARGE = `File exceeds the maximum upload size of ${MAX_UPLOAD_SIZE_MB}MB`
 
 /**
  * The type to record for an uploaded part. busboy reports a part without a
@@ -888,9 +895,12 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
   )
 
   const storage = c.get('storage')
-  const uploadUrl = await storage.getSignedUploadUrl(pendingKey, input.contentType, undefined, {
-    originalFilename: input.filename,
-  })
+  const uploadUrl = await storage.getSignedUploadUrl(
+    pendingKey,
+    input.contentType,
+    UPLOAD_URL_EXPIRES_S,
+    { originalFilename: input.filename }
+  )
 
   return c.json({ upload_url: uploadUrl })
 })
@@ -934,8 +944,9 @@ resourcesRouter.post('/:id/upload', async (c) => {
 
   // Promote the key we wrote to, not whatever is pending now: a concurrent
   // request may have replaced it, and promoting that one would point the
-  // resource at an object nobody has uploaded yet.
-  if (!(await resourceService.promoteUpload(id, pendingKey, { size }))) {
+  // resource at an object nobody has uploaded yet. Published as it lies: the
+  // server wrote it, so nothing can write it again (contrast `completeUpload`).
+  if (!(await resourceService.promoteUpload(id, pendingKey, { size, key: pendingKey }))) {
     throw new ValidationError(
       'A newer upload replaced this one before it completed',
       undefined,
@@ -964,41 +975,10 @@ resourcesRouter.post(
     const resourceService = new ResourceService(db)
     const existing = await checkResourcePermission(db, user, resourceService, id)
 
-    // The presigned PUT URL does not bind a content length, so verify the
-    // actually-stored object size server-side instead of trusting the client.
-    // Reject (and remove) anything over the limit before enqueueing the
-    // pipeline, so an oversize object can't drive worker memory exhaustion.
-    // The pending key is checked, never the live one: rejecting must not touch
-    // the content the resource is still serving.
-    // The precondition is that an upload is pending, which this states exactly.
-    // `url_type` no longer says so: it describes the content being served, and
-    // only becomes 'upload' when this call promotes the new object.
-    const storage = c.get('storage')
-    const pendingKey = existing.pendingStorageKey
-    if (!pendingKey) {
-      throw new ValidationError(
-        'No upload is pending for this resource',
-        undefined,
-        'upload-not-pending'
-      )
-    }
-    const head = await storage.head(pendingKey)
-    if (!head) {
-      throw new ValidationError('Uploaded object not found in storage')
-    }
-    if (head.size > MAX_UPLOAD_SIZE) {
-      await storage.delete(pendingKey)
-      throw new PayloadTooLargeError(UPLOAD_TOO_LARGE)
-    }
-
-    // Size comes from storage, not the client, and the hash is left for the
-    // worker to measure (ADR-043): version create records the hash against the
-    // bytes it copies, so a caller-supplied value would decide what a version
-    // claims to hold.
-    // Bound to the key that was headed above, so a `prepareForUpload` that ran
-    // in between cannot have this call promote its not-yet-uploaded key — with
-    // the size measured from a different object.
-    if (!(await resourceService.promoteUpload(id, pendingKey, { size: head.size }))) {
+    // The precondition is that an upload is pending, which the service states
+    // exactly. `url_type` no longer says so: it describes the content being
+    // served, and only becomes 'upload' once this call publishes the new object.
+    if (!(await resourceService.completeUpload(id, c.get('storage'), existing))) {
       throw new ValidationError(
         'No upload is pending for this resource',
         undefined,

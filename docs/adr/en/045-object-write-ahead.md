@@ -184,6 +184,12 @@ Even the overlapping job differs in its deadline. A browser upload's TTL is **24
 a slow client is not cut off, where a server-side write finishes in minutes. Having the
 writer declare `expires_at` (§2) is what keeps differences like that out of a single constant.
 
+> **Addendum, 2026-11:** `upload-complete` no longer promotes the pending key itself. The presigned
+> PUT URL stays valid after completion, and a version takes the live object as its own rather than
+> copying it (ADR-043 §1), so a client could rewrite the promoted key. It now copies, with this ADR's
+> write-ahead record, promotes the copy, and parks the pending key for the same 24 hours as the TTL
+> above, since its URL may still be writing it.
+
 ## Consequences
 
 - **DB**: `expires_at` added to `orphaned_object` (one migration; existing rows backfilled as
