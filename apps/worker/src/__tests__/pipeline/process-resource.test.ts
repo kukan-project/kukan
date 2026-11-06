@@ -196,7 +196,7 @@ describe('processResource', () => {
     // The steps get this run's context, not the worker's: the writes that leave
     // the database are wrapped in a claim check (ADR-044 §4).
     const held = expect.objectContaining({ getResource: ctx.getResource })
-    expect(executeFetch).toHaveBeenCalledWith('res-1', held, false)
+    expect(executeFetch).toHaveBeenCalledWith('res-1', held, false, 'turn')
     // The version file, not the live object: the input has to be one nothing
     // rewrites for the interpretation to be repeatable (ADR-046).
     expect(executeInterpret).toHaveBeenCalledWith(
@@ -451,7 +451,7 @@ describe('processResource', () => {
 
         await processResource({ resourceId: 'res-1', indexOnly: true }, ctx, db, queue)
 
-        expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true)
+        expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true, 'turn')
         expect(ctx.storedInterpretation).toHaveBeenCalledWith('res-1', 'sha256:abc', 1)
         expect(executeInterpret).not.toHaveBeenCalled()
         expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
@@ -859,6 +859,42 @@ describe('processResource', () => {
     expect(mockTracker.startStep).toHaveBeenCalledTimes(1) // Only fetch step
   })
 
+  it('comes back at the turn it was given, holding it', async () => {
+    // Not due before its turn: neither spun on nor counted as work waiting
+    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred', inSeconds: 600, turn: true })
+
+    await processResource({ resourceId: 'res-1', reprocessAll: true }, ctx, db, queue)
+
+    expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), false, 'turn')
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1', reprocessAll: true, fetchTurn: true },
+      { delaySeconds: 600, unlessWaiting: true }
+    )
+  })
+
+  it.each([
+    ['holds a turn', { resourceId: 'res-1', fetchTurn: true }, 'normal', 'held-turn'],
+    ['is one someone waits for', { resourceId: 'res-1' }, 'high', 'next-slot'],
+    [
+      'is one someone waits for, with a turn',
+      { resourceId: 'res-1', fetchTurn: true },
+      'high',
+      'next-slot',
+    ],
+  ] as const)('waits for the host as a run that %s', async (_l, job, priority, wait) => {
+    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred', inSeconds: 2 })
+
+    await processResource(job, ctx, db, queue, priority)
+
+    expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), false, wait)
+    expect(queue.enqueue).toHaveBeenCalledWith('resource-pipeline', job, {
+      delaySeconds: 2,
+      unlessWaiting: true,
+      priority,
+    })
+  })
+
   it('carries a reprocess-all run’s mark into the run it defers to', async () => {
     // Dropped, the last marked run looks like no reprocess at all, and another
     // could start and empty the content index under this one
@@ -949,7 +985,7 @@ describe('processResource', () => {
 
     await processResource({ resourceId: 'res-1', rebuildOnly: true }, ctx, db, queue)
 
-    expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true)
+    expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true, 'turn')
   })
 
   it('leaves without recording anything once it has been killed', async () => {

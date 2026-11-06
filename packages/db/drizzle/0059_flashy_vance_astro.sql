@@ -1,0 +1,1 @@
+ALTER TABLE "fetch_rate_limit" ADD COLUMN "reserved_until" timestamp with time zone;

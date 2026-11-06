@@ -46,7 +46,9 @@ import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
  * @param job - The job's payload, whole: a retry is queued with it unchanged
  * @param db - Database instance for pipeline state management (resource_pipeline tables)
  * @param queue - Job queue for requeueing rate-limited fetches
- * @param priority - The priority the job was taken at, kept by its requeue
+ * @param priority - The priority the job was taken at, kept by its requeue. A
+ *   `high` one is a run someone waits for: a busy host does not put it behind
+ *   the runs waiting on it
  */
 export async function processResource(
   job: PipelineJobPayload,
@@ -61,12 +63,15 @@ export async function processResource(
   // wrong thing publishes it again (ADR-044 §4); dropped, `reprocessAll` lets
   // another reprocess start under this one. Folded into the same job already
   // waiting: one run after the holder reads everything the requests asked about.
-  const requeue = (delaySeconds: number) =>
-    queue.enqueue(PIPELINE_JOB_TYPE, job, { delaySeconds, unlessWaiting: true, priority })
+  const requeue = (delaySeconds: number, payload: PipelineJobPayload = job) =>
+    queue.enqueue(PIPELINE_JOB_TYPE, payload, { delaySeconds, unlessWaiting: true, priority })
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
     // The context the steps get is this run's: the writes that leave the
     // database carry the claim check the row-level ones get for free.
-    runPipeline(job, new StepTracker(db, claim), heldContext(ctx, claim, db), queue, requeue)
+    runPipeline(job, new StepTracker(db, claim), heldContext(ctx, claim, db), queue, {
+      priority,
+      requeue,
+    })
   )
 
   // Held by another run or a purge (ADR-044). This job has to come back: the
@@ -94,7 +99,13 @@ async function runPipeline(
   tracker: StepTracker,
   ctx: PipelineContext,
   queue: JobQueue,
-  requeue: (delaySeconds: number) => Promise<string>
+  {
+    priority,
+    requeue,
+  }: {
+    priority?: JobPriority
+    requeue: (delaySeconds: number, payload?: PipelineJobPayload) => Promise<string>
+  }
 ): Promise<void> {
   const { resourceId, rebuildOnly = false, indexOnly = false } = job
   await tracker.beginRun()
@@ -103,7 +114,12 @@ async function runPipeline(
     // Step 1: Fetch — download external URL to Storage (uploads already there)
     const fetchStepId = await tracker.startStep('fetch')
     // Neither a rebuild nor a reindex fetches: both work from the object held
-    const fetchResult = await executeFetch(resourceId, ctx, rebuildOnly || indexOnly)
+    const fetchResult = await executeFetch(
+      resourceId,
+      ctx,
+      rebuildOnly || indexOnly,
+      priority === 'high' ? 'next-slot' : job.fetchTurn ? 'held-turn' : 'turn'
+    )
 
     if (fetchResult.status === 'superseded') {
       // A newer run replaced the content while this one was fetching, and owns
@@ -114,11 +130,15 @@ async function runPipeline(
     }
 
     if (fetchResult.status === 'deferred') {
-      // Rate-limited — requeue with delay and revert pipeline to 'queued'
+      // Rate-limited — requeue with delay and revert pipeline to 'queued'. A turn's
+      // job is not due before it, so a long line does not scale the workers up.
       await Promise.all([
         tracker.skipStep(fetchStepId),
         tracker.updateStatus('queued'),
-        requeue(FETCH_RATE_LIMIT_REQUEUE_DELAY_S),
+        requeue(
+          fetchResult.inSeconds ?? FETCH_RATE_LIMIT_REQUEUE_DELAY_S,
+          fetchResult.turn ? { ...job, fetchTurn: true } : job
+        ),
       ])
       return
     }

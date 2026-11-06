@@ -36,7 +36,10 @@ import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import type { SummaryDeps } from '../steps/summarize'
-import { FETCH_RATE_LIMIT_INTERVAL_S } from '@/config'
+import { FETCH_RATE_LIMIT_INTERVAL_S, FETCH_TURN_SPACING_S } from '@/config'
+
+/** When a host's slot is free again, in the `fetch_rate_limit` row's terms. */
+const slotFreeAt = sql`fetch_rate_limit.last_fetched_at + ${`${FETCH_RATE_LIMIT_INTERVAL_S} seconds`}::interval`
 
 /** Displaced mid-create: the claim went, or the pointer did. */
 class LostTheClaim extends Error {}
@@ -100,16 +103,46 @@ export function buildPipelineContext(
       await storage.upload(key, body, meta)
     },
 
-    async acquireFetchSlot(fqdn: string): Promise<boolean> {
-      const result = await db.execute(sql`
+    async acquireFetchSlot(fqdn: string): Promise<number> {
+      // Taken when the statement wrote the row. Not read off the row's time: two
+      // transactions can share a `NOW()`, and the one refused would then see
+      // its own time there.
+      const taken = await db.execute(sql`
         INSERT INTO fetch_rate_limit (fqdn, last_fetched_at)
         VALUES (${fqdn}, NOW())
         ON CONFLICT (fqdn) DO UPDATE
           SET last_fetched_at = NOW()
-          WHERE fetch_rate_limit.last_fetched_at < NOW() - ${`${FETCH_RATE_LIMIT_INTERVAL_S} seconds`}::interval
+          WHERE ${slotFreeAt} < NOW()
         RETURNING fqdn
       `)
-      return result.rows.length > 0
+      if (taken.rows.length > 0) return 0
+      // Refused, which a turn's collision is and a loop is not: how long is left
+      const left = await db.execute<{ wait: string }>(sql`
+        SELECT extract(epoch FROM ${slotFreeAt} - NOW()) AS wait
+        FROM fetch_rate_limit WHERE fqdn = ${fqdn}
+      `)
+      // Never 0 when refused: 0 is the answer that the slot was taken
+      return Math.max(Number(left.rows[0]?.wait ?? 0), 0.1)
+    },
+
+    async reserveFetchTurn(fqdn: string): Promise<number> {
+      // Free now only when the interval has passed and every turn handed out
+      // has come; `greatest` skips the null of a host nobody has waited on
+      const next = sql`greatest(
+        fetch_rate_limit.reserved_until + ${`${FETCH_TURN_SPACING_S} seconds`}::interval,
+        ${slotFreeAt},
+        NOW()
+      )`
+      const result = await db.execute<{ wait: string }>(sql`
+        INSERT INTO fetch_rate_limit (fqdn, last_fetched_at, reserved_until)
+        VALUES (${fqdn}, NOW(), NOW())
+        ON CONFLICT (fqdn) DO UPDATE
+          SET reserved_until = ${next},
+              last_fetched_at = CASE WHEN ${next} <= NOW() THEN NOW()
+                ELSE fetch_rate_limit.last_fetched_at END
+        RETURNING extract(epoch FROM reserved_until - NOW()) AS wait
+      `)
+      return Math.max(Number(result.rows[0].wait), 0)
     },
 
     async indexContent(doc: ContentDoc, options?: IndexContentOptions): Promise<void> {

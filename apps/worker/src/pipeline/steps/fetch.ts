@@ -33,9 +33,22 @@ interface FetchResultData {
 
 export type FetchResult =
   | (FetchResultData & { status: 'fetched' })
-  | { status: 'deferred' }
+  /**
+   * The host is over its limit: come back in `inSeconds` (unset, shortly).
+   * `turn` when that is a turn the run was given and holds from then on.
+   */
+  | { status: 'deferred'; inSeconds?: number; turn?: boolean }
   /** Another run replaced the content while this one was fetching. */
   | { status: 'superseded' }
+
+/**
+ * How a run waits for a busy host. `turn`: behind the runs already waiting on
+ * it. `held-turn`: the run has come back to its turn, and takes the slot if it
+ * is free — or, beaten to it, a turn again rather than a retry. `next-slot`:
+ * someone waits for the run, so it comes back when the slot is next free
+ * rather than at the end of a line a bulk run may have made hours long.
+ */
+export type FetchWait = 'turn' | 'held-turn' | 'next-slot'
 
 /**
  * Fetch resource data into Storage.
@@ -46,7 +59,8 @@ export type FetchResult =
 export async function executeFetch(
   resourceId: string,
   ctx: PipelineContext,
-  rebuildOnly = false
+  rebuildOnly = false,
+  wait: FetchWait = 'next-slot'
 ): Promise<FetchResult> {
   const res = await ctx.getResource(resourceId)
 
@@ -92,8 +106,14 @@ export async function executeFetch(
     // Rate limit: max 1 request per interval per FQDN. Normalized, so that the
     // slot this takes is the one the chain's own hops compare against.
     const fqdn = normalizeHostname(new URL(res.url).hostname)
-    if (!(await ctx.acquireFetchSlot(fqdn))) {
-      return { status: 'deferred' }
+    const freeIn = wait === 'turn' ? undefined : await ctx.acquireFetchSlot(fqdn)
+    if (freeIn !== 0) {
+      if (wait === 'next-slot') return { status: 'deferred', inSeconds: freeIn }
+      // A turn rather than a retry: runs that only retried would all come back
+      // every few seconds for as long as the host is busy — with a catalog on
+      // one host, every run, the whole time
+      const turnIn = await ctx.reserveFetchTurn(fqdn)
+      if (turnIn > 0) return { status: 'deferred', inSeconds: turnIn, turn: true }
     }
 
     // A key of this run's own, so the resource keeps serving the object it has
@@ -143,7 +163,7 @@ async function downloadToStorage(
     // The slot taken above covers the host the user registered. Every host the
     // chain reaches after it takes one of its own, or the limit is watching the
     // only host an attacker does not need it to watch.
-    { onHost: (hostname) => ctx.acquireFetchSlot(hostname) }
+    { onHost: async (hostname) => (await ctx.acquireFetchSlot(hostname)) === 0 }
   )
 
   // Both refusals below leave without reading the body, so both have to let go

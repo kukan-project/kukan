@@ -795,6 +795,12 @@ export const pipelineJobSchema = z.object({
    * another must wait for rather than empty the content index under it.
    */
   reprocessAll: z.boolean().optional(),
+  /**
+   * Written by the worker, never by a caller: the run was given a turn for its
+   * host's fetch slot and has come back to it, so it takes the slot when it is
+   * free rather than queueing for another.
+   */
+  fetchTurn: z.boolean().optional(),
 })
 export type PipelineJobPayload = z.infer<typeof pipelineJobSchema>
 export const reindexJobSchema = z.object({

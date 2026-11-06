@@ -261,8 +261,15 @@ export const ENCODING_SCAN_LIMIT = 8 * 1024 * 1024
 /** Minimum interval between fetches to the same FQDN (5 s) */
 export const FETCH_RATE_LIMIT_INTERVAL_S = 5
 
-/** Delay before retrying a rate-limited fetch (6 s) */
+/** Delay before retrying a fetch whose redirect reached a host within its interval (6 s) */
 export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 6
+
+/**
+ * How far apart turns on one host are (6 s): a second over the interval, since
+ * a run comes back a little after its turn, and turns an interval apart would
+ * collide with the fetch before them about half the time.
+ */
+export const FETCH_TURN_SPACING_S = FETCH_RATE_LIMIT_INTERVAL_S + 1
 
 // ── Content Indexing ──
 

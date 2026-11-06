@@ -414,6 +414,13 @@
       "when": 1792550669239,
       "tag": "0058_silky_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793926691938,
+      "tag": "0059_flashy_vance_astro",
+      "breakpoints": true
     }
   ]
 }

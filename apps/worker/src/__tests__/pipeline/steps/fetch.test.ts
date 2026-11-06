@@ -351,18 +351,78 @@ describe('executeFetch', () => {
     })
   })
 
-  it('should return deferred when rate-limited', async () => {
+  it('comes back when the slot is free, for a run someone waits for', async () => {
     const ctx = createMockCtx()
-    vi.mocked(ctx.acquireFetchSlot).mockResolvedValue(false)
+    vi.mocked(ctx.acquireFetchSlot).mockResolvedValue(3.5)
     vi.mocked(ctx.getResource).mockResolvedValue(
       makeResource({ url: 'https://example.com/data.csv' })
     )
 
-    const result = await executeFetch('res-1', ctx)
+    const result = await executeFetch('res-1', ctx, false, 'next-slot')
 
-    expect(result).toEqual({ status: 'deferred' })
+    expect(result).toEqual({ status: 'deferred', inSeconds: 3.5 })
     expect(ctx.acquireFetchSlot).toHaveBeenCalledWith('example.com')
+    // Someone waits for this run: it is not put at the end of the line
+    expect(ctx.reserveFetchTurn).not.toHaveBeenCalled()
     expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('queues a bulk run for a turn on a busy host rather than retrying it', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.reserveFetchTurn).mockResolvedValue(42)
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+
+    const result = await executeFetch('res-1', ctx, false, 'turn')
+
+    expect(result).toEqual({ status: 'deferred', inSeconds: 42, turn: true })
+    expect(ctx.reserveFetchTurn).toHaveBeenCalledWith('example.com')
+    expect(ctx.acquireFetchSlot).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('fetches at once when the turn it queued for is now', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.reserveFetchTurn).mockResolvedValue(0)
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+    safeFetchImpl.run = () => Promise.resolve(new Response('data'))
+
+    const result = await executeFetch('res-1', ctx, false, 'turn')
+
+    expect(result.status).toBe('fetched')
+    // The registered host's slot was taken by the reservation itself
+    expect(ctx.acquireFetchSlot).not.toHaveBeenCalledWith('example.com')
+  })
+
+  it('takes the slot without queueing again when it comes back to its turn', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+    safeFetchImpl.run = () => Promise.resolve(new Response('data'))
+
+    const result = await executeFetch('res-1', ctx, false, 'held-turn')
+
+    expect(result.status).toBe('fetched')
+    expect(ctx.reserveFetchTurn).not.toHaveBeenCalled()
+  })
+
+  it('takes another turn, not a retry, when beaten to the slot at its turn', async () => {
+    // Retrying every few seconds is the loop the turns replace: after a stall,
+    // every run whose turn passed would be in it at once
+    const ctx = createMockCtx()
+    vi.mocked(ctx.acquireFetchSlot).mockResolvedValue(2)
+    vi.mocked(ctx.reserveFetchTurn).mockResolvedValue(600)
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+
+    const result = await executeFetch('res-1', ctx, false, 'held-turn')
+
+    expect(result).toEqual({ status: 'deferred', inSeconds: 600, turn: true })
   })
 
   it('should ask for a slot for every host a redirect reaches', async () => {

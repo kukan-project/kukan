@@ -70,11 +70,20 @@ export interface PipelineContext {
    */
   putObject(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void>
   /**
-   * Atomically acquire a fetch slot for the given FQDN.
-   * Returns true if the slot was acquired (i.e. last fetch was >1s ago or first time).
-   * Returns false if rate-limited (another fetch happened within the last second).
+   * Atomically acquire a fetch slot for the given FQDN: 0 when it was taken
+   * (the last fetch was an interval ago, or there was none), else the seconds
+   * until it is free. Turns handed out by {@link reserveFetchTurn} are not
+   * consulted: this is for a run that holds one, or that cannot wait for one.
    */
-  acquireFetchSlot(fqdn: string): Promise<boolean>
+  acquireFetchSlot(fqdn: string): Promise<number>
+  /**
+   * Take the host's slot now if it is free and no run is waiting for it, or
+   * else the next turn after every run that is: the seconds until that turn,
+   * 0 when the slot was taken. A run given a turn comes back to it and takes
+   * the slot with {@link acquireFetchSlot}, rather than asking again behind
+   * everyone who asked since.
+   */
+  reserveFetchTurn(fqdn: string): Promise<number>
   /** Index extracted content into the search index, waiting for it to become
    *  searchable unless told not to (see `SearchAdapter.indexContent`).
    *  No-op when OpenSearch is not configured. */

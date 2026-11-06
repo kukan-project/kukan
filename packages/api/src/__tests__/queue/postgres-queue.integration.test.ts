@@ -416,10 +416,18 @@ describe('PostgresJobQueue', () => {
       .where(sql`${job.payload} ->> 'n' = 'normal, earlier'`)
 
     const seen: unknown[] = []
-    await newQueue().process({ t: async (j) => void seen.push((j.data as { n: string }).n) })
+    // The handler is told the priority too: a run someone waits for behaves so
+    await newQueue().process({
+      t: async (j) => void seen.push(`${(j.data as { n: string }).n} @${j.priority}`),
+    })
 
     await vi.waitFor(() =>
-      expect(seen).toEqual(['high', 'normal, earlier', 'normal, later', 'low'])
+      expect(seen).toEqual([
+        'high @high',
+        'normal, earlier @normal',
+        'normal, later @normal',
+        'low @low',
+      ])
     )
   })
 
@@ -453,14 +461,15 @@ describe('PostgresJobQueue', () => {
       },
     })
 
-    await vi.waitFor(async () => expect(await rows()).toHaveLength(4))
-    const byType = Object.fromEntries((await rows()).map((r) => [r.type, r.priority]))
-    expect(byType).toEqual({
-      outside: 'normal',
-      inherited: 'high',
-      asked: 'low',
-      everyones: 'normal',
-    })
+    // Four rows also exist midway, the parent not yet gone and a child not yet written
+    await vi.waitFor(async () =>
+      expect(Object.fromEntries((await rows()).map((r) => [r.type, r.priority]))).toEqual({
+        outside: 'normal',
+        inherited: 'high',
+        asked: 'low',
+        everyones: 'normal',
+      })
+    )
   })
 
   it('keeps its priority through a failed attempt', async () => {
