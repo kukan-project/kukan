@@ -952,7 +952,25 @@ describe('WAF rate-based rules and log (ADR-027 supplement)', () => {
       RedactedFields: [
         { SingleHeader: { Name: 'cookie' } },
         { SingleHeader: { Name: 'authorization' } },
+        { SingleHeader: { Name: 'x-kukan-api-key' } },
+        { SingleHeader: { Name: 'x-ckan-api-key' } },
       ],
+    })
+    // The same headers masked at the WebACL, which also covers the sampled requests
+    template.hasResourceProperties('AWS::WAFv2::WebACL', {
+      DataProtectionConfig: {
+        DataProtections: [
+          {
+            Field: {
+              FieldType: 'SINGLE_HEADER',
+              FieldKeys: ['cookie', 'authorization', 'x-kukan-api-key', 'x-ckan-api-key'],
+            },
+            Action: 'SUBSTITUTION',
+            ExcludeRuleMatchDetails: false,
+            ExcludeRateBasedDetails: false,
+          },
+        ],
+      },
     })
     template.hasResource('AWS::S3::Bucket', {
       DeletionPolicy: 'Retain',

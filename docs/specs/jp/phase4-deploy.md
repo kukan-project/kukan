@@ -588,8 +588,10 @@ WAF 費用合計: WebACL $5/月 + ルール $6/月（マネージド 3 + レー�
 `RateLimitAuth`（`/api/auth/` だけ、既定 100）。既定は `count`（数えるだけ）で、数えた IP を
 確かめてから `block`（429 + プレーンテキスト本文 + `Retry-After`）に切り替える。ルールが
 COUNT / BLOCK した分だけのログを、WebACL と同じ us-east-1 の S3 バケット
-`aws-waf-logs-kukan-<env>-<account>`（出力 `WafLogBucketName`）に残す（`cookie` と
-`authorization` は伏せる）。理由と切り替えの手順は ADR-027 の補足（2026-11）。
+`aws-waf-logs-kukan-<env>-<account>`（出力 `WafLogBucketName`）に残す（`cookie`、
+`authorization`、API トークンの `x-kukan-api-key` と `x-ckan-api-key` は伏せる。サンプリングした
+要求でも WebACL のデータ保護で伏せる）。理由と
+切り替えの手順は ADR-027 の補足（2026-11）。
 
 環境エントリの `waf`（環境専用。WebACL は環境のサイトで共有するので、サイトエントリに書くと
 synth で断る。`-c` でも上書きしない）:

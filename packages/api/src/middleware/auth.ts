@@ -1,6 +1,10 @@
 /**
  * KUKAN Authentication Middleware
- * Validates session cookies and API tokens (Bearer, or X-KUKAN-API-Key)
+ * Validates session cookies and API tokens (Bearer, or X-KUKAN-API-Key; and for
+ * the CKAN-compatible API, a bare Authorization token or X-CKAN-API-Key)
+ *
+ * A header that newly carries a token must also be masked in the WAF's logs
+ * and samples (CREDENTIAL_HEADERS in infra/lib/constructs/waf.ts).
  */
 
 import type { Context, Next } from 'hono'

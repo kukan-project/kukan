@@ -607,8 +607,9 @@ After the managed groups come two rules that count requests per viewer IP over 5
 only); switch to `block` (429 + plain-text body + `Retry-After`) once the counted IPs have been
 checked. A log of only what a rule counted or blocked goes to an S3 bucket in the same us-east-1
 stack as the WebACL, `aws-waf-logs-kukan-<env>-<account>` (output `WafLogBucketName`), with
-`cookie` and `authorization` redacted. The reasoning and the switch-over procedure are in the
-ADR-027 supplement (2026-11).
+`cookie`, `authorization` and the API token headers `x-kukan-api-key` and `x-ckan-api-key`
+redacted, and masked in the sampled requests too by the WebACL's data protection. The reasoning
+and the switch-over procedure are in the ADR-027 supplement (2026-11).
 
 `waf` on the environment entry (environment-only: the WebACL is shared by the environment's
 sites, so a site entry carrying it is refused at synth; no `-c` override either):

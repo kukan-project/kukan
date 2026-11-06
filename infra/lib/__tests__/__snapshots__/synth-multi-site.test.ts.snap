@@ -9858,6 +9858,16 @@ exports[`multi-site global stack (auto-created cert/WAF, standalone mode) > matc
               "Name": "authorization",
             },
           },
+          {
+            "SingleHeader": {
+              "Name": "x-kukan-api-key",
+            },
+          },
+          {
+            "SingleHeader": {
+              "Name": "x-ckan-api-key",
+            },
+          },
         ],
         "ResourceArn": {
           "Fn::GetAtt": [
@@ -9874,6 +9884,24 @@ exports[`multi-site global stack (auto-created cert/WAF, standalone mode) > matc
         "kukan:retain": "in-use edge resource — persist RETAIN before removal",
       },
       "Properties": {
+        "DataProtectionConfig": {
+          "DataProtections": [
+            {
+              "Action": "SUBSTITUTION",
+              "ExcludeRateBasedDetails": false,
+              "ExcludeRuleMatchDetails": false,
+              "Field": {
+                "FieldKeys": [
+                  "cookie",
+                  "authorization",
+                  "x-kukan-api-key",
+                  "x-ckan-api-key",
+                ],
+                "FieldType": "SINGLE_HEADER",
+              },
+            },
+          ],
+        },
         "DefaultAction": {
           "Allow": {},
         },

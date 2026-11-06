@@ -17,21 +17,38 @@ describe('LOG_REDACT_PATHS', () => {
     )
     log.info({
       password: 'secret-password-0',
+      'x-kukan-api-key': 'secret-token-2',
+      'x-ckan-api-key': 'secret-token-3',
       user: { email: 'a@example.com', password: 'secret-password-1' },
-      headers: { authorization: 'Bearer secret-token-0', cookie: 'secret-cookie-0' },
+      headers: {
+        authorization: 'Bearer secret-token-0',
+        cookie: 'secret-cookie-0',
+        'x-kukan-api-key': 'secret-token-4',
+        'x-ckan-api-key': 'secret-token-5',
+      },
       req: {
         method: 'GET',
-        headers: { authorization: 'Bearer secret-token-1', cookie: 'secret-cookie-1' },
+        headers: {
+          authorization: 'Bearer secret-token-1',
+          cookie: 'secret-cookie-1',
+          'x-kukan-api-key': 'secret-token-6',
+          'x-ckan-api-key': 'secret-token-7',
+        },
       },
     })
     const line = JSON.parse(lines[0])
     expect(line.password).toBe('[Redacted]')
+    expect(line['x-kukan-api-key']).toBe('[Redacted]')
+    expect(line['x-ckan-api-key']).toBe('[Redacted]')
     expect(line.user).toEqual({ email: 'a@example.com', password: '[Redacted]' })
-    expect(line.headers).toEqual({ authorization: '[Redacted]', cookie: '[Redacted]' })
-    expect(line.req).toEqual({
-      method: 'GET',
-      headers: { authorization: '[Redacted]', cookie: '[Redacted]' },
-    })
+    const headers = {
+      authorization: '[Redacted]',
+      cookie: '[Redacted]',
+      'x-kukan-api-key': '[Redacted]',
+      'x-ckan-api-key': '[Redacted]',
+    }
+    expect(line.headers).toEqual(headers)
+    expect(line.req).toEqual({ method: 'GET', headers })
     expect(lines[0]).not.toContain('secret-')
   })
 })

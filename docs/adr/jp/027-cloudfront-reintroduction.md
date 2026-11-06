@@ -340,9 +340,12 @@ WebACL に、マネージドルールグループの後ろにレートベース�
   キー `rate-limited`）と `Retry-After` ヘッダー付き。オリジンの 403 と見分けられ、クライアントに
   待って再試行するよう伝える
 - **ログ**（`AWS::WAFv2::LoggingConfiguration`）: 既定 DROP、動作が COUNT か BLOCK の一致だけ
-  KEEP。`cookie` と `authorization` ヘッダーは伏せる。全リクエストのアクセスログは CloudFront の
-  ほう（配信無料）に既にあり、WAF のログは GB 単位で課金されるので、ここには「どのルールが何に
-  当たったか」だけを置く。保持は `waf.logging.retentionDays`、省略時は `cdnLogRetentionDays`。
+  KEEP。資格情報を運ぶヘッダー（`cookie`、`authorization`、API トークンを受け付ける
+  `x-kukan-api-key` と `x-ckan-api-key`）は伏せる。ログの記録はロギング設定の `RedactedFields` で
+  伏せる。それはサンプリングした要求（コンソール）と、全ヘッダーを照合するルールの一致の詳細には
+  効かないので、WebACL の `DataProtectionConfig`（`SUBSTITUTION`）でも同じヘッダーを伏せる。
+  全リクエストのアクセスログは CloudFront のほう（配信無料）に既にあり、WAF のログは GB 単位で
+  課金されるので、ここには「どのルールが何に当たったか」だけを置く。保持は `waf.logging.retentionDays`、省略時は `cdnLogRetentionDays`。
   `logging: false` で切る
 - **バケットは WebACL と同じ us-east-1 のスタックに置く。** 名前は `aws-waf-logs-kukan-<env>-<account>`
   （AWS が `aws-waf-logs-` の接頭辞を要求する。アカウントを含めて一意にする）。CLOUDFRONT

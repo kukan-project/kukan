@@ -57,6 +57,14 @@ const BODY_INSPECTION_LIMIT_BYTES = 16 * 1024
  */
 const UPLOAD_PATH_PATTERN = '^/api/v1/resources/[0-9a-fA-F-]{36}/upload$'
 
+/**
+ * The headers that carry a credential: the session cookie, then the API token
+ * in every header the API reads it from (packages/api/src/middleware/auth.ts),
+ * `authorization` also carrying the edge's basic auth. A token there is enough
+ * to call the API as its user, so none of them may reach a log or a sample.
+ */
+const CREDENTIAL_HEADERS = ['cookie', 'authorization', 'x-kukan-api-key', 'x-ckan-api-key']
+
 type Statement = wafv2.CfnWebACL.StatementProperty
 
 /** Create an AWS managed WAF rule group definition, `counted` rules only counting. */
@@ -189,6 +197,19 @@ export class WafConstruct extends Construct {
         sampledRequestsEnabled: true,
         cloudWatchMetricsEnabled: true,
         metricName: 'kukan-waf',
+      },
+      // Masked at the WebACL too: the logging configuration's redaction keeps
+      // them out of the log record, but not out of the sampled requests the
+      // console shows, nor out of what a rule inspecting all headers matched
+      dataProtectionConfig: {
+        dataProtections: [
+          {
+            field: { fieldType: 'SINGLE_HEADER', fieldKeys: CREDENTIAL_HEADERS },
+            action: 'SUBSTITUTION',
+            excludeRuleMatchDetails: false,
+            excludeRateBasedDetails: false,
+          },
+        ],
       },
       // The rate rules come after the managed groups, so a request a managed
       // rule blocked is neither counted against its IP nor logged twice
@@ -398,11 +419,7 @@ export class WafConstruct extends Construct {
           },
         ],
       },
-      // The session token and bearer tokens have no place in a log
-      redactedFields: [
-        { singleHeader: { Name: 'cookie' } },
-        { singleHeader: { Name: 'authorization' } },
-      ],
+      redactedFields: CREDENTIAL_HEADERS.map((Name) => ({ singleHeader: { Name } })),
     })
     // AWS checks the grants when the configuration is created, so the policy
     // must land first — the implicit order (bucket, not its policy) does not do

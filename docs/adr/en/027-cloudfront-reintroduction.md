@@ -347,8 +347,12 @@ per-site one (a site entry carrying it is refused at synth).
   `rate-limited`) and a `Retry-After` header, so it reads apart from an origin 403 and tells the
   client to wait and retry.
 - **Logging** (`AWS::WAFv2::LoggingConfiguration`): default DROP, KEEP only matches whose action
-  is COUNT or BLOCK. The `cookie` and `authorization` headers are redacted. The full access log
-  already lives in CloudFront (delivery is free), and WAF logs are billed per GB, so this one
+  is COUNT or BLOCK. The headers that carry a credential are redacted: `cookie`, `authorization`,
+  and `x-kukan-api-key` and `x-ckan-api-key`, which the API takes a token in. The logging
+  configuration's `RedactedFields` keeps them out of the log record. It does not reach the sampled
+  requests the console shows, nor the match details of a rule inspecting all headers, so the
+  WebACL's `DataProtectionConfig` (`SUBSTITUTION`) masks the same headers as well. The full access
+  log already lives in CloudFront (delivery is free), and WAF logs are billed per GB, so this one
   holds only which rule matched what. Retention is `waf.logging.retentionDays`, falling back to
   `cdnLogRetentionDays`; `logging: false` turns it off.
 - **The bucket lives in the same us-east-1 stack as the WebACL.** Its name is

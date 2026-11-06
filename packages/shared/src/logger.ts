@@ -26,6 +26,9 @@ const PRETTY_OPTS = {
  * Fields no log line should carry in clear, wherever a caller passes them.
  * Nothing logs these today; this is the net for the day something does.
  * A `*` stands for exactly one level, so the top-level names are listed too.
+ * Paths are case-sensitive; header names are lower case as Node and the
+ * Fetch API's Headers hand them out. The two API token headers are the ones
+ * the auth middleware reads besides `authorization`.
  */
 export const LOG_REDACT_PATHS = [
   'password',
@@ -34,8 +37,14 @@ export const LOG_REDACT_PATHS = [
   '*.authorization',
   'cookie',
   '*.cookie',
+  '["x-kukan-api-key"]',
+  '*["x-kukan-api-key"]',
+  '["x-ckan-api-key"]',
+  '*["x-ckan-api-key"]',
   'req.headers.cookie',
   'req.headers.authorization',
+  'req.headers["x-kukan-api-key"]',
+  'req.headers["x-ckan-api-key"]',
 ]
 
 /** One pino-pretty worker thread, shared by every logger in the process. */
