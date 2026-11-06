@@ -56,7 +56,7 @@ export async function handler(event: CustomResourceEvent): Promise<{
   if (event.RequestType === 'Delete') {
     console.log(
       `Retaining database ${props.DbName} and its role. Manual purge (as master): ` +
-        `DROP DATABASE ${props.DbName}; DROP ROLE ${props.DbName};`
+        `GRANT ${props.DbName} TO CURRENT_USER; DROP DATABASE ${props.DbName}; DROP ROLE ${props.DbName};`
     )
     return { PhysicalResourceId: event.PhysicalResourceId ?? physicalId }
   }
@@ -89,6 +89,11 @@ export async function handler(event: CustomResourceEvent): Promise<{
       // Converge the password so recreating the site secret stays consistent
       await client.query(`ALTER ROLE ${roleName} WITH LOGIN PASSWORD ${literal(site.password)}`)
     }
+
+    // PostgreSQL 16 lets the master name the role as OWNER only with SET on it,
+    // and CREATE ROLE gives the master no membership (Aurora enforces this; RDS
+    // does not). Dropping the database needs it on both, so grant on every run
+    await client.query(`GRANT ${roleName} TO CURRENT_USER WITH SET TRUE`)
 
     const db = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName])
     if (db.rowCount === 0) {

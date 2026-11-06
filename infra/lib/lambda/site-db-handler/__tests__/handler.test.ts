@@ -69,6 +69,17 @@ describe('site-db-handler', () => {
     expect(endMock).toHaveBeenCalled()
   })
 
+  it('grants the master SET on the site role before creating the database', async () => {
+    queryMock.mockResolvedValue({ rowCount: 0 })
+
+    await handler(event('Create'))
+
+    const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
+    const grant = sql.indexOf('GRANT kukan_citya TO CURRENT_USER WITH SET TRUE')
+    expect(grant).toBeGreaterThan(-1)
+    expect(grant).toBeLessThan(sql.indexOf('CREATE DATABASE kukan_citya OWNER kukan_citya'))
+  })
+
   it('creates required extensions in the site database as master', async () => {
     queryMock.mockResolvedValue({ rowCount: 0 })
 
@@ -89,6 +100,8 @@ describe('site-db-handler', () => {
     const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
     expect(sql).toContain("ALTER ROLE kukan_citya WITH LOGIN PASSWORD 'site''pass'")
     expect(sql.some((s) => s.startsWith('CREATE DATABASE'))).toBe(false)
+    // Sites created before the grant existed get it here, so a manual purge works
+    expect(sql).toContain('GRANT kukan_citya TO CURRENT_USER WITH SET TRUE')
     expect(sql).toContain('GRANT CONNECT ON DATABASE kukan_citya TO kukan_citya')
   })
 
