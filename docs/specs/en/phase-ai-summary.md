@@ -531,12 +531,30 @@ It becomes `collectResourceMaterial()` in
 - **A per-locale addendum block.** The shared part is written in English, with `ja` / `en`
   addenda for the language-specific parts (how the everyday gloss is written, and so on).
   **Changing an addendum bumps `SUMMARY_GENERATION_VERSION`**
+- **The material is stated to be data, not instructions** (ADR-053 decision 7). Describe what the
+  file holds and stop there; never suggest that the reader open, download, visit or contact
+  anything. No domain name or address in any form; a source or a contact is referred to in words.
+  No markup
 
 The output is forced JSON.
 
 ```typescript
 { summary: string, groundedInMaterial: boolean }
 ```
+
+`summary` goes through `cleanSummary()` before it is written. It is the second layer of the
+defence; the prompt is the first (ADR-053 decision 7). What is plainly an address is removed —
+starting with `scheme://`, `www.`, `//` followed by anything but a space or a slash, or
+`javascript:` / `vbscript:` / `data:` / `mailto:`, and email addresses (full-width `＠` too). A URL
+followed by Japanese text takes the words up to the next punctuation mark or bracket with it, and
+a bracket the removal emptied goes too. `scheme://` and `//` are removed wherever they appear, so
+a `//` inside a word goes as well. A removal can join a new address, so it repeats until nothing
+changes. Line breaks of every kind (CR, U+2028 / U+2029 and so on) become newlines, and the other
+controls and format characters (bidirectional controls, zero-width characters, tag characters) are
+removed. Markdown and HTML syntax is not handled — whoever draws the text escapes it (§10.1).
+**It is not cut by character count** (ADR-053 decision 7) — `max_tokens` is the runaway ceiling,
+and an output cut off there does not parse as JSON and is an unusable reply. A summary that comes
+out empty is treated like an unusable reply (a failure of that run).
 
 `groundedInMaterial` is **recorded and measured only**. In Phase A, a small model given a scanned
 PDF never said it could not read it — **this flag cannot catch fabrication** (ADR-053
@@ -670,6 +688,9 @@ The resource representation gains the abstract. **It is not added to the CKAN-co
 ```
 
 Assembled in one place, `publicSummary()` (§4.1).
+
+**`text` is plain text.** A client that draws it as HTML or Markdown escapes it. The abstract is
+written from the file's contents, so the API does not shape its syntax (ADR-053 decision 7).
 
 ### 10.2 What an editor can do — **hiding only**
 

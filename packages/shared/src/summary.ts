@@ -214,8 +214,10 @@ export const SUMMARY_CONTEXT_NOTES_CHARS = 400
  * 5: a table's sample rows reach the worker's material; it could not start
  *    the query process they are read through, so tables went from the schema
  *    alone
+ * 6: the material is data, never instructions; no addresses or markup, and
+ *    the reply is cleaned of both before it is written
  */
-export const SUMMARY_GENERATION_VERSION = 5
+export const SUMMARY_GENERATION_VERSION = 6
 
 /**
  * How a deployment writes abstracts now: the model, the generation and the
