@@ -339,6 +339,20 @@ describe('PostgresJobQueue', () => {
     expect(await rows()).toHaveLength(2)
   })
 
+  it('writes one job unless-waiting for callers that arrive together', async () => {
+    // Each looking before the others wrote, every one of them would write its own
+    const queue = newQueue()
+
+    const ids = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        queue.enqueue('t', { n: 1 }, { delaySeconds: 30, unlessWaiting: true })
+      )
+    )
+
+    expect(new Set(ids).size).toBe(1)
+    expect(await rows()).toHaveLength(1)
+  })
+
   it('writes a job unless-waiting past one delayed beyond it, and none past one due sooner', async () => {
     // Wanted now, it cannot wait out another's delay; wanted later, one due
     // sooner sees what the caller wrote

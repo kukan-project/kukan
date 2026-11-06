@@ -169,18 +169,27 @@ export class PipelineService {
    * no job behind it is one nothing will ever process. Given `tx`, both are
    * written in it, and whoever opened it with `queue.transaction` wakes the
    * worker after the commit.
+   *
+   * With `unlessWaiting`, a run of the same kind that no worker has taken yet
+   * stands for this one (its id is returned): it reads the resource when it
+   * starts, so a second would only repeat it. Ignored with `tx`, as the
+   * queue's contract asks: the caller's writes are ones the run is to see.
    */
   async enqueue(
     resourceId: string,
-    opts: { rebuildOnly?: boolean } & Pick<EnqueueOptions, 'tx' | 'priority'> = {}
+    opts: { rebuildOnly?: boolean } & Pick<EnqueueOptions, 'tx' | 'priority' | 'unlessWaiting'> = {}
   ): Promise<string> {
     const queue = this.requireQueue()
-    const { tx: callerTx, priority, ...job } = opts
+    const { tx: callerTx, priority, unlessWaiting, ...job } = opts
     const write = async (tx: Transaction) => {
       if (!(await this.markQueued(tx, [resourceId])).has(resourceId)) {
         throw new NotFoundError('Resource', resourceId)
       }
-      return queue.enqueue(PIPELINE_JOB_TYPE, { resourceId, ...job }, { tx, priority })
+      return queue.enqueue(
+        PIPELINE_JOB_TYPE,
+        { resourceId, ...job },
+        { tx, priority, unlessWaiting: unlessWaiting && !callerTx }
+      )
     }
     return callerTx ? write(callerTx) : queue.transaction(this.db, write)
   }

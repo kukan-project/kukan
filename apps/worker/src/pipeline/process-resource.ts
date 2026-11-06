@@ -17,6 +17,7 @@ import {
   LAKE_INGEST_JOB_TYPE,
   PIPELINE_JOB_TYPE,
   rootCauseMessage,
+  type JobPriority,
   type PipelineJobPayload,
 } from '@kukan/shared'
 import { isSearchWriteUnavailable } from '@kukan/search-adapter'
@@ -45,18 +46,27 @@ import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
  * @param job - The job's payload, whole: a retry is queued with it unchanged
  * @param db - Database instance for pipeline state management (resource_pipeline tables)
  * @param queue - Job queue for requeueing rate-limited fetches
+ * @param priority - The priority the job was taken at, kept by its requeue
  */
 export async function processResource(
   job: PipelineJobPayload,
   ctx: PipelineContext,
   db: Database,
-  queue: JobQueue
+  queue: JobQueue,
+  priority?: JobPriority
 ): Promise<void> {
   const { resourceId } = job
+  // The job as it came, whole. Dropped, `rebuildOnly` turns the retry into an
+  // ordinary run, which for a resource reverted because its URL served the
+  // wrong thing publishes it again (ADR-044 §4); dropped, `reprocessAll` lets
+  // another reprocess start under this one. Folded into the same job already
+  // waiting: one run after the holder reads everything the requests asked about.
+  const requeue = (delaySeconds: number) =>
+    queue.enqueue(PIPELINE_JOB_TYPE, job, { delaySeconds, unlessWaiting: true, priority })
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
     // The context the steps get is this run's: the writes that leave the
     // database carry the claim check the row-level ones get for free.
-    runPipeline(job, new StepTracker(db, claim), heldContext(ctx, claim, db), queue)
+    runPipeline(job, new StepTracker(db, claim), heldContext(ctx, claim, db), queue, requeue)
   )
 
   // Held by another run or a purge (ADR-044). This job has to come back: the
@@ -65,13 +75,7 @@ export async function processResource(
   // nothing would record that work was outstanding. Requeued with a delay
   // rather than retried, so a long run is not spun on. A resource with no
   // pipeline row is the other refusal, and there is nothing to come back for.
-  if (outcome.status === 'held') {
-    // The job as it came, whole. Dropped, `rebuildOnly` turns the retry into an
-    // ordinary run, which for a resource reverted because its URL served the
-    // wrong thing publishes it again (ADR-044 §4); dropped, `reprocessAll` lets
-    // another reprocess start under this one.
-    await queue.enqueue(PIPELINE_JOB_TYPE, job, { delaySeconds: CLAIM_RETRY_DELAY_S })
-  }
+  if (outcome.status === 'held') await requeue(CLAIM_RETRY_DELAY_S)
 }
 
 /**
@@ -89,7 +93,8 @@ async function runPipeline(
   job: PipelineJobPayload,
   tracker: StepTracker,
   ctx: PipelineContext,
-  queue: JobQueue
+  queue: JobQueue,
+  requeue: (delaySeconds: number) => Promise<string>
 ): Promise<void> {
   const { resourceId, rebuildOnly = false, indexOnly = false } = job
   await tracker.beginRun()
@@ -113,9 +118,7 @@ async function runPipeline(
       await Promise.all([
         tracker.skipStep(fetchStepId),
         tracker.updateStatus('queued'),
-        queue.enqueue(PIPELINE_JOB_TYPE, job, {
-          delaySeconds: FETCH_RATE_LIMIT_REQUEUE_DELAY_S,
-        }),
+        requeue(FETCH_RATE_LIMIT_REQUEUE_DELAY_S),
       ])
       return
     }

@@ -2577,6 +2577,7 @@ export class ResourceVersionService {
       await new PipelineService(this.db, deps.queue).enqueue(resourceId, {
         rebuildOnly: true,
         priority: 'high',
+        unlessWaiting: true,
       })
       return true
     } catch (err) {

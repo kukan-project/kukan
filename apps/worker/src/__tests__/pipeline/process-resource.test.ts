@@ -852,7 +852,7 @@ describe('processResource', () => {
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
       { resourceId: 'res-1' },
-      { delaySeconds: 6 }
+      { delaySeconds: 6, unlessWaiting: true }
     )
     // Interpret should NOT run
     expect(executeInterpret).not.toHaveBeenCalled()
@@ -869,7 +869,7 @@ describe('processResource', () => {
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
       { resourceId: 'res-1', reprocessAll: true },
-      { delaySeconds: 6 }
+      { delaySeconds: 6, unlessWaiting: true }
     )
   })
 
@@ -897,6 +897,21 @@ describe('processResource', () => {
       'resource-pipeline',
       { resourceId: 'res-1' },
       expect.objectContaining({ delaySeconds: expect.any(Number) })
+    )
+  })
+
+  it('folds its requeue into a waiting run, at the priority it was taken at', async () => {
+    // Every request made during a long run is taken, finds it held, and comes
+    // back; each coming back as its own run would repeat the same work once per
+    // request after the holder lets go. The queue folds them into one.
+    claim.answer = 'held'
+
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue, 'high')
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      expect.objectContaining({ unlessWaiting: true, priority: 'high' })
     )
   })
 

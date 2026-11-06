@@ -272,11 +272,18 @@ export class PostgresJobQueue implements JobQueue {
   }
 
   async enqueue<T>(type: string, data: T, options?: EnqueueOptions): Promise<string> {
-    if (options?.unlessWaiting) {
-      // Two statements: two callers can both find nothing and write one each,
-      // which costs a job that finds its work already done
-      const db = options.tx ?? this.db
-      const standIn = db
+    if (!options?.unlessWaiting) {
+      const [id] = await this.enqueueMany(type, [data], options)
+      return id
+    }
+    const payload = JSON.stringify(data ?? {})
+    const write = async (tx: Transaction) => {
+      // One caller at a time per type and payload, until it commits: apart,
+      // two could both find nothing and write one each
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`job_enqueue:${type}:`} || ${payload}::jsonb::text, 0))`
+      )
+      const standIn = tx
         .select({ id: jobTable.id })
         .from(jobTable)
         .where(
@@ -287,7 +294,7 @@ export class PostgresJobQueue implements JobQueue {
             eq(jobTable.attempts, 0),
             // The same work: a metadata-only rebuild is no stand-in for one
             // that re-indexes content
-            sql`${jobTable.payload} = ${JSON.stringify(data ?? {})}::jsonb`,
+            sql`${jobTable.payload} = ${payload}::jsonb`,
             // No later than the one asked for: a job an hour out is no stand-in
             // for one wanted now
             lte(jobTable.runAt, inSeconds(options.delaySeconds ?? 0))
@@ -297,7 +304,7 @@ export class PostgresJobQueue implements JobQueue {
         .for('update', { skipLocked: true })
       // At any priority, raised to this one's: left behind the bulk runs, it
       // would hold back the caller who waits; passed over, the work runs twice
-      const [waiting] = await db
+      const [waiting] = await tx
         .update(jobTable)
         .set({
           priority: sql`least(${jobTable.priority}, ${this.priorityOf(options)}::job_priority)`,
@@ -305,9 +312,10 @@ export class PostgresJobQueue implements JobQueue {
         .where(sql`${jobTable.id} = (${standIn})`)
         .returning({ id: jobTable.id })
       if (waiting) return waiting.id
+      const [id] = await this.enqueueMany(type, [data], { ...options, tx })
+      return id
     }
-    const [id] = await this.enqueueMany(type, [data], options)
-    return id
+    return options.tx ? write(options.tx) : this.transaction(this.db, write)
   }
 
   async enqueueMany<T>(type: string, data: T[], options?: EnqueueOptions): Promise<string[]> {

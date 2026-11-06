@@ -144,10 +144,17 @@ function uploadContentType(partType: string, filename: string): string {
   return byName === 'application/octet-stream' ? partType : byName
 }
 
-/** Create pipeline record and enqueue processing job */
+/**
+ * Create pipeline record and enqueue processing job. A run already waiting for
+ * the resource is the one returned: requests repeated before a worker gets to
+ * it add no run, nor a turn in the heavy section, of their own.
+ */
 async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
   const pipelineService = new PipelineService(c.get('db'), c.get('queue'))
-  const jobId = await pipelineService.enqueue(resourceId, { priority: 'high' })
+  const jobId = await pipelineService.enqueue(resourceId, {
+    priority: 'high',
+    unlessWaiting: true,
+  })
   return { pipeline_status: 'queued' as const, job_id: jobId }
 }
 

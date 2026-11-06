@@ -118,6 +118,62 @@ describe('PipelineService', () => {
       expect(wake).toHaveBeenCalledOnce()
     })
 
+    describe('unlessWaiting', () => {
+      const pipelineJobs = () => db.select().from(job).where(eq(job.type, 'resource-pipeline'))
+
+      function realQueue() {
+        const queue = new PostgresJobQueue({ db })
+        vi.spyOn(queue, 'wake').mockImplementation(() => {})
+        return queue
+      }
+
+      it('returns the run already waiting, raised to this priority, instead of a second', async () => {
+        // A request repeated before a worker gets to the first adds nothing:
+        // the waiting run reads the resource when it starts
+        const service = new PipelineService(db, realQueue())
+        const first = await service.enqueue(testResId, { priority: 'low', unlessWaiting: true })
+
+        expect(await service.enqueue(testResId, { priority: 'high', unlessWaiting: true })).toBe(
+          first
+        )
+        const rows = await pipelineJobs()
+        expect(rows).toHaveLength(1)
+        expect(rows[0].priority).toBe('high')
+      })
+
+      it('queues another behind a run a worker has taken', async () => {
+        // The taken run may already have read the content this request is about
+        const service = new PipelineService(db, realQueue())
+        const taken = await service.enqueue(testResId, { unlessWaiting: true })
+        await db
+          .update(job)
+          .set({ lockedUntil: sql`now() + interval '10 minutes'`, attempts: 1 })
+          .where(eq(job.id, taken))
+
+        expect(await service.enqueue(testResId, { unlessWaiting: true })).not.toBe(taken)
+        expect(await pipelineJobs()).toHaveLength(2)
+      })
+
+      it('is no stand-in for a run of another kind', async () => {
+        const service = new PipelineService(db, realQueue())
+        const rebuild = await service.enqueue(testResId, { rebuildOnly: true, unlessWaiting: true })
+
+        expect(await service.enqueue(testResId, { unlessWaiting: true })).not.toBe(rebuild)
+      })
+
+      it('always queues its own inside a caller’s transaction', async () => {
+        // The waiting run could start before the caller's writes commit
+        const queue = realQueue()
+        const service = new PipelineService(db, queue)
+        const first = await service.enqueue(testResId, { unlessWaiting: true })
+
+        const second = await queue.transaction(db, (tx) =>
+          service.enqueue(testResId, { tx, unlessWaiting: true })
+        )
+        expect(second).not.toBe(first)
+      })
+    })
+
     it('refuses a resource that does not exist', async () => {
       const service = new PipelineService(db, new PostgresJobQueue({ db }))
 

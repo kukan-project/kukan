@@ -467,7 +467,7 @@ await queue.process({
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
     // The payload whole: a retry has to carry all of it
-    await processResource(data, ctx, db, queue)
+    await processResource(data, ctx, db, queue, job.priority)
     // Once, whatever in the run marked the document or the vector: an abstract
     // written, a format the version settled, a replacement upload's name
     await Promise.all([

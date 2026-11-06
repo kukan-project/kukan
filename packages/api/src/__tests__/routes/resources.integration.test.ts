@@ -2543,6 +2543,23 @@ describe('Resources API Routes', () => {
       expect(body.job_id).toBeDefined()
     })
 
+    it('asks the queue to fold the run into one already waiting', async () => {
+      // Pressed again before a worker gets to it, the waiting run stands for it
+      const pkg = await createPackage('run-pipeline-repeat-pkg')
+      const resource = await createResource(pkg.id, {
+        url: 'https://example.com/data.csv',
+      })
+      vi.mocked(mockQueue.enqueue).mockClear()
+
+      await app.request(`/api/v1/resources/${resource.id}/run-pipeline`, { method: 'POST' })
+
+      expect(mockQueue.enqueue).toHaveBeenCalledWith(
+        'resource-pipeline',
+        { resourceId: resource.id },
+        expect.objectContaining({ priority: 'high', unlessWaiting: true })
+      )
+    })
+
     it('repairs by rebuilding, without fetching', async () => {
       // The safe repair after a revert, reachable from the screen alone rather
       // than only by resending a request someone had to keep (ADR-044 §4).

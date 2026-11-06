@@ -23,6 +23,8 @@ export interface Job<T = unknown> {
   id: string
   type: string
   data: T
+  /** The priority it was taken at, for a handler that queues it again */
+  priority?: JobPriority
 }
 
 /**
