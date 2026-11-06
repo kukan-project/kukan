@@ -88,7 +88,7 @@ describe('proxy (ADR-065 decision 2)', () => {
   })
 
   it('runs for prefetches too, whose responses CloudFront’s HTML cache keeps for everyone', () => {
-    expect(config.matcher).toEqual(['/((?!api/|_next/static/|_next/image).*)'])
+    expect(config.matcher).toEqual(['/((?!api/|_next/static/).*)'])
   })
 })
 

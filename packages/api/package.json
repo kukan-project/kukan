@@ -65,11 +65,11 @@
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "better-auth": "1.7.12",
+    "better-auth": "1.7.17",
     "busboy": "^1.6.0",
     "dotenv": "^18.0.8",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.13",
+    "hono": "^4.13.16",
     "kysely": "^0.29.7",
     "pg": "^8.23.1",
     "zod": "4.6.7"

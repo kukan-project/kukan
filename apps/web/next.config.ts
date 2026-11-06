@@ -38,6 +38,10 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // Names the framework to every response; nothing reads it (ADR-070)
   poweredByHeader: false,
+  // Nothing renders next/image, so `/_next/image` answers 404 instead of running
+  // the optimizer on whatever URL a request names; turning it back on needs
+  // `images.localPatterns`
+  images: { unoptimized: true },
   transpilePackages: ['@kukan/shared', '@kukan/ui'],
   // No @kukan/* here: the workspace packages are bundled, @kukan/api from source
   // through the tsconfig path alias. Their `dist` cannot be loaded by Node as it

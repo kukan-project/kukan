@@ -110,8 +110,9 @@ function bootPolicy(origins: string[]): string {
 
 export const config = {
   // Not the API (an upload's body would be buffered here) nor Next's static
-  // files. No exception for prefetches: their responses reach CloudFront's HTML
-  // cache, whose key does not hold the header that marks them, and would serve
-  // every visitor a page with no CSP
-  matcher: ['/((?!api/|_next/static/|_next/image).*)'],
+  // files. `/_next/image` stays in: with the optimizer off, its 404 is a page.
+  // No exception for prefetches: their responses reach CloudFront's HTML cache,
+  // whose key does not hold the header that marks them, and would serve every
+  // visitor a page with no CSP
+  matcher: ['/((?!api/|_next/static/).*)'],
 }
