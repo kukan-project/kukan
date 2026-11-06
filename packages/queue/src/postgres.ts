@@ -296,8 +296,13 @@ export class PostgresJobQueue implements JobQueue {
             // that re-indexes content
             sql`${jobTable.payload} = ${payload}::jsonb`,
             // No later than the one asked for: a job an hour out is no stand-in
-            // for one wanted now
-            lte(jobTable.runAt, inSeconds(options.delaySeconds ?? 0))
+            // for one wanted now. Measured from the clock, not now(): that is
+            // when this transaction began, and a caller that waited on the
+            // lock began before the one it waited on wrote its job's time
+            lte(
+              jobTable.runAt,
+              sql`clock_timestamp() + ${`${options.delaySeconds ?? 0} seconds`}::interval`
+            )
           )
         )
         .limit(1)
