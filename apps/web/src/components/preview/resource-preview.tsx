@@ -124,18 +124,18 @@ export function ResourcePreview({
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (f && isOfficeFormat(f)) {
     // ibisOffice draws in the visitor's browser, from the file the visitor may
-    // read, so a private dataset's files are drawn too; it does not read DOC
-    const ibisOffice = officePreviewViewer === 'ibis-office'
-    if (ibisOffice ? f.toLowerCase() === 'doc' : notPublic)
-      return <DocumentTextPreview resourceId={resourceId} />
-    return ibisOffice ? (
-      <RememberedOriginal
-        key={`${doc}:${f}`}
-        resourceId={resourceId}
-        doc={doc}
-        original={<IbisOfficePreview resourceId={resourceId} doc={doc} format={f} size={size} />}
-      />
-    ) : (
+    // read, so a private dataset's files are drawn too
+    if (officePreviewViewer === 'ibis-office')
+      return (
+        <RememberedOriginal
+          key={`${doc}:${f}`}
+          resourceId={resourceId}
+          doc={doc}
+          original={<IbisOfficePreview resourceId={resourceId} doc={doc} format={f} size={size} />}
+        />
+      )
+    if (notPublic) return <DocumentTextPreview resourceId={resourceId} />
+    return (
       <DocumentPreview
         key={resourceId}
         resourceId={resourceId}

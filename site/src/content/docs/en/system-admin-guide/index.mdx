@@ -809,10 +809,10 @@ involved, so nothing needs reprocessing.
 
 Choose with `OFFICE_PREVIEW_VIEWER` (AWS: the site's `officePreviewViewer`).
 
-| Value                   | What draws the original          | What can be shown                                                                                                                                                                                                                               |
-| ----------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ibis-office` (default) | ibisOffice, in the browser       | XLSX, XLS, DOCX, PPTX, PPT, private and draft included. DOC: extracted text only                                                                                                                                                                |
-| `office-online`         | Microsoft's Office Online Viewer | Public datasets, up to 10 MB, DOC included. Microsoft's servers fetch the file, so uploaded files cannot be shown on a site behind an IP allowlist, Basic auth or a closed network (a resource with an external URL can, if that URL is public) |
+| Value                   | What draws the original          | What can be shown                                                                                                                                                                                                                 |
+| ----------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ibis-office` (default) | ibisOffice, in the browser       | XLSX, XLS, DOCX, DOC, PPTX, PPT, private and draft included                                                                                                                                                                       |
+| `office-online`         | Microsoft's Office Online Viewer | Public datasets, up to 10 MB. Microsoft's servers fetch the file, so uploaded files cannot be shown on a site behind an IP allowlist, Basic auth or a closed network (a resource with an external URL can, if that URL is public) |
 
 - **Build**: building web fetches ibisOffice's web build from upstream's GitHub release and checks its
   SHA-256 (version and SHA-256 are in `apps/web/vendor/ibis-office/manifest.json`). The running service does

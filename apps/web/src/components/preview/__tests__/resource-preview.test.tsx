@@ -187,7 +187,7 @@ describe('ResourcePreview', () => {
 
   describe('ibisOffice preview (the default, ADR-065)', () => {
     it('draws the original of each format ibisOffice reads, beside its extracted text', () => {
-      for (const format of ['XLSX', 'XLS', 'DOCX', 'PPTX', 'PPT']) {
+      for (const format of ['XLSX', 'XLS', 'DOCX', 'DOC', 'PPTX', 'PPT']) {
         const { unmount } = render(<ResourcePreview resourceId="r1" format={format} />)
         expect(screen.getByText('Original')).toBeInTheDocument()
         expect(screen.getByText('Extracted text')).toBeInTheDocument()
@@ -201,16 +201,6 @@ describe('ResourcePreview', () => {
     it('draws a non-public dataset’s file too: it never leaves the visitor’s browser', () => {
       render(<ResourcePreview resourceId="r1" format="XLSX" notPublic />)
       expect(screen.getByTestId('ibis-office-preview')).toBeInTheDocument()
-    })
-
-    it('offers only the extracted text of a DOC, which ibisOffice does not read', async () => {
-      mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
-      render(<ResourcePreview resourceId="r1" format="DOC" />)
-      await waitFor(() =>
-        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/document-text')
-      )
-      expect(screen.queryByText('Original')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
     })
 
     it('opens on the extracted text of a file that took a tab down, the original a tab away', async () => {

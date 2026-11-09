@@ -555,14 +555,14 @@ Interpret だけがフォーマットで処理を分ける（流れは §1）。
 | RDF                            |      No      | スキップ                                     |           -           |                  非対応                   |
 | PDF                            |      No      | スキップ                                     |           -           |      iframe（本体）+抽出テキスト切替      |
 | XLSX/XLS                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
-| DOC/DOCX                       |      No      | スキップ                                     |           -           |  DOCX は XLSX と同じ、DOC は抽出テキスト  |
+| DOC/DOCX                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
 | PPT/PPTX                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
 | JTD/JTT（一太郎）              |      No      | スキップ                                     |           -           | 原本（EZPZ、シート一覧）+抽出テキスト切替 |
 | ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |           -           |               ファイル一覧                |
 | PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |           -           |                img（本体）                |
 
 Office の「原本」は ibisOffice がブラウザの sandbox の iframe で描く（ADR-065）。サイトの
-`OFFICE_PREVIEW_VIEWER=office-online` で Office Online Viewer（公開のデータセットのみ、DOC も原本）にできる。
+`OFFICE_PREVIEW_VIEWER=office-online` で Office Online Viewer（公開のデータセットのみ）にできる。
 
 **サイズ制限:**
 

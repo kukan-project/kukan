@@ -44,10 +44,10 @@ function fromFrame(type: string) {
 }
 
 /** The preview on a resource whose file is this, with a frame to talk to. */
-function renderWith(file: Response) {
+function renderWith(file: Response, format = 'XLSX') {
   view()
   mockClientFetch.mockResolvedValue(file)
-  render(<IbisOfficePreview resourceId="r1" doc="r1:1" format="XLSX" />)
+  render(<IbisOfficePreview resourceId="r1" doc="r1:1" format={format} />)
   return frameWindow()
 }
 
@@ -107,6 +107,16 @@ describe('IbisOfficePreview (ADR-065)', () => {
     fromFrame('boot')
     await new Promise((r) => setTimeout(r, 50))
     expect(postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['a compound document', XLS, 'document.doc'],
+    ['a package', XLSX, 'document.docx'],
+  ])('names a DOC resource that is %s by its bytes', async (_, bytes, name) => {
+    const { postMessage } = renderWith(new Response(bytes), 'DOC')
+    fromFrame('boot')
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1))
+    expect(postMessage.mock.calls[0]![0]).toMatchObject({ name })
   })
 
   it('does not hand over a package that is not plainly built', async () => {

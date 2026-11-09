@@ -3,7 +3,7 @@
 ## Status
 
 **Proposed** — 2026-10-11 (option I added on 2026-10-27, measured on 2026-10-29, and the
-decision changed from F to I)
+decision changed from F to I; on 2026-11-09 raised to 0.8.6, which moved DOC to the "Original" tab too)
 
 Make Office documents (XLSX, XLS, DOCX, PPTX, PPT) viewable without relying on Microsoft's Office
 Online Viewer. **Bundle ibisOffice (an office suite written in Rust and compiled to WebAssembly)
@@ -12,10 +12,10 @@ that is unavailable. The server opens no document, and nothing is added to the w
 artifacts. The web app hands the bytes from `/preview` to ibisOffice, which runs in a sandboxed
 iframe (an opaque origin) so that it cannot reach KUKAN's cookies, API or the parent page. A document too heavy to draw is
 stopped inside ibisOffice by a ceiling on its WASM memory, and the page points to the extracted
-text. The "Original" tab of the five Office formats is ibisOffice by default; only a site that sets the
+text. The "Original" tab of Office documents is ibisOffice by default; only a site that sets the
 environment variable `OFFICE_PREVIEW_VIEWER` (`ibis-office` by default) to `office-online` keeps
-Office Online Viewer as today. DOC, which ibisOffice cannot open, gets extracted text and the
-download on `ibis-office` sites.
+Office Online Viewer as today. DOC, which 0.8.5 and earlier could not open, got extracted text and the
+download at first; 0.8.6 opens it, so it moved to the "Original" tab.
 
 F (a PDF made by LibreOffice in the worker) was the provisional decision at first. F opens
 untrusted documents in a worker that holds credentials and network access. Settings alone
@@ -24,7 +24,8 @@ environment with neither secrets nor network. Measured on the same samples (§Me
 "ibisOffice (I)"), I needs neither that isolation nor the image's +1.1 GB nor a conversion per
 version; it draws Japanese in the device's MS typefaces, and on devices without a GPU it still
 draws through WebGL2 with tables and documents usable. What I lacks (DOC, distributed alignment,
-the typeface of half-width characters, view-only polish) has been requested upstream.
+the typeface of half-width characters, view-only polish) has been requested upstream (DOC and the
+alignment arrived in 0.8.6; the half-width typeface still has gaps in DOCX, open question 1).
 
 The other ways of drawing in the browser are not adopted. LibreOffice's WebAssembly build
 (ZetaOffice) needs cross-origin isolation of the whole page, 50 MB per start (cached for 20 minutes) and 1 GB of WASM
@@ -208,7 +209,7 @@ conditions B failed. What the published material and code show, and what §Measu
   page setup), and a PPT reader too. **DOC does not open**: the web entry point takes .docx,
   .xlsx and .pptx, plus XLS and PPT recognised by their content; given a DOC it shows the start
   view (New, Open…) without an error. The .doc import in the conversion panel only extracts the
-  body text (requested upstream, ibisjp/ibis-office#71). Rendering is said to be
+  body text (requested upstream, ibisjp/ibis-office#71; 0.8.6 opens it with its formatting). Rendering is said to be
   tested against PDFs exported by Office in over 70,000 pixel comparisons (the developer's figure)
 - **Nothing opens on the server**: the viewer's browser draws, so the problem with F — opening
   untrusted documents in a worker that holds credentials and network access — does not arise.
@@ -434,16 +435,16 @@ follow the first frame (the blinking caret keeps redrawing after that). Two cond
 
 ### Verdict
 
-| Aspect                  | B ZetaOffice                       | C light libraries | D in-house grid | E HTML export    | F LibreOffice PDF         | G Collabora      | I ibisOffice                                                                          |
-| ----------------------- | ---------------------------------- | ----------------- | --------------- | ---------------- | ------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
-| Formats                 | 6                                  | DOCX, PPTX only   | XLS, XLSX       | XLS, XLSX        | 6                         | 6                | 5 (all but DOC)                                                                       |
-| Kami-Excel fidelity     | LibreOffice                        | —                 | reimplemented   | spill breaks     | LibreOffice               | LibreOffice      | borders and merges as original, distributed alignment missing, half-width substituted |
-| Japanese                | Tofu (fonts to add)                | OK                | OK              | OK               | OK                        | OK               | the device's fonts (MS Mincho on Windows)                                             |
-| Closed network, private | OK if self-hosted                  | OK                | OK              | OK               | OK                        | OK               | OK (self-hosted)                                                                      |
-| Client cost             | 50 MB (cached 20 min), 1 GB memory | 50 KB–450 KB      | a grid          | huge DOM         | pdf.js                    | iframe           | 16 MB first time, 200–1,100 MB, WebGPU or WebGL2                                      |
-| Effect on the page      | COOP/COEP on the top level         | sandboxed iframe  | none            | sandboxed iframe | none                      | none             | none (iframe, CSP narrows fetches)                                                    |
-| Server cost             | None (CDN) / 250 MB static         | none              | reader work     | image +1.1 GB    | image +1.1 GB, conversion | one more service | none (63 MB static)                                                                   |
-| Distribution terms      | Beta, undecided                    | Apache-2.0        | —               | MPL-2.0          | MPL-2.0                   | MPL-2.0          | AGPL-3.0 / commercial, v0.8.x                                                         |
+| Aspect                  | B ZetaOffice                       | C light libraries | D in-house grid | E HTML export    | F LibreOffice PDF         | G Collabora      | I ibisOffice                                                                 |
+| ----------------------- | ---------------------------------- | ----------------- | --------------- | ---------------- | ------------------------- | ---------------- | ---------------------------------------------------------------------------- |
+| Formats                 | 6                                  | DOCX, PPTX only   | XLS, XLSX       | XLS, XLSX        | 6                         | 6                | 6 (DOC from 0.8.6)                                                           |
+| Kami-Excel fidelity     | LibreOffice                        | —                 | reimplemented   | spill breaks     | LibreOffice               | LibreOffice      | borders, merges and distributed alignment as original (alignment from 0.8.6) |
+| Japanese                | Tofu (fonts to add)                | OK                | OK              | OK               | OK                        | OK               | the device's fonts (MS Mincho on Windows)                                    |
+| Closed network, private | OK if self-hosted                  | OK                | OK              | OK               | OK                        | OK               | OK (self-hosted)                                                             |
+| Client cost             | 50 MB (cached 20 min), 1 GB memory | 50 KB–450 KB      | a grid          | huge DOM         | pdf.js                    | iframe           | 16 MB first time, 200–1,100 MB, WebGPU or WebGL2                             |
+| Effect on the page      | COOP/COEP on the top level         | sandboxed iframe  | none            | sandboxed iframe | none                      | none             | none (iframe, CSP narrows fetches)                                           |
+| Server cost             | None (CDN) / 250 MB static         | none              | reader work     | image +1.1 GB    | image +1.1 GB, conversion | one more service | none (63 MB static)                                                          |
+| Distribution terms      | Beta, undecided                    | Apache-2.0        | —               | MPL-2.0          | MPL-2.0                   | MPL-2.0          | AGPL-3.0 / commercial, v0.8.x                                                |
 
 With XLS and XLSX at 99.9 %, C is no answer. None of B's premises is light. D and E fail the
 fidelity of §2. F keeps its cost on the server and fits the same "interpretation artifact" as the
@@ -452,9 +453,10 @@ other formats. G is the next step if F proves insufficient.
 I removes all of F's costs (image +1.1 GB, per-version conversion and PDFs, isolating the
 conversion). On a device with a real GPU it draws tables and documents in about a second and
 scrolls smoothly, and on Windows the Japanese text comes out in the real MS typefaces. Devices
-without a GPU still draw through WebGL2, and tables and documents remain usable. In exchange,
-DOC does not open, distributed alignment is lost, and half-width letters and digits are drawn in a substitute
-typeface. Rendering fidelity and the view-only polish (the info bar in §I) are left to an upstream
+without a GPU still draw through WebGL2, and tables and documents remain usable. In 0.8.4, as
+measured, DOC did not open, distributed alignment was lost and half-width letters and digits came out in a
+substitute typeface; 0.8.6 fixed DOC and the alignment, and the
+half-width typeface in XLSX (what remains in DOCX is open question 1). Rendering fidelity and the view-only polish (the info bar in §I) are left to an upstream
 project two weeks old.
 
 I is adopted. F's hard part — opening untrusted documents on the server — disappears by
@@ -608,7 +610,7 @@ without `eval`. The defence therefore rests not on a short import list but on th
 
 ### 3. The "Original" tab is ibisOffice by default, and only one runs at a time
 
-The "Original" tab for XLSX, XLS, DOCX, PPTX and PPT becomes ibisOffice. The viewer that draws the
+The "Original" tab for XLSX, XLS, DOCX, DOC, PPTX and PPT becomes ibisOffice. The viewer that draws the
 original is chosen with the web environment variable `OFFICE_PREVIEW_VIEWER`.
 
 | Value                   | Draws the original              |
@@ -619,12 +621,12 @@ original is chosen with the web environment variable `OFFICE_PREVIEW_VIEWER`.
 It is a value rather than a switch so that another renderer (F's PDF, say) only needs another
 value. Office Online Viewer gets no switch of its own: with `ibis-office` it is not used, so a
 closed network never sends anything out to it. Existing sites switch to ibisOffice by default on
-upgrade (public DOC files lose their original view), which the release notes must say.
+upgrade (with 0.8.5, public DOC files lost their original view; 0.8.6 brought it back), which the
+release notes must say.
 
 | Format                                     | `ibis-office` (default)              | `office-online` |
 | ------------------------------------------ | ------------------------------------ | --------------- |
-| XLSX, XLS, DOCX, PPTX, PPT                 | Original: ibisOffice; extracted text | as today        |
-| DOC                                        | extracted text and the download      | as today        |
+| XLSX, XLS, DOCX, DOC, PPTX, PPT            | Original: ibisOffice; extracted text | as today        |
 | Documents failing the pre-check            | extracted text and the download      | as today        |
 | Link resources whose file was never stored | extracted text (if any) and the link | as today        |
 
@@ -744,16 +746,20 @@ LibreOffice is not added to the worker image, and the implementation that assume
   a Lambda response
 - **api, worker**: no change (`/preview` stays as it is)
 - **Docs**: the administrator guide (setting `OFFICE_PREVIEW_VIEWER`, supported
-  browsers), the release notes (the default becomes ibisOffice; public DOC files lose
-  their original view), the matrix in CLAUDE.md (the preview column), third-party notices
+  browsers), the release notes (the default becomes ibisOffice; DOC returns to the
+  original view with 0.8.6), the matrix in CLAUDE.md (the preview column), third-party notices
 
 ## Open questions
 
 1. **Upstream gaps**: DOC does not open (ibisjp/ibis-office#71); DOCX shows the viewing-mode info
    bar even with `view=1` (ibisjp/ibis-office#72); half-width letters and digits come out in IBM
    Plex Sans (ibisjp/ibis-office#73); distributed alignment has no effect (ibisjp/ibis-office#75).
-   Raise the version as they are
-   fixed; once #71 lands, move DOC to the "Original" tab too
+   The version was raised to 0.8.6 and DOC moved to the "Original" tab. Checked on screen, two gaps
+   remain. DOC and older DOCX files still show the compatibility-mode info bar ("Convert to the
+   latest format") with `view=1` (ibisjp/ibis-office#139). Half-width letters and digits take the
+   given typeface in XLSX, but in DOCX only serif faces do; sans-serif and monospace faces still come
+   out in the substitute (findings added to ibisjp/ibis-office#126). DOC's layout is not yet as
+   accurate as DOCX's (upstream says it keeps improving it)
 2. **View-only polish**: even with `view=1`, the spreadsheet's "+" (add sheet) and the slides'
    notes pane show. A view-only build (a smaller WASM without the editing features) would also cut
    the transfer. Request it after watching upstream for a while
