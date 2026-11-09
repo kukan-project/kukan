@@ -114,6 +114,15 @@ describe('detectEncoding', () => {
     expect(detectEncoding('xml', Buffer.from('<?xml version="1.0"?><root/>'))).toBe('UTF-8')
   })
 
+  it('should fall back to UTF-8 for an XML declaration naming no encoding', () => {
+    const buf = Buffer.from('<?xml version="1.0" encoding="x-evil"?><root/>')
+    expect(detectEncoding('xml', buf)).toBe('UTF-8')
+  })
+
+  it('should read a buffer as UTF-8 under a stored name no decoder knows', () => {
+    expect(bufferToUtf8(Buffer.from('é'), 'x-evil')).toBe('é')
+  })
+
   it('should preserve original case in XML encoding declaration', () => {
     const buf = Buffer.from('<?xml version="1.0" encoding="shift_jis"?><root/>')
     expect(detectEncoding('xml', buf)).toBe('shift_jis')

@@ -288,12 +288,22 @@ describe('PostgresJobQueue', () => {
     expect(seen.sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, n) => n))
   })
 
-  it('deletes a job of a type it has no handler for', async () => {
-    await newQueue().enqueue('unknown', {})
-    await newQueue().process({})
+  // `constructor` is found on any object's prototype, and would have run as a handler
+  it.each(['unknown', 'constructor'])(
+    'deletes a job of a type it has no handler for (%s)',
+    async (type) => {
+      const warn = vi.spyOn(logger, 'warn')
+      await newQueue().enqueue(type, {})
+      await newQueue().process({})
 
-    await vi.waitFor(async () => expect(await rows()).toHaveLength(0))
-  })
+      await vi.waitFor(async () => expect(await rows()).toHaveLength(0))
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ type }),
+        'Unknown job type, deleting'
+      )
+      warn.mockRestore()
+    }
+  )
 
   it('sends one signal at a time from a writer, and one more after a burst', async () => {
     let release!: () => void

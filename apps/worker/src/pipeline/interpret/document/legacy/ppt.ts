@@ -179,7 +179,10 @@ function texts(stream: Buffer, container: PptRecord, budget: { records: number }
     if (record.type === TEXT_CHARS_ATOM || record.type === TEXT_BYTES_ATOM) {
       found.push(textOf(stream, record))
     } else if (record.container) {
-      pending.push(...children(stream, record, budget).reverse())
+      // Pushed one at a time: spread into arguments, a container of some
+      // hundred thousand empty atoms overflows the stack
+      const inside = children(stream, record, budget)
+      for (let i = inside.length - 1; i >= 0; i--) pending.push(inside[i]!)
     }
   }
   return found

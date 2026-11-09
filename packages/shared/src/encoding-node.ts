@@ -6,6 +6,7 @@
 
 import chardet from 'chardet'
 import Encoding from 'encoding-japanese'
+import { isEncodingLabel } from './formats'
 
 const AUTO_DETECT_FORMATS = new Set(['csv', 'tsv', 'txt', 'text', 'html', 'htm'])
 
@@ -115,12 +116,13 @@ function evidenceIn(buffer: Buffer): Buffer {
 
 /**
  * Parse encoding from XML declaration (<?xml ... encoding="..." ?>).
- * Returns IANA encoding name, or 'UTF-8' if no declaration.
+ * Returns the name as declared, or 'UTF-8' if there is none or it names no
+ * encoding a decoder knows — the file says it, so it is anyone's to write.
  */
 function parseXmlDeclaredEncoding(buffer: Buffer): string {
   const head = buffer.subarray(0, 200).toString('ascii')
-  const match = head.match(/<\?xml[^?]*encoding=["']([^"']+)["']/)
-  return match ? match[1] : 'UTF-8'
+  const declared = head.match(/<\?xml[^?]*encoding=["']([^"']+)["']/)?.[1]
+  return declared && isEncodingLabel(declared) ? declared : 'UTF-8'
 }
 
 /** Map legacy encoding-japanese names to IANA names for TextDecoder */
@@ -144,8 +146,8 @@ export function bufferToUtf8(buf: Buffer, encoding: string): string {
   if (iana === 'utf-8' || iana === 'ascii') {
     return buf.toString('utf-8')
   }
-  const decoder = new TextDecoder(iana)
-  return decoder.decode(buf)
+  // A name no decoder knows, stored before declarations were checked, reads as UTF-8
+  return isEncodingLabel(iana) ? new TextDecoder(iana).decode(buf) : buf.toString('utf-8')
 }
 
 /** Remove a trailing U+FFFD left by cutting a multi-byte character at a

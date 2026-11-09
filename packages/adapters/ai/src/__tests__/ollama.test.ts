@@ -103,6 +103,18 @@ describe('OllamaAdapter', () => {
     await expect(adapter.embed('x')).rejects.toThrow('Ollama embed failed: 404 model not found')
   })
 
+  it("cuts an error response's body short, as a proxy's page would be", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      text: async () => `<html>${'x'.repeat(5000)}</html>`,
+    })
+    const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+    const err = await adapter.embed('x').catch((e: Error) => e)
+    expect((err as Error).message.length).toBeLessThan(300)
+    expect((err as Error).message).toMatch(/^Ollama embed failed: 502 <html>x+…$/)
+  })
+
   it('exposes embedding info as capability', () => {
     const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
     expect(adapter.getEmbeddingInfo()).toEqual({

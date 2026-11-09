@@ -217,12 +217,35 @@ export async function* documentBlocks(
 ): AsyncGenerator<DocumentTextBlock> {
   if (format === 'pdf') yield* pdfBlocks(filePath)
   else if (format === 'xlsx') yield* xlsxBlocks(filePath)
-  else if (format === 'xls') yield* xlsBlocks(filePath)
-  else if (format === 'doc') yield* docBlocks(filePath)
-  else if (format === 'ppt') yield* pptBlocks(filePath)
-  else if (format === 'jtd' || format === 'jtt') yield* jtdBlocks(filePath)
+  else if (format === 'xls') yield* legacyBlocks(format, xlsBlocks(filePath))
+  else if (format === 'doc') yield* legacyBlocks(format, docBlocks(filePath))
+  else if (format === 'ppt') yield* legacyBlocks(format, pptBlocks(filePath))
+  else if (format === 'jtd' || format === 'jtt') yield* legacyBlocks(format, jtdBlocks(filePath))
   else if (isMarkdownFormat(format)) yield* markdownBlocks(filePath)
   else yield* officeBlocks(filePath)
+}
+
+/**
+ * A binary format's blocks, with a read past the end of a buffer — a record
+ * longer than its stream — told as the file being damaged rather than in
+ * Node's words. Any other RangeError is a reader's bug, and goes up as it is.
+ */
+async function* legacyBlocks(
+  format: string,
+  blocks: AsyncGenerator<DocumentTextBlock>
+): AsyncGenerator<DocumentTextBlock> {
+  try {
+    yield* blocks
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code
+    if (code === 'ERR_OUT_OF_RANGE' || code === 'ERR_BUFFER_OUT_OF_BOUNDS') {
+      throw new Error(
+        `${format.toUpperCase()} is damaged: a record runs past the end of its stream`,
+        { cause: err }
+      )
+    }
+    throw err
+  }
 }
 
 /**

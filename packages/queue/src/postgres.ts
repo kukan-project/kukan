@@ -508,7 +508,8 @@ export class PostgresJobQueue implements JobQueue {
 
   async process(handlers: Handlers): Promise<void> {
     if (this.handlers) throw new Error('PostgresJobQueue.process() already running')
-    this.handlers = handlers
+    // No prototype: a type named `constructor` or `toString` finds no handler
+    this.handlers = Object.assign(Object.create(null) as Handlers, handlers)
     // What was written while no worker was up — its signals went nowhere
     this.requestPass()
   }

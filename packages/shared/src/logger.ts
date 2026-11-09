@@ -45,6 +45,9 @@ export const LOG_REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers["x-kukan-api-key"]',
   'req.headers["x-ckan-api-key"]',
+  // An SDK's error carries the response's headers — an AI provider's org and
+  // project ids among them — and an error is logged whole as `err`
+  'err.headers',
 ]
 
 /** One pino-pretty worker thread, shared by every logger in the process. */

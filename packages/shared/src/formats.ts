@@ -201,12 +201,16 @@ export function toCharset(encoding: string): string {
   const lower = encoding.toLowerCase()
   if (lower === 'ascii') return 'utf-8'
   if (!lower) return 'utf-8'
-  // Validate against WHATWG encoding labels via TextDecoder
+  return isEncodingLabel(lower) ? lower : 'utf-8'
+}
+
+/** Whether `label` names an encoding a TextDecoder knows (a WHATWG label). */
+export function isEncodingLabel(label: string): boolean {
   try {
-    new TextDecoder(lower)
-    return lower
+    new TextDecoder(label)
+    return true
   } catch {
-    return 'utf-8'
+    return false
   }
 }
 

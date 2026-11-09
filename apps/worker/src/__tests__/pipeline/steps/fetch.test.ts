@@ -306,18 +306,20 @@ describe('executeFetch', () => {
     fetchSpy.mockRestore()
   })
 
-  it('should throw when streaming size exceeds limit', async () => {
-    // Create a response that streams more than 100MB without Content-Length
+  it('refuses a body that streams past the limit, and lets go of the response', async () => {
+    // Never closed: the body would go on until the request's own timeout
+    const cancel = vi.fn()
     const bigChunk = Buffer.alloc(60 * 1024 * 1024, 'x')
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(bigChunk)
-        controller.enqueue(bigChunk) // total = 120MB > 100MB
-        controller.close()
+        controller.enqueue(bigChunk)
       },
+      cancel,
     })
-    const mockResponse = new Response(stream, { status: 200 })
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(stream, { status: 200 }))
 
     const ctx = createMockCtx()
     vi.mocked(ctx.getResource).mockResolvedValue(
@@ -325,6 +327,28 @@ describe('executeFetch', () => {
     )
 
     await expect(executeFetch('res-1', ctx)).rejects.toThrow('100MB limit')
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+
+    fetchSpy.mockRestore()
+  })
+
+  it('fails rather than waits when the body is cut off mid-way', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(Buffer.from('id,name\n'))
+        controller.error(new Error('socket hang up'))
+      },
+    })
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(stream, { status: 200 }))
+
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/cut.csv' })
+    )
+
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('socket hang up')
 
     fetchSpy.mockRestore()
   })

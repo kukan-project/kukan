@@ -239,6 +239,24 @@ describe('the run record', () => {
     expect((await pipelineRow()).status).toBe('processing')
   })
 
+  it('records a long error cut short, on the run and on its step alike', async () => {
+    const tracker = new StepTracker(db, claim)
+    await tracker.beginRun()
+    const stepId = await tracker.startStep('fetch')
+    // A response body in the message, with a pair from outside the BMP across the cut
+    const error = `${'x'.repeat(999)}😀${'y'.repeat(5000)}`
+
+    await tracker.updateStatus('error', error)
+    await tracker.failStep(stepId, error)
+
+    const [step] = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.id, stepId))
+    expect(step.error).toBe(`${'x'.repeat(999)}…`)
+    expect((await pipelineRow()).error).toBe(`${'x'.repeat(999)}…`)
+  })
+
   it('does not clear the steps of the run that displaced it', async () => {
     // A data-modifying CTE runs whether or not the primary statement matches,
     // so the delete has to hang off the update rather than stand beside it.

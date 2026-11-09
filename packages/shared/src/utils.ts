@@ -19,3 +19,10 @@ export function isUuid(value: string): boolean {
 export function escapeLike(value: string): string {
   return value.replace(/[%_\\]/g, '\\$&')
 }
+
+/** `text` cut to `max` characters and marked as cut, short of a surrogate pair it would split. */
+export function clipText(text: string, max: number): string {
+  if (text.length <= max) return text
+  const high = text.charCodeAt(max - 1)
+  return `${text.slice(0, high >= 0xd800 && high <= 0xdbff ? max - 1 : max)}…`
+}

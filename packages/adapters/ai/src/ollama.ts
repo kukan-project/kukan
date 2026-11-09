@@ -12,6 +12,7 @@ import {
   EmbeddingInfo,
   resolveCompletionModels,
 } from './adapter'
+import { clipText } from '@kukan/shared'
 
 export interface OllamaConfig {
   baseUrl: string
@@ -72,8 +73,7 @@ export class OllamaAdapter implements AIAdapter {
       ...(options?.timeoutMs && { signal: AbortSignal.timeout(options.timeoutMs) }),
     })
     if (!response.ok) {
-      const detail = await response.text().catch(() => '')
-      throw new Error(`Ollama chat failed: ${response.status} ${detail}`)
+      throw new Error(`Ollama chat failed: ${response.status} ${await errorDetail(response)}`)
     }
     const payload = (await response.json()) as {
       message?: { content?: string }
@@ -116,8 +116,7 @@ export class OllamaAdapter implements AIAdapter {
       ...(options?.timeoutMs && { signal: AbortSignal.timeout(options.timeoutMs) }),
     })
     if (!response.ok) {
-      const detail = await response.text().catch(() => '')
-      throw new Error(`Ollama embed failed: ${response.status} ${detail}`)
+      throw new Error(`Ollama embed failed: ${response.status} ${await errorDetail(response)}`)
     }
     const payload = (await response.json()) as {
       embeddings: number[][]
@@ -146,4 +145,12 @@ export class OllamaAdapter implements AIAdapter {
     if (!type || !/(^|[/-])e5\b|multilingual-e5/.test(this.embeddingModel)) return text
     return type === 'query' ? `query: ${text}` : `passage: ${text}`
   }
+}
+
+/**
+ * The start of an error response's body. A proxy in front of Ollama answers
+ * with a page of its own, and the message is shown to editors.
+ */
+async function errorDetail(response: Response): Promise<string> {
+  return clipText(await response.text().catch(() => ''), 200)
 }

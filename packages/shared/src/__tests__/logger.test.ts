@@ -3,18 +3,24 @@ import { describe, it, expect } from 'vitest'
 import pino from 'pino'
 import { createLogger, LOG_REDACT_PATHS } from '../logger'
 
+/** A logger with the redactions, and the lines it writes. */
+function capture() {
+  const lines: string[] = []
+  const log = pino(
+    { redact: LOG_REDACT_PATHS },
+    new Writable({
+      write(chunk, _encoding, callback) {
+        lines.push(String(chunk))
+        callback()
+      },
+    })
+  )
+  return { log, lines }
+}
+
 describe('LOG_REDACT_PATHS', () => {
   it('censors credentials at the top level, one level down and in request headers', () => {
-    const lines: string[] = []
-    const log = pino(
-      { redact: LOG_REDACT_PATHS },
-      new Writable({
-        write(chunk, _encoding, callback) {
-          lines.push(String(chunk))
-          callback()
-        },
-      })
-    )
+    const { log, lines } = capture()
     log.info({
       password: 'secret-password-0',
       'x-kukan-api-key': 'secret-token-2',
@@ -49,6 +55,22 @@ describe('LOG_REDACT_PATHS', () => {
     }
     expect(line.headers).toEqual(headers)
     expect(line.req).toEqual({ method: 'GET', headers })
+    expect(lines[0]).not.toContain('secret-')
+  })
+
+  it("censors the headers an SDK's error carries", () => {
+    const { log, lines } = capture()
+    const err = Object.assign(new Error('429 Rate limit'), {
+      status: 429,
+      headers: { 'openai-organization': 'secret-org-0' },
+    })
+    log.warn({ err }, 'completion failed')
+    const line = JSON.parse(lines[0])
+    expect(line.err).toMatchObject({
+      message: '429 Rate limit',
+      status: 429,
+      headers: '[Redacted]',
+    })
     expect(lines[0]).not.toContain('secret-')
   })
 })

@@ -5,7 +5,7 @@
  */
 
 import { createHash, randomUUID } from 'crypto'
-import { Transform, Readable } from 'stream'
+import { Transform, Readable, pipeline } from 'stream'
 import {
   KukanError,
   PayloadTooLargeError,
@@ -204,7 +204,9 @@ async function downloadToStorage(
     },
   })
 
-  const stream = readable.pipe(meter)
+  // Not `pipe`, which passes errors neither way: over the limit the response
+  // would hold its socket, and a body cut off would leave the upload waiting
+  const stream = pipeline(readable, meter, () => {})
   await ctx.putObject(storageKey, stream)
 
   return {

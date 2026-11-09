@@ -19,8 +19,15 @@ import type {
   PipelineStepName,
   TableProfile,
 } from '@kukan/shared'
+import { clipText } from '@kukan/shared'
 import { heldBy, stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { PARKED_UNTIL } from '@kukan/api/services/pipeline/storage-pointer'
+
+/** A failure's error as recorded, at most: enough to say what went wrong. */
+const ERROR_MAX_CHARS = 1_000
+
+/** `error` as editors are shown it, on the run and its steps: it can carry a whole response body. */
+const shownError = (error: string) => clipText(error, ERROR_MAX_CHARS)
 
 /**
  * The run no longer holds its resource: something killed it, or took it over
@@ -93,7 +100,7 @@ export class StepTracker {
   async updateStatus(status: PipelineStatus, error?: string) {
     await this.db
       .update(resourcePipeline)
-      .set({ status, error: error ?? null, updated: sql`NOW()` })
+      .set({ status, error: error === undefined ? null : shownError(error), updated: sql`NOW()` })
       .where(this.held)
   }
 
@@ -272,7 +279,7 @@ export class StepTracker {
 
   /** Mark a step as failed. */
   async failStep(stepId: string, error: string) {
-    await this.settleStep(stepId, 'error', error)
+    await this.settleStep(stepId, 'error', shownError(error))
   }
 
   /** Mark a step as skipped. */
