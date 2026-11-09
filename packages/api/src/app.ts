@@ -16,6 +16,7 @@ import { isRegistrationAllowed } from './services/bootstrap'
 import { SystemSettingService } from './services/system-setting'
 import { optionalAuth } from './middleware/auth'
 import { authSurface } from './middleware/auth-surface'
+import { refuseCrossSite } from './middleware/cross-site'
 import { limitBody } from './middleware/body-limit'
 import { cacheControl, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
@@ -148,6 +149,9 @@ export async function createApp() {
       ? 'odata feed capacity from host memory; no container memory limit was found'
       : 'odata feed capacity'
   )
+
+  // Better Auth checks its own requests' origin; the rest are checked here
+  app.use('*', refuseCrossSite(trustedOrigins))
 
   // Auth middleware for non-auth routes
   app.use('*', optionalAuth(auth))

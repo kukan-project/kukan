@@ -27,6 +27,8 @@ export interface OpenDuckdbOptions {
    * spill anyway.
    */
   spill: string | null
+  /** How much it may spill, at most. DuckDB's default is 90% of the free disk. */
+  maxSpillBytes?: number
 }
 
 export interface DuckdbHandle {
@@ -60,6 +62,9 @@ export async function openDuckdb(opts: OpenDuckdbOptions): Promise<DuckdbHandle>
       memory_limit: `${Math.trunc(opts.memoryLimitBytes)}B`,
     }),
     ...(opts.threads !== undefined && { threads: String(Math.trunc(opts.threads)) }),
+    ...(opts.maxSpillBytes !== undefined && {
+      max_temp_directory_size: `${Math.trunc(opts.maxSpillBytes)}B`,
+    }),
   })
   let conn: DuckDBConnection | undefined
   let dropTempDir: () => Promise<void> = async () => {}

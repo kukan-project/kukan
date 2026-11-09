@@ -24,6 +24,7 @@ import {
   sqlLiteral,
   usesCredentialChain,
 } from '@kukan/lake'
+import { WEB_DUCKDB_MAX_SPILL_BYTES } from '../../config'
 
 /** Whether the location is read over S3 rather than from this filesystem. */
 export function isS3Location(location: string): boolean {
@@ -55,6 +56,7 @@ export async function prepareFeedInstance(opts: SessionOptions): Promise<DuckdbH
     memoryLimitBytes: opts.memoryLimitBytes,
     threads: 1,
     spill: overS3 ? null : 'odata',
+    maxSpillBytes: WEB_DUCKDB_MAX_SPILL_BYTES,
   })
   const { conn } = handle
   try {

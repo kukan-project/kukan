@@ -25,6 +25,7 @@ import {
   type SectionPosition,
 } from '../document-text'
 import { Semaphore } from '../concurrency/semaphore'
+import { CallerLimit, type Caller } from '../concurrency/caller-limit'
 import { mapWithConcurrency } from '../concurrency/map-with-concurrency'
 import { hybridSearch, type HybridSearchDeps } from './hybrid-search'
 import {
@@ -37,6 +38,7 @@ import {
   type PassageFinder,
 } from './passage-text'
 import {
+  PASSAGE_CALLER_MAX,
   PASSAGE_CANDIDATE_RESOURCES,
   PASSAGE_DATASETS,
   PASSAGE_DEFAULT_K,
@@ -74,6 +76,8 @@ export interface PassageSearchQuery {
   perResource?: number
   /** false leaves the vector leg out of the first stage */
   semantic?: boolean
+  /** Who is asking, for their share of the searches in flight (none: uncapped) */
+  caller?: Caller
 }
 
 /** A resource a passage is from, with what a citation of it needs. */
@@ -135,6 +139,11 @@ const passageSemaphore = new Semaphore(
     // A turn reads a handful of documents' text: seconds at most
     retryAfterSeconds: 1,
   }
+)
+
+const passageCallerLimit = new CallerLimit(
+  'Too many passage searches from this caller at once; wait for one to finish',
+  1
 )
 
 /** Run `fn` holding a turn to read documents' text, released however it ends. */
@@ -211,6 +220,18 @@ function readFrom(passage: CutPassage): SectionPosition {
 }
 
 export async function searchPassages(
+  deps: PassageSearchDeps,
+  query: PassageSearchQuery
+): Promise<PassageSearchResult> {
+  const releaseCaller = passageCallerLimit.enter(query.caller, PASSAGE_CALLER_MAX)
+  try {
+    return await runPassageSearch(deps, query)
+  } finally {
+    releaseCaller()
+  }
+}
+
+async function runPassageSearch(
   deps: PassageSearchDeps,
   query: PassageSearchQuery
 ): Promise<PassageSearchResult> {

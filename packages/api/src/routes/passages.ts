@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { searchPassages } from '../services/search/passage-search'
 import { textVersions } from '../services/document-text'
+import { callerOf } from '../middleware/client-ip'
 import { MCP_SECTION_MAX_CHARS, PASSAGE_MAX_K, PASSAGE_QUERY_MAX_CHARS } from '../config'
 import type { AppContext } from '../context'
 
@@ -53,6 +54,7 @@ passagesRouter.get(
       perResource: per_resource,
       maxChars: max_chars,
       semantic,
+      caller: callerOf(c),
     })
     return c.json({
       passages: result.passages.map((passage) => {

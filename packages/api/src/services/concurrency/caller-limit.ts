@@ -69,6 +69,15 @@ export class CallerLimit {
     }
   }
 
+  /**
+   * {@link acquire} for whoever `caller` is, keyed as {@link callerKey} keys
+   * them. A caller with no key is not counted, and gets a release that does nothing.
+   */
+  enter(caller: Caller | undefined, limit: number): () => void {
+    const key = caller && callerKey(caller)
+    return key ? this.acquire(key, limit) : () => {}
+  }
+
   /** Requests in flight under `key` (for tests / observability). */
   held(key: string): number {
     return this.inFlight.get(key) ?? 0

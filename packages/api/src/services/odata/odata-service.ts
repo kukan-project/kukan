@@ -27,7 +27,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ResourceService } from '../resource-service'
 import { PipelineService, isQueryable } from '../pipeline/pipeline-service'
 import { Semaphore } from '../concurrency/semaphore'
-import { CallerLimit, callerKey } from '../concurrency/caller-limit'
+import { CallerLimit } from '../concurrency/caller-limit'
 import type { EdmModel, EdmRefusal } from './edm'
 import { feedModel, feedRefusal, isEdmRefusal } from './feed-eligibility'
 import { capacity } from './capacity'
@@ -334,8 +334,7 @@ export class OdataService {
   ): Promise<PageReader> {
     const previewKey = feed.previewKey
     // Counted before the queue, so a caller's share covers its waiting pages
-    const key = callerKey({ ip: opts.ip })
-    const releaseCaller = key ? odataCallerLimit.acquire(key, ODATA_CALLER_MAX) : () => {}
+    const releaseCaller = odataCallerLimit.enter({ ip: opts.ip }, ODATA_CALLER_MAX)
     try {
       await odataSemaphore.acquire(opts.signal)
     } catch (err) {
@@ -344,6 +343,7 @@ export class OdataService {
     }
     const startedAt = Date.now()
     let lease: FeedLease | undefined
+    let acquiring: Promise<FeedLease> | undefined
     let timer: NodeJS.Timeout | undefined
     let timedOut = false
     let drained = false
@@ -375,19 +375,27 @@ export class OdataService {
     try {
       const location = this.storage.readUrl(previewKey)
 
-      lease = await feedPool.acquire({
+      // The timeout covers the whole read, not just its start: a page that
+      // stalls half way holds the slot as surely as one that never begins. It
+      // covers preparing an instance too, whose credential chain asks the
+      // container's credentials endpoint — a stall there would hold the slot
+      // with no timer running.
+      const expired = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true
+          lease?.conn.interrupt()
+          reject(timeoutError())
+        }, ODATA_READ_TIMEOUT_MS)
+      })
+      expired.catch(() => {})
+      acquiring = feedPool.acquire({
         location,
         env: this.env,
         memoryLimitBytes: ODATA_MEMORY_LIMIT_BYTES,
         readTimeoutMs: ODATA_READ_TIMEOUT_MS,
       })
+      lease = await Promise.race([acquiring, expired])
       const conn = lease.conn
-      // The timeout covers the whole read, not just its start: a page that
-      // stalls half way holds the slot as surely as one that never begins.
-      timer = setTimeout(() => {
-        timedOut = true
-        conn.interrupt()
-      }, ODATA_READ_TIMEOUT_MS)
 
       // Asked of the file where the interpretation did not record it: such a
       // preview is otherwise paged as if every page straddled a group — half the
@@ -440,7 +448,20 @@ export class OdataService {
 
       return { columns, limit, chunks, close }
     } catch (err) {
-      await close()
+      if (timedOut && !lease && acquiring) {
+        // Still being prepared: the slot and the caller's count stay held until
+        // it lands — released now, a stalled credentials endpoint would have
+        // every retry prepare another instance beside it. It ran nothing, so it
+        // goes back to the pool for the retry.
+        void acquiring
+          .then(
+            (late) => late.release(true),
+            () => {}
+          )
+          .finally(close)
+      } else {
+        await close()
+      }
       if (timedOut) throw timeoutError()
       throw refusalIfTooWide(err) ?? err
     }

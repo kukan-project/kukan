@@ -9,3 +9,6 @@
  * since anywhere else a client could send it and pick its own bucket.
  */
 export const EDGE_CLIENT_IP_HEADER = 'x-kukan-client-ip'
+
+/** The headers `CLIENT_IP_HEADER` may name. */
+export const CLIENT_IP_HEADERS = ['x-forwarded-for', EDGE_CLIENT_IP_HEADER] as const

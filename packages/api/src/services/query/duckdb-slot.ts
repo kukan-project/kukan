@@ -6,7 +6,7 @@ import {
   QUERY_QUEUE_MAX,
   QUERY_QUEUE_WAIT_MS,
 } from '../../config'
-import { CallerLimit, callerKey, type Caller } from '../concurrency/caller-limit'
+import { CallerLimit, type Caller } from '../concurrency/caller-limit'
 import { Semaphore } from '../concurrency/semaphore'
 
 export type { Caller } from '../concurrency/caller-limit'
@@ -63,13 +63,10 @@ export async function withDuckdbSlot<T>(
   signal?: AbortSignal,
   caller?: Caller
 ): Promise<T> {
-  const key = caller && callerKey(caller)
-  const releaseCaller = key
-    ? queryCallerLimit.acquire(
-        key,
-        caller.userId ? QUERY_CALLER_MAX_SIGNED_IN : QUERY_CALLER_MAX_ANONYMOUS
-      )
-    : () => {}
+  const releaseCaller = queryCallerLimit.enter(
+    caller,
+    caller?.userId ? QUERY_CALLER_MAX_SIGNED_IN : QUERY_CALLER_MAX_ANONYMOUS
+  )
   try {
     await duckdbSemaphore.acquire(signal, { priority: caller?.userId ? 'high' : 'normal' })
     try {

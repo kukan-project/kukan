@@ -25,6 +25,8 @@ export const LAKE_DATA_PREFIX = 'lake/'
 export interface LakeLimits {
   memoryLimitMb: number
   threads: number
+  /** Spill at most; unset leaves DuckDB's default (see `OpenDuckdbOptions`) */
+  maxSpillBytes?: number
 }
 
 export interface LakeConfig {

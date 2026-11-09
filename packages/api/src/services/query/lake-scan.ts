@@ -24,7 +24,12 @@ import { lakeConfigFromEnv, openBucketSession, openLakeCatalogReader } from '@ku
 import type { Env } from '@kukan/shared'
 import { RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
 import { withDuckdbSlot, type Caller } from './duckdb-slot'
-import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../../config'
+import {
+  QUERY_MEMORY_LIMIT_MB,
+  QUERY_THREADS,
+  QUERY_TIMEOUT_MS,
+  WEB_DUCKDB_MAX_SPILL_BYTES,
+} from '../../config'
 
 /**
  * The web's lake, bounded like the scans below — the only reason it opens
@@ -34,6 +39,7 @@ export function webLakeConfig(env: Env): LakeConfig {
   return lakeConfigFromEnv(env, {
     memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
     threads: QUERY_THREADS,
+    maxSpillBytes: WEB_DUCKDB_MAX_SPILL_BYTES,
   })
 }
 

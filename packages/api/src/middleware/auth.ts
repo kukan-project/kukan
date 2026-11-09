@@ -12,6 +12,12 @@ import { UnauthorizedError, SESSION_COOKIE_NAME, SysadminRequiredError } from '@
 import type { Auth } from '../auth/auth'
 import { ApiTokenService } from '../services/api-token-service'
 
+/** Whether the request carries a session cookie — under the `__Secure-` prefix on HTTPS. */
+export function hasSessionCookie(c: Context): boolean {
+  // The unprefixed name is contained in the prefixed one, so one test finds either
+  return (c.req.header('cookie') ?? '').includes(SESSION_COOKIE_NAME)
+}
+
 /** Sign the request in as the user `rawToken` belongs to, when it is a live token. */
 async function authenticateToken(c: Context, rawToken: string): Promise<void> {
   try {
@@ -39,13 +45,7 @@ async function authenticateToken(c: Context, rawToken: string): Promise<void> {
 export function optionalAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
     // 1. Check for Better Auth session cookie
-    const cookieHeader = c.req.header('cookie') ?? ''
-    // Better Auth uses __Secure- prefix on HTTPS (production)
-    const hasCookie =
-      cookieHeader.includes(`__Secure-${SESSION_COOKIE_NAME}`) ||
-      cookieHeader.includes(SESSION_COOKIE_NAME)
-
-    if (hasCookie) {
+    if (hasSessionCookie(c)) {
       try {
         const session = await auth.api.getSession({
           headers: c.req.raw.headers,

@@ -148,6 +148,7 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
     memoryLimitBytes: config.limits.memoryLimitMb * 1_000_000,
     threads: config.limits.threads,
     spill: 'lake',
+    maxSpillBytes: config.limits.maxSpillBytes,
   })
   spills.track(instance, dropTempDir)
 

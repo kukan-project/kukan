@@ -54,6 +54,15 @@ export const UPLOAD_URL_EXPIRES_S = 15 * 60
 export const QUERY_MEMORY_LIMIT_MB = 256
 
 /**
+ * What one of the web's DuckDB instances may spill to disk — a query's, a feed
+ * page's, or the lake's, which this process's lake reads take turns on. DuckDB's
+ * default is 90% of the free disk. A query at QUERY_MEMORY_LIMIT_MB that needs
+ * more within QUERY_TIMEOUT_MS is not one to serve; the worker, whose large CSVs
+ * spill as a matter of course, is left uncapped.
+ */
+export const WEB_DUCKDB_MAX_SPILL_BYTES = 4 * 1024 ** 3
+
+/**
  * What one query slot costs the container at its worst: the budget a slot is
  * counted at, beside the feed's (`services/odata/capacity.ts`).
  *
@@ -636,6 +645,12 @@ export const PASSAGE_SCAN_MAX_PASSAGES = 200
 export const PASSAGE_MAX_CONCURRENT = 2
 export const PASSAGE_QUEUE_MAX = 8
 export const PASSAGE_QUEUE_WAIT_MS = 10_000
+
+/** Passage searches one caller may have in flight, counted from the first
+ *  stage's embedding call to the last read: as many as read at once, so one
+ *  caller can hold the turns but not the queue behind them. One figure for
+ *  everyone — unlike queries, no signed-in caller goes ahead here */
+export const PASSAGE_CALLER_MAX = PASSAGE_MAX_CONCURRENT
 
 /** Documents one passage search reads at a time */
 export const PASSAGE_READS_PER_SEARCH = 4

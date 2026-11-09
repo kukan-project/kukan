@@ -23,6 +23,7 @@ import {
 } from '@kukan/lake'
 import type { DuckDBPreparedStatement } from '@duckdb/node-api'
 import { assertReadOnlySql, READ_ONLY_MESSAGE, SINGLE_STATEMENT_MESSAGE } from './sql-guard'
+import { WEB_DUCKDB_MAX_SPILL_BYTES } from '../../config'
 
 export interface SandboxLimits {
   maxRows: number
@@ -157,6 +158,7 @@ export async function runSandboxedQuery(
     memoryLimitBytes: limits.memoryLimitMb * 1_000_000,
     threads: limits.threads,
     spill: 'query',
+    maxSpillBytes: WEB_DUCKDB_MAX_SPILL_BYTES,
   })
   let timer: NodeJS.Timeout | undefined
   let timedOut = false

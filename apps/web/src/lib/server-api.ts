@@ -9,9 +9,19 @@ import { createSiteMetadata, type SiteMetadata } from './site-metadata'
  * Calls Hono app.request() directly (no HTTP hop).
  */
 export async function serverFetch(path: string, init?: RequestInit) {
-  const { cookies } = await import('next/headers')
+  const { cookies, headers } = await import('next/headers')
   const { getApp } = await import('./hono-app')
-  const { SESSION_COOKIE_NAME } = await import('@kukan/shared')
+  const { SESSION_COOKIE_NAME, CLIENT_IP_HEADERS } = await import('@kukan/shared')
+
+  // The viewer's address, for the API's per-caller limits: an in-process call
+  // has none of its own. Every header CLIENT_IP_HEADER may name, so the API
+  // reads the one it is set to.
+  const incoming = await headers()
+  const clientIp: Record<string, string> = {}
+  for (const name of CLIENT_IP_HEADERS) {
+    const value = incoming.get(name)
+    if (value) clientIp[name] = value
+  }
 
   const cookieStore = await cookies()
   // Better Auth uses __Secure- prefix on HTTPS (production)
@@ -26,6 +36,7 @@ export async function serverFetch(path: string, init?: RequestInit) {
   return app.request(url, {
     ...init,
     headers: {
+      ...clientIp,
       ...init?.headers,
       ...(sessionToken && {
         Cookie: `${cookieName}=${sessionToken.value}`,

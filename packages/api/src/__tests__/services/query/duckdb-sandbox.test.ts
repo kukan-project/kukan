@@ -42,6 +42,15 @@ describe('runSandboxedQuery', () => {
     expect(res.rows[0].c).toBe(100)
   })
 
+  it('spills no more than WEB_DUCKDB_MAX_SPILL_BYTES (4 GiB)', async () => {
+    const res = await runSandboxedQuery(
+      fixture,
+      `SELECT current_setting('max_temp_directory_size') AS v`,
+      LIMITS
+    )
+    expect(res.rows[0].v).toBe('4.0 GiB')
+  })
+
   it('spills somewhere of its own, and takes it away after', async () => {
     // DuckDB names a spill file after the block size, not the instance, so two
     // instances sharing a directory read each other's bytes and both fail. This

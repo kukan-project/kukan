@@ -49,6 +49,8 @@ import {
 type DocumentToolsContext = PassageSearchDeps & {
   env: Env
   user?: AuthUser
+  /** Where an anonymous request came from, for the passage search's per-caller share */
+  clientIp?: string
 }
 
 /** `5`, or `5–60`. */
@@ -520,6 +522,7 @@ export function registerDocumentTools(server: McpServer, ctx: DocumentToolsConte
         k,
         perResource: per_resource,
         maxChars: max_chars,
+        caller: { userId: user?.id, ip: ctx.clientIp },
       })
       if (result.passages.length === 0) {
         return reply([
