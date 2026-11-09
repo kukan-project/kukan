@@ -174,6 +174,8 @@ export const brandConfig: BrandConfig = {
 
 Text fields (`siteName`, `siteDescription`, `copyright`, `logo.alt`, `headerNavExtra[].label`, `footerLinks[].label`) accept either a plain string or a locale map (e.g. `{ ja: '利用規約', en: 'Terms of Use' }`). A plain string applies to all locales; a map follows locale switching. Missing locales fall back to English (the default locale), then to any defined entry.
 
+#### Search Engine Output
+
 `noindex` is a switch for staging or private deployments that should stay out of search engines. It does not turn crawlers away from the whole site in robots.txt (that would keep them from ever seeing the meta tag). To restrict access itself, combine this with access controls such as Basic auth or IP restrictions.
 
 What the site gives search engines follows `noindex` as below. No Search Console registration is needed: the major engines find the sitemap from the `Sitemap:` line in robots.txt.
@@ -186,6 +188,8 @@ What the site gives search engines follows `noindex` as below. No Search Console
 | List pages with a filter or a search term                             | `noindex, follow`                                                                 | `noindex, nofollow` (every page) |
 
 Whatever `noindex` says, robots.txt turns crawlers away from list queries (`/dataset?`, `/organization?`, `/group?`), `/api/`, `/odata/`, `/dashboard` and `/auth/`. Filter combinations make endless URLs; datasets are reached from the sitemap and from the organization, category and tag pages. The sitemap and robots.txt write their URLs with the origin of `BETTER_AUTH_URL`.
+
+#### Search Example Chips
 
 The example-query chips under the search box are configured from the **admin Site Management page** (`/dashboard/admin/site`), not the brand config. Values you would rather not rebuild for, such as a population and its as-of date, go in Site metadata on the same page ([Reading Site Metadata](#reading-site-metadata)).
 

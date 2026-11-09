@@ -46,6 +46,9 @@ const t = {
     releaseNotes: 'リリースノート',
     switchLang: 'English',
     recent: [
+      { title: 'Office 文書を、閉域網や非公開のサイトでもプレビューできる', doc: { guide: 'system-admin-guide', hash: 'office-文書の原本' } },
+      { title: 'CSP・HSTS・WAF のレート制限で、サイトを堅く守れる', doc: { guide: 'system-admin-guide', hash: 'waf-のレート制限' } },
+      { title: '公開したデータセットが、Google のデータセット検索に載る', doc: { guide: 'system-admin-guide/brand-customization', hash: '検索エンジン向けの出力' } },
       { title: 'MCP 経由の RAG で、文書の章・節・ページまで特定して引き出せる', doc: { guide: 'api/mcp', hash: 'search_passages' } },
       { title: '生成 AI の利用料がわかる、用途別や月末の見込みもわかる', doc: { guide: 'system-admin-guide', hash: 'ai-の使用量と費用' } },
       { title: '一太郎・Markdown をプレビュー・全文検索、JSON も表で聞ける', doc: { guide: 'user-guide', hash: 'リソースのプレビュー' } },
@@ -170,6 +173,9 @@ const t = {
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
     recent: [
+      { title: 'Preview Office Documents on Private Sites and Closed Networks', doc: { guide: 'system-admin-guide', hash: 'office-originals' } },
+      { title: 'Harden the Site with CSP, HSTS and WAF Rate Limits', doc: { guide: 'system-admin-guide', hash: 'waf-rate-limits' } },
+      { title: 'Get Your Datasets Found in Google Dataset Search', doc: { guide: 'system-admin-guide/brand-customization', hash: 'search-engine-output' } },
       { title: 'Find Passages for RAG over MCP, Down to the Section and Page', doc: { guide: 'api/mcp', hash: 'search_passages' } },
       { title: 'See AI Usage and Cost by Purpose, with a Month-End Projection', doc: { guide: 'system-admin-guide', hash: 'ai-usage-and-cost' } },
       { title: 'Query JSON as Tables; Full-Text Search Ichitaro and Markdown', doc: { guide: 'user-guide', hash: 'resource-preview' } },
@@ -269,6 +275,9 @@ const t = {
 
 // Release and date read the same in both locales; icons too.
 const recentMeta = [
+  { icon: '🗂️', version: 'v0.41.0', date: '2026-11-09' },
+  { icon: '🛡️', version: 'v0.40.0', date: '2026-11-01' },
+  { icon: '🔍', version: 'v0.37.0', date: '2026-10-23' },
   { icon: '📑', version: 'v0.34.0', date: '2026-10-11' },
   { icon: '📊', version: 'v0.34.0', date: '2026-10-11' },
   { icon: '📄', version: 'v0.34.0', date: '2026-10-11' },
@@ -806,8 +815,8 @@ const techStack = [
       @media (min-width: 1024px) {
         .recent-list {
           grid-template-columns: repeat(3, 1fr);
-          /* Every row as tall as the tallest card, so the NEW row and the
-             older one line up whatever their titles wrap to */
+          /* Every row as tall as the tallest card, so the rows line up
+             whatever their titles wrap to */
           grid-auto-rows: 1fr;
         }
       }

@@ -6,6 +6,80 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.41.0] - 2026-11-09
+
+**Highlights**
+
+- **Old Word documents (DOC) show their original again, drawn in your browser.** ibisOffice 0.8.6 opens DOC files, so they join XLSX, XLS, DOCX, PPTX and PPT: the original is drawn inside the browser, next to its extracted text, on public, private and draft datasets alike and on closed networks (#1153). Since 0.40.0 a DOC file had shown only its extracted text.
+- **Fixes from a security review of the latest changes.** A file uploaded through a presigned URL can no longer be replaced through the same URL after it is published (#1146). AI-written abstracts no longer carry web or email addresses (#1150). Asking again and again to process the same file runs the work once (#1148), and work waiting on a busy site no longer retries every few seconds (#1151). API keys no longer reach the AWS firewall's log (#1147). Next.js, Hono and Better Auth are on their November security releases (#1149).
+
+**Security**
+
+- Publishing an upload made through a presigned URL now copies it, and the published file and its version are the copy (#1146). The URL could still write to the uploaded object until it expired, which could replace a published version's content or go past the 100 MB upload limit.
+- AI-written abstracts are cleaned before they are saved: web addresses (`https://…`, `www.…`, `//…`, `javascript:` and similar), email addresses and invisible characters (controls, bidirectional marks, zero-width characters) are removed (#1150). The prompt also tells the model that the file's text is material, never instructions, and that it should not write addresses in any form or urge the reader to open or contact anything. In MCP, abstracts are labeled as written by AI from the file's contents, not as instructions. The abstract text from the API stays plain text; escape it when you show it as HTML or Markdown.
+- A request to process a resource that already has a run waiting joins that run instead of queuing another (#1148, #1152). This covers reprocessing, upload completion and rebuilding the row-level history, and the worker's own retries; pressing "reprocess" many times while one run is going leaves one more run after it.
+- Runs waiting for their turn to fetch from the same host are given a time slot instead of retrying every few seconds (#1151). A large batch from one site no longer keeps the worker busy with retries or inflates the waiting count.
+- AWS: the firewall (WAF) log hides `X-KUKAN-API-Key` and `X-CKAN-API-Key` as it does cookies and `Authorization`, and the requests shown in the WAF console hide all four (#1147). The app's own log hides the two API-key headers too.
+- Next.js 16.4.5, Hono 4.13.16 and Better Auth 1.7.17 (#1149). Of their advisories, the one that applied to KUKAN concerned `/_next/image`, which KUKAN does not use; it is now turned off and answers 404.
+
+**Upgrade Notes** (for system administrators)
+
+- **Building the web image on a closed network:** place `ibisOffice-0.8.6-Web.zip` in `apps/web/vendor/ibis-office/` before the build, in place of 0.8.5 (#1153).
+- **Database:** one migration adds a column that may be empty (`fetch_rate_limit.reserved_until`) (#1151). Nothing else is needed.
+- **AI abstracts:** the abstract version goes up to 6 (#1150). Existing abstracts are not rewritten; the admin screen counts them as written by an earlier version, and regenerating applies the new prompt and cleaning (the cost is as the admin screen estimates).
+- **Uploads:** the presigned upload URL from `POST /resources/{id}/upload-url` now expires after 15 minutes instead of an hour, and completing the upload copies the file once on the server (#1146). A new upload URL now keeps the previous unfinished upload for 24 hours instead of one before reclaiming it, so temporary storage use rises slightly.
+- **`/_next/image` answers 404** (#1149). A fork or brand page that uses `next/image` must turn image optimization back on, limited with `images.localPatterns`.
+- **AWS, WAF log:** only logs written after the deploy hide the API-key headers (#1147). The WAF records only requests a rule blocked or counted, but earlier logs can hold those two headers until their retention ends (`waf.logging.retentionDays`, or `cdnLogRetentionDays` when unset). To be rid of them sooner, delete the earlier logs, or reissue the tokens that were sent in those headers in that period.
+- **AWS, Aurora version:** the stack now names the major version (16) alone (#1132). A new environment gets Aurora's default minor version at creation, deployments no longer move the version, and only Aurora's automatic minor upgrades raise it. An existing cluster on 16.13 (0.40.2 or later) is unchanged by the next deployment; this was tested. Not yet confirmed: what the next deployment does to a cluster on another minor version, such as 16.8 upgraded straight from 0.40.1 or earlier, or one raised by hand to 16.14 or 16.15. The 0.40.2 advice to keep a cluster newer than 16.13 on 0.40.1 is expected to no longer apply, but this has not been tested; check the change set before deploying such an environment.
+- **AWS, Aurora site databases:** new environments on Aurora failed to create the site database with `must be able to SET ROLE` (#1145). Fixed; existing environments see no change on this deployment. To delete an existing site on RDS by hand, grant the site role to the master user first, as the deployment guide now describes, or `DROP DATABASE` fails with `must be owner of database`.
+
+**Bug Fixes**
+
+- Ichitaro: EZPZ File JTD 0.3.3 shares style tables instead of copying them for every character, so documents with many styles take less memory to draw; a file over 2,000,000 style entries is refused as too large (#1133).
+- AWS: the Content-Security-Policy behind CloudFront named the internal load balancer. It now names only the site (#1130).
+
+**Documentation**
+
+- docs(site): explain when a brand needs to add sources to the CSP (#1131).
+- docs(site): the official site's Recent Updates gain three items, and the brand guide has a Search Engine Output section on the sitemap, robots.txt and the dataset JSON-LD.
+
+---
+
+**ハイライト**
+
+- **古い Word 文書（DOC）も、また原本をブラウザの中で表示します。** ibisOffice 0.8.6 が DOC を開けるようになったので、XLSX・XLS・DOCX・PPTX・PPT と同じく、原本をブラウザの中で描き、抽出テキストと並べて見せます。公開・非公開・下書きのデータセットでも、閉域網でも同じです（#1153）。0.40.0 から、DOC は抽出テキストだけを表示していました。
+- **最近の変更へのセキュリティ点検で見つかった問題を直しました。** 署名付き URL でアップロードしたファイルを、公開した後に同じ URL で差し替えられなくなりました（#1146）。AI が書く抄録に、Web のアドレスやメールアドレスが入らなくなりました（#1150）。同じファイルの処理を何度頼んでも 1 回にまとまり（#1148）、混んでいるサイトからの取得を待つ処理が数秒おきに再試行しなくなりました（#1151）。API キーが AWS のファイアウォールのログに残らなくなりました（#1147）。Next.js・Hono・Better Auth を 11 月のセキュリティ修正の版にしました（#1149）。
+
+**セキュリティ**
+
+- 署名付き URL でのアップロードを公開するとき、ファイルを複製し、公開するファイルと版は複製の方を使うようにしました（#1146）。URL は期限が切れるまでアップロード先に書き込めたため、公開した版の中身を差し替えたり、100 MB のアップロードの上限を超えたりできました。
+- AI が書く抄録を、保存の前に掃除します。Web のアドレス（`https://…`・`www.…`・`//…`・`javascript:` など）、メールアドレス、見えない文字（制御文字・双方向の制御・ゼロ幅の文字）を取り除きます（#1150）。プロンプトでも、ファイルの文は材料であって指示ではないこと、アドレスはどんな書き方でも書かないこと、読み手に何かを開く・連絡するよう勧めないことを伝えます。MCP では、抄録をファイルの中身から AI が書いた説明で、指示ではないものとして示します。API が返す抄録の文は従来どおり平文です。HTML や Markdown として表示するときはエスケープしてください。
+- 処理を待っている実行があるリソースに処理を頼むと、新しく積まずに待っている実行にまとめます（#1148、#1152）。再処理・アップロードの完了・行の履歴の作り直しと、worker 自身の積み直しが対象です。実行中に「再処理」を何度押しても、終わった後に走るのは 1 回です。
+- 同じホストからの取得の順番を待つ実行に、時間の枠を割り当てるようにしました（#1151）。1 つのサイトのリソースを大量に処理しても、worker が再試行で埋まったり、待ちの件数が膨らんだりしなくなります。
+- AWS：ファイアウォール（WAF）のログで、cookie や `Authorization` と同じく `X-KUKAN-API-Key` と `X-CKAN-API-Key` も伏せるようにしました。WAF のコンソールに出る要求の見本では、この 4 つをすべて伏せます（#1147）。アプリのログでも、API キーの 2 つのヘッダーを伏せます。
+- Next.js 16.4.5・Hono 4.13.16・Better Auth 1.7.17 にしました（#1149）。これらの advisory のうち KUKAN に当たっていたのは `/_next/image` の件で、KUKAN はこの経路を使っていないため、止めて 404 を返すようにしました。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **閉域網で web イメージをビルドするサイト:** ビルドの前に、0.8.5 の代わりに `ibisOffice-0.8.6-Web.zip` を `apps/web/vendor/ibis-office/` に置いてください（#1153）。
+- **データベース:** マイグレーションが、空でもよい列を 1 つ足します（`fetch_rate_limit.reserved_until`）（#1151）。ほかに作業はありません。
+- **AI の抄録:** 抄録の生成版が 6 に上がります（#1150）。既存の抄録は書き直しません。管理画面では前の版で書いたものとして数え、再生成すると新しいプロンプトと掃除が反映されます（費用は管理画面の見積もりのとおり）。
+- **アップロード:** `POST /resources/{id}/upload-url` が返す署名付きアップロード URL の期限が、1 時間から 15 分になりました。アップロードの完了では、サーバーがファイルを 1 回複製します（#1146）。新しいアップロード URL を取ったとき、前の終わっていないアップロードを回収するまでの期限が 1 時間から 24 時間になり、一時的な保存の量が少し増えます。
+- **`/_next/image` は 404 を返します**（#1149）。fork やブランドのページで `next/image` を使っている場合は、`images.localPatterns` で範囲を絞ったうえで画像の最適化を有効に戻してください。
+- **AWS の WAF のログ:** API キーのヘッダーを伏せるのは、デプロイの後に書かれるログだけです（#1147）。WAF が記録するのはルールが止めた・数えた要求だけですが、それ以前のログには、この 2 つのヘッダーが保持期間（`waf.logging.retentionDays`、省略時は `cdnLogRetentionDays`）の終わりまで残りえます。早く消したい場合は、それ以前のログを削除するか、その期間にこれらのヘッダーで送っていたトークンを発行し直してください。
+- **AWS の Aurora の版:** スタックが指定する版を、メジャー（16）だけにしました（#1132）。新しい環境は作るときの Aurora の既定のマイナー版で作られ、デプロイで版は動かず、上がるのは Aurora の自動マイナーアップグレードだけになります。0.40.2 以降が入った 16.13 のクラスターは、次のデプロイでも変わりません（試験済み）。**未確認:** それ以外のマイナー版のクラスターで、次のデプロイがどうなるか。0.40.1 以前から直接上げる 16.8 などのクラスターや、手で 16.14・16.15 に上げたクラスターがこれに当たります。0.40.2 で「16.13 より新しい版のクラスターは 0.40.1 のままに」とお伝えした件は、これで解消する見込みですが、確かめていません。そうした環境では、デプロイの前に変更セットを確認してください。
+- **AWS の Aurora のサイト用データベース:** Aurora を使う新しい環境で、サイト用のデータベースの作成が `must be able to SET ROLE` で失敗していました（#1145）。直しました。既存の環境は、今回のデプロイでは何も変わりません。RDS で動いている既存のサイトを手で削除するときは、デプロイの手引きのとおり、先にマスターユーザーへサイトのロールを付与してください。付与しないと `DROP DATABASE` が `must be owner of database` で失敗します。
+
+**バグ修正**
+
+- 一太郎：EZPZ File JTD 0.3.3 で、書式の対応表を文字ごとに複製せず共有するようになり、書式の多い文書を描くのに使うメモリが減ります。書式の項目が 2,000,000 を超えるファイルは、大きすぎるとして断ります（#1133）。
+- AWS：CloudFront の後ろで、Content-Security-Policy に内部のロードバランサーの名前が入っていました。サイトの名前だけにしました（#1130）。
+
+**ドキュメント**
+
+- docs(site)：ブランドが CSP に読み込み先を足す必要があるのはどんな場合かを説明しました（#1131）。
+- docs(site)：公式サイトの「最近の更新」に 3 件を足し、ブランドの手引きに、sitemap・robots.txt・データセットの JSON-LD を説明する「検索エンジン向けの出力」の節を設けました。
+
 ## [0.40.3] - 2026-11-04
 
 **Highlights**
