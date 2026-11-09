@@ -23,6 +23,7 @@ async function authenticateToken(c: Context, rawToken: string): Promise<void> {
         name: tokenUser.name,
         displayName: tokenUser.displayName,
         sysadmin: tokenUser.sysadmin,
+        authMethod: 'token',
       })
     }
   } catch (err) {
@@ -61,6 +62,7 @@ export function optionalAuth(auth: Auth) {
             name: session.user.name || session.user.email,
             displayName: session.user.displayName ?? null,
             sysadmin: session.user.role === 'sysadmin',
+            authMethod: 'session',
           })
           return next()
         }

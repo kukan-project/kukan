@@ -181,7 +181,7 @@ export const testEnv = {
 } as unknown as Env
 
 /** Default sysadmin user for tests. Set `user: null` to test unauthenticated access. */
-const defaultTestUser = {
+export const defaultTestUser = {
   id: '00000000-0000-0000-0000-000000000001',
   email: 'test-admin@example.com',
   name: 'test-admin',
@@ -203,6 +203,7 @@ interface TestAppOverrides {
     name: string
     displayName?: string | null
     sysadmin: boolean
+    authMethod?: 'session' | 'token'
   } | null
   /** Override the auth instance (for testing admin user creation). */
   auth?: Auth
@@ -261,7 +262,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('analytics', overrides?.analytics ?? null)
     c.set('settings', settings)
     c.set('requestId', 'test-request-id')
-    if (testUser) c.set('user', { displayName: null, ...testUser })
+    if (testUser) c.set('user', { displayName: null, authMethod: 'session', ...testUser })
     await next()
   })
 

@@ -36,6 +36,8 @@ export interface AppContext {
     name: string
     displayName: string | null
     sysadmin: boolean
+    /** How the request signed in. A token cannot manage tokens (routes/api-tokens.ts). */
+    authMethod: 'session' | 'token'
   }
 }
 
@@ -56,12 +58,6 @@ declare module 'hono' {
     analytics: AnalyticsService | null
     /** DB-backed runtime settings (ADR-036) */
     settings: SystemSettingService
-    user?: {
-      id: string
-      email: string
-      name: string
-      displayName: string | null
-      sysadmin: boolean
-    }
+    user?: AppContext['user']
   }
 }

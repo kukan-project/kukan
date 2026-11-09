@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '../middleware/validator'
+import { zValidator, offsetParam, limitParam } from '../middleware/validator'
 import { z } from 'zod'
 import {
   createOrganizationSchema,
@@ -27,8 +27,8 @@ organizationsRouter.get(
   zValidator(
     'query',
     z.object({
-      offset: z.coerce.number().min(0).optional(),
-      limit: z.coerce.number().min(1).max(100).optional(),
+      offset: offsetParam.optional(),
+      limit: limitParam(100).optional(),
       q: z.string().optional(),
       state: z.enum(['active', 'deleted']).optional(),
       orderBy: z.enum(['name', 'datasetCount']).default('name'),

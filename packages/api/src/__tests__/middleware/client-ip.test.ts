@@ -9,7 +9,14 @@ function appReading(header: Env['CLIENT_IP_HEADER'], userId?: string) {
   app.use('*', async (c, next) => {
     c.set('env', { CLIENT_IP_HEADER: header } as Env)
     if (userId) {
-      c.set('user', { id: userId, email: '', name: '', displayName: null, sysadmin: false })
+      c.set('user', {
+        id: userId,
+        email: '',
+        name: '',
+        displayName: null,
+        sysadmin: false,
+        authMethod: 'session',
+      })
     }
     await next()
   })

@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '../middleware/validator'
+import { zValidator, offsetParam, limitParam } from '../middleware/validator'
 import { z } from 'zod'
 import { GroupService } from '../services/group-service'
 import { enqueueSearchDocSync } from '../services/search/search-index'
@@ -27,8 +27,8 @@ groupsRouter.get(
   zValidator(
     'query',
     z.object({
-      offset: z.coerce.number().min(0).default(0),
-      limit: z.coerce.number().min(1).max(100).default(20),
+      offset: offsetParam.default(0),
+      limit: limitParam(100).default(20),
       q: z.string().optional(),
       orderBy: z.enum(['name', 'datasetCount']).default('name'),
     })

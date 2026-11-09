@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '../middleware/validator'
+import { zValidator, limitParam } from '../middleware/validator'
 import { z } from 'zod'
 import { eq, and, sql, ilike, or, getTableColumns } from 'drizzle-orm'
 import { organization, userOrgMembership, group, userGroupMembership, user } from '@kukan/db'
@@ -125,7 +125,7 @@ usersRouter.get(
     'query',
     z.object({
       q: z.string().min(1),
-      limit: z.coerce.number().min(1).max(50).default(10),
+      limit: limitParam(50).default(10),
     })
   ),
   async (c) => {

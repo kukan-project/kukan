@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, defaultTestUser } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
 const unauthApp = createTestApp(db, { user: null })
+const tokenApp = createTestApp(db, { user: { ...defaultTestUser, authMethod: 'token' } })
 
 beforeEach(async () => {
   await cleanDatabase()
@@ -136,6 +137,31 @@ describe('API Tokens API', () => {
         }
       )
       expect(res.status).toBe(401)
+    })
+  })
+
+  describe('signed in with an API token', () => {
+    it('should refuse to create, list or revoke tokens', async () => {
+      const create = await tokenApp.request('/api/v1/api-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Minted with a token' }),
+      })
+      expect(create.status).toBe(403)
+
+      const created = await app.request('/api/v1/api-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'From the session' }),
+      })
+      const { id } = await created.json()
+
+      expect((await tokenApp.request('/api/v1/api-tokens')).status).toBe(403)
+      const revoke = await tokenApp.request(`/api/v1/api-tokens/${id}`, { method: 'DELETE' })
+      expect(revoke.status).toBe(403)
+
+      const list = await (await app.request('/api/v1/api-tokens')).json()
+      expect(list.items).toHaveLength(1)
     })
   })
 })

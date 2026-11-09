@@ -66,6 +66,7 @@ describe('optionalAuth', () => {
       name: 'testuser',
       displayName: 'Test User',
       sysadmin: false,
+      authMethod: 'session',
     })
   })
 
@@ -128,6 +129,7 @@ describe('optionalAuth', () => {
       name: 'apiuser',
       displayName: null,
       sysadmin: false,
+      authMethod: 'token',
     })
   })
 

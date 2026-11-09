@@ -255,11 +255,11 @@ export class GroupService {
   }
 
   async addMember(groupId: string, userId: string, role: string = 'member') {
-    // Verify user exists
+    // A deleted user would hold the role the moment a sysadmin restored them
     const [existingUser] = await this.db
       .select({ id: user.id })
       .from(user)
-      .where(eq(user.id, userId))
+      .where(and(eq(user.id, userId), eq(user.state, 'active')))
       .limit(1)
 
     if (!existingUser) {

@@ -7,11 +7,16 @@ import { VALIDATION_MESSAGES } from './messages'
 import type { ColumnSettings } from '../column-settings'
 import { checkUrlSafety } from '../url'
 
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CONTROL_CHAR = /[\u0000-\u001f\u007f]/
+
 /** Validate that url is a valid http(s) URL when urlType is not 'upload' */
 function refineUrl(data: { url?: string | null; urlType?: string | null }, ctx: z.RefinementCtx) {
   if (!data.url || data.urlType === 'upload') return
 
-  if (!z.url().safeParse(data.url).success) {
+  // The URL parser drops tabs and line breaks rather than rejecting them, so a
+  // value carrying one would be stored as typed and break the download redirect
+  if (CONTROL_CHAR.test(data.url) || !z.url().safeParse(data.url).success) {
     ctx.addIssue({ code: 'custom', message: VALIDATION_MESSAGES.invalidUrl, path: ['url'] })
     return
   }

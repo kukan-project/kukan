@@ -9,6 +9,7 @@ import {
   ValidationError,
 } from '@kukan/shared'
 import { z } from 'zod'
+import { offsetNumber, limitNumber } from '../../middleware/validator'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { MatchedResource, MatchedResourcesCount, SearchAdapter } from '@kukan/search-adapter'
@@ -94,14 +95,12 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         q: z.string().max(SEARCH_QUERY_MAX_CHARS).describe('Search query keywords'),
         organization: z.string().optional().describe('Filter by organization name (slug)'),
         tags: z.array(z.string()).optional().describe('Filter by tag names'),
-        offset: z
-          .number()
-          .min(0)
+        offset: offsetNumber
           .default(0)
           .describe(
             `Number of results to skip (for pagination); offset + limit is at most ${SEARCH_RESULT_WINDOW}`
           ),
-        limit: z.number().min(1).max(50).default(10).describe('Maximum number of results'),
+        limit: limitNumber(50).default(10).describe('Maximum number of results'),
         semantic: z
           .boolean()
           .default(true)

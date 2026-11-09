@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { user as userTable } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
 import {
   getTestDb,
@@ -88,6 +90,30 @@ describe('Groups API Routes', () => {
 
       it('should count every category for a sysadmin', async () => {
         expect(await listAs(app)).toEqual({ 'group-joined': 1, 'group-other': 0 })
+      })
+    })
+
+    describe('deleted users', () => {
+      beforeEach(async () => {
+        await ensureOutsiderUser()
+        await app.request('/api/v1/groups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'group-roster' }),
+        })
+        await db
+          .update(userTable)
+          .set({ state: 'deleted' })
+          .where(eq(userTable.id, OUTSIDER_USER_ID))
+      })
+
+      it('should not take one as a member', async () => {
+        const res = await app.request('/api/v1/groups/group-roster/members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'admin' }),
+        })
+        expect(res.status).toBe(404)
       })
     })
 

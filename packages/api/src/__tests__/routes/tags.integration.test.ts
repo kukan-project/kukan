@@ -74,6 +74,14 @@ describe('Tags API Routes', () => {
       expect(body.total).toBe(0)
     })
 
+    it.each(['offset=1e300', 'offset=1.5', 'offset=-1', 'limit=1.5'])(
+      'should refuse %s with 400',
+      async (query) => {
+        const res = await app.request(`/api/v1/tags?${query}`)
+        expect(res.status).toBe(400)
+      }
+    )
+
     it('should return tags created via packages', async () => {
       await createPackageWithTags('tagged-pkg', ['open-data', 'statistics'])
 

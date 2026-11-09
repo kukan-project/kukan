@@ -4,7 +4,7 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { zValidator, repeatedParam } from '../middleware/validator'
+import { zValidator, repeatedParam, offsetParam, limitParam } from '../middleware/validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
@@ -92,8 +92,8 @@ packagesRouter.get(
   zValidator(
     'query',
     z.object({
-      offset: z.coerce.number().min(0).default(0),
-      limit: z.coerce.number().min(1).max(100).default(20),
+      offset: offsetParam.default(0),
+      limit: limitParam(100).default(20),
       q: z.string().max(SEARCH_QUERY_MAX_CHARS).optional(),
       name: z.string().optional(),
       organization: repeatedParam,

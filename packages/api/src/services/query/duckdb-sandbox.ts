@@ -47,16 +47,36 @@ export interface SandboxResult {
   truncated: boolean
 }
 
-/** Largest number of leading rows whose JSON serialization stays within maxBytes. */
+/**
+ * Largest number of leading rows whose JSON serialization stays within maxBytes.
+ * Row by row, never the whole set at once: that string can pass V8's length limit.
+ */
 function rowsWithinByteLimit(rows: unknown[], maxBytes: number): number {
-  // Fast path for the common case: the whole set fits, so skip per-row accounting.
-  if (Buffer.byteLength(JSON.stringify(rows)) <= maxBytes) return rows.length
   let total = 2 // the enclosing "[]"
-  for (let i = 0; i < rows.length; i++) {
-    total += Buffer.byteLength(JSON.stringify(rows[i])) + (i > 0 ? 1 : 0) // + comma
-    if (total > maxBytes) return i
+  try {
+    for (let i = 0; i < rows.length; i++) {
+      total += Buffer.byteLength(JSON.stringify(rows[i])) + (i > 0 ? 1 : 0) // + comma
+      if (total > maxBytes) return i
+    }
+  } catch (err) {
+    rethrowTooLarge(err)
   }
   return rows.length
+}
+
+/**
+ * Answer a string past V8's length limit as the caller's to fix: a value DuckDB
+ * hands over (TextDecoder throws ERR_STRING_TOO_LONG) or a row's JSON
+ * (JSON.stringify throws a RangeError).
+ */
+function rethrowTooLarge(err: unknown): never {
+  if (
+    (err as { code?: unknown } | null)?.code === 'ERR_STRING_TOO_LONG' ||
+    (err instanceof RangeError && err.message === 'Invalid string length')
+  ) {
+    throw new ValidationError('Query result is too large to return; select fewer or shorter values')
+  }
+  throw err
 }
 
 /** First line of an error message, for surfacing a DuckDB failure to the caller. */
@@ -195,7 +215,7 @@ export async function runSandboxedQuery(
     // Deduplicated (`a`, `a:1`) to match rowObjectsJson's row keys — the
     // raw names would repeat duplicates and point consumers at missing keys.
     const columns = reader.deduplicatedColumnNames()
-    const all = await rowObjectsJson(reader)
+    const all = await rowObjectsJson(reader).catch(rethrowTooLarge)
     let truncated = all.length > limits.maxRows
     let rows = truncated ? all.slice(0, limits.maxRows) : all
 

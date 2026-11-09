@@ -45,6 +45,17 @@ describe('createResourceSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it.each(['\r\n', '\t', '\n', '\u0000'])(
+    'should reject a url carrying the control character %j',
+    (control) => {
+      const result = createResourceSchema.safeParse({
+        packageId: validUuid,
+        url: `https://example.com/data.csv${control}Set-Cookie:a=b`,
+      })
+      expect(result.success).toBe(false)
+    }
+  )
+
   it('should accept filename as url when urlType is upload', () => {
     const result = createResourceSchema.safeParse({
       packageId: validUuid,

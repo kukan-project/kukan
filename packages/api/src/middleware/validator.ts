@@ -59,3 +59,21 @@ export const repeatedParam = z
   .union([z.string(), z.array(z.string())])
   .optional()
   .transform((v) => (v === undefined ? undefined : (Array.isArray(v) ? v : [v]).filter(Boolean)))
+
+/**
+ * A list's `offset`. PostgreSQL takes OFFSET as a bigint and refuses a fraction,
+ * so either would otherwise reach the query and answer 500 instead of 400.
+ * As a number for MCP tools; {@link offsetParam} reads it from a query string.
+ */
+export const offsetNumber = z
+  .number()
+  .int()
+  .min(0)
+  .max(2 ** 31 - 1)
+
+/** A list's `limit`, a whole number like {@link offsetNumber}. */
+export const limitNumber = (max: number) => z.number().int().min(1).max(max)
+
+export const offsetParam = z.coerce.number().pipe(offsetNumber)
+
+export const limitParam = (max: number) => z.coerce.number().pipe(limitNumber(max))

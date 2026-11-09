@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
-import { UnauthorizedError } from '@kukan/shared'
+import { ForbiddenError, UnauthorizedError } from '@kukan/shared'
 import { ApiTokenService } from '../services/api-token-service'
 import type { AppContext } from '../context'
 
@@ -16,6 +16,14 @@ const createTokenSchema = z.object({
 })
 
 export const apiTokensRouter = new Hono<{ Variables: AppContext }>()
+
+// A leaked token must not mint a longer-lived one or revoke its owner's others
+apiTokensRouter.use('*', async (c, next) => {
+  if (c.get('user')?.authMethod === 'token') {
+    throw new ForbiddenError('API tokens can be managed only from a signed-in session')
+  }
+  await next()
+})
 
 // POST /api/v1/api-tokens - Create a new API token
 apiTokensRouter.post('/', zValidator('json', createTokenSchema), async (c) => {

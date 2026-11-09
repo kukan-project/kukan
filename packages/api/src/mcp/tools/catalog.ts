@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { offsetNumber, limitNumber } from '../../middleware/validator'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import { OrganizationService } from '../../services/organization-service'
@@ -29,8 +30,8 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
         'the last line is the total, for paging with offset.',
       inputSchema: {
         q: z.string().optional().describe('Search query to filter organizations by name or title'),
-        offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
-        limit: z.number().min(1).max(100).default(20).describe('Maximum number of results'),
+        offset: offsetNumber.default(0).describe('Number of results to skip (for pagination)'),
+        limit: limitNumber(100).default(20).describe('Maximum number of results'),
       },
       annotations: { readOnlyHint: true },
     },
@@ -66,8 +67,8 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
         'covers rather than to narrow a search.',
       inputSchema: {
         q: z.string().optional().describe('Search query to filter groups by name or title'),
-        offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
-        limit: z.number().min(1).max(100).default(20).describe('Maximum number of results'),
+        offset: offsetNumber.default(0).describe('Number of results to skip (for pagination)'),
+        limit: limitNumber(100).default(20).describe('Maximum number of results'),
       },
       annotations: { readOnlyHint: true },
     },
@@ -101,8 +102,8 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
         'names are what search_datasets takes as its `tags` filter.',
       inputSchema: {
         q: z.string().optional().describe('Search query to filter tags by name'),
-        offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
-        limit: z.number().min(1).max(200).default(50).describe('Maximum number of results'),
+        offset: offsetNumber.default(0).describe('Number of results to skip (for pagination)'),
+        limit: limitNumber(200).default(50).describe('Maximum number of results'),
       },
       annotations: { readOnlyHint: true },
     },

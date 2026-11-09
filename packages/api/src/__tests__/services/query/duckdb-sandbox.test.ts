@@ -6,6 +6,13 @@ import { writeParquet } from '../../test-helpers/parquet'
 import { stat, unlink } from 'node:fs/promises'
 import { runSandboxedQuery, type SandboxLimits } from '../../../services/query/duckdb-sandbox'
 import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
+import { rowObjectsJson } from '@kukan/lake'
+
+// A result past V8's string limit takes gigabytes to build for real
+vi.mock('@kukan/lake', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@kukan/lake')>()
+  return { ...actual, rowObjectsJson: vi.fn(actual.rowObjectsJson) }
+})
 
 const LIMITS: SandboxLimits = {
   maxRows: 10,
@@ -108,6 +115,21 @@ describe('runSandboxedQuery', () => {
     expect(res.truncated).toBe(true)
     expect(res.rowCount).toBeGreaterThan(0)
     expect(res.rowCount).toBeLessThan(100)
+  })
+
+  it.each([
+    [
+      'a value',
+      Object.assign(new Error('Cannot create a string longer than 0x1fffffe8 characters'), {
+        code: 'ERR_STRING_TOO_LONG',
+      }),
+    ],
+    ['a row', new RangeError('Invalid string length')],
+  ])('answers %s too long for a string as a validation error', async (_, error) => {
+    vi.mocked(rowObjectsJson).mockRejectedValueOnce(error)
+    await expect(runSandboxedQuery(fixture, 'SELECT * FROM data', LIMITS)).rejects.toThrow(
+      ValidationError
+    )
   })
 
   it('interrupts a query that exceeds the time limit', async () => {
