@@ -94,6 +94,8 @@ import {
   DEAD_JOB_RETENTION_MS,
   RATE_LIMIT_RETENTION_MS,
   LAKE_CATALOG_COPY_STALE_MS,
+  WORKER_TEMP_STALE_MS,
+  LONG_JOB_MAX_HOLD_MS,
   LAKE_INGEST_SWEEP_CRON,
   LAKE_MEMORY_LIMIT_MB,
   LAKE_THREADS,
@@ -106,6 +108,7 @@ import {
 } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedDueResources } from './embed/embed-resources'
+import { removeStaleWorkerTemp } from './pipeline/node-utils'
 import { setLocalRefusals, setUserAgent } from './safe-fetch'
 import { buildUserAgent } from './user-agent'
 import { WAITING_METRIC_INTERVAL_MS, waitingMetricLine } from './queue/waiting-metric'
@@ -164,6 +167,12 @@ if (concurrencyWarning) log.warn(concurrencyWarning)
 const queue = new PostgresJobQueue({
   db,
   concurrency,
+  // Walks of the whole catalog, which can outlast the queue's own limit
+  maxHoldMs: {
+    [REINDEX_JOB_TYPE]: LONG_JOB_MAX_HOLD_MS,
+    [SUMMARIZE_ALL_JOB_TYPE]: LONG_JOB_MAX_HOLD_MS,
+    [RECORD_ROW_GROUPS_JOB_TYPE]: LONG_JOB_MAX_HOLD_MS,
+  },
   logger: log.child({ component: 'job-queue' }),
   // The other tasks, told when a job this one runs writes another
   ...(env.WORKER_WAKE_URL && {
@@ -244,6 +253,14 @@ if (lake) {
     })
     .catch((err: unknown) => log.warn({ err }, 'Could not remove stale local lake catalog copies'))
 }
+
+// The worker's temporary directories a killed one left behind, for the same
+// reason; on Fargate a task starts on a disk of its own, so this finds nothing
+removeStaleWorkerTemp(WORKER_TEMP_STALE_MS)
+  .then((removed) => {
+    if (removed > 0) log.info({ removed }, 'Removed temporary directories left behind')
+  })
+  .catch((err: unknown) => log.warn({ err }, 'Could not remove stale temporary directories'))
 
 // --- Orphaned object sweeper (ADR-043) ---
 const orphanSweepLog = log.child({ component: 'orphan-cleanup' })
@@ -500,7 +517,12 @@ await queue.process({
       log: log.child({ jobId: job.id, type: job.type }),
     })
     log.info(
-      { jobId: job.id, type: job.type, ...result, elapsed: Math.round(performance.now() - start) },
+      {
+        jobId: job.id,
+        type: job.type,
+        ...result,
+        elapsed: Math.round(performance.now() - start),
+      },
       'Record row groups job completed'
     )
   },

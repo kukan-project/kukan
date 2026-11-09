@@ -1,0 +1,1 @@
+ALTER TABLE "resource" ADD COLUMN "content_index_sweeps" integer DEFAULT 0 NOT NULL;

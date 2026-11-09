@@ -1,7 +1,37 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sqlLiteral } from './sql'
+
+/** What an instance's spill directory under `tag` is named from. */
+export function spillDirPrefix(tag: string): string {
+  return `kukan-${tag}-tmp-`
+}
+
+/**
+ * Remove the directories under `dir` named from one of `prefixes` that a killed
+ * process left behind: only those untouched for `olderThanMs`, since another
+ * process on the host may have one open now.
+ *
+ * @returns how many were removed.
+ */
+export async function removeStaleTempDirs(
+  dir: string,
+  prefixes: readonly string[],
+  olderThanMs: number
+): Promise<number> {
+  const cutoff = Date.now() - olderThanMs
+  let removed = 0
+  for (const name of await readdir(dir)) {
+    if (!prefixes.some((prefix) => name.startsWith(prefix))) continue
+    const path = join(dir, name)
+    const { mtimeMs } = await stat(path).catch(() => ({ mtimeMs: Infinity }))
+    if (mtimeMs >= cutoff) continue
+    await rm(path, { recursive: true, force: true })
+    removed++
+  }
+  return removed
+}
 
 /**
  * Give this instance somewhere of its own to spill.
@@ -23,7 +53,7 @@ export async function useOwnTempDirectory(
   conn: { run(sql: string): Promise<unknown> },
   tag: string
 ): Promise<() => Promise<void>> {
-  const dir = await mkdtemp(join(tmpdir(), `kukan-${tag}-tmp-`))
+  const dir = await mkdtemp(join(tmpdir(), spillDirPrefix(tag)))
   const drop = () => rm(dir, { recursive: true, force: true }).catch(() => {})
   try {
     await conn.run(`SET temp_directory = ${sqlLiteral(dir)}`)

@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { Readable } from 'node:stream'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -10,10 +10,29 @@ import {
   streamToBuffer,
   streamToTempFile,
   cleanupTempFile,
-  streamUtf8Lines,
+  streamLines,
+  removeStaleWorkerTemp,
 } from '../../pipeline/node-utils'
 
 // detectEncoding / bufferToUtf8 tests live in packages/shared (encoding-node.test.ts)
+
+/**
+ * Run `fn` with `tmpdir()` pointing at a directory only it looks in: tmpdir()
+ * reads TMPDIR on every call.
+ */
+async function inOwnTmpdir(fn: (root: string) => Promise<void>): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), 'kukan-test-'))
+  const saved = process.env.TMPDIR
+  process.env.TMPDIR = root
+  try {
+    await fn(root)
+  } finally {
+    // Assigned undefined, it would read as the string "undefined"
+    if (saved === undefined) delete process.env.TMPDIR
+    else process.env.TMPDIR = saved
+    await rm(root, { recursive: true, force: true })
+  }
+}
 
 describe('streamToBuffer', () => {
   it('should collect stream chunks into a single Buffer', async () => {
@@ -68,11 +87,7 @@ describe('streamToTempFile + cleanupTempFile', () => {
   })
 
   it('leaves nothing behind when the stream fails', async () => {
-    // tmpdir() reads TMPDIR on every call, so the temp dir lands somewhere only this test looks
-    const root = await mkdtemp(join(tmpdir(), 'kukan-test-'))
-    const saved = process.env.TMPDIR
-    process.env.TMPDIR = root
-    try {
+    await inOwnTmpdir(async (root) => {
       const failing = new Readable({
         read() {
           this.destroy(new Error('broken download'))
@@ -80,18 +95,15 @@ describe('streamToTempFile + cleanupTempFile', () => {
       })
       await expect(streamToTempFile(failing)).rejects.toThrow('broken download')
       expect(await readdir(root)).toEqual([])
-    } finally {
-      process.env.TMPDIR = saved
-      await rm(root, { recursive: true, force: true })
-    }
+    })
   })
 })
 
-describe('streamUtf8Lines', () => {
+describe('streamLines', () => {
   it('should yield lines from a simple stream', async () => {
     const stream = Readable.from(Buffer.from('line1\nline2\nline3'))
     const lines: string[] = []
-    for await (const line of streamUtf8Lines(stream)) {
+    for await (const line of streamLines(stream)) {
       lines.push(line)
     }
     expect(lines).toEqual(['line1', 'line2', 'line3'])
@@ -100,7 +112,7 @@ describe('streamUtf8Lines', () => {
   it('should handle stream with no newlines', async () => {
     const stream = Readable.from(Buffer.from('single line'))
     const lines: string[] = []
-    for await (const line of streamUtf8Lines(stream)) {
+    for await (const line of streamLines(stream)) {
       lines.push(line)
     }
     expect(lines).toEqual(['single line'])
@@ -109,7 +121,7 @@ describe('streamUtf8Lines', () => {
   it('should handle empty stream', async () => {
     const stream = Readable.from(Buffer.from(''))
     const lines: string[] = []
-    for await (const line of streamUtf8Lines(stream)) {
+    for await (const line of streamLines(stream)) {
       lines.push(line)
     }
     expect(lines).toEqual([])
@@ -118,7 +130,7 @@ describe('streamUtf8Lines', () => {
   it('should handle trailing newline without extra empty line', async () => {
     const stream = Readable.from(Buffer.from('a\nb\n'))
     const lines: string[] = []
-    for await (const line of streamUtf8Lines(stream)) {
+    for await (const line of streamLines(stream)) {
       lines.push(line)
     }
     expect(lines).toEqual(['a', 'b'])
@@ -138,21 +150,53 @@ describe('streamUtf8Lines', () => {
     })
 
     const lines: string[] = []
-    for await (const line of streamUtf8Lines(stream)) {
+    for await (const line of streamLines(stream)) {
       lines.push(line)
     }
     expect(lines).toEqual(['A', '東', 'B'])
+  })
+
+  it('reads a Shift_JIS stream a chunk at a time, a character split across two', async () => {
+    // '東' = 93 8C in Shift_JIS
+    const stream = Readable.from([Buffer.from([0x41, 0x0a, 0x93]), Buffer.from([0x8c, 0x0a, 0x42])])
+    const lines: string[] = []
+    for await (const line of streamLines(stream, 'SJIS')) lines.push(line)
+    expect(lines).toEqual(['A', '東', 'B'])
+  })
+
+  it('joins a line that runs across many chunks once, keeping empty lines', async () => {
+    const chunks = [...Array.from({ length: 1000 }, () => Buffer.from('x')), Buffer.from('\n\ny')]
+    const lines: string[] = []
+    for await (const line of streamLines(Readable.from(chunks))) lines.push(line)
+    expect(lines).toEqual(['x'.repeat(1000), '', 'y'])
   })
 
   it('should handle large number of lines across multiple chunks', async () => {
     const text = Array.from({ length: 1000 }, (_, i) => `line${i}`).join('\n')
     const stream = Readable.from(Buffer.from(text))
     const lines: string[] = []
-    for await (const line of streamUtf8Lines(stream)) {
+    for await (const line of streamLines(stream)) {
       lines.push(line)
     }
     expect(lines).toHaveLength(1000)
     expect(lines[0]).toBe('line0')
     expect(lines[999]).toBe('line999')
+  })
+})
+
+describe('removeStaleWorkerTemp', () => {
+  it("removes the worker's own directories left untouched, and nothing else", async () => {
+    await inOwnTmpdir(async (root) => {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+      for (const name of ['kukan-heavy-a', 'kukan-worker-b', 'kukan-lake-tmp-c']) {
+        await mkdir(join(root, name))
+      }
+      await utimes(join(root, 'kukan-heavy-a'), twoHoursAgo, twoHoursAgo)
+      // Spared however old: the lake's spill is the web's as well as the worker's
+      await utimes(join(root, 'kukan-lake-tmp-c'), twoHoursAgo, twoHoursAgo)
+
+      expect(await removeStaleWorkerTemp(60 * 60 * 1000)).toBe(1)
+      expect((await readdir(root)).sort()).toEqual(['kukan-lake-tmp-c', 'kukan-worker-b'])
+    })
   })
 })

@@ -244,18 +244,29 @@ const FORMAT_SIGNATURES: Record<string, readonly string[]> = {
   PNG: ['\x89PNG\r\n'],
   JPEG: ['\xFF\xD8\xFF'],
   GIF: ['GIF87a', 'GIF89a'],
+  // A RIFF container, its size in the four bytes between: WAV and AVI are RIFF too.
+  // Keyed as `normalizeFormat` spells it, as every key here is
+  WebP: ['RIFF????WEBP'],
 }
 
 /** Longest signature above — how many bytes a caller has to hold to ask */
-export const FORMAT_SIGNATURE_BYTES = 8
+export const FORMAT_SIGNATURE_BYTES = 12
 
 function startOf(head: Uint8Array): string {
   return String.fromCharCode(...head.subarray(0, FORMAT_SIGNATURE_BYTES))
 }
 
-/** Whether these bytes open with this signature. */
+/** Whether these bytes open with this signature, a `?` in it standing for any byte. */
 export function hasSignature(head: Uint8Array, signature: string): boolean {
-  return startOf(head).startsWith(signature)
+  return opensWith(startOf(head), signature)
+}
+
+function opensWith(start: string, signature: string): boolean {
+  if (start.length < signature.length) return false
+  for (let i = 0; i < signature.length; i++) {
+    if (signature[i] !== '?' && signature[i] !== start[i]) return false
+  }
+  return true
 }
 
 /**
@@ -272,7 +283,7 @@ export function declaredFormatMismatch(format: string | null, head: Uint8Array):
   const signatures = FORMAT_SIGNATURES[normalizeFormat(format ?? '')]
   if (!signatures || head.length === 0) return false
   const start = startOf(head)
-  return !signatures.some((signature) => start.startsWith(signature))
+  return !signatures.some((signature) => opensWith(start, signature))
 }
 
 /** The Office 2007 format that followed each before it. */

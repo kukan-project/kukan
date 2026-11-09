@@ -566,15 +566,20 @@ Office の「原本」は ibisOffice がブラウザの sandbox の iframe で�
 
 **サイズ制限:**
 
-| 項目                                  | 制限値 | 設定ファイル                                              |
-| ------------------------------------- | ------ | --------------------------------------------------------- |
-| ブラウザアップロード                  | 100 MB | `packages/shared/src/formats.ts`                          |
-| 外部 URL 取得（Fetch）                | 100 MB | `apps/worker/src/config.ts`                               |
-| CSV/TSV Parquet 生成対象              | 100 MB | `packages/shared/src/formats.ts`                          |
-| JSON（1 オブジェクト）                | 32 MB  | `apps/worker/src/config.ts`                               |
-| JSON（入れ子の深さ）                  | 64 段  | `apps/worker/src/config.ts`                               |
-| Office の原本（ibisOffice、ファイル） | 64 MB  | `apps/web/src/components/preview/ibis-office-preview.tsx` |
-| Office の原本（ibisOffice、展開後）   | 128 MB | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+| 項目                                  | 制限値     | 設定ファイル                                              |
+| ------------------------------------- | ---------- | --------------------------------------------------------- |
+| ブラウザアップロード                  | 100 MB     | `packages/shared/src/formats.ts`                          |
+| 外部 URL 取得（Fetch）                | 100 MB     | `apps/worker/src/config.ts`                               |
+| CSV/TSV Parquet 生成対象              | 100 MB     | `packages/shared/src/formats.ts`                          |
+| JSON（1 オブジェクト）                | 32 MB      | `apps/worker/src/config.ts`                               |
+| JSON（入れ子の深さ）                  | 64 段      | `apps/worker/src/config.ts`                               |
+| ZIP マニフェスト（エントリ数）        | 1 万件     | `apps/worker/src/pipeline/interpret/zip.ts`               |
+| ZIP マニフェスト（エントリ名の合計）  | 200 万文字 | `apps/worker/src/pipeline/interpret/zip.ts`               |
+| Office の原本（ibisOffice、ファイル） | 64 MB      | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+| Office の原本（ibisOffice、展開後）   | 128 MB     | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+
+ZIP マニフェストはどちらかの上限に達したところで一覧を打ち切り、`truncated` を立てる。件数・サイズの
+合計は一覧に載せた分だけで、書庫自身が名乗るエントリ数は `totalEntries` に残す。
 
 **関連ファイル:**
 

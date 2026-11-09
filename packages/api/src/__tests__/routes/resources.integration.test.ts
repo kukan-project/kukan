@@ -196,6 +196,16 @@ describe('Resources API Routes', () => {
       expect(body).not.toHaveProperty('pkg')
     })
 
+    it('should not expose how far the search index has caught up', async () => {
+      const pkg = await createPackage('res-no-index-marks')
+      const resource = await createResource(pkg.id)
+
+      const body = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+      for (const key of ['docSyncDueAt', 'contentIndexDueAt', 'contentIndexSweeps']) {
+        expect(body).not.toHaveProperty(key)
+      }
+    })
+
     it('should not expose what the health checker recorded for itself', async () => {
       // It names the address a URL resolved to and the reason a certificate was
       // rejected. Sysadmins read it on the health screen; this response is

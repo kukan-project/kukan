@@ -10,6 +10,11 @@ import type { ZipEntry, ZipManifest } from '@kukan/shared'
 export type { ZipEntry, ZipManifest }
 
 const MAX_ZIP_ENTRIES = 10_000
+/**
+ * Characters of entry names listed, at most. A name may be 64 KB, so the entry
+ * cap alone lets a small archive put hundreds of megabytes of names on the heap
+ */
+const MAX_ZIP_NAME_CHARS = 2_000_000
 const EPOCH_LOCAL = '1970-01-01T00:00:00'
 
 /** General purpose bit flag 11 indicates UTF-8 encoded file names */
@@ -92,6 +97,7 @@ export async function extractZipManifest(input: Buffer | string): Promise<ZipMan
   }
 
   const entries: ZipEntry[] = []
+  let nameChars = 0
   let totalFiles = 0
   let totalSize = 0
   let totalCompressed = 0
@@ -115,6 +121,7 @@ export async function extractZipManifest(input: Buffer | string): Promise<ZipMan
             entry.fileName as unknown as Buffer,
             entry.generalPurposeBitFlag
           )
+          nameChars += fileName.length
           const isDirectory = fileName.endsWith('/')
           if (!isDirectory) totalFiles++
 
@@ -130,7 +137,8 @@ export async function extractZipManifest(input: Buffer | string): Promise<ZipMan
           // file; walking the rest only to add up totals is unbounded work.
           // The counts and sizes then cover only the entries listed, with the
           // archive's own claim, folders included, beside them.
-          if (entries.length >= MAX_ZIP_ENTRIES && zipFile.entryCount > MAX_ZIP_ENTRIES) {
+          const full = entries.length >= MAX_ZIP_ENTRIES || nameChars >= MAX_ZIP_NAME_CHARS
+          if (full && entries.length < zipFile.entryCount) {
             finish({
               totalFiles,
               totalEntries: zipFile.entryCount,

@@ -84,6 +84,7 @@ const {
   // a reader's — and a column added here is public the moment it is added
   docSyncDueAt: _docSyncDueAt,
   contentIndexDueAt: _contentIndexDueAt,
+  contentIndexSweeps: _contentIndexSweeps,
   ...projectedResourceColumns
 } = getTableColumns(resource)
 
@@ -672,6 +673,8 @@ export class ResourceService {
         // And the content chunks, which the route removes too and nothing would
         // remove again if it failed: the content sweep does
         contentIndexDueAt: sql`NOW()`,
+        // Raised afresh, as `CONTENT_INDEX_RAISED` does
+        contentIndexSweeps: 0,
       })
       .where(eq(resource.id, existing.id))
       .returning(publicResourceColumns)

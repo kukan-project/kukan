@@ -475,6 +475,16 @@ export const ORPHAN_CLEANUP_CRON = '17 * * * *'
  */
 export const LAKE_CATALOG_COPY_STALE_MS = 60 * 60 * 1000
 
+/** How long a temporary directory of the worker's is left alone before its start removes it (`removeStaleWorkerTemp`). */
+export const WORKER_TEMP_STALE_MS = 60 * 60 * 1000
+
+/**
+ * How long a maintenance job that walks the whole catalog may hold its job:
+ * past the queue's own 90 minutes another worker would take it and run all of
+ * it again beside the first.
+ */
+export const LONG_JOB_MAX_HOLD_MS = 12 * 60 * 60 * 1000
+
 /**
  * How often versions that never reached DuckLake are swept back in (ADR-043
  * layer 2). Offset from the orphan sweep so the two do not contend for the

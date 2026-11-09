@@ -288,6 +288,50 @@ describe('PostgresJobQueue', () => {
     expect(seen.sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, n) => n))
   })
 
+  it('holds a job past the default limit only for a type given a longer one', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+    const warn = vi.spyOn(logger, 'warn')
+    const done = gate()
+    try {
+      const queue = new PostgresJobQueue({
+        db,
+        logger,
+        concurrency: 2,
+        maxHoldMs: { long: 3 * 60 * 60_000 },
+      })
+      queues.push(queue)
+      const started: string[] = []
+      const handler = async (j: Job) => {
+        started.push(j.type)
+        await done.opened
+      }
+      await queue.enqueue('short', {})
+      await queue.enqueue('long', {})
+      await queue.process({ short: handler, long: handler })
+      await vi.waitFor(() => expect(started.sort()).toEqual(['long', 'short']))
+
+      // Past the default 90 minutes, an extension's two minutes at a time
+      const pastDefaultLimit = 94 * 60_000
+      for (let t = 0; t < pastDefaultLimit; t += 2 * 60_000) {
+        await vi.advanceTimersByTimeAsync(2 * 60_000)
+      }
+
+      const letGo = new Set(
+        warn.mock.calls
+          .filter(([, msg]) => msg === 'Job has held its lease too long; letting it go')
+          .map(([fields]) => (fields as { jobId: string }).jobId)
+      )
+      const ids = Object.fromEntries(
+        (await db.select({ id: job.id, type: job.type }).from(job)).map((r) => [r.type, r.id])
+      )
+      expect([...letGo]).toEqual([ids.short])
+    } finally {
+      done.open()
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   // `constructor` is found on any object's prototype, and would have run as a handler
   it.each(['unknown', 'constructor'])(
     'deletes a job of a type it has no handler for (%s)',

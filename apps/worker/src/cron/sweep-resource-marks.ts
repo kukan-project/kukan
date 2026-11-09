@@ -103,7 +103,8 @@ export async function sweepContentIndex(
   minAgeMs = MIN_AGE_MS
 ): Promise<void> {
   const result = await sweepContentIndexMarks(db, search, queue, { minAgeMs })
-  if (result.queued + result.failed + result.removed + result.held > 0) {
-    log.info(result, 'Acted on content index marks')
+  if (Object.values(result).some((n) => n > 0)) {
+    // Abandoned is a warning: those resources' content may disagree with them
+    log[result.abandoned > 0 ? 'warn' : 'info'](result, 'Acted on content index marks')
   }
 }

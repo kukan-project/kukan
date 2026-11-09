@@ -24,10 +24,10 @@ import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../run/types'
 import type { InterpretedDocument, InterpretResult } from './interpret'
 import { documentTextLines } from '../interpret/document/document-text-lines'
-import { streamToBuffer, streamUtf8Lines, zstdLines } from '../node-utils'
+import { streamLines, streamToBuffer, zstdLines } from '../node-utils'
 import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
 import { ContentChunkCutter } from '@kukan/shared/content-chunks'
-import { MAX_FETCH_SIZE, UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
+import { UNPROFILED_TABLE_HEAD_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -315,15 +315,8 @@ async function indexTextStream(
     )
       .replace(/\n$/, '')
       .split('\n')
-  } else if (isUtf8) {
-    lines = streamUtf8Lines(stream)
   } else {
-    // Non-UTF-8: buffer file and convert (stateful encodings need full context).
-    // Cap the buffer at the max legitimate file size so an oversize object can't
-    // OOM the worker; a truncated tail is acceptable degradation for indexing.
-    const buf = await streamToBuffer(stream, MAX_FETCH_SIZE)
-    const text = bufferToUtf8(buf, encoding)
-    lines = text.split('\n')
+    lines = streamLines(stream, encoding)
   }
 
   await ctx.deleteContent(resourceId)

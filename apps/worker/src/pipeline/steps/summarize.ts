@@ -286,7 +286,7 @@ export async function planMaterial(
   if (isImageFormat(input.format)) {
     if (!documentInfo?.imageFormats.includes(format)) return { reason: 'unsupported-format' }
     const bytes = await downloadImage(input, documentInfo.maxImageBytes, deps)
-    if (!bytes) return { reason: 'too-large' }
+    if (typeof bytes === 'string') return { reason: bytes }
     return {
       kind: 'image',
       material: EMPTY_MATERIAL,
@@ -568,7 +568,7 @@ async function inHeavyProcess<R extends HeavyRequest>(
  * size however far it scales, and PNG, WebP and GIF decode whole. So every
  * format is held to one pixel limit, read from the header before any pixel is,
  * and the decode runs in the heavy process, where an image that still outgrows
- * it, stalls it or crashes it takes that process alone. Null for any of those,
+ * it, stalls it or crashes it takes that process alone. `too-large` for any of those,
  * left unstamped like the other size refusals, so a later run re-reads the
  * header and a raised limit takes effect.
  */
@@ -576,9 +576,13 @@ async function downloadImage(
   input: SummaryInput,
   maxBytes: number,
   deps: SummaryDeps
-): Promise<Buffer | null> {
+): Promise<Buffer | 'format-mismatch' | 'too-large'> {
   const imagePath = await streamToTempFile(await deps.storage.download(input.storageKey))
   try {
+    // The declared format picks the decoder and what the provider is told the
+    // bytes are; a page served in an image's place is neither's to read
+    if (declaredFormatMismatch(input.format, await readHead(imagePath, FORMAT_SIGNATURE_BYTES)))
+      return 'format-mismatch'
     if ((await stat(imagePath)).size <= maxBytes) return await readFile(imagePath)
     const outPath = siblingTempPath(imagePath, 'downscaled')
     const downscaled = await inHeavyProcess(
@@ -586,10 +590,10 @@ async function downloadImage(
       input,
       deps
     )
-    if (!downscaled) return null
+    if (!downscaled) return 'too-large'
     if (!downscaled.written) {
       deps.log.warn({ component: 'summarize' }, 'image exceeds the pixel limit')
-      return null
+      return 'too-large'
     }
     return await readFile(outPath)
   } finally {

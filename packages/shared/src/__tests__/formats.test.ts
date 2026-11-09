@@ -492,6 +492,14 @@ describe('declaredFormatMismatch', () => {
     }
   })
 
+  it('knows WebP by its FourCC, not only the RIFF container it shares with WAV and AVI', () => {
+    const riff = (fourcc: string) =>
+      new Uint8Array([...bytes('RIFF'), 0x24, 0x08, 0x00, 0x00, ...bytes(fourcc)])
+    expect(declaredFormatMismatch('WEBP', riff('WEBP'))).toBe(false)
+    expect(declaredFormatMismatch('webp', riff('WAVE'))).toBe(true)
+    expect(declaredFormatMismatch('WEBP', riff('AVI '))).toBe(true)
+  })
+
   it('answers false where it cannot know, so acting on true stays safe', () => {
     // A format whose first bytes no specification fixes, and nothing to read
     expect(declaredFormatMismatch('CSV', bytes('<!doctype html>'))).toBe(false)

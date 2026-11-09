@@ -483,7 +483,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
 
   describe('images', () => {
     it('sends one that is already within the API limit unchanged', async () => {
-      const bytes = Buffer.from('jpeg-bytes')
+      const bytes = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from('jpeg-bytes')])
       const plan = await planMaterial(
         input({ format: 'JPEG', size: 1024 }),
         noArtifacts,
@@ -493,6 +493,18 @@ describe('choosing what to send (ADR-053 §3)', () => {
 
       expect(plan).toMatchObject({ kind: 'image' })
       expect(plan).toHaveProperty('attachment.bytes', bytes)
+    })
+
+    it('sends nothing for a page served in place of the image, and decodes nothing', async () => {
+      const bytes = Buffer.from('<!doctype html><title>Not Found</title>')
+      const plan = await planMaterial(
+        input({ format: 'PNG', size: bytes.byteLength }),
+        noArtifacts,
+        INTERPRETED,
+        deps({ bytes, maxImageBytes: 16 })
+      )
+
+      expect(plan).toEqual({ reason: 'format-mismatch' })
     })
 
     // 100M pixels: over the worker's limit, under sharp's own default

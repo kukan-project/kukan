@@ -11,6 +11,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import { PostgresJobQueue } from '@kukan/queue'
 import { PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { sweepContentIndexMarks } from '../../services/search/content-index-sweep'
+import { markContentIndexDue } from '../../services/search/content-index-record'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -33,6 +34,7 @@ async function seed(
     packageState?: string
     format?: string
     due?: ReturnType<typeof sql> | null
+    sweeps?: number
   } = {}
 ) {
   const [pkg] = await db
@@ -48,6 +50,7 @@ async function seed(
       state: opts.state ?? 'active',
       storageKey: opts.storageKey === undefined ? 'resources/x' : opts.storageKey,
       contentIndexDueAt: opts.due === undefined ? sql`NOW() - INTERVAL '1 hour'` : opts.due,
+      contentIndexSweeps: opts.sweeps ?? 0,
     })
     .returning({ id: resource.id })
   await db
@@ -88,6 +91,7 @@ describe('sweepContentIndexMarks', () => {
       failed: 0,
       removed: 0,
       held: 0,
+      abandoned: 0,
     })
     expect(await queuedRuns()).toEqual([
       { payload: expect.objectContaining({ resourceId: id, indexOnly: true }), priority: 'low' },
@@ -103,8 +107,39 @@ describe('sweepContentIndexMarks', () => {
       failed: 0,
       removed: 0,
       held: 0,
+      abandoned: 0,
     })
     expect(await queuedRuns()).toHaveLength(1)
+  })
+
+  it('gives up on a mark the runs it queued never lowered, and counts the ones it queues', async () => {
+    const spent = await seed({ sweeps: 3 })
+    const counting = await seed({ sweeps: 2 })
+    const search = contentIndex()
+
+    expect(await sweepContentIndexMarks(db, search, queue, opts)).toEqual({
+      queued: 1,
+      failed: 0,
+      removed: 0,
+      held: 0,
+      abandoned: 1,
+    })
+    expect(await queuedRuns()).toEqual([
+      { payload: expect.objectContaining({ resourceId: counting }), priority: 'low' },
+    ])
+    const sweeps = async (id: string) =>
+      (
+        await db
+          .select({ n: resource.contentIndexSweeps })
+          .from(resource)
+          .where(eq(resource.id, id))
+      )[0].n
+    expect(await mark(spent)).toBeNull()
+    expect(await sweeps(counting)).toBe(3)
+
+    // A mark raised afresh starts its count again
+    await markContentIndexDue(db, { resourceId: spent })
+    expect(await sweeps(spent)).toBe(0)
   })
 
   it('leaves a resource with a run already waiting to that run', async () => {
@@ -117,6 +152,7 @@ describe('sweepContentIndexMarks', () => {
       failed: 0,
       removed: 0,
       held: 0,
+      abandoned: 0,
     })
     expect(search.deleteContent).not.toHaveBeenCalled()
     expect(await mark(id)).not.toBeNull()
@@ -135,6 +171,7 @@ describe('sweepContentIndexMarks', () => {
       failed: 0,
       removed: 5,
       held: 0,
+      abandoned: 0,
     })
     for (const id of [deleted, draft, trashed, unfetched, image]) {
       expect(search.deleteContent).toHaveBeenCalledWith(id)
@@ -199,6 +236,7 @@ describe('sweepContentIndexMarks', () => {
       failed: 0,
       removed: 0,
       held: 1,
+      abandoned: 0,
     })
     expect(search.deleteContent).not.toHaveBeenCalled()
     expect(await mark(id)).not.toBeNull()
@@ -213,6 +251,7 @@ describe('sweepContentIndexMarks', () => {
       failed: 0,
       removed: 0,
       held: 0,
+      abandoned: 0,
     })
   })
 })

@@ -43,6 +43,12 @@ export async function markContentUnindexed(db: Database, scope: ContentIndexScop
 }
 
 /**
+ * The SET that raises the mark: a mark raised afresh is work of its own, so the
+ * sweep's count of the runs it queued for the last one starts again.
+ */
+export const CONTENT_INDEX_RAISED = sql`content_index_due_at = NOW(), content_index_sweeps = 0`
+
+/**
  * Raise the resource's content index mark: its content documents may disagree
  * with the row, and nothing is on its way to fix that — a delete whose cleanup
  * of the chunks failed, or is yet to run. The hourly sweep runs the resource
@@ -56,6 +62,6 @@ export async function markContentIndexDue(
   scope: { resourceId: string }
 ): Promise<void> {
   await db.execute(
-    sql`UPDATE ${resource} SET content_index_due_at = NOW() WHERE id = ${scope.resourceId}`
+    sql`UPDATE ${resource} SET ${CONTENT_INDEX_RAISED} WHERE id = ${scope.resourceId}`
   )
 }

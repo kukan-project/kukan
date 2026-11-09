@@ -44,7 +44,9 @@ import {
  * The terms the SQS queue this replaced gave (a 10-minute visibility timeout,
  * extended every two minutes, for 90 minutes at most): a handler that hangs
  * holds its job for `MAX_HOLD_MS` and no longer, and another worker may then
- * take it.
+ * take it. A job type that runs longer by design is given its own limit
+ * (`maxHoldMs`); a worker that dies stops extending either way, and its job is
+ * taken again once the lease runs out.
  */
 const LEASE_S = 600
 const HOLD_INTERVAL_MS = 120_000
@@ -88,6 +90,12 @@ export interface PostgresJobQueueConfig {
    * job, in priority order, as it finishes the last. Default 1.
    */
   concurrency?: number
+  /**
+   * How long a job of these types may hold its job while its handler runs,
+   * where longer than `MAX_HOLD_MS`: past the limit another worker may take it
+   * and run it again beside the first.
+   */
+  maxHoldMs?: Record<string, number>
   logger?: Logger
 }
 
@@ -222,6 +230,7 @@ export class PostgresJobQueue implements JobQueue {
   private readonly runningPriority = new AsyncLocalStorage<JobPriority>()
 
   private handlers?: Handlers
+  private readonly maxHoldMs: ReadonlyMap<string, number>
   private stopped = false
   private timer?: ReturnType<typeof setTimeout>
   /** When `timer` fires. */
@@ -258,6 +267,7 @@ export class PostgresJobQueue implements JobQueue {
     this.db = config.db
     this.onWaiting = config.onWaiting
     this.concurrency = Math.max(1, Math.floor(config.concurrency ?? 1))
+    this.maxHoldMs = new Map(Object.entries(config.maxHoldMs ?? {}))
     this.log = config.logger ?? createLogger({ name: 'job-queue' })
     const notify = (this.notify = config.notify)
     if (notify) {
@@ -694,7 +704,7 @@ export class PostgresJobQueue implements JobQueue {
       await this.complete(job.id)
       return
     }
-    const holding = this.hold(job.id)
+    const holding = this.hold(job.id, this.maxHoldMs.get(job.type) ?? MAX_HOLD_MS)
     try {
       await this.runningPriority.run(job.priority, () => handler(job))
       await this.complete(job.id)
@@ -763,8 +773,8 @@ export class PostgresJobQueue implements JobQueue {
    * Failures are logged and not raised: losing the lease lets another worker
    * take the job, which is not a reason to fail the run in progress.
    */
-  private hold(id: string): { release: () => void } {
-    const until = Date.now() + MAX_HOLD_MS
+  private hold(id: string, maxHoldMs: number): { release: () => void } {
+    const until = Date.now() + maxHoldMs
     const timer = setInterval(() => {
       if (Date.now() > until) {
         clearInterval(timer)

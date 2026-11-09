@@ -22,6 +22,13 @@ import { reindexable } from './content-reindex'
 /** The most marks one pass takes; the rest wait for the next */
 export const CONTENT_INDEX_SWEEP_LIMIT = 500
 
+/**
+ * Index-only runs queued for one mark before the sweep gives up on it. A run
+ * that cannot index the resource — its reading times out, every time — would
+ * otherwise be queued every hour for good. A mark raised afresh starts again.
+ */
+export const CONTENT_INDEX_SWEEP_MAX_RUNS = 3
+
 export interface ContentIndexSweep {
   /** Runs queued to index a resource again; each lowers its mark */
   queued: number
@@ -31,6 +38,8 @@ export interface ContentIndexSweep {
   removed: number
   /** Removals left for the next pass: a run held the resource */
   held: number
+  /** Marks lowered unresolved: the runs queued for them never lowered them */
+  abandoned: number
 }
 
 /**
@@ -57,7 +66,11 @@ export async function sweepContentIndexMarks(
   opts: { minAgeMs: number; limit?: number }
 ): Promise<ContentIndexSweep> {
   const marked = await db
-    .select({ id: resource.id, dueAt: sql<string>`${resource.contentIndexDueAt}::text` })
+    .select({
+      id: resource.id,
+      dueAt: sql<string>`${resource.contentIndexDueAt}::text`,
+      sweeps: resource.contentIndexSweeps,
+    })
     .from(resource)
     .where(
       and(
@@ -69,7 +82,7 @@ export async function sweepContentIndexMarks(
     )
     .orderBy(asc(resource.contentIndexDueAt))
     .limit(opts.limit ?? CONTENT_INDEX_SWEEP_LIMIT)
-  if (marked.length === 0) return { queued: 0, failed: 0, removed: 0, held: 0 }
+  if (marked.length === 0) return { queued: 0, failed: 0, removed: 0, held: 0, abandoned: 0 }
 
   const runnable = new Set(
     await reindexable(
@@ -80,7 +93,13 @@ export async function sweepContentIndexMarks(
       )
     )
   )
-  const toRun = marked.filter((r) => runnable.has(r.id))
+  const runs = marked.filter((r) => runnable.has(r.id))
+  // Given up on, as they were read: a mark raised since is new work
+  let abandoned = 0
+  for (const row of runs.filter((r) => r.sweeps >= CONTENT_INDEX_SWEEP_MAX_RUNS)) {
+    if (await lowerContentIndexMark(db, row.id, row.dueAt)) abandoned++
+  }
+  const toRun = runs.filter((r) => r.sweeps < CONTENT_INDEX_SWEEP_MAX_RUNS)
   // Stamped afresh before the run reads it: a run that never reaches the Index
   // step (its job dies earlier, every time) then waits at the back, rather
   // than holding the front of every pass
@@ -103,6 +122,15 @@ export async function sweepContentIndexMarks(
     // Nobody is waiting on any one of them (ADR-058 §6)
     { priority: 'low' }
   )
+  // Counted once queued: a run the queue refused never had its chance
+  const refused = new Set(failed.map((f) => f.id))
+  const queuedIds = toRun.map((r) => r.id).filter((id) => !refused.has(id))
+  if (queuedIds.length > 0) {
+    await db
+      .update(resource)
+      .set({ contentIndexSweeps: sql`${resource.contentIndexSweeps} + 1` })
+      .where(inArray(resource.id, queuedIds))
+  }
 
   let removed = 0
   let held = 0
@@ -119,15 +147,21 @@ export async function sweepContentIndexMarks(
     })
     if (outcome.status === 'held') held++
   }
-  return { queued: enqueued, failed: failed.length, removed, held }
+  return { queued: enqueued, failed: failed.length, removed, held, abandoned }
 }
 
 /** Lower the mark read, and only that one: a newer mark has work of its own */
-async function lowerContentIndexMark(db: Database, resourceId: string, read: string) {
-  await db
+async function lowerContentIndexMark(
+  db: Database,
+  resourceId: string,
+  read: string
+): Promise<boolean> {
+  const lowered = await db
     .update(resource)
     .set({ contentIndexDueAt: null })
     .where(
       and(eq(resource.id, resourceId), eq(resource.contentIndexDueAt, sql`${read}::timestamptz`))
     )
+    .returning({ id: resource.id })
+  return lowered.length > 0
 }

@@ -22,6 +22,7 @@ import type {
 import { clipText } from '@kukan/shared'
 import { heldBy, stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import { PARKED_UNTIL } from '@kukan/api/services/pipeline/storage-pointer'
+import { CONTENT_INDEX_RAISED } from '@kukan/api/services/search/content-index-record'
 
 /** A failure's error as recorded, at most: enough to say what went wrong. */
 const ERROR_MAX_CHARS = 1_000
@@ -199,7 +200,7 @@ export class StepTracker {
   /** Record that the resource's content index is owed another run. */
   async raiseContentIndexMark() {
     await this.db.execute(sql`
-      UPDATE resource SET content_index_due_at = NOW()
+      UPDATE resource SET ${CONTENT_INDEX_RAISED}
       WHERE id = ${this.claim.resourceId} AND ${stillHeld(this.claim)}
     `)
   }

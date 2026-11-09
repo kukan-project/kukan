@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream, existsSync } from 'node:fs'
-import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -29,6 +29,7 @@ import { LAKE_DATA_PREFIX } from './config'
 import type { BucketSession, LakeSession } from './connection'
 import { disableDataInlining, openBucketSession } from './connection'
 import { assertSafeIdentifier, sqlLiteral } from './sql'
+import { removeStaleTempDirs } from './spill'
 
 /** Where a resource's catalogs are kept and read from — the storage adapter, in practice. */
 export interface LakeObjectStore {
@@ -91,22 +92,11 @@ const LOCAL_COPY_PREFIX = 'kukan-lake-catalog-'
  *
  * @returns how many were removed.
  */
-export async function removeStaleLakeCatalogCopies(
+export function removeStaleLakeCatalogCopies(
   config: Pick<LakeConfig, 'tempDir'>,
   olderThanMs: number
 ): Promise<number> {
-  const dir = config.tempDir ?? tmpdir()
-  const cutoff = Date.now() - olderThanMs
-  let removed = 0
-  for (const name of await readdir(dir)) {
-    if (!name.startsWith(LOCAL_COPY_PREFIX)) continue
-    const path = join(dir, name)
-    const { mtimeMs } = await stat(path).catch(() => ({ mtimeMs: Infinity }))
-    if (mtimeMs >= cutoff) continue
-    await rm(path, { recursive: true, force: true })
-    removed++
-  }
-  return removed
+  return removeStaleTempDirs(config.tempDir ?? tmpdir(), [LOCAL_COPY_PREFIX], olderThanMs)
 }
 
 /** An alias of its own, so catalogs open side by side on one instance do not collide. */

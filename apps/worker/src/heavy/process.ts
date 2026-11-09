@@ -16,6 +16,7 @@ import {
 import type { Logger } from '@kukan/shared'
 import { JobInterruptedError } from '@kukan/queue'
 import type { HeavyReply, HeavyRequest, HeavyResult } from './protocol'
+import { HEAVY_TEMP_PREFIX } from '../pipeline/node-utils'
 
 /**
  * The process went with the request: past its own budget, picked by the
@@ -185,7 +186,7 @@ export class HeavyProcess {
       await this.drop(this.child)
     }
     if (!this.child) {
-      const started = await startChild(this.command(), HEAVY_CHILD_ENV, 'kukan-heavy-')
+      const started = await startChild(this.command(), HEAVY_CHILD_ENV, HEAVY_TEMP_PREFIX)
       // Shut down while it was starting, which found nothing to stop
       if (this.closed) {
         started.kill()

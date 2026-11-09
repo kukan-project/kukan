@@ -421,6 +421,13 @@
       "when": 1793926691938,
       "tag": "0059_flashy_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794261639870,
+      "tag": "0060_zippy_ted_forrester",
+      "breakpoints": true
     }
   ]
 }

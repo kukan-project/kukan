@@ -132,6 +132,16 @@ describe('extractZipManifest', () => {
     expect(manifest!.totalEntries).toBe(10_002)
   })
 
+  it('stops listing once the names run long, however few entries', async () => {
+    // 60,000-character names: the entry cap would let 10,000 of them through
+    const files = Array.from({ length: 50 }, (_, i) => ({ name: `${i}-${'n'.repeat(60_000)}` }))
+    const manifest = await extractZipManifest(await createTestZip(files))
+
+    expect(manifest!.truncated).toBe(true)
+    expect(manifest!.entries.length).toBeLessThan(50)
+    expect(manifest!.totalEntries).toBe(50)
+  })
+
   it('lists exactly the cap without calling it truncated', async () => {
     const files = Array.from({ length: 10_000 }, (_, i) => ({ name: `f${i}.txt` }))
     const manifest = await extractZipManifest(await createTestZip(files))

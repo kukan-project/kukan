@@ -179,6 +179,9 @@ export const resource = pgTable(
     // contract as `docSyncDueAt` — raised in the statement that knows, and the
     // token the clear is compared against.
     contentIndexDueAt: timestamp('content_index_due_at', { withTimezone: true }),
+    // Index-only runs the content index sweep has queued for the mark as it
+    // stands (CONTENT_INDEX_SWEEP_MAX_RUNS). Back to 0 when the mark is raised.
+    contentIndexSweeps: integer('content_index_sweeps').notNull().default(0),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),

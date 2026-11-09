@@ -21,6 +21,7 @@ export {
 } from './config'
 export type { LakeConfig, LakeLimits, S3Settings } from './config'
 export { openDuckdb, sealDuckdb } from './duckdb'
+export { removeStaleTempDirs, spillDirPrefix } from './spill'
 export type { DuckdbHandle } from './duckdb'
 export { lakeTableName, lakeTableExists, currentSnapshotId } from './table'
 export { sqlLiteral, sqlIdentifier } from './sql'

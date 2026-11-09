@@ -10,6 +10,8 @@ import { Readable, pipeline } from 'node:stream'
 import { promisify } from 'node:util'
 import { createZstdDecompress } from 'node:zlib'
 
+import { toCharset } from '@kukan/shared'
+import { removeStaleTempDirs, spillDirPrefix } from '@kukan/lake'
 import { ENCODING_SAMPLE_SIZE, ENCODING_SCAN_LIMIT } from '@/config'
 
 const pipelineAsync = promisify(pipeline)
@@ -115,35 +117,59 @@ function firstNonAscii(buf: Buffer): number {
  * that fails midway has to fail the lines.
  */
 export function zstdLines(stream: Readable): AsyncGenerator<string> {
-  return streamUtf8Lines(pipeline(stream, createZstdDecompress(), () => {}))
+  return streamLines(pipeline(stream, createZstdDecompress(), () => {}))
 }
 
-/** Yield lines from a UTF-8 stream without loading the entire file into memory.
- *  Uses StringDecoder to handle multi-byte characters split across chunk boundaries. */
-export async function* streamUtf8Lines(stream: Readable): AsyncGenerator<string> {
-  const { StringDecoder } = await import('node:string_decoder')
-  const decoder = new StringDecoder('utf-8')
-  let leftover = ''
-
+/** Yield lines from a text stream in `encoding` without loading the entire file into memory. */
+export async function* streamLines(stream: Readable, encoding = 'utf-8'): AsyncGenerator<string> {
+  // Streaming decode carries a multi-byte character, or a stateful encoding's
+  // shift, across chunk boundaries — so a Shift_JIS file need not be held whole
+  const decoder = new TextDecoder(toCharset(encoding))
+  // The line being read, in pieces: joining it to each chunk as it came would
+  // copy it once a chunk, and a file with no line breaks is all one line
+  let pieces: string[] = []
   for await (const chunk of stream) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    const text = decoder.write(buf)
-    const parts = (leftover + text).split('\n')
-    leftover = parts.pop()!
-    for (const line of parts) {
-      yield line
-    }
+    const text = decoder.decode(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk), {
+      stream: true,
+    })
+    const parts = text.split('\n')
+    pieces.push(parts[0]!)
+    if (parts.length === 1) continue
+    yield pieces.join('')
+    yield* parts.slice(1, -1)
+    pieces = [parts.at(-1)!]
   }
+  const tail = pieces.join('') + decoder.decode()
+  if (tail) yield tail
+}
 
-  const remaining = decoder.end()
-  if (remaining || leftover) {
-    yield leftover + remaining
-  }
+/** The worker's files being read, each in a directory of its own */
+const FILE_TEMP_PREFIX = 'kukan-worker-'
+/** The heavy process's own temporary directory (ADR-059) */
+export const HEAVY_TEMP_PREFIX = 'kukan-heavy-'
+
+/**
+ * The worker's own temporary directories: ones only it makes, so a start can
+ * remove what a killed one left without reaching anything the web beside it on
+ * a development host has open — the lake's spill, which both make, among them.
+ */
+const WORKER_TEMP_PREFIXES = [FILE_TEMP_PREFIX, HEAVY_TEMP_PREFIX, spillDirPrefix('interpret')]
+
+/**
+ * Remove the worker's temporary directories a killed process left behind — a
+ * file being read, a heavy process's — untouched for `olderThanMs`. Each removes
+ * its own however it ends, short of the process dying; a long-running Compose
+ * host would otherwise keep every one.
+ *
+ * @returns how many were removed.
+ */
+export function removeStaleWorkerTemp(olderThanMs: number): Promise<number> {
+  return removeStaleTempDirs(tmpdir(), WORKER_TEMP_PREFIXES, olderThanMs)
 }
 
 /** Write a Readable stream to a temp file and return its path */
 export async function streamToTempFile(stream: Readable, ext?: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'kukan-'))
+  const dir = await mkdtemp(join(tmpdir(), FILE_TEMP_PREFIX))
   const safeExt = ext?.replace(/[^a-zA-Z0-9]/g, '')
   const filePath = join(dir, safeExt ? `data.${safeExt}` : 'data')
   try {
