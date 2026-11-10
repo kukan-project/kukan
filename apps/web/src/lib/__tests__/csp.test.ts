@@ -30,10 +30,12 @@ describe('buildContentSecurityPolicy (ADR-071)', () => {
     )
   })
 
-  it('returns the frame-src it put in the policy', () => {
-    const { policy, frameSrc } = buildContentSecurityPolicy(base)
-    expect(frameSrc).toBe(`${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/`)
-    expect(directive(policy, 'frame-src')).toBe(frameSrc)
+  it('returns what stays enforced under report-only: frame-src and the directives no page uses', () => {
+    const { enforced } = buildContentSecurityPolicy(base)
+    expect(enforced).toBe(
+      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/; ` +
+        "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    )
   })
 
   it('lets gtag.js load and report, Google signals included, when the brand has GA4', () => {
@@ -57,12 +59,12 @@ describe('buildContentSecurityPolicy (ADR-071)', () => {
   })
 
   it('frames Microsoft’s viewer on an office-online site alone', () => {
-    expect(buildContentSecurityPolicy(base).frameSrc).not.toContain(OFFICE_ONLINE_VIEWER)
-    const { policy, frameSrc } = buildContentSecurityPolicy({ ...base, officeOnline: true })
-    expect(frameSrc).toBe(
+    expect(buildContentSecurityPolicy(base).enforced).not.toContain(OFFICE_ONLINE_VIEWER)
+    const { policy, enforced } = buildContentSecurityPolicy({ ...base, officeOnline: true })
+    expect(directive(policy, 'frame-src')).toBe(
       `${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/ ${OFFICE_ONLINE_VIEWER}`
     )
-    expect(directive(policy, 'frame-src')).toBe(frameSrc)
+    expect(directive(enforced, 'frame-src')).toBe(directive(policy, 'frame-src'))
   })
 
   it('names every origin the proxy found', () => {
@@ -90,15 +92,14 @@ describe('buildContentSecurityPolicy (ADR-071)', () => {
     expect(directive(policy, 'font-src')).toBe("'self' data:")
   })
 
-  it('carries a brand’s frame-src in the returned frame-src, for the enforced header', () => {
-    const { policy, frameSrc } = buildContentSecurityPolicy({
+  it('carries a brand’s frame-src into what stays enforced', () => {
+    const { policy, enforced } = buildContentSecurityPolicy({
       ...base,
       brandExtra: { 'frame-src': ['https://map.example.jp'] },
     })
-    expect(frameSrc).toBe(
-      `${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/ https://map.example.jp`
-    )
-    expect(directive(policy, 'frame-src')).toBe(frameSrc)
+    const frames = `${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/ https://map.example.jp`
+    expect(directive(enforced, 'frame-src')).toBe(frames)
+    expect(directive(policy, 'frame-src')).toBe(frames)
   })
 })
 

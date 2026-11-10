@@ -58,8 +58,8 @@ export function uploadOrigin(env: {
 export interface ContentSecurityPolicy {
   /** The full policy, serialized. */
   policy: string
-  /** The value of its `frame-src`, which stays enforced whatever CSP_MODE says. */
-  frameSrc: string
+  /** Its directives enforced whatever CSP_MODE says (ALWAYS_ENFORCED), serialized. */
+  enforced: string
 }
 
 /**
@@ -86,8 +86,8 @@ function frameSources(origins: string[], officeOnline: boolean): string[] {
  * `img-src` admits any host: organizations and groups show an image by a URL
  * their editors type, and a brand's logo may sit on its own host.
  *
- * `frameSrc` is returned beside the policy so that the enforced `frame-src`
- * header under report-only is the same list, a brand's additions included.
+ * `enforced` is returned beside the policy so that the header enforced under
+ * report-only holds the same lists, a brand's additions included.
  */
 export function buildContentSecurityPolicy(
   input: ContentSecurityPolicyInput
@@ -131,6 +131,17 @@ export function buildContentSecurityPolicy(
   const serialize = ([name, sources]: [string, string[]]) => `${name} ${sources.join(' ')}`
   return {
     policy: directives.map(serialize).join('; '),
-    frameSrc: directives.find(([name]) => name === 'frame-src')![1].join(' '),
+    enforced: directives
+      .filter(([name]) => ALWAYS_ENFORCED.includes(name))
+      .map(serialize)
+      .join('; '),
   }
 }
+
+/**
+ * The directives enforced whatever `CSP_MODE` says. `frame-src` keeps the
+ * Office preview's sandbox in (ADR-065); the rest have no use on these pages a
+ * page could break by losing — no plugins, no `<base>`, no form submitted
+ * natively but the GET searches to this site, and no other site framing them.
+ */
+const ALWAYS_ENFORCED = ['frame-src', 'object-src', 'base-uri', 'form-action', 'frame-ancestors']

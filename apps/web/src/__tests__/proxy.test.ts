@@ -12,6 +12,8 @@ vi.mock('@/brand/brand-config', async () => {
 })
 
 const ORIGIN = 'https://catalog.example.jp'
+/** Enforced beside frame-src under report-only: what no page uses */
+const UNUSED = "; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 
 function cspFor(url: string, headers?: Record<string, string>): string {
   const request = new NextRequest(url, { headers })
@@ -36,14 +38,14 @@ afterEach(() => {
 describe('proxy (ADR-065 decision 2)', () => {
   it('limits every page’s frames to the boot page and the PDF preview', () => {
     expect(cspFor(`${ORIGIN}/`)).toBe(
-      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/`
+      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/${UNUSED}`
     )
     expect(cspFor(`${ORIGIN}/dataset/some-dataset`)).toBe(cspFor(`${ORIGIN}/`))
   })
 
   it('names the configured origins, never the Host the request came under', () => {
     expect(cspForHost('http://localhost:3000/', '192.0.2.1:3000')).toBe(
-      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/`
+      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/${UNUSED}`
     )
     expect(cspFor(`${ORIGIN}/`, { 'x-forwarded-host': 'evil.example' })).not.toContain('evil')
   })
@@ -58,7 +60,7 @@ describe('proxy (ADR-065 decision 2)', () => {
     expect(cspFor(`${ORIGIN}/`)).toBe(
       `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/ ` +
         `https://10.0.0.5${IBIS_OFFICE_BOOT} https://10.0.0.5/api/v1/resources/ ` +
-        `https://intra.example.jp${IBIS_OFFICE_BOOT} https://intra.example.jp/api/v1/resources/`
+        `https://intra.example.jp${IBIS_OFFICE_BOOT} https://intra.example.jp/api/v1/resources/${UNUSED}`
     )
   })
 
@@ -94,10 +96,10 @@ describe('proxy (ADR-071)', () => {
     buildContentSecurityPolicy({ origins: [ORIGIN], officeOnline: false, ga: false, dev: false })
       .policy
 
-  it('reports the full policy beside the enforced frame-src by default', () => {
+  it('reports the full policy beside what it enforces by default', () => {
     const headers = proxy(new NextRequest(`${ORIGIN}/`)).headers
     expect(headers.get('content-security-policy')).toBe(
-      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/`
+      `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/${UNUSED}`
     )
     expect(headers.get('content-security-policy-report-only')).toBe(policy())
     expect(policy()).toContain("default-src 'self'")
@@ -128,7 +130,7 @@ describe('proxy (ADR-071)', () => {
     const frameSrc =
       `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/ ` +
       'https://map.example.jp'
-    expect(headers.get('content-security-policy')).toBe(frameSrc)
+    expect(headers.get('content-security-policy')).toBe(`${frameSrc}${UNUSED}`)
     expect(headers.get('content-security-policy-report-only')).toContain(`${frameSrc}; `)
   })
 

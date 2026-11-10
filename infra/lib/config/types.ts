@@ -226,7 +226,8 @@ export interface EnvironmentConfig {
   /**
    * How the pages' Content-Security-Policy goes out (CSP_MODE, ADR-071). Omit →
    * `report-only`: the policy is reported, not enforced, beside the enforced
-   * `frame-src`; `enforce` → the policy blocks.
+   * `frame-src` and directives the pages have no use for; `enforce` → the
+   * policy blocks.
    */
   cspMode?: CspMode
   /**
@@ -381,7 +382,8 @@ export interface SiteConfig {
   /**
    * How the pages' Content-Security-Policy goes out (CSP_MODE, ADR-071). Omit →
    * `report-only`: the policy is reported, not enforced, beside the enforced
-   * `frame-src`; `enforce` → the policy blocks.
+   * `frame-src` and directives the pages have no use for; `enforce` → the
+   * policy blocks.
    */
   cspMode?: CspMode
   /**

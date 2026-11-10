@@ -54,10 +54,10 @@ export const DEFAULT_CSP_MODE: CspMode = 'report-only'
 
 /**
  * `report-only` sends the full policy as Content-Security-Policy-Report-Only
- * beside the enforced `frame-src`, so a violation shows in the browser's
- * console without blocking anything; `enforce` sends the full policy as
- * Content-Security-Policy. Exported for the web, which reads this one variable
- * rather than `loadEnv()`, as with the Office viewer.
+ * beside the enforced `frame-src` and directives the pages have no use for, so
+ * a violation shows in the browser's console without blocking; `enforce` sends
+ * the full policy as Content-Security-Policy. Exported for the web, which reads
+ * this one variable rather than `loadEnv()`, as with the Office viewer.
  */
 export const cspModeSchema = z.preprocess(
   emptyAsUndefined,

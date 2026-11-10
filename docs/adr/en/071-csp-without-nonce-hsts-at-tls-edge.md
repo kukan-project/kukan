@@ -6,8 +6,8 @@
 
 Every page carries a Content-Security-Policy. Its `script-src` includes `'unsafe-inline'`, with no
 nonce and no hashes. The policy arrives in report-only mode (`CSP_MODE`, default `report-only`) and
-is switched to `enforce` once no violations show. The Office preview's `frame-src` (ADR-065) stays
-enforced throughout. No violation-report endpoint. HSTS is sent only by what terminates TLS — CloudFront
+is switched to `enforce` once no violations show. The Office preview's `frame-src` (ADR-065) and four
+directives the pages have no use for stay enforced throughout. No violation-report endpoint. HSTS is sent only by what terminates TLS — CloudFront
 on AWS, a Caddy TLS site block on Docker Compose — with `max-age` of one year, `includeSubDomains`
 off by default and chosen per site, and never `preload`.
 
@@ -149,11 +149,15 @@ by the web like `OFFICE_PREVIEW_VIEWER`, so switching needs no image build. On A
 
 | `CSP_MODE`    | `Content-Security-Policy`               | `Content-Security-Policy-Report-Only` |
 | ------------- | --------------------------------------- | ------------------------------------- |
-| `report-only` | `frame-src …` (exactly as today)        | the full policy                       |
+| `report-only` | `frame-src …` and 4 directives unused   | the full policy                       |
 | `enforce`     | the full policy (`frame-src` inside it) | none                                  |
 
 Report-only does not weaken the enforced `frame-src`. Keeping the Office preview's sandbox in is
-ADR-065's decision, separate from this ADR's staged rollout. The ibisOffice boot page keeps its own
+ADR-065's decision, separate from this ADR's staged rollout. The four directives no page has a use
+for, and so none can break under, are enforced from report-only on as well: `object-src 'none'`,
+`base-uri 'self'`, `form-action 'self'` and `frame-ancestors 'self'` (added 2026-11-10; no plugins,
+no `<base>`, every form submitted by fetch or as a same-origin GET search, and nothing meant to
+frame these pages). The ibisOffice boot page keeps its own
 policy (`sandbox allow-scripts; default-src 'none' …`) whatever `CSP_MODE` says.
 
 ### 3. No report endpoint
@@ -194,8 +198,8 @@ a caveat for operators.
 
 ## Consequences
 
-- Public page responses gain `Content-Security-Policy-Report-Only`. Nothing is blocked; violations
-  show in the browser console
+- Public page responses gain `Content-Security-Policy-Report-Only`. It blocks nothing; violations
+  show in the browser console. Only the enforced `frame-src` and the four unused directives (§2) block
 - On AWS the distribution gains one ResponseHeadersPolicy, and every response carries
   `Strict-Transport-Security`. CloudFront already redirects HTTP to HTTPS, so viewers see no change
 - On a site set to `enforce`, a brand that loads external JS or CSS is blocked until it lists them

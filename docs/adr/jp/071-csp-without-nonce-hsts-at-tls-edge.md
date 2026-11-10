@@ -6,8 +6,8 @@
 
 すべてのページに Content-Security-Policy を出す。`script-src` は `'unsafe-inline'` を含み、nonce も
 ハッシュも使わない。ポリシーは `CSP_MODE`（既定 `report-only`）で報告だけの状態から入れ、
-違反が無いことを確かめてから `enforce` に切り替える。Office プレビューの `frame-src`（ADR-065）は
-report-only の間も強制のまま変えない。違反の報告先は置かない。HSTS は TLS を終端するもの —
+違反が無いことを確かめてから `enforce` に切り替える。Office プレビューの `frame-src`（ADR-065）と、
+ページに使い道のない 4 つの指令は report-only の間も強制する。違反の報告先は置かない。HSTS は TLS を終端するもの —
 AWS では CloudFront、Docker Compose では Caddy の TLS サイトブロック — だけが出す。`max-age` は 1 年、
 `includeSubDomains` は既定で付けずサイト単位で選び、`preload` は付けない。
 
@@ -145,11 +145,14 @@ Compose では `.env`（マルチサイトは `sites/<site>.env`）。
 
 | `CSP_MODE`    | `Content-Security-Policy`          | `Content-Security-Policy-Report-Only` |
 | ------------- | ---------------------------------- | ------------------------------------- |
-| `report-only` | `frame-src …`（今までのまま）      | ポリシー全文                          |
+| `report-only` | `frame-src …` と使わない指令 4 つ  | ポリシー全文                          |
 | `enforce`     | ポリシー全文（`frame-src` を含む） | なし                                  |
 
 report-only の間も `frame-src` の強制は弱めない。Office プレビューの sandbox を外へ逃がさないのは
-ADR-065 の決定で、この ADR の段階的な導入とは別の話である。ibisOffice の起動ページは自分の
+ADR-065 の決定で、この ADR の段階的な導入とは別の話である。ページに使い道がなく、強制しても壊れようの
+ない 4 つ（`object-src 'none'`・`base-uri 'self'`・`form-action 'self'`・`frame-ancestors 'self'`）も、
+report-only の間から強制する（2026-11-10 追記。プラグインも `<base>` も使わず、フォームは fetch か
+同じオリジンへの GET の検索だけで、ほかのサイトに枠で埋め込まれる用途もない）。ibisOffice の起動ページは自分の
 ポリシー（`sandbox allow-scripts; default-src 'none' …`）を持ち、`CSP_MODE` に関わらず変わらない。
 
 ### 3. 報告先は置かない
@@ -190,8 +193,8 @@ HTTP だけで公開している非公開ドメインのサイトは、この AD
 
 ## 影響
 
-- 公開ページの応答に `Content-Security-Policy-Report-Only` が加わる。何も止めず、違反はブラウザの
-  コンソールに出る
+- 公開ページの応答に `Content-Security-Policy-Report-Only` が加わる。これは何も止めず、違反はブラウザの
+  コンソールに出る。止めるのは強制側の `frame-src` と使わない指令 4 つ（§2）だけ
 - AWS では CloudFront の配信に ResponseHeadersPolicy が 1 つ加わり、すべての応答に
   `Strict-Transport-Security` が付く。CloudFront はすでに HTTP を HTTPS にリダイレクトしているので、
   閲覧者に見える変化は無い

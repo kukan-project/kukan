@@ -17,9 +17,10 @@ import { IBIS_OFFICE_DIR, IBIS_OFFICE_ROOT } from '@/lib/ibis-office'
  * the PDF preview and, on an `office-online` site alone, Microsoft's viewer —
  * which a frame could otherwise be navigated to, carrying a document in its URL.
  *
- * Under `report-only`, `frame-src` stays enforced as it was, and the full
- * policy goes out beside it as Report-Only; under `enforce` the full policy,
- * which holds `frame-src`, is the one header.
+ * Under `report-only`, `frame-src` and the directives no page uses stay
+ * enforced (`ALWAYS_ENFORCED`), and the full policy goes out beside them as
+ * Report-Only; under `enforce` the full policy, which holds them, is the one
+ * header.
  */
 export function proxy(request: NextRequest) {
   const origins = allowedOrigins()
@@ -33,7 +34,7 @@ export function proxy(request: NextRequest) {
   }
   const officeOnline =
     officePreviewViewerSchema.parse(process.env.OFFICE_PREVIEW_VIEWER) === 'office-online'
-  const { policy, frameSrc } = buildContentSecurityPolicy({
+  const { policy, enforced } = buildContentSecurityPolicy({
     origins,
     officeOnline,
     ga: Boolean(brandConfig.gaMeasurementId),
@@ -48,7 +49,7 @@ export function proxy(request: NextRequest) {
   if (cspModeSchema.parse(process.env.CSP_MODE) === 'enforce') {
     response.headers.set('Content-Security-Policy', policy)
   } else {
-    response.headers.set('Content-Security-Policy', `frame-src ${frameSrc}`)
+    response.headers.set('Content-Security-Policy', enforced)
     response.headers.set('Content-Security-Policy-Report-Only', policy)
   }
   return response
