@@ -154,7 +154,9 @@ saving ~$9/month).
 
 **Note**: Basic auth credentials are embedded (base64) in the CF Function source, which is
 readable via the console/API, so this is a light gate (e.g. staging protection) only. Pair
-it with real app auth (Better Auth) or WAF for sensitive data.
+it with real app auth (Better Auth) or WAF for sensitive data. Whoever can read
+`cloudfront:GetFunction`, the CloudFormation template or the pipeline's artifacts (`cdk.out`)
+can read them, and `environments.ts` holds them in clear: use no password used elsewhere.
 
 ### Preventing Direct ALB Access (VPC Origin)
 

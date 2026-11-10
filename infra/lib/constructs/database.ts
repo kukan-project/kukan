@@ -76,6 +76,7 @@ export class DatabaseConstruct extends Construct {
         defaultDatabaseName: 'kukan',
         backup: { retention: cdk.Duration.days(config.backup.dbBackupRetentionDays) },
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
+        deletionProtection: config.db.deletionProtection,
         storageEncrypted: true,
       })
       this.secret = cluster.secret!
@@ -100,6 +101,7 @@ export class DatabaseConstruct extends Construct {
         backupRetention: cdk.Duration.days(config.backup.dbBackupRetentionDays),
         storageEncrypted: true,
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
+        deletionProtection: config.db.deletionProtection,
         caCertificate,
       })
       this.secret = instance.secret!

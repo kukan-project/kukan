@@ -9,6 +9,7 @@
 
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
 import pg from 'pg'
+import { scramSha256Verifier } from './scram.js'
 
 interface SiteDbProperties {
   MasterSecretArn: string
@@ -42,7 +43,7 @@ function assertIdentifier(name: string): string {
   return name
 }
 
-/** Single-quoted SQL literal (for the password — identifiers are allowlisted). */
+/** Single-quoted SQL literal (for the SCRAM verifier — identifiers are allowlisted). */
 function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
 }
@@ -83,12 +84,11 @@ export async function handler(event: CustomResourceEvent): Promise<{
   await client.connect()
   try {
     const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [roleName])
-    if (role.rowCount === 0) {
-      await client.query(`CREATE ROLE ${roleName} WITH LOGIN PASSWORD ${literal(site.password)}`)
-    } else {
-      // Converge the password so recreating the site secret stays consistent
-      await client.query(`ALTER ROLE ${roleName} WITH LOGIN PASSWORD ${literal(site.password)}`)
-    }
+    // An existing role's password is converged, so recreating the site secret stays consistent
+    const verb = role.rowCount === 0 ? 'CREATE' : 'ALTER'
+    await client.query(
+      `${verb} ROLE ${roleName} WITH LOGIN PASSWORD ${literal(scramSha256Verifier(site.password))}`
+    )
 
     // PostgreSQL 16 lets the master name the role as OWNER only with SET on it,
     // and CREATE ROLE gives the master no membership (Aurora enforces this; RDS

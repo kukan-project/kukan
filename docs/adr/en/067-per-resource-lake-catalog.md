@@ -706,7 +706,8 @@ What this shows:
 1. **How to show diffs during a rebuild.** Add "rebuilding" to `DiffUnavailableReason`, or are the
    existing reasons enough
 2. **Settling the guarantee** (decision 5). Whether to delete S3 noncurrent versions explicitly at
-   purge time (together with ADR-043 open issue 8), or write the 30-day residue into the guarantee
+   purge time (which means lifting ADR-043 open item 8's Deny), or write the 30-day residue into
+   the guarantee
 3. ~~**Propagation to derivatives.**~~ **Resolved (2026-10-12).** When this was drafted, the
    purge itself touched neither the AI summary (ADR-053) nor the resource embedding (ADR-054), so a
    purge that emptied the resource, or one where Summarize does not regenerate (private package, no

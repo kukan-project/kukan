@@ -100,6 +100,8 @@ export interface ScaleComputed {
     maxAcu?: number
     // Common
     multiAz: boolean
+    /** Refuses deletion until set false and deployed: `cdk destroy` fails, a replacement orphans the old one */
+    deletionProtection: boolean
   }
   opensearch: {
     instanceType: string

@@ -1148,6 +1148,7 @@ function expandV6(addr) {
         "DBSubnetGroupName": {
           "Ref": "DatabaseRdsInstanceSubnetGroup9978A35C",
         },
+        "DeletionProtection": true,
         "Engine": "postgres",
         "EngineVersion": "16",
         "MasterUserPassword": {
@@ -3685,6 +3686,35 @@ function expandV6(addr) {
               ],
             },
             {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
@@ -4610,6 +4640,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [
@@ -6087,6 +6146,7 @@ function expandV6(addr) {
           "Ref": "DatabaseAuroraClusterSubnets2B6839DC",
         },
         "DatabaseName": "kukan",
+        "DeletionProtection": true,
         "Engine": "aurora-postgresql",
         "EngineVersion": "16",
         "MasterUserPassword": {
@@ -8850,6 +8910,35 @@ function expandV6(addr) {
               ],
             },
             {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
@@ -9779,6 +9868,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [
@@ -11059,6 +11177,7 @@ function expandV6(addr) {
         "DBSubnetGroupName": {
           "Ref": "DatabaseRdsInstanceSubnetGroup9978A35C",
         },
+        "DeletionProtection": true,
         "Engine": "postgres",
         "EngineVersion": "16",
         "MasterUserPassword": {
@@ -12818,6 +12937,35 @@ function expandV6(addr) {
                 },
               ],
             },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -13556,6 +13704,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [
@@ -15702,6 +15879,7 @@ function expandV6(addr) {
         "DBSubnetGroupName": {
           "Ref": "DatabaseRdsInstanceSubnetGroup9978A35C",
         },
+        "DeletionProtection": true,
         "Engine": "postgres",
         "EngineVersion": "16",
         "MasterUserPassword": {
@@ -18297,6 +18475,35 @@ function expandV6(addr) {
               ],
             },
             {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
@@ -19222,6 +19429,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [
@@ -20582,6 +20818,7 @@ function expandV6(addr) {
           "Ref": "DatabaseAuroraClusterSubnets2B6839DC",
         },
         "DatabaseName": "kukan",
+        "DeletionProtection": true,
         "Engine": "aurora-postgresql",
         "EngineVersion": "16",
         "MasterUserPassword": {
@@ -23183,6 +23420,35 @@ function expandV6(addr) {
               ],
             },
             {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
@@ -24108,6 +24374,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [

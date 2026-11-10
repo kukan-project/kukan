@@ -18,6 +18,7 @@ import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName, taskRoleName } from '../naming.js'
+import { grantCurrentObjects } from './storage.js'
 import {
   configureBedrockEmbedding,
   configureBedrockCompletion,
@@ -118,7 +119,7 @@ export class WebServiceConstruct extends Construct {
     })
 
     // Grant permissions to task role
-    bucket.grantReadWrite(taskDef.taskRole)
+    grantCurrentObjects(bucket, taskDef.taskRole)
 
     // Environment variables
     const environment: Record<string, string> = {

@@ -54,6 +54,13 @@ beforeEach(() => {
   }))
 })
 
+/** The site password appears in no statement, as written or as a SQL literal spells it. */
+function expectNoPassword(sql: string[]) {
+  const all = sql.join('\n')
+  expect(all).not.toContain("site'pass")
+  expect(all).not.toContain("site''pass")
+}
+
 describe('site-db-handler', () => {
   it('creates role and database when neither exists', async () => {
     queryMock.mockResolvedValue({ rowCount: 0 })
@@ -62,7 +69,11 @@ describe('site-db-handler', () => {
 
     expect(result.PhysicalResourceId).toBe('db.example.internal/kukan_citya')
     const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
-    expect(sql).toContain("CREATE ROLE kukan_citya WITH LOGIN PASSWORD 'site''pass'")
+    // The verifier, never the password: a failed statement is logged whole
+    expect(sql).toContainEqual(
+      expect.stringMatching(/^CREATE ROLE kukan_citya WITH LOGIN PASSWORD 'SCRAM-SHA-256\$4096:/)
+    )
+    expectNoPassword(sql)
     expect(sql).toContain('CREATE DATABASE kukan_citya OWNER kukan_citya')
     expect(sql).toContain('REVOKE CONNECT ON DATABASE kukan_citya FROM PUBLIC')
     expect(sql).toContain('GRANT CONNECT ON DATABASE kukan_citya TO kukan_citya')
@@ -98,7 +109,10 @@ describe('site-db-handler', () => {
     await handler(event('Update'))
 
     const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
-    expect(sql).toContain("ALTER ROLE kukan_citya WITH LOGIN PASSWORD 'site''pass'")
+    expect(sql).toContainEqual(
+      expect.stringMatching(/^ALTER ROLE kukan_citya WITH LOGIN PASSWORD 'SCRAM-SHA-256\$4096:/)
+    )
+    expectNoPassword(sql)
     expect(sql.some((s) => s.startsWith('CREATE DATABASE'))).toBe(false)
     // Sites created before the grant existed get it here, so a manual purge works
     expect(sql).toContain('GRANT kukan_citya TO CURRENT_USER WITH SET TRUE')

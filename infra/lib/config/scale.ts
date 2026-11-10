@@ -131,7 +131,12 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   small: {
     web: { cpu: 256, memory: 512, minSize: 1, maxSize: 2 },
     worker: { cpu: 256, memory: 1024, minTasks: 1, maxTasks: 2, healthPort: 8080 },
-    db: { engine: 'rds', instanceClass: RDS_DEFAULT_INSTANCE_CLASS, multiAz: false },
+    db: {
+      engine: 'rds',
+      instanceClass: RDS_DEFAULT_INSTANCE_CLASS,
+      multiAz: false,
+      deletionProtection: true,
+    },
     opensearch: {
       instanceType: 't3.small.search',
       instanceCount: 1,
@@ -151,7 +156,7 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   medium: {
     web: { cpu: 512, memory: 1024, minSize: 1, maxSize: 5 },
     worker: { cpu: 512, memory: 1024, minTasks: 1, maxTasks: 2, healthPort: 8080 },
-    db: { engine: 'aurora', minAcu: 0.5, maxAcu: 2, multiAz: false },
+    db: { engine: 'aurora', minAcu: 0.5, maxAcu: 2, multiAz: false, deletionProtection: true },
     opensearch: {
       instanceType: 'm6g.large.search',
       instanceCount: 1,
@@ -170,7 +175,7 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   large: {
     web: { cpu: 1024, memory: 2048, minSize: 2, maxSize: 10 },
     worker: { cpu: 1024, memory: 2048, minTasks: 2, maxTasks: 5, healthPort: 8080 },
-    db: { engine: 'aurora', minAcu: 2, maxAcu: 8, multiAz: true },
+    db: { engine: 'aurora', minAcu: 2, maxAcu: 8, multiAz: true, deletionProtection: true },
     opensearch: {
       instanceType: 'm6g.xlarge.search',
       instanceCount: 2,

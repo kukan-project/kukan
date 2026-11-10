@@ -137,6 +137,7 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           "Ref": "DatabaseAuroraClusterSubnets2B6839DC",
         },
         "DatabaseName": "kukan",
+        "DeletionProtection": true,
         "Engine": "aurora-postgresql",
         "EngineVersion": "16",
         "MasterUserPassword": {
@@ -4969,6 +4970,35 @@ function expandV6(addr) {
               ],
             },
             {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
@@ -5940,6 +5970,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [
@@ -8341,6 +8400,35 @@ function expandV6(addr) {
               ],
             },
             {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
@@ -9325,6 +9413,35 @@ function expandV6(addr) {
                 "s3:Abort*",
               ],
               "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
               "Resource": [
                 {
                   "Fn::GetAtt": [

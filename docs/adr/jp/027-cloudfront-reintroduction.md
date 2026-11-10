@@ -152,6 +152,8 @@ WAF の IP セットルールは使用しない（CF Function で実現するこ
 **注意**: Basic 認証の資格情報は CF Function のソース（コンソール/API から閲覧可能）に
 base64 で埋め込まれるため、これは「軽い目隠し」用途（ステージング保護等）に留める。
 機密データの保護にはアプリ本来の認証（Better Auth）や WAF を併用すること。
+読めるのは `cloudfront:GetFunction`、CloudFormation のテンプレート、パイプラインの成果物
+（`cdk.out`）を読める主体で、`environments.ts` にも平文で残る。ほかで使うパスワードを流用しない。
 
 ### ALB 直アクセス防止（VPC Origin）
 

@@ -125,6 +125,9 @@ export const environments = {
     //   // Scaling
     //   web: { maxSize: 5 },
     //   opensearch: { instanceCount: 2, indexReplicas: 1 },
+    //   // The database refuses deletion unless this is false (deployed first): an
+    //   // environment made to be torn down with `cdk destroy` turns it off
+    //   db: { deletionProtection: false },
     //   // Backup (ADR-037). Presets: small = 7-day DB retention only; medium adds
     //   // S3 versioning + 14 days; large = 35 days + AWS Backup (daily 35d + monthly 12mo).
     //   // The DB plan runs once in the SharedStack, bucket plans per site (ADR-041)

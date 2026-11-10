@@ -5,9 +5,25 @@
  */
 
 import * as cdk from 'aws-cdk-lib'
+import * as iam from 'aws-cdk-lib/aws-iam'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+
+/**
+ * Read and write the current objects. Every version operation is denied, so
+ * noncurrent versions — a purged one among them — stay out of reach (ADR-043 open item 8).
+ */
+export function grantCurrentObjects(bucket: s3.IBucket, role: iam.IRole): void {
+  bucket.grantReadWrite(role)
+  role.addToPrincipalPolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['s3:*ObjectVersion*', 's3:ListBucketVersions'],
+      resources: [bucket.bucketArn, bucket.arnForObjects('*')],
+    })
+  )
+}
 
 export interface StorageProps {
   config: KukanConfig

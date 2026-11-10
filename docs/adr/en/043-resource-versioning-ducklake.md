@@ -489,8 +489,9 @@ Makes a named version **unobtainable**. A mechanism for taking past content out 
    > **This timeline describes layers 1 and 3 only.** It is about when the noncurrent versions
    > of a deleted **object** expire, and layer 2 was never deleted, so it is not at the door.
    > Rows left in layer 2's Parquet have no deadline.
-   > During the residual window, no code path in the app reaches noncurrent versions — no
-   > KUKAN role can access them (only infrastructure operators holding AWS IAM can).
+   > During the residual window, no code path in the app reaches noncurrent versions, and the
+   > task roles carry an explicit IAM Deny as well (open item 8). Only infrastructure
+   > operators holding AWS IAM can reach them.
    > On-prem (MinIO without versioning), deletion is immediate and no residue exists (note
    > that backup handling depends on the deploying organization's operations).
 
@@ -911,9 +912,12 @@ bytes: consolidate freely (§6-2).**
    — ADR-067 (implemented) overturns this settlement: per-resource catalogs make the
    fine-grained purge (a rebuild) work
 
-8. **IAM hardening**: Explicitly deny `s3:GetObjectVersion` / `s3:DeleteObjectVersion` on
-   task roles so that noncurrent versions during the purge residual window are blocked at
-   the IAM level too (currently blocked only by the absence of code paths)
+8. **IAM hardening** (implemented): the web and worker task roles carry an explicit Deny of
+   the version operations (`s3:*ObjectVersion*` and `s3:ListBucketVersions`). Noncurrent
+   versions in the purge residual window are out of reach through IAM, not only for want of a
+   code path. Deletion (`DeleteObjectVersion`) is denied too, so a hijacked task cannot remove
+   the versions that double as backups. Choosing to delete noncurrent versions at purge
+   (ADR-067 open item 2) means lifting this Deny
 9. **Iceberg export**: Provide public snapshots in Iceberg format (direct reads from
    external engines). DuckLake's Iceberg-compatible delete vectors keep conversion cost
    limited
