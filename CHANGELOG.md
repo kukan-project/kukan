@@ -6,6 +6,116 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.42.0] - 2026-11-10
+
+**Breaking Changes**
+
+- **API tokens can no longer manage API tokens.** Issuing, listing and revoking tokens under `/api-tokens` with an API token is refused with 403; do it signed in (#1156). `/admin` still takes a token.
+- **Writes sent from another site with the sign-in cookie are refused.** A `POST`, `PUT`, `PATCH` or `DELETE` that carries the session cookie and that the browser marks as coming from another site, a neighboring subdomain included (such as another site of a multi-site deployment), is answered 403 (#1157). Origins listed in `TRUSTED_ORIGINS` pass. Requests without the cookie (API tokens, anonymous) and requests from clients that do not send `Sec-Fetch-Site` are not affected.
+- **The PDF and Office previews load only under the site's configured names.** The Content-Security-Policy now names the origin of `BETTER_AUTH_URL` and the origins in `TRUSTED_ORIGINS`, never the name a request arrived under (#1160). A site also opened under another name, such as its IP address, must add that name to `TRUSTED_ORIGINS`, or the preview frames are blocked there.
+
+**Highlights**
+
+- **Fixes from a security review, in the API, the worker, the web and the AWS deployment.** None of them was rated above low; together they bound how much one caller or one file can take, and close gaps in token management, cross-site writes and the deployment's permissions (#1156–#1161, #1166, #1167).
+- **The Content-Security-Policy is a step closer to being enforced.** While it is still only reported, four directives no page uses are enforced already, and the pages no longer report a violation of their own (#1168).
+
+**Security**
+
+- One caller (a signed-in user, or an IP address when anonymous) can run at most two passage searches at once, over REST and MCP; a third gets 429 (#1157).
+- The OData read timeout now covers preparing its database connection too, and the web's DuckDB writes at most 4 GiB of temporary data to disk (#1157).
+- Pages rendered on the server pass the viewer's IP address on to the API, so per-caller limits hold for requests made on the viewer's behalf (#1157).
+- A deleted user can no longer be added to an organization or group (404) (#1156).
+- A resource URL with control characters is refused (400); `offset` and `limit` on lists must be integers (400 instead of 500); a query result too large to send is refused with 400 instead of failing (#1156).
+- The worker bounds its memory on ZIP files with very long entry names and on large text files in encodings other than UTF-8, which it now reads as a stream (#1159).
+- Images are checked to be what their format says before an AI abstract is written from them (#1159).
+- Damaged DOC, XLS, PPT and Ichitaro files are reported in the worker's own words, an unknown encoding declared by an XML file is read as UTF-8, and error messages saved for a resource are shortened to 1,000 characters (#1158).
+- The Content-Security-Policy enforces `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` and `frame-ancestors 'self'` even while `CSP_MODE` is `report-only` (#1168). Pages no longer cause the eval report that the form validation library used to trigger.
+- Docker Compose: the images a deployment runs (PostgreSQL, the object storage, Caddy, Ollama) are pinned by digest (#1160).
+- AWS: the database refuses deletion on every scale preset; the web and worker tasks are denied access to earlier versions of stored objects; site database roles are created with a SCRAM verifier instead of the plain password; the deploy notification reads only its own environment's pipeline (#1161, #1167).
+- A development dependency of ESLint (minimatch) is moved past a published advisory, and CI now reports such an override once upstream no longer needs it (#1169).
+
+**Upgrade Notes** (for system administrators)
+
+- **Database:** one migration adds a column with a default (`resource.content_index_sweeps`) (#1159). Nothing else is needed.
+- **AWS, database deletion protection:** the next deployment turns deletion protection on for an existing database; nothing is replaced (#1161). Before tearing an environment down with `cdk destroy`, deploy `overrides: { db: { deletionProtection: false } }` first.
+- **`TRUSTED_ORIGINS`:** spaces around each entry and a trailing slash are now ignored, the same way for sign-in, CORS and the Content-Security-Policy (#1160). An entry that a stray space kept from working now works.
+- **Docker Compose, other names:** to open a site under a name other than `BETTER_AUTH_URL`, set `TRUSTED_ORIGINS` (single site) or `SITE_TRUSTED_ORIGINS` (multi-site) (#1160).
+- **Passage search:** clients that run more than two passage searches at once from one user or IP address should wait for one to finish, or expect 429 (#1157).
+- **AWS, new environments:** start a new environment with `sites`, even for a single site. The single-site shape stays for existing environments only, and new features assume the multi-site shape (#1167).
+
+**Bug Fixes**
+
+- A fetch whose connection dropped partway no longer leaves the save waiting forever (#1158).
+- Long jobs that walk the whole catalog (rebuilding the metadata index, writing all abstracts, recording preview row groups) are no longer started a second time by another worker after 90 minutes (#1159).
+- The pass that re-indexes resources missing from search gives up on a resource after three tries and logs a warning, instead of trying forever (#1159).
+- The worker removes its temporary directories left untouched for an hour when it starts (#1159).
+- Records of objects being written are kept for 6 hours instead of 1, so a run waiting behind others is not cleaned up while it still works (#1166).
+- The shared database instance used to read row-level history is retired only when its connection is lost, not when a statement merely names something that looks like a connection error (#1166).
+- Signing up or creating a user with a user name already taken says so (`USER_NAME_TAKEN`) instead of a generic error (#1166).
+
+**Dependencies**
+
+- croner 11, @hookform/resolvers 7 and jsdom 31 (development), 30 minor and patch updates, the OpenSearch image and the GitHub Actions used by CI (#1119, #1165, #1164, #1163, #1117, #1162).
+
+**Documentation**
+
+- ADR-071: the directives enforced during report-only (#1168). ADR-041: new environments start with `sites` (#1167). ADR-045: the write-ahead record lifetime (#1166). ADR-027: who can read the basic-auth password (#1161). ADR-051: rebuilding the Ichitaro WASM to confirm its checksums (#1160). The deployment guide: what the access logs hold and how long they are kept (#1167).
+
+---
+
+**破壊的変更**
+
+- **API トークンで API トークンを管理できなくなりました。** `/api-tokens` での発行・一覧・失効を API トークンで行うと 403 になります。サインインして行ってください（#1156）。`/admin` は従来どおりトークンで使えます。
+- **別のサイトからサインインの Cookie 付きで送られた書き込みを断ります。** セッションの Cookie を持つ `POST`・`PUT`・`PATCH`・`DELETE` のうち、ブラウザが別のサイトから来たと示したもの（マルチサイト構成の隣のサイトのような、隣のサブドメインを含む）は 403 になります（#1157）。`TRUSTED_ORIGINS` に載っているオリジンは通します。Cookie のない要求（API トークン、匿名）と、`Sec-Fetch-Site` を送らないクライアントからの要求は対象外です。
+- **PDF と Office のプレビューは、設定したサイトの名前でだけ表示されます。** Content-Security-Policy に入れるのを、`BETTER_AUTH_URL` のオリジンと `TRUSTED_ORIGINS` のオリジンだけにし、要求が届いた名前は使わなくなりました（#1160）。IP アドレスなど別の名前でも開くサイトは、その名前を `TRUSTED_ORIGINS` に足してください。足さないと、その名前ではプレビューの枠が止まります。
+
+**ハイライト**
+
+- **セキュリティ点検で見つかった問題を、API・worker・Web・AWS のデプロイにわたって直しました。** いずれも深刻度は低です。1 つの呼び出し元や 1 つのファイルが使える量に上限を設け、トークンの管理・別サイトからの書き込み・デプロイの権限の隙間をふさぎました（#1156〜#1161、#1166、#1167）。
+- **Content-Security-Policy の強制に一歩近づきました。** 報告だけの間も、どのページも使わない 4 つの指令はもう強制し、ページ自身が違反を報告することもなくなりました（#1168）。
+
+**セキュリティ**
+
+- 1 つの呼び出し元（サインインしていればユーザー、匿名なら IP アドレス）が同時に流せるパッセージ検索を、REST と MCP で 2 本までにしました。3 本目は 429 になります（#1157）。
+- OData の読み取りの時間切れが、データベースへの接続の準備にも効くようにしました。Web の DuckDB がディスクに書く一時データは、4 GiB までにしました（#1157）。
+- サーバーで描くページが、閲覧者の IP アドレスを API に渡すようにしました。閲覧者に代わって送る要求にも、呼び出し元ごとの上限が効きます（#1157）。
+- 削除済みのユーザーを組織やグループに追加できなくなりました（404）（#1156）。
+- 制御文字を含むリソースの URL は断ります（400）。一覧の `offset` と `limit` は整数に限ります（500 ではなく 400）。送れないほど大きなクエリの結果は、失敗させずに 400 で断ります（#1156）。
+- worker が、エントリ名がとても長い ZIP ファイルと、UTF-8 以外の大きなテキストファイルで使うメモリに上限を設けました。後者はストリームで読むようにしました（#1159）。
+- 画像から AI の抄録を書く前に、宣言された形式のとおりのファイルかを確かめます（#1159）。
+- 壊れた DOC・XLS・PPT・一太郎のファイルを、worker 自身の言葉で報告します。XML ファイルが宣言する未知のエンコーディングは UTF-8 として読み、リソースに保存するエラーの文は 1,000 字までにしました（#1158）。
+- `CSP_MODE` が `report-only` の間も、Content-Security-Policy の `object-src 'none'`・`base-uri 'self'`・`form-action 'self'`・`frame-ancestors 'self'` を強制します（#1168）。フォームの検証に使うライブラリが起こしていた eval の報告も、出なくなりました。
+- Docker Compose：配備で動くイメージ（PostgreSQL・オブジェクトストレージ・Caddy・Ollama）を digest で固定しました（#1160）。
+- AWS：すべての規模のプリセットで、データベースが削除を拒むようにしました。web と worker のタスクには、保存したオブジェクトの以前の版へのアクセスを禁じました。サイトのデータベースのロールは、平文のパスワードではなく SCRAM の検証子で作ります。デプロイの通知は、自分の環境のパイプラインだけを読みます（#1161、#1167）。
+- ESLint が使う開発用の依存（minimatch）を、公表された advisory の対象外の版にしました。上流がこの差し替えを要らなくしたら、CI が知らせるようにしました（#1169）。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **データベース:** マイグレーションが、既定値のある列を 1 つ足します（`resource.content_index_sweeps`）（#1159）。ほかに作業はありません。
+- **AWS のデータベースの削除保護:** 次のデプロイで、既存のデータベースに削除保護が付きます。置き換えは起きません（#1161）。`cdk destroy` で環境を壊すときは、先に `overrides: { db: { deletionProtection: false } }` をデプロイしてください。
+- **`TRUSTED_ORIGINS`:** 各項目の前後の空白と末尾のスラッシュを無視するようになり、サインイン・CORS・Content-Security-Policy で同じ読み方になりました（#1160）。空白のせいで効いていなかった項目が、効くようになります。
+- **Docker Compose で別の名前を使う場合:** `BETTER_AUTH_URL` 以外の名前でサイトを開くには、`TRUSTED_ORIGINS`（単一サイト）または `SITE_TRUSTED_ORIGINS`（マルチサイト）を設定してください（#1160）。
+- **パッセージ検索:** 1 つのユーザーや IP アドレスから 3 本以上を同時に流すクライアントは、1 本が終わるのを待つか、429 を想定してください（#1157）。
+- **AWS の新しい環境:** サイトが 1 つでも、新しい環境は `sites` で作ってください。単一サイトの形は既存の環境のためだけに残し、新しい機能はマルチサイトの形を前提にします（#1167）。
+
+**バグ修正**
+
+- 取得の途中で接続が切れると、保存がいつまでも待ち続けていたのを直しました（#1158）。
+- カタログ全体をたどる長いジョブ（メタデータの索引の作り直し、全抄録の生成、プレビューの行グループの記録）が、90 分を過ぎると別の worker にもう一度始められていたのを直しました（#1159）。
+- 検索に入っていないリソースを索引し直す処理は、3 回試しても入らなければ諦めて警告のログを出します。これまでは試し続けていました（#1159）。
+- worker は起動時に、1 時間触られていない自分の一時ディレクトリを消します（#1159）。
+- 書き込み中のオブジェクトの記録を、1 時間ではなく 6 時間残すようにしました。ほかの処理の後ろで待っている実行が、まだ動いているのに後始末されることがなくなります（#1166）。
+- 行の履歴を読むための共有のデータベースのインスタンスは、接続が失われたときだけ退役させます。文の中に接続のエラーに似た名前があるだけでは退役させません（#1166）。
+- 使われているユーザー名でサインアップしたりユーザーを作ったりすると、汎用のエラーではなく、そのことを伝えます（`USER_NAME_TAKEN`）（#1166）。
+
+**依存関係**
+
+- croner 11・@hookform/resolvers 7・jsdom 31（開発用）、マイナー・パッチの更新 30 件、OpenSearch のイメージ、CI が使う GitHub Actions（#1119、#1165、#1164、#1163、#1117、#1162）。
+
+**ドキュメント**
+
+- ADR-071：report-only の間に強制する指令（#1168）。ADR-041：新しい環境は `sites` で作る（#1167）。ADR-045：書き込み中の記録を残す時間（#1166）。ADR-027：Basic 認証のパスワードを読める主体（#1161）。ADR-051：一太郎の WASM を作り直してチェックサムを確かめる手順（#1160）。デプロイの手引き：アクセスログに残るものと保持期間（#1167）。
+
 ## [0.41.0] - 2026-11-09
 
 **Highlights**
