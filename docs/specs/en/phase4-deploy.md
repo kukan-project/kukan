@@ -332,14 +332,14 @@ npx cdk deploy -c env=dev -c scale=medium 'Dev/**'
 ## Multi-Site Configuration (ADR-041)
 
 Declaring `sites: []` on an environment entry splits it into a SharedStack (the shared box) plus
-N SiteStacks (per-site resources). It is **opt-in only**: an environment without `sites` keeps
-synthesizing the traditional all-in-one KukanStack with unchanged logical IDs (verified
-mechanically by synth snapshot tests in `infra/lib/__tests__/`).
+N SiteStacks (per-site resources). An environment without `sites` keeps synthesizing the
+traditional all-in-one KukanStack with unchanged logical IDs, for compatibility with existing
+environments (verified mechanically by synth snapshot tests in `infra/lib/__tests__/`).
 
-**New environments are recommended to start with a single site** (e.g. `sites: [{ name: 'main' }]`).
-Adding `sites` to an already-deployed environment replaces every resource (see the blue-green
-migration below), so if there is any chance of adding sites later, adopt the multi-site shape from
-the start.
+**New environments start with `sites`, even with a single site** (e.g. `sites: [{ name: 'main' }]`;
+ADR-041's 2026-11-10 addendum). The single-site shape lacks the per-site separation, and adding
+`sites` to an already-deployed environment replaces every resource (see the blue-green migration
+below).
 
 ```
 Dev (Stage)
@@ -693,8 +693,11 @@ regions, so that a traffic burst can be traced to its source, its URLs, and why 
 - **One bucket per site** (`Bucket` in `AccessLogConstruct`, RETAIN, ObjectOwnership ObjectWriter
   because delivery writes through ACLs). The bucket tells the sites apart, and removing a site
   cleans up per site. The name is in the stack output `CdnLogBucketName`
-- **Retention is `cdnLogRetentionDays` (environment entry, default 90 days)**, expired by a
-  lifecycle rule
+- **Retention is `cdnLogRetentionDays` (environment entry, default 90 days, long enough to trace
+  something noticed weeks later)**, expired by a lifecycle rule. The logs keep the IP address,
+  the User-Agent and the URL's query (search words included), and the WAF's log (counted or
+  blocked requests only) defaults to the same. Shorten both where the privacy policy requires
+  (the WAF's with `waf.logging.retentionDays`)
 - **Cookies are not logged** (they carry the session token)
 - **No logs in opt-in regions (af-south-1, ap-east-1 …).** Legacy logging cannot deliver to a
   bucket there. Not worth failing the deploy over, so synth only warns. A region CDK does not

@@ -277,7 +277,9 @@ export interface EnvironmentConfig {
   ecrImageRetention?: number
   /**
    * Days CloudFront access logs are kept in each site's log bucket before
-   * they expire. Applies to every site of the environment. Omit → 90.
+   * they expire. Applies to every site of the environment. Omit → 90. They
+   * hold viewers' IPs, User-Agents and queries: shorten to fit the site's
+   * privacy policy (the WAF's log follows unless set apart, phase4-deploy).
    */
   cdnLogRetentionDays?: number
   /**

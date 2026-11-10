@@ -647,6 +647,20 @@ describe('pipeline mode', () => {
       GenerateSecretString: { PasswordLength: 32 },
     })
     template.resourceCountIs('AWS::SNS::Topic', 1)
+    // The handler reads its own pipeline's executions, by that pipeline's reference
+    const [pipelineId] = Object.keys(template.findResources('AWS::CodePipeline::Pipeline'))
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(['codepipeline:GetPipelineExecution']),
+            Resource: Match.objectLike({
+              'Fn::Join': Match.arrayWith([Match.arrayWith([{ Ref: pipelineId }])]),
+            }),
+          }),
+        ]),
+      },
+    })
   })
 })
 

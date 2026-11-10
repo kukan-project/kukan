@@ -1,6 +1,7 @@
 /** Slack notification for a pipeline's deployments (ADR-030). */
 
 import * as cdk from 'aws-cdk-lib'
+import type * as codepipeline from 'aws-cdk-lib/aws-codepipeline'
 import * as codestarnotifications from 'aws-cdk-lib/aws-codestarnotifications'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import * as lambda from 'aws-cdk-lib/aws-lambda'
@@ -13,8 +14,8 @@ import { Construct } from 'constructs'
 import { fileURLToPath } from 'node:url'
 
 export interface DeployNotificationProps {
-  /** The pipeline to report on. */
-  pipeline: codestarnotifications.INotificationRuleSource
+  /** The pipeline to report on, and the only one the handler may read. */
+  pipeline: codepipeline.IPipeline
   /** Environment name, as the message's subject. */
   environmentName: string
   /**
@@ -86,7 +87,7 @@ export class DeployNotificationConstruct extends Construct {
     handler.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['codepipeline:GetPipelineExecution', 'codepipeline:ListActionExecutions'],
-        resources: ['*'],
+        resources: [props.pipeline.pipelineArn],
       })
     )
 
