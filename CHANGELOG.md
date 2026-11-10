@@ -6,6 +6,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.42.1] - 2026-11-10
+
+**Security**
+
+- Trailing runs of a character are trimmed by a loop instead of a regular expression, which took time quadratic in a long run that did not end the text (#1171). This covers the text preview, which decodes up to 1 MB of a file in the browser and could freeze the viewer's tab on a file of invalid bytes, and the CSV check on a line of a fetched file, as well as the configured site origins and the worker's User-Agent URL.
+
+**Upgrade Notes** (for system administrators)
+
+- Nothing beyond deploying the new version.
+
+---
+
+**セキュリティ**
+
+- 末尾に続く同じ文字を、正規表現ではなくループで落とすようにしました。正規表現は、文の終わりで終わらない長い連なりに対して、長さの二乗の時間がかかっていました（#1171）。ブラウザでファイルを最大 1 MB までデコードするテキストのプレビュー（不正なバイト列が続くファイルで、閲覧者のタブが固まりえた）と、取得したファイルの 1 行に掛かる CSV の判定が対象です。設定したサイトのオリジンと、worker の User-Agent の URL も同じ処理にしました。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- 新しい版をデプロイする以外の作業はありません。
+
 ## [0.42.0] - 2026-11-10
 
 **Breaking Changes**
