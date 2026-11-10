@@ -294,7 +294,10 @@ vertical writing, headers or footers. It is used for the "original" tab.
   is about 320 KB. The build is committed under `apps/web/public/vendor/ezpzjtd/` and reaches the
   web image with `public/`; CI uses no Rust. Raising the version means running `build.sh`, which
   also regenerates the licence notices (LICENSE, NOTICE, THIRD_PARTY_NOTICES) and the commit taken
-  (SOURCE)
+  (SOURCE). What is committed is a binary built on a developer's machine, and `SHA256SUMS` is
+  written by the same script, so on its own it vouches only for itself. The review of that pull
+  request runs `build.sh` on another machine and checks the result against `SHA256SUMS` (the inputs
+  are pinned: the git commit, `Cargo.lock` and the toolchain's version)
 - **Attribution**: "Powered by EZPZ File" at the preview's top right, and a note that figures,
   vertical writing, headers and footers are not shown. EZPZ's logos are not used (they are outside
   its licence)

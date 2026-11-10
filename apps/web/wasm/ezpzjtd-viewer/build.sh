@@ -2,13 +2,14 @@
 # Build the Ichitaro viewer (EZPZ File JTD, MIT) into public/vendor/ezpzjtd/: its
 # module and .wasm, its licence and notice, those of the crates compiled in,
 # and the commit it was built from.
+# SHA256SUMS vouches only for itself: review rebuilds elsewhere and compares (ADR-051).
 # Needs: rustup toolchain install 1.90.0 --profile minimal --target wasm32-unknown-unknown
 #        cargo +1.90.0 install wasm-bindgen-cli --version 0.2.129 --locked
 set -euo pipefail
 cd "$(dirname "$0")"
 out=../../public/vendor/ezpzjtd
 # Panic messages name the sources: keep the builder's home directory out of them
-RUSTFLAGS="--remap-path-prefix=$HOME/.cargo=/cargo" \
+RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" \
   cargo +1.90.0 build --release --locked --target wasm32-unknown-unknown
 rm -rf "$out"
 wasm-bindgen --target web --no-typescript --out-dir "$out" \

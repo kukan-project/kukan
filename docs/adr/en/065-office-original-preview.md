@@ -554,11 +554,14 @@ without `eval`. The defence therefore rests not on a short import list but on th
   Auth's default Lax today, but this does not rely on it. DNS prefetching is turned off too
   (`X-DNS-Prefetch-Control: off`). `<A>` stands for `/vendor/ibis-office/<version>/` (the boot
   page sits in the same directory as ibisOffice). A CSP source needs the host, so it is written
-  with the site's public origin (`BETTER_AUTH_URL`) and the request's `Host` (for a site opened
-  directly under another name, such as its address). `X-Forwarded-Host` is not used: CloudFront
-  passes a viewer's value on, which would put someone else's host in the HTML cache. Nor is `Host`
-  used for a request through CloudFront (one carrying `X-Amz-Cf-Id`): it is the internal ALB's
-  name, which would show the setup in an unauthenticated response (ADR-070)
+  with the site's public origin (`BETTER_AUTH_URL`) and the other names the operator lets people
+  sign in under (`TRUSTED_ORIGINS`). Neither the request's `Host` nor `X-Forwarded-Host` is used:
+  CloudFront passes a viewer's `X-Forwarded-Host` on, which would put someone else's host in the
+  HTML cache, and the `Host` it sends is the internal ALB's name, which would show the setup in an
+  unauthenticated response (ADR-070). Without CloudFront, `Host` is still the sender's to choose,
+  and a shared cache in front would serve it to others. So a site opened directly under a name in
+  neither, such as its address, has the frames of the original's and the PDF's previews stopped by
+  the CSP; a name to be used is added to `TRUSTED_ORIGINS`
 
   ```
   sandbox allow-scripts; default-src 'none'; script-src <A> 'wasm-unsafe-eval';

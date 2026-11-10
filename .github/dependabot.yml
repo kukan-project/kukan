@@ -53,3 +53,15 @@ updates:
     target-branch: develop
     schedule:
       interval: weekly
+
+  # The images the Compose files run; those a deployment runs are pinned by digest.
+  - package-ecosystem: docker-compose
+    directories:
+      - /
+      - /docker/multi-site
+    target-branch: develop
+    schedule:
+      interval: weekly
+    ignore:
+      # Built here from the Dockerfiles (web, worker, OpenSearch); no registry has them
+      - dependency-name: 'kukan-*'

@@ -10,7 +10,7 @@ import { admin } from 'better-auth/plugins'
 import { adminAc } from 'better-auth/plugins/admin/access'
 import type { Database } from '@kukan/db'
 import { auditLog } from '@kukan/db'
-import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, type Env } from '@kukan/shared'
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, trustedOrigins, type Env } from '@kukan/shared'
 import { claimBootstrapPromotion } from '../services/bootstrap'
 import { checkPasswordPolicy } from './password-policy'
 import { enforceSignUpName } from './sign-up-name'
@@ -98,7 +98,7 @@ export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']
       updateAge: 60 * 60 * 24,
     },
     trustedOrigins: [
-      ...(process.env.TRUSTED_ORIGINS ? process.env.TRUSTED_ORIGINS.split(',') : []),
+      ...trustedOrigins(process.env.TRUSTED_ORIGINS),
       // Auto-trust Vercel preview URLs (*.vercel.app)
       ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
     ],

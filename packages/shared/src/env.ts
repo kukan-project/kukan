@@ -324,6 +324,19 @@ export function publicOrigin(env: Pick<Env, 'BETTER_AUTH_URL'>): string {
 }
 
 /**
+ * The other origins the site is reached under (TRUSTED_ORIGINS, comma-separated),
+ * spelled as `publicOrigin` spells the site's own. One reading for the three
+ * that trust them — sign-in, CORS and the pages' CSP — so a stray space or a
+ * trailing slash cannot have one trust a name the others refuse.
+ */
+export function trustedOrigins(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean)
+}
+
+/**
  * Load and validate environment variables.
  * DATABASE_URL is always constructed from POSTGRES_* variables.
  * @returns Validated environment configuration

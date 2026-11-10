@@ -6,7 +6,13 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
-import { createLogger, loadEnv, ODATA_BASE_PATH, SITEMAP_BASE_PATH } from '@kukan/shared'
+import {
+  createLogger,
+  loadEnv,
+  ODATA_BASE_PATH,
+  SITEMAP_BASE_PATH,
+  trustedOrigins,
+} from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { PostgresJobQueue, httpWake } from '@kukan/queue'
 import { createAdapters } from './adapters'
@@ -62,12 +68,12 @@ export async function createApp() {
   const settings = new SystemSettingService(db)
 
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
-  const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
-  if (trustedOrigins?.length) {
+  const trusted = trustedOrigins(process.env.TRUSTED_ORIGINS)
+  if (trusted.length > 0) {
     app.use(
       '/api/*',
       cors({
-        origin: trustedOrigins,
+        origin: trusted,
         credentials: true,
       })
     )
@@ -151,7 +157,7 @@ export async function createApp() {
   )
 
   // Better Auth checks its own requests' origin; the rest are checked here
-  app.use('*', refuseCrossSite(trustedOrigins))
+  app.use('*', refuseCrossSite(trusted))
 
   // Auth middleware for non-auth routes
   app.use('*', optionalAuth(auth))

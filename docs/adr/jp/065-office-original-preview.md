@@ -526,11 +526,13 @@ iframe**（`allow-same-origin` を付けない）に入れる。文書は信頼�
   SameSite=None なら Cookie も付く（§実測）。今の KUKAN のセッションの Cookie は Better Auth の
   既定の Lax だが、それに頼らない。DNS の先読みも止める（`X-DNS-Prefetch-Control: off`）。
   `<A>` は `/vendor/ibis-office/<版>/`（起動ページも ibisOffice と同じディレクトリに置く）。
-  CSP の許可にはホストが要るので、サイトの公開のオリジン（`BETTER_AUTH_URL`）と、リクエストの
-  `Host`（IP アドレスなど別の名前で直に開いたとき）で書く。`X-Forwarded-Host` は使わない —
-  CloudFront が閲覧者の値をそのまま渡すので、HTML のキャッシュに他人のホストが入る。CloudFront
-  経由の要求（`X-Amz-Cf-Id` が付く）では `Host` も使わない — 届くのは内部の ALB の名前で、
-  未認証の応答に構成を出すことになる（ADR-070）
+  CSP の許可にはホストが要るので、サイトの公開のオリジン（`BETTER_AUTH_URL`）と、運用者がログインを
+  許した別の名前（`TRUSTED_ORIGINS`）で書く。リクエストの `Host` も `X-Forwarded-Host` も使わない —
+  `X-Forwarded-Host` は CloudFront が閲覧者の値をそのまま渡すので HTML のキャッシュに他人のホストが
+  入り、CloudFront 経由の `Host` は内部の ALB の名前で未認証の応答に構成を出すことになる（ADR-070）。
+  CloudFront を介さない配備でも、`Host` は送り手が決める値で、前に共有のキャッシュを置けば他人の応答に
+  入る。そのため IP アドレスなど、どちらにもない名前で直に開いたサイトでは、原本と PDF のプレビューの
+  枠が CSP で止まる。その名前で使うなら `TRUSTED_ORIGINS` に足す
 
   ```
   sandbox allow-scripts; default-src 'none'; script-src <A> 'wasm-unsafe-eval';

@@ -15,7 +15,7 @@ const GA_CONNECT_SOURCES = [
 ]
 
 export interface ContentSecurityPolicyInput {
-  /** The site's origins, configured and requested, as the proxy computes them. */
+  /** The site's origins as configured: BETTER_AUTH_URL's, then TRUSTED_ORIGINS. */
   origins: string[]
   /** Whether frames may show Microsoft's viewer (OFFICE_PREVIEW_VIEWER=office-online). */
   officeOnline: boolean

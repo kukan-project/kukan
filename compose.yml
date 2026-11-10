@@ -50,16 +50,20 @@ x-app-environment: &app-environment
   # Reachable from the worker without authentication, and not a service it uses
   FETCH_DENY_HOSTS: ${FETCH_DENY_HOSTS:-opensearch-dashboards}
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost}
+  # Other names the site is reached under: signed in, and named in the CSP (ADR-065)
+  TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
 
 services:
   # ===== Infrastructure (always started) =====
+  # Pinned by digest (Dependabot keeps them current) but for OpenSearch
+  # Dashboards, which is for development only.
 
   postgres:
     # pgvector-bundled image (Debian-based). Migrating an existing alpine pgdata
     # volume changes the collation implementation — recreate the volume in dev,
     # or pg_dump/restore (or REINDEX) in production. See ADR-034.
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:0dd3149a06e4579a0d70d8fef9945636cd514005e7237deb27f9b67886f8dc4f
     container_name: kukan-postgres
     ports:
       - '127.0.0.1:5432:5432'
@@ -76,7 +80,7 @@ services:
       retries: 5
 
   minio:
-    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     container_name: kukan-minio
     ports:
       - '127.0.0.1:9000:9000'
@@ -93,7 +97,7 @@ services:
       retries: 5
 
   minio-init:
-    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     container_name: kukan-minio-init
     depends_on:
       minio:
@@ -158,7 +162,7 @@ services:
     # closed networks pre-distribute the ollama-models volume instead.
     # Host port defaults to 11435 (not 11434) so a natively installed Ollama
     # doesn't collide; in-network services still use http://ollama:11434.
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
     container_name: kukan-ollama
     environment:
       # Keep models loaded. The default (5m) unloads the embedding model on
@@ -180,7 +184,7 @@ services:
     # what the app uses. AI_COMPLETION_MODELS is the deployment's approved model
     # list (= the admin picker); every entry is pulled here so each option is
     # actually runnable. The first entry is the default.
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
     container_name: kukan-ollama-init
     depends_on:
       ollama:
@@ -270,7 +274,7 @@ services:
 
   caddy:
     profiles: [prod]
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
     container_name: kukan-caddy
     restart: unless-stopped
     ports:

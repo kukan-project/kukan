@@ -53,6 +53,8 @@ x-app-environment: &app-environment
   OLLAMA_URL: http://kukan-shared-ollama:11434
   BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET:?set SITE_AUTH_SECRET}
   BETTER_AUTH_URL: ${SITE_URL}
+  # Other names the site is reached under: signed in, and named in the CSP (ADR-065)
+  TRUSTED_ORIGINS: ${SITE_TRUSTED_ORIGINS:-}
 
 services:
   web:

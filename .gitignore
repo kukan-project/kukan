@@ -18,6 +18,10 @@ out/
 # Multi-site per-site env files (ADR-041) — only the .example template is committed
 docker/multi-site/sites/*.env
 
+# Private keys and certificates: none belongs in the repository
+*.pem
+*.key
+
 # Testing
 coverage/
 .nyc_output

@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { envSchema, loadEnv, databaseUrl, postgresSsl, timeZoneSchema, cspModeSchema } from '../env'
+import {
+  envSchema,
+  loadEnv,
+  databaseUrl,
+  postgresSsl,
+  timeZoneSchema,
+  cspModeSchema,
+  trustedOrigins,
+} from '../env'
 
 describe('envSchema', () => {
   it('should apply defaults for optional fields', () => {
@@ -365,5 +373,19 @@ describe('postgresSsl', () => {
   it('refuses a mode it does not know', () => {
     process.env.POSTGRES_SSLMODE = 'verify-ca'
     expect(() => postgresSsl()).toThrow()
+  })
+})
+
+describe('trustedOrigins', () => {
+  it('reads the list as the site origin is read: trimmed, no trailing slash, no blanks', () => {
+    expect(trustedOrigins(' https://a.example, https://b.example/ ,,')).toEqual([
+      'https://a.example',
+      'https://b.example',
+    ])
+  })
+
+  it('is empty when unset', () => {
+    expect(trustedOrigins(undefined)).toEqual([])
+    expect(trustedOrigins('')).toEqual([])
   })
 })

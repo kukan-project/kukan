@@ -67,6 +67,7 @@ function unpack(archive) {
         if (fileName.endsWith('/') || !SERVED.some((served) => fileName.startsWith(served))) {
           return zip.readEntry()
         }
+        // Inside `dest`: yauzl refuses an absolute name or one with a `..` segment before emitting it
         const target = join(dest, fileName)
         mkdirSync(dirname(target), { recursive: true })
         zip.openReadStream(entry, (readError, stream) => {

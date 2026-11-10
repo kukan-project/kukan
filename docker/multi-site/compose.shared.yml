@@ -24,7 +24,7 @@ x-minio-credentials: &minio-credentials
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:0dd3149a06e4579a0d70d8fef9945636cd514005e7237deb27f9b67886f8dc4f
     container_name: kukan-shared-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-kukan}
@@ -39,7 +39,7 @@ services:
       retries: 5
 
   minio:
-    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     container_name: kukan-shared-minio
     environment:
       <<: *minio-credentials
@@ -54,7 +54,7 @@ services:
 
   minio-init:
     # One bucket per site: space-separated list in S3_BUCKETS
-    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     container_name: kukan-shared-minio-init
     depends_on:
       minio:
@@ -92,7 +92,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
     container_name: kukan-shared-ollama
     environment:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
@@ -100,7 +100,7 @@ services:
       - ollama-models:/root/.ollama
 
   ollama-init:
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
     container_name: kukan-shared-ollama-init
     depends_on:
       ollama:
@@ -125,7 +125,7 @@ services:
     # Single edge for every site — per-site virtual hosts in ./Caddyfile.
     # No depends_on: the site web containers live in their own compose
     # projects; caddy just 502s until they are up.
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
     container_name: kukan-shared-caddy
     restart: unless-stopped
     ports:

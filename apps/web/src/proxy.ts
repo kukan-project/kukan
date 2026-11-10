@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { cspModeSchema, officePreviewViewerSchema } from '@kukan/shared'
+import { cspModeSchema, officePreviewViewerSchema, trustedOrigins } from '@kukan/shared'
 import { brandConfig } from '@/brand/brand-config'
 import { siteOrigin } from '@/lib/site-origin'
 import { buildContentSecurityPolicy, uploadOrigin } from '@/lib/csp'
@@ -10,9 +10,6 @@ import { IBIS_OFFICE_DIR, IBIS_OFFICE_ROOT } from '@/lib/ibis-office'
  * sandboxed frame in (ADR-065 decision 2). A source that names a path must
  * name the host too, and OFFICE_PREVIEW_VIEWER and CSP_MODE are read at
  * runtime, so the headers are set per request rather than in next.config.ts.
- * The host is the site's configured origin, which CloudFront's viewers see (it
- * does not pass their Host on), and the request's, for a site reached directly
- * under another name, as by its address.
  *
  * Every page gets the policy, not just a dataset's: the App Router keeps the
  * first document across client navigations, so only the CSP of the page a
@@ -25,7 +22,7 @@ import { IBIS_OFFICE_DIR, IBIS_OFFICE_ROOT } from '@/lib/ibis-office'
  * which holds `frame-src`, is the one header.
  */
 export function proxy(request: NextRequest) {
-  const origins = allowedOrigins(request)
+  const origins = allowedOrigins()
   const response = NextResponse.next()
   // All of it, decoded: the boot page is served under other spellings of its
   // path too (`%62oot.html`), and a script or WASM response ignores the CSP
@@ -58,27 +55,12 @@ export function proxy(request: NextRequest) {
 }
 
 /**
- * Behind CloudFront the Host is the origin's, an internal load balancer's name,
- * which a public response should not carry (ADR-070); CloudFront adds
- * X-Amz-Cf-Id to every request it forwards. A visitor who sends that header
- * directly only takes their own host out of their own page's policy.
+ * BETTER_AUTH_URL's origin, then TRUSTED_ORIGINS, and a Vercel preview's own as
+ * sign-in trusts it; never the request's Host (ADR-065 decision 2).
  */
-function allowedOrigins(request: NextRequest): string[] {
-  if (request.headers.has('x-amz-cf-id')) return [siteOrigin()]
-  return [...new Set([siteOrigin(), requestOrigin(request)])]
-}
-
-/**
- * From Host alone: CloudFront replaces it, but passes a viewer's
- * X-Forwarded-Host on, which would let anyone put a host of their own in the
- * CSP of a page its HTML cache then serves to everybody. An http source matches
- * https too, so a TLS proxy in front does not matter.
- */
-function requestOrigin(request: NextRequest): string {
-  const host = request.headers.get('host')
-  return host && /^[\w.:[\]-]+$/.test(host)
-    ? `${request.nextUrl.protocol}//${host}`
-    : request.nextUrl.origin
+function allowedOrigins(): string[] {
+  const vercel = process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []
+  return [...new Set([siteOrigin(), ...trustedOrigins(process.env.TRUSTED_ORIGINS), ...vercel])]
 }
 
 function decoded(path: string): string {
