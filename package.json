@@ -24,6 +24,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "lint": "turbo run lint",
+    "check:overrides": "node scripts/check-overrides.mjs",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:create-user": "pnpm --filter @kukan/db db:create-user --",
@@ -47,6 +48,7 @@
     "pg": "^8.23.1",
     "prettier": "^3.9.10",
     "prettier-plugin-astro": "^1.1.2",
+    "semver": "^7.8.6",
     "tailwindcss": "^4.3.5",
     "turbo": "^2.11.10",
     "typescript": "^6.0.3",
@@ -72,7 +74,8 @@
     },
     "overrides": {
       "@types/node": "$@types/node",
-      "esbuild@<0.28.1": ">=0.28.1 <0.29"
+      "esbuild@<0.28.1": ">=0.28.1 <0.29",
+      "minimatch@>=7.0.0 <11.0.1": "^11.0.5"
     }
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",

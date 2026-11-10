@@ -220,6 +220,14 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
 
+      # A security override pins a fixed version past what upstream allowed;
+      # this fails once upstream allows it, so the override comes out with the
+      # dependency update that made it unneeded instead of staying on. Last,
+      # and run even when lint or typecheck failed, so neither hides the other.
+      - name: Check overrides are still needed
+        if: ${{ !cancelled() && steps.changes.outputs.code == 'true' }}
+        run: pnpm check:overrides
+
       # Without a bound the saved cache grows by every merge; the action says
       # what it keeps.
       - name: Prune turbo cache
