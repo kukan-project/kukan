@@ -20,6 +20,17 @@ export function escapeLike(value: string): string {
   return value.replace(/[%_\\]/g, '\\$&')
 }
 
+/**
+ * `value` without the run of `chars` it ends in. A loop, not a pattern such as
+ * `/\/+$/`: a regular expression retries the run from each of its characters
+ * when it does not end the string, which takes time quadratic in its length.
+ */
+export function trimTrailing(value: string, chars: string): string {
+  let end = value.length
+  while (end > 0 && chars.includes(value[end - 1])) end--
+  return value.slice(0, end)
+}
+
 /** `text` cut to `max` characters and marked as cut, short of a surrogate pair it would split. */
 export function clipText(text: string, max: number): string {
   if (text.length <= max) return text

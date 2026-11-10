@@ -22,6 +22,7 @@ import {
   OFFICE_PREVIEW_LIMIT,
   OFFICE_PREVIEW_LIMIT_MB,
   TEXT_PREVIEW_LIMIT_MB,
+  trimTrailing,
 } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { DataExplorer } from '@/components/data-explorer/data-explorer'
@@ -436,7 +437,7 @@ function useResourceText(resourceId: string): ResourceText {
         const buf = await res.arrayBuffer()
         const decoded = new TextDecoder(charset).decode(buf)
         // Remove trailing replacement chars from truncated multi-byte sequences
-        setText(decoded.replace(/\uFFFD+$/, ''))
+        setText(trimTrailing(decoded, '\uFFFD'))
       } catch {
         if (!cancelled) setError(true)
       } finally {

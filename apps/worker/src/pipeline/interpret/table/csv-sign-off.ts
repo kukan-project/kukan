@@ -41,7 +41,7 @@ import { SIGN_OFF_MAX_CELLS, SIGN_OFF_MIN_MISSING } from '@/config'
 // time here, or the line would be measured against a column count taken with
 // another ruler. The shape itself lives in shared beside the schema field that
 // persists it.
-import type { CsvDialect } from '@kukan/shared'
+import { trimTrailing, type CsvDialect } from '@kukan/shared'
 
 export type { CsvDialect }
 
@@ -59,7 +59,7 @@ export function looksLikeSignOff(text: string, dialect: CsvDialect, columnCount:
   // before it, and any blank line between — the file this exists for arrives as
   // `"\n\r\n\"港区施設情報…\""`. Left on, the parser reads three rows and the line
   // is refused for not being one.
-  const parsed = Papa.parse<string[]>(text.replace(/^[\r\n]+|[\r\n]+$/g, ''), {
+  const parsed = Papa.parse<string[]>(trimTrailing(text.replace(/^[\r\n]+/, ''), '\r\n'), {
     header: false,
     skipEmptyLines: false,
     delimiter,

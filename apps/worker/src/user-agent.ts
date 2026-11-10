@@ -12,9 +12,9 @@
  * from a server of theirs, and with the site named that reads as which site is
  * behind on patches (ADR-070).
  */
-import type { Env } from '@kukan/shared'
+import { trimTrailing, type Env } from '@kukan/shared'
 
 export function buildUserAgent(env: Pick<Env, 'USER_AGENT_URL'>): string {
-  const site = env.USER_AGENT_URL?.replace(/\/+$/, '')
+  const site = env.USER_AGENT_URL && trimTrailing(env.USER_AGENT_URL, '/')
   return `KUKAN${site ? ` (+${site})` : ''}`
 }

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { passwordMinScoreSchema } from './password-strength'
 import { AI_PROVIDERS } from './ai-usage'
 import { CLIENT_IP_HEADERS } from './client-ip'
+import { trimTrailing } from './utils'
 
 const booleanString = z.preprocess(
   (v) => (typeof v === 'string' ? v : String(v)),
@@ -320,7 +321,7 @@ export const PINNED_PAGE_MAX_AGE_S = 600
  * function so the reading is in one place rather than spelled out per caller.
  */
 export function publicOrigin(env: Pick<Env, 'BETTER_AUTH_URL'>): string {
-  return env.BETTER_AUTH_URL.replace(/\/+$/, '')
+  return trimTrailing(env.BETTER_AUTH_URL, '/')
 }
 
 /**
@@ -332,7 +333,7 @@ export function publicOrigin(env: Pick<Env, 'BETTER_AUTH_URL'>): string {
 export function trustedOrigins(value: string | undefined): string[] {
   return (value ?? '')
     .split(',')
-    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .map((origin) => trimTrailing(origin.trim(), '/'))
     .filter(Boolean)
 }
 

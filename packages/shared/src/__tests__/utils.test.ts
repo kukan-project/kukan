@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isUuid, escapeLike, SESSION_COOKIE_NAME } from '../utils'
+import { isUuid, escapeLike, trimTrailing, SESSION_COOKIE_NAME } from '../utils'
 
 describe('isUuid', () => {
   it('should return true for valid UUIDs', () => {
@@ -54,5 +54,23 @@ describe('escapeLike', () => {
 describe('SESSION_COOKIE_NAME', () => {
   it('should be the expected cookie name', () => {
     expect(SESSION_COOKIE_NAME).toBe('better-auth.session_token')
+  })
+})
+
+describe('trimTrailing', () => {
+  it('drops the run of the given characters at the end and nothing else', () => {
+    expect(trimTrailing('https://example.jp///', '/')).toBe('https://example.jp')
+    expect(trimTrailing('https://example.jp/a/b', '/')).toBe('https://example.jp/a/b')
+    expect(trimTrailing('a\r\n\r\n', '\r\n')).toBe('a')
+    expect(trimTrailing('///', '/')).toBe('')
+    expect(trimTrailing('', '/')).toBe('')
+  })
+
+  it('takes linear time on a long run, whether or not it ends the string', () => {
+    const run = '\uFFFD'.repeat(1_000_000)
+    const start = performance.now()
+    expect(trimTrailing(`${run}x`, '\uFFFD')).toBe(`${run}x`)
+    expect(trimTrailing(run, '\uFFFD')).toBe('')
+    expect(performance.now() - start).toBeLessThan(1000)
   })
 })
