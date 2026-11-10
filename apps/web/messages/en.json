@@ -293,6 +293,7 @@
     "passwordRequired": "Enter your password",
     "nameError": "Lowercase letters, numbers, hyphens, underscores, and periods only (2-100 chars)",
     "invalidCredentials": "Invalid email or password",
+    "nameTaken": "That user name is taken. Please choose another.",
     "signUpFailed": "Registration failed. Please try a different email address.",
     "namePlaceholder": "john-doe",
     "registrationDisabled": "Registration is currently disabled. Please contact your administrator."

@@ -13,7 +13,7 @@ import { auditLog } from '@kukan/db'
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, trustedOrigins, type Env } from '@kukan/shared'
 import { claimBootstrapPromotion } from '../services/bootstrap'
 import { checkPasswordPolicy } from './password-policy'
-import { enforceSignUpName } from './sign-up-name'
+import { enforceSignUpName, refuseTakenName } from './sign-up-name'
 import { inactiveUser } from './inactive-user'
 
 export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']) {
@@ -61,6 +61,8 @@ export function createAuth(db: Database, clientIpHeader: Env['CLIENT_IP_HEADER']
           // sign-ups. The admin plugin's before hook merges with priority to
           // incoming data, so this wins regardless of hook execution order.
           before: async (userData) => {
+            // Ahead of the claim: a refused creation must not hold it until it goes stale
+            await refuseTakenName(db, userData.name)
             const claim = await claimBootstrapPromotion(db)
             if (claim === 'claimed') {
               bootstrapPromotion = true

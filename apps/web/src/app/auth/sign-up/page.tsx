@@ -56,6 +56,15 @@ export default function SignUpPage() {
   // Mounting the meter costs a settings request, so it waits for a keystroke
   const password = watch('password') ?? ''
 
+  const refusal = (code: string | undefined): string => {
+    // The strength policy is the server's call — its threshold is deployment
+    // specific, so the meter advises but never blocks the submit
+    if (code === 'PASSWORD_TOO_WEAK') return tp('tooWeak')
+    if (code === 'USER_NAME_TAKEN') return t('nameTaken')
+    if (code === 'INVALID_USER_NAME') return t('nameError')
+    return t('signUpFailed')
+  }
+
   const onSubmit = async (values: SignUpValues) => {
     setError(null)
     const result = await signUp.email({
@@ -64,9 +73,7 @@ export default function SignUpPage() {
       password: values.password,
     })
     if (result.error) {
-      // The strength policy is the server's call — its threshold is deployment
-      // specific, so the meter advises but never blocks the submit
-      setError(result.error.code === 'PASSWORD_TOO_WEAK' ? tp('tooWeak') : t('signUpFailed'))
+      setError(refusal(result.error.code))
       return
     }
     window.location.href = '/dashboard'

@@ -3,7 +3,7 @@
  * Business logic for user lifecycle management (delete, restore, purge)
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
   user,
@@ -15,6 +15,20 @@ import {
   resourceVersion,
 } from '@kukan/db'
 import { NotFoundError, ConflictError, ValidationError } from '@kukan/shared'
+
+/** Whether another user than `exceptUserId` has `name`: sign-up and a rename ask the same. */
+export async function userNameTaken(
+  db: Database,
+  name: string,
+  exceptUserId?: string
+): Promise<boolean> {
+  const [taken] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(and(eq(user.name, name), exceptUserId ? ne(user.id, exceptUserId) : undefined))
+    .limit(1)
+  return Boolean(taken)
+}
 
 export class UserService {
   constructor(private db: Database) {}

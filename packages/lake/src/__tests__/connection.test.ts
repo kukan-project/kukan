@@ -53,7 +53,7 @@ vi.mock('@duckdb/node-api', () => ({
   },
 }))
 
-const { withBucketSession, closeLakeInstances } = await import('../connection')
+const { withBucketSession, closeLakeInstances, isInstanceLost } = await import('../connection')
 
 const config: LakeConfig = {
   bucket: 'b',
@@ -151,5 +151,25 @@ describe('the instance', () => {
     await withBucketSession(config, runsWork())
 
     expect(instances[0].ran.some((sql) => /\bpostgres\b/.test(sql))).toBe(false)
+  })
+})
+
+describe('isInstanceLost', () => {
+  it.each([
+    'IO Error: Connection error for HTTP HEAD to https://bucket.s3.amazonaws.com/x',
+    'HTTP Error: socket hang up',
+    "IO Error: Couldn't open connection to 's3://bucket/x.parquet'",
+    'IO Error: ExpiredToken: The provided token has expired',
+    'Catalog Error: Catalog "__ducklake_metadata_lake_ab12" does not exist!',
+  ])('retires the instance on %s', (message) => {
+    expect(isInstanceLost(new Error(message))).toBe(true)
+  })
+
+  it.each([
+    'Binder Error: Referenced column "socket_id" not found in FROM clause!',
+    `Conversion Error: Could not convert string 'connection lost' to INT32`,
+    'Binder Error: Referenced column socket_id not found\n\nLINE 1: SELECT socket_id FROM t',
+  ])('keeps it on a statement error that only quotes the words: %s', (message) => {
+    expect(isInstanceLost(new Error(message))).toBe(false)
   })
 })

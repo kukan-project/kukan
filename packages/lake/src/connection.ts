@@ -98,12 +98,17 @@ function retire(instance: DuckDBInstance): Promise<void> {
  * detaching; whichever session meets it first takes the instance out, and the
  * queue's retry runs on a fresh one.
  */
-function isInstanceLost(err: unknown): boolean {
+export function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  return (
-    /connection|socket|ExpiredToken|token has expired|instance closed/i.test(message) ||
-    /Catalog "__ducklake_metadata_\w+" does not exist/.test(message)
-  )
+  // First: it is a Catalog Error too, and the statement errors below include those
+  if (/Catalog "__ducklake_metadata_\w+" does not exist/.test(message)) return true
+  // A fault in the statement, never in the instance under it: such an error
+  // names the statement's columns and values, and echoes the statement, so a
+  // column called `socket_id` would otherwise retire the instance
+  if (/^(Binder|Parser|Conversion|Constraint|Invalid Input|Catalog) Error/.test(message)) {
+    return false
+  }
+  return /connection|socket|ExpiredToken|token has expired|instance closed/i.test(message)
 }
 
 /**

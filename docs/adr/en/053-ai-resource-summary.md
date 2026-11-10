@@ -449,6 +449,8 @@ Fifty blank pages were sent from a 467-page yearbook holding 575,761 characters.
 correctly reported it could extract nothing.
 
 **Counting is safe; taking pages out is not.** `isEncrypted` refuses the cut.
+At 50 pages or fewer there is no cut, so an encrypted PDF goes by the same rule as any other:
+its extracted text or the original.
 
 Note that the Index step's `officeparser` **does** extract all 575,761 characters from the same
 file: it handles empty-password encryption (permissions-only protection) properly, so the

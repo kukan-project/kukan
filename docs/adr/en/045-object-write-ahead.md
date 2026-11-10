@@ -108,8 +108,11 @@ column**.
 
 The two kinds share a table but not a reason for waiting. Parking waits for readers that
 already resolved the old key to finish; a write-ahead record waits out the longest time its
-write could still be in progress. Both are an hour today, but that is the values coinciding
-— **tune one for its own reason and the other moves with it.**
+write could still be in progress. **Tune one for its own reason and the other moves with
+it**, so each has its own value: parking an hour, write-ahead six. A write is finished when a
+pointer names it, and the interpretation writes its preview, then waits its turn for the lake
+ingest behind every other run's heavy work, and only then records the pointer: four runs at
+once, each with a 15-minute interpretation, take that past an hour by themselves.
 
 ADR-044 gave every claimer one `CLAIM_STALE_AFTER_MS` precisely because they were asking the
 same question. Here the questions differ, so the values separate. One column covers it, and

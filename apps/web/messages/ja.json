@@ -293,6 +293,7 @@
     "passwordRequired": "パスワードを入力してください",
     "nameError": "英小文字、数字、ハイフン、アンダースコア、ピリオドのみ（2〜100文字）",
     "invalidCredentials": "メールアドレスまたはパスワードが正しくありません",
+    "nameTaken": "このユーザー名は使われています。別の名前を選んでください。",
     "signUpFailed": "登録に失敗しました。別のメールアドレスをお試しください。",
     "namePlaceholder": "taro-yamada",
     "registrationDisabled": "新規登録は現在無効です。管理者にお問い合わせください。"

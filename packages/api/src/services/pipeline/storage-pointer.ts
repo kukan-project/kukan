@@ -316,11 +316,14 @@ export const UPLOAD_PARKED_UNTIL = sql`NOW() + ${`${UPLOAD_WRITE_WINDOW_MS} mill
  * enough that the write has either finished — removing this record — or died
  * with it (ADR-045).
  *
- * The same hour as {@link PARKED_UNTIL} today, and stated separately because it
- * answers a different question. Tuning one for its own reason must not move the
- * other.
+ * Six hours, because finished means pointed at: the interpretation records its
+ * preview's pointer only after waiting its turn for the lake ingest behind
+ * other runs' heavy work (ADR-045 §2).
+ *
+ * Not {@link PARKED_UNTIL}, which answers a different question: tuning one for
+ * its own reason must not move the other.
  */
-export const RESERVED_UNTIL = sql`NOW() + INTERVAL '1 hour'`
+export const RESERVED_UNTIL = sql`NOW() + INTERVAL '6 hours'`
 
 /**
  * Record a key before its object exists, so a process that dies before anything

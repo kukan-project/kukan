@@ -81,7 +81,7 @@ import { AI_SUMMARY_LOCALE_KEY } from '../services/system-setting'
 import { markContentUnindexed } from '../services/search/content-index-record'
 import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA } from '@kukan/lake'
 import { ResourceVersionService } from '../services/resource-version-service'
-import { UserService } from '../services/user-service'
+import { UserService, userNameTaken } from '../services/user-service'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
@@ -1074,15 +1074,8 @@ adminRouter.patch(
     const db = c.get('db')
 
     // Check name uniqueness
-    if (body.name) {
-      const [existing] = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(and(eq(user.name, body.name), ne(user.id, userId)))
-        .limit(1)
-      if (existing) {
-        throw new ConflictError('Username already taken')
-      }
+    if (body.name && (await userNameTaken(db, body.name, userId))) {
+      throw new ConflictError('Username already taken')
     }
 
     const updates: Partial<Pick<typeof user.$inferInsert, 'name' | 'displayName' | 'role'>> = {}

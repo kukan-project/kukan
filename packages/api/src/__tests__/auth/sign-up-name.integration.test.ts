@@ -51,4 +51,43 @@ describe('sign-up name', () => {
     })
     expect(signUp.user.name).toBe('slug-user')
   })
+
+  it('refuses a name already taken as a 422 the form can tell apart, not a 500', async () => {
+    const auth = createAuth(db, 'x-forwarded-for')
+    await auth.api.signUpEmail({
+      body: { email: 'first@example.com', password: PASSWORD, name: 'same-name' },
+    })
+
+    await expect(
+      auth.api.signUpEmail({
+        body: { email: 'second@example.com', password: PASSWORD, name: 'same-name' },
+      })
+    ).rejects.toMatchObject({ statusCode: 422, body: { code: 'USER_NAME_TAKEN' } })
+  })
+
+  it("leaves signing up again with one's own email to the email check", async () => {
+    const auth = createAuth(db, 'x-forwarded-for')
+    await auth.api.signUpEmail({
+      body: { email: 'again@example.com', password: PASSWORD, name: 'again-user' },
+    })
+
+    await expect(
+      auth.api.signUpEmail({
+        body: { email: 'again@example.com', password: PASSWORD, name: 'again-user' },
+      })
+    ).rejects.not.toMatchObject({ body: { code: 'USER_NAME_TAKEN' } })
+  })
+
+  it('refuses a taken name the admin API asks for too', async () => {
+    const auth = createAuth(db, 'x-forwarded-for')
+    await auth.api.signUpEmail({
+      body: { email: 'owner@example.com', password: PASSWORD, name: 'held-name' },
+    })
+
+    await expect(
+      auth.api.createUser({
+        body: { email: 'other@example.com', password: PASSWORD, name: 'held-name' },
+      })
+    ).rejects.toMatchObject({ statusCode: 422, body: { code: 'USER_NAME_TAKEN' } })
+  })
 })
