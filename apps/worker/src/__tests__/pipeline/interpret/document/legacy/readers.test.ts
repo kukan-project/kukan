@@ -9,6 +9,7 @@ import { jtdSheets } from '@/pipeline/interpret/document/legacy/jtd'
 import { pptSlides } from '@/pipeline/interpret/document/legacy/ppt'
 import { xlsSheets } from '@/pipeline/interpret/document/legacy/xls'
 import {
+  biff,
   cell,
   docBuffer,
   jtd,
@@ -17,6 +18,7 @@ import {
   ppt,
   pptBuffer,
   pptDocument,
+  sstData,
   xlsBuffer,
 } from '../../../../test-helpers/legacy-office'
 
@@ -120,6 +122,33 @@ it.each([
     )
   }
 )
+
+describe('xls reader', () => {
+  it("passes a shared string through cellText once, however many cells name it, and each cell's own string", () => {
+    const bytes = xlsBuffer({
+      sst: biff(0x00fc, sstData(['\n'.repeat(1_000), 'b'])),
+      sheets: [
+        {
+          name: 's',
+          cells: [
+            cell.labelSst(0, 1, 1),
+            cell.label(0, 2, 'own'),
+            ...Array.from({ length: 100 }, (_, i) => cell.labelSst(i, 0, 0)),
+          ],
+        },
+      ],
+    })
+    const seen: string[] = []
+    const cellText = (text: string) => {
+      seen.push(text)
+      return text.trim() || '-'
+    }
+    const rows = [...xlsSheets(bytes, cellText)].flatMap((sheet) => [...sheet.rows])
+    expect(seen).toEqual(['\n'.repeat(1_000), 'b', 'own'])
+    expect(rows[0]).toEqual({ row: 1, cells: ['-', 'b', 'own'] })
+    expect(rows).toHaveLength(100)
+  })
+})
 
 describe('ppt reader', () => {
   it('reads a container of many atoms without overflowing the stack', async () => {

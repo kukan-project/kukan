@@ -150,11 +150,16 @@ export function readCompoundFile(bytes: Buffer): CompoundFile {
   const streams = new Map<string, { path: string; start: number; size: number }>()
   const pending: [number, string, number][] = root.child === NO_STREAM ? [] : [[root.child, '', 0]]
   const visited = new Set<number>()
+  // The paths' characters in all, no more than the file has bytes: each repeats
+  // its storages' names, and many entries deep down would make them many times its size
+  let pathChars = bytes.length
   while (pending.length > 0) {
     const [i, parent, depth] = pending.pop()!
     if (visited.has(i)) throw new Error('Compound file directory has a loop')
     visited.add(i)
     const e = entry(i)
+    pathChars -= parent.length + e.name.length
+    if (pathChars < 0) throw new Error('Compound file paths are longer than the file')
     const path = parent + e.name
     if (e.type === STREAM) streams.set(path.toLowerCase(), { path, ...e })
     if (e.type === STORAGE && e.child !== NO_STREAM) {

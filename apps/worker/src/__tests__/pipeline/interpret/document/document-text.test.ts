@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { zstdDecompressSync } from 'node:zlib'
+import { crc32, zstdDecompressSync } from 'node:zlib'
 import { OfficeParser, type OfficeContentNode, type OfficeParserConfig } from 'officeparser'
 import {
   PDFDocument,
@@ -294,6 +294,107 @@ describe('XLSX', () => {
     const rows = Array.from({ length: 50_000 }, (_, i) => [i])
     const path = await file('d.xlsx', await xlsxBuffer({ sheets: { 1: rows } }))
     await expect(lines(path, 'xlsx')).rejects.toThrow(/sheet1\.xml is \d+ bytes uncompressed/)
+  })
+
+  it('reads a sheet part once, however many tabs name it', async () => {
+    const path = await file(
+      'same.xlsx',
+      await xlsxBuffer({ sheets: { 1: [[1]] }, tabs: [1, 1, 1] })
+    )
+    expect(await lines(path, 'xlsx')).toEqual(['1'])
+  })
+
+  it("cleans a cell's stray characters as it reads it, shared or not", async () => {
+    const path = await file(
+      'stray.xlsx',
+      await xlsxBuffer({
+        shared: ['<si><t>\u2f00\u0080</t></si>'],
+        sheets: { 1: [[{ s: 0 }, { inline: '\u2f47x' }]] },
+      })
+    )
+    expect(await lines(path, 'xlsx')).toEqual(['\u4e00 \t\u65e5x'])
+  })
+
+  it('reads a sheet part once, however many entries of other names point at its bytes', async () => {
+    // Three central directory entries, one for each tab's part, all naming the first's local header
+    const sheet = Buffer.from(
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c><v>1</v></c></row></sheetData></worksheet>'
+    )
+    const tabs = [1, 2, 3]
+    const workbook = Buffer.from(
+      `<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${tabs.map((i) => `<sheet name="s${i}" sheetId="${i}" r:id="rId${i}"/>`).join('')}</sheets></workbook>`
+    )
+    const rels = Buffer.from(
+      `<Relationships>${tabs.map((i) => `<Relationship Id="rId${i}" Target="worksheets/sheet${i}.xml"/>`).join('')}</Relationships>`
+    )
+    const locals: Buffer[] = []
+    const central: Buffer[] = []
+    let offset = 0
+    const local = (name: string, data: Buffer) => {
+      const head = Buffer.alloc(30)
+      head.writeUInt32LE(0x04034b50, 0)
+      head.writeUInt16LE(20, 4)
+      head.writeUInt32LE(crc32(data), 14)
+      head.writeUInt32LE(data.length, 18)
+      head.writeUInt32LE(data.length, 22)
+      head.writeUInt16LE(Buffer.byteLength(name), 26)
+      const at = offset
+      locals.push(head, Buffer.from(name), data)
+      offset += 30 + Buffer.byteLength(name) + data.length
+      return at
+    }
+    const entry = (name: string, data: Buffer, at: number) => {
+      const head = Buffer.alloc(46)
+      head.writeUInt32LE(0x02014b50, 0)
+      head.writeUInt16LE(20, 4)
+      head.writeUInt16LE(20, 6)
+      head.writeUInt32LE(crc32(data), 16)
+      head.writeUInt32LE(data.length, 20)
+      head.writeUInt32LE(data.length, 24)
+      head.writeUInt16LE(Buffer.byteLength(name), 28)
+      head.writeUInt32LE(at, 42)
+      central.push(head, Buffer.from(name))
+    }
+    const sheetAt = local('xl/worksheets/sheet1.xml', sheet)
+    entry('xl/workbook.xml', workbook, local('xl/workbook.xml', workbook))
+    entry('xl/_rels/workbook.xml.rels', rels, local('xl/_rels/workbook.xml.rels', rels))
+    for (const i of tabs) entry(`xl/worksheets/sheet${i}.xml`, sheet, sheetAt)
+    const directory = Buffer.concat(central)
+    const end = Buffer.alloc(22)
+    end.writeUInt32LE(0x06054b50, 0)
+    end.writeUInt16LE(tabs.length + 2, 8)
+    end.writeUInt16LE(tabs.length + 2, 10)
+    end.writeUInt32LE(directory.length, 12)
+    end.writeUInt32LE(offset, 16)
+    const path = await file('aliases.xlsx', Buffer.concat([...locals, directory, end]))
+    expect(await lines(path, 'xlsx')).toEqual(['1'])
+  })
+
+  it("refuses rows that come to more than the text may before a chunk's rows are joined", async () => {
+    // Rows arrive a chunk of the part at a time, many to a chunk, before the artifact counts any
+    const path = await file(
+      'long-rows.xlsx',
+      await xlsxBuffer({
+        shared: [`<si><t>${'a'.repeat(100_000)}</t></si>`],
+        sheets: { 1: Array.from({ length: 100 }, () => [{ s: 0 }]) },
+      })
+    )
+    await expect(lines(path, 'xlsx')).rejects.toThrow('Document text is over')
+  })
+
+  it('refuses a row longer than the text may come to, and reads it no other way', async () => {
+    const path = await file(
+      'long-row.xlsx',
+      await xlsxBuffer({
+        shared: [`<si><t>${'a'.repeat(32_767)}</t></si>`],
+        sheets: { 1: [Array.from({ length: 200 }, () => ({ s: 0 }))] },
+        tabs: [1],
+      })
+    )
+    await expect(extractDocumentText(path, 'xlsx', join(dir, 'long-row.zst'))).rejects.toThrow(
+      'Document text is over'
+    )
+    expect(parseOffice).not.toHaveBeenCalled()
   })
 })
 
@@ -1538,6 +1639,75 @@ describe('XLS', () => {
     )
   })
 
+  it("gives a cell's line breaks and tabs as spaces, shared or not", async () => {
+    const path = await file(
+      'breaks.xls',
+      xlsBuffer({
+        sst: biff(0x00fc, sstData(['東京\n都', 'a\r\n\tb'])),
+        sheets: [
+          {
+            name: 's',
+            cells: [cell.labelSst(0, 0, 0), cell.label(0, 1, 'x\ty'), cell.labelSst(1, 0, 1)],
+          },
+        ],
+      })
+    )
+    expect(await lines(path, 'xls')).toEqual(['東京 都\tx y\na b'])
+  })
+
+  it("cleans a cell's stray characters as it reads it, shared or not", async () => {
+    const path = await file(
+      'stray.xls',
+      xlsBuffer({
+        sst: biff(0x00fc, sstData(['\u2f00\u0001'])),
+        sheets: [{ name: 's', cells: [cell.labelSst(0, 0, 0), cell.label(0, 1, '\u2f47\u0002x')] }],
+      })
+    )
+    expect(await lines(path, 'xls')).toEqual(['\u4e00 \t\u65e5 x'])
+  })
+
+  it('refuses a row longer than the text may come to before it joins its cells', async () => {
+    // Joined, the row would be longer than a string can be
+    const path = await file(
+      'long-row.xls',
+      xlsBuffer({
+        sst: biff(0x00fc, sstData(['あ'.repeat(30_000)])),
+        sheets: [
+          { name: 's', cells: Array.from({ length: 18_000 }, (_, i) => cell.labelSst(0, i, 0)) },
+        ],
+      })
+    )
+    await expect(blocks(path, 'xls')).rejects.toThrow('Document text is over')
+  })
+
+  it('refuses rows across its sheets that come to more than the text may, as it reads them', async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => cell.labelSst(i, 0, 0))
+    const path = await file(
+      'long-rows.xls',
+      xlsBuffer({
+        sst: biff(0x00fc, sstData(['あ'.repeat(30_000)])),
+        sheets: [
+          { name: 'a', cells: rows },
+          { name: 'b', cells: rows },
+        ],
+      })
+    )
+    await expect(blocks(path, 'xls')).rejects.toThrow('Document text is over')
+  })
+
+  it('refuses more CONTINUE records than its size allows, each held with the record before', async () => {
+    const empty = biff(0x003c, Buffer.alloc(0))
+    const path = await file(
+      'continues-many.xls',
+      xlsBuffer({
+        sheets: [
+          { name: 's', cells: [cell.label(0, 0, 'x'), ...Array<Buffer>(10_000).fill(empty)] },
+        ],
+      })
+    )
+    await expect(blocks(path, 'xls')).rejects.toThrow('more CONTINUE records than its size allows')
+  })
+
   it('refuses a compound file that counts more FAT sectors than it has', async () => {
     const bytes = xlsBuffer({ sheets: [{ name: 's', cells: [cell.label(0, 0, 'x')] }] })
     bytes.writeUInt32LE(1_000_000, 0x2c)
@@ -1628,6 +1798,15 @@ describe('DOC', () => {
       docBuffer([{ text: 'zero\r' }], { body: 5 }, { flags: 0 })
     )
     expect(await lines(path, 'doc')).toEqual(['zero\n'])
+  })
+
+  it('reads a text of many runs a character long, as many as it takes to join them in chunks', async () => {
+    const text = 'a\x07'.repeat(70_000)
+    const path = await file(
+      'runs.doc',
+      docBuffer([{ text, compressed: true }], { body: text.length })
+    )
+    expect(await lines(path, 'doc')).toEqual(['a\n'.repeat(70_000)])
   })
 })
 
@@ -1747,6 +1926,90 @@ describe('PPT', () => {
       ])
     )
     await expect(blocks(path, 'ppt')).rejects.toThrow('over and over')
+  })
+
+  it('reads carriage returns and vertical tabs as line breaks, and nothing else that holds their bytes', async () => {
+    const path = await file(
+      'breaks.ppt',
+      pptBuffer([
+        {
+          objects: {
+            1: pptDocument([{ ref: 2, records: [] }]),
+            2: ppt.slide([
+              ppt.chars('a\r\rb഍ଋc\v'),
+              ppt.bytes('d\re\x0bf'),
+              ppt.bytes('\r'.repeat(1_000_000)),
+            ]),
+          },
+        },
+      ])
+    )
+    expect(await blocks(path, 'ppt')).toEqual([{ loc: { slide: 1 }, text: 'a\n\nb഍ଋc\nd\ne\nf' }])
+  })
+
+  it('reads a text atom whole where the shape holding it is written shorter', async () => {
+    const atom = ppt.bytes('Title text')
+    const slide = ppt.slide([atom])
+    // The innermost container, the shape's text box, says it ends four bytes into the text
+    const box = slide.indexOf(atom) - 8
+    slide.writeUInt32LE(slide.readUInt32LE(box + 4) - 6, box + 4)
+    const path = await file(
+      'short-parent.ppt',
+      pptBuffer([{ objects: { 1: pptDocument([{ ref: 2, records: [] }]), 2: slide } }])
+    )
+    expect(await blocks(path, 'ppt')).toEqual([{ loc: { slide: 1 }, text: 'Title text' }])
+  })
+
+  it('refuses text atoms that each run on over those after them', async () => {
+    // Pairs of a container holding just the next atom's header, and that atom
+    // claiming every byte after it: read for each, the text grows with the square
+    const header = (container: boolean, type: number, length: number) => {
+      const b = Buffer.alloc(8)
+      b.writeUInt16LE(container ? 0x0f : 0, 0)
+      b.writeUInt16LE(type, 2)
+      b.writeUInt32LE(length, 4)
+      return b
+    }
+    const n = 2_000
+    const pairs = Buffer.concat(
+      Array.from({ length: n }, (_, k) =>
+        Buffer.concat([header(true, 0xf00d, 8), header(false, 0x0fa8, (n - k - 1) * 16)])
+      )
+    )
+    const slide = Buffer.concat([header(true, 0x03ee, pairs.length), pairs])
+    const path = await file(
+      'overlap.ppt',
+      pptBuffer([{ objects: { 1: pptDocument([{ ref: 2, records: [] }]), 2: slide } }])
+    )
+    await expect(blocks(path, 'ppt')).rejects.toThrow('more text than it holds')
+  })
+
+  it('counts text atoms by their bytes, not by what is left of them trimmed', async () => {
+    // As above, each atom running on to a long run of spaces at the end, which trimming leaves out
+    const header = (container: boolean, type: number, length: number) => {
+      const b = Buffer.alloc(8)
+      b.writeUInt16LE(container ? 0x0f : 0, 0)
+      b.writeUInt16LE(type, 2)
+      b.writeUInt32LE(length, 4)
+      return b
+    }
+    const n = 100
+    const spaces = 200_000
+    const pairs = Buffer.concat(
+      Array.from({ length: n }, (_, k) =>
+        Buffer.concat([header(true, 0xf00d, 8), header(false, 0x0fa8, (n - k - 1) * 16 + spaces)])
+      )
+    )
+    const slide = Buffer.concat([
+      header(true, 0x03ee, pairs.length + spaces),
+      pairs,
+      Buffer.alloc(spaces, 0x20),
+    ])
+    const path = await file(
+      'overlap-spaces.ppt',
+      pptBuffer([{ objects: { 1: pptDocument([{ ref: 2, records: [] }]), 2: slide } }])
+    )
+    await expect(blocks(path, 'ppt')).rejects.toThrow('more text than it holds')
   })
 
   it('refuses an encrypted presentation', async () => {
@@ -1872,6 +2135,43 @@ describe('Ichitaro', () => {
     await expect(blocks(path, 'jtd')).rejects.toThrow('nest too deep')
   })
 
+  it('refuses paths that come to more characters than the file has bytes', async () => {
+    // Each repeats the long names of the storages above it
+    const deep = Array.from({ length: 20 }, (_, i) => `${i}`.padStart(31, 'S')).join('/')
+    const streams = Object.fromEntries(
+      Array.from({ length: 200 }, (_, i) => [`${deep}/s${i}`, Buffer.alloc(0)])
+    )
+    const path = await file(
+      'paths.jtd',
+      jtdBuffer({ DocumentText: jtdStream({ blocks: [['本文']] }), ...streams })
+    )
+    await expect(blocks(path, 'jtd')).rejects.toThrow('paths are longer than the file')
+  })
+
+  it('reads a line longer than it holds at once, a character past the BMP across the edge', async () => {
+    const line = `${'あ'.repeat(4_095)}𠮷い`
+    const path = await file(
+      'long-line.jtd',
+      jtdBuffer({ DocumentText: jtdStream({ blocks: [[line]] }) })
+    )
+    expect(await lines(path, 'jtd')).toEqual([line])
+  })
+
+  it('reads a run of blank lines as one blank line, wherever it stands', async () => {
+    const path = await file(
+      'blank-lines.jtd',
+      jtdBuffer({
+        DocumentText: jtdStream({
+          blocks: [
+            [0x0a, 0x0a, 0x0a, 0x0a, '上', 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, '下'],
+            [0x0a, 0x0a, '次'],
+          ],
+        }),
+      })
+    )
+    expect(await lines(path, 'jtd')).toEqual(['\n\n上\n\n下\n\n次'])
+  })
+
   it('leaves out an empty sheet, the others keeping their numbers', async () => {
     const path = await file(
       'empty-sheet.jtd',
@@ -1957,6 +2257,20 @@ describe('the artifact', () => {
     // Each block whole on its own: the index joins them with newlines
     const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
     expect(texts.filter((t) => loneSurrogate.test(t))).toEqual([])
+  })
+
+  it('counts a block split in parts as the bytes of its whole text, line breaks and all', async () => {
+    // Split once between characters, once at a line break; two blocks between them
+    const text = `${'あ'.repeat(40_000)}\n${'x'.repeat(31_000)}\n${'y'.repeat(2_000)}`
+    parseOffice.mockResolvedValue(astOf([node('paragraph', text), node('paragraph', 'z')]))
+    const path = await file('count.docx', Buffer.alloc(10))
+    const artifact = join(dir, 'text.ndjson.zst')
+
+    const { bytes } = await extractDocumentText(path, 'docx', artifact)
+
+    const texts = (await artifactBlocks(await readFile(artifact))).map((b) => b.text)
+    expect(texts.length).toBeGreaterThan(3)
+    expect(bytes).toBe(Buffer.byteLength(`${text}\nz`))
   })
 
   it('splits a line with no break in it where the block ends', async () => {

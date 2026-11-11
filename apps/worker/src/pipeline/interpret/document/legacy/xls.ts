@@ -24,6 +24,13 @@ const FORMULA = 0x0006
 const STRING = 0x0207
 const BOOLERR = 0x0205
 
+/**
+ * Bytes of the stream for each CONTINUE record a walk of it holds, on average:
+ * each held costs far more than its 4 bytes of header, and a writer fills them.
+ * A comment's text, the shortest, comes with records of some hundred bytes around it.
+ */
+const MIN_CONTINUE_BYTES = 32
+
 const BIFF8 = 0x0600
 const BIFF5 = 0x0500
 const GLOBALS = 0x0005
@@ -74,8 +81,15 @@ interface BiffRecord {
   continues: Buffer[]
 }
 
-/** The workbook's worksheets in tab order, each with its rows; throws where it cannot read them. */
-export function* xlsSheets(bytes: Buffer): Generator<XlsSheet> {
+/**
+ * The workbook's worksheets in tab order, each with its rows; throws where it
+ * cannot read them. A cell's string is passed through `cellText`, a shared
+ * string's once however many cells name it.
+ */
+export function* xlsSheets(
+  bytes: Buffer,
+  cellText: (text: string) => string = (text) => text
+): Generator<XlsSheet> {
   const file = readCompoundFile(bytes)
   const stream = file.stream('Workbook') ?? file.stream('Book')
   if (!stream) throw new Error('XLS has no workbook stream')
@@ -99,9 +113,9 @@ export function* xlsSheets(bytes: Buffer): Generator<XlsSheet> {
     if (record.type === CODEPAGE) codePage = record.data.readUInt16LE(0)
     else if (record.type === BOUNDSHEET) {
       sheets.push({ offset: record.data.readUInt32LE(0), name: record.data.subarray(6) })
-    } else if (record.type === SST && biff8) shared = sharedStrings(record)
+    } else if (record.type === SST && biff8) shared = sharedStrings(record).map(cellText)
   }
-  const text = new Strings(biff8, decoderFor(codePage))
+  const text = new Strings(biff8, decoderFor(codePage), cellText)
 
   // The bytes the sheets' records take in all, at most twice the stream's: sheets
   // that all start at one place, or each inside the last, would otherwise have it
@@ -211,6 +225,7 @@ function* sheetRows(
 function* records(stream: Buffer, offset: number): Generator<BiffRecord> {
   let at = offset
   let current: BiffRecord | undefined
+  let continues = Math.floor(stream.length / MIN_CONTINUE_BYTES)
   while (at + 4 <= stream.length) {
     const type = stream.readUInt16LE(at)
     const length = stream.readUInt16LE(at + 2)
@@ -218,6 +233,7 @@ function* records(stream: Buffer, offset: number): Generator<BiffRecord> {
     if (data.length < length) throw new Error('XLS record runs past the end of its stream')
     at += 4 + length
     if (type === CONTINUE && current) {
+      if (--continues < 0) throw new Error('XLS has more CONTINUE records than its size allows')
       current.continues.push(data)
       continue
     }
@@ -249,7 +265,8 @@ function sharedStrings(record: BiffRecord): string[] {
 class Strings {
   constructor(
     private readonly biff8: boolean,
-    private readonly decoder: TextDecoder
+    private readonly decoder: TextDecoder,
+    private readonly cellText: (text: string) => string
   ) {}
 
   /** A sheet name: a byte of length, then — in BIFF8 — a byte of flags. */
@@ -259,13 +276,18 @@ class Strings {
     return new Reader([data.subarray(2)]).chars(length, (data[1] & 0x01) !== 0)
   }
 
-  /** A cell's string at `at` in `record`: two bytes of length, then — in BIFF8 — a byte of flags. */
+  /**
+   * A cell's string at `at` in `record`, through `cellText`: two bytes of
+   * length, then — in BIFF8 — a byte of flags.
+   */
   long(record: BiffRecord, at: number): string {
     const { data } = record
     const length = data.readUInt16LE(at)
-    if (!this.biff8) return this.decoder.decode(data.subarray(at + 2, at + 2 + length))
     const high = (data[at + 2] & 0x01) !== 0
-    return new Reader([data.subarray(at + 3), ...record.continues]).chars(length, high)
+    const text = this.biff8
+      ? new Reader([data.subarray(at + 3), ...record.continues]).chars(length, high)
+      : this.decoder.decode(data.subarray(at + 2, at + 2 + length))
+    return this.cellText(text)
   }
 }
 

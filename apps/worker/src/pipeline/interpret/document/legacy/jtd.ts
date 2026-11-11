@@ -80,13 +80,12 @@ function sheetText(streams: (Buffer | undefined)[]): string {
     }
     const blocks = textBlocks(stream)
     // An older version marks no block: the whole stream, its text found by its markers
-    const text = blocks.length
-      ? blocks.map(([from, to]) => runs(stream, from, to, true)).join('\n')
+    const lines = blocks.length
+      ? blocks.flatMap(([from, to]) => runs(stream, from, to, true))
       : runs(stream, SIGNATURE.length, stream.length, false)
-    parts.push(text)
+    parts.push(lines.join('\n'))
   }
   return parts
-    .map((part) => part.split('\n').map(tidy).filter(mostlyText).join('\n'))
     .filter((part) => part.trim())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -107,20 +106,26 @@ function textBlocks(stream: Buffer): [number, number][] {
 }
 
 /**
- * The text of the stream's units from `from` to `to`, `inText` where text
- * starts there without a marker, as a block's does.
+ * The lines of text of the stream's units from `from` to `to`, `inText` where
+ * text starts there without a marker, as a block's does. Tidied, and those
+ * that are mostly not text left out.
  */
-function runs(stream: Buffer, from: number, to: number, inText: boolean): string {
+function runs(stream: Buffer, from: number, to: number, inText: boolean): string[] {
   const end = from + Math.floor((to - from) / 2) * 2
   const unit = (at: number) => (at < end ? stream.readUInt16BE(at) : -1)
   const lines: string[] = []
-  let line = ''
+  const line = new LineText()
   let notes: string[] = []
+  let blanks = 0
   let text = inText
   const breakLine = () => {
-    lines.push(notes.length ? `${line} ${notes.join(' ')}` : line)
-    line = ''
+    const whole = line.take()
+    const tidied = tidy(notes.length ? `${whole} ${notes.join(' ')}` : whole)
     notes = []
+    if (!mostlyText(tidied)) return
+    // Blank lines past two in a row come to the same text: a run of them is joined as one
+    blanks = tidied ? 0 : blanks + 1
+    if (blanks <= 2) lines.push(tidied)
   }
   for (let at = from; at < end; at += 2) {
     const u = unit(at)
@@ -142,14 +147,14 @@ function runs(stream: Buffer, from: number, to: number, inText: boolean): string
         const content = characters(stream, last + 2, close)
         if (unit(at + 8) === ANNOTATION) {
           if (content.trim()) notes.push(content.trim())
-        } else line += content
+        } else line.addText(content)
         // After the inline, its own end: `0x001E`, its length, and the `0x001F`
         const tail = close + (unit(close + 2) - 1) * 2
         text = tail > close && unit(tail) === TEXT
         at = text ? tail : close
       } else if (unit(last) === TEXT) {
         // A record between runs of text stands for a cell's end, a tab
-        line += '\t'
+        line.add(0x0009)
         at = last
         text = true
       } else {
@@ -158,7 +163,7 @@ function runs(stream: Buffer, from: number, to: number, inText: boolean): string
     } else if (u === TEXT) {
       text = true
     } else if (u === 0x0009) {
-      if (text) line += '\t'
+      if (text) line.add(0x0009)
     } else if (BREAKS.has(u)) {
       breakLine()
       if (u === 0x000c || u === 0x000e) text = false
@@ -169,14 +174,51 @@ function runs(stream: Buffer, from: number, to: number, inText: boolean): string
       if (u >= 0xd800 && u < 0xdc00) {
         const low = unit(at + 2)
         if (low >= 0xdc00 && low < 0xe000) {
-          line += String.fromCharCode(u, low)
+          line.add(u)
+          line.add(low)
           at += 2
         }
-      } else if (u < 0xdc00 || u >= 0xe000) line += String.fromCharCode(u)
+      } else if (u < 0xdc00 || u >= 0xe000) line.add(u)
     }
   }
   breakLine()
-  return lines.join('\n')
+  return lines
+}
+
+/** UTF-16 units a line holds before it makes them a string. */
+const LINE_CHUNK_UNITS = 4096
+
+/**
+ * A line's characters, held as UTF-16 units and made a string a chunk at a
+ * time: added to a string one at a time, a long line holds a string for each.
+ */
+class LineText {
+  private readonly units = new Uint16Array(LINE_CHUNK_UNITS)
+  private held = 0
+  private chunks: string[] = []
+
+  add(unit: number): void {
+    if (this.held === this.units.length) this.flush()
+    this.units[this.held++] = unit
+  }
+
+  addText(text: string): void {
+    for (let i = 0; i < text.length; i++) this.add(text.charCodeAt(i))
+  }
+
+  /** The line, which starts again empty. */
+  take(): string {
+    this.flush()
+    const text = this.chunks.join('')
+    this.chunks = []
+    return text
+  }
+
+  private flush(): void {
+    if (this.held === 0) return
+    this.chunks.push(String.fromCharCode(...this.units.subarray(0, this.held)))
+    this.held = 0
+  }
 }
 
 /** Where the `0x001E` closing the inline at `at` is, within its bound; undefined where none is. */

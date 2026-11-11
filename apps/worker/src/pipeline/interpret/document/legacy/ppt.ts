@@ -100,11 +100,12 @@ export function pptSlides(bytes: Buffer): PptSlide[] {
   // the file's size. And no more text in all than the stream has bytes, which
   // a slide's record holding another's would otherwise get past
   const read = new Set<number>()
-  let chars = 0
-  const counted = (text: string) => {
-    chars += text.length
-    if (chars > doc.length) throw new Error('PPT reads more text than it holds')
-    return text
+  let textBytes = 0
+  // Charged by an atom's bytes before it is read: trimmed, its text can be far less
+  const counted = (record: PptRecord) => {
+    textBytes += record.end - record.start
+    if (textBytes > doc.length) throw new Error('PPT reads more text than it holds')
+    return textOf(doc, record)
   }
   const finish = () => {
     if (!slide) return
@@ -116,8 +117,9 @@ export function pptSlides(bytes: Buffer): PptSlide[] {
         // A placeholder's text is in the list, and the shape holds a reference to it; a
         // writer that copies it into the shape as well would have it read twice
         const listed = new Set(slide.lines)
-        for (const text of texts(doc, own, budget)) {
-          if (!listed.has(text)) slide.lines.push(counted(text))
+        for (const atom of textAtoms(doc, own, budget)) {
+          const text = counted(atom)
+          if (!listed.has(text)) slide.lines.push(text)
         }
       }
     }
@@ -133,10 +135,10 @@ export function pptSlides(bytes: Buffer): PptSlide[] {
     } else if (slide && record.type === TEXT_HEADER_ATOM) {
       slide.kind = doc.readUInt32LE(record.start)
     } else if (slide && (record.type === TEXT_CHARS_ATOM || record.type === TEXT_BYTES_ATOM)) {
-      const text = textOf(doc, record)
+      const text = counted(record)
       const title = slide.kind === TITLE || slide.kind === CENTER_TITLE
       if (title && slide.title === undefined) slide.title = text
-      slide.lines.push(counted(text))
+      slide.lines.push(text)
     }
   }
   finish()
@@ -171,13 +173,13 @@ function children(stream: Buffer, container: PptRecord, budget: { records: numbe
 }
 
 /** The text atoms anywhere inside `container`, in the order they are written. */
-function texts(stream: Buffer, container: PptRecord, budget: { records: number }): string[] {
-  const found: string[] = []
+function textAtoms(stream: Buffer, container: PptRecord, budget: { records: number }): PptRecord[] {
+  const found: PptRecord[] = []
   const pending = [container]
   while (pending.length > 0) {
     const record = pending.pop()!
     if (record.type === TEXT_CHARS_ATOM || record.type === TEXT_BYTES_ATOM) {
-      found.push(textOf(stream, record))
+      found.push(record)
     } else if (record.container) {
       // Pushed one at a time: spread into arguments, a container of some
       // hundred thousand empty atoms overflows the stack
@@ -195,11 +197,15 @@ function texts(stream: Buffer, container: PptRecord, budget: { records: number }
  */
 function textOf(stream: Buffer, record: PptRecord): string {
   if (record.end > stream.length) throw new Error('PPT text runs past the end of its stream')
-  const text =
-    record.type === TEXT_CHARS_ATOM
-      ? stream.toString('utf16le', record.start, record.end)
-      : stream.toString('latin1', record.start, record.end)
-  return text.replace(/[\r\v]/g, '\n').trimEnd()
+  const wide = record.type === TEXT_CHARS_ATOM
+  // The breaks made line feeds in a copy of the bytes, not in the string: a
+  // pattern replacing them holds every match it finds until it is done
+  const bytes = Buffer.from(stream.subarray(record.start, record.end))
+  const width = wide ? 2 : 1
+  for (let i = 0; i + width <= bytes.length; i += width) {
+    if ((bytes[i] === 0x0d || bytes[i] === 0x0b) && (!wide || bytes[i + 1] === 0)) bytes[i] = 0x0a
+  }
+  return bytes.toString(wide ? 'utf16le' : 'latin1').trimEnd()
 }
 
 /** Add a persist directory's object offsets to `offsets`, those already there kept: they are later. */

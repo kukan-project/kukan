@@ -31,6 +31,7 @@ import type { NoTableReason } from '@kukan/shared'
 import {
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
+  MAX_JSON_DEPTH,
   MAX_JSON_OBJECT_SIZE,
   MAX_TABLE_COLUMNS,
 } from '@/config'
@@ -82,9 +83,12 @@ export function settledReason(err: unknown): NoTableReason | null {
  * (`sample_size = -1`) — by default it looks at the first 20,480, and a key or
  * a type that first appears after them is silently dropped. And an object of
  * many keys as the struct it is, never a MAP: past 200 keys the reader makes
- * one MAP column of it by default, which is no table.
+ * one MAP column of it by default, which is no table. And typed no deeper
+ * than the nesting the caller lets through (`MAX_JSON_DEPTH`), one more for
+ * the level DuckDB counts differently: past it a value is JSON text, where
+ * typing it whole costs the reader minutes and, deeper still, its stack.
  */
-const READ_OPTIONS = 'sample_size = -1, map_inference_threshold = -1'
+const READ_OPTIONS = `sample_size = -1, map_inference_threshold = -1, maximum_depth = ${MAX_JSON_DEPTH + 1}`
 
 /**
  * Whether a JSON text is one object rather than an array, from its first byte
@@ -652,15 +656,18 @@ export function flatten(fields: Field[], extra: Leaf[] = [], root: string[] = []
   for (const f of fields) walk(`r.${sqlIdentifier(f.name)}`, [f.name], f.type)
   leaves.push(...extra)
 
-  // A suffix that spells a later leaf's name moves on, as a header dedup does
+  // A suffix that spells a later leaf's name moves on, as a header dedup does.
+  // Each name's search resumes where its last stopped: names only get taken
   const key = (name: string) => name.toLowerCase()
   const taken = new Set(leaves.map((l) => key(l.name)))
   const seen = new Set<string>()
+  const nextSuffix = new Map<string, number>()
   return leaves.map((leaf) => {
     let name = leaf.name
     if (seen.has(key(name))) {
-      let n = 2
+      let n = nextSuffix.get(key(name)) ?? 2
       while (taken.has(key(`${leaf.name}_${n}`))) n++
+      nextSuffix.set(key(name), n + 1)
       name = `${leaf.name}_${n}`
       taken.add(key(name))
     }

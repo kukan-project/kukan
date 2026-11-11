@@ -120,7 +120,8 @@ export async function extractDocumentText(
     return await writeBlocks(documentBlocks(filePath, format), artifactPath)
   } catch (err) {
     const fallback = fallbackBlocks(format)
-    if (!fallback) throw err
+    // The fallback would read the same text, only slower, to stop at the same limit
+    if (!fallback || err instanceof TooMuchTextError) throw err
     return writeBlocks(fallback(filePath), artifactPath)
   }
 }
@@ -145,15 +146,21 @@ async function writeBlocks(
   try {
     await put({ schema: DOCUMENT_TEXT_SCHEMA })
     for await (const block of blocks) {
-      const whole = cleaned(block)
-      if (whole.text) {
-        bytes += Buffer.byteLength(whole.text, 'utf-8') + (joined++ > 0 ? 1 : 0)
-        if (bytes > DOCUMENT_TEXT_MAX_BYTES) {
-          throw new Error(`Document text is over ${DOCUMENT_TEXT_MAX_BYTES} bytes`)
+      // A part at a time, cleaned and counted before it is written: a section
+      // with no headings is the whole document, and so would cleaning it be
+      let first = true
+      for (const { part, lineBreak } of bounded(block)) {
+        const whole = cleaned(part)
+        if (!first || whole.text) {
+          // As the whole block's text: a line break between blocks, and those it was split at
+          const separator = first ? joined++ > 0 : lineBreak
+          bytes += Buffer.byteLength(whole.text, 'utf-8') + (separator ? 1 : 0)
         }
+        first = false
+        if (bytes > DOCUMENT_TEXT_MAX_BYTES) throw new TooMuchTextError()
         if (!hasText && whole.text.trim()) hasText = true
+        await put(whole)
       }
-      for (const block of bounded(whole)) await put(block)
     }
     zstd.end()
   } catch (err) {
@@ -163,6 +170,12 @@ async function writeBlocks(
   }
   await written
   return { bytes: hasText ? bytes : 0 }
+}
+
+class TooMuchTextError extends Error {
+  constructor() {
+    super(`Document text is over ${DOCUMENT_TEXT_MAX_BYTES} bytes`)
+  }
 }
 
 /**
@@ -188,19 +201,24 @@ function cleaned(block: DocumentTextBlock): DocumentTextBlock {
 
 /**
  * `block`, as blocks of at most BLOCK_MAX_CHARS, split between lines where
- * there is one to split at. A section of a document with no headings is the
- * whole document, and a line of that length is what every reader of the
- * artifact would otherwise have to hold and split.
+ * there is one to split at, each saying whether a line break it was split at
+ * comes before it. A section of a document with no headings is the whole
+ * document, and a line of that length is what every reader of the artifact
+ * would otherwise have to hold and split.
  */
-function* bounded(block: DocumentTextBlock): Generator<DocumentTextBlock> {
+function* bounded(
+  block: DocumentTextBlock
+): Generator<{ part: DocumentTextBlock; lineBreak: boolean }> {
   let rest = block.text
+  let lineBreak = false
   while (rest.length > BLOCK_MAX_CHARS) {
     const newline = rest.lastIndexOf('\n', BLOCK_MAX_CHARS)
     const cut = newline > 0 ? newline : characterBoundary(rest, BLOCK_MAX_CHARS)
-    yield { ...block, text: rest.slice(0, cut) }
+    yield { part: { ...block, text: rest.slice(0, cut) }, lineBreak }
     rest = rest.slice(newline > 0 ? cut + 1 : cut)
+    lineBreak = newline > 0
   }
-  yield { ...block, text: rest }
+  yield { part: { ...block, text: rest }, lineBreak }
 }
 
 /**
@@ -1277,15 +1295,20 @@ async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> 
     const strings = entries.get(SHARED_STRINGS)
     if (strings) {
       for await (const text of readPart(zip, strings, sharedStringParser)) {
-        shared.push(oneLine(text))
+        shared.push(cellText(text))
       }
     }
+    // A part read once however many tabs name it, known by where its bytes are:
+    // entries of other names can point at them too
+    const read = new Set<number>()
+    const budget = rowBudget()
     for (const [index, { part, name }] of (await sheetOrder(zip, entries)).entries()) {
       const entry = entries.get(part)
-      if (!entry) continue
+      if (!entry || read.has(entry.relativeOffsetOfLocalHeader)) continue
+      read.add(entry.relativeOffsetOfLocalHeader)
       yield* sheetBlocks(
         { sheet: index + 1, ...(name !== undefined && { sheetName: name }) },
-        readPart<SheetRow>(zip, entry, (emit) => sheetRowParser(emit, shared))
+        readPart<SheetRow>(zip, entry, (emit) => sheetRowParser(emit, shared, budget))
       )
     }
   } finally {
@@ -1295,13 +1318,14 @@ async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> 
 
 /** An XLS workbook's rows, as an XLSX's are read. */
 async function* xlsBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
-  for (const { sheet, name, rows } of xlsSheets(await readFile(filePath))) {
-    yield* sheetBlocks({ sheet, ...(name && { sheetName: name }) }, xlsLines(rows))
+  const budget = rowBudget()
+  for (const { sheet, name, rows } of xlsSheets(await readFile(filePath), cellText)) {
+    yield* sheetBlocks({ sheet, ...(name && { sheetName: name }) }, xlsLines(rows, budget))
   }
 }
 
-function* xlsLines(rows: Iterable<XlsRow>): Generator<SheetRow> {
-  for (const { row, cells } of rows) yield { row, text: cells.map(oneLine).join('\t') }
+function* xlsLines(rows: Iterable<XlsRow>, budget: { bytes: number }): Generator<SheetRow> {
+  for (const { row, cells } of rows) yield { row, text: rowText(cells, budget) }
 }
 
 /** A Word 97–2003 document's text, as a block: it marks no headings a reader of it can find. */
@@ -1414,6 +1438,33 @@ function oneLine(text: string): string {
   return text.replace(/[\t\n\r]+/g, ' ')
 }
 
+/**
+ * A cell's text as it is written: on one line, and cleaned here rather than in
+ * its block, a shared string once however many cells name it.
+ */
+function cellText(text: string): string {
+  return cleanText(oneLine(text))
+}
+
+/** The last row's line break is charged by `rowText` but never written. */
+function rowBudget(): { bytes: number } {
+  return { bytes: DOCUMENT_TEXT_MAX_BYTES + 1 }
+}
+
+/**
+ * A row's cells joined by tabs, their UTF-8 bytes taken from the workbook's
+ * `budget` first. Cells that all name one long shared string, a few bytes each
+ * in the file, make rows of any length, and a chunk of the file arrives as
+ * many of them at once, before `writeBlocks` counts any.
+ */
+function rowText(cells: string[], budget: { bytes: number }): string {
+  for (const cell of cells) {
+    budget.bytes -= Buffer.byteLength(cell, 'utf-8') + 1
+    if (budget.bytes < 0) throw new TooMuchTextError()
+  }
+  return cells.join('\t')
+}
+
 /** Each `<si>`'s text; a phonetic reading (`<rPh>`) is not part of it. */
 function sharedStringParser(emit: (text: string) => void): PartParser {
   let current: string | undefined
@@ -1447,7 +1498,11 @@ interface SheetRow {
  * Each `<row>` as its cells' values, shared strings looked up, and its number:
  * the sheet's own (`r`), or one past the last where a writer left it out.
  */
-function sheetRowParser(emit: (row: SheetRow) => void, shared: string[]): PartParser {
+function sheetRowParser(
+  emit: (row: SheetRow) => void,
+  shared: string[],
+  budget: { bytes: number }
+): PartParser {
   let row = 0
   let cells: string[] = []
   let type: string | undefined
@@ -1469,11 +1524,11 @@ function sheetRowParser(emit: (row: SheetRow) => void, shared: string[]): PartPa
       if (tag.name === 'v' || tag.name === 't') inValue = false
       else if (tag.name === 'rPh') phonetic--
       else if (tag.name === 'c') {
-        const text = type === 's' ? (shared[Number(value)] ?? '') : oneLine(value)
+        const text = type === 's' ? (shared[Number(value)] ?? '') : cellText(value)
         // Formatted but empty: officeparser leaves such cells out, and rows of them
         if (text) cells.push(text)
       } else if (tag.name === 'row') {
-        if (cells.length > 0) emit({ row, text: cells.join('\t') })
+        if (cells.length > 0) emit({ row, text: rowText(cells, budget) })
         cells = []
       }
     },

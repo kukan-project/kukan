@@ -56,6 +56,9 @@ const SPECIAL: Record<number, string> = {
 
 const cp1252 = new TextDecoder('windows-1252')
 
+/** Runs `readable` holds before it joins them. */
+const READABLE_CHUNK_RUNS = 65_536
+
 /** The document's text, its paragraphs a line each; throws where it cannot read it. */
 export function docText(bytes: Buffer): string {
   const file = readCompoundFile(bytes)
@@ -137,8 +140,15 @@ function slice(buffer: Buffer, from: number, to: number): Buffer {
  */
 function readable(text: string): string {
   // Runs of characters shown, sliced whole: one string a character costs a
-  // document's text many times over in memory
+  // document's text many times over in memory. Joined a chunk at a time, as
+  // runs a character long, one after another, would cost the same
+  const chunks: string[] = []
   const out: string[] = []
+  const push = (run: string) => {
+    if (out.push(run) < READABLE_CHUNK_RUNS) return
+    chunks.push(out.join(''))
+    out.length = 0
+  }
   // Each open field: true once past its separator, into the result shown. A
   // character is shown when none is still in its instructions, which is
   // counted rather than looked for: fields nest as deep as a file makes them
@@ -148,7 +158,7 @@ function readable(text: string): string {
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i)
     if (code >= 0x20) continue
-    if (instructions === 0 && run < i) out.push(text.slice(run, i))
+    if (instructions === 0 && run < i) push(text.slice(run, i))
     run = i + 1
     if (code === FIELD_BEGIN) {
       fields.push(false)
@@ -160,11 +170,12 @@ function readable(text: string): string {
       }
     } else if (code === FIELD_END) {
       if (fields.length > 0 && !fields.pop()) instructions--
-    } else if (instructions === 0) {
-      out.push(SPECIAL[code] ?? '')
+    } else if (instructions === 0 && SPECIAL[code]) {
+      push(SPECIAL[code])
     }
   }
   if (instructions === 0 && run < text.length) out.push(text.slice(run))
+  chunks.push(out.join(''))
   // A table's empty cells and its rows' ends, a line each, run to many blank lines
-  return out.join('').replace(/\n{3,}/g, '\n\n')
+  return chunks.join('').replace(/\n{3,}/g, '\n\n')
 }

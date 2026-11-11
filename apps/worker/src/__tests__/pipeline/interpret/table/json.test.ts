@@ -279,10 +279,23 @@ describe('interpretJson', () => {
     expect((await interpret(JSON.stringify(['hello', 'world']))).reason).toBe('not-records')
   })
 
-  it("settles DuckDB's own bound on expression depth as no records", async () => {
+  it('types a value only as deep as the caller lets through, and gives what is past it as JSON text', async () => {
     // Deeper than MAX_JSON_DEPTH, which the caller refuses first; this is what is left behind it
-    const deep = '[{"x":' + '{"a":'.repeat(1000) + '1' + '}'.repeat(1000) + '}]'
-    expect((await interpret(deep, false)).reason).toBe('not-records')
+    const chain = (n: number) => '{"a":'.repeat(n) + '1' + '}'.repeat(n)
+    const deep = await interpret(`[{"x":${chain(1000)},"y":2}]`, false)
+    expect(deep.reason).toBeUndefined()
+    expect(deep.schema.columns.map((c) => c.type)).toEqual(['string', 'integer'])
+    // As deep as the caller lets through (64, the array and the record among them): typed as ever
+    const kept = await interpret(`[{"x":${chain(62)},"y":2}]`, false)
+    expect(kept.schema.columns.map((c) => c.type)).toEqual(['integer', 'integer'])
+  }, 20_000)
+
+  it('settles a file nested thousands deep in seconds', async () => {
+    let inner = '1'
+    for (let i = 0; i < 3_000; i++) inner = `{"s":1,"c":${inner}}`
+    const started = performance.now()
+    expect((await interpret(`[${inner}]`, false)).reason).toBeDefined()
+    expect(performance.now() - started).toBeLessThan(10_000)
   }, 20_000)
 
   it('settles an empty array as no columns, and a file of null as no records, without throwing', async () => {
@@ -508,5 +521,20 @@ describe('flatten', () => {
       { name: 'a_b_2', type: 'VARCHAR' },
     ])
     expect(leaves.map((l) => l.name)).toEqual(['a_b', 'a_b_3', 'a_b_2'])
+  })
+
+  it('gives each repeat of a name the next suffix free, whatever its case', () => {
+    const leaves = flatten(
+      ['a', 'a_3', 'a', 'A', 'a', 'b', 'b'].map((name) => ({ name, type: 'VARCHAR' }))
+    )
+    expect(leaves.map((l) => l.name)).toEqual(['a', 'a_3', 'a_2', 'A_4', 'a_5', 'b', 'b_2'])
+  })
+
+  it('names thousands of leaves of one name in a time their count bounds', () => {
+    const name = 'a'.repeat(200)
+    const started = performance.now()
+    const leaves = flatten(Array.from({ length: 8_000 }, () => ({ name, type: 'VARCHAR' })))
+    expect(performance.now() - started).toBeLessThan(2_000)
+    expect(leaves.at(-1)!.name).toBe(`${name}_8000`)
   })
 })
