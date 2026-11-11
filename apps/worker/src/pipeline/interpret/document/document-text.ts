@@ -59,6 +59,7 @@ import {
   XLSX_MAX_ENTRIES,
   XLSX_MAX_PART_BYTES,
 } from '@/config'
+import { openZipFile } from '../zip'
 import { docText } from './legacy/doc'
 import {
   BLOCK_MAX_CHARS,
@@ -1521,11 +1522,7 @@ async function* readPart<T>(
 }
 
 function openZip(filePath: string): Promise<yauzl.ZipFile> {
-  return new Promise((resolve, reject) => {
-    yauzl.open(filePath, { lazyEntries: true, autoClose: false }, (err, zip) =>
-      err || !zip ? reject(err ?? new Error('Failed to open XLSX')) : resolve(zip)
-    )
-  })
+  return openZipFile(filePath, { lazyEntries: true, autoClose: false })
 }
 
 function listEntries(zip: yauzl.ZipFile): Promise<Map<string, yauzl.Entry>> {

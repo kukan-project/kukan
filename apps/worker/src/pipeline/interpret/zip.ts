@@ -4,6 +4,9 @@
  * Does NOT extract or decompress file contents.
  */
 
+import fs from 'node:fs'
+import { PassThrough, Readable } from 'node:stream'
+import { promisify } from 'node:util'
 import yauzl from 'yauzl'
 import type { ZipEntry, ZipManifest } from '@kukan/shared'
 
@@ -73,13 +76,114 @@ function openZipFromBuffer(buffer: Buffer): Promise<yauzl.ZipFile> {
   })
 }
 
-function openZipFromFile(filePath: string): Promise<yauzl.ZipFile> {
-  return new Promise((resolve, reject) => {
-    yauzl.open(filePath, YAUZL_OPTIONS, (err, zipFile) => {
-      if (err || !zipFile) return reject(err ?? new Error('Failed to open ZIP'))
-      resolve(zipFile)
+/**
+ * A file reader for yauzl that refuses ranges outside the file. yauzl reads at
+ * offsets the archive itself states, and its own file reader hands them to
+ * `fs.read` from inside an earlier read's callback: an offset past what a
+ * Number holds exactly makes `fs.read` throw there, outside any promise, and
+ * takes the process down. Refused here, the read fails through yauzl's own
+ * error path instead.
+ */
+class BoundedFileReader extends yauzl.RandomAccessReader {
+  constructor(
+    private readonly fd: number,
+    private readonly size: number
+  ) {
+    super()
+  }
+
+  private outside(start: number, end: number): Error | undefined {
+    const inside =
+      Number.isSafeInteger(start) &&
+      Number.isSafeInteger(end) &&
+      start >= 0 &&
+      start <= end &&
+      end <= this.size
+    if (inside) return undefined
+    return new Error(`ZIP read ${start}..${end} is outside the file (${this.size} bytes)`)
+  }
+
+  override read(
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+    callback: (err: Error | null, bytesRead?: number) => void
+  ): void {
+    const err = this.outside(position, position + length)
+    if (err) {
+      setImmediate(() => callback(err))
+      return
+    }
+    fs.read(this.fd, buffer, offset, length, position, (readErr, bytesRead) =>
+      callback(readErr, bytesRead)
+    )
+  }
+
+  override _readStreamForRange(start: number, end: number): Readable {
+    const err = this.outside(start, end)
+    if (err) {
+      const stream = new PassThrough()
+      setImmediate(() => stream.destroy(err))
+      return stream
+    }
+    // Not fs.createReadStream: destroying one closes its descriptor whatever
+    // autoClose says, and yauzl destroys each stream it is done with
+    const fd = this.fd
+    let position = start
+    const stream: Readable = new Readable({
+      read(size) {
+        const length = Math.min(size, end - position)
+        if (length <= 0) {
+          stream.push(null)
+          return
+        }
+        const buffer = Buffer.allocUnsafe(length)
+        fs.read(fd, buffer, 0, length, position, (err, bytesRead) => {
+          if (err) {
+            stream.destroy(err)
+          } else if (bytesRead === 0) {
+            stream.push(null)
+          } else {
+            position += bytesRead
+            stream.push(buffer.subarray(0, bytesRead))
+          }
+        })
+      },
     })
-  })
+    return stream
+  }
+
+  override close(callback: (err: Error | null) => void): void {
+    fs.close(this.fd, callback)
+  }
+}
+
+/** Open a ZIP file with yauzl's options, reading it only within its bounds. */
+export async function openZipFile(
+  filePath: string,
+  options: yauzl.Options = YAUZL_OPTIONS
+): Promise<yauzl.ZipFile> {
+  // A bare descriptor rather than a FileHandle: the reader closes it, and a
+  // FileHandle left unclosed would close the same number again when collected
+  const fd = await promisify(fs.open)(filePath, 'r')
+  try {
+    const { size } = await promisify(fs.fstat)(fd)
+    return await new Promise<yauzl.ZipFile>((resolve, reject) => {
+      yauzl.fromRandomAccessReader(
+        new BoundedFileReader(fd, size),
+        size,
+        // yauzl writes its defaults into the options it is given
+        { ...options },
+        (err, zipFile) =>
+          err || !zipFile ? reject(err ?? new Error('Failed to open ZIP')) : resolve(zipFile)
+      )
+    })
+  } catch (err) {
+    // yauzl leaves the reader open when the archive does not open
+    await promisify(fs.close)(fd).catch(() => {})
+    throw err
+  }
 }
 
 /**
@@ -90,8 +194,7 @@ function openZipFromFile(filePath: string): Promise<yauzl.ZipFile> {
 export async function extractZipManifest(input: Buffer | string): Promise<ZipManifest | null> {
   let zipFile: yauzl.ZipFile
   try {
-    zipFile =
-      typeof input === 'string' ? await openZipFromFile(input) : await openZipFromBuffer(input)
+    zipFile = typeof input === 'string' ? await openZipFile(input) : await openZipFromBuffer(input)
   } catch {
     return null
   }

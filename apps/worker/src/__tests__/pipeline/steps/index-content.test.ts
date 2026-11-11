@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { zstdCompressSync } from 'node:zlib'
-import { executeIndexContent } from '../../../pipeline/steps/index-content'
+import { executeIndexContent, lineText } from '../../../pipeline/steps/index-content'
 import type { InterpretResult } from '../../../pipeline/steps/interpret'
 import {
   createPipelineContextMock,
@@ -703,5 +703,39 @@ describe('executeIndexContent', () => {
       expect(indexedDoc.packageId).toBe('pkg-1')
       expect(indexedDoc.contentType).toBe('tabular')
     })
+  })
+})
+
+describe('lineText', () => {
+  /** The pattern the loop replaced, for lines short enough to run it on */
+  const byPattern = (line: string) =>
+    line
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+  it('reads a line as the tag-stripping pattern did', () => {
+    const lines = [
+      '<html><body><h1>Title</h1><p>Hello <b>world</b></p></body></html>',
+      '<a href="x">link</a> and <img src="y" alt="z"> text',
+      'no tags at all',
+      '',
+      '   ',
+      '<br>',
+      'a < b and c > d',
+      'unclosed <tag at the end',
+      '<<nested>> brackets',
+      '<a<b>c',
+      'x > y <p>z</p> <',
+      '>leading close<i>t</i>',
+      '\t<td>東京</td>\t<td>大阪</td>\t',
+    ]
+    for (const line of lines) expect(lineText(line), line).toBe(byPattern(line))
+  })
+
+  it('keeps an unclosed run of brackets as text without rescanning it', () => {
+    const run = '<'.repeat(200_000)
+    expect(lineText(`<p>head</p>${run}`)).toBe(`head ${run}`)
+    expect(lineText(`${run}>`)).toBe('')
   })
 })

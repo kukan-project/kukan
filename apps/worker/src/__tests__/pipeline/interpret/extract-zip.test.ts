@@ -301,5 +301,36 @@ describe('extractZipManifest', () => {
 
       expect(manifest).toBeNull()
     })
+
+    // yauzl's own file reader threw these from inside an fs callback, where no
+    // promise could catch them and the process exited
+    it.each([
+      ['past what a Number holds exactly', 1n << 63n],
+      ['past the end of the file', 1n << 40n],
+    ])('returns null for an offset %s', async (_, offset) => {
+      tmpDir = await mkdtemp(join(tmpdir(), 'kukan-test-'))
+      const filePath = join(tmpDir, 'test.zip')
+      await writeFile(filePath, zip64EndAt(offset))
+
+      await expect(extractZipManifest(filePath)).resolves.toBeNull()
+    })
   })
 })
+
+/**
+ * An archive of nothing but a ZIP64 end-of-central-directory locator pointing
+ * at `offset` and the end record that sends the reader to it
+ */
+function zip64EndAt(offset: bigint): Buffer {
+  const locator = Buffer.alloc(20)
+  locator.writeUInt32LE(0x07064b50, 0)
+  locator.writeBigUInt64LE(offset, 8)
+  locator.writeUInt32LE(1, 16)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(0xffff, 8)
+  end.writeUInt16LE(0xffff, 10)
+  end.writeUInt32LE(0xffffffff, 12)
+  end.writeUInt32LE(0xffffffff, 16)
+  return Buffer.concat([locator, end])
+}

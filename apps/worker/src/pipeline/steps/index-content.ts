@@ -340,12 +340,30 @@ async function indexTextStream(
 /** HTML lines as their text, the lines left with none dropped */
 async function* withoutTags(lines: AsyncIterable<string> | Iterable<string>) {
   for await (const line of lines) {
-    const text = line
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
+    const text = lineText(line)
     if (text) yield text
   }
+}
+
+/**
+ * One HTML line with each `<…>` as a space and its whitespace collapsed. A
+ * loop, not `/<[^>]*>/g`: that pattern rescans to the end of the line from
+ * every `<` with no `>` after it, quadratic in a line with no limit on its
+ * length. A `<` left unclosed stays as text, as it did under the pattern.
+ */
+export function lineText(line: string): string {
+  let out = ''
+  let from = 0
+  for (;;) {
+    const open = line.indexOf('<', from)
+    const close = open === -1 ? -1 : line.indexOf('>', open + 1)
+    // No `>` after this `<` means none after any later one either
+    if (close === -1) break
+    out += line.slice(from, open) + ' '
+    from = close + 1
+  }
+  out += line.slice(from)
+  return out.replace(/\s+/g, ' ').trim()
 }
 
 interface WrittenChunks {
