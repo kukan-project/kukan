@@ -48,8 +48,14 @@ const basePkg: Package = {
   organization: null,
 }
 
+/** The viewer's memberships as `/users/me/organizations` answers them */
+function memberships(...items: { id: string; role: string }[]) {
+  return { ok: true, json: async () => ({ items }) } as Response
+}
+
+/** Editor in each of these organizations — enough to write their datasets */
 function memberOf(...ids: string[]) {
-  return { ok: true, json: async () => ({ items: ids.map((id) => ({ id })) }) } as Response
+  return memberships(...ids.map((id) => ({ id, role: 'editor' })))
 }
 
 async function renderLayout(pkg: Partial<Package> = {}, initialResourceId?: string) {
@@ -123,7 +129,7 @@ describe('DatasetDetailLayout', () => {
       expect(explorer()).toHaveAttribute('data-can-manage', 'true')
     })
 
-    it('lets a member of the owning organization manage', async () => {
+    it('lets an editor of the owning organization manage', async () => {
       vi.mocked(getCurrentUser).mockResolvedValue({ sysadmin: false } as User)
       vi.mocked(serverFetch).mockResolvedValue(memberOf('org-2', 'org-1'))
       await renderLayout()
@@ -151,6 +157,20 @@ describe('DatasetDetailLayout', () => {
       vi.mocked(serverFetch).mockImplementation(orgs)
       await renderLayout()
       expect(explorer()).toHaveAttribute('data-can-manage', 'false')
+    })
+
+    it('does not let a reader of the owning organization manage, who cannot write', async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue({ sysadmin: false } as User)
+      vi.mocked(serverFetch).mockResolvedValue(memberships({ id: 'org-1', role: 'member' }))
+      await renderLayout()
+      expect(explorer()).toHaveAttribute('data-can-manage', 'false')
+    })
+
+    it('lets the creator manage their draft without a role in the organization', async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue({ id: 'user-1', sysadmin: false } as User)
+      vi.mocked(serverFetch).mockResolvedValue(memberships())
+      await renderLayout({ state: 'draft', creatorUserId: 'user-1' })
+      expect(explorer()).toHaveAttribute('data-can-manage', 'true')
     })
 
     it('does not let a user manage a dataset with no owning organization', async () => {

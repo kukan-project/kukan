@@ -131,6 +131,7 @@
     "sourceUrl": "ソースURL",
     "editDataset": "データセット編集",
     "notFound": "データセットが見つかりません",
+    "noEditPermission": "このデータセットを編集する権限がありません。編集には、データセットの組織で編集者以上の役割が必要です。",
     "deleteDataset": "データセットを削除",
     "deleteThisDataset": "このデータセットを削除",
     "deleteDatasetConfirm": "このデータセットとそのすべてのリソースが削除されます。削除済タブから復元できます。",

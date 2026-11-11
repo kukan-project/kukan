@@ -131,6 +131,7 @@
     "sourceUrl": "Source URL",
     "editDataset": "Edit Dataset",
     "notFound": "Dataset not found",
+    "noEditPermission": "You do not have permission to edit this dataset. Editing needs the editor role or higher in the dataset's organization.",
     "deleteDataset": "Delete Dataset",
     "deleteThisDataset": "Delete This Dataset",
     "deleteDatasetConfirm": "This dataset and all its resources will be deleted. You can restore it from the Deleted tab.",

@@ -19,6 +19,13 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ nameOrId: 'test-entity' }),
 }))
 
+// The viewer the dashboard layout hands down; an editor in the package's org
+// unless a test says otherwise
+const viewer = vi.hoisted(() => ({ id: 'user-1', sysadmin: false }))
+vi.mock('@/components/dashboard/user-provider', () => ({
+  useUser: () => viewer,
+}))
+
 vi.mock('@/components/dashboard/dataset/dataset-form', () => ({
   // Publishing now happens inside the form ("Save & Publish") — surface the
   // onPublished callback so the page-level flow can be exercised, the target
@@ -120,8 +127,8 @@ const sampleDraft = {
 
 const sampleOrgs = {
   items: [
-    { id: 'org-1', name: 'org-one', title: 'Org One' },
-    { id: 'org-2', name: 'org-two', title: 'Org Two' },
+    { id: 'org-1', name: 'org-one', title: 'Org One', role: 'editor' },
+    { id: 'org-2', name: 'org-two', title: 'Org Two', role: 'editor' },
   ],
 }
 
@@ -144,6 +151,7 @@ describe('EditDatasetPage', () => {
     nav.router.push.mockReset()
     openWith('')
     resourceListProps.resources.length = 0
+    viewer.sysadmin = false
   })
 
   it('keeps handing the resource list the same array when the package has none', async () => {
@@ -179,9 +187,9 @@ describe('EditDatasetPage', () => {
   })
 
   it('should fetch dataset and organizations on mount', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(jsonResponse(samplePackage))
-      .mockResolvedValueOnce(jsonResponse(sampleOrgs))
+    mockClientFetch.mockImplementation(async (path: string) =>
+      jsonResponse(path.includes('/users/me/organizations') ? sampleOrgs : samplePackage)
+    )
     render(<EditDatasetPage />)
 
     await waitFor(() => {
@@ -195,9 +203,9 @@ describe('EditDatasetPage', () => {
   })
 
   it('should render DatasetForm and ResourceList after data loads', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(jsonResponse(samplePackage))
-      .mockResolvedValueOnce(jsonResponse(sampleOrgs))
+    mockClientFetch.mockImplementation(async (path: string) =>
+      jsonResponse(path.includes('/users/me/organizations') ? sampleOrgs : samplePackage)
+    )
     render(<EditDatasetPage />)
 
     await waitFor(() => {
@@ -228,9 +236,9 @@ describe('EditDatasetPage', () => {
   })
 
   it('should have delete button', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(jsonResponse(samplePackage))
-      .mockResolvedValueOnce(jsonResponse(sampleOrgs))
+    mockClientFetch.mockImplementation(async (path: string) =>
+      jsonResponse(path.includes('/users/me/organizations') ? sampleOrgs : samplePackage)
+    )
     render(<EditDatasetPage />)
 
     await waitFor(() => {
@@ -247,6 +255,50 @@ describe('EditDatasetPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Dataset not found')).toBeInTheDocument()
+    })
+  })
+
+  describe('who may edit', () => {
+    const memberOnly = {
+      items: [{ id: 'org-1', name: 'org-one', title: 'Org One', role: 'member' }],
+    }
+
+    it('should refuse a member of the organization, who can read but not write', async () => {
+      mockClientFetch.mockImplementation(async (path: string) =>
+        jsonResponse(path.includes('/users/me/organizations') ? memberOnly : samplePackage)
+      )
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/You do not have permission to edit this dataset/)
+        ).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('dataset-form')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('resource-list')).not.toBeInTheDocument()
+    })
+
+    it('should let the creator edit their draft without a role in the organization', async () => {
+      mockClientFetch.mockImplementation(async (path: string) =>
+        jsonResponse(
+          path.includes('/users/me/organizations')
+            ? memberOnly
+            : { ...sampleDraft, creatorUserId: 'user-1' }
+        )
+      )
+      render(<EditDatasetPage />)
+
+      await waitFor(() => expect(screen.getByTestId('dataset-form')).toBeInTheDocument())
+    })
+
+    it('should let a sysadmin edit without belonging to the organization', async () => {
+      viewer.sysadmin = true
+      mockClientFetch.mockImplementation(async (path: string) =>
+        jsonResponse(path.includes('/users/me/organizations') ? { items: [] } : samplePackage)
+      )
+      render(<EditDatasetPage />)
+
+      await waitFor(() => expect(screen.getByTestId('dataset-form')).toBeInTheDocument())
     })
   })
 
@@ -272,6 +324,24 @@ describe('EditDatasetPage', () => {
         return jsonResponse(pkg)
       })
     }
+
+    it('should open for an admin whose organization was deleted along with it', async () => {
+      // /users/me/organizations lists active organizations only, so the deleted
+      // one is missing — the view must not depend on finding it there
+      openWith('state=deleted')
+      mockClientFetch.mockImplementation(async (path: string) =>
+        jsonResponse(
+          path.includes('/users/me/organizations')
+            ? { items: [] }
+            : { ...samplePackage, state: 'deleted' }
+        )
+      )
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Restore Dataset' })).toBeInTheDocument()
+      })
+    })
 
     it('should restore with the visibility it was deleted with by default', async () => {
       mockDeletedFetch()

@@ -10,6 +10,7 @@ import { DatasetMetadata } from './dataset-metadata'
 import { ResourceExplorer, type Resource } from '@/components/resource/resource-explorer'
 import { LinkPendingIndicator } from '@/components/link-pending-indicator'
 import { tagPath } from '@/lib/paths'
+import { canEditPackage } from '@/lib/roles'
 
 interface Organization {
   id: string
@@ -30,6 +31,7 @@ export interface Package {
   maintainer?: string | null
   maintainerEmail?: string | null
   ownerOrg?: string | null
+  creatorUserId?: string | null
   private: boolean
   state?: PackageState
   created: string
@@ -56,12 +58,11 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
 
   let canManage = false
   if (user) {
-    if (user.sysadmin) {
-      canManage = true
-    } else if (pkg.ownerOrg && orgsRes?.ok) {
-      const data = await orgsRes.json()
-      canManage = data.items?.some((org: { id: string }) => org.id === pkg.ownerOrg)
-    }
+    const orgs: { items?: { id: string; role?: string }[] } | null = orgsRes?.ok
+      ? await orgsRes.json()
+      : null
+    const ownerOrgRole = orgs?.items?.find((org) => org.id === pkg.ownerOrg)?.role
+    canManage = canEditPackage(user, pkg, ownerOrgRole)
   }
 
   return (

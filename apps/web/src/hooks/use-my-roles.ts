@@ -1,17 +1,10 @@
 import { useMemo } from 'react'
+import { hasRole, type MembershipRole } from '@/lib/roles'
 import { useFetch } from './use-fetch'
 
-export type MembershipRole = 'admin' | 'editor' | 'member'
-
-/** Mirrors the API's ROLE_HIERARCHY so these answer the same question the
- *  server does — an equality test would deny a role added above admin */
-const ROLE_RANK: Record<string, number> = { admin: 3, editor: 2, member: 1 }
-
-/** Whether a membership role satisfies `required`, for callers that already
- *  hold the role (e.g. filtering the items of a /me/* response) */
-export function hasRole(role: string | undefined, required: MembershipRole): boolean {
-  return (ROLE_RANK[role ?? ''] ?? 0) >= ROLE_RANK[required]
-}
+// Kept here for the pages that already import them with the hook; the
+// definitions live in lib so a server component can use them without the hook
+export { hasRole, type MembershipRole }
 
 interface MembershipItem {
   id: string

@@ -27,6 +27,8 @@ import { clientFetch } from '@/lib/client-api'
 import { datasetEditPath } from '@/lib/paths'
 import { useFetch } from '@/hooks/use-fetch'
 import { hasRole } from '@/hooks/use-my-roles'
+import { canEditPackage } from '@/lib/roles'
+import { useUser } from '@/components/dashboard/user-provider'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -69,6 +71,7 @@ interface PackageDetail {
   maintainer?: string | null
   maintainerEmail?: string | null
   ownerOrg?: string | null
+  creatorUserId?: string | null
   private: boolean
   state: PackageState
   type?: string | null
@@ -124,6 +127,7 @@ export default function EditDatasetPage() {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
   const nameOrId = params.nameOrId as string
+  const user = useUser()
   const stateParam = searchParams.get('state')
   // Which resource to open, when arriving from the public page's status view
   const resourceParam = searchParams.get('resource')
@@ -210,7 +214,9 @@ export default function EditDatasetPage() {
   }, [loadedId, nameOrId])
 
   // The org options never change with the package — fetch once on mount
-  const { data: orgData } = useFetch<{ items: Organization[] }>('/api/v1/users/me/organizations')
+  const { data: orgData, loading: orgsLoading } = useFetch<{ items: Organization[] }>(
+    '/api/v1/users/me/organizations'
+  )
   // Only organizations the viewer may write in
   const organizations = (orgData?.items ?? []).filter((o) => hasRole(o.role, 'editor'))
 
@@ -300,7 +306,7 @@ export default function EditDatasetPage() {
     }
   }
 
-  if (loading) {
+  if (loading || orgsLoading) {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader title={t('editDataset')} />
@@ -314,6 +320,22 @@ export default function EditDatasetPage() {
       <div className="flex flex-col gap-6">
         <PageHeader title={t('editDataset')} />
         <p className="py-12 text-center text-muted-foreground">{t('notFound')}</p>
+      </div>
+    )
+  }
+
+  // Reached by URL as well as from the list (the public page's status view
+  // links here), so a reader without write access would otherwise get a form
+  // whose every save the API refuses. Not for a deleted dataset: that view has
+  // no form, only restore and purge, which the API gates on admin itself — and
+  // its organization may be deleted too, which the active-only membership list
+  // leaves out, so this check would turn that organization's admin away.
+  const ownerOrgRole = orgData?.items.find((o) => o.id === pkg.ownerOrg)?.role
+  if (!isDeleted && !canEditPackage(user, pkg, ownerOrgRole)) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title={t('editDataset')} />
+        <p className="py-12 text-center text-muted-foreground">{t('noEditPermission')}</p>
       </div>
     )
   }
