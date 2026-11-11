@@ -84,7 +84,8 @@ describe('IchitaroPreview', () => {
     viewer.pages.mockRejectedValue(new Error('out of memory'))
     render(preview())
     expect(await screen.findByText('not shown')).toBeInTheDocument()
-    expect(viewer.close).toHaveBeenCalled()
+    // The failure renders first; the viewer closes in the effect cleanup after it
+    await waitFor(() => expect(viewer.close).toHaveBeenCalled())
     expect(localStorage.length).toBe(0)
   })
 
