@@ -4,7 +4,9 @@
  * the CKAN-compatible API, a bare Authorization token or X-CKAN-API-Key)
  *
  * A header that newly carries a token must also be masked in the WAF's logs
- * and samples (CREDENTIAL_HEADERS in infra/lib/constructs/waf.ts).
+ * and samples (CREDENTIAL_HEADERS in infra/lib/constructs/waf.ts), and keep
+ * the request out of the edge cache (hasApiToken in
+ * infra/lib/cf-functions/viewer-request.js).
  */
 
 import type { Context, Next } from 'hono'

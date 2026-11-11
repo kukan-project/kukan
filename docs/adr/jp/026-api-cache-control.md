@@ -63,8 +63,10 @@ publicCache(maxAge = 60, swr = 300)
 
 これはキャッシュの**二層構造**を整合させるための措置である:
 
-- **CloudFront（共有キャッシュ）**: `.session_token` Cookie を持つリクエストに
-  `x-cache-bypass` を注入してエッジキャッシュをバイパス（ADR-027 / `viewer-request.js`）。
+- **CloudFront（共有キャッシュ）**: `.session_token` Cookie か API トークンのヘッダー
+  （`Authorization`（サイトの Basic 認証の値を除く）・`X-KUKAN-API-Key`・`X-CKAN-API-Key`）を
+  持つリクエストに、要求ごとに一意な `x-cache-bypass` を注入してエッジキャッシュをバイパス
+  （ADR-027 / `viewer-request.js`）。
 - **オリジンの `Cache-Control`（ブラウザのプライベートキャッシュ）**: 本 ADR の
   `publicCache()` が auth-aware にスキップすることで、認証ユーザーには毎回再検証を要求する。
 

@@ -63,7 +63,7 @@ const UPLOAD_PATH_PATTERN = '^/api/v1/resources/[0-9a-fA-F-]{36}/upload$'
  * `authorization` also carrying the edge's basic auth. A token there is enough
  * to call the API as its user, so none of them may reach a log or a sample.
  */
-const CREDENTIAL_HEADERS = ['cookie', 'authorization', 'x-kukan-api-key', 'x-ckan-api-key']
+export const CREDENTIAL_HEADERS = ['cookie', 'authorization', 'x-kukan-api-key', 'x-ckan-api-key']
 
 type Statement = wafv2.CfnWebACL.StatementProperty
 

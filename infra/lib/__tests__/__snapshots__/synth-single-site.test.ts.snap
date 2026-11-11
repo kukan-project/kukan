@@ -932,7 +932,7 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
         "FunctionCode": "/* eslint-disable */
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
-// 2. Cache bypass: inject unique header when session cookie is present.
+// 2. Cache bypass: inject a unique header when the request carries credentials.
 // 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 // 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
 //
@@ -981,21 +981,14 @@ function handler(event) {
     }
   }
 
-  // --- Cookie-based cache bypass ---
-  // Any authenticated request must bypass the edge cache so personalized SSR
-  // HTML is never stored and served to other users. Match the Better Auth
-  // session cookie by the \`.session_token\` suffix (covers \`better-auth.session_token\`,
-  // \`__Secure-better-auth.session_token\`, and any configured \`<prefix>.session_token\`)
-  // rather than a substring — a substring match would let any client inject the
-  // bypass with a cookie like \`xsession_tokenx\` and force cache misses.
-  // \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+  // --- Cache bypass for credentialed requests ---
+  // Any authenticated request must bypass the edge cache so personalized or
+  // access-controlled responses are never stored and served to other users.
+  // The value is CloudFront's per-request ID, not a timestamp: requests in the
+  // same millisecond would get the same key and share one cache entry.
   var req = event.request
-  var SUFFIX = '.session_token'
-  for (var name in req.cookies) {
-    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) {
-      req.headers['x-cache-bypass'] = { value: '' + Date.now() }
-      break
-    }
+  if (hasSessionCookie(req) || hasApiToken(req)) {
+    req.headers['x-cache-bypass'] = { value: event.context.requestId }
   }
 
   // --- Locale ---
@@ -1009,6 +1002,29 @@ function handler(event) {
   // viewer-sent value here would let a client pick its own rate-limit bucket.
   req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
   return req
+}
+
+// Match the Better Auth session cookie by the \`.session_token\` suffix (covers
+// \`better-auth.session_token\`, \`__Secure-better-auth.session_token\`, and any
+// configured \`<prefix>.session_token\`) rather than a substring — a substring
+// match would let any client inject the bypass with a cookie like
+// \`xsession_tokenx\` and force cache misses.
+// \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+function hasSessionCookie(req) {
+  var SUFFIX = '.session_token'
+  for (var name in req.cookies) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) return true
+  }
+  return false
+}
+
+// The API accepts tokens too, and a page outside \`/api/*\` (the download
+// permalink) hands the request's headers on to it. The site's Basic auth value
+// is the same for every viewer, so it alone does not count.
+function hasApiToken(req) {
+  var h = req.headers
+  if (h['x-kukan-api-key'] || h['x-ckan-api-key']) return true
+  return !!(h.authorization && h.authorization.value !== BASIC_AUTH)
 }
 
 // Same order as the web app's request config: NEXT_LOCALE cookie, then
@@ -5932,7 +5948,7 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
         "FunctionCode": "/* eslint-disable */
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
-// 2. Cache bypass: inject unique header when session cookie is present.
+// 2. Cache bypass: inject a unique header when the request carries credentials.
 // 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 // 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
 //
@@ -5981,21 +5997,14 @@ function handler(event) {
     }
   }
 
-  // --- Cookie-based cache bypass ---
-  // Any authenticated request must bypass the edge cache so personalized SSR
-  // HTML is never stored and served to other users. Match the Better Auth
-  // session cookie by the \`.session_token\` suffix (covers \`better-auth.session_token\`,
-  // \`__Secure-better-auth.session_token\`, and any configured \`<prefix>.session_token\`)
-  // rather than a substring — a substring match would let any client inject the
-  // bypass with a cookie like \`xsession_tokenx\` and force cache misses.
-  // \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+  // --- Cache bypass for credentialed requests ---
+  // Any authenticated request must bypass the edge cache so personalized or
+  // access-controlled responses are never stored and served to other users.
+  // The value is CloudFront's per-request ID, not a timestamp: requests in the
+  // same millisecond would get the same key and share one cache entry.
   var req = event.request
-  var SUFFIX = '.session_token'
-  for (var name in req.cookies) {
-    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) {
-      req.headers['x-cache-bypass'] = { value: '' + Date.now() }
-      break
-    }
+  if (hasSessionCookie(req) || hasApiToken(req)) {
+    req.headers['x-cache-bypass'] = { value: event.context.requestId }
   }
 
   // --- Locale ---
@@ -6009,6 +6018,29 @@ function handler(event) {
   // viewer-sent value here would let a client pick its own rate-limit bucket.
   req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
   return req
+}
+
+// Match the Better Auth session cookie by the \`.session_token\` suffix (covers
+// \`better-auth.session_token\`, \`__Secure-better-auth.session_token\`, and any
+// configured \`<prefix>.session_token\`) rather than a substring — a substring
+// match would let any client inject the bypass with a cookie like
+// \`xsession_tokenx\` and force cache misses.
+// \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+function hasSessionCookie(req) {
+  var SUFFIX = '.session_token'
+  for (var name in req.cookies) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) return true
+  }
+  return false
+}
+
+// The API accepts tokens too, and a page outside \`/api/*\` (the download
+// permalink) hands the request's headers on to it. The site's Basic auth value
+// is the same for every viewer, so it alone does not count.
+function hasApiToken(req) {
+  var h = req.headers
+  if (h['x-kukan-api-key'] || h['x-ckan-api-key']) return true
+  return !!(h.authorization && h.authorization.value !== BASIC_AUTH)
 }
 
 // Same order as the web app's request config: NEXT_LOCALE cookie, then
@@ -10887,7 +10919,7 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
         "FunctionCode": "/* eslint-disable */
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
-// 2. Cache bypass: inject unique header when session cookie is present.
+// 2. Cache bypass: inject a unique header when the request carries credentials.
 // 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 // 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
 //
@@ -10936,21 +10968,14 @@ function handler(event) {
     }
   }
 
-  // --- Cookie-based cache bypass ---
-  // Any authenticated request must bypass the edge cache so personalized SSR
-  // HTML is never stored and served to other users. Match the Better Auth
-  // session cookie by the \`.session_token\` suffix (covers \`better-auth.session_token\`,
-  // \`__Secure-better-auth.session_token\`, and any configured \`<prefix>.session_token\`)
-  // rather than a substring — a substring match would let any client inject the
-  // bypass with a cookie like \`xsession_tokenx\` and force cache misses.
-  // \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+  // --- Cache bypass for credentialed requests ---
+  // Any authenticated request must bypass the edge cache so personalized or
+  // access-controlled responses are never stored and served to other users.
+  // The value is CloudFront's per-request ID, not a timestamp: requests in the
+  // same millisecond would get the same key and share one cache entry.
   var req = event.request
-  var SUFFIX = '.session_token'
-  for (var name in req.cookies) {
-    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) {
-      req.headers['x-cache-bypass'] = { value: '' + Date.now() }
-      break
-    }
+  if (hasSessionCookie(req) || hasApiToken(req)) {
+    req.headers['x-cache-bypass'] = { value: event.context.requestId }
   }
 
   // --- Locale ---
@@ -10964,6 +10989,29 @@ function handler(event) {
   // viewer-sent value here would let a client pick its own rate-limit bucket.
   req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
   return req
+}
+
+// Match the Better Auth session cookie by the \`.session_token\` suffix (covers
+// \`better-auth.session_token\`, \`__Secure-better-auth.session_token\`, and any
+// configured \`<prefix>.session_token\`) rather than a substring — a substring
+// match would let any client inject the bypass with a cookie like
+// \`xsession_tokenx\` and force cache misses.
+// \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+function hasSessionCookie(req) {
+  var SUFFIX = '.session_token'
+  for (var name in req.cookies) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) return true
+  }
+  return false
+}
+
+// The API accepts tokens too, and a page outside \`/api/*\` (the download
+// permalink) hands the request's headers on to it. The site's Basic auth value
+// is the same for every viewer, so it alone does not count.
+function hasApiToken(req) {
+  var h = req.headers
+  if (h['x-kukan-api-key'] || h['x-ckan-api-key']) return true
+  return !!(h.authorization && h.authorization.value !== BASIC_AUTH)
 }
 
 // Same order as the web app's request config: NEXT_LOCALE cookie, then
@@ -15589,7 +15637,7 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         "FunctionCode": "/* eslint-disable */
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
-// 2. Cache bypass: inject unique header when session cookie is present.
+// 2. Cache bypass: inject a unique header when the request carries credentials.
 // 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 // 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
 //
@@ -15638,21 +15686,14 @@ function handler(event) {
     }
   }
 
-  // --- Cookie-based cache bypass ---
-  // Any authenticated request must bypass the edge cache so personalized SSR
-  // HTML is never stored and served to other users. Match the Better Auth
-  // session cookie by the \`.session_token\` suffix (covers \`better-auth.session_token\`,
-  // \`__Secure-better-auth.session_token\`, and any configured \`<prefix>.session_token\`)
-  // rather than a substring — a substring match would let any client inject the
-  // bypass with a cookie like \`xsession_tokenx\` and force cache misses.
-  // \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+  // --- Cache bypass for credentialed requests ---
+  // Any authenticated request must bypass the edge cache so personalized or
+  // access-controlled responses are never stored and served to other users.
+  // The value is CloudFront's per-request ID, not a timestamp: requests in the
+  // same millisecond would get the same key and share one cache entry.
   var req = event.request
-  var SUFFIX = '.session_token'
-  for (var name in req.cookies) {
-    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) {
-      req.headers['x-cache-bypass'] = { value: '' + Date.now() }
-      break
-    }
+  if (hasSessionCookie(req) || hasApiToken(req)) {
+    req.headers['x-cache-bypass'] = { value: event.context.requestId }
   }
 
   // --- Locale ---
@@ -15666,6 +15707,29 @@ function handler(event) {
   // viewer-sent value here would let a client pick its own rate-limit bucket.
   req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
   return req
+}
+
+// Match the Better Auth session cookie by the \`.session_token\` suffix (covers
+// \`better-auth.session_token\`, \`__Secure-better-auth.session_token\`, and any
+// configured \`<prefix>.session_token\`) rather than a substring — a substring
+// match would let any client inject the bypass with a cookie like
+// \`xsession_tokenx\` and force cache misses.
+// \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+function hasSessionCookie(req) {
+  var SUFFIX = '.session_token'
+  for (var name in req.cookies) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) return true
+  }
+  return false
+}
+
+// The API accepts tokens too, and a page outside \`/api/*\` (the download
+// permalink) hands the request's headers on to it. The site's Basic auth value
+// is the same for every viewer, so it alone does not count.
+function hasApiToken(req) {
+  var h = req.headers
+  if (h['x-kukan-api-key'] || h['x-ckan-api-key']) return true
+  return !!(h.authorization && h.authorization.value !== BASIC_AUTH)
 }
 
 // Same order as the web app's request config: NEXT_LOCALE cookie, then
@@ -20530,7 +20594,7 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
         "FunctionCode": "/* eslint-disable */
 // CloudFront Function — Viewer Request
 // 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
-// 2. Cache bypass: inject unique header when session cookie is present.
+// 2. Cache bypass: inject a unique header when the request carries credentials.
 // 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
 // 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
 //
@@ -20579,21 +20643,14 @@ function handler(event) {
     }
   }
 
-  // --- Cookie-based cache bypass ---
-  // Any authenticated request must bypass the edge cache so personalized SSR
-  // HTML is never stored and served to other users. Match the Better Auth
-  // session cookie by the \`.session_token\` suffix (covers \`better-auth.session_token\`,
-  // \`__Secure-better-auth.session_token\`, and any configured \`<prefix>.session_token\`)
-  // rather than a substring — a substring match would let any client inject the
-  // bypass with a cookie like \`xsession_tokenx\` and force cache misses.
-  // \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+  // --- Cache bypass for credentialed requests ---
+  // Any authenticated request must bypass the edge cache so personalized or
+  // access-controlled responses are never stored and served to other users.
+  // The value is CloudFront's per-request ID, not a timestamp: requests in the
+  // same millisecond would get the same key and share one cache entry.
   var req = event.request
-  var SUFFIX = '.session_token'
-  for (var name in req.cookies) {
-    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) {
-      req.headers['x-cache-bypass'] = { value: '' + Date.now() }
-      break
-    }
+  if (hasSessionCookie(req) || hasApiToken(req)) {
+    req.headers['x-cache-bypass'] = { value: event.context.requestId }
   }
 
   // --- Locale ---
@@ -20607,6 +20664,29 @@ function handler(event) {
   // viewer-sent value here would let a client pick its own rate-limit bucket.
   req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
   return req
+}
+
+// Match the Better Auth session cookie by the \`.session_token\` suffix (covers
+// \`better-auth.session_token\`, \`__Secure-better-auth.session_token\`, and any
+// configured \`<prefix>.session_token\`) rather than a substring — a substring
+// match would let any client inject the bypass with a cookie like
+// \`xsession_tokenx\` and force cache misses.
+// \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+function hasSessionCookie(req) {
+  var SUFFIX = '.session_token'
+  for (var name in req.cookies) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) return true
+  }
+  return false
+}
+
+// The API accepts tokens too, and a page outside \`/api/*\` (the download
+// permalink) hands the request's headers on to it. The site's Basic auth value
+// is the same for every viewer, so it alone does not count.
+function hasApiToken(req) {
+  var h = req.headers
+  if (h['x-kukan-api-key'] || h['x-ckan-api-key']) return true
+  return !!(h.authorization && h.authorization.value !== BASIC_AUTH)
 }
 
 // Same order as the web app's request config: NEXT_LOCALE cookie, then

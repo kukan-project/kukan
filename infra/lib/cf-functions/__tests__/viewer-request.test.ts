@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { CREDENTIAL_HEADERS } from '../../constructs/waf'
 import { loadViewerRequestCode } from '../inject'
 
 /**
@@ -37,6 +38,7 @@ function event(
   for (const [k, v] of Object.entries(opts.headers ?? {})) headers[k] = { value: v }
   if (opts.auth) headers.authorization = { value: opts.auth }
   return {
+    context: { requestId: 'req-id' },
     viewer: { ip },
     request: { uri: opts.uri ?? '/', cookies: opts.cookies ?? {}, headers },
   }
@@ -157,7 +159,44 @@ describe('viewer-request access control', () => {
           headers: { 'x-cache-bypass': 'mine' },
         })
       )
-      expect(r.headers?.['x-cache-bypass']?.value).toMatch(/^\d+$/)
+      expect(r.headers?.['x-cache-bypass']?.value).toBe('req-id')
+    })
+  })
+
+  describe('token-based cache bypass', () => {
+    const open = makeHandler()
+
+    it.each([
+      ['authorization', 'Bearer kukan_abc'],
+      ['authorization', 'kukan_abc'],
+      ['x-kukan-api-key', 'kukan_abc'],
+      ['x-ckan-api-key', 'kukan_abc'],
+    ])('injects x-cache-bypass for a %s header', (name, value) => {
+      const r = open(event('8.8.8.8', { headers: { [name]: value } }))
+      expect(r.headers?.['x-cache-bypass']).toBeDefined()
+    })
+    // The WAF's list of credential headers and this function's must not drift apart
+    it.each(CREDENTIAL_HEADERS.filter((name) => name !== 'cookie'))(
+      'covers %s from the WAF credential headers',
+      (name) => {
+        const r = open(event('8.8.8.8', { headers: { [name]: 'Bearer kukan_abc' } }))
+        expect(r.headers?.['x-cache-bypass']).toBeDefined()
+      }
+    )
+
+    describe('behind the site Basic auth', () => {
+      const gated = makeHandler(undefined, { username: 'preview', password: 'secret' })
+      const good = basicHeader('preview', 'secret')
+
+      it('does not count the site credentials, which every viewer sends', () => {
+        const r = gated(event('8.8.8.8', { auth: good }))
+        expect(forwarded(r)).toBe(true)
+        expect(r.headers?.['x-cache-bypass']).toBeUndefined()
+      })
+      it('injects x-cache-bypass for a token header sent alongside them', () => {
+        const r = gated(event('8.8.8.8', { auth: good, headers: { 'x-kukan-api-key': 'k' } }))
+        expect(r.headers?.['x-cache-bypass']).toBeDefined()
+      })
     })
   })
 

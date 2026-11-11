@@ -38,7 +38,7 @@ export class CdnConstruct extends Construct {
 
     const { config, origin: albOrigin, certificateArn, webAclArn } = props
 
-    // --- CloudFront Function: IP restriction + cookie-based cache bypass ---
+    // --- CloudFront Function: IP restriction + cache bypass for credentialed requests ---
     // Env-prefixed name for readability + multi-environment uniqueness (ADR-031).
     const viewerRequestFn = new cloudfront.Function(this, 'ViewerRequestFn', {
       functionName: resourceName(this, 'viewer-request'),
@@ -133,7 +133,7 @@ export class CdnConstruct extends Construct {
       : undefined
 
     // --- Behavior patterns ---
-    // Shared: all behaviors use the CF Function (IP restriction + cookie bypass).
+    // Shared: all behaviors use the CF Function (IP restriction + cache bypass).
     const fnAssociations: cloudfront.FunctionAssociation[] = [
       { function: viewerRequestFn, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
     ]
@@ -158,7 +158,7 @@ export class CdnConstruct extends Construct {
       functionAssociations: fnAssociations,
     }
 
-    // HTML pages: short-lived cache with cookie-based bypass for logged-in users
+    // HTML pages: short-lived cache, bypassed for requests with a session or an API token
     const htmlPages: cloudfront.BehaviorOptions = {
       origin: albOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,

@@ -65,8 +65,10 @@ only by CDNs but also by the browser's local cache.
 
 This aligns the **two cache layers**:
 
-- **CloudFront (shared cache)**: injects `x-cache-bypass` for requests carrying a
-  `.session_token` cookie, bypassing the edge cache (ADR-027 / `viewer-request.js`).
+- **CloudFront (shared cache)**: injects a per-request unique `x-cache-bypass` for
+  requests carrying a `.session_token` cookie or an API token header (`Authorization`
+  other than the site's Basic auth value, `X-KUKAN-API-Key`, `X-CKAN-API-Key`),
+  bypassing the edge cache (ADR-027 / `viewer-request.js`).
 - **Origin `Cache-Control` (browser private cache)**: this ADR's `publicCache()` skips
   auth-aware, requiring authenticated users to revalidate every time.
 
