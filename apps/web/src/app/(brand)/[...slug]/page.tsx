@@ -4,8 +4,8 @@ import { notFound } from 'next/navigation'
 import { type BrandPage, pages } from '@/brand/pages'
 
 const loadPage = cache(async (path: string): Promise<BrandPage | null> => {
-  const loader = pages[path]
-  return loader ? loader() : null
+  // `/constructor` and the like would otherwise find Object.prototype's
+  return Object.hasOwn(pages, path) ? pages[path]() : null
 })
 
 interface Props {

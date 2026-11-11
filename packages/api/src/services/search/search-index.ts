@@ -570,7 +570,7 @@ async function buildDatasetDocs(q: Database | Transaction, ids: string[]): Promi
     q
       .select({ packageId: packageGroup.packageId, name: group.name })
       .from(packageGroup)
-      .innerJoin(group, eq(packageGroup.groupId, group.id))
+      .innerJoin(group, and(eq(packageGroup.groupId, group.id), eq(group.state, 'active')))
       .where(inArray(packageGroup.packageId, ids)),
     q
       .select({ packageId: packageTag.packageId, name: tag.name })

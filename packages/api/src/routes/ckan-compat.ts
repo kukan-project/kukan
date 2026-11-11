@@ -25,6 +25,7 @@ import { TagService } from '../services/tag-service'
 import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import { ckanTokenAuth } from '../middleware/auth'
+import { OFFSET_MAX } from '../middleware/validator'
 import type { AppContext } from '../context'
 import {
   toCkanGroup,
@@ -131,12 +132,13 @@ function requiredParam(params: Params, key: string): string {
   return value
 }
 
-function intParam(params: Params, key: string, fallback: number, min = 0): number {
+function intParam(params: Params, key: string, fallback: number, min = 0, max = Infinity): number {
   const value = params[key]
   if (value === undefined || value === null || value === '') return fallback
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isInteger(n)) throw new CkanValidationError({ [key]: ['Invalid integer'] })
   if (n < min) throw new CkanValidationError({ [key]: [`Must be at least ${min}`] })
+  if (n > max) throw new CkanValidationError({ [key]: [`Must be at most ${max}`] })
   return n
 }
 
@@ -275,8 +277,10 @@ function action(
 action(
   'package_list',
   async (c, params) => {
-    const limit = params.limit === undefined ? undefined : intParam(params, 'limit', 0, 1)
-    const offset = intParam(params, 'offset', 0)
+    // Handed to PostgreSQL as they are, where 1e300 — an integer to JavaScript — is a 500
+    const limit =
+      params.limit === undefined ? undefined : intParam(params, 'limit', 0, 1, OFFSET_MAX)
+    const offset = intParam(params, 'offset', 0, 0, OFFSET_MAX)
     return new PackageService(c.get('db')).listPublicNames(limit, offset)
   },
   { cache: [60, 300] }
@@ -497,7 +501,7 @@ async function listGroups(c: Ctx, params: Params, isOrganization: boolean) {
     throw new CkanValidationError({ sort: [`Unsupported sort: ${sortText}`] })
   }
   const query = {
-    offset: intParam(params, 'offset', 0),
+    offset: intParam(params, 'offset', 0, 0, OFFSET_MAX),
     limit: Math.min(intParam(params, 'limit', max), max),
     q: stringParam(params, 'q'),
     orderBy: GROUP_SORT_FIELDS[sortField as keyof typeof GROUP_SORT_FIELDS],

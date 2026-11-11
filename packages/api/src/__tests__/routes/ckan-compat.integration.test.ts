@@ -114,6 +114,20 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const body = await (await staleIndex.request('/api/3/action/package_list')).json()
       expect(body.result).toEqual(['list-shown'])
     })
+
+    it('refuses an offset or limit past what PostgreSQL reads, as it does any unreadable number', async () => {
+      for (const query of ['offset=1e300', 'offset=9223372036854775808', 'limit=2147483648']) {
+        const res = await unauthApp.request(`/api/3/action/package_list?${query}`)
+        expect(res.status).toBe(409)
+        expect((await res.json()).error.__type).toBe('Validation Error')
+      }
+      const posted = await unauthApp.request('/api/action/package_list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offset: 1e300 }),
+      })
+      expect(posted.status).toBe(409)
+    })
   })
 
   describe('package_show', () => {

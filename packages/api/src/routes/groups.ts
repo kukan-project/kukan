@@ -96,6 +96,8 @@ groupsRouter.delete('/:nameOrId', async (c) => {
   await checkGroupRole(db, user, existing.id, 'admin')
 
   const result = await service.delete(nameOrId)
+  // The delete marked the group's datasets; the job drops the group from them
+  await enqueueSearchDocSync(c.get('queue'), c.get('logger'))
   return c.json(result)
 })
 
@@ -128,6 +130,8 @@ groupsRouter.post('/:nameOrId/restore', async (c) => {
   const existing = await service.getByNameOrId(nameOrId, 'deleted')
 
   const result = await service.restore(existing.id)
+  // The restore marked the group's datasets; the job puts the group back on them
+  await enqueueSearchDocSync(c.get('queue'), c.get('logger'))
   return c.json(result)
 })
 

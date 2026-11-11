@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { user as userTable } from '@kukan/db'
+import { packageTable, user as userTable } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
 import {
   getTestDb,
@@ -269,6 +269,53 @@ describe('Groups API Routes', () => {
       const listRes = await app.request('/api/v1/groups')
       const body = await listRes.json()
       expect(body.total).toBe(0)
+    })
+
+    it('drops the group from its datasets until restored, and keeps the link through a save', async () => {
+      await app.request('/api/v1/groups', json({ name: 'gone-group', title: 'Gone' }))
+      const org = await (
+        await app.request('/api/v1/organizations', json({ name: 'gone-org' }))
+      ).json()
+      const pkg = await (
+        await app.request(
+          '/api/v1/packages',
+          json({ name: 'gone-pkg', ownerOrg: org.id, groups: [{ name: 'gone-group' }] })
+        )
+      ).json()
+      const unmark = () =>
+        db.update(packageTable).set({ docSyncDueAt: null }).where(eq(packageTable.id, pkg.id))
+      const marked = async () => {
+        const [row] = await db
+          .select({ due: packageTable.docSyncDueAt })
+          .from(packageTable)
+          .where(eq(packageTable.id, pkg.id))
+        return row.due !== null
+      }
+      const groupNames = async () =>
+        (
+          (await (await app.request('/api/v1/packages/gone-pkg')).json()).groups as {
+            name: string
+          }[]
+        ).map((g) => g.name)
+
+      await unmark()
+      await app.request('/api/v1/groups/gone-group', { method: 'DELETE' })
+      expect(await marked()).toBe(true)
+      expect(await groupNames()).toEqual([])
+
+      // The edit form sends back the groups it was shown, which no longer
+      // include the deleted one
+      const saved = await app.request('/api/v1/packages/gone-pkg', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'gone-pkg', ownerOrg: org.id, groups: [] }),
+      })
+      expect(saved.status).toBe(200)
+
+      await unmark()
+      await app.request('/api/v1/groups/gone-group/restore', { method: 'POST' })
+      expect(await marked()).toBe(true)
+      expect(await groupNames()).toEqual(['gone-group'])
     })
   })
 

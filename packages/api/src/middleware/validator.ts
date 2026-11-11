@@ -60,16 +60,15 @@ export const repeatedParam = z
   .optional()
   .transform((v) => (v === undefined ? undefined : (Array.isArray(v) ? v : [v]).filter(Boolean)))
 
+/** The largest `offset` a list takes: int32, well inside the bigint PostgreSQL reads. */
+export const OFFSET_MAX = 2 ** 31 - 1
+
 /**
  * A list's `offset`. PostgreSQL takes OFFSET as a bigint and refuses a fraction,
  * so either would otherwise reach the query and answer 500 instead of 400.
  * As a number for MCP tools; {@link offsetParam} reads it from a query string.
  */
-export const offsetNumber = z
-  .number()
-  .int()
-  .min(0)
-  .max(2 ** 31 - 1)
+export const offsetNumber = z.number().int().min(0).max(OFFSET_MAX)
 
 /** A list's `limit`, a whole number like {@link offsetNumber}. */
 export const limitNumber = (max: number) => z.number().int().min(1).max(max)

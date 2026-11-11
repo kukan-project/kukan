@@ -31,6 +31,18 @@ async function markGroupPackages(tx: Transaction, groupId: string): Promise<void
   )
 }
 
+/**
+ * Mark a group's datasets and hold its row whole, for a write that changes what
+ * their documents say of it. Twice: once ahead of the lock, against the edit
+ * that relinks while holding its own row, and again once it is held, for a
+ * link that committed in between.
+ */
+async function lockGroupMarkingPackages(tx: Transaction, groupId: string): Promise<void> {
+  await markGroupPackages(tx, groupId)
+  await tx.select({ id: group.id }).from(group).where(eq(group.id, groupId)).for('update')
+  await markGroupPackages(tx, groupId)
+}
+
 export class GroupService {
   constructor(private db: Database) {}
 
@@ -193,13 +205,16 @@ export class GroupService {
   async delete(nameOrId: string) {
     const existing = await this.getByNameOrId(nameOrId)
 
-    await this.db
-      .update(group)
-      .set({
-        state: 'deleted',
-        updated: new Date(),
-      })
-      .where(eq(group.id, existing.id))
+    await this.db.transaction(async (tx) => {
+      await lockGroupMarkingPackages(tx, existing.id)
+      await tx
+        .update(group)
+        .set({
+          state: 'deleted',
+          updated: new Date(),
+        })
+        .where(eq(group.id, existing.id))
+    })
 
     return { success: true }
   }
@@ -207,14 +222,8 @@ export class GroupService {
   /** Hard-delete a soft-deleted group and all related data (CASCADE). */
   async purge(id: string) {
     return await this.db.transaction(async (tx) => {
-      // Before the links go with it: the documents still name the group. As
-      // for a rename, twice: once ahead of the row's full lock, against the
-      // edit that relinks while holding its own row, and again once it is
-      // held, for a link that committed in between — after the delete, the
-      // link is gone and the dataset cannot be found
-      await markGroupPackages(tx, id)
-      await tx.select({ id: group.id }).from(group).where(eq(group.id, id)).for('update')
-      await markGroupPackages(tx, id)
+      // Before the links go with it: after the delete, the dataset cannot be found
+      await lockGroupMarkingPackages(tx, id)
       const [purged] = await tx.delete(group).where(eq(group.id, id)).returning()
 
       if (!purged) throw new NotFoundError('Group', id)
@@ -224,14 +233,17 @@ export class GroupService {
 
   /** Restore a soft-deleted group back to active state. */
   async restore(id: string) {
-    const [restored] = await this.db
-      .update(group)
-      .set({ state: 'active', updated: new Date() })
-      .where(eq(group.id, id))
-      .returning()
+    return await this.db.transaction(async (tx) => {
+      await lockGroupMarkingPackages(tx, id)
+      const [restored] = await tx
+        .update(group)
+        .set({ state: 'active', updated: new Date() })
+        .where(eq(group.id, id))
+        .returning()
 
-    if (!restored) throw new NotFoundError('Group', id)
-    return restored
+      if (!restored) throw new NotFoundError('Group', id)
+      return restored
+    })
   }
 
   // ── Member management ──

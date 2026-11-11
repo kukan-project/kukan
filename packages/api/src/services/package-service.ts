@@ -285,7 +285,7 @@ export class PackageService {
           agg: sql`COALESCE(string_agg(${group.name} || ':' || COALESCE(${group.title}, ${group.name}), ',' ORDER BY ${group.title}), '')`,
         })
         .from(packageGroup)
-        .innerJoin(group, eq(group.id, packageGroup.groupId))
+        .innerJoin(group, and(eq(group.id, packageGroup.groupId), eq(group.state, 'active')))
         .where(eq(packageGroup.packageId, packageTable.id))}`.as('groups_agg'),
       orgName: organization.name,
       orgTitle: organization.title,
@@ -602,7 +602,7 @@ export class PackageService {
           created: group.created,
         })
         .from(packageGroup)
-        .innerJoin(group, eq(packageGroup.groupId, group.id))
+        .innerJoin(group, and(eq(packageGroup.groupId, group.id), eq(group.state, 'active')))
         .where(inArray(packageGroup.packageId, ids)),
       orgIds.length > 0
         ? this.db
@@ -828,7 +828,19 @@ export class PackageService {
         tagsChanged = after.length !== was.size || after.some((id) => !was.has(id))
       }
       if (groups) {
-        await tx.delete(packageGroup).where(eq(packageGroup.packageId, existing.id))
+        // A deleted group is not shown, so cannot be sent back; its link stays
+        // for a restore to bring back
+        await tx
+          .delete(packageGroup)
+          .where(
+            and(
+              eq(packageGroup.packageId, existing.id),
+              inArray(
+                packageGroup.groupId,
+                tx.select({ id: group.id }).from(group).where(eq(group.state, 'active'))
+              )
+            )
+          )
         await this.linkGroups(tx, existing.id, groups)
       }
       // The title and tags head every resource's embedding text (ADR-054). A

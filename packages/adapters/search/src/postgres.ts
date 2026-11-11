@@ -192,7 +192,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM ${packageGroup}
-          JOIN ${group} ON ${packageGroup.groupId} = ${group.id}
+          JOIN ${group} ON ${packageGroup.groupId} = ${group.id} AND ${group.state} = 'active'
           WHERE ${packageGroup.packageId} = ${packageTable.id}
           AND ${group.name} IN ${groupNames}
           HAVING COUNT(DISTINCT ${group.name}) = ${count}
@@ -447,7 +447,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
         })
         .from(packageTable)
         .innerJoin(packageGroup, eq(packageGroup.packageId, packageTable.id))
-        .innerJoin(group, eq(packageGroup.groupId, group.id))
+        .innerJoin(group, and(eq(packageGroup.groupId, group.id), eq(group.state, 'active')))
         .where(where)
         .groupBy(group.name),
     ])

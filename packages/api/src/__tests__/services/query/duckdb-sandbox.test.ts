@@ -247,6 +247,18 @@ describe('runSandboxedQuery', () => {
       )
     })
 
+    it('keeps the head of the URL out of the statement DuckDB quotes', async () => {
+      // The quoted statement cuts a long URL short with `...`, so the whole
+      // URL is not there to be matched: the bucket and the key's head would be
+      const missing = url.replace('/f.parquet', `/a-bucket/${'k'.repeat(80)}/missing.parquet`)
+      const message = await runSandboxedQuery(missing, 'SELECT 1', LIMITS).then(
+        () => '',
+        (err: Error) => err.message
+      )
+      expect(message).toContain('<the preview URL>')
+      expect(message).not.toContain(missing.slice(0, 20))
+    })
+
     it('leaves no way to ask for the deployment credentials', async () => {
       // Why this matters, and why the guard does not catch it, is on
       // `materialize`. Here: the extension is not loaded, so the function the

@@ -140,10 +140,16 @@ async function materialize(
   }
 }
 
-/** The failure, with every copy of the URL replaced by what it was for. */
+/**
+ * The failure, with every copy of the URL replaced by what it was for. DuckDB
+ * also quotes the statement after `LINE n:`, cutting the URL short with `...`
+ * where no whole copy is left to match, so the quote goes, and with it every
+ * line after the first.
+ */
 function redacting(err: unknown, location: string): string {
   const message = err instanceof Error ? err.message : String(err)
-  return message.split(location).join('<the preview URL>')
+  const [first] = message.split(/LINE \d+:/)[0].split('\n')
+  return first.split(location).join('<the preview URL>')
 }
 
 export async function runSandboxedQuery(
