@@ -341,9 +341,13 @@ export class PostgresJobQueue implements JobQueue {
       const rows = await (options?.tx ?? this.db)
         .insert(jobTable)
         .values(
-          data
-            .slice(i, i + INSERT_BATCH_SIZE)
-            .map((payload) => ({ type, payload: payload ?? {}, priority, ...(runAt && { runAt }) }))
+          data.slice(i, i + INSERT_BATCH_SIZE).map((payload) => ({
+            type,
+            payload: payload ?? {},
+            priority,
+            ...(runAt && { runAt }),
+            ...(options?.attempts && { attempts: options.attempts }),
+          }))
         )
         .returning({ id: jobTable.id })
       ids.push(...rows.map((r) => r.id))
@@ -693,6 +697,7 @@ export class PostgresJobQueue implements JobQueue {
         type: jobTable.type,
         data: jobTable.payload,
         priority: jobTable.priority,
+        attempts: jobTable.attempts,
       })
     return row ?? null
   }

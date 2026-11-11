@@ -49,13 +49,16 @@ import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
  * @param priority - The priority the job was taken at, kept by its requeue. A
  *   `high` one is a run someone waits for: a busy host does not put it behind
  *   the runs waiting on it
+ * @param attempts - How many times the queue has taken the job, this time
+ *   included
  */
 export async function processResource(
   job: PipelineJobPayload,
   ctx: PipelineContext,
   db: Database,
   queue: JobQueue,
-  priority?: JobPriority
+  priority?: JobPriority,
+  attempts = 1
 ): Promise<void> {
   const { resourceId } = job
   // The job as it came, whole. Dropped, `rebuildOnly` turns the retry into an
@@ -63,8 +66,19 @@ export async function processResource(
   // wrong thing publishes it again (ADR-044 §4); dropped, `reprocessAll` lets
   // another reprocess start under this one. Folded into the same job already
   // waiting: one run after the holder reads everything the requests asked about.
+  //
+  // With the job's earlier takes, not this one: a requeue ends the job, and a
+  // clean count would undo its attempts. After a worker dies mid-run the lease
+  // hands the job out before its claim goes stale, so a run that kills its
+  // worker would otherwise come back for ever. The take that requeues costs
+  // nothing, so a job that waits on a holder or a host never nears dead.
   const requeue = (delaySeconds: number, payload: PipelineJobPayload = job) =>
-    queue.enqueue(PIPELINE_JOB_TYPE, payload, { delaySeconds, unlessWaiting: true, priority })
+    queue.enqueue(PIPELINE_JOB_TYPE, payload, {
+      delaySeconds,
+      unlessWaiting: true,
+      priority,
+      attempts: Math.max(0, attempts - 1),
+    })
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
     // The context the steps get is this run's: the writes that leave the
     // database carry the claim check the row-level ones get for free.

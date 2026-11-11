@@ -33,4 +33,31 @@ interface HeavyResults {
 
 export type HeavyResult<R extends HeavyRequest> = HeavyResults[R['kind']]
 
-export type HeavyReply = { ok: true; result: unknown } | { ok: false; message: string }
+/**
+ * `tooLarge` says the failure was V8 refusing an allocation — a string or
+ * buffer past its limits — which the parent takes as the request being too
+ * large, as it does the heap running out, rather than recording V8's words.
+ */
+export type HeavyReply =
+  { ok: true; result: unknown } | { ok: false; message: string; tooLarge?: boolean }
+
+/**
+ * Only the failures of size. An invalid array or typed array length is also
+ * what a negative length read from a broken header gives, and that file is
+ * damaged rather than large.
+ */
+const ALLOCATION_FAILURES = new Set(['Invalid string length', 'Array buffer allocation failed'])
+const ALLOCATION_FAILURE_CODES = new Set(['ERR_STRING_TOO_LONG', 'ERR_BUFFER_TOO_LARGE'])
+
+/** The reply for a request that threw `err` in the heavy process. */
+export function failedReply(err: unknown): HeavyReply {
+  const code = (err as { code?: unknown } | null)?.code
+  const tooLarge =
+    (err instanceof RangeError && ALLOCATION_FAILURES.has(err.message)) ||
+    (typeof code === 'string' && ALLOCATION_FAILURE_CODES.has(code))
+  return {
+    ok: false,
+    message: err instanceof Error ? err.message : String(err),
+    ...(tooLarge && { tooLarge }),
+  }
+}

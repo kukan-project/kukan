@@ -20,8 +20,9 @@ import { HEAVY_TEMP_PREFIX } from '../pipeline/node-utils'
 
 /**
  * The process went with the request: past its own budget, picked by the
- * kernel, or out of heap. One request at a time, so the request is the cause,
- * and running it again gets the same answer.
+ * kernel, or out of heap — or V8 refused one of its allocations outright
+ * (`HeavyReply`). One request at a time, so the request is the cause, and
+ * running it again gets the same answer.
  *
  * The kernel's pick counts although the parent shares the container: the
  * parent's container bound is read every {@link HeavyLimits.pollMs} and stops
@@ -49,11 +50,13 @@ export class HeavyTimedOutError extends Error {
 
 /**
  * The process was stopped because the container as a whole neared its limit,
- * which the worker's other jobs share in: nothing to hold against the request.
+ * which the worker's other jobs share in: nothing to hold against the request
+ * at once. Its message says nothing of a retry, since the job may be dead by
+ * the time an editor reads it.
  */
 export class HeavyShortOfMemoryError extends Error {
   constructor() {
-    super('The worker was short of memory; the job will be run again')
+    super('The worker was short of memory while it ran')
     this.name = 'HeavyShortOfMemoryError'
   }
 }
@@ -240,6 +243,12 @@ export class HeavyProcess {
       stopCheck?.()
       clearTimeout(timer)
       timeLeft.ms -= Date.now() - runStarted
+    }
+    if (!reply.ok && reply.tooLarge) {
+      // Dropped, as a process gone over its budget is: what it kept from
+      // earlier requests may be why, and the rerun is meant to be fresh
+      await this.drop(child)
+      throw new HeavyTooLargeError()
     }
     await this.rest(child)
     if (!reply.ok) throw new Error(reply.message)

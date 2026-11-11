@@ -22,7 +22,13 @@ const command = () => ({
 
 /** A time limit for each of the fixture's kinds, `hang` overridable. */
 function within(ms: number, hang = ms): HeavyLimits['timeoutMs'] {
-  return { pid: ms, fail: ms, crash: ms, hang } as unknown as HeavyLimits['timeoutMs']
+  return {
+    pid: ms,
+    fail: ms,
+    'too-large': ms,
+    crash: ms,
+    hang,
+  } as unknown as HeavyLimits['timeoutMs']
 }
 
 const LIMITS: HeavyLimits = {
@@ -82,6 +88,22 @@ describe('HeavyProcess', () => {
     const pid = await ask(heavy, 'pid')
     await expect(ask(heavy, 'fail')).rejects.toThrow('refused')
     expect(await ask(heavy, 'pid')).toBe(pid)
+  })
+
+  it("takes V8 refusing an allocation for the request being too large, not in V8's words", async () => {
+    heavy = new HeavyProcess(command, LIMITS)
+    await expect(ask(heavy, 'too-large')).rejects.toThrow(HeavyTooLargeError)
+  })
+
+  it('drops the process that refused an allocation, so its rerun and the next request are fresh', async () => {
+    const started = vi.fn(command)
+    heavy = new HeavyProcess(started, LIMITS)
+    const first = await ask(heavy, 'pid')
+    // Reused, refused, run again in a fresh process, refused again
+    await expect(ask(heavy, 'too-large')).rejects.toThrow(HeavyTooLargeError)
+    expect(started).toHaveBeenCalledTimes(2)
+    expect(await ask(heavy, 'pid')).not.toBe(first)
+    expect(started).toHaveBeenCalledTimes(3)
   })
 
   // Finds the processes through /proc

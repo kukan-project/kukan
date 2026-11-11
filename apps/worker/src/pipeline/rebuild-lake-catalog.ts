@@ -35,6 +35,8 @@ export async function rebuildLakeCatalog(
     storage: StorageAdapter
     lake: LakeConfig | undefined
     log: Logger
+    /** How many times the queue has taken the job, this time included */
+    attempts?: number
   }
 ): Promise<void> {
   const { resourceId } = job
@@ -68,10 +70,13 @@ export async function rebuildLakeCatalog(
     }
   })
   if (outcome.status === 'held') {
+    // With the job's earlier takes, as every held requeue carries them
+    // (`processResource`): a rebuild that kills its worker would otherwise
+    // come back with a clean count for ever
     await deps.queue.enqueue(
       LAKE_REBUILD_JOB_TYPE,
       { resourceId },
-      { delaySeconds: CLAIM_RETRY_DELAY_S }
+      { delaySeconds: CLAIM_RETRY_DELAY_S, attempts: Math.max(0, (deps.attempts ?? 1) - 1) }
     )
     log.info({ resourceId }, 'Lake rebuild requeued — the resource is held')
     return

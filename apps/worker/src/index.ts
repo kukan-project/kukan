@@ -484,7 +484,7 @@ await queue.process({
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
     // The payload whole: a retry has to carry all of it
-    await processResource(data, ctx, db, queue, job.priority)
+    await processResource(data, ctx, db, queue, job.priority, job.attempts)
     // Once, whatever in the run marked the document or the vector: an abstract
     // written, a format the version settled, a replacement upload's name
     await Promise.all([
@@ -681,6 +681,7 @@ await queue.process({
       db,
       queue,
       log: log.child({ jobId: job.id, type: job.type }),
+      attempts: job.attempts,
     })
   },
   // Rebuild one resource's layer 2 from layer 1 (ADR-067), or clear what a
@@ -696,6 +697,7 @@ await queue.process({
       storage,
       lake,
       log: log.child({ jobId: job.id, type: job.type }),
+      attempts: job.attempts,
     })
   },
   // The layer 2 half of a dataset's purge, queued with the rows' deletion: the

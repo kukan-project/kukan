@@ -126,6 +126,23 @@ task stays up and the retry does not repeat it). The next request starts the chi
   limit is a transient failure and is not recorded on the version, since the parent's other jobs can
   be the cause. The child's budget fits inside the container's limit less the parent's share, so a
   file too large meets the child's own budget first
+- The child's heap limit is set explicitly (added after implementation): `--max-old-space-size` is
+  the smaller of the budget and "the container's limit less the headroom and the parent's share",
+  less 100 MB (560 MB on a 1 GB task, 846 MB on 2 GB). Left to V8, which sizes it from the
+  container, a parser growing its heap spent seconds in GC before it aborted — time in which the
+  parent could judge the container short, so which bound a file met turned on the parent's state.
+  Sized from the budget alone, a small task's container check would still fire first with the parent
+  within its share, so the second term holds it below that too. An error the child returns that is
+  V8 refusing an allocation's size (`Invalid string length`, `Array buffer allocation failed`, the
+  error codes for strings and buffers past their limits) is also "too large", rather than recorded in
+  V8's words. Invalid array lengths are left out: a negative length from a broken header gives them
+  too
+- A short container does count against the version in a layer-2 ingest retry
+  (`lake-ingest-version`, added after implementation). No reason (`out-of-memory`) is recorded and
+  the job still fails for the queue's retry, but the version's failure count goes up, at most once a
+  lease period. Uncounted, a CSV / JSON version whose interpretation is judged short every time keeps
+  an empty schema and is handed out by the hourly sweep for good. A container that happened to be busy
+  for an hour spends one count
 - Interpretation: the version records `out-of-memory` as why it has no table. Unrecorded, the hourly
   sweep would hand out the same version and take the child down every time. It is kept apart from the
   size cap's `too-large` (never stored, derived from the cap each time): this one is a fact about the

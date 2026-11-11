@@ -6,18 +6,12 @@
 
 import { becomeExpendable, serve } from '@kukan/api/services/child/serve'
 import { answer } from './answer'
-import type { HeavyReply, HeavyRequest } from './protocol'
+import { failedReply, type HeavyReply, type HeavyRequest } from './protocol'
 
 // At the worker's own priority, unlike the web's queries: its requests run one
 // at a time, so a request slowed is every job behind it slowed
 becomeExpendable()
 
 serve<HeavyRequest>((request) =>
-  answer(request).then(
-    (result): HeavyReply => ({ ok: true, result }),
-    (err: unknown): HeavyReply => ({
-      ok: false,
-      message: err instanceof Error ? err.message : String(err),
-    })
-  )
+  answer(request).then((result): HeavyReply => ({ ok: true, result }), failedReply)
 )

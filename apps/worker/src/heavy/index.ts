@@ -14,6 +14,7 @@ import {
   HEAVY_CLAIM_POLL_MS,
   HEAVY_EXTRACT_TIMEOUT_MS,
   HEAVY_HEADROOM_MB,
+  HEAVY_HEAP_SLACK_MB,
   HEAVY_IDLE_MS,
   HEAVY_INTERPRET_TIMEOUT_MS,
   HEAVY_PARENT_RESERVE_MB,
@@ -29,6 +30,21 @@ import type { HeavyRequest, HeavyResult } from './protocol'
 
 export { HeavyTimedOutError, HeavyTooLargeError } from './process'
 
+const budgetMb = Math.min(HEAVY_PROCESS_MB, containerLimitMb() - HEAVY_PARENT_RESERVE_MB)
+
+/**
+ * The child's heap, from its budget rather than V8's own sizing from the
+ * container, which sat well below the budget: a parser at its edge spent
+ * seconds in GC before aborting, long enough for the container's bound to stop
+ * it first, as the moment's fault rather than the file's. Kept under where the
+ * container's bound fires with the parent at its reserve, too, which on a small
+ * task is below the budget: a heap sized to the budget would meet it first again.
+ */
+const heapMb =
+  Math.min(budgetMb, containerLimitMb() - HEAVY_PARENT_RESERVE_MB - HEAVY_HEADROOM_MB) -
+  HEAVY_HEAP_SLACK_MB
+const HEAVY_HEAP_FLAG = `--max-old-space-size=${Math.max(64, heapMb)}`
+
 /**
  * Where the child's code is. **Run from source** (tsx, vitest), the source
  * through tsx, started in this package's directory where `--import tsx` and the
@@ -41,11 +57,11 @@ function heavyCommand(): ChildCommand {
     const here = dirname(fileURLToPath(url))
     return {
       entry: join(here, 'child.ts'),
-      execArgv: ['--import', 'tsx'],
+      execArgv: ['--import', 'tsx', HEAVY_HEAP_FLAG],
       cwd: join(here, '../..'),
     }
   }
-  return { entry: fileURLToPath(new URL('./heavy/child.js', url)), execArgv: [] }
+  return { entry: fileURLToPath(new URL('./heavy/child.js', url)), execArgv: [HEAVY_HEAP_FLAG] }
 }
 
 const log = createLogger({ name: 'worker' }).child({ component: 'heavy-process' })
@@ -53,7 +69,7 @@ const log = createLogger({ name: 'worker' }).child({ component: 'heavy-process' 
 const heavy = new HeavyProcess(
   heavyCommand,
   {
-    budgetMb: Math.min(HEAVY_PROCESS_MB, containerLimitMb() - HEAVY_PARENT_RESERVE_MB),
+    budgetMb,
     headroomMb: HEAVY_HEADROOM_MB,
     pollMs: HEAVY_POLL_MS,
     restartMb: HEAVY_RESTART_MB,

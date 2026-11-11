@@ -25,6 +25,8 @@ export interface Job<T = unknown> {
   data: T
   /** The priority it was taken at, for a handler that queues it again */
   priority?: JobPriority
+  /** How many times it has been taken, this time included */
+  attempts?: number
 }
 
 /**
@@ -82,6 +84,12 @@ export interface EnqueueOptions {
    * before that transaction commits and miss it. Enqueue after the commit.
    */
   unlessWaiting?: boolean
+  /**
+   * Write the job as taken this many times already — for a handler that puts
+   * its own job back in its place, so the count that makes a job dead goes on
+   * rather than starting again. A waiting job it is folded into keeps its own.
+   */
+  attempts?: number
 }
 
 export interface JobQueue {

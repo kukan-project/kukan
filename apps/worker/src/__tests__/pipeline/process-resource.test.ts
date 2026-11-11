@@ -852,11 +852,25 @@ describe('processResource', () => {
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
       { resourceId: 'res-1' },
-      { delaySeconds: 6, unlessWaiting: true }
+      { delaySeconds: 6, unlessWaiting: true, attempts: 0 }
     )
     // Interpret should NOT run
     expect(executeInterpret).not.toHaveBeenCalled()
     expect(mockTracker.startStep).toHaveBeenCalledTimes(1) // Only fetch step
+  })
+
+  it('carries the earlier takes into the run it defers to', async () => {
+    // A requeue ends the job; with a clean count, a run that kills its worker
+    // and then meets a busy host would never be dead
+    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred' })
+
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue, undefined, 2)
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      expect.objectContaining({ attempts: 1 })
+    )
   })
 
   it('comes back at the turn it was given, holding it', async () => {
@@ -869,7 +883,7 @@ describe('processResource', () => {
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
       { resourceId: 'res-1', reprocessAll: true, fetchTurn: true },
-      { delaySeconds: 600, unlessWaiting: true }
+      { delaySeconds: 600, unlessWaiting: true, attempts: 0 }
     )
   })
 
@@ -892,6 +906,7 @@ describe('processResource', () => {
       delaySeconds: 2,
       unlessWaiting: true,
       priority,
+      attempts: 0,
     })
   })
 
@@ -905,7 +920,7 @@ describe('processResource', () => {
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
       { resourceId: 'res-1', reprocessAll: true },
-      { delaySeconds: 6, unlessWaiting: true }
+      { delaySeconds: 6, unlessWaiting: true, attempts: 0 }
     )
   })
 
@@ -933,6 +948,35 @@ describe('processResource', () => {
       'resource-pipeline',
       { resourceId: 'res-1' },
       expect.objectContaining({ delaySeconds: expect.any(Number) })
+    )
+  })
+
+  it('comes back as often as a live run holds the resource, never nearer dead', async () => {
+    // A take that found the resource held is not an attempt: first taken, it
+    // comes back with a clean count, and so on for as long as the holder runs
+    claim.answer = 'held'
+
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue, undefined, 1)
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      expect.objectContaining({ attempts: 0 })
+    )
+  })
+
+  it('carries the earlier takes into its requeue, so a run that kills its worker ends dead', async () => {
+    // Taken again after its worker died, the job finds that run's claim not yet
+    // stale. Requeued with a clean count, it would run, kill the worker and
+    // come back for ever
+    claim.answer = 'held'
+
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue, undefined, 2)
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      expect.objectContaining({ attempts: 1 })
     )
   })
 

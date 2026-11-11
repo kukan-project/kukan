@@ -145,6 +145,12 @@ export const HEAVY_PARENT_RESERVE_MB = 300
  */
 export const HEAVY_HEADROOM_MB = 64
 
+/**
+ * How far under its budget the heavy process's V8 heap is capped
+ * (`--max-old-space-size`): what its anonymous memory holds besides the heap.
+ */
+export const HEAVY_HEAP_SLACK_MB = 100
+
 /** How often the parent reads the heavy process's memory during a request (ms). */
 export const HEAVY_POLL_MS = 100
 

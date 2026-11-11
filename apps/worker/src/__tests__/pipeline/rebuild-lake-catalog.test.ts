@@ -147,6 +147,26 @@ describe('rebuildLakeCatalog', () => {
     )
   })
 
+  it.each([
+    [1, 0],
+    [2, 1],
+  ])(
+    'carries the earlier takes into its requeue (taken %i times, %i carried)',
+    async (taken, carried) => {
+      // Waiting on a holder never nears dead; a rebuild that killed its worker
+      // and finds its own claim not yet stale does
+      claim.answer = 'held'
+
+      await rebuildLakeCatalog(job, { ...deps, attempts: taken })
+
+      expect(deps.queue.enqueue).toHaveBeenCalledWith(
+        'rebuild-lake-catalog',
+        { resourceId: 'res-1' },
+        expect.objectContaining({ attempts: carried })
+      )
+    }
+  )
+
   it('does nothing without a lake', async () => {
     await rebuildLakeCatalog(job, { ...deps, lake: undefined })
 

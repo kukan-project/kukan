@@ -178,6 +178,48 @@ describe('retryLakeIngest', () => {
     )
   })
 
+  it('requeues a held take with a clean count, leaving the giving up to the version', async () => {
+    // The version counts a take that did not finish; carried here, a long
+    // hold would count against a healthy version once more each time
+    claim.answer = 'held'
+
+    await retryLakeIngest(job, { ...deps, attempts: 2 })
+
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      'lake-ingest-version',
+      job,
+      expect.not.objectContaining({ attempts: expect.anything() })
+    )
+  })
+
+  it('counts nothing on its first take', async () => {
+    await retryLakeIngest(job, { ...deps, attempts: 1 })
+
+    expect(recordLakeIngestFailure).not.toHaveBeenCalled()
+    expect(deps.ctx.ingestLakeVersion).toHaveBeenCalled()
+  })
+
+  it('counts a take before it that never finished, then loads the version', async () => {
+    // Its worker died under it, which nothing else counts: uncounted, the sweep
+    // hands a version that kills the worker out every hour for good
+    await retryLakeIngest(job, { ...deps, attempts: 2 })
+
+    expect(recordLakeIngestFailure).toHaveBeenCalledWith(deps.db, job)
+    expect(deps.ctx.ingestLakeVersion).toHaveBeenCalled()
+  })
+
+  it('loads nothing once the unfinished take is the one that gives up', async () => {
+    vi.mocked(recordLakeIngestFailure).mockResolvedValueOnce({
+      failures: 3,
+      counted: true,
+      gaveUp: true,
+    })
+
+    await retryLakeIngest(job, { ...deps, attempts: 2 })
+
+    expect(withInterpretedVersion).not.toHaveBeenCalled()
+  })
+
   it('reads nothing when the version is not waiting to be loaded', async () => {
     // Redelivered after another pass ingested it, or after a purge. Asked
     // before anything is interpreted, because every worker task runs the hourly
@@ -255,12 +297,16 @@ describe('retryLakeIngest', () => {
     await expect(retryLakeIngest(job, deps)).rejects.toThrow('connection lost')
   })
 
-  it('fails the message without counting it when the container was short', async () => {
-    // The moment's, not the version's: the queue runs it again after its delay
+  it('counts a short container against the version and still fails the message', async () => {
+    // Maybe the moment's, so the queue runs it again after its delay; counted,
+    // spaced like any failure, so a version that keeps the container short
+    // leaves the sweep at the limit rather than coming back every hour
     deps.ctx.ingestLakeVersion.mockRejectedValue(new HeavyShortOfMemoryError())
 
     await expect(retryLakeIngest(job, deps)).rejects.toThrow(HeavyShortOfMemoryError)
-    expect(recordLakeIngestFailure).not.toHaveBeenCalled()
+    expect(recordLakeIngestFailure).toHaveBeenCalledWith(deps.db, job)
+    // Nothing about the catalog to look into
+    expect(deps.queue.enqueue).not.toHaveBeenCalled()
   })
 
   it('fails the message without counting it when the worker stops under it', async () => {

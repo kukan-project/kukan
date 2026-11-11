@@ -245,6 +245,18 @@ describe('PostgresJobQueue', () => {
     await vi.waitFor(() => expect(handler).toHaveBeenCalledOnce())
   })
 
+  it('tells the handler how many times the job has been taken, and writes a job as taken already', async () => {
+    // A handler that puts its own job back keeps the count that makes it dead
+    const writer = newQueue()
+    await writer.enqueue('t', {}, { attempts: 1 })
+    expect(await rows()).toEqual([expect.objectContaining({ attempts: 1 })])
+
+    const seen: Job[] = []
+    await newQueue().process({ t: async (j) => void seen.push(j) })
+
+    await vi.waitFor(() => expect(seen).toEqual([expect.objectContaining({ attempts: 2 })]))
+  })
+
   it("takes back a crashed worker's job when its lease runs out, with no signal", async () => {
     // The process that held it is gone and nothing will wake anyone for it;
     // the pass that found it leased comes back at the lease's end.

@@ -20,17 +20,24 @@ import {
   ResourceVersionService,
 } from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
-import { interruptsRun } from '../heavy/process'
+import { HeavyShortOfMemoryError, WorkerStoppingError } from '../heavy/process'
 import { claimKeeper } from './run/held-context'
 import type { PipelineContext } from './run/types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
 export async function retryLakeIngest(
   job: { resourceId: string; version: number },
-  deps: { ctx: PipelineContext; db: Database; queue: JobQueue; log: Logger }
+  deps: {
+    ctx: PipelineContext
+    db: Database
+    queue: JobQueue
+    log: Logger
+    /** How many times the queue has taken the job, this time included */
+    attempts?: number
+  }
 ): Promise<void> {
   const { resourceId, version } = job
-  const { ctx, log } = deps
+  const { ctx, log, attempts = 1 } = deps
 
   // Asked before anything is read — the same predicate the sweep queued from,
   // narrowed to this version, so there is no second opinion about what layer 2
@@ -47,6 +54,19 @@ export async function retryLakeIngest(
     // costs a second run of something already queued.
     await chainToNext(deps, resourceId, version, log)
     return
+  }
+
+  // Taken before and not finished: the take before this one failed, which was
+  // counted where it threw, or its worker died, which nothing counted. Counted
+  // here, spaced as ever, so an ingest that kills its worker reaches the limit
+  // rather than being reissued by the sweep every hour for good. A stop hands
+  // the job back with that take uncounted, so it does not land here.
+  if (attempts > 1) {
+    const failure = await recordLakeIngestFailure(deps.db, job)
+    if (failure?.counted) {
+      log.warn({ resourceId, version, ...failure }, 'Lake ingest retry found a take unfinished')
+    }
+    if (failure?.gaveUp) return
   }
 
   // Before the interpretation, which the ingest would only throw away: the
@@ -92,19 +112,30 @@ export async function retryLakeIngest(
     }
     return result
   }).catch(async (err: unknown) => {
-    // Not a failure of this version: the job fails, and the queue runs it again
-    // — at once elsewhere for a stop, after its delay for a container that was
-    // short
-    if (interruptsRun(err)) throw err
-    // Counted on the version and let go, not rethrown: thrown, the job waits
-    // out its retry delay and fails the same way, and the sweep reissues it
-    // next hour regardless. The count is what gives up
+    // Not a failure of this version: the job is handed back, and another task
+    // runs it at once
+    if (err instanceof WorkerStoppingError) throw err
+    // Counted on the version, and the count is what gives up
     // (`LAKE_INGEST_FAILURE_LIMIT`); a count that cannot be written throws
     // through, leaving the queue's retry as the retry. Not handed on either — the
     // next version loaded first would overtake this one for good.
     const failure = await recordLakeIngestFailure(deps.db, job)
-    // The catalog may be what failed — its object or its files gone — and
-    // nothing else would notice: the rebuild's handler looks
+    // A short container may be the moment's, so the queue runs it again after
+    // its delay; counted all the same, or a version whose interpretation keeps
+    // the container short is reissued by the sweep every hour for good
+    if (err instanceof HeavyShortOfMemoryError) {
+      log.warn(
+        { resourceId, version, ...failure },
+        failure?.gaveUp
+          ? 'Lake ingest gave up on this version'
+          : 'Lake ingest retry was short of memory'
+      )
+      throw err
+    }
+    // Any other failure is let go, not rethrown: thrown, the job waits out its
+    // retry delay and fails the same way, and the sweep reissues it next hour
+    // regardless. The catalog may be what failed — its object or its files
+    // gone — and nothing else would notice: the rebuild's handler looks
     await queueLakeRebuild(deps.queue, resourceId)
     log.error(
       { err, resourceId, version, ...failure },
@@ -117,7 +148,9 @@ export async function retryLakeIngest(
   if (outcome.status === 'held') {
     // Comes back rather than failing: the holder releases within the staleness
     // window, and by then the ingest's own ordering guard decides whether this
-    // version is still worth loading (ADR-043).
+    // version is still worth loading (ADR-043). With a clean count: a take that
+    // did not finish is counted on the version above, which is what gives up,
+    // and a carried count would charge a long hold to a healthy version again.
     await deps.queue.enqueue(
       LAKE_INGEST_JOB_TYPE,
       { resourceId, version },

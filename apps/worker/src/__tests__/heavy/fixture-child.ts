@@ -2,7 +2,8 @@
 // never finishing
 import { becomeExpendable, serve } from '@kukan/api/services/child/serve'
 
-type Request = { kind: 'pid' } | { kind: 'fail' } | { kind: 'crash' } | { kind: 'hang' }
+type Request =
+  { kind: 'pid' } | { kind: 'fail' } | { kind: 'too-large' } | { kind: 'crash' } | { kind: 'hang' }
 
 becomeExpendable()
 
@@ -12,6 +13,8 @@ serve<Request>(async (request) => {
       return { ok: true, result: process.pid }
     case 'fail':
       return { ok: false, message: 'refused' }
+    case 'too-large':
+      return { ok: false, message: 'Invalid string length', tooLarge: true }
     case 'crash':
       return process.exit(3)
     case 'hang':
