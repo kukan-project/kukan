@@ -544,17 +544,28 @@ The output is forced JSON.
 
 `summary` goes through `cleanSummary()` before it is written. It is the second layer of the
 defence; the prompt is the first (ADR-053 decision 7). What is plainly an address is removed —
-starting with `scheme://`, `www.`, `//` followed by anything but a space or a slash, or
-`javascript:` / `vbscript:` / `data:` / `mailto:`, and email addresses (full-width `＠` too). A URL
-followed by Japanese text takes the words up to the next punctuation mark or bracket with it, and
-a bracket the removal emptied goes too. `scheme://` and `//` are removed wherever they appear, so
-a `//` inside a word goes as well. A removal can join a new address, so it repeats until nothing
-changes. Line breaks of every kind (CR, U+2028 / U+2029 and so on) become newlines, and the other
-controls and format characters (bidirectional controls, zero-width characters, tag characters) are
-removed. Markdown and HTML syntax is not handled — whoever draws the text escapes it (§10.1).
+starting with `scheme://` (an IPv6 host too), `www.`, `//` followed by anything but a space or a
+slash, or a `scheme:` followed directly by a letter, `/` or `\`, and email addresses (full-width
+`＠` and non-ASCII letters too). A colon followed by a space, a digit or Japanese is notation and
+stays ("Note: ", "EPSG:6668", "10:30"; a phone number after `tel:` stays with it, which is left to
+the prompt). An email's last domain label never starts with a digit, so a unit price such as
+`1個@12.5円` stays. Full-width and styled addresses are also matched on the compatibility (NFKC)
+form, and the text is rewritten in that form only when one is found there (so `km²` and `①` are
+left as written). A URL followed by Japanese text takes the words up to the next punctuation mark
+or bracket with it, and a bracket the removal emptied goes too; Japanese around an ASCII address
+stays. `scheme://` and `//` are removed wherever they appear, so a `//` inside a word goes as
+well. A removal can join a new address, so it repeats until nothing changes. One pass takes time
+proportional to the length, and the length limit below bounds the passes. Line breaks of every kind (CR, U+2028 / U+2029 and so on)
+become newlines, and the other controls and format characters (bidirectional controls, zero-width
+characters, tag characters) and characters drawn as nothing (Hangul fillers and the like) are
+removed; a variation selector after a kanji stays. Markdown and HTML syntax is not handled — whoever draws the text
+escapes it (§10.1).
 **It is not cut by character count** (ADR-053 decision 7) — `max_tokens` is the runaway ceiling,
-and an output cut off there does not parse as JSON and is an unusable reply. A summary that comes
-out empty is treated like an unusable reply (a failure of that run).
+and an output cut off there does not parse as JSON and is an unusable reply. For providers that
+ignore `max_tokens` (some OpenAI-compatible servers, Ollama), a `summary` over 2,000 characters is
+refused as an unusable reply rather than cut (the prompt asks for 3 to 4 sentences, and measured
+abstracts stay under 400 characters). A summary that comes out empty is treated like an unusable
+reply (a failure of that run).
 
 `groundedInMaterial` is **recorded and measured only**. In Phase A, a small model given a scanned
 PDF never said it could not read it — **this flag cannot catch fabrication** (ADR-053

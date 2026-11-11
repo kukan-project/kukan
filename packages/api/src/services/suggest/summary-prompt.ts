@@ -40,23 +40,45 @@ export interface SummaryDatasetContext {
 const LINE_BREAK = /\r\n?|[\v\f\u0085\u2028\u2029]/g
 /*
  * Characters an abstract never needs and a reader cannot see: controls other
- * than the newline, and the format characters — bidirectional controls,
- * zero-width characters, the tag block. They make text read differently from
- * how it is stored, and a model reads what a person does not.
+ * than the newline, the format characters — bidirectional controls,
+ * zero-width characters, the tag block — and the rest of what Unicode says to
+ * draw as nothing (Hangul fillers, the combining grapheme joiner). They make
+ * text read differently from how it is stored, and a model reads what a person
+ * does not. A variation selector stays only after a kanji, whose variant form
+ * it picks; anywhere else it only breaks up what is around it.
  */
-const INVISIBLE = /(?!\n)[\p{Cc}\p{Cf}\p{Cs}]/gu
+const INVISIBLE =
+  /(?!\n)(?:(?<!\p{Script=Han})\p{Variation_Selector}|(?!\p{Variation_Selector})[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}])/gu
 /*
- * Any `scheme://` address, protocol-relative `//`, bare `www.` host, one of
- * the schemes a Markdown renderer would run or open without `//`, or an email
- * address, with the spaces and a bracket around it, up to a space, a quote, a
+ * Any `scheme://` address (an IPv6 host included), protocol-relative `//`,
+ * bare `www.` host, `scheme:` followed by an ASCII letter or a slash (a
+ * browser reads `\` as `/`), or an email address. A colon before a space, a
+ * digit or Japanese is data notation ("Note: x", "EPSG:6668", "注:単位",
+ * "10:30"), so it stays — a phone number after `tel:` with it, which the
+ * prompt is left to keep out. An email's last label does not start with a
+ * digit, which keeps a unit price ("1個@12.5円"), and its local part and each
+ * label are either Latin letters (é and ü too) or other letters with their
+ * combining marks, so the Japanese around a Latin address stays. Each
+ * goes with the spaces and a bracket around it, up to a space, a quote, a
  * bracket or Japanese punctuation. Japanese prose puts no space after one, so
  * the words that follow can go with it — and a host or path spelt in Japanese
- * has to. The first two are taken wherever they appear, since a renderer may
- * not see a boundary before them; the rest only where a word does not run
- * into them.
+ * has to.
+ * A scheme is taken from the start of the run of characters it can be spelt
+ * with, so a word running into it goes too.
+ *
+ * Every repeated part starts only where the same repetition could not have
+ * started one character earlier, so no position is scanned from twice and one
+ * pass stays linear.
  */
 const ADDRESS =
-  /( *)([(（<「【『[{]?)((?:[a-z][a-z0-9+.-]*:\/\/|(?<![a-z])(?:www\.|(?:javascript|vbscript|data|mailto):)|\/\/(?=[^\s/]))[^\s"'`<>()[\]{}（）「」『』【】、。，．]+|[a-z0-9._%+-]+[@＠][a-z0-9-]+(?:\.[a-z0-9-]+)+)([)）>」】』\]}]?)/giu
+  /((?<! ) *)([(（<「【『[{]?)((?:(?<![a-z0-9+.-])(?:[a-z][a-z0-9+.-]*:\/\/(?:\[[^\s\][]*\])?|www\.|[a-z][a-z0-9+.-]+:(?=[a-z/\\]))|\/\/(?=[^\s/]))[^\s"'`<>()[\]{}（）「」『』【】、。，．]*|(?:(?<![\p{Script=Latin}0-9._%+-])[\p{Script=Latin}0-9._%+-]+|(?<!(?![\p{Script=Latin}\p{ASCII}])[\p{L}\p{M}\p{N}])(?:(?![\p{Script=Latin}\p{ASCII}])[\p{L}\p{M}\p{N}])+)[@＠](?:[\p{Script=Latin}0-9-]+|(?:(?![\p{Script=Latin}\p{ASCII}])[\p{L}\p{M}\p{N}])+)(?:\.(?:[\p{Script=Latin}0-9-]+|(?:(?![\p{Script=Latin}\p{ASCII}])[\p{L}\p{M}\p{N}])+))*\.(?!\p{N})(?:[\p{Script=Latin}0-9-]+|(?:(?![\p{Script=Latin}\p{ASCII}])[\p{L}\p{M}\p{N}])+))([)）>」】』\]}]?)/giu
+/*
+ * Far above what the prompt asks for (3 to 4 sentences, about 300 characters
+ * in Japanese). Longer is a provider that ignored the token limit: the
+ * response is refused rather than cut, since an abstract is never shortened by
+ * count, and the patterns never see it.
+ */
+const MAX_SUMMARY_LENGTH = 2000
 const CLOSING: Record<string, string> = {
   '(': ')',
   '（': '）',
@@ -81,9 +103,25 @@ const CLOSING: Record<string, string> = {
  * whoever draws it as HTML or Markdown escapes it.
  */
 export function cleanSummary(text: string): string {
-  let cleaned = text.replace(LINE_BREAK, '\n').replace(/\t/g, ' ').replace(INVISIBLE, '')
+  let cleaned = dropAddresses(strip(text))
+  // Matched on the compatibility form too, so a full-width or styled address
+  // goes. The text is published as written unless that finds one: the folded
+  // form also turns km² into km2 and ① into 1.
+  const folded = strip(cleaned.normalize('NFKC'))
+  const refolded = dropAddresses(folded)
+  if (refolded !== folded) cleaned = refolded
+  return cleaned.replace(/ {2,}/g, ' ').trim()
+}
+
+function strip(text: string): string {
+  return text.replace(LINE_BREAK, '\n').replace(/\t/g, ' ').replace(INVISIBLE, '')
+}
+
+function dropAddresses(text: string): string {
+  let cleaned = text
   // A removal can join the text either side of it into a new address, so it
-  // runs until nothing changes. Every pass only takes away, so it ends.
+  // runs until nothing changes. Every pass only takes away, so it ends; nested
+  // addresses can need a pass each, which the length limit keeps small.
   for (let before = ''; before !== cleaned;) {
     before = cleaned
     cleaned = cleaned.replace(
@@ -95,11 +133,11 @@ export function cleanSummary(text: string): string {
       }
     )
   }
-  return cleaned.replace(/ {2,}/g, ' ').trim()
+  return cleaned
 }
 
 export const summaryLlmOutputSchema = z.object({
-  summary: z.string().transform(cleanSummary),
+  summary: z.string().max(MAX_SUMMARY_LENGTH).transform(cleanSummary),
   groundedInMaterial: z.boolean(),
 })
 

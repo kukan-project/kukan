@@ -667,9 +667,11 @@ That is an explanation of what an abstract is, not an evasion.
     any form (broken up, spelt out in words, a domain without `www.`); a source or a contact is
     referred to in words — "the source website", "the section's contact details"
   - **Cleaning the output (second)**: for when the model did not listen, what is plainly an
-    address (starting with `scheme://`, `www.`, `//`, `javascript:` / `vbscript:` / `data:` /
-    `mailto:`, and email addresses) and invisible characters (controls other than the newline, and
-    format characters) are removed before writing
+    address (starting with `scheme://`, `www.`, `//`, or a `scheme:` followed directly by a letter
+    or `/`, and email addresses, full-width forms included) and invisible characters (controls other
+    than the newline, and format characters) are removed before writing. One pass takes time
+    proportional to the input, and an output over the length limit is refused as unusable rather
+    than cut, which also bounds the repeated passes
   - **The way out does not control rendering.** Over MCP a model stands between the tool result
     and the screen, and it can rebuild a link from readable text. Escaping or enumerating
     characters on the way out does not decide how the text is drawn. The API returns plain text,

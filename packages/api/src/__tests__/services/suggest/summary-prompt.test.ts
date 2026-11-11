@@ -176,6 +176,112 @@ describe('cleanSummary', () => {
     }
   })
 
+  it('drops any scheme, not only the ones a renderer runs', () => {
+    expect(cleanSummary('Call tel:abc or sms:x now.')).toBe('Call or now.')
+    expect(cleanSummary('See http:/evil.example now.')).toBe('See now.')
+    expect(cleanSummary('Open intent:view#Intent;end and stop.')).toBe('Open and stop.')
+    expect(cleanSummary('Host http://[::1]:80/a here.')).toBe('Host here.')
+    // A browser reads a backslash as a slash
+    expect(cleanSummary('See https:\\\\evil.example now.')).toBe('See now.')
+  })
+
+  it('leaves colons that are not a scheme alone', () => {
+    for (const ok of [
+      '注:単位は人。備考: 推計値である。',
+      'Note: counts as of 10:30. The ratio is 3:1 and A:B.',
+      '男女比は 1:1.05、開始は 9:00 である。',
+      'URL:なし、出典:総務省。',
+      '座標系は EPSG:6668（元は EPSG:4326）、ID:123、ver:1.2 である。',
+      // A phone number is left to the prompt: the colon before a digit is data
+      '電話は tel:+81-3-1234-5678 である。',
+    ]) {
+      expect(cleanSummary(ok)).toBe(ok)
+    }
+  })
+
+  it('drops a full-width or styled address, and folds nothing else', () => {
+    const plain = '面積は 12.3km²、①から③の区分（令和6年度）。'
+    expect(cleanSummary(plain)).toBe(plain)
+    expect(
+      cleanSummary('一覧は ｈｔｔｐｓ：／／ｅｖｉｌ．ｅｘａｍｐｌｅ／ａ を参照。')
+    ).not.toMatch(/evil|ｅｖｉｌ/)
+    expect(cleanSummary('see 𝐰𝐰𝐰.evil.example now')).not.toMatch(/evil/)
+    expect(cleanSummary('連絡先 ｔｏｕｋｅｉ＠ｃｉｔｙ．ｅｘａｍｐｌｅ．ｊｐ まで')).not.toMatch(
+      /ｃｉｔｙ|city/
+    )
+    // Folding lengthens ㈱ to (株): the address near the end is still found
+    const near =
+      '㈱の表。'.repeat(450) + '詳細はｈｔｔｐｓ：／／ｅｖｉｌ．ｅｘａｍｐｌｅ／ａを参照。'
+    expect(cleanSummary(near)).not.toMatch(/evil|ｅｖｉｌ/)
+  })
+
+  it('drops an email address spelt in non-ASCII letters', () => {
+    expect(cleanSummary('連絡先は 担当者@市役所.example である。')).toBe('連絡先は である。')
+    expect(cleanSummary('単価は 3@100円、比は 1.5。')).toBe('単価は 3@100円、比は 1.5。')
+    expect(cleanSummary('宛先 a@b.c.jp と x@y.z。')).toBe('宛先 と。')
+    expect(cleanSummary('宛先 user@café.fr と müller@müller.de。')).toBe('宛先 と。')
+    expect(cleanSummary('宛先 user@भारत.in と user@বাংলা.com。')).toBe('宛先 と。')
+  })
+
+  it('keeps a unit price, whose last label starts with a digit', () => {
+    for (const ok of ['1個@12.5円で計算する。', '単価＠１２．５円。', '重量@1.5kg の箱。']) {
+      expect(cleanSummary(ok)).toBe(ok)
+    }
+  })
+
+  it('keeps the Japanese before an ASCII email, not one spelt in Japanese', () => {
+    expect(cleanSummary('問い合わせは統計課toukei@city.example.jpまで。')).toBe(
+      '問い合わせは統計課まで。'
+    )
+    // The local part is a run of one script: a Japanese one takes its clause
+    expect(cleanSummary('連絡先は担当者@市役所.example まで。')).toBe('まで。')
+  })
+
+  it('drops the other characters drawn as nothing, but keeps a kanji variant', () => {
+    expect(cleanSummary('a\u3164b\u115fc\u034fd\uffa0e')).toBe('abcde')
+    const variant = '葛\u{E0100}城市の表。'
+    expect(cleanSummary(variant)).toBe(variant)
+    for (const broken of [
+      'www\ufe0f.example.org',
+      'user\ufe0f@example.org',
+      'u@exam\ufe0fple.org',
+    ]) {
+      expect(cleanSummary(`see ${broken} now`)).toBe('see now')
+    }
+  })
+
+  it('refuses an abstract past the length limit instead of cutting it', () => {
+    const output = (summary: string) => ({ summary, groundedInMaterial: true })
+    expect(summaryLlmOutputSchema.safeParse(output('あ'.repeat(2000))).success).toBe(true)
+    expect(summaryLlmOutputSchema.safeParse(output('あ'.repeat(2001))).success).toBe(false)
+  })
+
+  it('takes linear time on input built to backtrack', () => {
+    const started = performance.now()
+    for (const text of [
+      'a'.repeat(100_000),
+      ' '.repeat(100_000) + 'x',
+      'a.'.repeat(50_000),
+      'あ'.repeat(100_000),
+      'h://['.repeat(20_000),
+      'a@'.repeat(50_000),
+      '㈱'.repeat(100_000),
+    ]) {
+      cleanSummary(text)
+    }
+    // The pattern this replaced took seconds on one of these at 100k
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+
+  it('stays quick on nested addresses that need a pass each, up to the length limit', () => {
+    let nested = 'https:/x'
+    while (nested.length < 1990) nested = `https:(${nested})/x`
+    const started = performance.now()
+    const parsed = summaryLlmOutputSchema.parse({ summary: nested, groundedInMaterial: true })
+    expect(parsed.summary).toBe('')
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+
   it('cleans what the model returns, so an abstract of addresses alone is empty', () => {
     const parsed = summaryLlmOutputSchema.parse({
       summary: ' https://example.org/only ',
