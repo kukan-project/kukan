@@ -175,19 +175,20 @@ export async function summaryEstimate(
   // serves*: that refusal stands until the file or the generation moves, so
   // quoting for it would promise work that will not happen. A refusal against
   // an older version is not a refusal of this one, and the run asks again.
-  // `format-mismatch` stands on the same footing: both are facts about these
-  // bytes read under this generation, settled until one of the two moves.
+  // `unusable-output` and `format-mismatch` stand on the same footing: facts
+  // about these bytes read under this generation, settled until one moves.
   // Reasons that turn on an artifact the pipeline may yet write —
   // `no-material`, `unsupported-format`, `too-large` — are deliberately *not*
   // here; those are re-asked below, because understating a bill is the worse
   // error to make.
   // The stamp is its own pair of fields; rows from before them carry it in the
   // abstract's (see ResourceSummaryMeta.skipVersion).
-  const standingRefusal = sql`(${resource.summaryMeta}->>'skipReason' IN ('rejected', 'format-mismatch')
-    AND COALESCE(${resource.summaryMeta}->>'skipGenKey', ${resource.summaryMeta}->>'genKey')
+  const stampedHere = sql`(COALESCE(${resource.summaryMeta}->>'skipGenKey', ${resource.summaryMeta}->>'genKey')
       IS NOT DISTINCT FROM ${genKey}
     AND COALESCE(${resource.summaryMeta}->>'skipVersion', ${resource.summaryMeta}->>'version')::int
       IS NOT DISTINCT FROM ${versionAgg.liveVersion})`
+  const standingRefusal = sql`(${resource.summaryMeta}->>'skipReason' IN ('rejected', 'unusable-output', 'format-mismatch')
+    AND ${stampedHere})`
   // What each count is taken over. Spelled once and combined, because the
   // difference between them is one predicate and hand-writing every pairing
   // is how two of them come to disagree.
@@ -199,9 +200,15 @@ export async function summaryEstimate(
   // adds the two without counting a resource twice. Not one the current
   // generation has refused for this version, either: the old abstract stays,
   // and the run leaves it, as it does on the fill side.
-  const refreshAdds = sql`${resource.summary} IS NOT NULL AND ${describesLive}
+  // The one standing refusal a refresh asks again, as the run does: an unusable
+  // answer may have been the model's fluke. Unless an abstract of this version
+  // and generation is already there, which the run leaves before asking.
+  const refreshAdds = sql`((${resource.summary} IS NOT NULL AND ${describesLive}
     AND ${resource.summaryMeta}->>'genKey' IS DISTINCT FROM ${genKey}
-    AND NOT ${standingRefusal}`
+    AND NOT ${standingRefusal})
+    OR (${resource.summaryMeta}->>'skipReason' = 'unusable-output' AND ${stampedHere}
+      AND NOT (${resource.summary} IS NOT NULL AND ${describesLive}
+        AND ${resource.summaryMeta}->>'genKey' IS NOT DISTINCT FROM ${genKey})))`
   // The version's bytes, as the walk measures them
   const withinDoc = sql`${versionAgg.size} <= ${SUMMARY_MAX_DOC_BYTES}`
   const withinOffice = sql`${versionAgg.size} <= ${SUMMARY_MAX_OFFICE_BYTES}`

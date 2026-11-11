@@ -17,6 +17,7 @@ import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
 import {
   AIAdapter,
   AiInputRejectedError,
+  AiOutputUnusableError,
   CompleteOptions,
   CompletionAttachment,
   CompletionInfo,
@@ -148,7 +149,7 @@ export class BedrockAIAdapter implements AIAdapter {
     if (options?.jsonSchema) {
       const toolUse = blocks.find((block) => block.toolUse)?.toolUse
       if (!toolUse?.input) {
-        throw new Error(
+        throw new AiOutputUnusableError(
           `Bedrock Converse returned no tool use for forced JSON output (stopReason: ${response.stopReason})`
         )
       }

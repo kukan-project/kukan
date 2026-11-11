@@ -37,6 +37,7 @@ function extent(meta: ResourceSummaryMeta): string | null {
 const SKIPPED: Record<string, string> = {
   'too-large': 'the file is over the size limit',
   rejected: 'the file was more than the model could read at once',
+  'unusable-output': 'the model did not return a description that could be used',
   'unsupported-format': 'the model cannot read this format',
   'format-mismatch':
     'the bytes are not the format this resource declares — the source link may be dead',

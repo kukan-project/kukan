@@ -10,7 +10,12 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { eq } from 'drizzle-orm'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { AiInputRejectedError, type AIAdapter, type MeteredAI } from '@kukan/ai-adapter'
+import {
+  AiInputRejectedError,
+  AiOutputUnusableError,
+  type AIAdapter,
+  type MeteredAI,
+} from '@kukan/ai-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { createLogger, generationKey } from '@kukan/shared'
 import { setResourceSummary } from '@kukan/api/services/ai/resource-summary-service'
@@ -317,6 +322,77 @@ describe('the Summarize step', () => {
     const stored = await storedSummary(input.resourceId)
     expect(stored.meta.skipReason).toBe('rejected')
     expect(stored.meta.rejectedTokens).toBe(919286)
+  })
+
+  it.each([
+    ['not JSON', '{"summary": "途中で切れ'],
+    [
+      'empty once cleaned',
+      JSON.stringify({ summary: 'https://example.com', groundedInMaterial: true }),
+    ],
+    [
+      'over the length limit',
+      JSON.stringify({ summary: 'あ'.repeat(2001), groundedInMaterial: true }),
+    ],
+  ])('settles an answer that is %s instead of paying for it again', async (_, raw) => {
+    const input = await seed('processing')
+    const complete = vi.fn(async () => raw)
+    const deps = depsWith(aiThat(complete as unknown as AIAdapter['complete']))
+
+    const first = await executeSummarize(input, deps)
+    expect(first).toMatchObject({ status: 'skipped', reason: 'unusable-output', version: 1 })
+    if (first.status === 'skipped') await recordSkip(input, deps, first.reason, first)
+
+    expect(await executeSummarize(input, deps)).toEqual({ status: 'unchanged' })
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect((await storedSummary(input.resourceId)).meta.skipReason).toBe('unusable-output')
+
+    // A new version is new material, and is asked about again
+    expect(await executeSummarize({ ...input, version: 2 }, deps)).toMatchObject({
+      status: 'skipped',
+      reason: 'unusable-output',
+    })
+    expect(complete).toHaveBeenCalledTimes(2)
+  })
+
+  it('settles a reply the adapter found no output in, as it settles a broken one', async () => {
+    const input = await seed('processing')
+    const deps = depsWith(
+      aiThat((async () => {
+        throw new AiOutputUnusableError('no tool use (stopReason: max_tokens)')
+      }) as unknown as AIAdapter['complete'])
+    )
+
+    expect(await executeSummarize(input, deps)).toMatchObject({
+      status: 'skipped',
+      reason: 'unusable-output',
+    })
+  })
+
+  it('asks again about an unusable answer when a refresh asks, and only then', async () => {
+    const input = await seed('processing')
+    const complete = vi.fn(async () => '')
+    const deps = depsWith(aiThat(complete as unknown as AIAdapter['complete']))
+    const first = await executeSummarize(input, deps)
+    if (first.status === 'skipped') await recordSkip(input, deps, first.reason, first)
+
+    complete.mockResolvedValueOnce(abstract)
+    expect(await executeSummarize({ ...input, refresh: true }, deps)).toMatchObject({
+      status: 'written',
+    })
+    expect(complete).toHaveBeenCalledTimes(2)
+  })
+
+  it('still lets a failure of the moment go up to be retried', async () => {
+    const input = await seed('processing')
+    const deps = depsWith(
+      aiThat((async () => {
+        throw Object.assign(new Error('Too many requests'), { name: 'ThrottlingException' })
+      }) as unknown as AIAdapter['complete'])
+    )
+
+    await expect(executeSummarize(input, deps)).rejects.toThrow('Too many requests')
+    expect((await storedSummary(input.resourceId)).meta.skipReason).toBeUndefined()
   })
 
   it('stamps a declared format the bytes contradict with the generation that read it', async () => {

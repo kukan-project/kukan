@@ -297,12 +297,19 @@ pressing it twice is free.**
 | `unsupported-format`   | The provider takes no original and there is no extracted text either               |
 | `too-large`            | Over the size or page limit, or `size` is unknown                                  |
 | `rejected`             | Sent and refused with `ValidationException` (permanent); `rejectedTokens` recorded |
+| `unusable-output`      | The provider answered, but the answer is unusable (§8); only a refresh asks again  |
 | `no-material`          | The material is empty (§7.3)                                                       |
 | `not-public`           | The package is not `active` (draft or private)                                     |
 | `hidden`               | An editor hid it                                                                   |
 
 **A transient failure (throttling, 5xx, timeout) must never be written as a `skipReason`.** It is
 recorded as a step failure and retried on the next run.
+
+**`rejected` and `unusable-output` are not retried until the recorded version and generation
+(`skipVersion` / `skipGenKey`) change.** Sending the same material to the same model again only
+pays for the same answer, so the next run, the backfill and the estimate all treat it as settled.
+`unusable-output` can also be the model's fluke, though, so a refresh asks again, and the
+estimate counts it in the refresh total.
 
 ## 5. Step 1: extending the AIAdapter
 
@@ -565,7 +572,10 @@ and an output cut off there does not parse as JSON and is an unusable reply. For
 ignore `max_tokens` (some OpenAI-compatible servers, Ollama), a `summary` over 2,000 characters is
 refused as an unusable reply rather than cut (the prompt asks for 3 to 4 sentences, and measured
 abstracts stay under 400 characters). A summary that comes out empty is treated like an unusable
-reply (a failure of that run).
+reply. An unusable reply — not parseable as JSON, not the output shape, over the limit, or empty
+once cleaned, or a Bedrock reply with no tool use (stopped by `max_tokens` or a guardrail) — is
+recorded as `unusable-output` and not retried until a refresh asks (§4.3). Only a failure with no
+answer at all (throttling, 5xx, timeout) is a failure of that run.
 
 `groundedInMaterial` is **recorded and measured only**. In Phase A, a small model given a scanned
 PDF never said it could not read it — **this flag cannot catch fabrication** (ADR-053

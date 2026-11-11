@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { BedrockAIAdapter } from '../bedrock'
-import { AiInputRejectedError } from '../adapter'
+import { AiInputRejectedError, AiOutputUnusableError } from '../adapter'
 
 type Handler = (args?: unknown) => Promise<{ response: unknown; output: unknown }>
 type Middleware = (next: Handler) => Handler
@@ -354,9 +354,9 @@ describe('BedrockAIAdapter', () => {
       mockSend.mockResolvedValueOnce(converseResponse('sorry'))
       const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
 
-      await expect(
-        adapter.complete('x', { jsonSchema: { name: 'suggest', schema: {} } })
-      ).rejects.toThrow('no tool use')
+      const failed = adapter.complete('x', { jsonSchema: { name: 'suggest', schema: {} } })
+      await expect(failed).rejects.toThrow('no tool use')
+      await expect(failed).rejects.toBeInstanceOf(AiOutputUnusableError)
     })
   })
 

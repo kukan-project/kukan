@@ -46,6 +46,11 @@ export type SummarySkipReason =
   | 'format-mismatch'
   | 'too-large'
   | 'rejected'
+  /** The provider answered with nothing publishable — not JSON, not the
+   *  schema, over the length limit or empty once cleaned. Settled for this
+   *  version and generation, as a refusal is: asking again pays for the same
+   *  answer */
+  | 'unusable-output'
   | 'no-material'
   | 'not-public'
   | 'hidden'
@@ -116,9 +121,9 @@ export interface ResourceSummaryMeta {
   rejectedTokens?: number
   /**
    * The version and generation a standing refusal (`rejected`,
-   * `format-mismatch`) was found under, so the next run and the estimate
-   * recognise it. Apart from `version` and `genKey`, which describe the
-   * abstract kept beside the reason: a refusal of version 2 must not relabel
+   * `unusable-output`, `format-mismatch`) was found under, so the next run and
+   * the estimate recognise it. Apart from `version` and `genKey`, which describe
+   * the abstract kept beside the reason: a refusal of version 2 must not relabel
    * version 1's abstract as written from it. Rows recorded before these
    * existed carry the stamp in those two instead, and are read that way.
    */

@@ -29,7 +29,7 @@ import {
 } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { CompletionAttachment, MeteredAI } from '@kukan/ai-adapter'
-import { AiInputRejectedError } from '@kukan/ai-adapter'
+import { AiInputRejectedError, AiOutputUnusableError } from '@kukan/ai-adapter'
 import {
   isImageFormat,
   isOfficeFormat,
@@ -180,7 +180,12 @@ export async function executeSummarize(
   const refusedHere =
     (row.meta.skipVersion ?? row.meta.version) === input.version &&
     (row.meta.skipGenKey ?? row.meta.genKey) === genKey
-  if (row.meta.skipReason === 'rejected' && refusedHere) {
+  // An unusable answer can be the model's fluke rather than the file's fact, so
+  // a refresh asks again; that button is the one way back for a resource.
+  const standing =
+    row.meta.skipReason === 'rejected' ||
+    (row.meta.skipReason === 'unusable-output' && !input.refresh)
+  if (standing && refusedHere) {
     return { status: 'unchanged' }
   }
 
@@ -213,6 +218,14 @@ export async function executeSummarize(
   try {
     output = await generate(input, material, row.context, plan, locale, deps)
   } catch (err) {
+    // The adapter's finding of no output in a reply, or ours of nothing publishable in it
+    if (err instanceof AiOutputUnusableError) {
+      deps.log.warn(
+        { component: 'summarize', resourceId: input.resourceId, model: deps.model },
+        err.message
+      )
+      return { status: 'skipped', reason: 'unusable-output', genKey, version: input.version }
+    }
     const rejected = rejectionReason(err)
     // A refusal of the moment goes up: the caller records it on the run and
     // tries again. Only a refusal of the input itself is the file's answer.
@@ -656,10 +669,15 @@ async function generate(
         'abstract generated'
       ),
   })
-  const parsed = summaryLlmOutputSchema.safeParse(JSON.parse(raw))
-  if (!parsed.success || !parsed.data.summary.trim()) {
-    throw new Error('The provider returned no usable abstract')
+  const unusable = () => new AiOutputUnusableError('The provider returned no usable abstract')
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw unusable()
   }
+  const parsed = summaryLlmOutputSchema.safeParse(json)
+  if (!parsed.success || !parsed.data.summary.trim()) throw unusable()
   return parsed.data
 }
 

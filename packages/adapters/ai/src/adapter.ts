@@ -96,6 +96,19 @@ export class AiInputRejectedError extends Error {
   }
 }
 
+/**
+ * The provider answered, and the answer holds no output to use — forced JSON
+ * that came back as prose, or a reply cut off or filtered before it began.
+ * Paid for, so not one attempt's failure to back off on: asking again buys
+ * the same answer.
+ */
+export class AiOutputUnusableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AiOutputUnusableError'
+  }
+}
+
 export interface CompleteOptions {
   maxTokens?: number
   temperature?: number

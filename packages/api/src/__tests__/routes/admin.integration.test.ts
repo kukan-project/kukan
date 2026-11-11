@@ -1470,6 +1470,50 @@ describe('Admin API Routes', () => {
       expect(body.fill.resources).toBe(0)
     })
 
+    it('quotes an unusable answer to a refresh only, which is where the run asks again', async () => {
+      const thisGeneration = generationKey('gemma4:e4b', 'ja')
+      const orgId = await ensureOrg('estimate-unusable-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-unusable-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const [row] = await db
+        .insert(resource)
+        .values({
+          packageId: pkg.id,
+          name: 'unusable',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          hash: 'h1',
+          summaryMeta: {
+            skipReason: 'unusable-output',
+            skipVersion: 1,
+            skipGenKey: thisGeneration,
+          },
+        })
+        .returning({ id: resource.id })
+      await db.insert(resourcePipeline).values({
+        resourceId: row.id,
+        status: 'complete',
+        previewKey: `previews/${row.id}.parquet`,
+        metadata: { schema: { columns: [], rowCount: 0 } },
+      })
+      await db.insert(resourceVersion).values({
+        resourceId: row.id,
+        version: 1,
+        storageKey: 'k1',
+        hash: 'h1',
+        origin: 'upload',
+        state: 'active',
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.resources).toBe(0)
+      expect(body.refresh.resources).toBe(1)
+    })
+
     it('quotes for an abstract whose version has been replaced', async () => {
       // The run writes it: an abstract stands while its version stands, and
       // this one's has not. Counted in neither total, the fill button quotes a
