@@ -213,7 +213,9 @@ dataset (the same reason option D was rejected).
   label is kept**; null clears it — a label is arranged from the reorder side and must not
   vanish as a side effect of an unrelated edit (the same treatment as `extras`). The form's edit
   goes through this path (it is editing the resource itself, so the pipeline re-enqueue
-  happens as it always has)
+  happens as it always has). **Note (ADR-072)**: `PUT` now queues the pipeline only when the
+  source (URL, type) or format changes; an update to only name, description or `section` does
+  not queue it
 
 ### API
 

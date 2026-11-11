@@ -245,6 +245,7 @@ pnpm format        # Prettier フォーマット
 - 共有 OpenSearch のサイト間分離を FGAC で強制する（マスターは IAM ロール、ロールの割り当ては共有スタックがサイト一覧から作る、ADR-041 拡張、提案） → `docs/adr/jp/069-opensearch-fgac-site-isolation.md`
 - 製品名は名乗りバージョンは未認証に出さない（`<meta name="generator" content="KUKAN">` はサイト単位で無効化可、worker の User-Agent からも版を外す、MCP の版は機能面の版、版は管理画面だけ） → `docs/adr/jp/070-product-name-without-version.md`
 - CSP を nonce なしで入れ、HSTS を TLS 終端で出す（`script-src 'unsafe-inline'`：App Router のインラインスクリプトはハッシュできず nonce は CDN の HTML キャッシュと両立しない。守るのは読み込み先と送信先。`CSP_MODE=report-only` で入れ後に enforce、`frame-src` は report-only 中も強制、違反報告先は置かない。HSTS は CloudFront のレスポンスヘッダーポリシーと Caddy の TLS ブロックだけ、`includeSubDomains` はサイト単位、preload なし） → `docs/adr/jp/071-csp-without-nonce-hsts-at-tls-edge.md`
+- 管理画面のデータセット編集を公開ページの鏡にする（URL を対にし、左にリソースの一覧・右にタブ、データセットを開いている間はサイドバーを一覧に入れ替える。編集側はデータセットを ID で指す。保存は「版が増えない保存」「列の適用」「並び順の保存」に分け、列の人の決定は 1 つの列タブで下書き→1 回の適用（主キー・確定型を含めば 1 版、役割の上書きだけなら版なし）、公開側には `editor` 以上に「管理」ボタン、提案） → `docs/adr/jp/072-dashboard-mirrors-public-page.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
