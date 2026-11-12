@@ -171,7 +171,7 @@ groupsRouter.post(
     await checkGroupRole(db, user, grp.id, 'admin')
 
     const { user_id, role } = c.req.valid('json')
-    const result = await service.addMember(grp.id, user_id, role)
+    const result = await service.addMember(grp.id, user_id, role, user)
     return c.json(result, 201)
   }
 )
@@ -186,6 +186,6 @@ groupsRouter.delete('/:nameOrId/members/:userId', async (c) => {
   const grp = await service.getByNameOrId(c.req.param('nameOrId'))
   await checkGroupRole(db, user, grp.id, 'admin')
 
-  const result = await service.removeMember(grp.id, c.req.param('userId'))
+  const result = await service.removeMember(grp.id, c.req.param('userId'), user)
   return c.json(result)
 })

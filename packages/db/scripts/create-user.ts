@@ -8,11 +8,11 @@ import { parseArgs } from 'node:util'
 import { randomBytes, scrypt } from 'node:crypto'
 import { generateId } from './generate-id'
 import { config } from 'dotenv'
-import { and, eq, or, count } from 'drizzle-orm'
+import { and, eq, or, count, sql } from 'drizzle-orm'
 import { loadEnv, checkPasswordGuessability, normalizePassword } from '@kukan/shared'
 import { createUserSchema, userRoleSchema, type UserRole } from '@kukan/shared/validators/user'
 import { createDb, closePool } from '../src/client'
-import { user, account } from '../src/schema'
+import { user, account, auditLog } from '../src/schema'
 import { PASSWORD_ENV, PasswordInputError, promptHidden, readPassword } from './read-password'
 
 const CREDENTIAL_PROVIDER_ID = 'credential'
@@ -186,6 +186,15 @@ async function createUser(args: CreateUserArgs): Promise<void> {
         accountId: userId,
         providerId: CREDENTIAL_PROVIDER_ID,
         password: hashedPassword,
+      })
+
+      // No actor: whoever runs this has the database itself, not a KUKAN account
+      await tx.insert(auditLog).values({
+        entityType: 'user',
+        entityId: sql`gen_random_uuid()`,
+        action: 'create',
+        userId: null,
+        changes: { userId, role: args.role, authMethod: 'cli' },
       })
     })
 

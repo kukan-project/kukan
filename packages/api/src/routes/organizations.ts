@@ -197,7 +197,7 @@ organizationsRouter.post(
     await checkOrgRole(db, user, org.id, 'admin')
 
     const { user_id, role } = c.req.valid('json')
-    const result = await service.addMember(org.id, user_id, role)
+    const result = await service.addMember(org.id, user_id, role, user)
     return c.json(result, 201)
   }
 )
@@ -212,6 +212,6 @@ organizationsRouter.delete('/:nameOrId/members/:userId', async (c) => {
   const org = await service.getByNameOrId(c.req.param('nameOrId'))
   await checkOrgRole(db, user, org.id, 'admin')
 
-  const result = await service.removeMember(org.id, c.req.param('userId'))
+  const result = await service.removeMember(org.id, c.req.param('userId'), user)
   return c.json(result)
 })

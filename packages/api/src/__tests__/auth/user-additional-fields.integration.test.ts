@@ -13,6 +13,7 @@ import {
   cleanUsers,
   closeTestDb,
   ensureTestUser,
+  TEST_USER_ID,
 } from '../test-helpers/test-db'
 import { createAuth, type Auth } from '../../auth/auth'
 import { optionalAuth } from '../../middleware/auth'
@@ -153,7 +154,10 @@ describe('user additional fields', () => {
     const auth = createAuth(db, 'x-forwarded-for')
     const credentials = { email: 'returning@example.com', password: 'harbor-lantern-quiet-42' }
     const created = await auth.api.signUpEmail({ body: { ...credentials, name: 'returning-user' } })
-    await new UserService(db).delete(created.user.id)
+    await new UserService(db).delete(created.user.id, {
+      id: TEST_USER_ID,
+      authMethod: 'session',
+    })
 
     const res = await auth.handler(
       new Request('http://localhost:3000/api/auth/sign-in/email', {

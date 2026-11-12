@@ -621,7 +621,7 @@ describe('executePurge', () => {
 
     const deps = mockDeps()
     vi.mocked(deps.storage.delete).mockImplementation(async () => {
-      await new UserService(db).purge(purgerId, userId)
+      await new UserService(db).purge(purgerId, { id: userId, authMethod: 'session' })
     })
     expect(await service.executePurge(resourceId, 1, deps)).toMatchObject({ purged: true })
 

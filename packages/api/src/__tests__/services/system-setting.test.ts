@@ -9,6 +9,8 @@ import {
   isSettingKey,
 } from '../../services/system-setting'
 
+const ACTOR = { id: 'admin-1', authMethod: 'session' as const }
+
 describe('isSettingKey', () => {
   it('accepts registered keys only, not ones inherited from Object.prototype', () => {
     expect(isSettingKey(VECTOR_SIMILARITY_NOTCHES_KEY)).toBe(true)
@@ -60,7 +62,7 @@ describe('SystemSettingService', () => {
     addResult([{ id: 'row-id' }]) // insert ... returning
     const service = new SystemSettingService(db)
 
-    const result = await service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 2)
+    const result = await service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 2, ACTOR)
     expect(result).toEqual({ id: 'row-id', previous: 1 })
     // Cache holds the new value — no queued result needed
     expect(await service.getSetting(VECTOR_SIMILARITY_NOTCHES_KEY)).toBe(2)
@@ -70,8 +72,8 @@ describe('SystemSettingService', () => {
     const { db } = createMockDb()
     const service = new SystemSettingService(db)
 
-    await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 5)).rejects.toThrow()
-    await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 0.5)).rejects.toThrow()
+    await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 5, ACTOR)).rejects.toThrow()
+    await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 0.5, ACTOR)).rejects.toThrow()
   })
 
   it('ai-suggest settings default to empty model + enabled', async () => {
@@ -90,10 +92,10 @@ describe('SystemSettingService', () => {
     addResult([{ id: 'row-id' }])
     const service = new SystemSettingService(db)
 
-    await service.setSetting(AI_SUGGEST_MODEL_KEY, '  gemma4:e4b  ')
+    await service.setSetting(AI_SUGGEST_MODEL_KEY, '  gemma4:e4b  ', ACTOR)
     expect(await service.getSetting(AI_SUGGEST_MODEL_KEY)).toBe('gemma4:e4b')
 
-    await expect(service.setSetting(AI_SUGGEST_MODEL_KEY, 'x'.repeat(201))).rejects.toThrow()
+    await expect(service.setSetting(AI_SUGGEST_MODEL_KEY, 'x'.repeat(201), ACTOR)).rejects.toThrow()
   })
 
   it('clearCache() forces the next read back to the DB', async () => {

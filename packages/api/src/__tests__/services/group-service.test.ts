@@ -3,6 +3,8 @@ import { GroupService } from '../../services/group-service'
 import { createMockDb } from '../test-helpers/mock-db'
 import { createGroupFixture } from '../test-helpers/fixtures'
 
+const ACTOR = { id: 'admin-1', authMethod: 'session' as const }
+
 describe('GroupService', () => {
   let service: GroupService
   let mock: ReturnType<typeof createMockDb>
@@ -125,7 +127,7 @@ describe('GroupService', () => {
       mock.addResult([]) // no existing membership
       mock.addResult([{ id: 'mem-1', userId: 'user-1', groupId: 'grp-1', role: 'member' }])
 
-      const result = await service.addMember('grp-1', 'user-1')
+      const result = await service.addMember('grp-1', 'user-1', 'member', ACTOR)
       expect(result.role).toBe('member')
     })
 
@@ -134,14 +136,16 @@ describe('GroupService', () => {
       mock.addResult([{ id: 'mem-1' }]) // existing membership
       mock.addResult([{ id: 'mem-1', role: 'admin' }]) // update returning
 
-      const result = await service.addMember('grp-1', 'user-1', 'admin')
+      const result = await service.addMember('grp-1', 'user-1', 'admin', ACTOR)
       expect(result.role).toBe('admin')
     })
 
     it('should throw NotFoundError if user does not exist', async () => {
       mock.addResult([]) // user not found
 
-      await expect(service.addMember('grp-1', 'no-user')).rejects.toThrow('User not found: no-user')
+      await expect(service.addMember('grp-1', 'no-user', 'member', ACTOR)).rejects.toThrow(
+        'User not found: no-user'
+      )
     })
   })
 
@@ -149,14 +153,16 @@ describe('GroupService', () => {
     it('should remove membership and return success', async () => {
       mock.addResult([{ id: 'mem-1' }]) // delete returning
 
-      const result = await service.removeMember('grp-1', 'user-1')
+      const result = await service.removeMember('grp-1', 'user-1', ACTOR)
       expect(result).toEqual({ success: true })
     })
 
     it('should throw NotFoundError when membership does not exist', async () => {
       mock.addResult([]) // delete returns nothing
 
-      await expect(service.removeMember('grp-1', 'no-user')).rejects.toThrow('Membership not found')
+      await expect(service.removeMember('grp-1', 'no-user', ACTOR)).rejects.toThrow(
+        'Membership not found'
+      )
     })
   })
 })

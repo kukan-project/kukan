@@ -18,6 +18,7 @@ import {
 import type { Database } from '@kukan/db'
 import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
 import { orderTerms } from './list-order'
+import { writeAudit, type AuditActor } from './audit'
 import {
   NotFoundError,
   ValidationError,
@@ -436,57 +437,85 @@ export class OrganizationService {
     return rows
   }
 
-  async addMember(orgId: string, userId: string, role: string = 'member') {
-    // A deleted user would hold the role the moment a sysadmin restored them
-    const [existingUser] = await this.db
-      .select({ id: user.id })
-      .from(user)
-      .where(and(eq(user.id, userId), eq(user.state, 'active')))
-      .limit(1)
+  async addMember(orgId: string, userId: string, role: string, actor: AuditActor) {
+    return this.db.transaction(async (tx) => {
+      // A deleted user would hold the role the moment a sysadmin restored them
+      const [existingUser] = await tx
+        .select({ id: user.id })
+        .from(user)
+        .where(and(eq(user.id, userId), eq(user.state, 'active')))
+        .limit(1)
 
-    if (!existingUser) {
-      throw new NotFoundError('User', userId)
-    }
+      if (!existingUser) {
+        throw new NotFoundError('User', userId)
+      }
 
-    // Check if already a member
-    const [existing] = await this.db
-      .select({ id: userOrgMembership.id })
-      .from(userOrgMembership)
-      .where(and(eq(userOrgMembership.userId, userId), eq(userOrgMembership.organizationId, orgId)))
-      .limit(1)
+      // Check if already a member
+      const [existing] = await tx
+        .select({ id: userOrgMembership.id, role: userOrgMembership.role })
+        .from(userOrgMembership)
+        .where(
+          and(eq(userOrgMembership.userId, userId), eq(userOrgMembership.organizationId, orgId))
+        )
+        .for('update')
+        .limit(1)
 
-    if (existing) {
-      // Update role if already a member
-      const [updated] = await this.db
-        .update(userOrgMembership)
-        .set({ role })
-        .where(eq(userOrgMembership.id, existing.id))
+      if (existing) {
+        // Update role if already a member
+        const [updated] = await tx
+          .update(userOrgMembership)
+          .set({ role })
+          .where(eq(userOrgMembership.id, existing.id))
+          .returning()
+        if (existing.role !== role) {
+          await writeAudit(tx, actor, {
+            entityType: 'organization',
+            entityId: orgId,
+            action: 'member_update',
+            changes: { userId, previousRole: existing.role, role },
+          })
+        }
+        return updated
+      }
+
+      const [created] = await tx
+        .insert(userOrgMembership)
+        .values({
+          userId,
+          organizationId: orgId,
+          role,
+        })
         .returning()
-      return updated
-    }
-
-    const [created] = await this.db
-      .insert(userOrgMembership)
-      .values({
-        userId,
-        organizationId: orgId,
-        role,
+      await writeAudit(tx, actor, {
+        entityType: 'organization',
+        entityId: orgId,
+        action: 'member_add',
+        changes: { userId, role },
       })
-      .returning()
-
-    return created
+      return created
+    })
   }
 
-  async removeMember(orgId: string, userId: string) {
-    const [deleted] = await this.db
-      .delete(userOrgMembership)
-      .where(and(eq(userOrgMembership.userId, userId), eq(userOrgMembership.organizationId, orgId)))
-      .returning()
+  async removeMember(orgId: string, userId: string, actor: AuditActor) {
+    return this.db.transaction(async (tx) => {
+      const [deleted] = await tx
+        .delete(userOrgMembership)
+        .where(
+          and(eq(userOrgMembership.userId, userId), eq(userOrgMembership.organizationId, orgId))
+        )
+        .returning()
 
-    if (!deleted) {
-      throw new NotFoundError('Membership', `user=${userId} org=${orgId}`)
-    }
+      if (!deleted) {
+        throw new NotFoundError('Membership', `user=${userId} org=${orgId}`)
+      }
 
-    return { success: true }
+      await writeAudit(tx, actor, {
+        entityType: 'organization',
+        entityId: orgId,
+        action: 'member_remove',
+        changes: { userId, role: deleted.role },
+      })
+      return { success: true }
+    })
   }
 }

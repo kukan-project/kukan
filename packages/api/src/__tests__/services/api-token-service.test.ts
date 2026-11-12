@@ -4,6 +4,7 @@ import { createMockDb } from '../test-helpers/mock-db'
 import { ApiTokenService } from '../../services/api-token-service'
 
 const TOKEN_ID = '00000000-0000-4000-8000-000000000001'
+const USER = { id: 'user-1', authMethod: 'session' as const }
 
 describe('ApiTokenService', () => {
   describe('create', () => {
@@ -19,7 +20,7 @@ describe('ApiTokenService', () => {
       ])
 
       const service = new ApiTokenService(db)
-      const result = await service.create('user-1', { name: 'My Token' })
+      const result = await service.create(USER, { name: 'My Token' })
 
       expect(result.token).toMatch(/^kukan_[0-9a-f]{64}$/)
       expect(result.id).toBe('tok-1')
@@ -29,11 +30,12 @@ describe('ApiTokenService', () => {
     it('should generate unique tokens on each call', async () => {
       const { db, addResult } = createMockDb()
       addResult([{ id: 'tok-1', name: null, expiresAt: null, created: new Date() }])
+      addResult([]) // audit row
       addResult([{ id: 'tok-2', name: null, expiresAt: null, created: new Date() }])
 
       const service = new ApiTokenService(db)
-      const r1 = await service.create('user-1', {})
-      const r2 = await service.create('user-1', {})
+      const r1 = await service.create(USER, {})
+      const r2 = await service.create(USER, {})
 
       expect(r1.token).not.toBe(r2.token)
     })
@@ -44,7 +46,7 @@ describe('ApiTokenService', () => {
       addResult([{ id: 'tok-1', name: null, expiresAt: expires, created: new Date() }])
 
       const service = new ApiTokenService(db)
-      const result = await service.create('user-1', { expiresAt: expires })
+      const result = await service.create(USER, { expiresAt: expires })
 
       expect(result.expiresAt).toEqual(expires)
     })
@@ -91,7 +93,7 @@ describe('ApiTokenService', () => {
       addResult([]) // delete succeeds
 
       const service = new ApiTokenService(db)
-      const result = await service.revoke(TOKEN_ID, 'user-1')
+      const result = await service.revoke(TOKEN_ID, USER)
 
       expect(result).toEqual({ success: true })
     })
@@ -101,16 +103,16 @@ describe('ApiTokenService', () => {
       addResult([]) // select returns empty
 
       const service = new ApiTokenService(db)
-      await expect(
-        service.revoke('00000000-0000-4000-8000-000000000999', 'user-1')
-      ).rejects.toThrow(NotFoundError)
+      await expect(service.revoke('00000000-0000-4000-8000-000000000999', USER)).rejects.toThrow(
+        NotFoundError
+      )
     })
 
     it('should refuse a non-uuid id as not found without querying', async () => {
       const { db, addResult } = createMockDb()
       addResult([{ id: 'tok-999', userId: 'user-1' }]) // would be found, were it asked
       const service = new ApiTokenService(db)
-      await expect(service.revoke('tok-999', 'user-1')).rejects.toThrow(NotFoundError)
+      await expect(service.revoke('tok-999', USER)).rejects.toThrow(NotFoundError)
     })
   })
 

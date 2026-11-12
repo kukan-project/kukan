@@ -24,13 +24,9 @@ import {
   packageTable,
   resource,
   resourcePipeline,
-  organization,
-  group,
   tag,
   packageTag,
-  vocabulary,
   user,
-  auditLog,
   type Database,
 } from '@kukan/db'
 import { embeddingKey } from '@kukan/ai-adapter'
@@ -81,7 +77,8 @@ import { AI_SUMMARY_LOCALE_KEY } from '../services/system-setting'
 import { markContentUnindexed } from '../services/search/content-index-record'
 import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA } from '@kukan/lake'
 import { ResourceVersionService } from '../services/resource-version-service'
-import { UserService, userNameTaken } from '../services/user-service'
+import { UserService, userNameTaken, type UserUpdates } from '../services/user-service'
+import { deleteAllCatalogData } from '../services/catalog-wipe'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
@@ -270,24 +267,6 @@ async function buildVectorSearchSettings(c: Context<{ Variables: AppContext }>) 
   }
 }
 
-async function auditSettingChange(
-  c: Context<{ Variables: AppContext }>,
-  key: string,
-  value: unknown,
-  write: { id: string; previous: unknown }
-) {
-  await c
-    .get('db')
-    .insert(auditLog)
-    .values({
-      entityType: 'system_setting',
-      entityId: write.id,
-      action: 'update',
-      userId: c.get('user')!.id,
-      changes: { key, value, previous: write.previous ?? null },
-    })
-}
-
 // GET /api/v1/admin/settings/vector-search — Vector-search context (read-only)
 adminRouter.get('/settings/vector-search', async (c) => {
   return c.json(await buildVectorSearchSettings(c))
@@ -399,8 +378,7 @@ adminRouter.put(
       throw new ValidationError(detail)
     }
 
-    const write = await c.get('settings').setSetting(key, parsed.data)
-    await auditSettingChange(c, key, parsed.data, write)
+    await c.get('settings').setSetting(key, parsed.data, c.get('user')!)
 
     return c.json({ key, value: parsed.data })
   }
@@ -829,19 +807,7 @@ adminRouter.delete('/data', async (c) => {
   const storage = c.get('storage')
 
   // 1. Delete all data in a transaction (rollback on failure)
-  const counts = await db.transaction(async (tx) => {
-    const pkgs = await tx.delete(packageTable).returning({ id: packageTable.id })
-    const orgs = await tx.delete(organization).returning({ id: organization.id })
-    const grps = await tx.delete(group).returning({ id: group.id })
-    const tgs = await tx.delete(tag).returning({ id: tag.id })
-    await tx.delete(vocabulary)
-    return {
-      packages: pkgs.length,
-      organizations: orgs.length,
-      groups: grps.length,
-      tags: tgs.length,
-    }
-  })
+  const counts = await deleteAllCatalogData(db, c.get('user')!)
 
   // 2. Clear the search index. Not best-effort: nothing is left to say the
   // index still holds the deleted data, so a failure is reported (below, once
@@ -1043,6 +1009,7 @@ adminRouter.post(
     }
 
     const created = result.user
+    await new UserService(c.get('db')).recordCreated(created, c.get('user')!)
     return c.json(
       { id: created.id, name: created.name, email: created.email, role: created.role },
       201
@@ -1078,7 +1045,7 @@ adminRouter.patch(
       throw new ConflictError('Username already taken')
     }
 
-    const updates: Partial<Pick<typeof user.$inferInsert, 'name' | 'displayName' | 'role'>> = {}
+    const updates: UserUpdates = {}
     if (body.name !== undefined) updates.name = body.name
     if (body.displayName !== undefined) updates.displayName = body.displayName
     if (body.role !== undefined) updates.role = body.role
@@ -1087,23 +1054,7 @@ adminRouter.patch(
       throw new ValidationError('No fields to update')
     }
 
-    const [updated] = await db
-      .update(user)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(user.id, userId))
-      .returning({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        displayName: user.displayName,
-        role: user.role,
-        state: user.state,
-      })
-
-    if (!updated) {
-      throw new NotFoundError('User')
-    }
-
+    const updated = await new UserService(db).update(userId, updates, currentUser)
     return c.json(updated)
   }
 )
@@ -1117,7 +1068,7 @@ adminRouter.delete('/users/:userId', async (c) => {
   }
 
   const service = new UserService(c.get('db'))
-  await service.delete(userId)
+  await service.delete(userId, currentUser)
   return c.json({ success: true })
 })
 
@@ -1130,7 +1081,7 @@ adminRouter.post('/users/:userId/restore', async (c) => {
   }
 
   const service = new UserService(c.get('db'))
-  await service.restore(userId)
+  await service.restore(userId, currentUser)
   return c.json({ success: true })
 })
 
@@ -1143,7 +1094,7 @@ adminRouter.post('/users/:userId/purge', async (c) => {
   }
 
   const service = new UserService(c.get('db'))
-  await service.purge(userId, currentUser.id)
+  await service.purge(userId, currentUser)
   return c.json({ success: true })
 })
 

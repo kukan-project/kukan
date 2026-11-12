@@ -3,6 +3,8 @@ import { OrganizationService } from '../../services/organization-service'
 import { createMockDb } from '../test-helpers/mock-db'
 import { createOrganizationFixture } from '../test-helpers/fixtures'
 
+const ACTOR = { id: 'admin-1', authMethod: 'session' as const }
+
 describe('OrganizationService', () => {
   let service: OrganizationService
   let mock: ReturnType<typeof createMockDb>
@@ -188,7 +190,7 @@ describe('OrganizationService', () => {
       mock.addResult([]) // no existing membership
       mock.addResult([{ id: 'mem-1', userId: 'user-1', organizationId: 'org-1', role: 'editor' }])
 
-      const result = await service.addMember('org-1', 'user-1', 'editor')
+      const result = await service.addMember('org-1', 'user-1', 'editor', ACTOR)
       expect(result.role).toBe('editor')
     })
 
@@ -197,25 +199,16 @@ describe('OrganizationService', () => {
       mock.addResult([{ id: 'mem-1' }]) // existing membership found
       mock.addResult([{ id: 'mem-1', role: 'admin' }]) // update returning
 
-      const result = await service.addMember('org-1', 'user-1', 'admin')
+      const result = await service.addMember('org-1', 'user-1', 'admin', ACTOR)
       expect(result.role).toBe('admin')
     })
 
     it('should throw NotFoundError if user does not exist', async () => {
       mock.addResult([]) // user not found
 
-      await expect(service.addMember('org-1', 'no-user', 'member')).rejects.toThrow(
+      await expect(service.addMember('org-1', 'no-user', 'member', ACTOR)).rejects.toThrow(
         'User not found: no-user'
       )
-    })
-
-    it('should default role to member', async () => {
-      mock.addResult([{ id: 'user-1' }]) // user exists
-      mock.addResult([]) // no existing membership
-      mock.addResult([{ id: 'mem-1', userId: 'user-1', organizationId: 'org-1', role: 'member' }])
-
-      const result = await service.addMember('org-1', 'user-1')
-      expect(result.role).toBe('member')
     })
   })
 
@@ -223,14 +216,16 @@ describe('OrganizationService', () => {
     it('should remove membership and return success', async () => {
       mock.addResult([{ id: 'mem-1' }]) // delete returning
 
-      const result = await service.removeMember('org-1', 'user-1')
+      const result = await service.removeMember('org-1', 'user-1', ACTOR)
       expect(result).toEqual({ success: true })
     })
 
     it('should throw NotFoundError when membership does not exist', async () => {
       mock.addResult([]) // delete returns nothing
 
-      await expect(service.removeMember('org-1', 'no-user')).rejects.toThrow('Membership not found')
+      await expect(service.removeMember('org-1', 'no-user', ACTOR)).rejects.toThrow(
+        'Membership not found'
+      )
     })
   })
 })

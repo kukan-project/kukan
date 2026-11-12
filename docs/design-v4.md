@@ -959,6 +959,26 @@ DuckLake のカタログ（ADR-043 層 2）は PostgreSQL ではなく、リソ�
 検索索引・埋め込みへの反映を待っていることを示す（立っていれば NULL でない）。書き込みと同じ文で立て、
 反映したジョブが下ろす（`docs/jobs.md`）。
 
+**監査ログ（`audit_log`）に書く操作**: 権限と全消去にかかわる操作を、その変更と同じトランザクションで 1 行書く
+（例外は管理 API からのユーザー作成で、Better Auth がユーザーを作り終えたあとに書く）。`user_id` は操作した人、
+`changes.authMethod` はその人の認証の方法（`session` / `token`。`pnpm db:create-user` は `cli` で `user_id` なし。
+初回ユーザーの昇格と `resource_version` の行には無い）。
+ユーザーの id は text なので `entity_id` には入らず、`changes.userId` に置く（`entity_id` は乱数）。
+トークンの値やパスワードは書かない。書き込みは `packages/api/src/services/audit.ts` の `writeAudit` を通す。
+
+| `entity_type`      | `action`                                         | `entity_id`   | `changes`                                                                               |
+| ------------------ | ------------------------------------------------ | ------------- | --------------------------------------------------------------------------------------- |
+| `user`             | `create`                                         | 乱数          | `userId`、`role`（初回ユーザーの昇格は `bootstrap: true`、ADR-038）                     |
+| `user`             | `update`（役割が変わったときだけ）               | 乱数          | `userId`、`previousRole`、`role`                                                        |
+| `user`             | `delete` / `restore`                             | 乱数          | `userId`                                                                                |
+| `user`             | `purge`                                          | 乱数          | `purgedUserId`、`purgedEmail`、`purgedName`                                             |
+| `organization`     | `member_add` / `member_update` / `member_remove` | 組織の id     | `userId`、`role`（`member_update` は `previousRole` も。同じ役割での追加は書かない）    |
+| `group`            | 同上                                             | グループの id | 同上                                                                                    |
+| `api_token`        | `create` / `revoke`                              | トークンの id | `userId`（持ち主）、`name`（`create` は `expiresAt` も）                                |
+| `catalog`          | `delete_all`（`DELETE /admin/data`）             | 乱数          | 消した件数（`packages`、`organizations`、`groups`、`tags`）。`audit_log` 自体は消さない |
+| `system_setting`   | `update`                                         | 設定の id     | `key`、`value`、`previous`                                                              |
+| `resource_version` | `purge_request` / `purge`                        | リソースの id | `version`、`reason`（`purge` は `rolledBack` も）                                       |
+
 ### 6.4 計画中の表（未実装）
 
 次の表は計画のみで、まだ作っていない。

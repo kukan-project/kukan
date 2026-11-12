@@ -1,6 +1,6 @@
 /**
  * KUKAN User Service
- * Business logic for user lifecycle management (delete, restore, purge)
+ * Business logic for user lifecycle management (update, delete, restore, purge)
  */
 
 import { and, eq, ne, sql } from 'drizzle-orm'
@@ -15,6 +15,9 @@ import {
   resourceVersion,
 } from '@kukan/db'
 import { NotFoundError, ConflictError, ValidationError } from '@kukan/shared'
+import { writeAudit, type AuditActor } from './audit'
+
+export type UserUpdates = Partial<Pick<typeof user.$inferInsert, 'name' | 'displayName' | 'role'>>
 
 /** Whether another user than `exceptUserId` has `name`: sign-up and a rename ask the same. */
 export async function userNameTaken(
@@ -33,8 +36,58 @@ export async function userNameTaken(
 export class UserService {
   constructor(private db: Database) {}
 
+  /**
+   * Record a user the admin API created. Not in the creating transaction:
+   * Better Auth writes the user and its account itself, without one, and runs
+   * its own after-hooks only once that is done.
+   */
+  async recordCreated(created: { id: string; role?: string | null }, actor: AuditActor) {
+    await writeAudit(this.db, actor, {
+      entityType: 'user',
+      action: 'create',
+      changes: { userId: created.id, role: created.role ?? 'user' },
+    })
+  }
+
+  /** Update name, displayName or role; a role change is audited */
+  async update(userId: string, updates: UserUpdates, actor: AuditActor) {
+    return this.db.transaction(async (tx) => {
+      const [before] = await tx
+        .select({ role: user.role })
+        .from(user)
+        .where(eq(user.id, userId))
+        // Not FOR UPDATE: the audit row's key share on the actor's own row would
+        // deadlock two sysadmins changing each other's roles at once
+        .for('no key update')
+        .limit(1)
+      if (!before) throw new NotFoundError('User')
+
+      const [updated] = await tx
+        .update(user)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(user.id, userId))
+        .returning({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          displayName: user.displayName,
+          role: user.role,
+          state: user.state,
+        })
+
+      if (updates.role !== undefined && updates.role !== before.role) {
+        await writeAudit(tx, actor, {
+          entityType: 'user',
+          action: 'update',
+          changes: { userId, previousRole: before.role, role: updated.role },
+        })
+      }
+      return updated
+    })
+  }
+
   /** Soft-delete a user: set state='deleted' and revoke sessions/tokens */
-  async delete(userId: string) {
+  async delete(userId: string, actor: AuditActor) {
     // One transaction, so a user is never left deleted with sessions that still sign in
     await this.db.transaction(async (tx) => {
       const [deleted] = await tx
@@ -47,30 +100,35 @@ export class UserService {
 
       await tx.delete(session).where(eq(session.userId, userId))
       await tx.delete(apiToken).where(eq(apiToken.userId, userId))
+      await writeAudit(tx, actor, { entityType: 'user', action: 'delete', changes: { userId } })
     })
   }
 
   /** Restore a soft-deleted user back to active state */
-  async restore(userId: string) {
-    const [target] = await this.db
-      .select({ id: user.id, state: user.state })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1)
+  async restore(userId: string, actor: AuditActor) {
+    await this.db.transaction(async (tx) => {
+      const [target] = await tx
+        .select({ id: user.id, state: user.state })
+        .from(user)
+        .where(eq(user.id, userId))
+        .for('no key update')
+        .limit(1)
 
-    if (!target) throw new NotFoundError('User', userId)
-    if (target.state !== 'deleted') {
-      throw new ValidationError(
-        'Only soft-deleted users can be restored',
-        undefined,
-        'user-not-deleted'
-      )
-    }
+      if (!target) throw new NotFoundError('User', userId)
+      if (target.state !== 'deleted') {
+        throw new ValidationError(
+          'Only soft-deleted users can be restored',
+          undefined,
+          'user-not-deleted'
+        )
+      }
 
-    await this.db
-      .update(user)
-      .set({ state: 'active', updatedAt: new Date() })
-      .where(eq(user.id, userId))
+      await tx
+        .update(user)
+        .set({ state: 'active', updatedAt: new Date() })
+        .where(eq(user.id, userId))
+      await writeAudit(tx, actor, { entityType: 'user', action: 'restore', changes: { userId } })
+    })
   }
 
   /**
@@ -79,7 +137,7 @@ export class UserService {
    * cascade: activity, audit log, and who created or purged a version.
    * Records a purge entry in the audit log.
    */
-  async purge(userId: string, performedBy: string) {
+  async purge(userId: string, actor: AuditActor) {
     await this.db.transaction(async (tx) => {
       // All checks inside transaction to prevent TOCTOU races
       const [target] = await tx
@@ -125,13 +183,9 @@ export class UserService {
       await tx.update(activity).set({ userId: null }).where(eq(activity.userId, userId))
       await tx.update(auditLog).set({ userId: null }).where(eq(auditLog.userId, userId))
 
-      // Record the purge in audit log
-      // entityId is uuid; Better Auth user IDs are text, so store in changes instead
-      await tx.insert(auditLog).values({
+      await writeAudit(tx, actor, {
         entityType: 'user',
-        entityId: sql`gen_random_uuid()`,
         action: 'purge',
-        userId: performedBy,
         changes: { purgedUserId: userId, purgedEmail: target.email, purgedName: target.name },
       })
 

@@ -16,6 +16,7 @@ import type {
 import { markPackageDocs } from './search/doc-marks'
 import { orderTerms } from './list-order'
 import { groupMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
+import { writeAudit, type AuditActor } from './audit'
 
 /** Mark a group's datasets for the sync: their search documents carry its name */
 async function markGroupPackages(tx: Transaction, groupId: string): Promise<void> {
@@ -266,57 +267,85 @@ export class GroupService {
     return rows
   }
 
-  async addMember(groupId: string, userId: string, role: string = 'member') {
-    // A deleted user would hold the role the moment a sysadmin restored them
-    const [existingUser] = await this.db
-      .select({ id: user.id })
-      .from(user)
-      .where(and(eq(user.id, userId), eq(user.state, 'active')))
-      .limit(1)
+  async addMember(groupId: string, userId: string, role: string, actor: AuditActor) {
+    return this.db.transaction(async (tx) => {
+      // A deleted user would hold the role the moment a sysadmin restored them
+      const [existingUser] = await tx
+        .select({ id: user.id })
+        .from(user)
+        .where(and(eq(user.id, userId), eq(user.state, 'active')))
+        .limit(1)
 
-    if (!existingUser) {
-      throw new NotFoundError('User', userId)
-    }
+      if (!existingUser) {
+        throw new NotFoundError('User', userId)
+      }
 
-    // Check if already a member
-    const [existing] = await this.db
-      .select({ id: userGroupMembership.id })
-      .from(userGroupMembership)
-      .where(and(eq(userGroupMembership.userId, userId), eq(userGroupMembership.groupId, groupId)))
-      .limit(1)
+      // Check if already a member
+      const [existing] = await tx
+        .select({ id: userGroupMembership.id, role: userGroupMembership.role })
+        .from(userGroupMembership)
+        .where(
+          and(eq(userGroupMembership.userId, userId), eq(userGroupMembership.groupId, groupId))
+        )
+        .for('update')
+        .limit(1)
 
-    if (existing) {
-      // Update role if already a member
-      const [updated] = await this.db
-        .update(userGroupMembership)
-        .set({ role })
-        .where(eq(userGroupMembership.id, existing.id))
+      if (existing) {
+        // Update role if already a member
+        const [updated] = await tx
+          .update(userGroupMembership)
+          .set({ role })
+          .where(eq(userGroupMembership.id, existing.id))
+          .returning()
+        if (existing.role !== role) {
+          await writeAudit(tx, actor, {
+            entityType: 'group',
+            entityId: groupId,
+            action: 'member_update',
+            changes: { userId, previousRole: existing.role, role },
+          })
+        }
+        return updated
+      }
+
+      const [created] = await tx
+        .insert(userGroupMembership)
+        .values({
+          userId,
+          groupId,
+          role,
+        })
         .returning()
-      return updated
-    }
-
-    const [created] = await this.db
-      .insert(userGroupMembership)
-      .values({
-        userId,
-        groupId,
-        role,
+      await writeAudit(tx, actor, {
+        entityType: 'group',
+        entityId: groupId,
+        action: 'member_add',
+        changes: { userId, role },
       })
-      .returning()
-
-    return created
+      return created
+    })
   }
 
-  async removeMember(groupId: string, userId: string) {
-    const [deleted] = await this.db
-      .delete(userGroupMembership)
-      .where(and(eq(userGroupMembership.userId, userId), eq(userGroupMembership.groupId, groupId)))
-      .returning()
+  async removeMember(groupId: string, userId: string, actor: AuditActor) {
+    return this.db.transaction(async (tx) => {
+      const [deleted] = await tx
+        .delete(userGroupMembership)
+        .where(
+          and(eq(userGroupMembership.userId, userId), eq(userGroupMembership.groupId, groupId))
+        )
+        .returning()
 
-    if (!deleted) {
-      throw new NotFoundError('Membership', `user=${userId} group=${groupId}`)
-    }
+      if (!deleted) {
+        throw new NotFoundError('Membership', `user=${userId} group=${groupId}`)
+      }
 
-    return { success: true }
+      await writeAudit(tx, actor, {
+        entityType: 'group',
+        entityId: groupId,
+        action: 'member_remove',
+        changes: { userId, role: deleted.role },
+      })
+      return { success: true }
+    })
   }
 }

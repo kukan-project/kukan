@@ -40,7 +40,7 @@ apiTokensRouter.post('/', zValidator('json', createTokenSchema), async (c) => {
     ? new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000)
     : undefined
 
-  const result = await service.create(user.id, {
+  const result = await service.create(user, {
     name: input.name,
     expiresAt,
   })
@@ -73,6 +73,6 @@ apiTokensRouter.delete('/:id', async (c) => {
   const service = new ApiTokenService(db)
   const tokenId = c.req.param('id')
 
-  const result = await service.revoke(tokenId, user.id)
+  const result = await service.revoke(tokenId, user)
   return c.json(result)
 })

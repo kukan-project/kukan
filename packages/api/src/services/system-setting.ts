@@ -16,6 +16,7 @@ import {
   type SummaryLocale,
 } from '@kukan/shared'
 import { SYSTEM_SETTING_CACHE_TTL_MS, VECTOR_SIMILARITY_MAX_NOTCHES } from '../config'
+import { writeAudit, type AuditActor } from './audit'
 
 export const VECTOR_SIMILARITY_NOTCHES_KEY = 'vector-similarity-notches'
 export const SEMANTIC_SEARCH_ENABLED_KEY = 'semantic-search-enabled'
@@ -132,24 +133,34 @@ export class SystemSettingService {
     return parsed.success ? parsed.data : def.default
   }
 
-  /** Validated upsert. Returns the row id (for audit logs) and the previous raw value. */
+  /** Validated upsert, audited with it. Returns the row id and the previous raw value. */
   async setSetting<K extends SettingKey>(
     key: K,
-    value: SettingValue<K>
+    value: SettingValue<K>,
+    actor: AuditActor
   ): Promise<{ id: string; previous: unknown }> {
     const validated = this.def(key).schema.parse(value)
     const previous = await this.read(key)
-    const [row] = await this.db
-      .insert(systemSetting)
-      .values({ key, value: validated })
-      .onConflictDoUpdate({
-        target: systemSetting.key,
-        set: { value: validated, updated: new Date() },
+    const id = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(systemSetting)
+        .values({ key, value: validated })
+        .onConflictDoUpdate({
+          target: systemSetting.key,
+          set: { value: validated, updated: new Date() },
+        })
+        .returning({ id: systemSetting.id })
+      await writeAudit(tx, actor, {
+        entityType: 'system_setting',
+        entityId: row.id,
+        action: 'update',
+        changes: { key, value: validated, previous: previous ?? null },
       })
-      .returning({ id: systemSetting.id })
+      return row.id
+    })
 
     this.cache.set(key, { value: validated })
-    return { id: row.id, previous }
+    return { id, previous }
   }
 
   /** Drop cached reads (tests). */

@@ -8,6 +8,7 @@ import { eq, and } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { apiToken, user } from '@kukan/db'
 import { NotFoundError, isUuid } from '@kukan/shared'
+import { writeAudit, type AuditActor } from './audit'
 
 const TOKEN_PREFIX = 'kukan_'
 const TOKEN_BYTES = 32
@@ -32,19 +33,28 @@ export class ApiTokenService {
    * Create a new API token for a user.
    * Returns the raw token (only shown once) and the token metadata.
    */
-  async create(userId: string, input: CreateApiTokenInput) {
+  async create(actor: AuditActor, input: CreateApiTokenInput) {
     const rawToken = generateToken()
     const tokenHash = hashToken(rawToken)
 
-    const [created] = await this.db
-      .insert(apiToken)
-      .values({
-        userId,
-        name: input.name || null,
-        tokenHash,
-        expiresAt: input.expiresAt || null,
+    const created = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(apiToken)
+        .values({
+          userId: actor.id,
+          name: input.name || null,
+          tokenHash,
+          expiresAt: input.expiresAt || null,
+        })
+        .returning()
+      await writeAudit(tx, actor, {
+        entityType: 'api_token',
+        entityId: row.id,
+        action: 'create',
+        changes: { userId: actor.id, name: row.name, expiresAt: row.expiresAt },
       })
-      .returning()
+      return row
+    })
 
     return {
       id: created.id,
@@ -76,19 +86,25 @@ export class ApiTokenService {
   /**
    * Revoke (delete) an API token.
    */
-  async revoke(tokenId: string, userId: string) {
+  async revoke(tokenId: string, actor: AuditActor) {
     if (!isUuid(tokenId)) throw new NotFoundError('API Token', tokenId)
-    const [existing] = await this.db
-      .select()
-      .from(apiToken)
-      .where(and(eq(apiToken.id, tokenId), eq(apiToken.userId, userId)))
-      .limit(1)
+    await this.db.transaction(async (tx) => {
+      const [revoked] = await tx
+        .delete(apiToken)
+        .where(and(eq(apiToken.id, tokenId), eq(apiToken.userId, actor.id)))
+        .returning({ name: apiToken.name })
 
-    if (!existing) {
-      throw new NotFoundError('API Token', tokenId)
-    }
+      if (!revoked) {
+        throw new NotFoundError('API Token', tokenId)
+      }
 
-    await this.db.delete(apiToken).where(eq(apiToken.id, tokenId))
+      await writeAudit(tx, actor, {
+        entityType: 'api_token',
+        entityId: tokenId,
+        action: 'revoke',
+        changes: { userId: actor.id, name: revoked.name },
+      })
+    })
 
     return { success: true }
   }
