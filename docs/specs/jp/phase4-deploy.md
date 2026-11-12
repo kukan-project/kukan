@@ -486,6 +486,15 @@ K の上限は「(推定 max_connections × 0.7 − 平常時の最大) ÷ 同�
 - サイト DB（`kukan_<site>` + 専用ロール）は SiteStack 内の Lambda Custom
   Resource が冪等に作成する。マイグレーションは従来どおり各サイトのタスクが
   起動時に自 DB へ実行
+- サイトのロールが接続できるのは自分の DB だけ。CR は自 DB に加えて、クラスター
+  既定の `postgres` と `template1` からも PUBLIC の CONNECT を外す（所有者の
+  master は接続できる。master 以外のロールで `postgres` に入るなら明示の GRANT
+  が要る）。CR のプロパティ `Revision` は、ハンドラーの SQL を既存サイトにも
+  当てるための版で、SQL を変えたら上げる（Lambda のコードの変更だけでは CR は
+  再実行されない）。共有カタログの `pg_database` / `pg_roles` は自 DB からも
+  読めるので、他サイトの DB 名・ロール名は見える（ADR-069 の `cluster_monitor`
+  と同じ程度として受け入れる）。全サイトを見る管理用のロールを置くときは、各サイトの
+  DB と、必要なら `postgres` への CONNECT（と読み取りの権限）を、その CR で明示的に付ける
 - 本体コード変更 → 全サイトが順次ローリング。ブランドのみの変更（ADR-042）→
   該当サイトのみ（イメージのコンテンツハッシュ管理による）
 

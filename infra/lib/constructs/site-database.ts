@@ -17,6 +17,9 @@ import * as cr from 'aws-cdk-lib/custom-resources'
 import { Construct } from 'constructs'
 import { POSTGRES_TLS_ENVIRONMENT, type DbAccess } from './database.js'
 
+/** Bump when the handler's SQL changes and existing sites must converge to it. */
+const SITE_DB_HANDLER_REVISION = '2'
+
 export interface SiteDatabaseProps {
   /** Validated site name (config.validateSites) — becomes `kukan_<site>` in PostgreSQL. */
   siteName: string
@@ -110,6 +113,9 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
         DbHost: props.dbHost,
         DbPort: props.dbPort,
         DbName: this.dbName,
+        // A change here is what makes CloudFormation send existing sites an
+        // Update; a new handler bundle alone does not
+        Revision: SITE_DB_HANDLER_REVISION,
       },
     })
   }

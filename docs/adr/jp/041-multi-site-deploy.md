@@ -99,7 +99,7 @@ KukanPipeline（フォーク、1 本）
 
 ### サイト分離の実体
 
-- **PostgreSQL**: 1 サイト = 1 データベース + 専用ロール。他サイト DB への CONNECT を持たない資格情報を Secrets Manager でサイト別に払い出す。サイト DB とロールの作成は Custom Resource（Lambda）が行う（CDK は素では DB 内オブジェクトを作れない）。マイグレーションは各サイトのタスクが起動時に自分の DB へ advisory lock 付きで実行する現行方式のまま
+- **PostgreSQL**: 1 サイト = 1 データベース + 専用ロール。他サイト DB とクラスター既定の DB（`postgres`・`template1`）への CONNECT を持たない資格情報を Secrets Manager でサイト別に払い出す（共有カタログの `pg_database` / `pg_roles` は読めるため、他サイトの DB 名・ロール名は見える）。サイト DB とロールの作成は Custom Resource（Lambda）が行う（CDK は素では DB 内オブジェクトを作れない）。マイグレーションは各サイトのタスクが起動時に自分の DB へ advisory lock 付きで実行する現行方式のまま
 - **OpenSearch**: `OPENSEARCH_INDEX_PREFIX` 環境変数を新設し、`packages/api/src/adapters.ts` から `indexPrefix` に配線する（アプリ側の唯一の変更）。parent-child 統合インデックス（ADR-025）はサイトごとに 1 インデックスになる
 - **Worker**: サイトごとにキュー + Worker サービスを維持する（環境変数の差し替えのみ、コード変更なし）。Worker 共有化（メッセージへのサイト識別子付与 + 接続の動的解決）はサイト数が増えてからの最適化とする
 

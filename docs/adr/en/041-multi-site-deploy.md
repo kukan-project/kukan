@@ -78,7 +78,7 @@ KukanPipeline (fork, one pipeline)
 
 ### How site isolation is realized
 
-- **PostgreSQL**: 1 site = 1 database + a dedicated role. Issue per-site credentials via Secrets Manager that cannot CONNECT to other sites' databases. Site database/role creation is done by a Custom Resource (Lambda) — CDK cannot create in-database objects natively. Migrations keep the current model: each site's task runs them against its own database at startup under an advisory lock
+- **PostgreSQL**: 1 site = 1 database + a dedicated role. Issue per-site credentials via Secrets Manager that cannot CONNECT to other sites' databases or the cluster's default databases (`postgres`, `template1`); the shared catalogs `pg_database` / `pg_roles` stay readable, so other sites' database and role names are visible. Site database/role creation is done by a Custom Resource (Lambda) — CDK cannot create in-database objects natively. Migrations keep the current model: each site's task runs them against its own database at startup under an advisory lock
 - **OpenSearch**: introduce an `OPENSEARCH_INDEX_PREFIX` environment variable and wire it to `indexPrefix` in `packages/api/src/adapters.ts` (the only application-side change). The parent-child unified index (ADR-025) becomes one index per site
 - **Worker**: keep one queue + one worker service per site (environment variable swap only, no code changes). Sharing workers (adding a site identifier to messages + dynamic connection resolution) is an optimization for when the site count grows
 

@@ -502,6 +502,15 @@ Aurora's 5,000 ceiling, so the sites need more than one shared cluster (environm
 - The site DB (`kukan_<site>` plus a dedicated role) is created idempotently by a Lambda custom
   resource inside the SiteStack. Migrations still run against each site's own DB when its tasks
   start
+- A site role can connect only to its own DB. Besides its own DB, the CR takes CONNECT away from
+  PUBLIC on the cluster's default `postgres` and `template1` (the master, their owner, still
+  connects; any other role entering `postgres` needs an explicit GRANT). The CR property
+  `Revision` is the version that applies the handler's SQL to existing sites too; bump it when
+  the SQL changes (a change to the Lambda code alone does not rerun the CR). The shared catalogs
+  `pg_database` / `pg_roles` are readable from the site's own DB, so other sites' database and
+  role names stay visible (accepted to the same degree as ADR-069's `cluster_monitor`). A role
+  meant to see every site gets CONNECT (and read access) on each site's DB, and on `postgres` if
+  it needs it, granted explicitly by the same CR
 - A change to the main code rolls out to every site in sequence. A brand-only change (ADR-042)
   touches only the affected site (thanks to content-hash management of the image)
 

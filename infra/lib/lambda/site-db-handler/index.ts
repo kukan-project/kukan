@@ -18,6 +18,8 @@ interface SiteDbProperties {
   DbPort: string
   /** `kukan_<site>` — database name AND role name (one concept). */
   DbName: string
+  /** Unused by the handler; changing it makes CloudFormation send an Update. */
+  Revision?: string
 }
 
 interface CustomResourceEvent {
@@ -27,6 +29,11 @@ interface CustomResourceEvent {
 }
 
 const secrets = new SecretsManagerClient({})
+
+/** Databases every cluster has that PUBLIC may connect to (template0 refuses connections). */
+const SHARED_DATABASES = ['postgres', 'template1']
+/** Advisory lock key serializing the handlers' writes to the shared databases' ACLs. */
+const SHARED_DATABASES_LOCK = 0x6b756b61
 
 async function getSecret(arn: string): Promise<Record<string, string>> {
   const res = await secrets.send(new GetSecretValueCommand({ SecretId: arn }))
@@ -105,6 +112,32 @@ export async function handler(event: CustomResourceEvent): Promise<{
     // Credential-level isolation: only the site role may connect to its database
     await client.query(`REVOKE CONNECT ON DATABASE ${dbName} FROM PUBLIC`)
     await client.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${roleName}`)
+
+    // PUBLIC may connect to the cluster's default databases too, and a PUBLIC
+    // privilege cannot be withheld from one role. The master keeps CONNECT as
+    // their owner; any other role needs an explicit GRANT
+    // Every site's handler writes these same pg_database rows, and sites deploy
+    // in parallel: two GRANT/REVOKEs on one row fail "tuple concurrently updated"
+    await client.query('SELECT pg_advisory_lock($1)', [SHARED_DATABASES_LOCK])
+    for (const shared of SHARED_DATABASES) {
+      try {
+        await client.query(`REVOKE CONNECT ON DATABASE ${shared} FROM PUBLIC`)
+      } catch (err) {
+        console.warn(`REVOKE CONNECT ON DATABASE ${shared} FROM PUBLIC failed: ${String(err)}`)
+      }
+    }
+    // A non-owner's REVOKE warns or fails and changes nothing. Warn rather than
+    // throw: a failed Update would run this same code again on rollback
+    const open = await client.query<{ datname: string }>(
+      `SELECT datname FROM pg_database WHERE datname = ANY($1) AND has_database_privilege($2, datname, 'CONNECT')`,
+      [SHARED_DATABASES, roleName]
+    )
+    if (open.rowCount) {
+      console.warn(
+        `${roleName} can still connect to ${open.rows.map((r) => r.datname).join(', ')}: ` +
+          `the master does not own them, so REVOKE CONNECT ... FROM PUBLIC had no effect`
+      )
+    }
   } finally {
     await client.end()
   }

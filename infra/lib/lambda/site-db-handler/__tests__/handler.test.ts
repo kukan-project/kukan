@@ -104,7 +104,10 @@ describe('site-db-handler', () => {
   })
 
   it('converges an existing role/database instead of failing (idempotent re-create)', async () => {
-    queryMock.mockResolvedValue({ rowCount: 1 })
+    queryMock.mockImplementation((sql: string) => ({
+      rowCount: sql.includes('has_database_privilege') ? 0 : 1,
+      rows: [],
+    }))
 
     await handler(event('Update'))
 
@@ -117,6 +120,57 @@ describe('site-db-handler', () => {
     // Sites created before the grant existed get it here, so a manual purge works
     expect(sql).toContain('GRANT kukan_citya TO CURRENT_USER WITH SET TRUE')
     expect(sql).toContain('GRANT CONNECT ON DATABASE kukan_citya TO kukan_citya')
+  })
+
+  it('takes CONNECT on the default databases away from PUBLIC, on create and on update', async () => {
+    for (const requestType of ['Create', 'Update'] as const) {
+      queryMock.mockReset()
+      queryMock.mockResolvedValue({ rowCount: requestType === 'Create' ? 0 : 1, rows: [] })
+
+      await handler(event(requestType))
+
+      const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
+      expect(sql).toContain('REVOKE CONNECT ON DATABASE postgres FROM PUBLIC')
+      expect(sql).toContain('REVOKE CONNECT ON DATABASE template1 FROM PUBLIC')
+      // Serialized with the other sites' handlers, which write the same rows
+      const lock = sql.findIndex((q) => q.startsWith('SELECT pg_advisory_lock'))
+      expect(lock).toBeGreaterThanOrEqual(0)
+      expect(lock).toBeLessThan(sql.indexOf('REVOKE CONNECT ON DATABASE postgres FROM PUBLIC'))
+    }
+  })
+
+  it('warns, without failing, when a REVOKE on a default database errors', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    queryMock.mockImplementation((sql: string) => {
+      if (sql.startsWith('REVOKE CONNECT ON DATABASE template1')) {
+        throw new Error('permission denied for database template1')
+      }
+      return { rowCount: 1, rows: [] }
+    })
+
+    await expect(handler(event('Update'))).resolves.toBeDefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('template1 FROM PUBLIC failed'))
+    warn.mockRestore()
+  })
+
+  it('warns, without failing, when the site role can still connect to a default database', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    queryMock.mockImplementation((sql: string) =>
+      sql.includes('has_database_privilege')
+        ? { rowCount: 1, rows: [{ datname: 'postgres' }] }
+        : { rowCount: 1, rows: [] }
+    )
+
+    await expect(handler(event('Update'))).resolves.toBeDefined()
+
+    const check = queryMock.mock.calls.find((c: unknown[]) =>
+      (c[0] as string).includes('has_database_privilege')
+    )
+    expect(check?.[1]).toEqual([['postgres', 'template1'], 'kukan_citya'])
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('kukan_citya can still connect to postgres')
+    )
+    warn.mockRestore()
   })
 
   it('retains the database on Delete (no SQL at all)', async () => {

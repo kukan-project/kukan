@@ -3761,6 +3761,7 @@ function expandV6(addr) {
         "MasterSecretArn": {
           "Ref": "SsmParameterValuekukandevshareddbmastersecretarnC96584B6F00A464EAD1953AFF4B05118Parameter",
         },
+        "Revision": "2",
         "ServiceToken": {
           "Fn::GetAtt": [
             "SiteDatabaseProviderframeworkonEventE21C9080",
@@ -7234,6 +7235,7 @@ function expandV6(addr) {
         "MasterSecretArn": {
           "Ref": "SsmParameterValuekukandevshareddbmastersecretarnC96584B6F00A464EAD1953AFF4B05118Parameter",
         },
+        "Revision": "2",
         "ServiceToken": {
           "Fn::GetAtt": [
             "SiteDatabaseProviderframeworkonEventE21C9080",
