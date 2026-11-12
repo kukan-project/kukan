@@ -2,7 +2,8 @@
 
 # Phase Versioning-ii: Row-Level Diffs via DuckLake (layer 2) — Implementation Spec
 
-> **ii-a implementation complete (2026-07-27). ii-b implementation complete (2026-08-22). ii-c onwards has not been started.**
+> **ii-a implementation complete (2026-07-27). ii-b implementation complete (2026-08-22). ii-c is specified but not started (2026-11-11, §8).**
+> ii-c's screens sit on ADR-072's Table settings and Version history tabs, so ADR-072 Step 1 comes first.
 >
 > **§1–§5, §7 (except §7.2), §10, §12 and §13 are a record.** After implementation, ADR-046
 > changed the ordering and who does the interpreting (`Fetch → Version → Interpret → Lake → Index`,
@@ -76,14 +77,14 @@ not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" ar
 ## 2. Staging (this phase does not implement everything at once)
 
 Most of the value of row-level diffs comes from just "an added/removed summary without a primary
-key + schema-change detection". Primary key MERGE and the type-demotion UX are extensions stacked
+key + schema-change detection". Primary key MERGE and settled types are extensions stacked
 on top, introduced in the following order.
 
-| Stage                      | Content                                                                                                                             |  Primary key  | Type demotion UX  |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | :-----------: | :---------------: |
-| **ii-a (MVP)** ✅ complete | DuckLake ingest + keyless diffs (added/removed rows, row counts) + schema-change detection + the diff API + **the diff UI (admin)** |       –       |         –         |
-| **ii-b**                   | Primary key specification (resource setting, manual) → tracking **changed rows** via `MERGE`. Column schema history                 |    manual     |   recorded only   |
-| **ii-c**                   | UX presenting type-demotion choices, AI suggestions for key candidates and types (an ADR-040 extension)                             | AI candidates | choices presented |
+| Stage                      | Content                                                                                                                             |      Primary key      |     Type changes      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | :-------------------: | :-------------------: |
+| **ii-a (MVP)** ✅ complete | DuckLake ingest + keyless diffs (added/removed rows, row counts) + schema-change detection + the diff API + **the diff UI (admin)** |           –           |           –           |
+| **ii-b**                   | Primary key specification (resource setting, manual) → tracking **changed rows** via `MERGE`. Column schema history                 |        manual         |     recorded only     |
+| **ii-c**                   | Settled types (the fourth input to version identity), post-ingest review of type changes, rule-based key and type candidates (§8)   | rule-based candidates | reviewed after ingest |
 
 **ii-a goes first as the smallest vertical slice** (confirming on real data that ingest → diff
 works). Later stages are stacked based on demand and the results of the spikes.
@@ -341,13 +342,14 @@ semantics switch at that boundary. (b) Since diff semantics differ per version, 
 side can record how each version was ingested (one resource being keyless for v1–v5 and keyed from
 v6 is perfectly ordinary). (c) The history of key-specification changes itself.
 
-**Settled types do not need to be added to the version side.** Once a settled type becomes the
-an input to version identity (§6.5, the fourth after ii-b's key), changing it stands up a new
-version and that version's
-`resource_version.schema` is frozen as the interpretation result including the settled type. Only
-the primary key needs its own record, because `schema` carries no declaration of a primary key
-(`ResourceColumn.unique` is a computed value for "can this be offered as a candidate", not whether
-a human specified it).
+**Settled types are frozen on the version too (corrected 2026-11-11).** This originally said "settled
+types need not be added to the version side: changing one stands up a new version whose `schema` is
+frozen as the interpretation including the settled type". That does not hold. Since ADR-046 the version
+gate (Version) runs **before** interpretation (Interpret), so what the gate can compare is the person's
+setting itself, not an inferred result. Without the version holding "which settled-type setting it was
+created under", there is nothing to compare the resource's current setting against — the same reason the
+key needs `lake_key_columns`. Add `resource_version.settled_types` (jsonb, null = no setting), frozen when
+the version is created (§8.2).
 
 ### 6.2 Where the setting lives
 
@@ -415,21 +417,32 @@ is one way to say it: `[]` is normalized to the key's absence on write, and read
 **Only humans write `column_settings`.** The pipeline does not (§6.1), so it never contends with the
 worker's `||` merges — the same reason `resource_pipeline.metadata` was ruled out.
 
-### 6.3 Impact on the display paths once settled types are introduced (an ii-c question)
+### 6.3 Impact on the display paths once settled types are introduced (ii-c, settled 2026-11-11)
 
-Column type display today is **entirely inference-based**, and bringing in a settled layer requires
-a "prefer the settled type if there is one" decision on all three paths below:
+Today every column-type display is **inference-based**, and a settled layer affects these three paths:
 
-| Path                                                             | Actual source                                | Origin                                      |
-| ---------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------- |
-| The column list on the resource detail page (`useParquetSchema`) | A range read of the preview Parquet's footer | **Parquet baked with the inference result** |
-| `GET /:id/schema` (also MCP `get_resource_schema`)               | `resource_pipeline.metadata -> 'schema'`     | The inferred schema                         |
-| The column schema in the version history                         | `resource_version.schema`                    | Inference frozen per version                |
+| Path                                                  | What it is                               | Source                             |
+| ----------------------------------------------------- | ---------------------------------------- | ---------------------------------- |
+| Column list on the resource page (`useParquetSchema`) | Range-reads the preview Parquet footer   | **A Parquet baked from inference** |
+| `GET /:id/schema` (also MCP `get_resource_schema`)    | `resource_pipeline.metadata -> 'schema'` | Inferred schema                    |
+| A version's column schema in the history              | `resource_version.schema`                | Inference frozen per version       |
 
-In particular, **the preview Parquet is materialized with inferred types**, so when a settled type
-contradicts the inference we must decide between "re-bake the Parquet (re-Extract)" and "override
-only the display layer with the settled type". This is decided when ii-c starts (it does not arise
-in ii-a/ii-b, which have no settled types).
+**Rebuild rather than overlay at display.** The original left "re-bake the Parquet (re-Extract)" versus
+"overlay the settled type only at display" to be decided when ii-c starts; §6.5 answers it. Changing a
+settled type creates a version, and creating a version re-runs interpretation. Interpretation applies the
+settled types when building the table (§8.3), so the preview Parquet, `resource_pipeline.metadata`'s
+`schema` and the new version's `resource_version.schema` are all rebuilt with them. All three paths read
+the right value as they read today.
+
+Two reasons not to overlay at display. (a) Parquet types, MCP queries and OData types (ADR-055) read the
+materialized types, so changing only the display would make the screen disagree with query results. (b) Old
+versions should stay a record of how they were read under the old setting; showing them overlaid with the
+current setting shows a reading that was never applied (the same argument as `format` in §6.1).
+
+**Telling settled from inferred types is added to `schema`.** Each column gets `settled: true` (a settled
+type was applied), and the Table settings tab and the version schema display use it to mark "settled". The
+inferred type itself is overwritten by the settled one, so for a settled column "what inference said" is
+kept as `inferredType` (used to detect type changes, §8.4).
 
 ### 6.4 Handling the primary key
 
@@ -1115,35 +1128,334 @@ there is no reason to refuse.
 trip grows them linearly). And **ADR-044 has already been released** (v0.11.x), so the contract
 change and the handling of versions whose snapshots have already been rewritten must be decided.
 
-## 8. Step 5 — Type Determination and Presenting "Type Demotion" Choices (ii-c)
+## 8. Step 5 — Settling Types and Reviewing "Type Changes" (ii-c)
 
-The interpretation infers a column type for each version (`integer` / `float` / `boolean` /
-`string` / `date` / `timestamp`; since ADR-046 DuckDB's sniffer does this, and `date` / `timestamp`
-were added there). The inferred type can change between versions (e.g. a column `amount` that was
-all integers in v1 gains `"N/A"` or a thousands separator `"1,234"` in v2 → v2 is `string`). This is
-a **column type demotion** (integer → string) and in DuckLake it lands as a schema change, i.e. the
-"abandon the diff, new version" of §7-3.
+> **Revised 2026-11-11.** The original §8 said "present the type demotion at replacement time and let
+> the administrator choose". Re-fetching a URL resource happens with nobody present, so a choice made
+> before ingest cannot work. It is now **reviewed after ingest** (§8.4). How settled types are applied,
+> freezing them on the version, the effect on layer 2, and a decimal type were also worked out. The
+> previous text is in git history.
 
-- **ii-a/b**: a type change is **only recorded as a schema diff** (the demotion is accepted
-  automatically and a new version is created).
-- **ii-c (the choice-presenting UX)**: on the replacement confirmation, present "the type of column
-  `amount` changes from integer to string" and let the administrator choose:
-  1. **Accept the demotion** (ingest with the column as a string. Default and safe)
-  2. **Treat the offending rows as errors** (keep the type and present the outlier rows as
-     "inconsistencies" in the diff)
+### 8.0 ii-c decisions
 
-  Type **promotion** (string → integer, when every row became an integer) can be detected the same
-  way, but the default is "do not change" so as not to break existing data. The UX is integrated
-  with the replacement flow of Phase iii.
+**This table is the conclusion.** Rows marked "needs a decision" keep their options with a
+recommendation (§8.8).
 
-The lattice of type promotion/demotion (which type can move to which) and the function that decides
-it deterministically live in `packages/shared` and are used by both Extract's inference and the
-diff.
+| Decision                                                                                                                                                                                                      | Where |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| The settled-type setting lives in `resource.column_settings.types` (column name → type). Only people write it                                                                                                 | §8.2  |
+| **The settled-type setting is the fourth input to version identity**; add it to `sameVersionIdentity`                                                                                                         | §8.2  |
+| A version freezes the settled-type setting it was created under in **`resource_version.settled_types`** (corrects §6.1)                                                                                       | §8.2  |
+| A rollback copies the destination's `settled_types` and puts `column_settings.types` back in the same transaction (as §6.4 does for the key)                                                                  | §8.2  |
+| **`docs/pipeline.md` §7 (version gate, rebuild, freezing, rollback) is updated in the same change as the implementation.** pipeline.md describes behavior that runs, so it is not rewritten ahead of the code | §8.2  |
+| A settled column is **read as text, then `TRY_CAST`**. Values that do not convert become NULL and are counted per column (rows are not dropped)                                                               | §8.3  |
+| The count of values that did not convert stays on the schema column as **`castFailures`**; non-zero shows "needs review" on the Version history tab                                                           | §8.3  |
+| A settled column the file lacks is left out of the reading and named in `missingSettled` for review. Numeric types take commas out only of comma-grouped values                                               | §8.3  |
+| A settled column carries `settled: true` and what inference said (`inferredType`) in `schema`                                                                                                                 | §6.3  |
+| The preview Parquet, `GET /schema` and the version's schema take the settled type **by being rebuilt**, not by a display overlay                                                                              | §6.3  |
+| Type changes are reviewed **after ingest**. Ingest proceeds as inferred and the Version history tab shows "needs review"                                                                                      | §8.4  |
+| Two choices: **accept as is** (no version) / **settle on the previous type** (a version is created)                                                                                                           | §8.4  |
+| The choices that create a version are offered **only on the current version**: sent with the reviewed version's number, refused (409) if the current version differs                                          | §8.4  |
+| Where the acceptance is recorded — **needs a decision** (recommended: on the version row, written once)                                                                                                       | §8.8  |
+| Whether to add a `decimal` settled type — **needs a decision** (recommended: add it; inference never produces it, the interpretation picks the digits from the data)                                          | §8.8  |
+| Key and type candidates come from **rules** (no LLM). Candidates only fill the draft                                                                                                                          | §8.6  |
+| The screens are ADR-072's Table settings tab (setting types) and Version history tab (reviewing changes). ADR-072 Step 1 comes first                                                                          | §8.7  |
 
-**The set of types is itself a ii-c question.** Inference has no decimal type (ADR-029), so a column
-of exact decimals — money, rates — is inferred as `float`. A primary key refuses floating-point
-(§6.4), so such a column cannot identify a row today. Whether to add a settled type corresponding to
-`Edm.Decimal` is answered here.
+### 8.1 The set of types
+
+Inference produces `integer` / `float` / `boolean` / `string` / `date` / `timestamp`
+(`RESOURCE_COLUMN_TYPES`; since ADR-046 DuckDB's sniffer infers them). The types that can be settled are
+these six plus `decimal`, seven in all (`decimal` depends on the decision in §8.8; without it, six).
+
+**Inference and settling have different type sets.** `decimal` appears only as a settled type;
+inference never produces it. That inference has no decimal is a property since ADR-029, and changing it
+would change how existing versions read. A column becomes decimal only when a person decides to read it
+that way.
+
+**No type lattice.** The original plan put "a lattice of promotions/demotions and a deterministic
+function judging it in `packages/shared`". With review after ingest (§8.4), there is no need to judge
+which way a type moved. All that is needed is "is the type different from the previous version", which
+equality answers. A demotion (integer → string) and a promotion (string → integer) are the same "type
+change", with the same choices.
+
+### 8.2 Where settled types live, and version identity
+
+```
+resource.column_settings   jsonb
+  { "primaryKey": [...], "types": { "rate": "decimal", "ward_code": "string" } }
+
+resource_version.settled_types   jsonb NULL      ← frozen when the version is created; null = no setting
+  { "rate": "decimal", "ward_code": "string" }
+```
+
+- **`types` is never written empty.** "No setting" and "an empty setting" have one spelling (as with
+  `primaryKey` in §6.2). Setting a column back to "follow inference" removes its key; when none remain,
+  `types` itself goes
+- **Validated when set**: the column exists in the current version's schema, and the type is in §8.1's set.
+  `date` and `timestamp` are also accepted with a format attached (`"date:%d/%m/%Y"`, §8.3), where the
+  format is one of §8.3's candidate formats. Readers of the type split it at `:` into type and format
+- **Add `settledTypes` to `sameVersionIdentity`.** Compared as the same keys with equal values; order is
+  ignored (unlike the key, settled types have no meaningful order). The version gate and a revert's
+  settled check go through the same function, so neither is left on the old comparison (§6.5)
+- **A rollback's settled check also compares the date columns' actual formats and the decimal columns'
+  digits.** A date column settled
+  without a format has its format decided per version from the values, a tie going to the previous
+  version's (§8.3). The same bytes can therefore give different dates if a version with another format
+  came in between. A rollback's check compares, besides the settled types, each such column's
+  `dateFormat` on the schema ("undecided" for a version that could not decide). For a column settled as
+  `decimal` it also compares `decimalPrecision` and `decimalScale`: a version with no readable value
+  inherits the previous version's digits, so the same bytes and settled type can be `DECIMAL(10, 2)` in an
+  all-`N/A` old version and `DECIMAL(12, 3)` now. If they differ, it issues a version read with the
+  destination's format and digits. The version gate run at every ingest does not add this comparison:
+  formats and digits are outcomes of interpretation, not known before ingest
+- **The Version step freezes it**, at the same place and time it writes the key (`lake_key_columns`)
+- **A rollback copies the destination's `settled_types`.** As with the key in §6.4, the version it issues
+  freezes the destination version's `settled_types`, and `resource.column_settings.types` goes back to the
+  destination's value in the same transaction. Freezing the current setting would issue a version that
+  reads the destination's bytes under today's settled types, at odds with the resource's setting too.
+  **The date format is the destination's too.** A column settled without a format has its format
+  decided from the values, with a tie going to the previous version's (§8.3). Redone for a rollback,
+  "the previous version" would be the current live one, not the destination, and if the format has
+  changed since, the same bytes would come out with month and day swapped. A rollback does not try the
+  candidates again; it reads with the `dateFormat` on the destination version's schema. **The same
+  goes for a decimal's digits**: a column with no readable value takes the previous version's (§8.3), so
+  a rollback does not decide them again but reads with the destination's `decimalPrecision` and
+  `decimalScale`. **When the destination has no format or digits** (a version whose
+  interpretation did not succeed; having no `schema` is a normal state), they are decided from the
+  values. The "previous version" used for a tie or for no readable value is then the destination's own
+  predecessor, and failing that, §8.3's handling applies (a date stays text for review, a decimal is
+  `DECIMAL(18, 3)`)
+- **The key rules for a settled column do not change.** The key refuses floating point (§6.4). A settled
+  `float` is refused, a settled `decimal` accepted — so an inferred `float` column settled as `decimal`
+  can be a key
+
+### 8.3 Applying settled types (interpretation)
+
+**A settled column is read as text, then `TRY_CAST`.** Reading it directly as that type (passing `BIGINT`
+etc. in `read_csv`'s `types`) is not adopted. Under `ignore_errors`, `read_csv` refuses a **whole row**
+holding a value that does not fit the type, and if that row is not a sign-off note, today's interpretation
+refuses the entire file (`rejectedLines`' `notAllNotes`). Settling one column would make one stray value
+keep the whole table out.
+
+Steps:
+
+1. Of the settled columns, read **only those present in this version's file** as `VARCHAR` through
+   `read_csv`'s `types` (today's `asText` mechanism). A column name in `types` that the file lacks stops
+   DuckDB with a binder error before the table exists, and the version reaches neither the preview nor
+   layer 2. A URL resource's fetched file can lose or rename a column. A settled column the file lacked
+   is named in the schema's `missingSettled` and needs review under §8.4
+2. After the table is read, rebuild only the settled columns as `TRY_CAST(column AS type)`. Values that
+   do not convert become NULL. For every type but `string`, surrounding whitespace is trimmed first
+   (`trim`): `read_csv` skips it when reading a number or a date, so without trimming, `" 123 "`, read
+   fine under inference, would fail under the settled type. `string` is not trimmed: the `VARCHAR` read
+   keeps spaces inside quotes (`"  A  "`), and trimming would change the value without a word. **`date` and `timestamp` convert with a format decided from the column's
+   values.** Read as `VARCHAR`, `read_csv`'s format inference is not used, and `TRY_CAST` turns a value
+   like `31/12/2026` into NULL. The whole-file inference (`sniff_csv`'s `DateFormat`) cannot be relied on
+   either: one stray value makes the column infer as `VARCHAR`, and no format comes back (checked with
+   `31/12/2026`, `N/A`, `30/11/2026`). So for settled columns only, candidate formats (ISO, `%d/%m/%Y`,
+   `%m/%d/%Y`, `%Y/%m/%d`, `%d.%m.%Y` and the others `read_csv`'s inference tries) are applied in turn
+   with `try_strptime`, and the one that reads the most non-empty values is used. A tie goes to the
+   previous version's format, and the chosen format stays on the schema column as `dateFormat`. Ingest is
+   published before review, so the wrong format would publish correct dates empty. **When tied formats
+   give different dates and there is no previous format, the settled type is not applied in that
+   version.** A column of only `01/02/2026` and `03/04/2026` reads the same count under `%d/%m/%Y` and
+   `%m/%d/%Y`, and either choice could publish swapped months and days with `castFailures` at 0. That
+   version reads the column as text, and §8.4 flags "the date format cannot be decided" for review. It is
+   not left to inference, because `read_csv`'s inference settles the same tie silently (`%d/%m/%Y` for
+   `01/02/2026` and `03/04/2026`).
+   A person picks the format on the Table settings tab, and the format is held with the settled type
+   (`"date:%d/%m/%Y"`), so version identity and freezing treat it as part of the settled type. For the numeric types (`integer`, `float`, `decimal`), the commas are taken
+   out before converting only when the whole value is grouped in threes with commas
+   (`^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$`). `TRY_CAST` of `"1,234"` as it is gives NULL, and ingest is
+   published before review, so a correct amount would be published empty. Other ways of writing
+   (`"1.234,5"` and so on) are converted unchanged and counted as values that did not convert.
+   **For `integer`, the value's form is checked first.** Only a value that is an integer in form after
+   the whitespace and commas are taken out (`^[+-]?\d+$`) is converted; anything else becomes NULL without converting.
+   DuckDB's `TRY_CAST('1.5' AS BIGINT)` does not fail but rounds to `2`, so without the check, settling a
+   column with fractions as `integer` would publish rounded values with `castFailures` = 0
+3. Per column, count values that were non-empty but became NULL after conversion, and put the count in
+   the schema column's `castFailures`. Keep the first few (line number and original text) as
+   `castFailureSamples` (up to 10), each original text cut to 100 characters. A free-text value of
+   several megabytes kept whole would swell the version's `schema` and every response that returns it
+4. Recount `nullCount`, `distinctCount`, `unique` and `stats` on the converted column
+
+**JSON tables** (ADR-063 decision 10) read a settled column as the `JSON` type through `read_json`'s
+`columns`, turn it into text with `column ->> '$'`, and then apply step 2's `TRY_CAST`. The `JSON` type
+keeps a value as it was written, so a number keeps its digits. Left to inference, `read_json` reads a
+number with many digits as `DOUBLE`, rounding it before `TRY_CAST` (and making a value too large NULL),
+which defeats `decimal`'s purpose of exact values. `columns` has to name every column, so the others
+are listed with their inferred types (the names and types come from a first, inference-only read).
+XLSX goes through CSV (ADR-057), so it follows the CSV steps.
+
+**Step 1 also matters when `string` is the settled type.** Settling an inferred `integer` column as
+`string` keeps leading zeros (`"007"`). This is the typical case settled types exist to fix (ADR-057
+decision 4's note; an XLSX cell's `00123` is the same).
+
+**`decimal` digits** (if added by §8.8): the interpretation takes the largest number of fractional digits
+in the column's values as `s` and the largest number of integer digits as `p - s`, giving `DECIMAL(p, s)`
+(`p` up to 38). Leading zeros of the integer part are not counted (`007` is one digit, and `0.5` has
+no integer digits): DuckDB spends no precision on them either, so a zero-padded value is not turned into a
+failure. `p` is still at least 1, so a column holding only `0` does not ask for `DECIMAL(0, 0)`, a type
+that cannot exist. **A value whose integer and fractional digits together exceed 38 is left out of
+deciding the digits, and counts in `castFailures` as a value that did not convert.** Taken in, it
+would ask for a type that cannot exist, such as `DECIMAL(38, 39)`, and DuckDB stops with a type error
+before `TRY_CAST` runs, failing the whole interpretation. Each value's digits are counted before
+converting, and a value that does not fit the decided `p` and `s` becomes NULL without converting
+(`TRY_CAST` would round a long fraction without a word). **When each value fits but the largest
+integer part and the largest fraction together exceed 38** (a 38-digit integer and `0.1`, say), the
+integer part wins and `s` shrinks to `38 - (largest integer digits)`. A value with a longer fraction counts
+as a value that did not convert instead of being rounded: cutting the integer part would leave the large
+values unreadable, while a fraction too long is caught as a failure. The digits stay on the schema as both `p` and `s` (`decimalPrecision`,
+`decimalScale`), and §8.4 compares both with the previous version: with the same fractional width, a
+longer integer part still changes `p` and rebuilds layer 2. If the digits change between versions,
+layer 2's column type changes (§8.5), so a change of digits is also treated as a "type change". When
+no value can be read (all empty or `N/A`), the digits cannot be decided, so the previous version's are
+used; failing that, `DECIMAL(18, 3)` (DuckDB's default). Either way ingest goes on, and non-empty values
+count in `castFailures`.
+
+### 8.4 Reviewing type changes (after ingest)
+
+**Ingest is not stopped.** A version whose types changed still becomes a version as inferred, goes into
+layer 2 and is published. Stopping would freeze a URL resource's updates until someone looks. A column
+without a settled type changing type is, as in ii-a/b, an interpretation result, not a broken state.
+
+**Detection happens after the version is created.** When the interpretation finishes, the version's
+`schema` is compared with that of the previous `active` version in layer 1. These two count as "needs
+review":
+
+| Kind                        | Condition                                                                                                                                                                                                                                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Type change                 | A column without a settled type whose type (and digits for `decimal`) differs from the previous version. A column settled as `decimal` whose digits differ counts too (the digits come from the values even when settled, and a change rebuilds layer 2, §8.5). Added or removed columns do not count |
+| Values that did not convert | A column with a settled type whose `castFailures` is not 0                                                                                                                                                                                                                                            |
+| Settled column missing      | A column with a settled type is not in this version's file (`missingSettled`: the column went away or was renamed)                                                                                                                                                                                    |
+| Date format undecided       | A column settled as `date` or `timestamp` whose tied formats give different dates, with no previous format (§8.3). Read as text until a person picks the format                                                                                                                                       |
+
+Added or removed columns do not count because that is not a type problem; ii-a already records it as a
+schema diff.
+
+**Choices** (type change):
+
+1. **Accept as is** (default): keep following inference rather than settling on the new type. No version
+   is created. The acceptance is recorded and the review cleared (where it is recorded: §8.8)
+2. **Settle on the previous type**: write the column's previous type into the settled-type setting. Version
+   identity changes, so one version is created and the same bytes are read again under the previous type.
+   Values that do not fit are counted in `castFailures` and shown on the Version history tab as "values that did
+   not convert" (that version starts out needing review; look at the values and accept)
+
+**When only the digits of a column settled as `decimal` change**, only "accept as is" is offered. The
+settled type is `decimal` either way, so writing it back changes nothing (version identity is the same,
+so no version is made either), and the digits are decided from the values again. Pinning the previous
+digits would only turn the longer values into failures.
+
+For **values that did not convert**, the choices are "accept as is" (record it and clear the review) and
+"remove the settled type" (back to inference; a version is created). A **missing settled column** has the
+same two, where "remove the settled type" takes the column out of the setting. A renamed column is
+settled again under its new name (on the Table settings tab).
+
+**The choices that create a version are offered only on the current version.** Changing the settled
+types queues a run that reads the current canonical object again (`rebuildOnly`, `docs/pipeline.md` §7).
+If a later fetch has made the reviewed version no longer the current one, a type chosen from the old
+version's values would land on newer content, and "the same bytes are read again" would not hold. So the
+choices that create a version (settle on the previous type, remove the settled type) are sent with the
+reviewed version's number, and the server compares it with the current version under the row lock
+before writing the setting. If they differ it refuses without writing (409), and the screen points to the
+newer version's review. On an older version only "accept as is" is offered.
+
+**That run reads the reviewed version's bytes, and makes a version only while that version is still
+the current one.** A check at write time is not enough: a fetch already queued can run first and put
+the settled type on newer content. Today a re-enqueue rides along with a run that is queued or
+processing, and the setting is read when the run reaches Version (`docs/pipeline.md` §7), so nothing
+guarantees a `rebuildOnly` run reads the reviewed version. Therefore:
+
+- a choice that creates a version is queued as a dedicated run, not ridden along, carrying the reviewed
+  version's number
+- that run does not fetch; it reads the reviewed version's object kept in layer 1. **Before reading, it
+  checks under the claim that the current version is still that number and not being purged.** Purge's
+  claim does not take the run claim, so without the check the object may already be gone, and the read
+  fails before the branch below is reached
+- Version checks again under the claim that the current version is still that number before making
+  one. If either check fails (including a purge under way or a missing object), it ends without a
+  version, **and once it has released its claim, queues an ordinary rebuild (`rebuildOnly`) of the
+  current version.** Queued while it is still running, the `complete` the run writes at its end would
+  overwrite the `queued`, and the rebuild could not claim the resource. That version may have been read under the old settled types, frozen before the setting was
+  written (a fetch already running passed Version first). Waiting for the next fetch would leave the
+  setting and the published reading apart for good on a resource that is not fetched again. The rebuild
+  reads the current setting at Version, so if it differs it makes a version under the new settled type,
+  and values that do not fit surface as `castFailures` for review
+
+**The default for a promotion (string → integer etc.) can also be "accept".** The original said "the
+default is not to change, so existing data is not broken". With review after ingest, ingest has already
+gone as inferred, so making "do not change" the default would itself need a re-read. Accepting needs
+nothing.
+
+### 8.5 Effect on layer 2
+
+Layer 2's ingest replaces the table when its columns (names and types) differ from the previous snapshot
+(`loadContents`' "columns moved" branch, §7.2). A diff across a replacement cannot use the first,
+key-matched tier and degrades.
+
+- **Adding a settled type causes one replacement, at that version** (the type moves from inferred to
+  settled). From then on the type is fixed, so inference wobbling (one version gets an `"N/A"` and reads as
+  `string`) no longer causes replacements. Settled types also make diffs more stable
+- **Changing `decimal` digits causes a replacement** (`DECIMAL(10,2)` and `DECIMAL(12,3)` are different
+  types). That is why §8.3 reports a change of digits as a type change
+- Layer 2's ingest itself needs no change. A table with settled types applied goes in by the same path
+
+### 8.6 Key and type candidates (rules)
+
+**Candidates come from rules; no LLM.** The values the interpretation already produces suffice.
+
+| Candidate     | Rule                                                                                                                                                                                                                                                                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Key           | A column whose `unique` is true (all values distinct, none empty). Floating-point columns excluded. No candidate if one column is not enough                                                                                                                                                                                           |
+| `string`      | Inferred `integer` where the original values had leading zeros (`"007"`). Reading as integers drops the zeros, so the interpretation recounts only the integer-inferred columns as text and records `leadingZeros` on the schema column. Or a column whose ADR-063 role is "identifier" (settled as text, so inference stops wobbling) |
+| `decimal`     | A column whose ADR-063 role is "numbers written as text" whose values are §8.3's comma-grouped form or plain decimals, and read once ungrouped                                                                                                                                                                                         |
+| `integer` etc | A column that changed type: its previous version's type (the same as §8.4's "settle on the previous type")                                                                                                                                                                                                                             |
+
+- Candidates only **fill the draft** on ADR-072's Table settings tab; a person presses apply (ADR-040's
+  suggest-only stance)
+- Composite key candidates (sets of two or more columns that are unique together) are not offered in
+  ii-c. The number of sets grows with the square of the column count and weighs on interpretation time.
+  Add them separately if demand appears
+- LLM candidates (guessing from column names and the meaning of values) are outside ii-c. Consider them
+  as an ADR-040 extension once cases rules cannot handle accumulate
+
+### 8.7 Screens (ADR-072)
+
+- **Settled types are set on the Table settings tab** (ADR-072 decision 5). A settled type changes how the bytes
+  are read, so applying it creates one version. The Table settings tab's table has "inferred type" and "settled
+  type" columns, and a settled column is marked
+- **Type changes are reviewed on the Version history tab** (ADR-072 decision 4). A version needing review shows
+  which columns changed and how, samples of values that did not convert, and §8.4's choices. The list's
+  dot is "needs review" (ADR-072 decision 3)
+- **ADR-072 Step 1 comes first.** Nothing is put on today's row-expansion screen
+
+### 8.8 Needs a decision
+
+**1. Whether to add a `decimal` settled type**
+
+| Option                       | Contents                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **A. Add it (recommended)**  | Add `decimal` as a settled type only. The interpretation picks the digits from the data (§8.3). Can be a key   |
+| B. Add it; people set digits | The Table settings tab asks for `DECIMAL(p, s)`. Digit wobble causes no replacement, at the cost of more input |
+| C. Do not add it             | Amounts and rates stay `float` and cannot be keys                                                              |
+
+Why A: only decimal handles amounts and rates exactly, and OData has `Edm.Decimal` (ADR-055). Taking the
+digits from the data leaves people with just "read as decimal". Replacements from digit wobble happen
+only when the digits of the same column change between versions, which is rare.
+
+**2. Where "accepted" type changes are recorded**
+
+| Option                                  | Contents                                                                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. On the version row (recommended)** | `resource_version.type_review` (jsonb, written once) keeps who reviewed, when, and the choice per column. No version                                    |
+| B. Accepting = settling on the new type | Write the new type into the settled-type setting. No new place needed, but the setting changes, so each acceptance creates a version and they pile up   |
+| C. Do not record                        | Recompute "needs review" each time as "differs from the previous version"; it vanishes when the next version arrives. Whether anyone looked is not kept |
+
+Why A: accepting does not change how the bytes are read, so there is no reason to create a version (B
+needlessly invokes §6.5's "settling creates a version"). With C, on a resource whose versions keep
+arriving, the chance to review slips away. The version row already holds write-once records
+(`lake_ingest_reason`, §6.6), so this can be treated the same way.
 
 ## 9. Step 6 — Propagating a Purge to Layer 2
 
@@ -2846,7 +3158,9 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
 3. **Multi-site (ADR-041)**: split the catalog per site, or a single catalog with a table-name prefix.
    Accounting for it in the connection budget
 4. **AI suggestions for keys/types (ii-c)**: an ADR-040 extension. Deterministically compute column
-   profiles (uniqueness rate, null rate, value patterns) → present candidates
+   profiles (uniqueness rate, null rate, value patterns) → present candidates. **2026-11-11: start with
+   rule-based candidates (§8.6).** The inputs are `unique`, `nullCount` and `distinctCount`, which the
+   interpretation already produces, and ADR-063's column profile; no LLM
 5. **Unapproved patch/proposal flow**: a "propose a replacement → commit on approval" workflow
    (future)
 6. **What a tombstone shows**

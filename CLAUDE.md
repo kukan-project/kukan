@@ -260,10 +260,11 @@ pnpm format        # Prettier フォーマット
 バージョン番号を書くのは「どこで入ったか」だけにする —
 「最新リリースは」はリリースごとに古くなるので書かない。
 
-**次: Phase Versioning-ii-c — 型の確定と降格の選択肢提示**
-（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md` §8・§6.3・§6.5）。
-着手前に §6.5 を読むこと — 確定型は版のゲートの 4 つ目の入力になる。主キー/型の AI 提案
-（ADR-040 拡張）も ii-c の枠（同 §14.1 項目 4）。
+**次: Phase Versioning-ii-c — 型の確定と、型の変化の取り込み後の確認**
+（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md` §8・§6.3・§6.5。結論は §8.0 の表）。
+着手前に §6.5 を読むこと — 確定型は版のゲートの 4 つ目の入力になる。主キー/型の候補（規則、
+ADR-040 拡張）も ii-c の枠（同 §8.6）。画面は ADR-072 の列のタブと版のタブに載るので、
+ADR-072 の Step 1 が先に要る。
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/jp/phase2-frontend.md`）
