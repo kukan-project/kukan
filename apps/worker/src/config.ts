@@ -316,6 +316,22 @@ export const XLSX_MAX_PART_BYTES = 512 * 1024 * 1024
 export const XLSX_MAX_ENTRIES = 10_000
 
 /**
+ * Shared strings an XLSX may have to be read: a cell names one by its index,
+ * so all are held while the sheets are read, at four bytes each over their
+ * text. A short one is a few bytes of the compressed part: 8 million came
+ * from a 1 MB file, and took 10 seconds to read.
+ */
+export const XLSX_MAX_SHARED_STRINGS = 8 * 1024 * 1024
+
+/**
+ * Uncompressed bytes an XLSX may come to for officeparser to read it, where
+ * our own reader refused it. officeparser holds each cell as a node of over a
+ * kilobyte: 4 MB of cells (224,000) took 380 MB, and under its own limits a
+ * 1 MB file ran out of a 1.4 GB heap.
+ */
+export const XLSX_FALLBACK_MAX_BYTES = 4 * 1024 * 1024
+
+/**
  * UTF-8 bytes of text a document may come to. A cell or a slide can name the
  * same text over and over — a shared string, a slide — so a small file can
  * make text thousands of times its size for the index to take. The largest

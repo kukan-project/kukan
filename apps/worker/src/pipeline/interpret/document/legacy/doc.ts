@@ -149,10 +149,12 @@ function readable(text: string): string {
     chunks.push(out.join(''))
     out.length = 0
   }
-  // Each open field: true once past its separator, into the result shown. A
+  // Each open field: 1 once past its separator, into the result shown. A
   // character is shown when none is still in its instructions, which is
-  // counted rather than looked for: fields nest as deep as a file makes them
-  const fields: boolean[] = []
+  // counted rather than looked for: fields nest as deep as a file makes them.
+  // A byte each, not an array's entry: there can be a field a character
+  const fields = new Uint8Array(text.length)
+  let depth = 0
   let instructions = 0
   let run = 0
   for (let i = 0; i < text.length; i++) {
@@ -161,15 +163,15 @@ function readable(text: string): string {
     if (instructions === 0 && run < i) push(text.slice(run, i))
     run = i + 1
     if (code === FIELD_BEGIN) {
-      fields.push(false)
+      fields[depth++] = 0
       instructions++
     } else if (code === FIELD_SEPARATOR) {
-      if (fields.length > 0 && !fields[fields.length - 1]) {
-        fields[fields.length - 1] = true
+      if (depth > 0 && !fields[depth - 1]) {
+        fields[depth - 1] = 1
         instructions--
       }
     } else if (code === FIELD_END) {
-      if (fields.length > 0 && !fields.pop()) instructions--
+      if (depth > 0 && !fields[--depth]) instructions--
     } else if (instructions === 0 && SPECIAL[code]) {
       push(SPECIAL[code])
     }

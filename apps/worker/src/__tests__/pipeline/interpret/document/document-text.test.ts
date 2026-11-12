@@ -17,7 +17,7 @@ import JSZip from 'jszip'
 import { DOCUMENT_TEXT_SCHEMA, type DocumentTextBlock } from '@kukan/shared'
 import { artifactBlocks } from '../../../test-helpers/document-text'
 import { documentBlocks, extractDocumentText } from '@/pipeline/interpret/document/document-text'
-import { PDF_RANGE_BYTES, PDF_RANGE_MAX_PAGES } from '@/config'
+import { PDF_RANGE_BYTES, PDF_RANGE_MAX_PAGES, XLSX_FALLBACK_MAX_BYTES } from '@/config'
 import { xlsxBuffer } from '../../../test-helpers/xlsx'
 import {
   biff,
@@ -44,7 +44,8 @@ vi.mock('@/config', async (original) => ({
   ...(await original<typeof import('@/config')>()),
   XLSX_MAX_PART_BYTES: 1024 * 1024,
   XLSX_MAX_ENTRIES: 10,
-  DOCUMENT_TEXT_MAX_BYTES: 4 * 1024 * 1024,
+  XLSX_MAX_SHARED_STRINGS: 5_000,
+  DOCUMENT_TEXT_MAX_BYTES: 512 * 1024,
 }))
 
 vi.mock('officeparser', () => ({ OfficeParser: { parseOffice: vi.fn() } }))
@@ -249,10 +250,69 @@ describe('XLSX', () => {
     expect(await rows(path)).toEqual(['1\t2', '3\t4'])
   })
 
-  it('refuses an archive with more entries than the limit', async () => {
+  it('refuses an archive with more entries than the limit, and reads it no other way', async () => {
     const sheets = Object.fromEntries(Array.from({ length: 12 }, (_, n) => [n + 1, [[n]]]))
     const path = await file('many.xlsx', await xlsxBuffer({ sheets }))
-    await expect(lines(path, 'xlsx')).rejects.toThrow(/\d+ entries, over 10/)
+    await expect(extractDocumentText(path, 'xlsx', join(dir, 'many.zst'))).rejects.toThrow(
+      /\d+ entries, over 10/
+    )
+    expect(parseOffice).not.toHaveBeenCalled()
+  })
+
+  it('finds each shared string past the first thousands, held joined', async () => {
+    const shared = Array.from({ length: 5_000 }, (_, i) => `<si><t>s${i}</t></si>`)
+    const cells = [0, 4_095, 4_096, 4_999, 5_000].map((s) => ({ s }))
+    const path = await file('shared.xlsx', await xlsxBuffer({ shared, sheets: { 1: [cells] } }))
+    expect(await lines(path, 'xlsx')).toEqual(['s0\ts4095\ts4096\ts4999'])
+  })
+
+  it('finds shared strings of any length, a chunk long and longer among short ones', async () => {
+    const texts = ['a', 'b'.repeat(40_000), 'c', 'd'.repeat(70_000), 'e', 'f'.repeat(40_000), 'g']
+    const shared = texts.map((t) => `<si><t>${t}</t></si>`)
+    const cells = texts.map((_, s) => ({ s }))
+    const path = await file('lengths.xlsx', await xlsxBuffer({ shared, sheets: { 1: [cells] } }))
+    expect(await lines(path, 'xlsx')).toEqual([texts.join('\t')])
+  })
+
+  it('joins a string or a cell of many thousands of parts', async () => {
+    const parts = Array.from({ length: 10_000 }, (_, i) => `<t>${i % 10}</t>`).join('')
+    const sheet =
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+      `<row r="1"><c t="s"><v>0</v></c><c t="inlineStr"><is>${parts}</is></c></row>` +
+      '</sheetData></worksheet>'
+    const path = await file(
+      'parts.xlsx',
+      await xlsxBuffer({ shared: [`<si>${parts}</si>`], sheets: {}, raw: { 1: sheet } })
+    )
+    const text = '0123456789'.repeat(1_000)
+    expect(await lines(path, 'xlsx')).toEqual([`${text}\t${text}`])
+  })
+
+  it('refuses a string of parts past the text it may come to before joining them', async () => {
+    const parts = Array.from({ length: 20 }, () => `<t>${'a'.repeat(40_000)}</t>`).join('')
+    const path = await file(
+      'many-parts.xlsx',
+      await xlsxBuffer({ shared: [`<si>${parts}</si>`], sheets: { 1: [[1]] } })
+    )
+    await expect(lines(path, 'xlsx')).rejects.toThrow('Document text is over')
+  })
+
+  it('refuses elements nested deeper than the limit, and reads it no other way', async () => {
+    const deep = `<si><t>a</t>${'<rPh>'.repeat(300)}${'</rPh>'.repeat(300)}</si>`
+    const path = await file('deep.xlsx', await xlsxBuffer({ shared: [deep], sheets: { 1: [[1]] } }))
+    await expect(extractDocumentText(path, 'xlsx', join(dir, 'deep.zst'))).rejects.toThrow(
+      'sharedStrings.xml nests elements over 256 deep'
+    )
+    expect(parseOffice).not.toHaveBeenCalled()
+  })
+
+  it('refuses more shared strings than the limit, and reads it no other way', async () => {
+    const shared = Array.from({ length: 5_001 }, () => '<si/>')
+    const path = await file('strings.xlsx', await xlsxBuffer({ shared, sheets: { 1: [[1]] } }))
+    await expect(extractDocumentText(path, 'xlsx', join(dir, 'strings.zst'))).rejects.toThrow(
+      'over 5000 shared strings'
+    )
+    expect(parseOffice).not.toHaveBeenCalled()
   })
 
   it('joins a rich string, and leaves its phonetic reading out', async () => {
@@ -290,10 +350,13 @@ describe('XLSX', () => {
     expect(out.join('')).not.toContain('�')
   })
 
-  it('refuses a part larger uncompressed than the limit', async () => {
+  it('refuses a part larger uncompressed than the limit, and reads it no other way', async () => {
     const rows = Array.from({ length: 50_000 }, (_, i) => [i])
     const path = await file('d.xlsx', await xlsxBuffer({ sheets: { 1: rows } }))
-    await expect(lines(path, 'xlsx')).rejects.toThrow(/sheet1\.xml is \d+ bytes uncompressed/)
+    await expect(extractDocumentText(path, 'xlsx', join(dir, 'd.zst'))).rejects.toThrow(
+      /sheet1\.xml is \d+ bytes uncompressed/
+    )
+    expect(parseOffice).not.toHaveBeenCalled()
   })
 
   it('reads a sheet part once, however many tabs name it', async () => {
@@ -2157,6 +2220,14 @@ describe('Ichitaro', () => {
     expect(await lines(path, 'jtd')).toEqual([line])
   })
 
+  it('reads more lines than it holds before joining them', async () => {
+    const path = await file(
+      'many-lines.jtd',
+      jtdBuffer({ DocumentText: jtdStream({ blocks: [Array(70_000).fill(['あ', 0x0a]).flat()] }) })
+    )
+    expect(await lines(path, 'jtd')).toEqual([Array(70_000).fill('あ').join('\n')])
+  })
+
   it('reads a run of blank lines as one blank line, wherever it stands', async () => {
     const path = await file(
       'blank-lines.jtd',
@@ -2295,11 +2366,23 @@ describe('the artifact', () => {
 
     await extractDocumentText(path, 'xlsx', artifact)
 
-    expect(parseOffice).toHaveBeenCalledWith(path)
+    // Bounded tighter than officeparser bounds itself, as it holds every cell as a node
+    expect(parseOffice).toHaveBeenCalledWith(path, {
+      decompressionLimits: { maxUncompressedBytes: XLSX_FALLBACK_MAX_BYTES },
+    })
     expect(await artifactBlocks(await readFile(artifact))).toEqual([
       { loc: { sheet: 1, sheetName: '集計' }, text: '1\t2' },
       { loc: { sheet: 2 }, text: '3' },
     ])
+  })
+
+  it('fails with both reasons where officeparser cannot read what the strict reader refused', async () => {
+    parseOffice.mockRejectedValue(new Error('ZIP uncompressed size limit exceeded'))
+    const path = await file('broken.xlsx', Buffer.from('not a zip archive'))
+
+    const failed = await extractDocumentText(path, 'xlsx', join(dir, 'out.zst')).catch((e) => e)
+    expect(failed.message).toMatch(/^.+; read another way: ZIP uncompressed size limit exceeded$/)
+    expect(failed.message.split(';')[0]).toBe((failed.cause as Error).message)
   })
 
   it('fails where another format cannot be read, there being no other way to read it', async () => {

@@ -56,8 +56,10 @@ import {
   PDF_RANGE_BYTES,
   PDF_RANGE_MAX_PAGES,
   PDF_RANGE_MIN_PAGES,
+  XLSX_FALLBACK_MAX_BYTES,
   XLSX_MAX_ENTRIES,
   XLSX_MAX_PART_BYTES,
+  XLSX_MAX_SHARED_STRINGS,
 } from '@/config'
 import { openZipFile } from '../zip'
 import { docText } from './legacy/doc'
@@ -107,6 +109,10 @@ export interface ExtractedText {
   bytes: number
 }
 
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 /**
  * Write the text of the document at `filePath` to `artifactPath` as zstd
  * NDJSON, reading it another way where the first fails (`fallbackBlocks`).
@@ -120,9 +126,15 @@ export async function extractDocumentText(
     return await writeBlocks(documentBlocks(filePath, format), artifactPath)
   } catch (err) {
     const fallback = fallbackBlocks(format)
-    // The fallback would read the same text, only slower, to stop at the same limit
-    if (!fallback || err instanceof TooMuchTextError) throw err
-    return writeBlocks(fallback(filePath), artifactPath)
+    if (!fallback || err instanceof LimitError) throw err
+    try {
+      return await writeBlocks(fallback(filePath), artifactPath)
+    } catch (again) {
+      throw new Error(`${messageOf(err)}; read another way: ${messageOf(again)}`, {
+        // eslint-disable-next-line preserve-caught-error -- the first reason says what is wrong with the file
+        cause: err,
+      })
+    }
   }
 }
 
@@ -172,7 +184,10 @@ async function writeBlocks(
   return { bytes: hasText ? bytes : 0 }
 }
 
-class TooMuchTextError extends Error {
+/** A limit the fallback would stop at too, only later and at more cost in memory. */
+class LimitError extends Error {}
+
+class TooMuchTextError extends LimitError {
   constructor() {
     super(`Document text is over ${DOCUMENT_TEXT_MAX_BYTES} bytes`)
   }
@@ -275,7 +290,11 @@ async function* legacyBlocks(
 function fallbackBlocks(
   format: string
 ): ((filePath: string) => AsyncGenerator<DocumentTextBlock>) | undefined {
-  return format === 'xlsx' ? officeBlocks : undefined
+  return format === 'xlsx' ? (filePath) => officeBlocks(filePath, XLSX_FALLBACK) : undefined
+}
+
+const XLSX_FALLBACK: OfficeParserConfig = {
+  decompressionLimits: { maxUncompressedBytes: XLSX_FALLBACK_MAX_BYTES },
 }
 
 /**
@@ -312,8 +331,11 @@ function taggedHeadingText(node: OfficeContentNode): string {
  * document's own: Word's heading styles, a slide's title placeholder. Each
  * run's pictures follow it.
  */
-async function* officeBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> {
-  const ast = await OfficeParser.parseOffice(filePath)
+async function* officeBlocks(
+  filePath: string,
+  config?: OfficeParserConfig
+): AsyncGenerator<DocumentTextBlock> {
+  const ast = await OfficeParser.parseOffice(filePath, config)
   const top = ast.content ?? []
   if (top.length === 0) {
     yield { loc: {}, text: await render(ast) }
@@ -1288,15 +1310,16 @@ async function* xlsxBlocks(filePath: string): AsyncGenerator<DocumentTextBlock> 
   const zip = await openZip(filePath)
   try {
     if (zip.entryCount > XLSX_MAX_ENTRIES) {
-      throw new Error(`XLSX has ${zip.entryCount} entries, over ${XLSX_MAX_ENTRIES}`)
+      throw new LimitError(`XLSX has ${zip.entryCount} entries, over ${XLSX_MAX_ENTRIES}`)
     }
     const entries = await listEntries(zip)
-    const shared: string[] = []
+    const shared = new SharedStrings()
     const strings = entries.get(SHARED_STRINGS)
     if (strings) {
       for await (const text of readPart(zip, strings, sharedStringParser)) {
-        shared.push(cellText(text))
+        shared.add(cellText(text))
       }
+      shared.end()
     }
     // A part read once however many tabs name it, known by where its bytes are:
     // entries of other names can point at them too
@@ -1465,26 +1488,128 @@ function rowText(cells: string[], budget: { bytes: number }): string {
   return cells.join('\t')
 }
 
+/** Shared strings joined into one string at a time, and the characters they may come to. */
+const SHARED_CHUNK_STRINGS = 4096
+const SHARED_CHUNK_CHARS = 64 * 1024
+
+/**
+ * The shared strings, joined a few thousand at a time and found by their
+ * offsets. Held one by one, each costs tens of bytes over its text, and one
+ * the parser sliced from the part keeps that whole chunk of it alive.
+ */
+class SharedStrings {
+  private readonly joined: string[] = []
+  private readonly offsets: Uint32Array[] = []
+  /** The index of each chunk's first string. */
+  private readonly starts: number[] = []
+  private held: string[] = []
+  private heldChars = 0
+  private count = 0
+  private bytes = 0
+
+  add(text: string): void {
+    // One longer than a chunk is a chunk of its own: joined with others, it
+    // would be held twice while it was copied, and joined alone it is not copied
+    if (text.length > SHARED_CHUNK_CHARS) this.end()
+    if (++this.count > XLSX_MAX_SHARED_STRINGS) {
+      throw new LimitError(`XLSX has over ${XLSX_MAX_SHARED_STRINGS} shared strings`)
+    }
+    // A writer keeps the strings its cells show: more than the text may come to is more text
+    this.bytes += Buffer.byteLength(text, 'utf-8')
+    if (this.bytes > DOCUMENT_TEXT_MAX_BYTES) throw new TooMuchTextError()
+    this.heldChars += text.length
+    const held = this.held.push(text)
+    if (held === SHARED_CHUNK_STRINGS || this.heldChars >= SHARED_CHUNK_CHARS) this.end()
+  }
+
+  /** Join the strings still held; the reader calls it after the last one too. */
+  end(): void {
+    if (this.held.length === 0) return
+    const offsets = new Uint32Array(this.held.length + 1)
+    for (const [i, text] of this.held.entries()) offsets[i + 1] = offsets[i]! + text.length
+    this.joined.push(this.held.join(''))
+    this.offsets.push(offsets)
+    this.starts.push(this.count - this.held.length)
+    this.held = []
+    this.heldChars = 0
+  }
+
+  /** The string at `index`, a cell's value, or none where an array would have none. */
+  get(index: number): string | undefined {
+    if (!Number.isInteger(index) || index < 0 || index >= this.count) return undefined
+    // Chunks end at a count or at a size, so the chunk is found by where each starts
+    let low = 0
+    let high = this.starts.length - 1
+    while (low < high) {
+      const mid = (low + high + 1) >> 1
+      if (this.starts[mid]! <= index) low = mid
+      else high = mid - 1
+    }
+    const offsets = this.offsets[low]!
+    const at = index - this.starts[low]!
+    return this.joined[low]!.slice(offsets[at], offsets[at + 1])
+  }
+}
+
+/** Text events held before they are joined. */
+const TEXT_CHUNK_PARTS = 4096
+
+/**
+ * A string or a cell's text from the parser's text events, joined a chunk at
+ * a time: added one at a time, millions of `<t>` in one make a rope of a node
+ * each, from a part of a few hundred kilobytes compressed.
+ */
+class TextParts {
+  private chunks: string[] = []
+  private parts: string[] = []
+  private length = 0
+
+  add(text: string): void {
+    // UTF-16 units are no more than UTF-8 bytes
+    this.length += text.length
+    if (this.length > DOCUMENT_TEXT_MAX_BYTES) throw new TooMuchTextError()
+    if (this.parts.push(text) < TEXT_CHUNK_PARTS) return
+    this.chunks.push(this.parts.join(''))
+    this.parts = []
+  }
+
+  /** The text, taken once the element ends. */
+  text(): string {
+    // A value is mostly one text event: taken as it is, it leaves nothing to clear
+    if (this.chunks.length === 0 && this.parts.length <= 1) return this.parts.pop() ?? ''
+    return this.chunks.concat(this.parts).join('')
+  }
+
+  clear(): void {
+    if (this.chunks.length > 0) this.chunks = []
+    if (this.parts.length > 0) this.parts = []
+    this.length = 0
+  }
+}
+
 /** Each `<si>`'s text; a phonetic reading (`<rPh>`) is not part of it. */
 function sharedStringParser(emit: (text: string) => void): PartParser {
-  let current: string | undefined
+  const current = new TextParts()
+  let inString = false
   let inText = false
   let phonetic = 0
   return {
     open(tag: SaxesTagPlain) {
-      if (tag.name === 'si') current = ''
-      else if (tag.name === 'rPh') phonetic++
+      if (tag.name === 'si') {
+        current.clear()
+        inString = true
+      } else if (tag.name === 'rPh') phonetic++
       else if (tag.name === 't') inText = true
     },
     close(tag: SaxesTagPlain) {
-      if (tag.name === 'si' && current !== undefined) {
-        emit(current)
-        current = undefined
+      if (tag.name === 'si' && inString) {
+        emit(current.text())
+        inString = false
       } else if (tag.name === 'rPh') phonetic--
       else if (tag.name === 't') inText = false
     },
     text(text: string) {
-      if (inText && phonetic === 0 && current !== undefined) current += text
+      if (inText && phonetic === 0 && inString) current.add(text)
     },
   }
 }
@@ -1500,13 +1625,13 @@ interface SheetRow {
  */
 function sheetRowParser(
   emit: (row: SheetRow) => void,
-  shared: string[],
+  shared: SharedStrings,
   budget: { bytes: number }
 ): PartParser {
   let row = 0
   let cells: string[] = []
   let type: string | undefined
-  let value = ''
+  const value = new TextParts()
   let inValue = false
   let phonetic = 0
   return {
@@ -1516,7 +1641,7 @@ function sheetRowParser(
         row = Number.isInteger(r) && r > 0 ? r : row + 1
       } else if (tag.name === 'c') {
         type = tag.attributes.t
-        value = ''
+        value.clear()
       } else if (tag.name === 'rPh') phonetic++
       else if (tag.name === 'v' || tag.name === 't') inValue = true
     },
@@ -1524,7 +1649,8 @@ function sheetRowParser(
       if (tag.name === 'v' || tag.name === 't') inValue = false
       else if (tag.name === 'rPh') phonetic--
       else if (tag.name === 'c') {
-        const text = type === 's' ? (shared[Number(value)] ?? '') : cellText(value)
+        const own = value.text()
+        const text = type === 's' ? (shared.get(Number(own)) ?? '') : cellText(own)
         // Formatted but empty: officeparser leaves such cells out, and rows of them
         if (text) cells.push(text)
       } else if (tag.name === 'row') {
@@ -1533,10 +1659,13 @@ function sheetRowParser(
       }
     },
     text(text: string) {
-      if (inValue && phonetic === 0) value += text
+      if (inValue && phonetic === 0) value.add(text)
     },
   }
 }
+
+/** Elements an XLSX part may nest, where writers nest them about ten deep. */
+const XLSX_MAX_DEPTH = 256
 
 interface PartParser {
   open(tag: SaxesTagPlain): void
@@ -1554,15 +1683,25 @@ async function* readPart<T>(
   parserFor: (emit: (item: T) => void) => PartParser
 ): AsyncGenerator<T> {
   if (entry.uncompressedSize > XLSX_MAX_PART_BYTES) {
-    throw new Error(
+    throw new LimitError(
       `${entry.fileName} is ${entry.uncompressedSize} bytes uncompressed, over ${XLSX_MAX_PART_BYTES}`
     )
   }
   const ready: T[] = []
   const handlers = parserFor((item) => ready.push(item))
   const sax = new SaxesParser()
-  sax.on('opentag', (tag) => handlers.open(tag))
-  sax.on('closetag', (tag) => handlers.close?.(tag))
+  // The parser holds each open element: nested millions deep, they fill the heap
+  let depth = 0
+  sax.on('opentag', (tag) => {
+    if (++depth > XLSX_MAX_DEPTH) {
+      throw new LimitError(`${entry.fileName} nests elements over ${XLSX_MAX_DEPTH} deep`)
+    }
+    handlers.open(tag)
+  })
+  sax.on('closetag', (tag) => {
+    depth--
+    handlers.close?.(tag)
+  })
   sax.on('text', (text) => handlers.text?.(text))
   sax.on('cdata', (text) => handlers.text?.(text))
   // A chunk can end inside a multi-byte character

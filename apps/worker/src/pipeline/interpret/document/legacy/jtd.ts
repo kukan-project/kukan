@@ -79,11 +79,11 @@ function sheetText(streams: (Buffer | undefined)[]): string {
       throw new Error('JTD text stream does not start with its signature')
     }
     const blocks = textBlocks(stream)
+    const lines = new Lines()
     // An older version marks no block: the whole stream, its text found by its markers
-    const lines = blocks.length
-      ? blocks.flatMap(([from, to]) => runs(stream, from, to, true))
-      : runs(stream, SIGNATURE.length, stream.length, false)
-    parts.push(lines.join('\n'))
+    if (blocks.length) for (const [from, to] of blocks) runs(stream, from, to, true, lines)
+    else runs(stream, SIGNATURE.length, stream.length, false, lines)
+    parts.push(lines.text())
   }
   return parts
     .filter((part) => part.trim())
@@ -106,14 +106,13 @@ function textBlocks(stream: Buffer): [number, number][] {
 }
 
 /**
- * The lines of text of the stream's units from `from` to `to`, `inText` where
- * text starts there without a marker, as a block's does. Tidied, and those
- * that are mostly not text left out.
+ * Add to `lines` the lines of text of the stream's units from `from` to `to`,
+ * `inText` where text starts there without a marker, as a block's does.
+ * Tidied, and those that are mostly not text left out.
  */
-function runs(stream: Buffer, from: number, to: number, inText: boolean): string[] {
+function runs(stream: Buffer, from: number, to: number, inText: boolean, lines: Lines): void {
   const end = from + Math.floor((to - from) / 2) * 2
   const unit = (at: number) => (at < end ? stream.readUInt16BE(at) : -1)
-  const lines: string[] = []
   const line = new LineText()
   let notes: string[] = []
   let blanks = 0
@@ -182,7 +181,30 @@ function runs(stream: Buffer, from: number, to: number, inText: boolean): string
     }
   }
   breakLine()
-  return lines
+}
+
+/** Lines a sheet holds before it joins them. */
+const LINES_CHUNK = 65_536
+
+/**
+ * A sheet's lines, joined by line breaks a chunk at a time: a sheet of short
+ * lines, held a string each, would cost its text many times over in memory.
+ */
+class Lines {
+  private chunks: string[] = []
+  private held: string[] = []
+
+  push(line: string): void {
+    if (this.held.push(line) < LINES_CHUNK) return
+    this.chunks.push(this.held.join('\n'))
+    this.held = []
+  }
+
+  /** The lines joined, once they are all pushed. */
+  text(): string {
+    if (this.held.length > 0) this.chunks.push(this.held.join('\n'))
+    return this.chunks.join('\n')
+  }
 }
 
 /** UTF-16 units a line holds before it makes them a string. */
