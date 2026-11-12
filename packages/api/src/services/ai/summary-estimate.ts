@@ -275,7 +275,6 @@ export async function summaryEstimate(
       and(
         eq(resource.state, 'active'),
         eq(packageTable.state, 'active'),
-        eq(packageTable.private, false),
         // An editor's own text is never overwritten and a hidden abstract is
         // never regenerated, so neither is ever billed. Counted in, a catalogue
         // that has been curated by hand would be quoted for work it will not do.

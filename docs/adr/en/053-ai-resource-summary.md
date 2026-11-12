@@ -509,14 +509,14 @@ decision 5's on-screen reasons.
 
 ### 5. State explicitly when nothing is generated, and show the reason
 
-| Condition                    | Test                                                                                                                                    |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Over the cap, size unknown   | `resource.size`. **Applies only to formats handed over as binaries**                                                                    |
-| Formats outside the MVP      | Formats whose original the provider cannot take and that have no extracted text (decision 3)                                            |
-| **Rejected on sending**      | **`ValidationException`; recorded as a permanent failure** (decision 3.4)                                                               |
-| Unusable answer              | Unparseable, wrong shape, over the limit, or empty once cleaned; not retried until the version or generation changes, or a refresh asks |
-| Empty material               | No schema extracted from a CSV, empty text                                                                                              |
-| Drafts and private resources | Only resources belonging to `state = active` packages                                                                                   |
+| Condition                  | Test                                                                                                                                    |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Over the cap, size unknown | `resource.size`. **Applies only to formats handed over as binaries**                                                                    |
+| Formats outside the MVP    | Formats whose original the provider cannot take and that have no extracted text (decision 3)                                            |
+| **Rejected on sending**    | **`ValidationException`; recorded as a permanent failure** (decision 3.4)                                                               |
+| Unusable answer            | Unparseable, wrong shape, over the limit, or empty once cleaned; not retried until the version or generation changes, or a refresh asks |
+| Empty material             | No schema extracted from a CSV, empty text                                                                                              |
+| Drafts                     | Only resources belonging to `state = active` packages (private packages included)                                                       |
 
 **The size cap applies only to formats handed over as binaries.** CSV uses its schema and
 sample rows, so **it is generated regardless of file size** — the target catalogue holds ten CSVs over 4 MB
@@ -531,10 +531,22 @@ A missing description reads very differently with a reason attached. And **this 
 observation point for whether the over-cap work is needed at all** — many such notices are the
 evidence that justifies the follow-up work.
 
-**The content of a draft or private resource is never sent to an external AI without a human
-action.** This matches the line embeddings already draw ("drafts are embedded at publish",
-ADR-039). A description for a draft comes from ADR-040's manual suggestion, where pressing the
-button is the consent.
+**The content of a draft resource is never sent to an AI without a human action.** This
+matches the line embeddings already draw ("drafts are embedded at publish", ADR-039). A
+description for a draft comes from ADR-040's manual suggestion, where pressing the button is the
+consent.
+
+**Private (`private = true`) packages are written for once `active`** (revised 2026-11-12; at
+first they were left out along with drafts). Embeddings already include private packages
+(ADR-054) — members need to search private datasets too — and abstracts are written for the same
+reason. They go to the provider the site configured: with Bedrock they stay inside AWS; a site
+configured for OpenAI sends them out. A site that does not want that leaves `AI_SUMMARY_MODEL`
+unset. Every path an abstract is returned through — resource and package reads (REST, MCP),
+search results, the embedding text that includes it (decision 8) and the search index
+documents — goes through the package's visibility. In the index a resource's document is
+filtered by its parent package's `private`, and the vector leg is filtered by the same
+conditions as the keyword leg. The abstract itself does not depend on visibility, so
+switching a package between public and private regenerates nothing.
 
 **The model's own report is recorded too.** The output (forced JSON) carries one flag for
 "could this be described from the material". It costs about 10 tokens. But **the flag cannot
@@ -1097,8 +1109,7 @@ canonical file), so the same input yields the same material.
 - **Full OCR** — a separate ADR's scope
 - **Generating insights** — the material does not support them
 - **Adopting the Batch API** — the saving does not justify the implementation (decision 9)
-- **Automatic generation for drafts and private resources** — use the manual suggestion
-  (ADR-040)
+- **Automatic generation for drafts** — use the manual suggestion (ADR-040)
 - **Turning `thinking` on** — **writing an abstract is reading, not reasoning.** Measured, it
   doubles the billed output and did not improve quality (Appendix 17). And at `effort: low`
   **adaptive thinking switches itself off** — the default (no thinking) is the state the model

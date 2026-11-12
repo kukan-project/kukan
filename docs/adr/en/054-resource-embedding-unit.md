@@ -125,6 +125,12 @@ last still separates at 0.048, little short of the 0.061 it gets first.
 > told apart inside one vector; the distinction lives in the unit — one vector per resource — and
 > in the budget.
 
+**Resources of private (`private = true`) packages are embedded too** (drafts at publish,
+ADR-039). Members need to find private datasets by meaning as well, and the vector leg is
+filtered by the same visibility conditions as the keyword leg, so a vector never names a private
+resource to anyone else. Abstracts (ADR-053 decision 5) are written for private packages for the
+same reason.
+
 ### 4. Aggregate to the package with `max`; do not reward count
 
 A package scores as the **highest** similarity among its resources. This follows directly from

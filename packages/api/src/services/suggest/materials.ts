@@ -102,6 +102,15 @@ export function materialKind(
   return null
 }
 
+/**
+ * The worker's abstract as a reader of sample rows. A symbol, so no request
+ * body, query string or MCP argument can carry it.
+ */
+export const PIPELINE_READER: unique symbol = Symbol('pipeline-reader')
+
+/** Who the sample rows are read for: a signed-in user, anonymous, or the pipeline */
+export type MaterialReader = AuthUser | typeof PIPELINE_READER
+
 /** The material itself — the subset of a prompt's fields that comes from content */
 export interface LoadedMaterial {
   schema: ResourceSchema | null
@@ -125,16 +134,17 @@ export const EMPTY_MATERIAL: LoadedMaterial = {
  * exception is the sample rows, which are an enhancement rather than a source;
  * see the `tabular` branch.
  *
- * `user` scopes the sample-row read to what that caller may see. The pipeline
- * passes none: it summarizes public resources only, so anonymous visibility is
- * exactly the set it is allowed to send to a provider.
+ * `reader` scopes the sample-row read. A suggestion passes the signed-in user,
+ * and sees what that user may see. The pipeline passes {@link PIPELINE_READER}:
+ * it writes abstracts for private packages too, having already decided which
+ * resources it may send, and anonymous visibility would lose their rows.
  */
 export async function loadMaterial(
   kind: MaterialKind,
   resource: MaterialResource,
   artifacts: MaterialArtifacts,
   deps: MaterialDeps,
-  user?: AuthUser
+  reader?: MaterialReader
 ): Promise<LoadedMaterial> {
   switch (kind) {
     case 'tabular': {
@@ -145,7 +155,7 @@ export async function loadMaterial(
       // suggestion degrades the whole resource to its metadata, and the
       // pipeline step fails its job, which has the queue retry the same package
       // for ever.
-      const sampleRows = await readSampleRows(resource.id, deps, user).catch((err) => {
+      const sampleRows = await readSampleRows(resource.id, deps, reader).catch((err) => {
         deps.log.warn(
           { component: 'material', resourceId: resource.id, err },
           'sample rows unavailable; using the schema alone'
@@ -194,13 +204,14 @@ export async function readDocumentHead(
 export async function readSampleRows(
   resourceId: string,
   deps: MaterialDeps,
-  user?: AuthUser
+  reader?: MaterialReader
 ): Promise<Record<string, unknown>[]> {
-  const result = await new QueryService(deps.db, deps.storage, deps.log).query(
-    resourceId,
-    `SELECT * FROM data LIMIT ${SUGGEST_SAMPLE_ROWS}`,
-    user
-  )
+  const service = new QueryService(deps.db, deps.storage, deps.log)
+  const sql = `SELECT * FROM data LIMIT ${SUGGEST_SAMPLE_ROWS}`
+  const result =
+    reader === PIPELINE_READER
+      ? await service.queryForPipeline(resourceId, sql)
+      : await service.query(resourceId, sql, reader)
   // LIMIT bounds rows, not cell size — clamp huge text cells
   return result.rows.map((row) =>
     Object.fromEntries(

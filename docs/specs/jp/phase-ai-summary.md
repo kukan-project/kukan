@@ -284,7 +284,7 @@ genKey  = モデル ‖ 生成版 ‖ ロケール
 | `rejected`             | 送って `ValidationException`（恒久）。`rejectedTokens` を記録 |
 | `unusable-output`      | 応答はあったが使えない（§8）。再生成だけが問い直す            |
 | `no-material`          | 材料が空（§7.3）                                              |
-| `not-public`           | パッケージが `active` でない（下書き・非公開）                |
+| `not-public`           | パッケージが `active` でない（下書き）。非公開は対象          |
 | `hidden`               | 編集者が非表示にした                                          |
 
 **一時的な失敗（スロットル・5xx・タイムアウト）を `skipReason` に書いてはならない。** これは
@@ -743,10 +743,10 @@ export const SUMMARIZE_ALL_JOB_TYPE = 'summarize-all' as const
 export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
 ```
 
-| ジョブ              | payload                          | すること                                                             |
-| ------------------- | -------------------------------- | -------------------------------------------------------------------- |
-| `summarize-all`     | `{ refresh }`                    | `active` かつ非公開でないパッケージごとに `summarize-package` を撒く |
-| `summarize-package` | `{ packageId, after?, refresh }` | 次の **1 件**を処理し、`after` を進めて自分を再投入。尽きたら終わる  |
+| ジョブ              | payload                          | すること                                                               |
+| ------------------- | -------------------------------- | ---------------------------------------------------------------------- |
+| `summarize-all`     | `{ refresh }`                    | `active` のパッケージ（非公開を含む）ごとに `summarize-package` を撒く |
+| `summarize-package` | `{ packageId, after?, refresh }` | 次の **1 件**を処理し、`after` を進めて自分を再投入。尽きたら終わる    |
 
 **1 ジョブ 1 完了にする。** 100 件のパッケージを 1 ジョブで回すと 20 分走って可視性
 タイムアウトで再配信され、**すべての完了に二重に課金される**。

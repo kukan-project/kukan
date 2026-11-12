@@ -451,6 +451,13 @@ Withdraw ADR-043 §5's "layer 2 does not guarantee erasure of bytes", and write 
 > (spec §9.8, 1 hour plus the sweep interval), tombstones inside OpenSearch segments (until merge),
 > PostgreSQL dead tuples (until VACUUM), DB snapshots and AWS Backup (retention period).
 
+The claim is about storage. A process's copy of an old catalog (one a web or worker DuckDB
+instance opened, or the bytes the web keeps in memory by key — §3) is not covered. From the next
+time the process reads `lake_catalog_key` it opens the new generation; the old copy is never
+looked up again, and the in-memory one stays until it is evicted or the process is replaced. It
+holds no row values, but may hold column min/max. No read path serves it (a diff answers
+`purged` / `purging` versions as unavailable).
+
 Whether to bring back the term "legal deletion" depends on how much of this residue, and of the
 human-written summaries a purge keeps (open issue 3), the guarantee covers (open issue 2).
 

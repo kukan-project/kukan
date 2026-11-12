@@ -80,15 +80,20 @@ function depsWith(ai: MeteredAI): SummaryDeps {
 /** A published resource whose run is still in flight, as the step sees it */
 async function seed(
   pipelineStatus: string,
-  opts: { format?: string; failedStep?: string } = {}
+  opts: {
+    format?: string
+    failedStep?: string
+    packageState?: 'active' | 'draft'
+    private?: boolean
+  } = {}
 ): Promise<SummaryInput> {
   const format = opts.format ?? 'TXT'
   const [pkg] = await db
     .insert(packageTable)
     .values({
       name: `summarize-${pipelineStatus}-${format}-${Date.now()}`,
-      state: 'active',
-      private: false,
+      state: opts.packageState ?? 'active',
+      private: opts.private ?? false,
     })
     .returning({ id: packageTable.id })
   const [res] = await db
@@ -155,6 +160,25 @@ describe('the Summarize step', () => {
 
     expect(outcome).toMatchObject({ status: 'written', material: 'text' })
     expect((await storedSummary(input.resourceId)).summary).toBe('AI が書いた抄録。')
+  })
+
+  it('writes for a private package, whose readers are its members', async () => {
+    const input = await seed('processing', { private: true })
+
+    const outcome = await executeSummarize(input, depsWith(aiThat(async () => abstract)))
+
+    expect(outcome).toMatchObject({ status: 'written' })
+    expect((await storedSummary(input.resourceId)).summary).toBe('AI が書いた抄録。')
+  })
+
+  it('sends nothing of a draft', async () => {
+    const input = await seed('processing', { packageState: 'draft' })
+    const complete = vi.fn(async () => abstract)
+
+    const outcome = await executeSummarize(input, depsWith(aiThat(complete)))
+
+    expect(outcome).toEqual({ status: 'skipped', reason: 'not-public' })
+    expect(complete).not.toHaveBeenCalled()
   })
 
   it('will not take material from a preview the failed interpretation left behind', async () => {

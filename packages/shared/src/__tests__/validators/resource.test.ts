@@ -8,6 +8,10 @@ import {
   normalizeSection,
   splitSection,
 } from '../../validators/resource'
+import { VALIDATION_MESSAGES } from '../../validators/messages'
+
+// The header-breaking characters, and the rest of the range the URL check refuses
+const CONTROL_CHARACTERS = ['\r', '\n', '\t', '\u0000', '\u001f', '\u007f']
 
 describe('createResourceSchema', () => {
   const validUuid = '550e8400-e29b-41d4-a716-446655440000'
@@ -173,9 +177,39 @@ describe('updateResourceSchema', () => {
     })
     expect(result.success).toBe(true)
   })
+
+  it.each(CONTROL_CHARACTERS)('should refuse a mimetype carrying %j', (char) => {
+    const result = updateResourceSchema.safeParse({ mimetype: `text/csv${char}X-Injected: 1` })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['mimetype'],
+        message: VALIDATION_MESSAGES.controlCharacter,
+      }),
+    ])
+  })
+
+  it('should accept a mimetype with parameters', () => {
+    const result = updateResourceSchema.safeParse({ mimetype: 'text/csv; charset=utf-8' })
+    expect(result.success).toBe(true)
+  })
 })
 
 describe('uploadUrlSchema', () => {
+  it.each(CONTROL_CHARACTERS)('should refuse a contentType carrying %j', (char) => {
+    const result = uploadUrlSchema.safeParse({
+      filename: 'data.csv',
+      contentType: `text/csv${char}`,
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['contentType'],
+        message: VALIDATION_MESSAGES.controlCharacter,
+      }),
+    ])
+  })
+
   it('should accept valid input', () => {
     const result = uploadUrlSchema.safeParse({
       filename: 'data.csv',

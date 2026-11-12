@@ -299,7 +299,7 @@ pressing it twice is free.**
 | `rejected`             | Sent and refused with `ValidationException` (permanent); `rejectedTokens` recorded |
 | `unusable-output`      | The provider answered, but the answer is unusable (§8); only a refresh asks again  |
 | `no-material`          | The material is empty (§7.3)                                                       |
-| `not-public`           | The package is not `active` (draft or private)                                     |
+| `not-public`           | The package is not `active` (a draft); private packages are written for            |
 | `hidden`               | An editor hid it                                                                   |
 
 **A transient failure (throttling, 5xx, timeout) must never be written as a `skipReason`.** It is
@@ -790,7 +790,7 @@ export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
 
 | Job                 | Payload                          | What it does                                                                            |
 | ------------------- | -------------------------------- | --------------------------------------------------------------------------------------- |
-| `summarize-all`     | `{ refresh }`                    | Fans out one `summarize-package` per `active`, non-private package                      |
+| `summarize-all`     | `{ refresh }`                    | Fans out one `summarize-package` per `active` package, private ones included            |
 | `summarize-package` | `{ packageId, after?, refresh }` | Processes the **next one**, advances `after` and requeues itself; ends when none remain |
 
 **One job, one completion.** A hundred resources in a single job would run for twenty minutes,

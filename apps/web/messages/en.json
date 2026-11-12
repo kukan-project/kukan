@@ -1245,6 +1245,7 @@
     "invalidUrl": "Enter a valid URL",
     "httpOnly": "Use a URL that starts with http or https",
     "privateAddress": "URLs pointing to a private or reserved address are not allowed",
+    "controlCharacter": "Control characters are not allowed",
     "keyColumnEmpty": "A primary key column name cannot be empty",
     "keyColumnRepeated": "The same column cannot appear twice in the primary key",
     "reservedKey": "This key is reserved",

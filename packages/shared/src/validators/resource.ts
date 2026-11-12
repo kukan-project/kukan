@@ -10,6 +10,12 @@ import { checkUrlSafety } from '../url'
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
 const CONTROL_CHAR = /[\u0000-\u001f\u007f]/
 
+/** A media type, which is served back as the download's Content-Type header */
+const mediaType = z
+  .string()
+  .max(200)
+  .refine((v) => !CONTROL_CHAR.test(v), VALIDATION_MESSAGES.controlCharacter)
+
 /** Validate that url is a valid http(s) URL when urlType is not 'upload' */
 function refineUrl(data: { url?: string | null; urlType?: string | null }, ctx: z.RefinementCtx) {
   if (!data.url || data.urlType === 'upload') return
@@ -137,7 +143,7 @@ const resourceFieldsSchema = z.object({
   name: z.string().nullish(),
   description: z.string().nullish(),
   format: z.string().max(100).nullish(),
-  mimetype: z.string().max(200).nullish(),
+  mimetype: mediaType.nullish(),
   resourceType: z.string().max(50).nullish(),
   // Absent leaves the stored label alone; null clears it (ADR-050)
   section: z.string().nullable().transform(normalizeSection).optional(),
@@ -167,7 +173,7 @@ export type UpdateResourceInput = z.infer<typeof updateResourceSchema>
 
 export const uploadUrlSchema = z.object({
   filename: z.string().min(1).max(500),
-  contentType: z.string().min(1).max(200),
+  contentType: mediaType.min(1),
   format: z.string().max(100).optional(),
 })
 

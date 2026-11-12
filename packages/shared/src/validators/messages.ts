@@ -10,6 +10,7 @@ export const VALIDATION_MESSAGES = {
   invalidUrl: 'Invalid URL',
   httpOnly: 'Only http and https URLs are allowed',
   privateAddress: 'URL points to a private or reserved address',
+  controlCharacter: 'Must not contain control characters',
   keyColumnEmpty: 'A key column name cannot be empty',
   keyColumnRepeated: 'Key columns must not repeat',
   reservedKey: 'This key is reserved',

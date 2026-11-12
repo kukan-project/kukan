@@ -38,6 +38,7 @@ function cidr(text: string): Subnet {
 const BLOCKED_V4 = [
   '127.0.0.0/8', // loopback
   '169.254.0.0/16', // link-local, including AWS IMDS
+  '100.100.100.200/32', // Alibaba Cloud metadata, inside the CGNAT range allowed below
   '0.0.0.0/8', // unspecified
 ].map(cidr)
 

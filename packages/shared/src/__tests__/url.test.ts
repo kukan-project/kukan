@@ -19,6 +19,7 @@ describe('isBlockedAddress', () => {
       ['169.254.0.1', 'link-local'],
       ['0.0.0.0', 'unspecified'],
       ['0.1.2.3', 'unspecified, the rest of 0/8'],
+      ['100.100.100.200', 'Alibaba Cloud metadata, inside the CGNAT range allowed below'],
     ])('should block %s (%s)', (address) => {
       expect(isBlockedAddress(address)).toBe(true)
     })
@@ -29,6 +30,9 @@ describe('isBlockedAddress', () => {
       ['192.168.1.1', 'private'],
       ['8.8.8.8', 'public'],
       ['203.0.113.1', 'public, and adjacent to nothing blocked'],
+      ['100.64.0.1', 'CGNAT, allowed on purpose'],
+      ['100.100.100.199', 'CGNAT, one below the metadata address'],
+      ['100.100.100.201', 'CGNAT, one above the metadata address'],
     ])('should allow %s (%s)', (address) => {
       expect(isBlockedAddress(address)).toBe(false)
     })
@@ -83,6 +87,9 @@ describe('isBlockedAddress', () => {
       ['64:ff9b::127.0.0.1', 'NAT64'],
       ['64:ff9b::7f00:1', 'NAT64, hex'],
       ['64:ff9b::a9fe:a9fe', 'NAT64 IMDS'],
+      ['::ffff:100.100.100.200', 'IPv4-mapped Alibaba Cloud metadata'],
+      ['::ffff:6464:64c8', 'IPv4-mapped Alibaba Cloud metadata, hex'],
+      ['64:ff9b::6464:64c8', 'NAT64 Alibaba Cloud metadata'],
       ['2002:7f00:1::1', '6to4, which carries its IPv4 higher up'],
     ])('should block %s (%s)', (address) => {
       expect(isBlockedAddress(address)).toBe(true)
@@ -120,6 +127,11 @@ describe('checkUrlSafety', () => {
     'http://0177.0.0.1/', // URL normalises the obfuscated spellings
     'http://2130706433/',
     'http://127.1/',
+    'http://100.100.100.200/latest/meta-data/',
+    'http://1684301000/', // 100.100.100.200 in decimal
+    'http://0x646464c8/', // and in hex
+    'http://[::ffff:100.100.100.200]/',
+    'http://[64:ff9b::6464:64c8]/',
   ])('should refuse %s as an address', (url) => {
     expect(checkUrlSafety(url)?.reason).toBe('address')
   })

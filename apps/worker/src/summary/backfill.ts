@@ -45,7 +45,7 @@ export async function enqueueSummarizePackages(
   const packages = await db
     .select({ id: packageTable.id })
     .from(packageTable)
-    .where(and(eq(packageTable.state, 'active'), eq(packageTable.private, false)))
+    .where(eq(packageTable.state, 'active'))
     .orderBy(asc(packageTable.id))
 
   let enqueued = 0

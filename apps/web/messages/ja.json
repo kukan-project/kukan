@@ -1260,6 +1260,7 @@
     "invalidUrl": "URL の形式が正しくありません",
     "httpOnly": "http または https の URL のみ使用できます",
     "privateAddress": "プライベートアドレスや予約済みアドレスを指す URL は使用できません",
+    "controlCharacter": "制御文字は使えません",
     "keyColumnEmpty": "主キーの列名を空にすることはできません",
     "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません",
     "reservedKey": "このキーは予約されているため使えません",

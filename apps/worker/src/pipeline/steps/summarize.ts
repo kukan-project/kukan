@@ -61,6 +61,7 @@ import {
   readDocumentHead,
   textHeadWasCapped,
   EMPTY_MATERIAL,
+  PIPELINE_READER,
   type LoadedMaterial,
   type MaterialArtifacts,
   type MaterialKind,
@@ -147,11 +148,12 @@ export async function executeSummarize(
 
   const row = await readRow(input, deps)
   if (!row) return { status: 'skipped', reason: 'not-public' }
-  // Drafts and private packages are not sent to a provider without someone
-  // pressing something — the line embedding draws (ADR-039). The manual
-  // suggestion (ADR-040) is where a draft gets a description, and pressing it
-  // is the consent this path has none of.
-  if (row.packageState !== 'active' || row.packagePrivate) {
+  // Drafts are not sent to a provider without someone pressing something — the
+  // line embedding draws (ADR-039). The manual suggestion (ADR-040) is where a
+  // draft gets a description, and pressing it is the consent this path has none
+  // of. A private package is written for, as it is embedded: its members search
+  // it, and every read of the abstract applies the package's visibility.
+  if (row.packageState !== 'active') {
     return { status: 'skipped', reason: 'not-public' }
   }
   if (row.meta.hidden) return { status: 'skipped', reason: 'hidden' }
@@ -348,7 +350,8 @@ export async function planMaterial(
     kind,
     { id: input.resourceId, format: input.format },
     artifacts,
-    deps
+    deps,
+    PIPELINE_READER
   )
   if (isEmpty(loaded)) return { reason: 'no-material' }
   return { kind: MATERIAL_OF[kind], material: loaded, coverage: coverageOf(kind, loaded) }
@@ -691,7 +694,6 @@ async function readRow(input: SummaryInput, deps: SummaryDeps) {
       summary: resource.summary,
       meta: resource.summaryMeta,
       packageState: packageTable.state,
-      packagePrivate: packageTable.private,
       title: packageTable.title,
       notes: packageTable.notes,
       organization: organization.title,

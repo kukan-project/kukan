@@ -22,7 +22,7 @@ import {
 } from '@kukan/shared'
 import { EMBED_DELAY_S } from '@kukan/api/services/search/resource-embedding'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '@kukan/api/services/pipeline/pipeline-claim'
-import { summarizeNextInPackage } from '../../summary/backfill'
+import { enqueueSummarizePackages, summarizeNextInPackage } from '../../summary/backfill'
 import type { SummaryDeps } from '../../pipeline/steps/summarize'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
@@ -199,5 +199,27 @@ describe('the backfill walk', () => {
 
     expect(result).toEqual({ done: true })
     expect(enqueue).not.toHaveBeenCalled()
+  })
+})
+
+describe('the fan-out', () => {
+  it('walks private packages and leaves drafts out', async () => {
+    const values = [
+      { name: 'fanout-public', state: 'active' as const, private: false },
+      { name: 'fanout-private', state: 'active' as const, private: true },
+      { name: 'fanout-draft', state: 'draft' as const, private: false },
+    ]
+    const rows = await db
+      .insert(packageTable)
+      .values(values)
+      .returning({ id: packageTable.id, name: packageTable.name })
+    const id = (name: string) => rows.find((r) => r.name === name)!.id
+    const { queue, enqueue } = fakeQueue()
+
+    const result = await enqueueSummarizePackages(db, queue, deps.log)
+
+    expect(result).toEqual({ enqueued: 2, failed: 0 })
+    const walked = enqueue.mock.calls.map((call) => (call[1] as { packageId: string }).packageId)
+    expect(walked.sort()).toEqual([id('fanout-public'), id('fanout-private')].sort())
   })
 })

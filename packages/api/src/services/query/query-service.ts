@@ -32,6 +32,13 @@ export function sqlLogFields(sql: string): { sql: string; sqlLength: number } {
   return { sql: cut, sqlLength: sql.length }
 }
 
+function assertQuerySql(sql: string): void {
+  if (sql.length > QUERY_MAX_SQL_LENGTH) {
+    throw new ValidationError(`SQL query exceeds the maximum length of ${QUERY_MAX_SQL_LENGTH}`)
+  }
+  assertReadOnlySql(sql)
+}
+
 export interface QueryResult {
   columns: string[]
   rows: Record<string, unknown>[]
@@ -72,14 +79,30 @@ export class QueryService {
   ): Promise<QueryResult> {
     // Validate the SQL before any expensive work (the read and the materialize). The REST
     // route bounds length via zValidator, but the MCP tool does not — enforce both here.
-    if (sql.length > QUERY_MAX_SQL_LENGTH) {
-      throw new ValidationError(`SQL query exceeds the maximum length of ${QUERY_MAX_SQL_LENGTH}`)
-    }
-    assertReadOnlySql(sql)
+    assertQuerySql(sql)
 
     // Visibility check (private resources require org membership — ADR-017).
     await new ResourceService(this.db).getByIdWithAccessCheck(resourceId, user)
+    return this.run(resourceId, sql, { userId: user?.id, ip }, signal)
+  }
 
+  /**
+   * {@link query} without the visibility check, for the worker's abstract
+   * (ADR-053), which writes for private packages too and has already decided
+   * what it may read. No route or MCP tool calls this: a request reaches only
+   * {@link query}, which checks the caller.
+   */
+  async queryForPipeline(resourceId: string, sql: string): Promise<QueryResult> {
+    assertQuerySql(sql)
+    return this.run(resourceId, sql, {})
+  }
+
+  private async run(
+    resourceId: string,
+    sql: string,
+    caller: { userId?: string; ip?: string },
+    signal?: AbortSignal
+  ): Promise<QueryResult> {
     // Resolve the preview Parquet + validated schema in one read.
     const target = await new PipelineService(this.db).getQueryTarget(resourceId)
     if (!isQueryable(target)) {
@@ -91,7 +114,6 @@ export class QueryService {
     const previewKey = target.previewKey
 
     // Bound concurrency to keep total DuckDB memory within the container.
-    const caller = { userId: user?.id, ip }
     const run = async () => {
       const startedAt = Date.now()
       // Read where it lives, through a signed URL rather than a copy on this

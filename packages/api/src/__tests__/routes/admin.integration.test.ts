@@ -1726,7 +1726,7 @@ describe('Admin API Routes', () => {
       expect(body.skipped.noMaterial).toBe(1)
     })
 
-    it('leaves private and non-active packages out of the estimate', async () => {
+    it('counts private packages and leaves drafts out of the estimate', async () => {
       const orgId = await ensureOrg('estimate-private-org')
       const [priv] = await db
         .insert(packageTable)
@@ -1742,7 +1742,8 @@ describe('Admin API Routes', () => {
       ])
 
       const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
-      expect(body.fill.resources).toBe(0)
+      // The private package's resource is written for, as the walk does; the draft's is not
+      expect(body.fill.resources).toBe(1)
     })
   })
 
