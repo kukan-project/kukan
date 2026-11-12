@@ -35,7 +35,8 @@ export type FetchResult =
   | (FetchResultData & { status: 'fetched' })
   /**
    * The host is over its limit: come back in `inSeconds` (unset, shortly).
-   * `turn` when that is a turn the run was given and holds from then on.
+   * `turn` when the run comes back as one holding a turn (`held-turn`): it was
+   * given one, or it was let ahead to the next free slot.
    */
   | { status: 'deferred'; inSeconds?: number; turn?: boolean }
   /** Another run replaced the content while this one was fetching. */
@@ -46,7 +47,10 @@ export type FetchResult =
  * it. `held-turn`: the run has come back to its turn, and takes the slot if it
  * is free — or, beaten to it, a turn again rather than a retry. `next-slot`:
  * someone waits for the run, so it comes back when the slot is next free
- * rather than at the end of a line a bulk run may have made hours long.
+ * rather than at the end of a line a bulk run may have made hours long — once,
+ * as a `held-turn`. Retried at every free slot, a burst of such runs on one
+ * host would take each slot in turn and hold every run in the line back for
+ * as long as the burst lasts.
  */
 export type FetchWait = 'turn' | 'held-turn' | 'next-slot'
 
@@ -108,7 +112,7 @@ export async function executeFetch(
     const fqdn = normalizeHostname(new URL(res.url).hostname)
     const freeIn = wait === 'turn' ? undefined : await ctx.acquireFetchSlot(fqdn)
     if (freeIn !== 0) {
-      if (wait === 'next-slot') return { status: 'deferred', inSeconds: freeIn }
+      if (wait === 'next-slot') return { status: 'deferred', inSeconds: freeIn, turn: true }
       // A turn rather than a retry: runs that only retried would all come back
       // every few seconds for as long as the host is busy — with a catalog on
       // one host, every run, the whole time

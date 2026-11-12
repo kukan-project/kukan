@@ -797,8 +797,9 @@ export const pipelineJobSchema = z.object({
   reprocessAll: z.boolean().optional(),
   /**
    * Written by the worker, never by a caller: the run was given a turn for its
-   * host's fetch slot and has come back to it, so it takes the slot when it is
-   * free rather than queueing for another.
+   * host's fetch slot (or, for one someone waits for, the next free slot) and
+   * has come back to it, so it takes the slot when it is free rather than
+   * queueing for another.
    */
   fetchTurn: z.boolean().optional(),
 })

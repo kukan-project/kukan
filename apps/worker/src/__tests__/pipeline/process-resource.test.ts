@@ -887,14 +887,28 @@ describe('processResource', () => {
     )
   })
 
+  it('comes back once to the next free slot when someone waits for it', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred', inSeconds: 3, turn: true })
+
+    await processResource({ resourceId: 'res-1' }, ctx, db, queue, 'high', 2)
+
+    expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), false, 'next-slot')
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1', fetchTurn: true },
+      { delaySeconds: 3, unlessWaiting: true, priority: 'high', attempts: 1 }
+    )
+  })
+
   it.each([
     ['holds a turn', { resourceId: 'res-1', fetchTurn: true }, 'normal', 'held-turn'],
     ['is one someone waits for', { resourceId: 'res-1' }, 'high', 'next-slot'],
+    // Back from the free slot it was let ahead to: beaten again, it joins the line
     [
       'is one someone waits for, with a turn',
       { resourceId: 'res-1', fetchTurn: true },
       'high',
-      'next-slot',
+      'held-turn',
     ],
   ] as const)('waits for the host as a run that %s', async (_l, job, priority, wait) => {
     vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred', inSeconds: 2 })
@@ -948,6 +962,19 @@ describe('processResource', () => {
       'resource-pipeline',
       { resourceId: 'res-1' },
       expect.objectContaining({ delaySeconds: expect.any(Number) })
+    )
+  })
+
+  it('keeps the turn a high-priority run holds when the resource was held', async () => {
+    // Dropped, a run that had already queued would get the free slot again
+    claim.answer = 'held'
+
+    await processResource({ resourceId: 'res-1', fetchTurn: true }, ctx, db, queue, 'high')
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1', fetchTurn: true },
+      expect.objectContaining({ priority: 'high' })
     )
   })
 

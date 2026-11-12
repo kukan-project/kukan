@@ -48,7 +48,7 @@ import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
  * @param queue - Job queue for requeueing rate-limited fetches
  * @param priority - The priority the job was taken at, kept by its requeue. A
  *   `high` one is a run someone waits for: a busy host does not put it behind
- *   the runs waiting on it
+ *   the runs waiting on it, unless it loses the next free slot too
  * @param attempts - How many times the queue has taken the job, this time
  *   included
  */
@@ -94,6 +94,8 @@ export async function processResource(
   // nothing would record that work was outstanding. Requeued with a delay
   // rather than retried, so a long run is not spun on. A resource with no
   // pipeline row is the other refusal, and there is nothing to come back for.
+  // Kept as it came, turn and all: the payload cannot tell a run still owed
+  // its one try at the free slot from one that has lost it and queued.
   if (outcome.status === 'held') await requeue(CLAIM_RETRY_DELAY_S)
 }
 
@@ -132,7 +134,7 @@ async function runPipeline(
       resourceId,
       ctx,
       rebuildOnly || indexOnly,
-      priority === 'high' ? 'next-slot' : job.fetchTurn ? 'held-turn' : 'turn'
+      job.fetchTurn ? 'held-turn' : priority === 'high' ? 'next-slot' : 'turn'
     )
 
     if (fetchResult.status === 'superseded') {

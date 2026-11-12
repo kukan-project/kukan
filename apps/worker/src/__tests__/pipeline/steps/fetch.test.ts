@@ -384,7 +384,8 @@ describe('executeFetch', () => {
 
     const result = await executeFetch('res-1', ctx, false, 'next-slot')
 
-    expect(result).toEqual({ status: 'deferred', inSeconds: 3.5 })
+    // Back once, as a run holding a turn: beaten again, it joins the line
+    expect(result).toEqual({ status: 'deferred', inSeconds: 3.5, turn: true })
     expect(ctx.acquireFetchSlot).toHaveBeenCalledWith('example.com')
     // Someone waits for this run: it is not put at the end of the line
     expect(ctx.reserveFetchTurn).not.toHaveBeenCalled()
