@@ -1,37 +1,30 @@
 'use client'
 
-import { Fragment, useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { Fragment, useState, useRef, useEffect, useMemo } from 'react'
 import {
   Alert,
   AlertDescription,
   Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Badge,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   Input,
-  Field,
-  FieldControl,
-  FieldLabel,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
   cn,
 } from '@kukan/ui'
-import { Upload, X, Plus, GripVertical, Pencil } from 'lucide-react'
+import { X, Plus, GripVertical, Pencil } from 'lucide-react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import {
   detectFormat,
-  isTableSourceFormat,
   normalizeSection,
   splitSection,
   MAX_UPLOAD_SIZE,
   MAX_UPLOAD_SIZE_MB,
-  updateRunsPipeline,
+  JSON_PREVIEW_LIMIT_MB,
+  OFFICE_PREVIEW_LIMIT_MB,
+  TEXT_PREVIEW_LIMIT_MB,
 } from '@kukan/shared'
 import {
   DndContext,
@@ -51,9 +44,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { clientFetch, readProblem } from '@/lib/client-api'
 import { useProblemMessage } from '@/hooks/use-problem-message'
-import { rowActivateProps } from '@/lib/row-activate'
 import { takePendingDropFiles } from '@/lib/pending-drop-files'
-import { updateResource } from '@/lib/update-resource'
+import { resourceEditPath } from '@/lib/paths'
 import {
   opensSection,
   sectionRunEnd,
@@ -71,16 +63,12 @@ import {
 } from '@/lib/resource-sections'
 import { useFileDrop } from '@/hooks/use-file-drop'
 import { FormatBadge } from '@/components/format-badge'
-import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
-import { ViewPublicLink } from '@/components/dashboard/dataset/view-public-link'
 import { PipelineStatusBadge } from './pipeline-status-badge'
-import { DropFilesZone, dropZoneClass } from './drop-files-zone'
+import { DropFilesZone } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
 import { ResourceFormFields } from './resource-form-fields'
-import { ExtrasFields, useExtrasRows } from './extras-fields'
-import { PrimaryKeyPicker } from './primary-key-picker'
-import { ColumnRoles } from './column-roles'
-import { ResourceVersionHistory } from './resource-version-history'
+import { ResourceSourceTabs } from './resource-source-tabs'
+import { ExtrasFields, snapshotExtras, useExtrasRows } from './extras-fields'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
 
 interface Resource {
@@ -118,25 +106,20 @@ interface DropUpload {
 
 interface ResourceListProps {
   packageId: string
-  /** Dataset name for the public resource links; omitted when there is no
-   *  public page to open (a draft is unpublished and has a placeholder name) */
-  packageName?: string
   resources: Resource[]
-  /** Row to open on arrival, named by the public page's status view */
-  initialEditId?: string | null
+  /** Where a row leads; the resource's own page in the editor unless told (ADR-072) */
+  hrefFor?: (resourceId: string) => string
+  /** The resource whose page is open, drawn as selected */
+  activeId?: string | null
+  /** A deleted dataset: its resources are shown, not opened or arranged */
+  readOnly?: boolean
   /** Refetch the parent's package; return false when the refresh could not
    *  be applied — the list then keeps its busy gate up and retries */
   onUpdated: () => void | boolean | Promise<void | boolean>
   /** Reports whether any file upload is still in flight (ADR-040) */
   onUploadingChange?: (uploading: boolean) => void
-}
-
-/** Columns the table has, so a heading spans the row rather than sitting in one cell. */
-const COLUMN_COUNT = 7
-
-/** A row's element id, so a link naming a resource can scroll to it. */
-function rowDomId(resourceId: string) {
-  return `resource-row-${resourceId}`
+  /** Reports whether an order or section labels are staged and not saved */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 /** A heading with nothing under it yet — unsaved, held until a resource joins it (ADR-050). */
@@ -191,7 +174,7 @@ function SectionHeadingRow({
   })
 
   return (
-    <TableRow
+    <div
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
@@ -200,21 +183,19 @@ function SectionHeadingRow({
       }}
       // Tinted with the brand colour rather than the neutral grey a hovered row
       // takes, so a heading and a hovered row cannot be mistaken for each other
-      className="bg-primary/10 hover:bg-primary/10"
+      className="mt-2 flex items-start gap-1 rounded-md bg-primary/10 py-1 pr-1"
     >
-      <TableCell className="w-8 p-2">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-30"
-          disabled={disabled}
-          aria-label={t('reorderSection')}
-        >
-          <GripVertical className="size-4" />
-        </button>
-      </TableCell>
-      <TableCell colSpan={COLUMN_COUNT - 1} className="py-1.5">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-30"
+        disabled={disabled}
+        aria-label={t('reorderSection')}
+      >
+        <GripVertical className="size-4" />
+      </button>
+      <div className="min-w-0 flex-1 py-0.5">
         {editing ? (
           <div className="flex flex-wrap items-center gap-2">
             <Input
@@ -222,7 +203,7 @@ function SectionHeadingRow({
               value={draft}
               aria-label={t('sectionName')}
               placeholder={t('sectionNamePlaceholder')}
-              className="h-8 max-w-64"
+              className="h-8"
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -252,7 +233,7 @@ function SectionHeadingRow({
             <span
               {...(disabled ? {} : listeners)}
               className={cn(
-                'text-xs font-semibold text-foreground select-none',
+                'min-w-0 flex-1 truncate text-xs font-semibold text-foreground select-none',
                 !disabled && 'cursor-grab touch-none'
               )}
             >
@@ -278,61 +259,68 @@ function SectionHeadingRow({
             </Button>
           </div>
         )}
-      </TableCell>
-    </TableRow>
+      </div>
+    </div>
   )
 }
 
 function SortableResourceRow({
   resource: r,
-  packageName,
+  href,
   isDragDisabled,
-  isActionsDisabled,
   isActive,
-  onEdit,
-  onClose,
+  readOnly,
   onPipelineSettled,
   justRan,
 }: {
   resource: Resource
-  packageName?: string
+  href: string
   isDragDisabled: boolean
-  isActionsDisabled: boolean
-  /** True when this row's inline editor is open — a row click then closes it. */
+  /** This resource's page is the one open */
   isActive: boolean
-  onEdit: (r: Resource) => void
-  onClose: () => void
+  readOnly: boolean
   onPipelineSettled?: () => void
   /** This row's run was started from here — see the badge's own prop. */
   justRan?: boolean
 }) {
-  const t = useTranslations('resource')
   const tc = useTranslations('common')
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: r.id,
     disabled: isDragDisabled,
   })
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
-
-  // Row click toggles the inline editor: open it, or close it if already open.
-  const toggleEdit = () => {
-    if (isActive) onClose()
-    else onEdit(r)
-  }
+  // The badge inline at the head of the first line, so a second line runs from
+  // the left edge rather than under a column the badge keeps empty. Two lines
+  // before it is cut: names that share a long prefix differ near their end.
+  // The whole name on hover.
+  const body = (
+    <span className="line-clamp-2 min-w-0 flex-1 break-words" title={r.name || undefined}>
+      {/* The public list's badge, so a format reads the same on both sides */}
+      {r.format ? (
+        <FormatBadge format={r.format} className="mr-2 min-w-[48px] text-center align-middle" />
+      ) : (
+        <span className="mr-2 inline-block min-w-[48px] text-center text-xs text-muted-foreground">
+          -
+        </span>
+      )}
+      {r.name || '-'}
+    </span>
+  )
 
   return (
-    <TableRow
+    <div
       ref={setNodeRef}
-      id={rowDomId(r.id)}
-      style={style}
-      {...rowActivateProps(toggleEdit, { role: 'button', disabled: isActionsDisabled })}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      className={cn(
+        'flex items-center gap-1 rounded-md pr-2 text-sm',
+        isActive ? 'bg-accent font-medium' : 'hover:bg-accent/60'
+      )}
     >
-      <TableCell className="w-8 p-2">
+      {!readOnly && (
         <button
           type="button"
           {...attributes}
@@ -343,80 +331,65 @@ function SortableResourceRow({
         >
           <GripVertical className="size-4" />
         </button>
-      </TableCell>
-      {/* Indented rather than nested: the list is one column showing two
-          levels, and the indent is what says which one a row is on. */}
-      <TableCell className={cn(r.section && 'pl-8')}>{r.name || '-'}</TableCell>
-      <TableCell>{r.format ? <FormatBadge format={r.format} /> : '-'}</TableCell>
-      <TableCell className="whitespace-nowrap">
-        {r.latestVersion != null ? (
-          <Badge variant="secondary">v{r.latestVersion}</Badge>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </TableCell>
-      <TableCell className="whitespace-nowrap">
-        {r.urlType === 'upload' ? (
-          <Badge variant="outline">{t('sourceUpload')}</Badge>
-        ) : r.url ? (
-          <Badge variant="outline">{t('sourceUrl')}</Badge>
-        ) : (
-          '-'
-        )}
-      </TableCell>
-      <TableCell>
-        {r.pipelineStatus && (
-          <PipelineStatusBadge
-            resourceId={r.id}
-            initialStatus={r.pipelineStatus}
-            onSettled={onPipelineSettled}
-            justRan={justRan}
-          />
-        )}
-      </TableCell>
-      <TableCell>
-        {packageName && <ViewPublicLink href={`/dataset/${packageName}/resource/${r.id}`} />}
-      </TableCell>
-    </TableRow>
+      )}
+      {/* Not indented: a row outside every section can only stand above the
+          first heading (ADR-050), so the tinted heading bars say which rows a
+          section holds, and the narrow column keeps the width for the name */}
+      {readOnly ? (
+        <span className="flex min-w-0 flex-1 items-center gap-2 py-1.5">{body}</span>
+      ) : (
+        <Link
+          href={href}
+          aria-current={isActive ? 'page' : undefined}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1.5"
+        >
+          {body}
+        </Link>
+      )}
+      {r.pipelineStatus && (
+        <PipelineStatusBadge
+          variant="dot"
+          resourceId={r.id}
+          initialStatus={r.pipelineStatus}
+          onSettled={onPipelineSettled}
+          justRan={justRan}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Whether two lists put the rows in a different order or under different labels */
+function arrangementDiffers(a: readonly Resource[], b: readonly Resource[]): boolean {
+  return (
+    a.length !== b.length ||
+    a.some((r, i) => r.id !== b[i].id || (r.section ?? null) !== (b[i].section ?? null))
   )
 }
 
 export function ResourceList({
   packageId,
-  packageName,
   resources,
-  initialEditId,
+  hrefFor = (resourceId) => resourceEditPath(packageId, resourceId),
+  activeId = null,
+  readOnly = false,
   onUpdated,
   onUploadingChange,
+  onDirtyChange,
 }: ResourceListProps) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
+  const td = useTranslations('dataset')
   const describeProblem = useProblemMessage()
 
-  // Delete
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
-  /** Runs that settled on the row whose editor is open.
-   *
-   *  A rebuild re-reads bytes that are already published, so unless the reading
-   *  changed the create gate makes no version (`sameVersionIdentity`) and
-   *  Interpret writes over the standing one's schema and preview in place.
-   *  `latestVersion` does not move then, and the panels below have no other way
-   *  to hear that what they are showing was rewritten. */
-  const [editedRunsSettled, setEditedRunsSettled] = useState(0)
-
-  // Edit / Create shared state
-  const [editId, setEditId] = useState<string | null>(null)
+  // The create form (a resource's own fields are edited on its page, ADR-072)
   const [creating, setCreating] = useState(false)
   const [formState, setFormState] = useState<FormState>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const extrasEditor = useExtrasRows()
-  const [replacing, setReplacing] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [uploadingResourceId, setUploadingResourceId] = useState<string | null>(null)
-  const [dragOver, setDragOver] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Drop-to-create: files dropped anywhere on the list become resources
   const [dropUploads, setDropUploads] = useState<DropUpload[]>([])
@@ -468,13 +441,29 @@ export function ResourceList({
   const [editingHeading, setEditingHeading] = useState<string | null>(null)
   const draftOpen = editingHeading === DRAFT_ID
 
-  const isFormOpen = editId !== null || creating
   // One gate for every arrangement control: a rename must not watch rows move under it
   const controlsLocked =
-    isFormOpen || savingOrder || dropUploads.length > 0 || editingHeading !== null
+    readOnly || creating || savingOrder || dropUploads.length > 0 || editingHeading !== null
 
+  // What the last copy of the data said, to tell a staged arrangement from one
+  // the server sent
+  const lastResources = useRef(resources)
   useEffect(() => {
-    setItems(resources)
+    const before = lastResources.current
+    lastResources.current = resources
+    // A staged order is kept across a refetch — a save on a resource's page
+    // reads the dataset back, and taking that copy whole would undo the
+    // arrangement being made here. The rows' own fields still come fresh;
+    // their order and labels stay as staged until saved or cancelled.
+    setItems((staged) => {
+      if (!arrangementDiffers(staged, before)) return resources
+      const fresh = new Map(resources.map((r) => [r.id, r]))
+      const kept = staged
+        .filter((r) => fresh.has(r.id))
+        .map((r) => ({ ...fresh.get(r.id)!, section: r.section }))
+      const added = resources.filter((r) => !staged.some((x) => x.id === r.id))
+      return [...kept, ...added]
+    })
     // A name the data now carries is drawn from the data: a row created into the
     // heading has arrived, or a refetch brought back the run it was lifted from
     const live = new Set(resources.map((r) => r.section))
@@ -508,6 +497,18 @@ export function ResourceList({
       labelsChanged,
     [items, resources, labelsChanged]
   )
+  // A heading being typed, or one waiting for a row to join it, is unsaved work
+  // too, though neither moves the order or a stored label yet — and so is a
+  // resource being filled in on the add dialog
+  const draftingResource =
+    creating &&
+    (!!pendingFile ||
+      JSON.stringify(formState) !== JSON.stringify(emptyForm) ||
+      snapshotExtras(extrasEditor.rows) !== snapshotExtras([]))
+  const unsaved = isDirty || pendings.length > 0 || editingHeading !== null || draftingResource
+  useEffect(() => {
+    onDirtyChange?.(unsaved)
+  }, [unsaved, onDirtyChange])
 
   /** The list as drawn: one slot per row plus one past the end, each carrying
    *  the empty headings standing there and whether a section opens on its row. */
@@ -680,7 +681,7 @@ export function ResourceList({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           resourceIds: items.map((r) => r.id),
-          // Labels ride with the order: a resource update would re-enqueue the pipeline (ADR-050)
+          // Labels ride with the order, settled in the same transaction (ADR-050)
           ...(labelsChanged && {
             sections: items.map((r) => ({ resourceId: r.id, section: r.section ?? null })),
           }),
@@ -700,89 +701,28 @@ export function ResourceList({
 
   // --- Helpers ---
 
-  /** Everything the file half of the form carries, cleared in one place so a
-   *  form opening or finishing never leaves part of it behind. */
-  function clearUploadState() {
+  /** Open or close the create form, empty either way */
+  function setCreateOpen(open: boolean) {
+    setCreating(open)
+    setFormState(emptyForm)
+    extrasEditor.reset()
     setFormError(null)
-    setReplacing(false)
     setPendingFile(null)
     setUploadingResourceId(null)
-    setDragOver(false)
   }
 
   function resetForm() {
-    setEditId(null)
-    setCreating(false)
-    setFormState(emptyForm)
-    extrasEditor.reset()
-    clearUploadState()
+    setCreateOpen(false)
   }
-
-  function startEdit(r: Resource) {
-    setCreating(false)
-    setEditId(r.id)
-    setFormState({
-      name: r.name ?? '',
-      url: r.url ?? '',
-      urlType: r.urlType ?? null,
-      format: r.format ?? '',
-      description: r.description ?? '',
-    })
-    extrasEditor.reset(r.extras)
-    clearUploadState()
-  }
-
-  // The link named a row to open. On arrival only — the list mounts with the
-  // package already loaded, and the refetch on every pipeline settle would
-  // otherwise reopen the form over whatever is being typed in it.
-  useEffect(() => {
-    const target = resources.find((r) => r.id === initialEditId)
-    if (!target) return
-    startEdit(target)
-    document.getElementById(rowDomId(target.id))?.scrollIntoView({ block: 'center' })
-  }, [])
 
   function startCreate() {
-    setEditId(null)
-    setCreating(true)
-    setFormState(emptyForm)
-    extrasEditor.reset()
-    clearUploadState()
+    setCreateOpen(true)
   }
-
-  function handleTabChange(tab: string) {
-    setFormState((s) => ({ ...s, urlType: tab === 'upload' ? 'upload' : null }))
-    setReplacing(false)
-    setPendingFile(null)
-  }
-
-  function handleUrlChange(value: string) {
-    const detected = detectFormat(value)
-    setFormState((s) => ({ ...s, url: value, ...(detected && { format: detected }) }))
-  }
-
-  function selectFile(file: File) {
-    setPendingFile(file)
-    const detected = detectFormat(file.name)
-    if (detected) setFormState((s) => ({ ...s, format: detected }))
-  }
-
-  const handleFileDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) selectFile(file)
-  }, [])
-
-  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) selectFile(file)
-  }, [])
 
   // --- Drop-to-create ---
 
   // Dropping while a form is open or a reorder is pending would be ambiguous
-  const dropEnabled = !isFormOpen && !isDirty && !savingOrder
+  const dropEnabled = !creating && !isDirty && !savingOrder
 
   const { active: dropActive, handlers: dropHandlers } = useFileDrop({
     disabled: !dropEnabled,
@@ -872,72 +812,6 @@ export function ResourceList({
     scheduleRefetch()
   }
 
-  // --- Save (edit) ---
-
-  async function handleSave() {
-    if (!editId) return
-    const extras = extrasEditor.build()
-    if (!extras) return
-    setSaving(true)
-    setFormError(null)
-    const before = resources.find((r) => r.id === editId)
-    // A file still to come carries the source and format with it, and its
-    // promotion applies them together with the bytes. Written here, they would
-    // switch the live resource before the file exists: the download would stop
-    // pointing at the link, and an abandoned upload would leave it that way.
-    // Otherwise the form's tab says the type (null is a link); on the upload
-    // tab the existing url is kept by leaving it out.
-    const source: Record<string, unknown> = pendingFile
-      ? {}
-      : {
-          urlType: formState.urlType,
-          format: formState.format || undefined,
-          ...(formState.urlType !== 'upload' && { url: formState.url || undefined }),
-        }
-    // What the server will compare — left-out fields keep the current value
-    const after = {
-      url: before?.url,
-      urlType: before?.urlType,
-      format: before?.format,
-      ...Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined)),
-    }
-    // Only a new source or format runs the pipeline (ADR-072 decision 6), and a
-    // pending file leads to an upload — close the gate before the request goes
-    // out; on success scheduleRefetch / uploadingResourceId takes over in the
-    // same tick, so the gate never gaps
-    const startsPipeline = !!pendingFile || !before || updateRunsPipeline(before, after)
-    if (startsPipeline) setPipelineOps((n) => n + 1)
-    try {
-      const patch: Record<string, unknown> = {
-        name: formState.name || undefined,
-        ...source,
-        description: formState.description || undefined,
-        // Always sent: the PUT replaces extras whole, and the form holds all of them
-        extras,
-      }
-      const updated = await updateResource(editId, patch)
-      if (!updated.ok) {
-        // The server's reason when it gave one — the create path has always
-        // shown it, and an edit failing for the same cause used to say only
-        // that it failed.
-        setFormError(describeProblem(updated.problem) ?? t('failedToUpdate'))
-        return
-      }
-      if (pendingFile) {
-        setUploadingResourceId(editId)
-        return
-      }
-      resetForm()
-      if (startsPipeline) scheduleRefetch()
-      else onUpdated()
-    } catch {
-      setFormError(t('failedToUpdate'))
-    } finally {
-      if (startsPipeline) setPipelineOps((n) => n - 1)
-      setSaving(false)
-    }
-  }
-
   // --- Create ---
 
   /** POST a new resource; throws with the server's problem detail on failure */
@@ -1019,43 +893,10 @@ export function ResourceList({
   function handleUploadComplete(resourceId: string) {
     setJustRan(resourceId)
     scheduleRefetch()
-    // Replacing an existing resource's file keeps its editor open — closing it
-    // leaves nothing saying which row was just updated. url/format are set to
-    // what the promoted upload wrote server-side, so the form names the new
-    // file right away: the format the upload carried — picking the file set it
-    // from the name, and a format chosen after that is the one the server took.
-    // Detected again here, a later save would write the name's back.
-    if (editId && pendingFile) {
-      const detected = detectFormat(pendingFile.name)
-      setFormState((s) => ({ ...s, url: pendingFile.name, format: s.format || detected || '' }))
-      clearUploadState()
-      return
-    }
     resetForm()
   }
 
-  // --- Delete ---
-
-  async function handleDelete() {
-    if (!deleteId) return
-    setDeleting(true)
-    try {
-      const res = await clientFetch(`/api/v1/resources/${deleteId}`, { method: 'DELETE' })
-      if (res.ok) {
-        setDeleteId(null)
-        // Delete runs from the open editor — close it, its resource is gone
-        resetForm()
-        onUpdated()
-      }
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  // --- Inline form (shared between edit and create) ---
-
-  const isEditing = editId !== null
-  const activeFormId = editId ?? (creating ? '__create__' : null)
+  // --- Create form ---
 
   /** The heading of a section with nothing under it yet, wherever it stands. */
   function renderSectionHeading(
@@ -1090,20 +931,13 @@ export function ResourceList({
           (name) => nameTaken(name, { pendingId: p.id })
         )}
         {!creating && (
-          <TableRow className="hover:bg-transparent">
-            <TableCell
-              colSpan={COLUMN_COUNT}
-              className="py-3 text-center text-xs text-muted-foreground"
-            >
-              {t('sectionEmpty')}
-            </TableCell>
-          </TableRow>
+          <p className="py-2 pl-7 text-xs text-muted-foreground">{t('sectionEmpty')}</p>
         )}
       </Fragment>
     )
   }
 
-  function renderInlineForm() {
+  function renderCreateForm() {
     if (uploadingResourceId) {
       return (
         <FileUploadZone
@@ -1115,19 +949,6 @@ export function ResourceList({
       )
     }
 
-    const isUploadTab = formState.urlType === 'upload'
-    // The form is open on a resource that already exists, not on a new one
-    const isExistingResource = isEditing && !creating
-    /** The row being edited, as the last refetch found it — the panels below
-     *  are about the resource the server holds, not about the open form. */
-    const edited = resources.find((r) => r.id === editId)
-    /** What tells the two panels below their inputs moved. Two things do: a run
-     *  storing a version, and a run rewriting the standing version's
-     *  interpretation without storing one. Composed rather than summed — a
-     *  purge lowers `latestVersion`, and a sum would sit still across a settle
-     *  that happens to offset it. */
-    const panelKey = `${edited?.latestVersion ?? 0}:${editedRunsSettled}`
-
     return (
       <>
         {formError && (
@@ -1137,7 +958,7 @@ export function ResourceList({
         )}
         <div className="flex flex-col gap-4">
           <ResourceFormFields
-            idPrefix={isEditing ? 'edit' : 'create'}
+            idPrefix="create"
             name={formState.name}
             onNameChange={(v) => setFormState((s) => ({ ...s, name: v }))}
             format={formState.format}
@@ -1145,255 +966,104 @@ export function ResourceList({
             description={formState.description}
             onDescriptionChange={(v) => setFormState((s) => ({ ...s, description: v }))}
           >
-            <Tabs value={isUploadTab ? 'upload' : 'url'} onValueChange={handleTabChange}>
-              <TabsList variant="line">
-                <TabsTrigger value="url">{t('sourceUrl')}</TabsTrigger>
-                <TabsTrigger value="upload">{t('sourceUpload')}</TabsTrigger>
-              </TabsList>
-              <TabsContent value="url">
-                <Field id={`${isEditing ? 'edit' : 'create'}-url`}>
-                  <FieldLabel>URL</FieldLabel>
-                  <FieldControl>
-                    <Input
-                      value={formState.url}
-                      onChange={(e) => handleUrlChange(e.target.value)}
-                      placeholder="https://example.com/data.csv"
-                    />
-                  </FieldControl>
-                </Field>
-              </TabsContent>
-              <TabsContent value="upload">
-                {isExistingResource && !replacing && !pendingFile ? (
-                  <div className="flex items-center gap-2 py-2">
-                    <Upload className="size-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      {formState.url || t('sourceUpload')}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setReplacing(true)}
-                    >
-                      {t('replaceFile')}
-                    </Button>
-                  </div>
-                ) : (
-                  <div
-                    className={cn(dropZoneClass(dragOver || !!pendingFile), 'gap-3 p-6')}
-                    onDrop={handleFileDrop}
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                      setDragOver(true)
-                    }}
-                    onDragLeave={() => setDragOver(false)}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="size-6 text-muted-foreground" />
-                    {pendingFile ? (
-                      <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                        {pendingFile.name}
-                        <button
-                          type="button"
-                          className="rounded p-0.5 hover:bg-muted"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setPendingFile(null)
-                            setReplacing(false)
-                          }}
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">{t('dropFileHere')}</span>
-                    )}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={handleFileInputChange}
-                    />
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+            <ResourceSourceTabs
+              idPrefix="create"
+              urlType={formState.urlType}
+              url={formState.url}
+              file={pendingFile}
+              onTypeChange={(urlType) => setFormState((s) => ({ ...s, urlType }))}
+              onUrlChange={(url) => setFormState((s) => ({ ...s, url }))}
+              onFileChange={setPendingFile}
+              onFormatDetected={(format) => setFormState((s) => ({ ...s, format }))}
+            />
           </ResourceFormFields>
           <ExtrasFields editor={extrasEditor} />
           <div className="flex gap-2">
-            {isEditing ? (
-              <Button onClick={handleSave} disabled={saving} variant="outline">
-                {saving ? tc('updating') : tc('save')}
-              </Button>
-            ) : (
-              <Button
-                onClick={handleCreate}
-                disabled={saving || (formState.urlType === 'upload' && !pendingFile)}
-                variant="outline"
-              >
-                {saving ? t('addingResource') : t('addResource')}
-              </Button>
-            )}
+            <Button
+              onClick={handleCreate}
+              disabled={saving || (formState.urlType === 'upload' && !pendingFile)}
+            >
+              {saving ? t('addingResource') : t('addResource')}
+            </Button>
             <Button variant="ghost" onClick={resetForm} disabled={saving}>
               {tc('cancel')}
             </Button>
-            {/* Pushed to the far edge, away from Save/Cancel, to keep a
-                destructive action out of misclick range of the routine ones */}
-            {isExistingResource && (
-              <Button
-                variant="destructive"
-                className="ml-auto"
-                onClick={() => setDeleteId(editId)}
-                disabled={saving}
-              >
-                {t('deleteThisResource')}
-              </Button>
-            )}
           </div>
-          {isEditing && !creating && editId && (
-            <>
-              {/* Only where rows exist to identify. A key is what a diff
-                  matches rows by, and nothing but CSV/TSV is loaded row by row
-                  — the same gate the preview uses to decide whether to offer a
-                  table at all. Offered on a PDF it can only ever say there are
-                  no columns, which is not news about a PDF.
-                  The stored format, not the form's: everything below acts on
-                  the resource as the server holds it, so a format being typed
-                  and not yet saved must not make the section come and go. */}
-              {isTableSourceFormat(edited?.format) && (
-                <div className="mt-2 border-t pt-4">
-                  {/* Above the history because settling a key creates a version:
-                      what it does shows up in the list below it. */}
-                  <PrimaryKeyPicker
-                    resourceId={editId}
-                    reloadKey={panelKey}
-                    // A queued run reaches this screen the long way round: the
-                    // refetch puts the row back as queued, the badge polls it,
-                    // and its settling refetches again — which is what finally
-                    // moves `latestVersion` and reloads the two panels below.
-                    // Bumping them here instead would reload them while the run
-                    // that changes them has not started.
-                    onRunQueued={() => {
-                      setJustRan(editId)
-                      scheduleRefetch()
-                    }}
-                  />
-                </div>
-              )}
-              {/* Draws its own separator: it renders nothing for a table with no roles */}
-              {isTableSourceFormat(edited?.format) && (
-                <ColumnRoles resourceId={editId} reloadKey={panelKey} />
-              )}
-              <div className="mt-2 border-t pt-4">
-                {/* Moves when a run changed what is listed here, and not on
-                    every refresh of the package. */}
-                <ResourceVersionHistory resourceId={editId} reloadKey={panelKey} />
-              </div>
-            </>
-          )}
         </div>
       </>
     )
   }
 
   return (
-    <div className="flex flex-col gap-4" {...dropHandlers}>
+    <div className="flex flex-col gap-2" {...(readOnly ? {} : dropHandlers)}>
       {reorderError && (
-        <Alert variant="destructive" className="mb-2">
+        <Alert variant="destructive">
           <AlertDescription>{reorderError}</AlertDescription>
         </Alert>
       )}
       {isDirty && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+        <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/5 p-2 text-xs">
           <span className="text-muted-foreground">{t('reorderPending')}</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={cancelOrder} disabled={savingOrder}>
-              {tc('cancel')}
-            </Button>
             <Button size="sm" onClick={saveOrder} disabled={savingOrder}>
               {savingOrder ? tc('updating') : t('saveOrder')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={cancelOrder} disabled={savingOrder}>
+              {tc('cancel')}
             </Button>
           </div>
         </div>
       )}
       {!showTable && dropUploads.length === 0 && (
-        <p className="py-4 text-center text-sm text-muted-foreground">{t('noResources')}</p>
+        <p className="px-2 py-2 text-xs text-muted-foreground">{t('noResources')}</p>
       )}
       {showTable && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <Table>
-            {visibleItems.length > 0 && (
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8" />
-                  <TableHead>{tc('name')}</TableHead>
-                  <TableHead>{tc('format')}</TableHead>
-                  <TableHead>{t('versions.version')}</TableHead>
-                  <TableHead>{t('source')}</TableHead>
-                  <TableHead>{t('status')}</TableHead>
-                  <TableHead className="w-[100px]">{tc('actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-            )}
-            <TableBody>
-              <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-                {slots.map(({ row: r, opens, pendingsHere }, i) => (
-                  <Fragment key={r?.id ?? 'end'}>
-                    {pendingsHere.map(renderPending)}
-                    {r &&
-                      opens &&
-                      renderSectionHeading(
-                        sectionDragId(r.id),
-                        r.section as string,
-                        () => relabel(runIds(i), null),
-                        (name) => nameTaken(name, { runStart: i })
-                      )}
-                    {r && (
-                      <SortableResourceRow
-                        resource={r}
-                        packageName={packageName}
-                        isDragDisabled={controlsLocked}
-                        isActionsDisabled={isDirty || savingOrder}
-                        isActive={editId === r.id}
-                        onEdit={startEdit}
-                        onClose={resetForm}
-                        // A settle means the row's status (and maybe others)
-                        // changed — refresh through the retrying gate
-                        onPipelineSettled={() => {
-                          scheduleRefetch()
-                          if (r.id === editId) setEditedRunsSettled((n) => n + 1)
-                        }}
-                        justRan={justRan === r.id}
-                      />
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+            <div className="flex flex-col">
+              {slots.map(({ row: r, opens, pendingsHere }, i) => (
+                <Fragment key={r?.id ?? 'end'}>
+                  {pendingsHere.map(renderPending)}
+                  {r &&
+                    opens &&
+                    renderSectionHeading(
+                      sectionDragId(r.id),
+                      r.section as string,
+                      () => relabel(runIds(i), null),
+                      (name) => nameTaken(name, { runStart: i })
                     )}
-                    {r && activeFormId === r.id && (
-                      <TableRow>
-                        <TableCell colSpan={COLUMN_COUNT} className="bg-muted/30 p-4">
-                          {renderInlineForm()}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
-                ))}
-                {draftOpen &&
-                  renderSectionHeading(DRAFT_ID, '', cancelHeading, (name) => nameTaken(name, {}))}
-              </SortableContext>
-              {creating && (
-                <TableRow>
-                  <TableCell colSpan={COLUMN_COUNT} className="bg-muted/30 p-4">
-                    {renderInlineForm()}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                  {r && (
+                    <SortableResourceRow
+                      resource={r}
+                      href={hrefFor(r.id)}
+                      isDragDisabled={controlsLocked}
+                      isActive={activeId === r.id}
+                      readOnly={readOnly}
+                      // A settle means the row's status (and maybe others)
+                      // changed — refresh through the retrying gate
+                      onPipelineSettled={() => scheduleRefetch()}
+                      justRan={justRan === r.id}
+                    />
+                  )}
+                </Fragment>
+              ))}
+              {draftOpen &&
+                renderSectionHeading(DRAFT_ID, '', cancelHeading, (name) => nameTaken(name, {}))}
+            </div>
+          </SortableContext>
         </DndContext>
       )}
 
       {dropUploads.map((u) => (
-        <div key={u.key} className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+        <div key={u.key} className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-2">
           <div className="flex items-center justify-between gap-2">
-            <span className={cn('text-sm', u.error ? 'text-destructive' : 'text-muted-foreground')}>
+            <span
+              className={cn(
+                'min-w-0 truncate text-xs',
+                u.error ? 'text-destructive' : 'text-muted-foreground'
+              )}
+              title={u.file.name}
+            >
               {u.file.name}
               {u.error ? `: ${u.error}` : !u.resourceId && ` — ${t('addingResource')}`}
             </span>
@@ -1418,7 +1088,7 @@ export function ResourceList({
         </div>
       ))}
 
-      {dropEnabled && (
+      {!readOnly && dropEnabled && (
         <DropFilesZone
           hint={t('dropHint')}
           active={dropActive}
@@ -1428,7 +1098,7 @@ export function ResourceList({
         />
       )}
 
-      {!creating && !editId && (
+      {!readOnly && (
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
@@ -1443,20 +1113,36 @@ export function ResourceList({
             <Plus className="mr-1 size-4" />
             {t('addSection')}
           </Button>
-          <span className="text-xs text-muted-foreground">{t('sectionHint')}</span>
         </div>
       )}
 
-      <DeleteConfirmDialog
-        open={!!deleteId}
-        onOpenChange={(open) => !open && setDeleteId(null)}
-        title={t('deleteResource')}
-        description={t('deleteResourceConfirm', {
-          name: items.find((r) => r.id === deleteId)?.name || t('unnamed'),
-        })}
-        onConfirm={handleDelete}
-        isDeleting={deleting}
-      />
+      {/* Too wide for the left column: the new resource's fields open over the page */}
+      <Dialog
+        open={creating}
+        onOpenChange={(open) => {
+          if (open || saving) return
+          // Closed with an upload begun: the resource exists, so read the list
+          // back to show it — the upload may have been cancelled or failed,
+          // and the zone has no way out of its own
+          const created = uploadingResourceId
+          resetForm()
+          if (created) scheduleRefetch()
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('addResource')}</DialogTitle>
+            <DialogDescription>
+              {td('resourcesPreviewLimits', {
+                officeMb: OFFICE_PREVIEW_LIMIT_MB,
+                jsonMb: JSON_PREVIEW_LIMIT_MB,
+                textMb: TEXT_PREVIEW_LIMIT_MB,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          {renderCreateForm()}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

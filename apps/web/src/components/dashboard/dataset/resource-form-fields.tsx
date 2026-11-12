@@ -46,7 +46,7 @@ export function ResourceFormFields({
           <Textarea
             value={description}
             onChange={(e) => onDescriptionChange(e.target.value)}
-            rows={2}
+            rows={5}
             placeholder={t('descriptionPlaceholder')}
           />
         </FieldControl>

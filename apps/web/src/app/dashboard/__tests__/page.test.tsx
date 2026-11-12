@@ -209,7 +209,7 @@ describe('DashboardPage', () => {
 
     await waitFor(() => {
       const link = screen.getByText('My Dataset').closest('a')
-      expect(link).toHaveAttribute('href', '/dashboard/datasets/my-ds/edit')
+      expect(link).toHaveAttribute('href', '/dashboard/datasets/1')
     })
   })
 })

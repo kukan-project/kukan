@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Sidebar } from '../sidebar'
 
 const mockUseUser = vi.fn()
+const nav = vi.hoisted(() => ({ pathname: '/' }))
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => nav.pathname,
+}))
 
 vi.mock('@/components/dashboard/user-provider', () => ({
   useUser: () => mockUseUser(),
@@ -95,5 +100,29 @@ describe('Sidebar', () => {
       '/dashboard/admin/ai',
       '/dashboard/admin/site',
     ])
+  })
+
+  describe('inside the dataset editor', () => {
+    afterEach(() => {
+      nav.pathname = '/'
+    })
+
+    it.each(['/dashboard/datasets/pkg-1', '/dashboard/datasets/pkg-1/resources/r1'])(
+      'gives way to the dataset contents at %s',
+      (pathname) => {
+        // The editor puts the dataset's own list where this sidebar would be (ADR-072)
+        nav.pathname = pathname
+        mockUseUser.mockReturnValue({ sysadmin: false })
+        const { container } = render(<Sidebar />)
+        expect(container).toBeEmptyDOMElement()
+      }
+    )
+
+    it.each(['/dashboard/datasets', '/dashboard/datasets/new'])('stays at %s', (pathname) => {
+      nav.pathname = pathname
+      mockUseUser.mockReturnValue({ sysadmin: false })
+      render(<Sidebar />)
+      expect(screen.getByText('Dataset Management')).toBeInTheDocument()
+    })
   })
 })

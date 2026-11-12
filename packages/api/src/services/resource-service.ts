@@ -565,7 +565,8 @@ export class ResourceService {
           // (measured or produced by the pipeline) and left untouched. Writing
           // back the values read above would be a read-modify-write that reverts
           // whatever the worker or the health check recorded in between — and an
-          // upload is not reprocessed on edit, so a stale hash would persist.
+          // edit that leaves the source and format alone runs nothing (ADR-072),
+          // so a stale hash would persist.
           updated: sql`NOW()`,
           // The search document is written by the route straight after, but a
           // sync that read this row before the edit can land after that write

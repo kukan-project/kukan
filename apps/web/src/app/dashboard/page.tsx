@@ -13,6 +13,7 @@ import { RowGroupBackfillNotice } from '@/components/dashboard/maintenance/row-g
 import { SearchAnalysisNotice } from '@/components/dashboard/maintenance/search-analysis-notice'
 import { EmbeddingBackfillNotice } from '@/components/dashboard/maintenance/embedding-backfill-notice'
 import { ContentChunkNotice } from '@/components/dashboard/maintenance/content-chunk-notice'
+import { datasetEditPath } from '@/lib/paths'
 
 interface PkgItem {
   id: string
@@ -91,10 +92,7 @@ export default function DashboardPage() {
               {items.map((pkg) => (
                 <div key={pkg.id} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/dashboard/datasets/${pkg.name}/edit`}
-                      className="font-medium hover:underline"
-                    >
+                    <Link href={datasetEditPath(pkg.id)} className="font-medium hover:underline">
                       {pkg.title || pkg.name}
                     </Link>
                     {pkg.private && <Badge variant="secondary">{tc('private')}</Badge>}

@@ -12,7 +12,10 @@ interface FileUploadZoneProps {
   initialFile?: File
   /** May fire after unmount (see UseFileUploadOptions.onComplete) */
   onComplete?: () => void
-  /** The format the editor chose; see UseFileUploadOptions.format */
+  /**
+   * The format the editor chose for `initialFile`. A different file picked
+   * here afterwards is a different file, and its own extension decides.
+   */
   format?: string
 }
 
@@ -26,12 +29,11 @@ export function FileUploadZone({
   const { status, progress, error, upload, cancel } = useFileUpload({
     resourceId,
     onComplete,
-    format,
   })
   // Auto-start upload when initialFile is provided
   useEffect(() => {
     if (initialFile && status === 'idle') {
-      upload(initialFile)
+      upload(initialFile, format)
     }
   }, [initialFile])
 

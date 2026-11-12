@@ -14,18 +14,18 @@ interface UseFileUploadOptions {
    * effects (timers, refetches) with the owner's own lifecycle.
    */
   onComplete?: () => void
-  /**
-   * The format the editor chose, sent with the upload so the promotion applies
-   * it together with the bytes. Without it the file's extension decides.
-   */
-  format?: string
 }
 
 interface UseFileUploadResult {
   status: UploadStatus
   progress: number
   error: string | null
-  upload: (file: File) => void
+  /**
+   * `format` is the one the editor chose for this file, sent with the upload so
+   * the promotion applies it together with the bytes; without it the file's
+   * extension decides.
+   */
+  upload: (file: File, format?: string) => void
   cancel: () => void
   reset: () => void
 }
@@ -39,7 +39,6 @@ interface UseFileUploadResult {
 export function useFileUpload({
   resourceId,
   onComplete,
-  format: chosenFormat,
 }: UseFileUploadOptions): UseFileUploadResult {
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [progress, setProgress] = useState(0)
@@ -77,7 +76,7 @@ export function useFileUpload({
   }, [])
 
   const upload = useCallback(
-    async (file: File) => {
+    async (file: File, chosenFormat?: string) => {
       try {
         setStatus('requesting')
         setProgress(0)
@@ -180,7 +179,7 @@ export function useFileUpload({
         setError(err instanceof Error ? err.message : 'Upload failed')
       }
     },
-    [resourceId, onComplete, describeProblem, chosenFormat]
+    [resourceId, onComplete, describeProblem]
   )
 
   return { status, progress, error, upload, cancel, reset }

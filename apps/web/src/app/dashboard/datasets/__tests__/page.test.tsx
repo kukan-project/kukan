@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
@@ -8,8 +9,11 @@ vi.mock('@/lib/client-api', () => ({
 }))
 
 const mockPush = vi.fn()
+const nav = vi.hoisted(() => ({ search: '', replace: vi.fn() }))
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: nav.replace }),
+  usePathname: () => '/dashboard/datasets',
+  useSearchParams: () => new URLSearchParams(nav.search),
 }))
 
 function mockFetchResponse(data: unknown) {
@@ -62,6 +66,170 @@ describe('DatasetsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
     mockPush.mockClear()
+    nav.search = ''
+    nav.replace.mockClear()
+    sessionStorage.clear()
+  })
+
+  describe('the list as its address names it (ADR-072)', () => {
+    it('opens on the view and page the address names', async () => {
+      // Back from the editor, or the browser's Back, lands where the list was left
+      nav.search = 'category=private&page=3'
+      setupDefaultMocks()
+      render(<DatasetsManagePage />)
+      await waitFor(() =>
+        expect(clientFetch).toHaveBeenCalledWith(
+          expect.stringMatching(/private=true.*offset=40|offset=40.*private=true/)
+        )
+      )
+    })
+
+    it('keeps the page it was asked for through a failed first read, and retries it', async () => {
+      nav.search = 'category=private&page=3'
+      vi.mocked(clientFetch).mockImplementation(async (path: string) =>
+        path.includes('/api/v1/packages?') &&
+        path.includes('private=true') &&
+        path.includes('offset=40')
+          ? ({ ok: false, json: async () => ({}) } as Response)
+          : mockFetchResponse({ items: [], total: 0 })
+      )
+      render(<DatasetsManagePage />)
+      const retry = await screen.findByRole('button', { name: 'Retry' })
+      for (const [href] of nav.replace.mock.calls)
+        expect(href).not.toBe('/dashboard/datasets?category=private')
+
+      setupDefaultMocks()
+      vi.mocked(clientFetch).mockClear()
+      fireEvent.click(retry)
+      await waitFor(() =>
+        expect(clientFetch).toHaveBeenCalledWith(
+          expect.stringMatching(/private=true.*offset=40|offset=40.*private=true/)
+        )
+      )
+    })
+
+    it('retries the first page of a new view, not the page the old view was on', async () => {
+      nav.search = 'page=3'
+      setupDefaultMocks(sampleItems, 100)
+      render(<DatasetsManagePage />)
+      await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
+
+      // The new view's first page fails
+      vi.mocked(clientFetch).mockImplementation(async (path: string) =>
+        path.includes('state=draft')
+          ? ({ ok: false, json: async () => ({}) } as Response)
+          : mockFetchResponse({ items: sampleItems, total: 100 })
+      )
+      fireEvent.click(screen.getByText('Drafts'))
+      const retry = await screen.findByRole('button', { name: 'Retry' })
+      // Remembered at the page asked for, not the old view's
+      expect(sessionStorage.getItem('kukan:dashboard-dataset-list')).toBe(
+        '/dashboard/datasets?category=drafts'
+      )
+
+      setupDefaultMocks(sampleItems, 100)
+      vi.mocked(clientFetch).mockClear()
+      fireEvent.click(retry)
+      await waitFor(() =>
+        expect(clientFetch).toHaveBeenCalledWith(
+          expect.stringMatching(/state=draft.*offset=0|offset=0.*state=draft/)
+        )
+      )
+    })
+
+    it('keeps the page it opened on when effects run twice, as in development', async () => {
+      // React runs each effect twice for one mount in development; the second
+      // run used to start the list over at the first page and drop `page`
+      nav.search = 'category=private&page=3'
+      setupDefaultMocks()
+      render(
+        <StrictMode>
+          <DatasetsManagePage />
+        </StrictMode>
+      )
+      await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
+      const offsets = vi
+        .mocked(clientFetch)
+        .mock.calls.map(([url]) => String(url))
+        .filter((url) => url.includes('private=true') && url.includes('offset='))
+        .map((url) => new URL(url, 'http://x').searchParams.get('offset'))
+      expect(offsets).not.toContain('0')
+      // Nothing is written to the address while the asked-for page is loading
+      for (const [href] of nav.replace.mock.calls)
+        expect(href).not.toBe('/dashboard/datasets?category=private')
+    })
+
+    it('follows a link to the plain list rather than writing its own view back', async () => {
+      // The sidebar's "Datasets" while the list is open: the address changes,
+      // the page stays mounted
+      nav.search = 'category=deleted'
+      setupDefaultMocks()
+      const { rerender } = render(<DatasetsManagePage />)
+      await waitFor(() =>
+        expect(sessionStorage.getItem('kukan:dashboard-dataset-list')).toBe(
+          '/dashboard/datasets?category=deleted'
+        )
+      )
+      nav.replace.mockClear()
+      vi.mocked(clientFetch).mockClear()
+
+      nav.search = ''
+      rerender(<DatasetsManagePage />)
+      await waitFor(() =>
+        expect(clientFetch).toHaveBeenCalledWith(expect.stringContaining('private=false'))
+      )
+      expect(nav.replace).not.toHaveBeenCalledWith('/dashboard/datasets?category=deleted', {
+        scroll: false,
+      })
+    })
+
+    it('takes a view and a page from outside together, on the page they name', async () => {
+      // Applied one after the other, the view's change sent the list back to
+      // its first page after the page had been asked for
+      setupDefaultMocks(sampleItems, 100)
+      const { rerender } = render(<DatasetsManagePage />)
+      await waitFor(() =>
+        expect(sessionStorage.getItem('kukan:dashboard-dataset-list')).toBe('/dashboard/datasets')
+      )
+      vi.mocked(clientFetch).mockClear()
+
+      nav.search = 'category=private&page=3'
+      rerender(<DatasetsManagePage />)
+      await waitFor(() =>
+        expect(sessionStorage.getItem('kukan:dashboard-dataset-list')).toBe(
+          '/dashboard/datasets?category=private&page=3'
+        )
+      )
+      const listed = vi
+        .mocked(clientFetch)
+        .mock.calls.map(([url]) => String(url))
+        .filter((url) => url.includes('private=true') && url.includes('offset='))
+      expect(listed.at(-1)).toContain('offset=40')
+    })
+
+    it('puts a change of view in the address, without adding history', async () => {
+      setupDefaultMocks()
+      render(<DatasetsManagePage />)
+      await waitFor(() => expect(screen.getByText('Drafts')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Drafts'))
+      await waitFor(() =>
+        expect(nav.replace).toHaveBeenCalledWith('/dashboard/datasets?category=drafts', {
+          scroll: false,
+        })
+      )
+      expect(mockPush).not.toHaveBeenCalled()
+    })
+
+    it('keeps the address it was last seen at, for the editor’s way back', async () => {
+      nav.search = 'category=deleted'
+      setupDefaultMocks()
+      render(<DatasetsManagePage />)
+      await waitFor(() =>
+        expect(sessionStorage.getItem('kukan:dashboard-dataset-list')).toBe(
+          '/dashboard/datasets?category=deleted'
+        )
+      )
+    })
   })
 
   it('should display datasets in table', async () => {
@@ -150,7 +318,7 @@ describe('DatasetsManagePage', () => {
 
     await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
     fireEvent.click(screen.getByText('population-data'))
-    expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/population-data/edit')
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/1')
   })
 
   it('opens the public page in a new tab without opening the editor', async () => {
@@ -332,7 +500,7 @@ describe('DatasetsManagePage', () => {
       await openDraftsTab()
 
       fireEvent.click(screen.getByText('My Draft'))
-      expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/d2/edit?state=draft')
+      expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/d2?state=draft')
     })
 
     it('flags purging drafts and does not make their row clickable', async () => {
@@ -346,7 +514,7 @@ describe('DatasetsManagePage', () => {
       expect(mockPush).not.toHaveBeenCalled()
       // An intact draft still navigates on row click
       fireEvent.click(screen.getByText('My Draft'))
-      expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/d2/edit?state=draft')
+      expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/d2?state=draft')
     })
 
     it('should retry deletion of a purging draft with a dedicated confirmation', async () => {

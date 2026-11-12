@@ -9,7 +9,7 @@ import { DateTime } from '@/components/date-time'
 import { DatasetMetadata } from './dataset-metadata'
 import { ResourceExplorer, type Resource } from '@/components/resource/resource-explorer'
 import { LinkPendingIndicator } from '@/components/link-pending-indicator'
-import { tagPath } from '@/lib/paths'
+import { keepsFilesPrivate, tagPath } from '@/lib/paths'
 import { canEditPackage } from '@/lib/roles'
 
 interface Organization {
@@ -166,10 +166,11 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
             <ResourceExplorer
               resources={pkg.resources}
               packageName={pkg.name}
+              packageId={pkg.id}
               sectionTitle={`${t('resources')} (${pkg.resources.length})`}
               initialResourceId={initialResourceId}
               canManage={canManage}
-              notPublic={pkg.private || pkg.state === 'draft'}
+              notPublic={keepsFilesPrivate(pkg)}
               officePreviewViewer={officePreviewViewerSchema.parse(
                 process.env.OFFICE_PREVIEW_VIEWER
               )}

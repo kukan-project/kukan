@@ -123,6 +123,20 @@ describe('PrimaryKeyPicker', () => {
     expect(summary.textContent).toBe('Key:line→order(composite)')
   })
 
+  it('says a key is picked and not applied, and that it is not once the picker is gone', async () => {
+    // The page asks before leaving an unapplied key; a format that stops being
+    // a table takes the tab away, and the question with it
+    route({})
+    const onDraftChange = vi.fn()
+    const { unmount } = render(<PrimaryKeyPicker resourceId="r1" onDraftChange={onDraftChange} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    expect(onDraftChange).toHaveBeenLastCalledWith(true)
+
+    unmount()
+    expect(onDraftChange).toHaveBeenLastCalledWith(false)
+  })
+
   it('keeps the key line in place when there is no key, and says which kind it is', async () => {
     // A line that comes and goes moves everything under it each time a key is
     // emptied or begun — including the chips being clicked.

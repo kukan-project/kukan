@@ -16,7 +16,7 @@ dashboard sidebar is replaced by that list.
 Saving is split into three kinds — "save without creating a version", "apply the columns",
 and "save the order" — and each tab states which one it uses. Every decision a person makes
 about columns (primary key, settled type, role override, and later column descriptions) is
-gathered into a single "Columns" tab and applied together, once. If the draft holds a
+gathered into a single "Table settings" tab and applied together, once. If the draft holds a
 decision that changes how the bytes are read (key, settled type), that apply creates one
 version (turning the constraint in spec `phase-versioning-2-ducklake.md` §6.5 directly into
 the screen). A draft holding only decisions that do not change the reading, such as role
@@ -72,7 +72,7 @@ the key and a type together would create two versions.
 
 The dashboard puts a 224px sidebar inside a 1200px frame. The public page's resource list
 is 320px on the left (`resource-explorer.tsx`). Placing the list beside the sidebar makes
-three columns, leaving roughly 650px for the Columns tab's table (name, inferred type,
+three columns, leaving roughly 650px for the Table settings tab's table (name, inferred type,
 settled type, key, role, and later a description).
 
 ## Options Considered
@@ -174,7 +174,7 @@ collapsing the sidebar to an icon rail. Replacement is chosen because:
 
 - **It is exactly the public page's two columns.** Decision 1's pairing holds visually, not
   just in URLs
-- **It gives the Columns tab's table the most width.**
+- **It gives the Table settings tab's table the most width.**
 - **While editing a dataset, people rarely jump to other screens such as user
   management.** Global navigation remains via "← All datasets" and the header
 
@@ -234,12 +234,13 @@ read-only list.
 
 **When a resource is selected**
 
-| Tab        | Contents                                                                             | Saving                                                           |
-| ---------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Basic      | Name, format, description, source (URL / replace), extras, delete                    | Save, no version (except source and format, decision 6)          |
-| Columns    | Every per-column decision in one table (decision 5). Only for formats read as tables | Apply the columns (a version if the reading changes, decision 5) |
-| Versions   | History, diffs, revert, purge, type-change review                                    | Press and confirm                                                |
-| Processing | Per-step state, reprocess (re-fetches a URL)                                         | Press and confirm                                                |
+| Tab             | Contents                                                                                                                                                        | Saving                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Basic           | Name, format, description, source (URL / replace), extras. Below them, what the catalogue holds about the resource (read-only, with the AI abstract) and delete | Save, no version (except source and format, decision 6)          |
+| Preview         | The public page's preview (for a draft or private dataset too)                                                                                                  | None                                                             |
+| Table settings  | Every per-column decision in one table (decision 5). Only for formats read as tables                                                                            | Apply the columns (a version if the reading changes, decision 5) |
+| Version history | History, diffs, revert, purge, type-change review                                                                                                               | Press and confirm                                                |
+| Processing      | Per-step state, reprocess (re-fetches a URL)                                                                                                                    | Press and confirm                                                |
 
 **The two tables above show where things go; they are not an inventory of operations.** Every operation
 today's editor offers stays somewhere on the new screens, including ones not listed here. The Step 1
@@ -249,11 +250,11 @@ implementation PR checks them one by one against today's screens and decides whe
 version (except source and format)", "Applying key and type changes creates one version". Today identical-looking buttons have different
 results; this makes it clear before the button.
 
-The Columns tab appears under the same condition as today's key picker,
+The Table settings tab appears under the same condition as today's key picker,
 `isTableSourceFormat` (judged on the stored format, so a format being typed does not make
 it come and go).
 
-### 5. The Columns tab: one table of columns, changes held as a draft, applied once
+### 5. The Table settings tab: one table of columns, changes held as a draft, applied once
 
 ```
  Saving: applying key and type changes creates one version
@@ -278,7 +279,7 @@ it come and go).
   table and is part of the same apply
 - **Changes are held as a draft.** Changed rows are tinted, and the count and the result of
   applying stay visible below. Nothing is saved until applied
-- **What applying does depends on the draft.** Decisions on the Columns tab either change how
+- **What applying does depends on the draft.** Decisions on the Table settings tab either change how
   the bytes are read or do not.
 
   | Decision                               | Reading  | On apply                                                                     |
@@ -309,7 +310,7 @@ it come and go).
 └────────────────────────────────────────────────────────┘
 ```
 
-While the Columns tab holds a draft, every way of leaving the editor asks whether to discard
+While the Table settings tab holds a draft, every way of leaving the editor asks whether to discard
 it: switching tabs, selecting another resource or the dataset details, the "← All datasets",
 public page and header links, browser Back and Forward, and reloading or closing the tab
 (`beforeunload`). The draft lives only on the screen and is unsaved, so letting any one of these
@@ -353,7 +354,7 @@ pipeline next runs. Both contradict the confirmation shown before saving. So thi
 | URL              | Created if the fetched contents differ from the previous version; unknown until the fetch ends |
 | Format           | Created (an input to version identity, `sameVersionIdentity`; created even for the same bytes) |
 
-Format is how the bytes are read, so there is a case for moving it to the Columns tab. It
+Format is how the bytes are read, so there is a case for moving it to the Table settings tab. It
 stays on Basic because it is also a label shown on the public page, and people decide it
 alongside the source. The source sits next to name and description for the same reason.
 
@@ -361,7 +362,7 @@ In exchange, saving a changed source or format asks for confirmation. Format say
 creates one version". For a replaced file or a URL, whether the contents match the previous
 version is not known at save time, so the message is conditional — "this creates one version
 if the contents have changed" — and whether a version was created is shown once processing
-ends, on the Versions tab and by the list's dot. The one-line note at the top of the tab (decision 4) names
+ends, on the Version history tab and by the list's dot. The one-line note at the top of the tab (decision 4) names
 these two as the exceptions.
 
 ### 7. The entry from the public page is a "Manage" button
@@ -393,8 +394,8 @@ collapsible form.
 | `apps/web/src/app/dashboard/datasets/[nameOrId]/`                               | Add a layout, the dataset page and `resources/[resourceId]/`. Keep `edit/page.tsx` as a redirect only (decision 1) |
 | `apps/web/src/app/dashboard/layout.tsx`, `components/layout/sidebar.tsx`        | Under a dataset, replace the sidebar with the list                                                                 |
 | `components/dashboard/dataset/resource-list.tsx`                                | Split the table and row expansion into the left list and right tabs                                                |
-| `primary-key-picker.tsx`, `column-roles.tsx`                                    | Merge into the Columns tab's single table                                                                          |
-| `resource-version-history.tsx`, `version-diff-panel.tsx`                        | Move to the Versions tab                                                                                           |
+| `primary-key-picker.tsx`, `column-roles.tsx`                                    | Merge into the Table settings tab's single table                                                                   |
+| `resource-version-history.tsx`, `version-diff-panel.tsx`                        | Move to the Version history tab                                                                                    |
 | `components/resource/resource-pipeline-preview.tsx` and other public components | "Manage" button, ⚙ link target                                                                                     |
 | `components/dataset/dataset-detail-layout.tsx`                                  | (Done) Decide `canManage` with `canEditPackage`                                                                    |
 | `apps/web/src/lib/paths.ts`                                                     | `resourceEditPath` to the new URL                                                                                  |
@@ -409,17 +410,17 @@ There are two API changes.
   accepts only the primary key. Add roles to it, and on write rebuild the profile and update the
   index on the spot (ADR-063)
 
-Applying settled types on the Columns tab adds them to the same write that sets the key today
+Applying settled types on the Table settings tab adds them to the same write that sets the key today
 (decided in the ii-c spec).
 
 ## Steps
 
-| Step   | Contents                                                                                                                                                                                                          | Depends on |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| Step 1 | Move to the new URLs and two-column skeleton. Merge key and role into the Columns tab's single table (roles still read-only), with draft → apply for the key. Narrow when saving queues the pipeline (decision 6) | none       |
-| Step 2 | "Manage" on the public page; change the ⚙ link target                                                                                                                                                             | Step 1     |
-| Step 3 | Put ii-c (settled types, type-change review, AI suggestions) on the Columns and Versions tabs                                                                                                                     | Step 1     |
-| Step 4 | Role overrides (ADR-063, next step): a write that adds roles to `column_settings`, and rebuilding the profile and index. Make the Columns tab's role column editable                                              | Step 1     |
+| Step   | Contents                                                                                                                                                                                                                 | Depends on |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| Step 1 | Move to the new URLs and two-column skeleton. Merge key and role into the Table settings tab's single table (roles still read-only), with draft → apply for the key. Narrow when saving queues the pipeline (decision 6) | none       |
+| Step 2 | "Manage" on the public page; change the ⚙ link target                                                                                                                                                                    | Step 1     |
+| Step 3 | Put ii-c (settled types, type-change review, AI suggestions) on the Table settings and Version history tabs                                                                                                              | Step 1     |
+| Step 4 | Role overrides (ADR-063, next step): a write that adds roles to `column_settings`, and rebuilding the profile and index. Make the Table settings tab's role column editable                                              | Step 1     |
 
 Step 1 changes appearance and placement but adds no capability. Applying a key is already
 "choose, then apply", so draft → apply does not change its meaning. Roles are listed read-only
@@ -438,10 +439,10 @@ reprocess on the Processing tab.
 ## Open Issues
 
 - Whether to bring dataset creation (`/new`) onto the same skeleton
-- How type-change review appears on the Versions tab is decided in the ii-c spec (spec §8).
+- How type-change review appears on the Version history tab is decided in the ii-c spec (spec §8).
   Re-fetching a URL resource happens with nobody present, so asking at ingest time cannot
   work; review happens after ingest
-- How to present the Columns tab's table when it grows wide (once descriptions and the like
+- How to present the Table settings tab's table when it grows wide (once descriptions and the like
   are added)
 
 ## Related ADRs
@@ -452,5 +453,5 @@ reprocess on the Processing tab.
 - ADR-040: AI metadata suggestions (a person settles suggestions)
 - ADR-043: Resource versioning (spec §6.5, "one apply, one version")
 - ADR-050: Resource sections (rules for the left list)
-- ADR-057: XLSX table range (applied together on the Columns tab)
+- ADR-057: XLSX table range (applied together on the Table settings tab)
 - ADR-063: Table profile (column roles)

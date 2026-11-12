@@ -41,4 +41,10 @@ describe('DeleteConfirmDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
+
+  it('names what is being deleted', () => {
+    // From a list of deleted datasets, the description alone does not say which
+    render(<DeleteConfirmDialog {...defaultProps} target="Population by ward" />)
+    expect(screen.getByText('Population by ward')).toBeInTheDocument()
+  })
 })

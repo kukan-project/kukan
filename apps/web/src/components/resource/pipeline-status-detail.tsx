@@ -4,7 +4,7 @@ import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
 import { RefreshCw, Undo2, Wrench, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
-import type { LegacyPipelineStepName, PipelineStepName } from '@kukan/shared'
+import { isRunActive, type LegacyPipelineStepName, type PipelineStepName } from '@kukan/shared'
 import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-status'
 import { STATUS_KEYS } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { clientFetch } from '@/lib/client-api'
@@ -14,6 +14,8 @@ interface PipelineStatusDetailProps {
   resourceId: string
   /** Called when pipeline reaches a terminal state after reprocessing */
   onSettled?: (status: PipelineStatus) => void
+  /** Called once a reprocess, cancel or revert was accepted, for views that show the run elsewhere */
+  onStarted?: () => void
 }
 
 // Typed by the step names so adding one forces a label rather than
@@ -111,7 +113,11 @@ function RebuildButton({ disabled, onClick }: { disabled: boolean; onClick: () =
  * Pipeline status display with reprocess button.
  * Polls automatically; fires onSettled when pipeline reaches terminal state.
  */
-export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDetailProps) {
+export function PipelineStatusDetail({
+  resourceId,
+  onSettled,
+  onStarted,
+}: PipelineStatusDetailProps) {
   const t = useTranslations('resource')
   // Do NOT set initialActive here: merely opening the status view must not be
   // treated as an in-flight reprocess, or onSettled would fire immediately on an
@@ -156,7 +162,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         s.started_at &&
         Date.now() - new Date(s.started_at).getTime() > STUCK_THRESHOLD_MS
     )
-  const active = status === 'queued' || status === 'processing'
+  const active = isRunActive(status)
   // A stalled run is still active — it just stops counting as healthy, which is
   // what decides the badge and whether reprocessing is offered.
   const isRunning = active && !stuck
@@ -219,6 +225,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         }
         setPartial(result.cleared === false || result.queued === false)
       }
+      onStarted?.()
       refetch()
     } catch {
       // A request that never landed and one whose answer was lost look the

@@ -70,7 +70,8 @@
     "fetchError": "データの読み込みに失敗しました",
     "apiTokens": "APIトークン",
     "resources": "リソース",
-    "required": "必須項目です"
+    "required": "必須項目です",
+    "saved": "保存しました"
   },
   "home": {
     "title": "KUKAN",
@@ -766,6 +767,7 @@
     "deleteResource": "リソースを削除",
     "deleteThisResource": "このリソースを削除",
     "deleteResourceConfirm": "リソース「{name}」を削除してもよろしいですか？",
+    "deleteResourceDescription": "削除したリソースは、この一覧と公開ページから外れます。",
     "unnamed": "無名リソース",
     "preview": "プレビュー",
     "previewPlaceholder": "データプレビューは今後のフェーズで対応予定です",
@@ -843,7 +845,6 @@
     "sectionName": "セクション名",
     "sectionNamePlaceholder": "例: 関連資料",
     "sectionNameTaken": "同じ名前のセクションが既にあります",
-    "sectionHint": "データセットページでの表示上の区切りです。公開範囲は変わりません。",
     "sectionEmpty": "このセクションはまだ空です。リソースを追加するか、行をここへドラッグしてください",
     "renameSection": "セクション名を変更",
     "dissolveSection": "セクションを解除",
@@ -958,6 +959,7 @@
     "status": "ステータス",
     "editResource": "リソースを編集",
     "failedToUpdate": "リソースの更新に失敗しました",
+    "failedToDelete": "リソースの削除に失敗しました",
     "reorderFailed": "リソースの並べ替えに失敗しました",
     "reorderPending": "並び順に未保存の変更があります",
     "saveOrder": "並び順を保存",
@@ -1148,7 +1150,13 @@
       "type": "型（推定）",
       "role": "役割",
       "basis": "判定の根拠"
-    }
+    },
+    "chooseFileToSwitch": "アップロードに切り替えるには、ファイルを選んでください。",
+    "backToFields": "項目の編集に戻る",
+    "basicSaveNote": "保存しても版は増えません（ソースと形式の変更を除く）。",
+    "saveVersionTitle": "版が増える保存",
+    "saveMakesVersion": "形式を変えると、版が 1 つ増えます。",
+    "saveMayMakeVersion": "ソースを変えると、取得した中身が前の版と違えば版が 1 つ増えます。版ができたかどうかは、処理が終わってから「バージョン履歴」タブで分かります。"
   },
   "apiToken": {
     "title": "APIトークン",
@@ -1299,5 +1307,27 @@
       "organization": "組織",
       "group": "カテゴリー"
     }
+  },
+  "datasetEditor": {
+    "contents": "データセットの中身",
+    "allDatasets": "データセット一覧",
+    "datasetDetails": "データセットの情報",
+    "resource": "リソース",
+    "resourceNotFound": "リソースが見つかりません",
+    "tabBasic": "基本",
+    "tabPreview": "プレビュー",
+    "tabColumns": "表の設定",
+    "tabVersions": "バージョン履歴",
+    "tabProcessing": "処理状況",
+    "showContents": "中身を表示",
+    "hideContents": "閉じる",
+    "previewWaitingForRun": "処理中です。終わるとプレビューが新しい内容で表示し直されます。",
+    "previewAfterUnfinishedRun": "最後の処理が終わっていないため、プレビューは古いか、表示できません。理由は「処理状況」タブで確かめられます。",
+    "previewAfterUnfinishedRunReader": "最後の処理が終わっていないため、プレビューは古いか、表示できません。",
+    "infoHeading": "このリソースの情報",
+    "currentVersion": "現在のバージョン",
+    "rowCount": "行数",
+    "columnCount": "列数",
+    "leaveUnsaved": "保存していない変更があります。このページを離れると、変更は失われます。移動しますか？"
   }
 }

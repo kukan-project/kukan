@@ -35,6 +35,7 @@ export function PrimaryKeyPicker({
   resourceId,
   reloadKey,
   onRunQueued,
+  onDraftChange,
 }: {
   resourceId: string
   /** Any change re-reads the settings. The owner passes whatever tells it a run
@@ -51,6 +52,8 @@ export function PrimaryKeyPicker({
    * refresh, so this is the only thing that starts it.
    */
   onRunQueued?: () => void
+  /** Whether a key is picked that is not yet applied — the page's guard on leaving */
+  onDraftChange?: (draft: boolean) => void
 }) {
   const t = useTranslations('resource.columnSettings')
   const tc = useTranslations('common')
@@ -67,6 +70,13 @@ export function PrimaryKeyPicker({
   const [error, setError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const draft = !!view && !sameKeyColumns(view.primaryKey, selected.length > 0 ? selected : null)
+  useEffect(() => {
+    onDraftChange?.(draft)
+  }, [draft, onDraftChange])
+  // Gone with the tab — a format that is no longer a table takes it away — the
+  // draft goes too: nothing is left on the screen to apply or undo it with
+  useEffect(() => () => onDraftChange?.(false), [onDraftChange])
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -244,13 +254,12 @@ export function PrimaryKeyPicker({
   const noCounts = view.schema.columns.every((column) => column.distinctCount === undefined)
 
   return (
-    // `w-0 min-w-full`, on the whole section rather than the sample alone: this
-    // renders inside a `<td>`, and a table cell is sized from its content, so
-    // anything in here that cannot shrink sets the width of the resource list
-    // and the page takes the scrollbar. A declared width of zero keeps the
-    // section out of that measurement, and the minimum puts it back to the
-    // cell's width — which is what finally gives `max-w-full` below something
-    // definite to resolve against.
+    // `w-0 min-w-full`, on the whole section rather than the sample alone: a
+    // box is sized from its content, so a sample sixty columns wide would widen
+    // the tab and the page would take the scrollbar. A declared width of zero
+    // keeps the section out of that measurement, and the minimum puts it back
+    // to the width it is given — which is what gives `max-w-full` below
+    // something definite to resolve against.
     <div className="flex w-0 min-w-full flex-col gap-3">
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium">{t('title')}</p>
@@ -274,6 +283,17 @@ export function PrimaryKeyPicker({
             beats wrong. */}
         <p className="text-muted-foreground text-xs">{t('stability')}</p>
       </div>
+
+      {/* What the columns actually hold. A name does not say whether a column
+          identifies a row, and the counts beside it do not say what a value
+          looks like — which is what tells someone that two columns together are
+          the key and one of them alone is not. Before the chips: the values are
+          what the choice is made from, and the chips are read against them. */}
+      {view.preview === 'ready' ? (
+        <ColumnSample resourceId={resourceId} columns={view.schema.columns} selected={selected} />
+      ) : (
+        <p className="text-muted-foreground text-xs">{t(`noSample.${view.preview}`)}</p>
+      )}
 
       {/* The key as a unit. The chips say which columns are in it; with sixty of
           them, the order is not something to reconstruct by hunting for
@@ -336,16 +356,6 @@ export function PrimaryKeyPicker({
           type it does not hold. */}
       {unkeyable.size > 0 && (
         <p className="text-muted-foreground text-xs">{t('floatNotKeyable')}</p>
-      )}
-
-      {/* What the columns actually hold. A name does not say whether a column
-          identifies a row, and the counts beside it do not say what a value
-          looks like — which is what tells someone that two columns together are
-          the key and one of them alone is not. */}
-      {view.preview === 'ready' ? (
-        <ColumnSample resourceId={resourceId} columns={view.schema.columns} selected={selected} />
-      ) : (
-        <p className="text-muted-foreground text-xs">{t(`noSample.${view.preview}`)}</p>
       )}
 
       {/* Both notes above are "the derivatives are behind", and one run repairs
@@ -536,12 +546,8 @@ function ColumnSample({
   const names = columns.map((column) => column.name)
 
   return (
-    // `w-0 min-w-full`: the editor is rendered inside a `<td>`, and a table cell
-    // is sized from its content — so an `overflow-x-auto` that is as wide as
-    // sixty columns widens the cell, then the resource list, then the page. A
-    // declared width of zero contributes nothing to that measurement, and the
-    // minimum puts the box back to the cell's width once the cell has one. The
-    // scrollbar then belongs to the sample rather than to the screen.
+    // The scrollbar belongs to the sample rather than to the screen: the
+    // section above keeps it to the width it is given (`w-0 min-w-full`).
     <div className="overflow-x-auto rounded border">
       <Table>
         <TableHeader>

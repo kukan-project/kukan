@@ -130,7 +130,7 @@ test.describe('Content-Security-Policy: upload', () => {
 
   test('a file dropped on the dashboard reaches storage without a violation', async ({ page }) => {
     test.setTimeout(90_000)
-    expect(await violationsOn(page, `/dashboard/datasets/${datasetName}/edit`)).toEqual([])
+    expect(await violationsOn(page, `/dashboard/datasets/${datasetName}`)).toEqual([])
     await page.locator('input[type="file"][multiple]').setInputFiles({
       name: 'e2e-csp.csv',
       mimeType: 'text/csv',

@@ -70,7 +70,8 @@
     "fetchError": "Failed to load data",
     "apiTokens": "API Tokens",
     "resources": "Resources",
-    "required": "This field is required"
+    "required": "This field is required",
+    "saved": "Saved"
   },
   "home": {
     "title": "KUKAN",
@@ -766,6 +767,7 @@
     "deleteResource": "Delete Resource",
     "deleteThisResource": "Delete This Resource",
     "deleteResourceConfirm": "Are you sure you want to delete the resource \"{name}\"?",
+    "deleteResourceDescription": "A deleted resource leaves this list and the public page.",
     "unnamed": "Unnamed Resource",
     "preview": "Preview",
     "previewPlaceholder": "Data preview is planned for a future phase",
@@ -843,7 +845,6 @@
     "sectionName": "Section name",
     "sectionNamePlaceholder": "e.g. Supporting documents",
     "sectionNameTaken": "A section with this name already exists",
-    "sectionHint": "A display grouping on the dataset page. It does not change who can see the resource.",
     "sectionEmpty": "This section is empty. Add a resource, or drag a row here",
     "renameSection": "Rename section",
     "dissolveSection": "Dissolve section",
@@ -958,6 +959,7 @@
     "status": "Status",
     "editResource": "Edit Resource",
     "failedToUpdate": "Failed to update resource",
+    "failedToDelete": "Failed to delete resource",
     "reorderFailed": "Failed to reorder resources",
     "reorderPending": "You have unsaved order changes",
     "saveOrder": "Save order",
@@ -1148,7 +1150,13 @@
       "type": "Type (inferred)",
       "role": "Role",
       "basis": "Why"
-    }
+    },
+    "chooseFileToSwitch": "Choose a file to switch this resource to an upload.",
+    "backToFields": "Back to the fields",
+    "basicSaveNote": "Saving does not create a version, except when the source or format changes.",
+    "saveVersionTitle": "This save can create a version",
+    "saveMakesVersion": "Changing the format creates one version.",
+    "saveMayMakeVersion": "Changing the source creates one version if the contents differ from the previous version. Whether one was created shows on the Version history tab once processing ends."
   },
   "apiToken": {
     "title": "API Tokens",
@@ -1284,5 +1292,27 @@
       "organization": "organization",
       "group": "category"
     }
+  },
+  "datasetEditor": {
+    "contents": "Dataset contents",
+    "allDatasets": "All datasets",
+    "datasetDetails": "Dataset details",
+    "resource": "Resource",
+    "resourceNotFound": "Resource not found",
+    "tabBasic": "Basic",
+    "tabPreview": "Preview",
+    "tabColumns": "Table settings",
+    "tabVersions": "Version history",
+    "tabProcessing": "Processing",
+    "showContents": "Show contents",
+    "hideContents": "Hide",
+    "previewWaitingForRun": "Processing. The preview is shown again with the new content once it finishes.",
+    "previewAfterUnfinishedRun": "The last run did not finish, so the preview may be out of date or missing. The Processing tab says why.",
+    "previewAfterUnfinishedRunReader": "The last run did not finish, so the preview may be out of date or missing.",
+    "infoHeading": "About this resource",
+    "currentVersion": "Current version",
+    "rowCount": "Rows",
+    "columnCount": "Columns",
+    "leaveUnsaved": "You have unsaved changes. Leave this page and lose them?"
   }
 }

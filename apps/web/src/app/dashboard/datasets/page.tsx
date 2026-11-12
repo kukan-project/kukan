@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   Button,
   Badge,
@@ -38,6 +38,7 @@ import { FormatBadges } from '@/components/format-badges'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { hasRole, useMyRoles } from '@/hooks/use-my-roles'
+import { datasetEditPath, rememberDatasetList } from '@/lib/paths'
 
 interface PkgItem {
   id: string
@@ -64,20 +65,82 @@ interface OptionItem {
 const ALL = '__all__'
 
 type CategoryFilter = 'public' | 'private' | 'drafts' | 'deleted'
+const CATEGORIES: readonly CategoryFilter[] = ['public', 'private', 'drafts', 'deleted']
+const PAGE_SIZE = 20
 
+/**
+ * Where the list was, as its address says it (ADR-072): the editor's
+ * "← All datasets" and the browser's Back both come back to this page of
+ * this view, not the first page of public datasets.
+ */
+interface ListState {
+  category: CategoryFilter
+  name: string
+  q: string
+  org: string
+  group: string
+  offset: number
+}
+
+function readListState(params: { get(key: string): string | null }): ListState {
+  const category = params.get('category')
+  const page = Number(params.get('page'))
+  return {
+    category: CATEGORIES.includes(category as CategoryFilter)
+      ? (category as CategoryFilter)
+      : 'public',
+    name: params.get('name') ?? '',
+    q: params.get('q') ?? '',
+    org: params.get('org') ?? '',
+    group: params.get('group') ?? '',
+    offset: Number.isInteger(page) && page > 1 ? (page - 1) * PAGE_SIZE : 0,
+  }
+}
+
+/** The other half of {@link readListState}: defaults are left out of the address */
+function writeListState(pathname: string, state: ListState): string {
+  const params = new URLSearchParams()
+  if (state.category !== 'public') params.set('category', state.category)
+  if (state.name) params.set('name', state.name)
+  if (state.q) params.set('q', state.q)
+  if (state.org) params.set('org', state.org)
+  // Drafts are listed without the search index, which groups need (ADR-039)
+  if (state.group && state.category !== 'drafts') params.set('group', state.group)
+  const page = Math.floor(state.offset / PAGE_SIZE) + 1
+  if (page > 1) params.set('page', String(page))
+  const query = params.toString()
+  return query ? `${pathname}?${query}` : pathname
+}
+
+/**
+ * An address that arrives from outside while the list is open — a link to the
+ * plain list, or another page of another view — opens the list afresh from it.
+ * Taken into the open list instead, a view and a page changed together were
+ * applied one after the other, and the view's change sent the page back to
+ * the first.
+ */
 export default function DatasetsManagePage() {
+  const [generation, setGeneration] = useState(0)
+  return <DatasetsList key={generation} onAddressChanged={() => setGeneration((n) => n + 1)} />
+}
+
+function DatasetsList({ onAddressChanged }: { onAddressChanged: () => void }) {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  // Read once: from here on this page's state leads and the address follows
+  const [initial] = useState(() => readListState(searchParams))
 
   // Filter state
-  const [nameFilter, setNameFilter] = useState('')
+  const [nameFilter, setNameFilter] = useState(initial.name)
   const debouncedName = useDebouncedValue(nameFilter)
-  const [keyword, setKeyword] = useState('')
+  const [keyword, setKeyword] = useState(initial.q)
   const debouncedKeyword = useDebouncedValue(keyword)
-  const [orgFilter, setOrgFilter] = useState('')
-  const [groupFilter, setGroupFilter] = useState('')
-  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('public')
+  const [orgFilter, setOrgFilter] = useState(initial.org)
+  const [groupFilter, setGroupFilter] = useState(initial.group)
+  const [activeCategory, setActiveCategory] = useState<CategoryFilter>(initial.category)
 
   // Stats (inactive categories fetched separately; active category uses pagination.total)
   const [inactiveStats, setInactiveStats] = useState<Partial<Record<CategoryFilter, number>>>({})
@@ -153,7 +216,64 @@ export default function DatasetsManagePage() {
     return `/api/v1/packages?${params}`
   }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, activeCategory])
 
-  const { items, loading, error, ...pagination } = usePaginatedFetch<PkgItem>(filterUrl)
+  const { items, loading, error, ...pagination } = usePaginatedFetch<PkgItem>(
+    filterUrl,
+    PAGE_SIZE,
+    {
+      initialOffset: initial.offset,
+    }
+  )
+
+  // The address follows the view — the page last asked for, so a view whose
+  // first page failed is not remembered at the page the old view was on —
+  // replacing rather than adding history: a
+  // filter typed or a page turned is not a place to go Back to. The last list
+  // address is kept for the editor's way back (DATASET_LIST_KEY).
+  const listHref = useMemo(
+    () =>
+      writeListState(pathname, {
+        category: activeCategory,
+        name: debouncedName,
+        q: debouncedKeyword,
+        org: orgFilter,
+        group: groupFilter,
+        offset: pagination.attemptedOffset,
+      }),
+    [
+      pathname,
+      activeCategory,
+      debouncedName,
+      debouncedKeyword,
+      orgFilter,
+      groupFilter,
+      pagination.attemptedOffset,
+    ]
+  )
+  // Until the first page has loaded, the page number is not yet the one the
+  // address asked for; written then, it would drop it
+  const [opened, setOpened] = useState(false)
+  useEffect(() => {
+    // A failed first read holds no page either: written then, the address
+    // would lose the page it asked for to a passing error
+    if (!loading && !error) setOpened(true)
+  }, [loading, error])
+  // The address this page last wrote. Any other one arrived from outside, and
+  // the list opens again from it rather than writing its own state back over it.
+  const written = useRef<string | null>(null)
+  const current = `${pathname}${searchParams.size ? `?${searchParams}` : ''}`
+  useEffect(() => {
+    if (!opened) return
+    // The address moved from outside and the view has not taken it yet
+    if (written.current !== null && current !== written.current && current !== listHref) return
+    rememberDatasetList(listHref)
+    written.current = listHref
+    if (current !== listHref) router.replace(listHref, { scroll: false })
+    // Only the view moving writes; the address moving is the effect below
+  }, [opened, listHref, router])
+  useEffect(() => {
+    if (written.current === null || current === written.current) return
+    onAddressChanged()
+  }, [current])
 
   // Merge active category total from pagination with inactive stats
   const stats: Record<CategoryFilter, number | undefined> = {
@@ -298,7 +418,9 @@ export default function DatasetsManagePage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => pagination.fetchPage(pagination.offset)}
+            // The page that failed, not the one shown before it: the address's
+            // before the first page arrived, the first page after a filter changed
+            onClick={() => pagination.fetchPage(pagination.attemptedOffset)}
           >
             {tc('retry')}
           </Button>
@@ -327,8 +449,8 @@ export default function DatasetsManagePage() {
                 const pkgGroups = parseGroups(pkg.groups)
                 const pkgTags = pkg.tags?.split(',').filter(Boolean) ?? []
                 const editHref = isDeletedView
-                  ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
-                  : `/dashboard/datasets/${pkg.name}/edit`
+                  ? `${datasetEditPath(pkg.id)}?state=deleted`
+                  : datasetEditPath(pkg.id)
                 const canPurge = isDeletedView && !!pkg.orgName && canInOrg(pkg.orgName, 'admin')
                 return (
                   <TableRow key={pkg.id} {...rowActivateProps(() => router.push(editHref))}>
@@ -399,6 +521,7 @@ export default function DatasetsManagePage() {
         }}
         title={t('purgeDataset')}
         description={t('purgeDatasetConfirm')}
+        target={purgeTarget ? purgeTarget.title || purgeTarget.name : undefined}
         onConfirm={handlePurge}
         isDeleting={purging}
         confirmLabel={t('purgeDataset')}

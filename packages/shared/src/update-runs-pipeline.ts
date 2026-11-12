@@ -21,8 +21,8 @@ export interface ResourceSource {
  * new source. The run comes from the upload's promotion instead, as it always
  * has for a new file.
  *
- * Shared by the API, which decides, and the editor, which has to know whether a
- * run is coming to show that it is.
+ * In `@kukan/shared` beside the other rule about how bytes are read,
+ * `sameVersionIdentity`.
  */
 export function updateRunsPipeline(before: ResourceSource, after: ResourceSource): boolean {
   const formatChanged = !sameFormat(before.format, after.format)

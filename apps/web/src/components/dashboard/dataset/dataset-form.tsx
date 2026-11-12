@@ -33,7 +33,7 @@ import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { SwitchField } from '@/components/switch-field'
 import { clientFetch, readProblem } from '@/lib/client-api'
-import { draftEditPath } from '@/lib/paths'
+import { draftEditPath, recallDatasetList } from '@/lib/paths'
 import { updateResource } from '@/lib/update-resource'
 import { parseTags } from '@/lib/parse-tags'
 import {
@@ -107,6 +107,8 @@ interface DatasetFormProps {
     /** Called after adopted resource descriptions were saved */
     onResourcesUpdated?: () => void
   }
+  /** Whether the form holds changes not yet saved (ADR-072 decision 5's guard) */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 export function DatasetForm({
@@ -121,6 +123,7 @@ export function DatasetForm({
   submitSignal,
   onDraftCreated,
   suggest,
+  onDirtyChange,
 }: DatasetFormProps) {
   // Creation always starts as a draft (ADR-039)
   const isDraftMode = mode === 'create' || !!isDraft
@@ -294,6 +297,13 @@ export function DatasetForm({
     tagsInput !== baseline.tags ||
     snapshotGroups(selectedGroups) !== baseline.groups ||
     snapshotExtras(extrasRows) !== baseline.extras
+  // Said once a save that stays on the page lands, until the next change: the
+  // button only disables, which reads the same as a save that has not happened
+  const [justSaved, setJustSaved] = useState(false)
+  useEffect(() => {
+    if (hasChanges) setJustSaved(false)
+    onDirtyChange?.(hasChanges)
+  }, [hasChanges, onDirtyChange])
 
   // Live publish preconditions (ADR-039): judge on the current form values so
   // "Save & Publish" enables without a save round-trip. A blank name field
@@ -454,11 +464,13 @@ export function DatasetForm({
     }
 
     if (onSaved) {
+      setJustSaved(!adopt)
       onSaved()
     } else if (!adopt) {
       // An adopt-save keeps the user editing; only an explicit save navigates
       setNavigating(true)
-      router.push('/dashboard/datasets')
+      // Back to the list as it was left (its view, filters and page)
+      router.push(recallDatasetList())
     }
   }
 
@@ -752,6 +764,11 @@ export function DatasetForm({
               ? t('createDraft')
               : tc('save')}
         </Button>
+      )}
+      {justSaved && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {tc('saved')}
+        </p>
       )}
     </form>
   )

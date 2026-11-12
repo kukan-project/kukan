@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { stashPendingDropFiles } from '@/lib/pending-drop-files'
 import { MAX_UPLOAD_SIZE } from '@kukan/shared'
@@ -62,6 +62,11 @@ vi.mock('../primary-key-picker', () => ({
 }))
 
 const mockClientFetch = vi.mocked(clientFetch)
+
+/** The create form's submit — the dialog's own button, not the one that opened it */
+function submitCreate() {
+  return within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Resource' })
+}
 
 function jsonResponse(data: unknown, ok = true) {
   return { ok, json: async () => data } as Response
@@ -257,53 +262,6 @@ describe('ResourceList drop-to-create', () => {
     expect(container.querySelector('input[type="file"][multiple]')).not.toBeInTheDocument()
   })
 
-  it('should show the resource name in the delete confirmation', () => {
-    render(
-      <ResourceList {...baseProps} resources={[{ id: 'r1', name: 'weather.csv', format: 'CSV' }]} />
-    )
-    // Delete only appears once the row's editor is open
-    expect(screen.queryByRole('button', { name: 'Delete This Resource' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('weather.csv'))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete This Resource' }))
-    expect(
-      screen.getByText('Are you sure you want to delete the resource "weather.csv"?')
-    ).toBeInTheDocument()
-  })
-
-  it('should not show table headers when the create form opens with zero resources', () => {
-    render(<ResourceList {...baseProps} />)
-
-    fireEvent.click(screen.getByText('Add Resource'))
-    expect(screen.queryAllByRole('columnheader')).toHaveLength(0)
-  })
-
-  it('should show table headers when resources exist', () => {
-    render(
-      <ResourceList
-        {...baseProps}
-        resources={[{ id: 'r1', name: 'existing.csv', urlType: 'upload', format: 'CSV' }]}
-      />
-    )
-    expect(screen.queryAllByRole('columnheader').length).toBeGreaterThan(0)
-  })
-
-  it('should link a row to the public resource page without opening its editor', () => {
-    render(
-      <ResourceList
-        {...baseProps}
-        packageName="weather"
-        resources={[{ id: 'r1', name: 'existing.csv', urlType: 'upload', format: 'CSV' }]}
-      />
-    )
-
-    const view = screen.getByRole('link', { name: 'View' })
-    expect(view).toHaveAttribute('href', '/dataset/weather/resource/r1')
-    expect(view).toHaveAttribute('target', '_blank')
-
-    fireEvent.click(view)
-    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument()
-  })
-
   it('should offer no public page for a draft dataset (no packageName)', () => {
     render(
       <ResourceList
@@ -315,11 +273,12 @@ describe('ResourceList drop-to-create', () => {
   })
 
   it('should ignore drops while the create form is open but still suppress navigation', () => {
-    render(<ResourceList {...baseProps} />)
+    const { container } = render(<ResourceList {...baseProps} />)
 
     fireEvent.click(screen.getByText('Add Resource'))
-    const table = screen.getByRole('table')
-    const notPrevented = dropFiles(table, [new File(['a'], 'a.csv', { type: 'text/csv' })])
+    const notPrevented = dropFiles(container.firstElementChild!, [
+      new File(['a'], 'a.csv', { type: 'text/csv' }),
+    ])
 
     expect(mockClientFetch).not.toHaveBeenCalled()
     // Default must be prevented, or the browser would navigate to the file
@@ -341,7 +300,7 @@ describe('ResourceList drop-to-create', () => {
     fireEvent.change(screen.getByLabelText('URL'), {
       target: { value: 'https://example.com/x.csv' },
     })
-    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.click(submitCreate())
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(mockClientFetch).toHaveBeenCalledTimes(1)
@@ -414,6 +373,19 @@ describe('ResourceList drop-to-create', () => {
     expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument()
   })
 
+  it('reports a resource being filled in as unsaved, and an empty dialog as not', () => {
+    // Back or a reload would drop it with the dialog
+    const onDirtyChange = vi.fn()
+    render(<ResourceList {...baseProps} onDirtyChange={onDirtyChange} />)
+    fireEvent.click(screen.getByText('Add Resource'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false)
+
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://example.com/a.csv' },
+    })
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
   it('should hold the busy gate after creating a url resource', async () => {
     // The server enqueues the pipeline at creation for url resources
     const onUploadingChange = vi.fn()
@@ -430,7 +402,7 @@ describe('ResourceList drop-to-create', () => {
     fireEvent.change(screen.getByLabelText('URL'), {
       target: { value: 'https://example.com/a.csv' },
     })
-    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.click(submitCreate())
 
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
     await waitFor(() => expect(onUpdated).toHaveBeenCalled())
@@ -451,7 +423,7 @@ describe('ResourceList drop-to-create', () => {
     fireEvent.change(screen.getByLabelText('URL'), {
       target: { value: 'https://example.com/a.csv' },
     })
-    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.click(submitCreate())
 
     // The request is still in flight — the gate must already be up
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
@@ -460,165 +432,23 @@ describe('ResourceList drop-to-create', () => {
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
   })
 
-  it('toggles the inline editor open and closed on row click', async () => {
-    render(
-      <ResourceList
-        {...baseProps}
-        resources={[{ id: 'r1', name: 'data.csv', urlType: 'upload', format: 'CSV' }]}
-      />
-    )
-
-    // First row click opens the editor.
-    fireEvent.click(screen.getByText('data.csv'))
-    expect(screen.getByText('Save')).toBeInTheDocument()
-
-    // Clicking the same row again closes it (toggle).
-    fireEvent.click(screen.getByText('data.csv'))
-    expect(screen.queryByText('Save')).not.toBeInTheDocument()
-  })
-
-  it('reloads the editor panels when a run settles without storing a version', async () => {
-    // A rebuild re-reads bytes that are already published. Unless the reading
-    // changed the create gate makes no version (`sameVersionIdentity`), and
-    // Interpret writes the schema and preview over the standing one — so
-    // `latestVersion` never moves, and nothing else would tell the picker that
-    // what it is showing has been rewritten.
-    render(
-      <ResourceList
-        {...baseProps}
-        onUpdated={vi.fn()}
-        resources={[
-          {
-            id: 'r1',
-            name: 'data.csv',
-            urlType: 'upload',
-            format: 'CSV',
-            pipelineStatus: 'complete',
-            latestVersion: 2,
-          },
-        ]}
-      />
-    )
-
-    fireEvent.click(screen.getByText('data.csv'))
-    expect(screen.getByTestId('picker-reload-key')).toHaveTextContent(/^2:0$/)
-
-    fireEvent.click(screen.getByRole('button', { name: 'settle:r1' }))
-    expect(screen.getByTestId('picker-reload-key')).toHaveTextContent(/^2:1$/)
-  })
-
-  it('should close the gate before a url-resource save resolves', async () => {
-    const onUploadingChange = vi.fn()
-    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
-    render(
-      <ResourceList
-        {...baseProps}
-        resources={[
-          { id: 'r1', name: 'data.csv', url: 'https://example.com/a.csv', urlType: null },
-        ]}
-        onUploadingChange={onUploadingChange}
-      />
-    )
-
-    // Row click opens the inline editor (the Edit button was removed)
-    fireEvent.click(screen.getByText('data.csv'))
-    // A new link is what runs the pipeline (ADR-072 decision 6)
-    fireEvent.change(screen.getByPlaceholderText('https://example.com/data.csv'), {
-      target: { value: 'https://example.com/b.csv' },
-    })
-    fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
-  })
-
-  it('should leave the gate open for a url-resource save that keeps its source', async () => {
-    // Renaming no longer re-fetches the link, so nothing is coming to wait for
-    const onUploadingChange = vi.fn()
-    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
-    render(
-      <ResourceList
-        {...baseProps}
-        resources={[
-          { id: 'r1', name: 'data.csv', url: 'https://example.com/a.csv', urlType: null },
-        ]}
-        onUploadingChange={onUploadingChange}
-      />
-    )
-
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
-    expect(onUploadingChange).not.toHaveBeenCalledWith(true)
-  })
-
   it('should close the gate before an upload-resource create resolves', async () => {
     const onUploadingChange = vi.fn()
     mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
-    const { container } = render(
-      <ResourceList {...baseProps} onUploadingChange={onUploadingChange} />
-    )
+    render(<ResourceList {...baseProps} onUploadingChange={onUploadingChange} />)
 
     fireEvent.click(screen.getByText('Add Resource'))
     // Radix tabs select on mousedown
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Upload' }))
-    const input = container.querySelector('input[type="file"]:not([multiple])')!
+    // The form opens in a dialog, drawn outside the list
+    const input = document.querySelector('[role="dialog"] input[type="file"]')!
     fireEvent.change(input, {
       target: { files: [new File(['a'], 'a.csv', { type: 'text/csv' })] },
     })
-    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.click(submitCreate())
 
     // The create request is still in flight — the gate must already be up
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
-  })
-
-  it('should close the gate before a file-replace save resolves', async () => {
-    const onUploadingChange = vi.fn()
-    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
-    const { container } = render(
-      <ResourceList
-        {...baseProps}
-        resources={[{ id: 'r1', name: 'data.csv', urlType: 'upload', format: 'CSV' }]}
-        onUploadingChange={onUploadingChange}
-      />
-    )
-
-    // Row click opens the inline editor (the Edit button was removed)
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.click(screen.getByText('Replace file'))
-    const input = container.querySelector('input[type="file"]:not([multiple])')!
-    fireEvent.change(input, {
-      target: { files: [new File(['a'], 'new.csv', { type: 'text/csv' })] },
-    })
-    fireEvent.click(screen.getByText('Save'))
-
-    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
-  })
-
-  it('should keep the editor open on the row whose file was replaced', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'r1' }))
-    const { container } = render(
-      <ResourceList
-        {...baseProps}
-        resources={[
-          { id: 'r1', name: 'data.csv', url: 'data.csv', urlType: 'upload', format: 'CSV' },
-        ]}
-      />
-    )
-
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.click(screen.getByText('Replace file'))
-    const input = container.querySelector('input[type="file"]:not([multiple])')!
-    fireEvent.change(input, {
-      target: { files: [new File(['a'], 'new.csv', { type: 'text/csv' })] },
-    })
-    fireEvent.click(screen.getByText('Save'))
-
-    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('complete-upload'))
-
-    // Still open, and naming the file that replaced the old one — closing it
-    // would leave nothing saying which row was just updated
-    await waitFor(() => expect(screen.getByText('Replace file')).toBeInTheDocument())
-    expect(screen.getByText('new.csv')).toBeInTheDocument()
   })
 
   it('should not clear the gate when the newest of overlapping refetches failed', async () => {
@@ -811,6 +641,19 @@ describe('ResourceList sections', () => {
     expect(screen.queryByText('Save order')).not.toBeInTheDocument()
   })
 
+  it('reports a heading being typed, or one waiting for a row, as unsaved', () => {
+    // The editor asks before leaving them, as it does for a staged order
+    const onDirtyChange = vi.fn()
+    render(<ResourceList {...baseProps} resources={sectioned} onDirtyChange={onDirtyChange} />)
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false)
+
+    fireEvent.click(screen.getByText('Add section'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'raw data' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
   it('should let a section be named and saved on a dataset with no resources', () => {
     render(<ResourceList {...baseProps} />)
 
@@ -927,197 +770,37 @@ describe('ResourceList sections', () => {
   })
 })
 
-describe('ResourceList deep link', () => {
+describe('ResourceList in the editor’s left column', () => {
   beforeEach(() => {
     mockClientFetch.mockReset()
   })
 
   const resources = [
-    { id: 'r1', name: 'addresses.csv', urlType: 'upload', format: 'CSV' },
-    { id: 'r2', name: 'dictionary.pdf', urlType: 'upload', format: 'PDF' },
+    { id: 'r1', name: '2024.csv', format: 'CSV', section: null },
+    { id: 'r2', name: '2023.csv', format: 'CSV', section: null },
   ]
+  const props = { packageId: 'pkg1', resources, onUpdated: () => {} }
 
-  const baseProps = { packageId: 'pkg1', resources, onUpdated: () => {} }
-
-  it('should open the editor on the row the link named', () => {
-    render(<ResourceList {...baseProps} initialEditId="r2" />)
-    expect(screen.getByDisplayValue('dictionary.pdf')).toBeInTheDocument()
-  })
-
-  it('should open nothing when the named resource is not in the list', () => {
-    render(<ResourceList {...baseProps} initialEditId="gone" />)
-    expect(screen.queryByText('Save')).not.toBeInTheDocument()
-  })
-
-  it('should not reopen the editor when the package refetches', () => {
-    const { rerender } = render(<ResourceList {...baseProps} initialEditId="r2" />)
-    fireEvent.click(screen.getByText('dictionary.pdf'))
-    expect(screen.queryByText('Save')).not.toBeInTheDocument()
-
-    // A pipeline settle hands the list a fresh array of the same rows
-    rerender(<ResourceList {...baseProps} resources={[...resources]} initialEditId="r2" />)
-    expect(screen.queryByText('Save')).not.toBeInTheDocument()
-  })
-})
-
-describe('ResourceList custom fields', () => {
-  beforeEach(() => {
-    mockClientFetch.mockReset()
-  })
-
-  const resources = [
-    {
-      id: 'r1',
-      name: 'data.csv',
-      url: 'https://example.com/a.csv',
-      urlType: null,
-      extras: { unit: 'persons', year: 2024 },
-    },
-  ]
-  const baseProps = { packageId: 'pkg1', resources, onUpdated: () => {} }
-
-  /** The body of the request made with `method`, parsed */
-  function sentBody(method: string) {
-    const call = mockClientFetch.mock.calls.find(([, init]) => init?.method === method)
-    return call && JSON.parse(String(call[1]!.body))
-  }
-
-  it('shows a resource extras in its editor and saves them whole', async () => {
-    mockClientFetch.mockImplementation(async (_url, init) =>
-      jsonResponse(init?.method === 'PUT' ? {} : resources[0])
+  it('leads each row to the resource’s own page (ADR-072)', () => {
+    render(<ResourceList {...props} />)
+    expect(screen.getByRole('link', { name: /2024\.csv/ })).toHaveAttribute(
+      'href',
+      '/dashboard/datasets/pkg1/resources/r1'
     )
-    render(<ResourceList {...baseProps} />)
-
-    fireEvent.click(screen.getByText('data.csv'))
-    expect(screen.getByDisplayValue('persons')).toBeInTheDocument()
-    // Not a string: shown, and saved back, as its JSON text
-    expect(screen.getByDisplayValue('2024')).toBeInTheDocument()
-
-    fireEvent.change(screen.getByDisplayValue('persons'), { target: { value: 'households' } })
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove this field' })[1])
-    fireEvent.click(screen.getByText('+ Add field'))
-    const [, newKey] = screen.getAllByPlaceholderText('Key')
-    const [, newValue] = screen.getAllByPlaceholderText('Value')
-    fireEvent.change(newKey, { target: { value: ' source ' } })
-    fireEvent.change(newValue, { target: { value: 'census' } })
-    fireEvent.click(screen.getByText('Save'))
-
-    await waitFor(() => expect(sentBody('PUT')).toBeDefined())
-    expect(sentBody('PUT').extras).toEqual({ unit: 'households', source: 'census' })
   })
 
-  it('saves a value it was not asked to change as it was, not as its text', async () => {
-    mockClientFetch.mockImplementation(async (_url, init) =>
-      jsonResponse(init?.method === 'PUT' ? {} : resources[0])
-    )
-    render(<ResourceList {...baseProps} />)
-
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.click(screen.getByText('Save'))
-
-    await waitFor(() => expect(sentBody('PUT')).toBeDefined())
-    expect(sentBody('PUT').extras).toEqual({ unit: 'persons', year: 2024 })
+  it('marks the resource whose page is open', () => {
+    render(<ResourceList {...props} activeId="r2" />)
+    expect(screen.getByRole('link', { name: /2023\.csv/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /2024\.csv/ })).not.toHaveAttribute('aria-current')
   })
 
-  it('leaves the link live until the file that replaces it has arrived', async () => {
-    // The source and format travel with the upload and land at its promotion;
-    // written by the save, the download would stop pointing at the link before
-    // the file exists — and for good if the upload were abandoned
-    mockClientFetch.mockImplementation(async (_url, init) =>
-      jsonResponse(init?.method === 'PUT' ? {} : resources[0])
-    )
-    const { container } = render(<ResourceList {...baseProps} />)
-
-    fireEvent.click(screen.getByText('data.csv'))
-    // Radix tabs select on mousedown
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Upload' }))
-    fireEvent.click(screen.getByText('Replace file'))
-    const input = container.querySelector('input[type="file"]:not([multiple])')!
-    fireEvent.change(input, {
-      target: { files: [new File(['a'], 'b.tsv', { type: 'text/tab-separated-values' })] },
-    })
-    fireEvent.change(screen.getByPlaceholderText('Auto-detected from URL or file'), {
-      target: { value: 'TSV' },
-    })
-    fireEvent.click(screen.getByText('Save'))
-
-    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
-    const body = sentBody('PUT')
-    expect(body.urlType).toBeNull()
-    expect(body.url).toBe('https://example.com/a.csv')
-    expect(uploadZone.format).toBe('TSV')
-  })
-
-  it('keeps the format the upload carried once the file has landed', async () => {
-    // The server took the chosen format; the name's, put back in the form, would
-    // be written by the next save and run the pipeline under the wrong reading
-    const upload = { id: 'r1', name: 'data.csv', url: 'data.csv', urlType: 'upload', format: 'CSV' }
-    mockClientFetch.mockImplementation(async (_url, init) =>
-      jsonResponse(init?.method === 'PUT' ? {} : upload)
-    )
-    const { container } = render(<ResourceList {...baseProps} resources={[upload]} />)
-
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.click(screen.getByText('Replace file'))
-    fireEvent.change(container.querySelector('input[type="file"]:not([multiple])')!, {
-      target: { files: [new File(['a'], 'new.csv', { type: 'text/csv' })] },
-    })
-    fireEvent.change(screen.getByPlaceholderText('Auto-detected from URL or file'), {
-      target: { value: 'TSV' },
-    })
-    fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('complete-upload'))
-
-    await waitFor(() => expect(screen.getByText('Replace file')).toBeInTheDocument())
-    expect(screen.getByPlaceholderText('Auto-detected from URL or file')).toHaveValue('TSV')
-  })
-
-  it('turns an upload back into a link when the link tab is saved', async () => {
-    // A link is a null type; leaving it out kept the row an upload with a URL
-    const upload = { id: 'r1', name: 'data.csv', url: 'data.csv', urlType: 'upload', format: 'CSV' }
-    mockClientFetch.mockImplementation(async (_url, init) =>
-      jsonResponse(init?.method === 'PUT' ? {} : upload)
-    )
-    render(<ResourceList {...baseProps} resources={[upload]} />)
-
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'External URL' }))
-    fireEvent.change(screen.getByPlaceholderText('https://example.com/data.csv'), {
-      target: { value: 'https://example.com/b.csv' },
-    })
-    fireEvent.click(screen.getByText('Save'))
-
-    await waitFor(() => expect(sentBody('PUT')).toBeDefined())
-    expect(sentBody('PUT').urlType).toBeNull()
-    expect(sentBody('PUT').url).toBe('https://example.com/b.csv')
-  })
-
-  it('refuses a key typed twice before sending anything', () => {
-    render(<ResourceList {...baseProps} />)
-
-    fireEvent.click(screen.getByText('data.csv'))
-    fireEvent.change(screen.getAllByPlaceholderText('Key')[1], { target: { value: 'unit' } })
-    fireEvent.click(screen.getByText('Save'))
-
-    expect(screen.getByText('Duplicate custom field keys: unit')).toBeInTheDocument()
-    expect(mockClientFetch).not.toHaveBeenCalled()
-  })
-
-  it('sends the extras a new resource is created with', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'new' }))
-    render(<ResourceList {...baseProps} resources={[]} />)
-
-    fireEvent.click(screen.getByText('Add Resource'))
-    fireEvent.click(screen.getByText('+ Add field'))
-    fireEvent.change(screen.getByPlaceholderText('Key'), { target: { value: 'unit' } })
-    fireEvent.change(screen.getByPlaceholderText('Value'), { target: { value: 'persons' } })
-    fireEvent.change(screen.getByPlaceholderText('https://example.com/data.csv'), {
-      target: { value: 'https://example.com/b.csv' },
-    })
-    fireEvent.click(screen.getAllByText('Add Resource').at(-1)!)
-
-    await waitFor(() => expect(sentBody('POST')).toBeDefined())
-    expect(sentBody('POST').extras).toEqual({ unit: 'persons' })
+  it('only shows the rows of a deleted dataset', () => {
+    // Nothing of it can be opened, arranged or added to (ADR-072 decision 4)
+    render(<ResourceList {...props} readOnly />)
+    expect(screen.getByText('2024.csv')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /2024\.csv/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reorder' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Add Resource')).not.toBeInTheDocument()
   })
 })

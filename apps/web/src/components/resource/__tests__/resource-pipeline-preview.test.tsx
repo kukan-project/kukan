@@ -87,12 +87,12 @@ describe('ResourcePipelinePreview', () => {
     expect(screen.queryByRole('button', { name: 'Processing Status' })).not.toBeInTheDocument()
   })
 
-  it('links the status view to the resource row in the dashboard', () => {
-    render(<ResourcePipelinePreview resourceId="r 1" packageName="my dataset" canManage />)
+  it('links the status view to the resource’s page in the dashboard', () => {
+    render(<ResourcePipelinePreview resourceId="r 1" packageId="pkg 1" canManage />)
     fireEvent.click(screen.getByRole('button', { name: 'Processing Status' }))
 
     const link = screen.getByRole('link', { name: /Manage this resource/ })
-    expect(link).toHaveAttribute('href', '/dashboard/datasets/my%20dataset/edit?resource=r%201')
+    expect(link).toHaveAttribute('href', '/dashboard/datasets/pkg%201/resources/r%201')
     expect(link).toHaveAttribute('target', '_blank')
   })
 

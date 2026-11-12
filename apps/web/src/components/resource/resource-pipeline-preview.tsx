@@ -35,8 +35,9 @@ interface ResourcePipelinePreviewProps {
   format?: string | null
   url?: string | null
   size?: number | null
-  /** Dataset name, for the link into this resource's row in the dashboard */
-  packageName?: string
+  /** For the link into this resource's page in the dashboard editor, which is
+   *  addressed by id: a dataset named `new` would reach the creation page */
+  packageId?: string
   canManage?: boolean
   notPublic?: boolean
   officePreviewViewer?: OfficePreviewViewer
@@ -53,7 +54,7 @@ export function ResourcePipelinePreview({
   format,
   url,
   size,
-  packageName,
+  packageId,
   canManage,
   notPublic,
   officePreviewViewer,
@@ -140,10 +141,10 @@ export function ResourcePipelinePreview({
                 {/* Everything the status view cannot do — renaming, replacing
                     the file, the key, deleting — lives on the row this opens,
                     and finding it meant walking back through the dashboard. */}
-                {packageName && (
+                {packageId && (
                   <div className="flex justify-end border-t pt-3">
                     <NewTabLink
-                      href={resourceEditPath(packageName, resourceId)}
+                      href={resourceEditPath(packageId, resourceId)}
                       label={t('manageResource')}
                       variant="outline"
                     />

@@ -1217,13 +1217,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   const { updated: res, previous } = await resourceService.update(id, input)
 
   await Promise.all([
-    settleResourceWrites(
-      db,
-      c.var,
-      [res],
-      'high',
-      updateRunsPipeline(previous, res) ? [res.id] : []
-    ),
+    settleResourceWrites(db, c.var, [res], 'high', () => updateRunsPipeline(previous, res)),
     enqueueResourceEmbedsIfDue(db, c.var, { packageId: res.packageId }),
   ])
   return c.json(res)

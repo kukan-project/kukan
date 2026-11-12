@@ -16,6 +16,8 @@ interface DeleteConfirmDialogProps {
   onOpenChange: (open: boolean) => void
   title: string
   description: string
+  /** What is being deleted, by name: a description says what happens, not to which */
+  target?: string
   onConfirm: () => void
   isDeleting?: boolean
   /** Custom label for the confirm button (defaults to "Delete" / "Deleting...") */
@@ -28,6 +30,7 @@ export function DeleteConfirmDialog({
   onOpenChange,
   title,
   description,
+  target,
   onConfirm,
   isDeleting,
   confirmLabel,
@@ -41,6 +44,7 @@ export function DeleteConfirmDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
+          {target && <p className="break-all text-sm font-medium">{target}</p>}
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isDeleting}>

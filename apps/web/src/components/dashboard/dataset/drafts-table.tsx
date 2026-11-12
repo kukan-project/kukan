@@ -150,6 +150,12 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
         description={
           draftToDelete?.state === 'purging' ? t('retryDeleteConfirm') : t('deleteDraftConfirm')
         }
+        target={
+          draftToDelete
+            ? draftToDelete.title ||
+              (isDraftPlaceholderName(draftToDelete.name) ? t('untitled') : draftToDelete.name)
+            : undefined
+        }
         onConfirm={handleDeleteDraft}
         isDeleting={deletingDraft}
         confirmLabel={t('purgeDataset')}

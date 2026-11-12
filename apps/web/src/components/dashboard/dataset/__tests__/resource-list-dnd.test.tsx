@@ -339,3 +339,40 @@ describe('ResourceList heading editing', () => {
     })
   })
 })
+
+describe('a staged arrangement across a read-back', () => {
+  it('keeps the staged order, taking the rows’ own fields fresh', () => {
+    // A save on a resource's page reads the dataset again (ADR-072); taking
+    // that copy whole would undo the arrangement still waiting for "Save order"
+    const rows = [
+      { id: 'r1', name: '2024.csv', section: null },
+      { id: 'r2', name: '2023.csv', section: null },
+    ]
+    const { rerender } = render(<ResourceList {...baseProps} resources={rows} />)
+    drag('r2', 'r1')
+    expect(screen.getByText('Save order')).toBeInTheDocument()
+
+    rerender(
+      <ResourceList
+        {...baseProps}
+        resources={[{ ...rows[0], name: '2024 (renamed).csv' }, { ...rows[1] }]}
+      />
+    )
+
+    const names = screen.getAllByRole('link').map((a) => a.textContent)
+    expect(names[0]).toContain('2023.csv')
+    expect(names[1]).toContain('2024 (renamed).csv')
+    expect(screen.getByText('Save order')).toBeInTheDocument()
+  })
+
+  it('takes the server’s order when nothing was staged', () => {
+    const rows = [
+      { id: 'r1', name: 'a.csv', section: null },
+      { id: 'r2', name: 'b.csv', section: null },
+    ]
+    const { rerender } = render(<ResourceList {...baseProps} resources={rows} />)
+    rerender(<ResourceList {...baseProps} resources={[rows[1], rows[0]]} />)
+    const names = screen.getAllByRole('link').map((a) => a.textContent)
+    expect(names[0]).toContain('b.csv')
+  })
+})

@@ -42,8 +42,8 @@ test.describe('Dataset draft lifecycle', () => {
     await page.getByRole('button', { name: /下書きを作成|Create Draft/ }).click()
 
     // The form creates a draft and lands on its edit page (UUID, not the placeholder name)
-    await page.waitForURL(/\/dashboard\/datasets\/[0-9a-f-]{36}\/edit\?state=draft/)
-    draftId = page.url().match(/datasets\/([0-9a-f-]{36})\/edit/)![1]
+    await page.waitForURL(/\/dashboard\/datasets\/[0-9a-f-]{36}\?state=draft/)
+    draftId = page.url().match(/datasets\/([0-9a-f-]{36})/)![1]
 
     await expect(page.locator('main')).toContainText(/下書き|Draft/)
   })
@@ -77,7 +77,7 @@ test.describe('Dataset draft lifecycle', () => {
     page,
     request,
   }) => {
-    await page.goto(`/dashboard/datasets/${draftId}/edit?state=draft`)
+    await page.goto(`/dashboard/datasets/${draftId}?state=draft`)
     const publishButton = page.getByRole('button', { name: /保存して公開|Save & Publish/ })
     await expect(publishButton).toBeDisabled()
     // The button explains itself with the live-value precondition hints
@@ -99,7 +99,7 @@ test.describe('Dataset draft lifecycle', () => {
     })
     expect(putRes.ok()).toBe(true)
 
-    await page.goto(`/dashboard/datasets/${draftId}/edit?state=draft`)
+    await page.goto(`/dashboard/datasets/${draftId}?state=draft`)
     // Save & Publish saves the form (PUT) and then publishes in one step
     const publishButton = page.getByRole('button', { name: /保存して公開|Save & Publish/ })
     await expect(publishButton).toBeEnabled()
@@ -128,7 +128,7 @@ test.describe('Dataset draft lifecycle', () => {
     const draft = await createRes.json()
 
     try {
-      await page.goto(`/dashboard/datasets/${draft.id}/edit?state=draft`)
+      await page.goto(`/dashboard/datasets/${draft.id}?state=draft`)
       const nameInput = page.getByLabel(/URL識別子|URL Identifier/)
       await expect(nameInput).toHaveValue(draft.name)
       await nameInput.fill('')

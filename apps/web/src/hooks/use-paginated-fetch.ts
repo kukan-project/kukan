@@ -6,16 +6,34 @@ import { keepIfEqual } from '@/lib/keep-if-equal'
 
 const DEFAULT_PAGE_SIZE = 20
 
-export function usePaginatedFetch<T>(url: string, pageSize = DEFAULT_PAGE_SIZE) {
+/**
+ * `initialOffset` is where the first fetch starts — a list restoring the page
+ * its address names. A later change of `url` (a filter) starts over at 0.
+ */
+export function usePaginatedFetch<T>(
+  url: string,
+  pageSize = DEFAULT_PAGE_SIZE,
+  { initialOffset = 0 }: { initialOffset?: number } = {}
+) {
   const [items, setItems] = useState<T[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  // The page last asked for, which `offset` becomes only once it arrives: a
+  // retry after a failure asks for this one, not the page shown before it.
+  // Kept with the address it was asked under: a filter that has just changed
+  // starts over at 0 from the render it changes in, not from the fetch after.
+  const [attempted, setAttempted] = useState({ url, offset: initialOffset })
+  const attemptedOffset = attempted.url === url ? attempted.offset : 0
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const requestId = useRef(0)
   // `loading`, readable from a callback without making it a dependency
   const loadingRef = useRef(false)
   const refreshRequest = useRef(0)
+  // Where to start, for as long as the list is at the address it opened with.
+  // Not cleared by the first fetch: an effect can run twice for one mount (React
+  // checks for that in development), and the second must start where the first did.
+  const opening = useRef<{ url: string; offset: number } | null>({ url, offset: initialOffset })
 
   const pageUrl = useCallback(
     (at: number) => `${url}${url.includes('?') ? '&' : '?'}limit=${pageSize}&offset=${at}`,
@@ -25,6 +43,7 @@ export function usePaginatedFetch<T>(url: string, pageSize = DEFAULT_PAGE_SIZE) 
   const fetchPage = useCallback(
     async (newOffset: number) => {
       const id = ++requestId.current
+      setAttempted({ url, offset: newOffset })
       loadingRef.current = true
       setLoading(true)
       setError(null)
@@ -49,7 +68,7 @@ export function usePaginatedFetch<T>(url: string, pageSize = DEFAULT_PAGE_SIZE) 
         }
       }
     },
-    [pageUrl]
+    [pageUrl, url]
   )
 
   /**
@@ -77,10 +96,11 @@ export function usePaginatedFetch<T>(url: string, pageSize = DEFAULT_PAGE_SIZE) 
   }, [pageUrl, offset])
 
   useEffect(() => {
-    fetchPage(0)
+    if (opening.current && opening.current.url !== url) opening.current = null
+    fetchPage(opening.current?.offset ?? 0)
     return () => {
       // Invalidate in-flight requests immediately when url/pageSize changes,
-      // closing the gap between re-render and the next fetchPage(0) call.
+      // closing the gap between re-render and the next fetchPage call.
       requestId.current++
     }
   }, [fetchPage])
@@ -103,6 +123,7 @@ export function usePaginatedFetch<T>(url: string, pageSize = DEFAULT_PAGE_SIZE) 
     items,
     total,
     offset,
+    attemptedOffset,
     loading,
     error,
     totalPages,

@@ -13,6 +13,11 @@ import { csvDialectSchema } from './csv-records'
  */
 export type PipelineStatus =
   'pending' | 'queued' | 'processing' | 'complete' | 'error' | 'cancelled'
+
+/** A run on its way: waiting its turn or under way. Every other state is settled. */
+export function isRunActive(status: PipelineStatus | null | undefined): boolean {
+  return status === 'queued' || status === 'processing'
+}
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
 export type PipelineStepName = 'fetch' | 'version' | 'interpret' | 'lake' | 'index' | 'summarize'
 

@@ -38,7 +38,14 @@ describe('FileUploadZone', () => {
   it('starts uploading a file it was handed', () => {
     const file = csv()
     render(<FileUploadZone resourceId="r1" initialFile={file} />)
-    expect(upload).toHaveBeenCalledWith(file)
+    expect(upload).toHaveBeenCalledWith(file, undefined)
+  })
+
+  it('sends the chosen format with the file it was handed', () => {
+    // Only that file: one picked in the zone afterwards goes by its own extension
+    const file = csv()
+    render(<FileUploadZone resourceId="r1" initialFile={file} format="TSV" />)
+    expect(upload).toHaveBeenCalledWith(file, 'TSV')
   })
 
   it('does not restart an upload already under way for the handed file', () => {

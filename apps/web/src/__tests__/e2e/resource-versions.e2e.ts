@@ -21,6 +21,7 @@ test.use({ storageState: ADMIN_FILE })
 let adminRequest: APIRequestContext
 let orgId: string
 let resourceId: string
+let packageId: string
 const datasetName = `e2e-versions-${Date.now()}`
 const resourceName = 'E2E versioned resource'
 
@@ -37,21 +38,18 @@ async function withDb<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
   }
 }
 
-/** Open the resource's inline editor, which is where the history lives. */
+/** Open the resource's page in the editor at its Version history tab (ADR-072). */
 async function openHistory(page: Page) {
-  await page.goto(`/dashboard/datasets/${datasetName}/edit`)
-  await page.getByRole('button', { name: new RegExp(resourceName) }).click()
-  await expect(page.getByText(/version history|バージョン履歴/i)).toBeVisible({ timeout: 10_000 })
+  // By id, as the editor's own links are: opened by name, the editor moves to
+  // the id once it has loaded, and a tab picked before that would be reset
+  await page.goto(`/dashboard/datasets/${packageId}/resources/${resourceId}`)
+  await page.getByRole('tab', { name: /^(Version history|バージョン履歴)$/ }).click()
+  // In the panel: the tab carries the same words
+  const panel = page.getByRole('tabpanel')
+  await expect(panel.getByText(/version history|バージョン履歴/i)).toBeVisible({ timeout: 10_000 })
 }
 
-/**
- * The history's own table.
- *
- * Scoped by a column only it has, because the resource list is a table too and
- * shows each resource's latest version number — an unscoped `v3` matches there.
- * Then `last()`, because the editor opens *inside* a row of that outer table,
- * so the filter matches the outer one as well: it contains this one.
- */
+/** The history's own table, scoped by a column only it has. */
 function historyTable(page: Page) {
   return page
     .getByRole('table')
@@ -72,6 +70,7 @@ test.beforeAll(async () => {
     data: { name: datasetName, title: 'E2E Versions', ownerOrg: orgId },
   })
   const pkg = await pkgRes.json()
+  packageId = pkg.id
 
   const resRes = await adminRequest.post(`/api/v1/packages/${pkg.id}/resources`, {
     // `.invalid` never resolves, so the run this create enqueues fails at Fetch
@@ -142,7 +141,9 @@ test.describe('Resource versions', () => {
       .getByRole('button', { name: /^(diff|差分)$/i })
       .click()
 
-    await expect(page.getByText(/not covered by diffs|差分の対象外/i)).toBeVisible({
+    await expect(
+      page.getByText(/no row-level snapshot|行レベルのスナップショットが無い/i)
+    ).toBeVisible({
       timeout: 10_000,
     })
   })
@@ -153,7 +154,7 @@ test.describe('Resource versions', () => {
     // is gone when it is not.
     await openHistory(page)
     await versionRow(page, 2)
-      .getByRole('button', { name: /purge|パージ/i })
+      .getByRole('button', { name: /delete this version|この版を削除/i })
       .click()
 
     const warning = page.getByRole('alert')
@@ -168,7 +169,7 @@ test.describe('Resource versions', () => {
     await openHistory(page)
 
     await versionRow(page, 3)
-      .getByRole('button', { name: /purge|パージ/i })
+      .getByRole('button', { name: /delete this version|この版を削除/i })
       .click()
     await expect(page.getByRole('dialog')).toContainText(
       /is not what the resource is serving|現在配信されている内容ではありません/i
@@ -176,7 +177,7 @@ test.describe('Resource versions', () => {
     await page.getByRole('button', { name: /^(cancel|キャンセル)$/i }).click()
 
     await versionRow(page, 2)
-      .getByRole('button', { name: /purge|パージ/i })
+      .getByRole('button', { name: /delete this version|この版を削除/i })
       .click()
     await expect(page.getByRole('dialog')).toContainText(
       /serving falls back to v1|配信は v1 へ戻り/i
@@ -188,7 +189,7 @@ test.describe('Resource versions', () => {
   }) => {
     await openHistory(page)
     await versionRow(page, 3)
-      .getByRole('button', { name: /purge|パージ/i })
+      .getByRole('button', { name: /delete this version|この版を削除/i })
       .click()
 
     await expect(page.getByRole('dialog')).toBeVisible()

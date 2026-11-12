@@ -19,8 +19,15 @@ import {
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
-import { cn } from '@kukan/ui'
+import { cn, Separator } from '@kukan/ui'
 import { useUser } from '@/components/dashboard/user-provider'
+
+/**
+ * A dataset open in the editor (not the creation page beside it). The editor
+ * puts the dataset's own contents where this sidebar would be (ADR-072
+ * decision 2).
+ */
+const DATASET_EDITOR = /^\/dashboard\/datasets\/(?!new(?:\/|$))[^/]+/
 
 interface SidebarItem {
   href: string
@@ -66,29 +73,34 @@ export function Sidebar() {
       isActive(href, exact) && 'bg-accent text-accent-foreground'
     )
 
+  if (DATASET_EDITOR.test(pathname)) return null
+
   return (
-    <aside className="hidden w-56 shrink-0 md:block">
-      <nav className="flex flex-col gap-1 py-4">
-        {sidebarItems.map((item) => (
-          <Link key={item.href} href={item.href} className={linkClass(item.href, item.exact)}>
-            <item.icon aria-hidden className="h-4 w-4 shrink-0" />
-            {item.label}
-          </Link>
-        ))}
-        {user.sysadmin && (
-          <>
-            <div className="mt-4 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t('adminSection')}
-            </div>
-            {adminItems.map((item) => (
-              <Link key={item.href} href={item.href} className={linkClass(item.href)}>
-                <item.icon aria-hidden className="h-4 w-4 shrink-0" />
-                {item.label}
-              </Link>
-            ))}
-          </>
-        )}
-      </nav>
-    </aside>
+    <>
+      <aside className="hidden w-56 shrink-0 md:block">
+        <nav className="flex flex-col gap-1 py-4">
+          {sidebarItems.map((item) => (
+            <Link key={item.href} href={item.href} className={linkClass(item.href, item.exact)}>
+              <item.icon aria-hidden className="h-4 w-4 shrink-0" />
+              {item.label}
+            </Link>
+          ))}
+          {user.sysadmin && (
+            <>
+              <div className="mt-4 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('adminSection')}
+              </div>
+              {adminItems.map((item) => (
+                <Link key={item.href} href={item.href} className={linkClass(item.href)}>
+                  <item.icon aria-hidden className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </Link>
+              ))}
+            </>
+          )}
+        </nav>
+      </aside>
+      <Separator orientation="vertical" className="hidden md:block" />
+    </>
   )
 }

@@ -122,7 +122,7 @@ describe('DatasetForm (draft flows)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }))
 
       await waitFor(() => {
-        expect(push).toHaveBeenCalledWith('/dashboard/datasets/draft-1/edit?state=draft')
+        expect(push).toHaveBeenCalledWith('/dashboard/datasets/draft-1?state=draft')
       })
       const body = JSON.parse(findSubmitCall()![1]!.body as string)
       expect(body.name).toBe('my-dataset')

@@ -20,6 +20,7 @@ function mockPaginatedReturn(overrides: Record<string, unknown> = {}) {
     items: [],
     total: 0,
     offset: 0,
+    attemptedOffset: 0,
     loading: true,
     error: null,
     totalPages: 0,

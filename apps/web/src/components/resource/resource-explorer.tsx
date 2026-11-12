@@ -17,6 +17,7 @@ import { LinkHealthWarning } from './link-health-warning'
 import { sectionLayout, type OfficePreviewViewer, type ResourceSummaryMeta } from '@kukan/shared'
 import { ResourceAbstract } from './resource-abstract'
 import { indentClass, headingTag } from '@/lib/resource-sections'
+import { externalUrl } from '@/lib/paths'
 
 export interface Resource {
   id: string
@@ -46,6 +47,8 @@ export interface Resource {
 interface ResourceExplorerProps {
   resources: Resource[]
   packageName: string
+  /** For the link into the dashboard editor, which is addressed by id (ADR-072) */
+  packageId?: string
   sectionTitle?: string
   initialResourceId?: string
   canManage?: boolean
@@ -53,16 +56,6 @@ interface ResourceExplorerProps {
   notPublic?: boolean
   /** What draws an Office file's original (OFFICE_PREVIEW_VIEWER, ADR-065) */
   officePreviewViewer?: OfficePreviewViewer
-}
-
-/**
- * A resource's URL when it points at another site — an upload's names our own.
- *
- * Tested by exclusion because `upload` is the only value the validator admits
- * (`createResourceBodySchema`); anything else, `null` included, is a fetch.
- */
-function externalUrl(resource: Resource | undefined): string | null {
-  return resource && resource.urlType !== 'upload' ? (resource.url ?? null) : null
 }
 
 /**
@@ -82,6 +75,7 @@ function getResourceIdFromPath(): string | null {
 export function ResourceExplorer({
   resources,
   packageName,
+  packageId,
   sectionTitle,
   initialResourceId,
   canManage,
@@ -293,7 +287,7 @@ export function ResourceExplorer({
                   format={r.format}
                   url={externalUrl(r)}
                   size={r.size}
-                  packageName={packageName}
+                  packageId={packageId}
                   canManage={canManage}
                   notPublic={notPublic}
                   officePreviewViewer={officePreviewViewer}

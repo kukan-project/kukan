@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Badge } from '@kukan/ui'
+import { Badge, cn } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import { isRunActive } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import {
   failureReason,
@@ -24,6 +25,12 @@ interface PipelineStatusBadgeProps {
    * became of it.
    */
   justRan?: boolean
+  /**
+   * `dot` for a narrow list (the dataset editor's left column, ADR-072
+   * decision 3): the same states, as a dot that names itself — with the
+   * failure, or that no version was stored — on hover and to screen readers.
+   */
+  variant?: 'badge' | 'dot'
 }
 
 const STATUS_CONFIG: Record<
@@ -45,6 +52,16 @@ const STATUS_CONFIG: Record<
     variant: 'secondary',
     className: 'bg-warning/15 text-warning-tint-foreground',
   },
+}
+
+/** The dot's colour per state — the same reading as the badge */
+const STATUS_DOT_CLASS: Record<PipelineStatus, string> = {
+  pending: 'border border-muted-foreground/60',
+  queued: 'border border-muted-foreground/60',
+  processing: 'bg-primary animate-pulse',
+  complete: 'bg-success',
+  error: 'bg-destructive',
+  cancelled: 'bg-warning',
 }
 
 export const STATUS_KEYS: Record<PipelineStatus, string> = {
@@ -111,9 +128,10 @@ export function PipelineStatusBadge({
   initialStatus,
   onSettled,
   justRan,
+  variant = 'badge',
 }: PipelineStatusBadgeProps) {
   const t = useTranslations('resource')
-  const shouldPoll = initialStatus === 'queued' || initialStatus === 'processing'
+  const shouldPoll = isRunActive(initialStatus)
   const { status, data } = usePipelineStatus({
     resourceId,
     enabled: shouldPoll,
@@ -167,6 +185,25 @@ export function PipelineStatusBadge({
 
   const config = STATUS_CONFIG[displayStatus]
   const label = t(STATUS_KEYS[displayStatus])
+  const noNewVersion = sameContent || (settled !== null && storedNoVersion(settled))
+
+  if (variant === 'dot') {
+    const note = reason ?? (noNewVersion ? t('pipelineNoNewVersion') : null)
+    const name = note ? `${label}: ${note}` : label
+    return (
+      <span
+        role="img"
+        aria-label={name}
+        title={name}
+        className={cn(
+          'size-2 shrink-0 rounded-full',
+          STATUS_DOT_CLASS[displayStatus],
+          // Finished without a version: still a success, told apart by its name
+          noNewVersion && 'opacity-50'
+        )}
+      />
+    )
+  }
 
   return (
     <div className="flex flex-col items-start gap-1">
@@ -181,7 +218,7 @@ export function PipelineStatusBadge({
           {reason}
         </span>
       )}
-      {(sameContent || (settled !== null && storedNoVersion(settled))) && (
+      {noNewVersion && (
         <span className="max-w-[200px] text-xs text-muted-foreground">
           {t('pipelineNoNewVersion')}
         </span>
