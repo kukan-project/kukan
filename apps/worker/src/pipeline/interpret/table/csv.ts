@@ -18,12 +18,14 @@ import {
   DROPPED_LINE_SAMPLE,
   SIGN_OFF_MAX_CELLS,
   SIGN_OFF_MIN_MISSING,
+  INTERPRET_MAX_SPILL_BYTES,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
 } from '@/config'
 import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
 import {
   describe,
+  isOutOfMemory,
   semanticType,
   writeTable,
   type Column,
@@ -117,6 +119,7 @@ export async function interpretCsv(
     memoryLimitBytes: INTERPRET_MEMORY_LIMIT_MB * 1_000_000,
     threads: INTERPRET_THREADS,
     spill: 'interpret',
+    maxSpillBytes: INTERPRET_MAX_SPILL_BYTES,
   })
   try {
     // Materialized rather than streamed straight into the COPY: the schema needs
@@ -197,6 +200,9 @@ export async function interpretCsv(
         ...(lenient && { lenient }),
       },
     }
+  } catch (err) {
+    if (isOutOfMemory(err)) return { schema: { rowCount: 0, columns: [] }, reason: 'out-of-memory' }
+    throw err
   } finally {
     // A worker leaking an instance per message accumulates its buffer manager
     // and threads for days.

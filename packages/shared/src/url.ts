@@ -41,11 +41,22 @@ const BLOCKED_V4 = [
   '0.0.0.0/8', // unspecified
 ].map(cidr)
 
+/**
+ * RFC 8215's local-use NAT64 prefix, refused outright rather than unwrapped.
+ *
+ * Where the IPv4 sits depends on the prefix length the operator picked inside
+ * this /48 (RFC 6052 allows /48 to /96), and the address does not say, so there
+ * is no one place to read it from. Refusing it costs only a deployment behind
+ * its own local-use NAT64, which would then reach IPv4-only hosts by name.
+ */
+const LOCAL_NAT64 = '64:ff9b:1::/48'
+
 const BLOCKED_V6 = [
   '::1/128', // loopback
   '::/96', // unspecified, and IPv4-compatible (`::127.0.0.1`)
   'fe80::/10', // link-local
   'fd00:ec2::/32', // AWS IMDS over IPv6, inside the ULA range allowed above
+  LOCAL_NAT64,
 ].map(cidr)
 
 /**
@@ -53,14 +64,12 @@ const BLOCKED_V6 = [
  *
  * Judged on what they carry rather than blocked outright: `64:ff9b::/96` is how
  * a NAT64 network reaches IPv4 at all, so refusing the prefix refuses the
- * internet.
- *
- * NAT64 is matched at /32 rather than the /96 of the well-known prefix, so that
- * RFC 8215's local-use `64:ff9b:1::/48` is covered too.
+ * internet. The local-use /48 inside it is left wrapped, for `BLOCKED_V6`.
  */
-const EMBEDS_IPV4: { subnet: Subnet; at: number }[] = [
+const EMBEDS_IPV4: { subnet: Subnet; at: number | null }[] = [
   { subnet: cidr('::ffff:0:0/96'), at: 12 }, // IPv4-mapped
-  { subnet: cidr('64:ff9b::/32'), at: 12 }, // NAT64 (RFC 6052, RFC 8215)
+  { subnet: cidr(LOCAL_NAT64), at: null }, // before the /32 that contains it
+  { subnet: cidr('64:ff9b::/32'), at: 12 }, // NAT64 (RFC 6052)
   { subnet: cidr('2002::/16'), at: 2 }, // 6to4 (RFC 3056) — its IPv4 sits higher up
 ]
 
@@ -155,7 +164,7 @@ function addressBytes(address: string): number[] | null {
   const v6 = parseIPv6(bare)
   if (!v6) return null
   for (const { subnet, at } of EMBEDS_IPV4) {
-    if (matches(v6, subnet)) return v6.slice(at, at + 4)
+    if (matches(v6, subnet)) return at === null ? v6 : v6.slice(at, at + 4)
   }
   return v6
 }

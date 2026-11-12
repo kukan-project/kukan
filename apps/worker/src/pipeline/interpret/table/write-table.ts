@@ -49,6 +49,16 @@ export interface InterpretedTableFile {
   profile?: InterpretedProfile
 }
 
+/**
+ * Whether DuckDB ran out of room for the table: past its memory limit with
+ * nothing left to spill, or past its spill cap (`INTERPRET_MAX_SPILL_BYTES`).
+ * Both bounds are the instance's own, so reading the file again ends the same
+ * way. A full disk is not among them: that is an IO error, and runs again.
+ */
+export function isOutOfMemory(err: unknown): boolean {
+  return err instanceof Error && /Out of Memory Error/.test(err.message)
+}
+
 /** A DuckDB type name, folded to the semantic type persisted on the schema. */
 export function semanticType(duckType: string): ResourceColumnType {
   const t = duckType.toUpperCase()

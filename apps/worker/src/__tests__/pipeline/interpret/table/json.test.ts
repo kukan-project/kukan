@@ -476,14 +476,14 @@ describe('settledReason', () => {
     expect(
       settledReason(new Error('Binder Error: Max expression depth limit of 1000 exceeded.'))
     ).toBe('not-records')
-    // A full spill directory is the moment's, not the file's
+    // The spill cap is the instance's own, so reaching it is the file's
     expect(
       settledReason(
         new Error(
-          "Out of Memory Error: failed to offload data block of size 256.0 KiB (19.9 GiB/20.0 GiB used). This limit was set by the 'max_temp_directory_size' setting."
+          "Out of Memory Error: failed to offload data block of size 256.0 KiB (3.9 GiB/4.0 GiB used). This limit was set by the 'max_temp_directory_size' setting."
         )
       )
-    ).toBeNull()
+    ).toBe('out-of-memory')
     expect(settledReason(new Error('IO Error: No files found'))).toBeNull()
     expect(settledReason('Out of Memory Error')).toBeNull()
   })

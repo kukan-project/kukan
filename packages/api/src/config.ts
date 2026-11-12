@@ -57,8 +57,8 @@ export const QUERY_MEMORY_LIMIT_MB = 256
  * What one of the web's DuckDB instances may spill to disk — a query's, a feed
  * page's, or the lake's, which this process's lake reads take turns on. DuckDB's
  * default is 90% of the free disk. A query at QUERY_MEMORY_LIMIT_MB that needs
- * more within QUERY_TIMEOUT_MS is not one to serve; the worker, whose large CSVs
- * spill as a matter of course, is left uncapped.
+ * more within QUERY_TIMEOUT_MS is not one to serve. The worker's interpretation
+ * has its own cap (`INTERPRET_MAX_SPILL_BYTES`); its lake is left uncapped.
  */
 export const WEB_DUCKDB_MAX_SPILL_BYTES = 4 * 1024 ** 3
 

@@ -120,6 +120,17 @@ export const INTERPRET_MEMORY_LIMIT_MB = 512
 export const INTERPRET_THREADS = 2
 
 /**
+ * What that instance may spill. DuckDB's default is 90% of the free disk, which
+ * on a task is the 20 GiB Fargate gives when the task asks for none (the stack
+ * does not) — shared with the image, the jobs' downloads, Parquet outputs and
+ * version files. Interpretations run one at a time in the heavy process, from a
+ * source of at most `MAX_PARQUET_SOURCE_SIZE`, so this is forty times the
+ * largest file: a table that needs more is not one to keep reading. Hitting it
+ * settles the version as `out-of-memory`, like the memory bound.
+ */
+export const INTERPRET_MAX_SPILL_BYTES = 4 * 1024 ** 3
+
+/**
  * The anonymous memory at which the parent kills the heavy process mid-request
  * (ADR-059) where the container has room for it: an interpretation's DuckDB at
  * its cap, by the rule the web's resource queries measured in RSS, on top of

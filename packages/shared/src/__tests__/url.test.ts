@@ -46,6 +46,12 @@ describe('isBlockedAddress', () => {
       ['[::1]', 'as URL.hostname spells it'],
       ['fd00:ec2::254', 'AWS IMDS over IPv6, inside the ULA range allowed below'],
       ['fd00:ec2::23', 'AWS IMDS over IPv6, the other well-known one'],
+      // Where the IPv4 sits in the local-use NAT64 prefix is the operator's
+      // choice, so no reading of the address is safe; public ones go too.
+      ['64:ff9b:1::7f00:1', 'local-use NAT64, IPv4 at the /96 position'],
+      ['64:ff9b:1:7f00:0:100:808:808', 'local-use NAT64, 127.0.0.1 at the /48 position'],
+      ['64:ff9b:1::8.8.8.8', 'local-use NAT64 to a public address'],
+      ['64:ff9b:1:ffff:ffff:ffff:ffff:ffff', 'local-use NAT64, top of the /48'],
     ])('should block %s (%s)', (address) => {
       expect(isBlockedAddress(address)).toBe(true)
     })
@@ -57,6 +63,8 @@ describe('isBlockedAddress', () => {
       ['2001:db8::1', 'documentation range'],
       ['2606:2800:220::1', 'public'],
       ['fec0::1', 'site-local: deprecated, and not ours to block'],
+      ['2001:4860:4860::8888', 'public'],
+      ['64:ff9b:2::808:808', 'just past the local-use NAT64 /48, read as NAT64'],
     ])('should allow %s (%s)', (address) => {
       expect(isBlockedAddress(address)).toBe(false)
     })

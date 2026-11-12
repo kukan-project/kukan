@@ -29,13 +29,20 @@ import type { DuckDBConnection } from '@duckdb/node-api'
 import { openDuckdb, sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import type { NoTableReason } from '@kukan/shared'
 import {
+  INTERPRET_MAX_SPILL_BYTES,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
   MAX_JSON_DEPTH,
   MAX_JSON_OBJECT_SIZE,
   MAX_TABLE_COLUMNS,
 } from '@/config'
-import { describe, writeTable, type Column, type InterpretedTableFile } from './write-table'
+import {
+  describe,
+  isOutOfMemory,
+  writeTable,
+  type Column,
+  type InterpretedTableFile,
+} from './write-table'
 
 /** What reading the file produced nothing from. */
 const refused = (reason: NoTableReason): InterpretedTableFile => ({
@@ -61,19 +68,12 @@ const TOO_LARGE = /maximum_object_size/
  * them: it can also be a passing fault, and `MAX_JSON_DEPTH` keeps the nesting
  * that causes one from reaching the reader at all.
  */
-const OUT_OF_MEMORY = /Out of Memory Error/
 const TOO_DEEP = /Max expression depth/
-
-/**
- * The out-of-memory DuckDB raises when it cannot spill: the temp directory is
- * shared with other jobs' downloads, so full is a passing state, not the file's.
- */
-const SPILL_FULL = /offload|max_temp_directory_size/
 
 /** The reason an error raised while interpreting settles the file with, if it does. */
 export function settledReason(err: unknown): NoTableReason | null {
   if (!(err instanceof Error)) return null
-  if (OUT_OF_MEMORY.test(err.message)) return SPILL_FULL.test(err.message) ? null : 'out-of-memory'
+  if (isOutOfMemory(err)) return 'out-of-memory'
   if (TOO_DEEP.test(err.message)) return 'not-records'
   return null
 }
@@ -174,6 +174,7 @@ export async function interpretJson(
     memoryLimitBytes: INTERPRET_MEMORY_LIMIT_MB * 1_000_000,
     threads: INTERPRET_THREADS,
     spill: 'interpret',
+    maxSpillBytes: INTERPRET_MAX_SPILL_BYTES,
   })
   try {
     const isObject = await jsonStartsWithObject(createReadStream(jsonPath))

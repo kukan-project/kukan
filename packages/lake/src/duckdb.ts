@@ -62,14 +62,17 @@ export async function openDuckdb(opts: OpenDuckdbOptions): Promise<DuckdbHandle>
       memory_limit: `${Math.trunc(opts.memoryLimitBytes)}B`,
     }),
     ...(opts.threads !== undefined && { threads: String(Math.trunc(opts.threads)) }),
-    ...(opts.maxSpillBytes !== undefined && {
-      max_temp_directory_size: `${Math.trunc(opts.maxSpillBytes)}B`,
-    }),
   })
   let conn: DuckDBConnection | undefined
   let dropTempDir: () => Promise<void> = async () => {}
   try {
     conn = await instance.connect()
+    // A `SET`, not a creation option like the bounds above: as a creation
+    // option `current_setting` reports the limit but nothing enforces it
+    // (measured on 1.5.5, a 50 MiB cap let a sort write 820 MB).
+    if (opts.maxSpillBytes !== undefined) {
+      await conn.run(`SET max_temp_directory_size = '${Math.trunc(opts.maxSpillBytes)}B'`)
+    }
     if (opts.spill !== null) dropTempDir = await useOwnTempDirectory(conn, opts.spill)
   } catch (err) {
     // A failed `useOwnTempDirectory` removed its own directory; the instance

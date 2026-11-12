@@ -109,6 +109,15 @@ describe('ssrfSafeLookup', () => {
     expect(err!.message).toContain('169.254.169.254')
   })
 
+  it('should reject an AAAA answer in the local-use NAT64 prefix, IMDS at its /48 position', async () => {
+    mockResolve4.mockRejectedValue(dnsError('ENOTFOUND'))
+    mockResolve6.mockResolvedValue(['64:ff9b:1:a9fe:a9:fe00:808:808'])
+
+    const { err } = await lookedUp('evil.example.com', { all: true, family: 6 })
+
+    expect(err!.message).toContain('64:ff9b:1:a9fe:a9:fe00:808:808')
+  })
+
   it('should reject a name that answers with a public address beside a private one', async () => {
     // Rebinding: taking the survivors would connect to the loopback one.
     mockResolve4.mockResolvedValue(['93.184.216.34', '127.0.0.1'])

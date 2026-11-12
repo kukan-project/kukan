@@ -46,6 +46,28 @@ describe('openDuckdb', () => {
     await dropTempDir()
     expect(existsSync(dir)).toBe(false)
   })
+
+  it('stops a query at the spill cap, and the connection goes on', async () => {
+    // The cap has to be enforced, not only reported: `current_setting` shows
+    // it either way.
+    const { conn, close } = await openDuckdb({
+      memoryLimitBytes: 32_000_000,
+      threads: 1,
+      spill: 'test',
+      maxSpillBytes: 8 * 1024 ** 2,
+    })
+    try {
+      await expect(
+        conn.run(
+          'SELECT count(*) FROM (SELECT md5(i::VARCHAR) || md5((i + 1)::VARCHAR) AS s FROM range(2000000) t(i) ORDER BY s)'
+        )
+      ).rejects.toThrow(/failed to offload/)
+      const reader = await conn.runAndReadAll('SELECT 42 AS v')
+      expect(reader.getRowObjectsJson()).toEqual([{ v: 42 }])
+    } finally {
+      await close()
+    }
+  })
 })
 
 describe('sealDuckdb', () => {
