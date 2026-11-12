@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, defaultTestUser } from '../test-helpers/test-app'
 import {
   getTestDb,
   cleanDatabase,
@@ -38,6 +38,10 @@ const nonAdminApp = createTestApp(db, {
     name: 'regular-user',
     sysadmin: false,
   },
+  auth: mockAuth,
+})
+const tokenApp = createTestApp(db, {
+  user: { ...defaultTestUser, authMethod: 'token' },
   auth: mockAuth,
 })
 
@@ -611,6 +615,91 @@ describe('Admin Users API', () => {
         sql`SELECT COUNT(*)::int AS count FROM "api_token" WHERE user_id = ${targetId}`
       )
       expect((tokensAfter.rows[0] as Record<string, unknown>).count).toBe(0)
+    })
+  })
+
+  // ---- Signed in with an API token ----
+  describe('signed in with an API token', () => {
+    const TARGET_ID = '00000000-0000-0000-0000-0000000000a1'
+
+    async function targetRow() {
+      const result = await db.execute(sql`SELECT role, state FROM "user" WHERE id = ${TARGET_ID}`)
+      return result.rows[0] as { role: string; state: string } | undefined
+    }
+
+    async function expectRefused(res: Response) {
+      expect(res.status).toBe(403)
+      const body = await res.json()
+      expect(body.title).toBe('FORBIDDEN')
+      expect(body.detail).toBe('This operation is available only from a signed-in session')
+    }
+
+    it('still lists users', async () => {
+      await insertUser(TARGET_ID, 'listed-user', 'listed@example.com')
+      const res = await tokenApp.request('/api/v1/admin/users')
+      expect(res.status).toBe(200)
+      expect((await tokenApp.request('/api/v1/admin/users/stats')).status).toBe(200)
+    })
+
+    it('refuses to create a user, which the session can', async () => {
+      const init = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'minted-admin',
+          email: 'minted@example.com',
+          password: 'harbor-lantern-quiet-42',
+          role: 'sysadmin',
+        }),
+      }
+      await expectRefused(await tokenApp.request('/api/v1/admin/users', init))
+      expect(mockCreateUser).not.toHaveBeenCalled()
+
+      expect((await app.request('/api/v1/admin/users', init)).status).toBe(201)
+    })
+
+    it('refuses to change a role, which the session can', async () => {
+      await insertUser(TARGET_ID, 'promoted-user', 'promoted@example.com')
+      const init = {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'sysadmin' }),
+      }
+      await expectRefused(await tokenApp.request(`/api/v1/admin/users/${TARGET_ID}`, init))
+      expect((await targetRow())?.role).toBe('user')
+
+      expect((await app.request(`/api/v1/admin/users/${TARGET_ID}`, init)).status).toBe(200)
+      expect((await targetRow())?.role).toBe('sysadmin')
+    })
+
+    it('refuses to delete a user, which the session can', async () => {
+      await insertUser(TARGET_ID, 'deleted-user', 'deleted@example.com')
+      const path = `/api/v1/admin/users/${TARGET_ID}`
+      await expectRefused(await tokenApp.request(path, { method: 'DELETE' }))
+      expect((await targetRow())?.state).toBe('active')
+
+      expect((await app.request(path, { method: 'DELETE' })).status).toBe(200)
+      expect((await targetRow())?.state).toBe('deleted')
+    })
+
+    it('refuses to restore a user, which the session can', async () => {
+      await insertUser(TARGET_ID, 'restored-user', 'restored@example.com', 'user', 'deleted')
+      const path = `/api/v1/admin/users/${TARGET_ID}/restore`
+      await expectRefused(await tokenApp.request(path, { method: 'POST' }))
+      expect((await targetRow())?.state).toBe('deleted')
+
+      expect((await app.request(path, { method: 'POST' })).status).toBe(200)
+      expect((await targetRow())?.state).toBe('active')
+    })
+
+    it('refuses to purge a user, which the session can', async () => {
+      await insertUser(TARGET_ID, 'purged-user', 'purged@example.com', 'user', 'deleted')
+      const path = `/api/v1/admin/users/${TARGET_ID}/purge`
+      await expectRefused(await tokenApp.request(path, { method: 'POST' }))
+      expect(await targetRow()).toBeDefined()
+
+      expect((await app.request(path, { method: 'POST' })).status).toBe(200)
+      expect(await targetRow()).toBeUndefined()
     })
   })
 })

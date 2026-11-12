@@ -123,9 +123,13 @@ describe('audit log', () => {
       ])
     })
 
-    it('says the change came through a token when it did', async () => {
-      await send(tokenApp, 'PATCH', `/api/v1/admin/users/${OUTSIDER_USER_ID}`, { role: 'sysadmin' })
-      expect(await auditRows()).toMatchObject([{ changes: { authMethod: 'token' } }])
+    it('records nothing for a role change a token is refused', async () => {
+      // A token's changes are recorded as such under settings; this one never happens
+      const res = await send(tokenApp, 'PATCH', `/api/v1/admin/users/${OUTSIDER_USER_ID}`, {
+        role: 'sysadmin',
+      })
+      expect(res.status).toBe(403)
+      expect(await auditRows()).toEqual([])
     })
 
     it('records nothing for an update that leaves the role as it was', async () => {

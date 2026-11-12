@@ -5,6 +5,7 @@
 
 import { Hono, type Context } from 'hono'
 import { zValidator } from '../middleware/validator'
+import { refuseApiToken } from '../middleware/auth'
 import { z } from 'zod'
 import {
   eq,
@@ -64,6 +65,7 @@ import {
   ServiceUnavailableError,
   KukanError,
   ValidationError,
+  ForbiddenError,
 } from '@kukan/shared'
 import type { JobKind } from '@kukan/queue'
 import { PipelineService, reprocessAllPending } from '../services/pipeline/pipeline-service'
@@ -85,6 +87,7 @@ import {
   AI_SUGGEST_MODEL_KEY,
   AI_SUGGEST_ENABLED_KEY,
   SETTING_KEYS,
+  REGISTRATION_ENABLED_KEY,
   isSettingKey,
   parseSettingValue,
 } from '../services/system-setting'
@@ -116,6 +119,13 @@ adminRouter.use('*', async (c, next) => {
   if (!user.sysadmin) throw new SysadminRequiredError('Sysadmin role required')
   await next()
 })
+
+/**
+ * For user management and the catalog wipe. A leaked sysadmin token could
+ * otherwise create a sysadmin account that outlives the token, or erase the
+ * catalog; the dashboard calls these with a session.
+ */
+const sessionOnly = refuseApiToken('This operation is available only from a signed-in session')
 
 const DEFAULT_PAGE_LIMIT = 20
 const MAX_PAGE_LIMIT = 100
@@ -369,6 +379,10 @@ adminRouter.put(
     const key = c.req.param('key')
     if (!isSettingKey(key)) {
       throw new KukanError(`Unknown setting: ${key}`, 'NOT_FOUND', 404)
+    }
+    // Opening registration would let a leaked token make accounts that outlive it
+    if (key === REGISTRATION_ENABLED_KEY && c.get('user')?.authMethod === 'token') {
+      throw new ForbiddenError('This operation is available only from a signed-in session')
     }
 
     const parsed = parseSettingValue(key, c.req.valid('json').value)
@@ -801,7 +815,7 @@ adminRouter.delete('/queue/jobs/:id', zValidator('param', jobIdParam), async (c)
 })
 
 // DELETE /api/v1/admin/data — Delete all data (preserves users)
-adminRouter.delete('/data', async (c) => {
+adminRouter.delete('/data', sessionOnly, async (c) => {
   const db = c.get('db')
   const search = c.get('search')
   const storage = c.get('storage')
@@ -977,6 +991,7 @@ adminRouter.get('/users', async (c) => {
 // POST /api/v1/admin/users — Create a new user
 adminRouter.post(
   '/users',
+  sessionOnly,
   zValidator(
     'json',
     z.object({
@@ -1020,6 +1035,7 @@ adminRouter.post(
 // PATCH /api/v1/admin/users/:userId — Update user (name, displayName, role)
 adminRouter.patch(
   '/users/:userId',
+  sessionOnly,
   zValidator(
     'json',
     z.object({
@@ -1060,7 +1076,7 @@ adminRouter.patch(
 )
 
 // DELETE /api/v1/admin/users/:userId — Soft-delete user
-adminRouter.delete('/users/:userId', async (c) => {
+adminRouter.delete('/users/:userId', sessionOnly, async (c) => {
   const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
@@ -1073,7 +1089,7 @@ adminRouter.delete('/users/:userId', async (c) => {
 })
 
 // POST /api/v1/admin/users/:userId/restore — Restore a soft-deleted user
-adminRouter.post('/users/:userId/restore', async (c) => {
+adminRouter.post('/users/:userId/restore', sessionOnly, async (c) => {
   const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
@@ -1086,7 +1102,7 @@ adminRouter.post('/users/:userId/restore', async (c) => {
 })
 
 // POST /api/v1/admin/users/:userId/purge — Permanently delete a soft-deleted user
-adminRouter.post('/users/:userId/purge', async (c) => {
+adminRouter.post('/users/:userId/purge', sessionOnly, async (c) => {
   const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {

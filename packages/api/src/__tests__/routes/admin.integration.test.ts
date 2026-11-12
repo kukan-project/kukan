@@ -10,7 +10,7 @@ import {
   tag,
   packageTag,
 } from '@kukan/db'
-import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
+import { createTestApp, defaultTestUser, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { pagedField, rankedId } from '../test-helpers/paging'
 import type { SearchAdapter } from '@kukan/search-adapter'
@@ -2244,6 +2244,41 @@ describe('Admin API Routes', () => {
       expect(body.detail).toMatch(/search index could not be cleared/)
       // Deleted all the same; running it again clears the index
       expect(await db.$count(packageTable)).toBe(0)
+    })
+
+    it('refuses an API token, and leaves the catalog and the search index alone', async () => {
+      await seedPackage('data-delete-token')
+      const search = { ...mockSearch, deleteAllPackages: vi.fn().mockResolvedValue(undefined) }
+      const tokenApp = createTestApp(db, {
+        search,
+        user: { ...defaultTestUser, authMethod: 'token' },
+      })
+
+      const res = await tokenApp.request('/api/v1/admin/data', { method: 'DELETE' })
+
+      expect(res.status).toBe(403)
+      const body = await res.json()
+      expect(body.title).toBe('FORBIDDEN')
+      expect(body.detail).toBe('This operation is available only from a signed-in session')
+      expect(await db.$count(packageTable)).toBe(1)
+      expect(search.deleteAllPackages).not.toHaveBeenCalled()
+
+      // The rest of /admin still answers a sysadmin token
+      expect((await tokenApp.request('/api/v1/admin/settings')).status).toBe(200)
+    })
+
+    it('refuses opening registration with an API token, which would let it make accounts', async () => {
+      const tokenApp = createTestApp(db, { user: { ...defaultTestUser, authMethod: 'token' } })
+      const put = (key: string, value: unknown) =>
+        tokenApp.request(`/api/v1/admin/settings/${key}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value }),
+        })
+
+      expect((await put('registration-enabled', true)).status).toBe(403)
+      // Other settings still take a sysadmin token
+      expect((await put('semantic-search-enabled', false)).status).toBe(200)
     })
   })
 })

@@ -9,8 +9,13 @@
  * infra/lib/cf-functions/viewer-request.js).
  */
 
-import type { Context, Next } from 'hono'
-import { UnauthorizedError, SESSION_COOKIE_NAME, SysadminRequiredError } from '@kukan/shared'
+import type { Context, MiddlewareHandler, Next } from 'hono'
+import {
+  ForbiddenError,
+  UnauthorizedError,
+  SESSION_COOKIE_NAME,
+  SysadminRequiredError,
+} from '@kukan/shared'
 import type { Auth } from '../auth/auth'
 import { ApiTokenService } from '../services/api-token-service'
 
@@ -100,6 +105,18 @@ export function ckanTokenAuth() {
         header && !/\s/.test(header) ? header : c.req.header('X-CKAN-API-Key') || undefined
       if (rawToken) await authenticateToken(c, rawToken)
     }
+    await next()
+  }
+}
+
+/**
+ * Refuses a request signed in with an API token, for what must stay with a
+ * session: anything a leaked token could use to outlive its own expiry and
+ * revocation, or to do damage the owner cannot undo.
+ */
+export function refuseApiToken(detail: string): MiddlewareHandler {
+  return async (c, next) => {
+    if (c.get('user')?.authMethod === 'token') throw new ForbiddenError(detail)
     await next()
   }
 }
