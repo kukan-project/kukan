@@ -577,10 +577,16 @@ Office の「原本」は ibisOffice がブラウザの sandbox の iframe で�
 | CSV/TSV Parquet 生成対象              | 100 MB     | `packages/shared/src/formats.ts`                          |
 | JSON（1 オブジェクト）                | 32 MB      | `apps/worker/src/config.ts`                               |
 | JSON（入れ子の深さ）                  | 64 段      | `apps/worker/src/config.ts`                               |
+| XLSX の読み直し（展開後）             | 4 MB       | `apps/worker/src/config.ts`                               |
+| XLSX の読み直し（XML 要素）           | 20 万個    | `apps/worker/src/config.ts`                               |
 | ZIP マニフェスト（エントリ数）        | 1 万件     | `apps/worker/src/pipeline/interpret/zip.ts`               |
 | ZIP マニフェスト（エントリ名の合計）  | 200 万文字 | `apps/worker/src/pipeline/interpret/zip.ts`               |
 | Office の原本（ibisOffice、ファイル） | 64 MB      | `apps/web/src/components/preview/ibis-office-preview.tsx` |
 | Office の原本（ibisOffice、展開後）   | 128 MB     | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+
+XLSX は自前の読み取りで読み、それが失敗したとき（壊れた XML など）だけ officeparser で読み直す。読み直しは
+どちらかの上限を超えると読み始める前に失敗する（officeparser は要素ごとに 1 KB 前後を持つため、メモリで決めた値）。
+共有文字列の数・テキストの量などの上限で止めたときは読み直さない。
 
 ZIP マニフェストはどちらかの上限に達したところで一覧を打ち切り、`truncated` を立てる。件数・サイズの
 合計は一覧に載せた分だけで、書庫自身が名乗るエントリ数は `totalEntries` に残す。

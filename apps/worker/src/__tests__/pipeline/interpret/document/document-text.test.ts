@@ -17,7 +17,12 @@ import JSZip from 'jszip'
 import { DOCUMENT_TEXT_SCHEMA, type DocumentTextBlock } from '@kukan/shared'
 import { artifactBlocks } from '../../../test-helpers/document-text'
 import { documentBlocks, extractDocumentText } from '@/pipeline/interpret/document/document-text'
-import { PDF_RANGE_BYTES, PDF_RANGE_MAX_PAGES, XLSX_FALLBACK_MAX_BYTES } from '@/config'
+import {
+  PDF_RANGE_BYTES,
+  PDF_RANGE_MAX_PAGES,
+  XLSX_FALLBACK_MAX_BYTES,
+  XLSX_FALLBACK_MAX_XML_ELEMENTS,
+} from '@/config'
 import { xlsxBuffer } from '../../../test-helpers/xlsx'
 import {
   biff,
@@ -2368,7 +2373,10 @@ describe('the artifact', () => {
 
     // Bounded tighter than officeparser bounds itself, as it holds every cell as a node
     expect(parseOffice).toHaveBeenCalledWith(path, {
-      decompressionLimits: { maxUncompressedBytes: XLSX_FALLBACK_MAX_BYTES },
+      decompressionLimits: {
+        maxUncompressedBytes: XLSX_FALLBACK_MAX_BYTES,
+        maxXmlElements: XLSX_FALLBACK_MAX_XML_ELEMENTS,
+      },
     })
     expect(await artifactBlocks(await readFile(artifact))).toEqual([
       { loc: { sheet: 1, sheetName: '集計' }, text: '1\t2' },

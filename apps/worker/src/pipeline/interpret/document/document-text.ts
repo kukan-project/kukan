@@ -57,6 +57,7 @@ import {
   PDF_RANGE_MAX_PAGES,
   PDF_RANGE_MIN_PAGES,
   XLSX_FALLBACK_MAX_BYTES,
+  XLSX_FALLBACK_MAX_XML_ELEMENTS,
   XLSX_MAX_ENTRIES,
   XLSX_MAX_PART_BYTES,
   XLSX_MAX_SHARED_STRINGS,
@@ -294,7 +295,10 @@ function fallbackBlocks(
 }
 
 const XLSX_FALLBACK: OfficeParserConfig = {
-  decompressionLimits: { maxUncompressedBytes: XLSX_FALLBACK_MAX_BYTES },
+  decompressionLimits: {
+    maxUncompressedBytes: XLSX_FALLBACK_MAX_BYTES,
+    maxXmlElements: XLSX_FALLBACK_MAX_XML_ELEMENTS,
+  },
 }
 
 /**

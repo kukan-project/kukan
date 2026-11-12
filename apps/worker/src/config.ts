@@ -343,6 +343,14 @@ export const XLSX_MAX_SHARED_STRINGS = 8 * 1024 * 1024
 export const XLSX_FALLBACK_MAX_BYTES = 4 * 1024 * 1024
 
 /**
+ * XML elements in that fallback (officeparser's own limit is 2 million). Its
+ * styles and other parts are not shared strings or sheets, so our reader never
+ * bounded them, and officeparser holds each element at about a kilobyte: a
+ * million `<a/>` in the styles of a 5.5 KB workbook ran out of a 512 MB heap.
+ */
+export const XLSX_FALLBACK_MAX_XML_ELEMENTS = 200_000
+
+/**
  * UTF-8 bytes of text a document may come to. A cell or a slide can name the
  * same text over and over — a shared string, a slide — so a small file can
  * make text thousands of times its size for the index to take. The largest
