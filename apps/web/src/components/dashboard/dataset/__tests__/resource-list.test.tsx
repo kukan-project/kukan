@@ -55,12 +55,6 @@ vi.mock('../resource-version-history', () => ({
 }))
 
 // Renders what it was told to reload on, which is what these tests assert.
-vi.mock('../primary-key-picker', () => ({
-  PrimaryKeyPicker: ({ reloadKey }: { reloadKey?: number | string }) => (
-    <div data-testid="picker-reload-key">{String(reloadKey)}</div>
-  ),
-}))
-
 const mockClientFetch = vi.mocked(clientFetch)
 
 /** The create form's submit — the dialog's own button, not the one that opened it */

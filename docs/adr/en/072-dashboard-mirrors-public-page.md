@@ -246,9 +246,11 @@ read-only list.
 today's editor offers stays somewhere on the new screens, including ones not listed here. The Step 1
 implementation PR checks them one by one against today's screens and decides where each one moves.
 
-**Each tab states its kind of saving in one line at the top**: "Saving does not create a
-version (except source and format)", "Applying key and type changes creates one version". Today identical-looking buttons have different
-results; this makes it clear before the button.
+**Which saves create a version is made clear before the button.** Today identical-looking buttons
+have different results. The Table settings tab says it in one line at the top ("Applying a change of
+primary key creates one version"). On the Basic tab only a save that changes the source or format
+creates one, so that save's confirmation says it (decision 6) and the top carries no line: most saves
+create none, and a line shown every time goes unread.
 
 The Table settings tab appears under the same condition as today's key picker,
 `isTableSourceFormat` (judged on the stored format, so a format being typed does not make
@@ -362,8 +364,7 @@ In exchange, saving a changed source or format asks for confirmation. Format say
 creates one version". For a replaced file or a URL, whether the contents match the previous
 version is not known at save time, so the message is conditional — "this creates one version
 if the contents have changed" — and whether a version was created is shown once processing
-ends, on the Version history tab and by the list's dot. The one-line note at the top of the tab (decision 4) names
-these two as the exceptions.
+ends, on the Version history tab and by the list's dot.
 
 ### 7. The entry from the public page is a "Manage" button
 

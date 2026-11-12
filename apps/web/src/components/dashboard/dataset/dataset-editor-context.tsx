@@ -66,6 +66,12 @@ interface DatasetEditorContextValue {
   setPageUnsaved: (unsaved: boolean) => void
   /** The dataset could not be read: nothing under it is to be shown as its */
   missing?: boolean
+  /**
+   * The resource page's open tab, kept here so moving to another resource of
+   * the dataset opens it on the same one. Absent outside the editor.
+   */
+  resourceTab?: string
+  setResourceTab?: (tab: string) => void
 }
 
 const DatasetEditorContext = createContext<DatasetEditorContextValue | null>(null)

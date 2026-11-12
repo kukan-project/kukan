@@ -83,6 +83,8 @@
   --color-warning: hsl(var(--warning));
   --color-success-tint-foreground: hsl(var(--success-tint-foreground));
   --color-warning-tint-foreground: hsl(var(--warning-tint-foreground));
+  /* The warning tint as an opaque fill, for a surface content scrolls under */
+  --color-warning-surface: color-mix(in oklab, hsl(var(--warning)) 10%, hsl(var(--background)));
   --color-highlight: hsl(var(--highlight));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));

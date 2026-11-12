@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
-import { PrimaryKeyPicker } from '../primary-key-picker'
+import { TableSettings } from '../table-settings'
 
 vi.mock('@/lib/client-api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/client-api')>()),
@@ -13,13 +13,32 @@ vi.mock('@/hooks/use-parquet-preview', () => ({ useParquetPreview: vi.fn() }))
 
 const mockClientFetch = vi.mocked(clientFetch)
 
-/** The sample is read straight off the Parquet, so it is stubbed at the hook. */
-function sampleRows(rows: Record<string, unknown>[] = []) {
+/** The sample is read straight off the Parquet, so it is stubbed at the hook.
+ *  `numRows` is the file's own count, which the caption is read against. */
+function sampleRows(rows: Record<string, unknown>[] = [], numRows = rows.length) {
   vi.mocked(useParquetPreview).mockReturnValue({
     rows,
+    metadata: { numRows },
     loading: false,
     error: null,
   } as unknown as ReturnType<typeof useParquetPreview>)
+}
+
+/** The box that puts a column in the key, or takes it out */
+const keyBox = (name: string) =>
+  screen.getByRole('checkbox', { name: `Use ${name} in the primary key` })
+
+/** The row of a column, found by its name cell */
+const rowOf = (name: string) =>
+  screen
+    .getAllByTitle(name)
+    .find((el) => el.tagName === 'TD')!
+    .closest('tr')!
+
+/** Apply from the bar, and confirm the change of key the dialog names */
+function applyKey(confirm = 'Apply') {
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: confirm }))
 }
 
 const json = (data: unknown) => ({ ok: true, json: async () => data }) as Response
@@ -64,13 +83,15 @@ function route(handlers: {
   get?: Record<string, unknown>
   check?: Response | (() => Response)
   put?: Response
+  roles?: Response
 }) {
   let stored = handlers.get ?? {}
   mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path.endsWith('/column-roles')) return handlers.roles ?? json({ columns: null })
     if (path.endsWith('/column-settings/check')) {
       const c = handlers.check
       // The default echoes the key it was asked about, as the route does: the
-      // picker only trusts an answer that names the current selection.
+      // screen only trusts an answer that names the current selection.
       const asked = JSON.parse(init!.body as string) as { primaryKey: string[] | null }
       return (
         (typeof c === 'function' ? c() : c) ??
@@ -102,35 +123,32 @@ async function afterCheck() {
   await vi.advanceTimersByTimeAsync(500)
 }
 
-describe('PrimaryKeyPicker', () => {
-  it('reads the key as one line, so a chip never changes size when it is picked', async () => {
-    // A chip that grows by a number reflows every chip after it, and the list
-    // moves under the pointer as the key is built. With sixty columns the order
-    // is not something to reconstruct by hunting for numbers either.
+describe('TableSettings', () => {
+  it('numbers the key in the order columns were picked, and reads it as one line', async () => {
+    // The place sits in a slot of its own, so a row does not move under the
+    // pointer as the key is built; with sixty columns the line says the order
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeInTheDocument())
-    const before = screen.getByRole('button', { name: /line/ }).textContent
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+    fireEvent.click(keyBox('line'))
+    fireEvent.click(keyBox('order'))
 
-    expect(screen.getByRole('button', { name: /line/ })).toHaveTextContent(before!)
-    expect(screen.getByRole('button', { name: /line/ })).toHaveAttribute('aria-pressed', 'true')
-
-    // The order lives in the summary, in the order the columns were picked.
+    expect(keyBox('line')).toBeChecked()
+    expect(within(rowOf('line')).getByText('1')).toBeInTheDocument()
+    expect(within(rowOf('order')).getByText('2')).toBeInTheDocument()
     const summary = screen.getByText('Key:').parentElement!
     expect(summary.textContent).toBe('Key:line→order(composite)')
   })
 
-  it('says a key is picked and not applied, and that it is not once the picker is gone', async () => {
+  it('says a key is picked and not applied, and that it is not once the tab is gone', async () => {
     // The page asks before leaving an unapplied key; a format that stops being
     // a table takes the tab away, and the question with it
     route({})
     const onDraftChange = vi.fn()
-    const { unmount } = render(<PrimaryKeyPicker resourceId="r1" onDraftChange={onDraftChange} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    const { unmount } = render(<TableSettings resourceId="r1" onDraftChange={onDraftChange} />)
+    await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+    fireEvent.click(keyBox('line'))
     expect(onDraftChange).toHaveBeenLastCalledWith(true)
 
     unmount()
@@ -139,14 +157,14 @@ describe('PrimaryKeyPicker', () => {
 
   it('keeps the key line in place when there is no key, and says which kind it is', async () => {
     // A line that comes and goes moves everything under it each time a key is
-    // emptied or begun — including the chips being clicked.
+    // emptied or begun — including the boxes being clicked.
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() => expect(screen.getByText('Key:').parentElement).toHaveTextContent('(none)'))
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    fireEvent.click(keyBox('order'))
     expect(screen.getByText('Key:').parentElement).toHaveTextContent('(single)')
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    fireEvent.click(keyBox('line'))
     expect(screen.getByText('Key:').parentElement).toHaveTextContent('(composite)')
   })
 
@@ -154,18 +172,14 @@ describe('PrimaryKeyPicker', () => {
     // A date and the string of one look alike in a sample, and so does a code
     // with leading zeros next to a number that lost them.
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /order/ })).toHaveTextContent('(String)')
-    )
+    await waitFor(() => expect(rowOf('order')).toHaveTextContent('String'))
   })
 
   it('does not let a column name set the width of the page', async () => {
     // A name is arbitrary text out of a CSV header, and where the delimiter was
-    // not found there is one column named after the whole line. This renders
-    // inside a `<td>`, which is sized from its content — so a chip that cannot
-    // shrink takes the resource list and the page with it.
+    // not found there is one column named after the whole line.
     const wide = 'x'.repeat(4000)
     route({
       get: {
@@ -177,25 +191,25 @@ describe('PrimaryKeyPicker', () => {
         },
       },
     })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    const chip = await screen.findByRole('button', { name: new RegExp(wide.slice(0, 20)) })
-    expect(chip).toHaveClass('max-w-full', 'min-w-0', 'shrink')
-    expect(chip.querySelector('.truncate')).toHaveTextContent(wide)
-    // And the section itself declares a width the cell can resolve, so nothing
-    // inside it contributes to how wide the cell becomes.
-    expect(chip.closest('div.flex.w-0')).not.toBeNull()
+    await waitFor(() => expect(keyBox(wide)).toBeInTheDocument())
+    const cell = screen.getAllByTitle(wide).find((el) => el.tagName === 'TD')!
+    expect(cell).toHaveClass('max-w-48', 'truncate')
+    // And the section declares a width the page can resolve, so nothing inside
+    // it contributes to how wide the tab becomes
+    expect(cell.closest('div.flex.w-0')).not.toBeNull()
   })
 
   it('offers every column, not only the ones that stand alone', async () => {
     // A composite key is built out of columns that individually repeat; `unique`
     // marks the ones that need no checking, it does not gate the choice.
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeEnabled())
-    expect(screen.getByRole('button', { name: /order/ })).toHaveTextContent('unique')
-    expect(screen.getByRole('button', { name: /line/ })).not.toHaveTextContent('unique')
+    await waitFor(() => expect(keyBox('line')).toBeEnabled())
+    expect(within(rowOf('order')).getByText('unique')).toBeInTheDocument()
+    expect(within(rowOf('line')).queryByText('unique')).not.toBeInTheDocument()
   })
 
   it('leaves a floating-point column on screen, unpressable, with the reason beside it', async () => {
@@ -214,25 +228,28 @@ describe('PrimaryKeyPicker', () => {
         },
       },
     })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /ratio/ })).toBeDisabled())
+    await waitFor(() => expect(within(rowOf('ratio')).getByText('Not allowed')).toBeInTheDocument())
+    expect(
+      screen.queryByRole('checkbox', { name: 'Use ratio in the primary key' })
+    ).not.toBeInTheDocument()
     expect(
       screen.getByText(/A column of type Number cannot be used in a primary key/)
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /id/ })).toBeEnabled()
+    expect(keyBox('id')).toBeEnabled()
   })
 
   it('says nothing about a type the table does not hold', async () => {
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
     expect(screen.queryByText(/cannot be used in a primary key/)).not.toBeInTheDocument()
   })
 
   it('keeps a key already resting on one removable, and blocks the apply that changes it', async () => {
-    // The stored key stands (the server refuses only a change), so the chip
+    // The stored key stands (the server refuses only a change), so the box
     // that would take the column back out has to stay pressable — and the
     // selection that adds to it has to be stopped here rather than at a 400.
     route({
@@ -248,13 +265,13 @@ describe('PrimaryKeyPicker', () => {
         },
       },
     })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    const chips = await screen.findAllByRole('button', { name: /ratio/ })
-    const chip = chips[chips.length - 1]
-    expect(chip).toBeEnabled()
+    expect(
+      await screen.findByRole('checkbox', { name: 'Use ratio in the primary key' })
+    ).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: /^id/ }))
+    fireEvent.click(keyBox('id'))
     await afterCheck()
     expect(screen.getByText(/cannot identify a row/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
@@ -263,14 +280,14 @@ describe('PrimaryKeyPicker', () => {
     expect(mockClientFetch.mock.calls.some(([path]) => path.endsWith('/check'))).toBe(false)
 
     // Taking the column out leaves a key the apply will take.
-    fireEvent.click(chip)
+    fireEvent.click(keyBox('ratio'))
     await afterCheck()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
 
     // And putting it back is still possible: the stored key is one the server
     // takes unchanged, so taking the column out must not be a one-way door.
-    expect(chip).toBeEnabled()
-    fireEvent.click(chip)
+    expect(keyBox('ratio')).toBeEnabled()
+    fireEvent.click(keyBox('ratio'))
     await afterCheck()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled())
   })
@@ -290,7 +307,7 @@ describe('PrimaryKeyPicker', () => {
         },
       },
     })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() => expect(screen.getByText(/does not record per-column/)).toBeInTheDocument())
     // Repaired by the same run that repairs a stale preview, so it is offered
@@ -311,7 +328,7 @@ describe('PrimaryKeyPicker', () => {
         },
       },
     })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() => expect(screen.getByText(/does not record per-column/)).toBeInTheDocument())
     expect(screen.getByText(/would be of the previous content/)).toBeInTheDocument()
@@ -320,9 +337,9 @@ describe('PrimaryKeyPicker', () => {
 
   it('says nothing about counts once the version has them', async () => {
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
     expect(screen.queryByText(/does not record per-column/)).not.toBeInTheDocument()
   })
 
@@ -333,10 +350,10 @@ describe('PrimaryKeyPicker', () => {
     // is no verdict at all, so the apply goes through the gate that exists to
     // stop it. Either way the version is made and layer 2 refuses it (§6.6).
     route({ check: json({ checked: true, primaryKey: ['line'], fault: 'key-not-unique' }) })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+    fireEvent.click(keyBox('line'))
 
     // Before the answer: nothing to apply on.
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
@@ -344,34 +361,35 @@ describe('PrimaryKeyPicker', () => {
     await screen.findByText(/does not narrow a row down to one/)
 
     // The answer is about ['line']; the selection has moved on.
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    fireEvent.click(keyBox('order'))
     expect(screen.queryByText(/does not narrow a row down to one/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
   })
 
-  it('says nothing where the key line and the help have already said it', async () => {
-    // No key and nothing picked: the line above reads "(none)" and the help has
-    // explained what a diff does without one. A third telling is not a state.
+  it('says nothing where the key line and the guide have already said it', async () => {
+    // No key and nothing picked: the line above reads "(none)" and the guide
+    // explains what a diff does without one. A third telling is not a state.
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    const { unmount } = render(<TableSettings resourceId="r1" />)
 
     await waitFor(() => expect(screen.getByText('Key:').parentElement).toHaveTextContent('(none)'))
-    expect(screen.queryByText(/one row added and one removed/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Applying removes the primary key/)).not.toBeInTheDocument()
+    unmount()
 
     // The pending removal still gets one, because that is about the button.
     route({ get: { primaryKey: ['order'] } })
-    render(<PrimaryKeyPicker resourceId="r2" />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeInTheDocument())
-    fireEvent.click(screen.getAllByRole('button', { name: /order/ })[1])
+    render(<TableSettings resourceId="r2" />)
+    await waitFor(() => expect(keyBox('order')).toBeChecked())
+    fireEvent.click(keyBox('order'))
     expect(screen.getByText(/Applying removes the primary key/)).toBeInTheDocument()
   })
 
   it('says what a key would fail on before it is applied', async () => {
     route({ check: json({ checked: true, primaryKey: ['line'], fault: 'key-not-unique' }) })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    await waitFor(() => expect(keyBox('line')).toBeEnabled())
+    fireEvent.click(keyBox('line'))
     await afterCheck()
 
     await waitFor(() =>
@@ -393,10 +411,10 @@ describe('PrimaryKeyPicker', () => {
     // §6.6). Irreversible from this screen, so it is confirmed rather than
     // blocked.
     route({ check: json({ checked: true, primaryKey: ['line'], fault: 'key-not-unique' }) })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    await waitFor(() => expect(keyBox('line')).toBeEnabled())
+    fireEvent.click(keyBox('line'))
     await afterCheck()
     // The rendered answer, not just the elapsed timer: the click has to carry
     // the check the screen is showing.
@@ -414,19 +432,24 @@ describe('PrimaryKeyPicker', () => {
     )
   })
 
-  it('applies straight away when the key is not known to fail', async () => {
-    // "Could not check" is not a fault, and treating it as one would make the
-    // unknown case cost a confirmation it has nothing to warn about.
+  it('confirms a change of key with what it changes, though nothing is known to fail', async () => {
+    // Every change of key makes a version (ADR-072 decision 5); "could not
+    // check" adds no warning of its own to that confirmation.
     route({ check: json({ checked: false, primaryKey: ['order'], reason: 'no-preview' }) })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
+    fireEvent.click(keyBox('order'))
     await afterCheck()
     // The answer has to be on screen before Apply is offered — an apply with no
     // verdict is one the confirmation could not have stopped.
     await screen.findByText(/could not be checked/)
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('(none)')
+    expect(dialog).toHaveTextContent('order')
+    expect(mockClientFetch.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(false)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply' }))
 
     await waitFor(() =>
       expect(mockClientFetch.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true)
@@ -435,10 +458,10 @@ describe('PrimaryKeyPicker', () => {
 
   it('does not turn "could not check" into a refusal', async () => {
     route({ check: json({ checked: false, primaryKey: ['order'], reason: 'no-preview' }) })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
+    fireEvent.click(keyBox('order'))
     await afterCheck()
 
     await waitFor(() => expect(screen.getByText(/could not be checked/)).toBeInTheDocument())
@@ -451,11 +474,11 @@ describe('PrimaryKeyPicker', () => {
     // and the first two answers are about keys nobody asked for.
     const check = vi.fn(() => json({ checked: true, fault: null }))
     route({ check })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
+    fireEvent.click(keyBox('order'))
+    fireEvent.click(keyBox('line'))
     await afterCheck()
 
     expect(check).toHaveBeenCalledTimes(1)
@@ -470,13 +493,13 @@ describe('PrimaryKeyPicker', () => {
     // owns a copy of them (ADR-046 §3). The screen has to say that happened.
     route({ put: json({ primaryKey: ['order'], queued: true }) })
     const onRunQueued = vi.fn()
-    render(<PrimaryKeyPicker resourceId="r1" onRunQueued={onRunQueued} />)
+    render(<TableSettings resourceId="r1" onRunQueued={onRunQueued} />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
+    fireEvent.click(keyBox('order'))
     await afterCheck()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    applyKey()
 
     await waitFor(() => expect(screen.getByText(/A rebuild is queued/)).toBeInTheDocument())
     expect(onRunQueued).toHaveBeenCalled()
@@ -488,13 +511,13 @@ describe('PrimaryKeyPicker', () => {
     // to watch, and a refetch would put the badge back as it was.
     route({ get: { primaryKey: ['order'], carried: false }, put: json({ queued: false }) })
     const onRunQueued = vi.fn()
-    render(<PrimaryKeyPicker resourceId="r1" onRunQueued={onRunQueued} />)
+    render(<TableSettings resourceId="r1" onRunQueued={onRunQueued} />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    await waitFor(() => expect(keyBox('line')).toBeEnabled())
+    fireEvent.click(keyBox('line'))
     await afterCheck()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    applyKey()
 
     await waitFor(() => expect(screen.getByText(/rebuild could not be queued/)).toBeInTheDocument())
     expect(onRunQueued).not.toHaveBeenCalled()
@@ -507,13 +530,13 @@ describe('PrimaryKeyPicker', () => {
     // looks for a resource whose setting and newest version disagree.
     let put = json({ primaryKey: ['line'], queued: false })
     route({ get: { primaryKey: ['order'], carried: false }, put })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /line/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    await waitFor(() => expect(keyBox('line')).toBeEnabled())
+    fireEvent.click(keyBox('line'))
     await afterCheck()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    applyKey()
 
     // Settled now, and the standing version still does not read this way.
     const retry = await screen.findByRole('button', { name: 'Queue the rebuild' })
@@ -531,13 +554,14 @@ describe('PrimaryKeyPicker', () => {
     // says "no key needs no sentence" is reached — with the outcome of the
     // apply that has just run underneath it, and unsaid.
     route({ get: { primaryKey: ['order'], carried: true }, put: json({ queued: true }) })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /order/ })).toHaveAttribute('aria-pressed', 'true')
-    )
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    await waitFor(() => expect(keyBox('order')).toBeChecked())
+    fireEvent.click(keyBox('order'))
     fireEvent.click(screen.getByRole('button', { name: 'Remove the key' }))
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove the key' })
+    )
 
     await waitFor(() => expect(screen.getByText(/A rebuild is queued/)).toBeInTheDocument())
   })
@@ -546,16 +570,16 @@ describe('PrimaryKeyPicker', () => {
     // The owner moves `reloadKey` when the resource gains a version. Left up,
     // "a rebuild is queued" outlives the rebuild it was about.
     route({ put: json({ primaryKey: ['order'], queued: true }) })
-    const { rerender } = render(<PrimaryKeyPicker resourceId="r1" reloadKey={3} />)
+    const { rerender } = render(<TableSettings resourceId="r1" reloadKey={3} />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /order/ }))
+    await waitFor(() => expect(keyBox('order')).toBeEnabled())
+    fireEvent.click(keyBox('order'))
     await afterCheck()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    applyKey()
     await waitFor(() => expect(screen.getByText(/A rebuild is queued/)).toBeInTheDocument())
 
-    rerender(<PrimaryKeyPicker resourceId="r1" reloadKey={4} />)
+    rerender(<TableSettings resourceId="r1" reloadKey={4} />)
 
     await waitFor(() => expect(screen.queryByText(/A rebuild is queued/)).not.toBeInTheDocument())
   })
@@ -564,7 +588,7 @@ describe('PrimaryKeyPicker', () => {
     // The two disagree for as long as a queued run has not landed, which is
     // ordinary rather than a fault (spec §6.4) — so it gets its own sentence.
     route({ get: { primaryKey: ['order'], carried: false } })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await afterCheck()
     await waitFor(() =>
@@ -587,19 +611,98 @@ describe('PrimaryKeyPicker', () => {
       { order: 'A-1', line: '2' },
     ])
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() =>
       expect(screen.getByRole('columnheader', { name: /order/ })).toBeInTheDocument()
     )
-    expect(screen.getAllByRole('row')).toHaveLength(3) // header + two samples
+    const sample = screen.getAllByRole('table')[0]
+    expect(within(sample).getAllByRole('row')).toHaveLength(3) // header + two samples
     expect(screen.getAllByText('A-1')).toHaveLength(2)
 
-    fireEvent.click(screen.getByRole('button', { name: /line/ }))
+    fireEvent.click(keyBox('line'))
     // Not a tint of `muted`: the row's own hover is `bg-muted/50`, so a muted
     // mark disappears exactly while a row is being read.
     expect(screen.getByRole('columnheader', { name: 'line' })).toHaveClass('bg-primary/15')
     expect(screen.getByRole('columnheader', { name: 'order' })).not.toHaveClass('bg-primary/15')
+    // Two rows of a two-row file: the whole of it
+    expect(screen.getByText('Sample values (all 2)')).toBeInTheDocument()
+  })
+
+  it('keeps a repeated heading as two rows, each with its own role', async () => {
+    route({
+      get: {
+        schema: {
+          rowCount: 2,
+          columns: [
+            { name: 'x', type: 'string', nullable: false, nullCount: 0, distinctCount: 2 },
+            { name: 'x', type: 'integer', nullable: false, nullCount: 0, distinctCount: 2 },
+          ],
+        },
+      },
+      roles: json({
+        columns: [
+          { name: 'x', type: 'string', role: 'category', roleBasis: { rule: 'other' } },
+          { name: 'x', type: 'integer', role: 'measure', roleBasis: { rule: 'typed' } },
+        ],
+      }),
+    })
+    render(<TableSettings resourceId="r1" />)
+    await waitFor(() => expect(screen.getByText('Category')).toBeInTheDocument())
+    const rows = screen
+      .getAllByTitle('x')
+      .filter((el) => el.tagName === 'TD')
+      .map((td) => td.closest('tr')!)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('Category')
+    expect(rows[1]).toHaveTextContent('Number / date')
+  })
+
+  it('says the sample is the first rows when the file holds more', async () => {
+    // Twenty read of a hundred: counted from the file the rows came from
+    sampleRows(
+      Array.from({ length: 20 }, (_, i) => ({ order: `A-${i}`, line: '1' })),
+      100
+    )
+    route({})
+    render(<TableSettings resourceId="r1" />)
+    expect(await screen.findByText('Sample values (the first 20)')).toBeInTheDocument()
+  })
+
+  it('will not apply from an open confirmation while the key is checked again', async () => {
+    route({})
+    const { rerender } = render(<TableSettings resourceId="r1" reloadKey={1} />)
+    await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+    fireEvent.click(keyBox('line'))
+    await afterCheck()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    const dialog = screen.getByRole('dialog')
+
+    // A run lands while the dialog is open: the key is checked again
+    rerender(<TableSettings resourceId="r1" reloadKey={2} />)
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Apply' })).toBeDisabled()
+    )
+    await afterCheck()
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Apply' })).toBeEnabled())
+  })
+
+  it('checks a kept draft again once a run has landed on new content', async () => {
+    // The verdict was about the content before; the new one may break the key
+    route({})
+    const { rerender } = render(<TableSettings resourceId="r1" reloadKey={1} />)
+    await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+    fireEvent.click(keyBox('line'))
+    await afterCheck()
+    const checks = () =>
+      mockClientFetch.mock.calls.filter(([path]) => path.endsWith('/column-settings/check')).length
+    const before = checks()
+
+    rerender(<TableSettings resourceId="r1" reloadKey={2} />)
+    await afterCheck()
+    await waitFor(() => expect(checks()).toBe(before + 1))
+    expect(keyBox('line')).toBeChecked()
   })
 
   it('offers the rebuild the note names, which lives nowhere else in this screen', async () => {
@@ -607,7 +710,7 @@ describe('PrimaryKeyPicker', () => {
     // resource already holds. Its control is on the public resource page, so
     // without this the note points at a button that is not here.
     route({ get: { preview: 'preview-stale' } })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Rebuild the interpretation' })).toBeInTheDocument()
@@ -625,7 +728,7 @@ describe('PrimaryKeyPicker', () => {
     // A resource with no interpretation at all may simply not be tabular, and
     // naming a remedy there names one for something that is not a fault.
     route({ get: { preview: 'no-preview' } })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() =>
       expect(screen.getByText(/no interpretation to show a sample from/)).toBeInTheDocument()
@@ -640,12 +743,13 @@ describe('PrimaryKeyPicker', () => {
     // place. Showing it would be choosing a key over content the resource does
     // not serve — the same reason the check reports `preview-stale`.
     route({ get: { preview: 'preview-stale' } })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() =>
       expect(screen.getByText(/would be of the previous content/)).toBeInTheDocument()
     )
-    expect(screen.queryByRole('columnheader')).not.toBeInTheDocument()
+    // Only the column table: no sample of other bytes
+    expect(screen.getAllByRole('table')).toHaveLength(1)
   })
 
   it('shows only the columns a key can be chosen from', async () => {
@@ -654,7 +758,7 @@ describe('PrimaryKeyPicker', () => {
     // do not have.
     sampleRows([{ order: 'A-1', line: '1', dropped: 'x' }])
     route({})
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() =>
       expect(screen.getByRole('columnheader', { name: /order/ })).toBeInTheDocument()
@@ -664,10 +768,153 @@ describe('PrimaryKeyPicker', () => {
 
   it('has nothing to offer before anything has been interpreted', async () => {
     route({ get: { schema: null } })
-    render(<PrimaryKeyPicker resourceId="r1" />)
+    render(<TableSettings resourceId="r1" />)
 
     await waitFor(() =>
       expect(screen.getByText(/No columns have been interpreted/)).toBeInTheDocument()
     )
+  })
+
+  describe('one table with the roles (ADR-072 Step 1c)', () => {
+    const roles = (columns: unknown[]) => json({ columns })
+
+    it(`shows each column's role and why, beside its place in the key`, async () => {
+      route({
+        roles: roles([
+          {
+            name: 'order',
+            type: 'string',
+            role: 'identifier',
+            roleBasis: { rule: 'fixed-width-code' },
+          },
+          {
+            name: 'line',
+            type: 'string',
+            role: 'category',
+            roleBasis: { rule: 'distinct-values', share: 0.5 },
+          },
+        ]),
+      })
+      render(<TableSettings resourceId="r1" />)
+
+      await waitFor(() =>
+        expect(within(rowOf('order')).getByText('Identifier')).toBeInTheDocument()
+      )
+      expect(rowOf('line')).toHaveTextContent('50%')
+    })
+
+    it('leaves a role out that the profile has under another name, and keeps the key pickable', async () => {
+      // A profile of other content says nothing about these columns
+      route({
+        roles: roles([
+          { name: 'renamed', type: 'string', role: 'identifier', roleBasis: { rule: 'typed' } },
+        ]),
+      })
+      render(<TableSettings resourceId="r1" />)
+
+      await waitFor(() => expect(keyBox('order')).toBeEnabled())
+      expect(within(rowOf('order')).getByText('—')).toBeInTheDocument()
+    })
+
+    it('keeps the key choosable when the roles cannot be read', async () => {
+      route({ roles: { ok: false, json: async () => ({}) } as Response })
+      render(<TableSettings resourceId="r1" />)
+
+      expect(await screen.findByText('Could not load the column roles')).toBeInTheDocument()
+      fireEvent.click(keyBox('order'))
+      expect(keyBox('order')).toBeChecked()
+    })
+
+    it('marks and counts the rows a draft moves, and discards them back to the stored key', async () => {
+      route({ get: { primaryKey: ['order'] } })
+      const onDraftChange = vi.fn()
+      render(<TableSettings resourceId="r1" onDraftChange={onDraftChange} />)
+      await waitFor(() => expect(keyBox('order')).toBeChecked())
+      expect(screen.getByRole('button', { name: 'Discard' })).toBeDisabled()
+
+      fireEvent.click(keyBox('line'))
+      expect(rowOf('line')).toHaveAttribute('data-draft')
+      expect(rowOf('order')).not.toHaveAttribute('data-draft')
+      expect(screen.getByText('Changes not applied: 1')).toBeInTheDocument()
+      expect(onDraftChange).toHaveBeenLastCalledWith(true)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+      expect(keyBox('line')).not.toBeChecked()
+      expect(rowOf('line')).not.toHaveAttribute('data-draft')
+      expect(onDraftChange).toHaveBeenLastCalledWith(false)
+    })
+
+    it('says the same before the table on every resource, keyed or not', async () => {
+      // A note that came and went with the key read as two different screens
+      route({ get: { primaryKey: ['order'] } })
+      render(<TableSettings resourceId="r1" />)
+      const note = await screen.findByText(
+        /setting it as the primary key is recommended.*Applying a change of primary key creates one version/
+      )
+      const table = screen.getAllByRole('table').at(-1)!
+      expect(note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('draws a key column this version does not have, so the key can still be taken apart', async () => {
+      // The content dropped a column the stored key rests on
+      route({ get: { primaryKey: ['gone', 'order'] } })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('gone')).toBeChecked())
+      expect(rowOf('gone')).toHaveTextContent('Not in this version')
+
+      fireEvent.click(keyBox('gone'))
+      fireEvent.click(keyBox('order'))
+      expect(screen.getByText('Changes not applied: 2')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Remove the key' })).toBeInTheDocument()
+    })
+
+    it('keeps a draft when a run lands on the same key, and drops it when the key moved', async () => {
+      route({})
+      const { rerender } = render(<TableSettings resourceId="r1" reloadKey={1} />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+      fireEvent.click(keyBox('line'))
+
+      rerender(<TableSettings resourceId="r1" reloadKey={2} />)
+      await waitFor(() =>
+        expect(
+          mockClientFetch.mock.calls.filter(
+            ([p, i]) => p.endsWith('/column-settings') && !i?.method
+          )
+        ).toHaveLength(2)
+      )
+      expect(keyBox('line')).toBeChecked()
+
+      // Someone else set a key meanwhile: the draft was built on a key that is gone
+      route({ get: { primaryKey: ['order'] } })
+      rerender(<TableSettings resourceId="r1" reloadKey={3} />)
+      await waitFor(() => expect(keyBox('order')).toBeChecked())
+      expect(keyBox('line')).not.toBeChecked()
+    })
+
+    it('says which place a column holds in the key, for a screen reader too', async () => {
+      route({})
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+      fireEvent.click(keyBox('line'))
+      expect(keyBox('line')).toHaveAccessibleDescription('position 1 in the primary key')
+    })
+
+    it('names the values that keep a column from being a number', async () => {
+      route({
+        roles: json({
+          columns: [
+            {
+              name: 'order',
+              type: 'string',
+              role: 'numeric-text',
+              roleBasis: { rule: 'number-shape', share: 0.9, examples: ['-', '(8)'] },
+            },
+          ],
+        }),
+      })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(rowOf('order')).toHaveTextContent('90%'))
+      expect(rowOf('order')).toHaveTextContent(/do not read as numbers: -.*\(8\)/)
+    })
   })
 })

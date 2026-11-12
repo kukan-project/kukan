@@ -211,7 +211,6 @@ export function ResourceEditForm({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-muted-foreground">{t('basicSaveNote')}</p>
       {formError && (
         <Alert variant="destructive">
           <AlertDescription>{formError}</AlertDescription>

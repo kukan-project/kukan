@@ -12,8 +12,6 @@ vi.mock('@/lib/client-api', async (importOriginal) => ({
 vi.mock('../file-upload-zone', () => ({ FileUploadZone: () => null }))
 vi.mock('../pipeline-status-badge', () => ({ PipelineStatusBadge: () => null }))
 vi.mock('../resource-version-history', () => ({ ResourceVersionHistory: () => null }))
-vi.mock('../primary-key-picker', () => ({ PrimaryKeyPicker: () => null }))
-
 /**
  * jsdom has no layout, so a real pointer drag cannot reach `onDragEnd`. The
  * context is kept — the rows still register as sortables — and only the

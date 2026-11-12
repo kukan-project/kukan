@@ -103,6 +103,7 @@ export {
   DialogTitle,
   DialogDescription,
 } from './components/ui/dialog'
+export { Checkbox } from './components/ui/checkbox'
 export { Switch } from './components/ui/switch'
 export { Skeleton } from './components/ui/skeleton'
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs'

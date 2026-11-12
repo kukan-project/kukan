@@ -15,8 +15,7 @@ import {
 import { useFetch } from '@/hooks/use-fetch'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { ViewPublicLink } from '@/components/dashboard/dataset/view-public-link'
-import { PrimaryKeyPicker } from '@/components/dashboard/dataset/primary-key-picker'
-import { ColumnRoles } from '@/components/dashboard/dataset/column-roles'
+import { TableSettings } from '@/components/dashboard/dataset/table-settings'
 import { ResourceVersionHistory } from '@/components/dashboard/dataset/resource-version-history'
 import { useDatasetEditor } from '@/components/dashboard/dataset/dataset-editor-context'
 import {
@@ -88,6 +87,8 @@ export function ResourceEditor({
   // key being picked survives a look at another tab. Not before: its sample
   // reads the preview file, which a page opened for its name has no use for.
   const [columnsOpened, setColumnsOpened] = useState(false)
+  // The tab this page shows, settled once it first knows what it offers
+  const [pageTab, setPageTab] = useState<string | null>(null)
   // A save or an upload under way: deleting meanwhile would race it
   const [busy, setBusy] = useState(false)
 
@@ -137,6 +138,18 @@ export function ResourceEditor({
       ? resourcePath(pkg.name, resource.id)
       : null
 
+  // Opened on the tab the last resource was left on, where this one has it
+  // too: a Table settings tab is only for a table, a Processing tab only for a
+  // writer. Settled then and kept: a save that turns this resource into a
+  // table must not move the page off the form being used.
+  const offered = new Set(['basic', 'preview', 'versions'])
+  if (table && !readOnly) offered.add('columns')
+  if (!readOnly) offered.add('processing')
+  const wanted = pageTab ?? editor?.resourceTab ?? 'basic'
+  const tab = offered.has(wanted) ? wanted : 'basic'
+  if (pageTab !== tab) setPageTab(tab)
+  if (tab === 'columns' && !columnsOpened) setColumnsOpened(true)
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={resource.name || resource.id}>
@@ -144,15 +157,20 @@ export function ResourceEditor({
       </PageHeader>
 
       <Tabs
-        defaultValue="basic"
-        onValueChange={(value) => value === 'columns' && setColumnsOpened(true)}
+        value={tab}
+        onValueChange={(value) => {
+          setPageTab(value)
+          editor?.setResourceTab?.(value)
+        }}
       >
         {/* The default, filled tabs: the Basic tab holds line tabs of its own
             (link or upload), and the page's sections must not read as those */}
         <TabsList>
           <TabsTrigger value="basic">{t('tabBasic')}</TabsTrigger>
           <TabsTrigger value="preview">{t('tabPreview')}</TabsTrigger>
-          {table && <TabsTrigger value="columns">{t('tabColumns')}</TabsTrigger>}
+          {/* Not where nothing may be written: a deleted dataset's column
+              settings and roles are not read at all (ADR-072 decision 4) */}
+          {table && !readOnly && <TabsTrigger value="columns">{t('tabColumns')}</TabsTrigger>}
           <TabsTrigger value="versions">{t('tabVersions')}</TabsTrigger>
           {/* Reprocess, cancel and revert: nothing a reader may do */}
           {!readOnly && <TabsTrigger value="processing">{t('tabProcessing')}</TabsTrigger>}
@@ -239,23 +257,20 @@ export function ResourceEditor({
           />
         </TabsContent>
 
-        {table && (
+        {table && !readOnly && (
           <TabsContent
             value="columns"
             forceMount={columnsOpened || undefined}
             className="flex flex-col gap-6 pt-4 data-[state=inactive]:hidden"
           >
-            {!readOnly && (
-              <PrimaryKeyPicker
-                resourceId={resource.id}
-                reloadKey={reloadKey}
-                // The list reads the run back as queued, and its dot follows it
-                // until it settles
-                onRunQueued={() => editor?.reload()}
-                onDraftChange={setKeyDraft}
-              />
-            )}
-            <ColumnRoles resourceId={resource.id} reloadKey={reloadKey} />
+            <TableSettings
+              resourceId={resource.id}
+              reloadKey={reloadKey}
+              // The list reads the run back as queued, and its dot follows it
+              // until it settles
+              onRunQueued={() => editor?.reload()}
+              onDraftChange={setKeyDraft}
+            />
           </TabsContent>
         )}
 

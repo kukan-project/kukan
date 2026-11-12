@@ -17,18 +17,24 @@ vi.mock('next/navigation', () => ({
 }))
 
 // The panels are tested on their own; here they only have to be where the tabs put them
-vi.mock('@/components/dashboard/dataset/primary-key-picker', () => ({
-  PrimaryKeyPicker: () => <div data-testid="primary-key-picker" />,
-}))
-vi.mock('@/components/dashboard/dataset/column-roles', () => ({
-  ColumnRoles: () => <div data-testid="column-roles" />,
+vi.mock('@/components/dashboard/dataset/table-settings', () => ({
+  TableSettings: () => <div data-testid="table-settings" />,
 }))
 vi.mock('@/components/dashboard/dataset/resource-version-history', () => ({
   ResourceVersionHistory: () => <div data-testid="version-history" />,
 }))
 vi.mock('@/components/dashboard/dataset/resource-edit-form', () => ({
-  ResourceEditForm: ({ resource }: { resource: { name?: string } }) => (
-    <div data-testid="resource-edit-form">{resource.name}</div>
+  ResourceEditForm: ({
+    resource,
+    onSaved,
+  }: {
+    resource: { name?: string }
+    onSaved: () => void
+  }) => (
+    <div data-testid="resource-edit-form">
+      {resource.name}
+      <button type="button" data-testid="resource-edit-form-save" onClick={onSaved} />
+    </div>
   ),
 }))
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
@@ -64,7 +70,8 @@ const reload = vi.fn()
 function renderPage(
   resource: Record<string, unknown>,
   editorPkg: EditorPackage = pkg,
-  canEdit = true
+  canEdit = true,
+  tab?: { resourceTab: string; setResourceTab: (tab: string) => void }
 ) {
   vi.mocked(clientFetch).mockResolvedValue({
     ok: true,
@@ -83,6 +90,7 @@ function renderPage(
         setPageReloader: () => {},
         uploading: false,
         setPageUnsaved: () => {},
+        ...tab,
       }}
     >
       <ResourceEditorPage />
@@ -96,6 +104,63 @@ describe('ResourceEditorPage', () => {
     nav.search = ''
   })
 
+  it('opens on the tab the last resource was left on, and tells the editor of a move', async () => {
+    // Moving between a dataset's resources keeps the tab
+    const setResourceTab = vi.fn()
+    renderPage({ format: 'CSV' }, pkg, true, { resourceTab: 'versions', setResourceTab })
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Version history' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    )
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
+    expect(setResourceTab).toHaveBeenCalledWith('preview')
+  })
+
+  it('opens on Basic where the remembered tab is not offered, and stays there once it is', async () => {
+    // Table settings is only for a table. Saved as one, the resource then
+    // offers it — and the page must not leave the form being used.
+    const setResourceTab = vi.fn()
+    let format = 'PDF'
+    vi.mocked(clientFetch).mockImplementation(
+      async () =>
+        ({ ok: true, json: async () => ({ id: 'r1', name: 'data.csv', format }) }) as Response
+    )
+    render(
+      <DatasetEditorProvider
+        value={{
+          pkg,
+          mark: () => 0,
+          publish: vi.fn(),
+          reload,
+          canEdit: true,
+          readOnly: false,
+          organizations: [],
+          setPageReloader: () => {},
+          uploading: false,
+          setPageUnsaved: () => {},
+          resourceTab: 'columns',
+          setResourceTab,
+        }}
+      >
+        <ResourceEditorPage />
+      </DatasetEditorProvider>
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Basic' })).toHaveAttribute('aria-selected', 'true')
+    )
+    expect(setResourceTab).not.toHaveBeenCalled()
+
+    // The form saves the format; the page reads the resource again
+    format = 'CSV'
+    fireEvent.click(screen.getByTestId('resource-edit-form-save'))
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
+    )
+    expect(screen.getByRole('tab', { name: 'Basic' })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('splits the resource into tabs, with the columns for a table', async () => {
     renderPage({ format: 'CSV', url: 'https://example.com/a.csv' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Basic' })).toBeInTheDocument())
@@ -105,8 +170,7 @@ describe('ResourceEditorPage', () => {
 
     // Radix tabs select on mousedown
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
-    expect(screen.getByTestId('primary-key-picker')).toBeInTheDocument()
-    expect(screen.getByTestId('column-roles')).toBeInTheDocument()
+    expect(screen.getByTestId('table-settings')).toBeInTheDocument()
   })
 
   it('offers no columns for what is not read as a table', async () => {
@@ -262,10 +326,12 @@ describe('ResourceEditorPage', () => {
     expect(reload).toHaveBeenCalled()
   })
 
-  it('offers no Processing tab where nothing may be written', async () => {
+  it('offers no Processing or Table settings tab where nothing may be written', async () => {
+    // A deleted dataset's column settings and roles are not read at all
     renderPage({ format: 'CSV' }, { ...pkg, state: 'deleted' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Basic' })).toBeInTheDocument())
     expect(screen.queryByRole('tab', { name: 'Processing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Table settings' })).not.toBeInTheDocument()
   })
 
   it('treats another dataset’s resource as not found here', async () => {

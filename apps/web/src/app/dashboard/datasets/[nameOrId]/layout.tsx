@@ -109,6 +109,8 @@ export default function DatasetEditorLayout({ children }: { children: React.Reac
   }, [nameOrId, state, apply])
 
   const [missing, setMissing] = useState(false)
+  // Held here, above the resource pages, so it outlives a move between them
+  const [resourceTab, setResourceTab] = useState('basic')
   useEffect(() => {
     void reload().then((ok) => setMissing(!ok))
   }, [reload])
@@ -130,8 +132,10 @@ export default function DatasetEditorLayout({ children }: { children: React.Reac
       // Only while nothing has been read: a later read, or the dataset page
       // handing its own copy over, answers it
       missing: missing && !pkg,
+      resourceTab,
+      setResourceTab,
     }),
-    [pkg, apply, reload, uploading, canEdit, readOnly, memberships, missing]
+    [pkg, apply, reload, uploading, canEdit, readOnly, memberships, missing, resourceTab]
   )
 
   return (
