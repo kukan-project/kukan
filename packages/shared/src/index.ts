@@ -33,6 +33,7 @@ export * from './resource-sections'
 
 // Version identity (ADR-046 §3): the one definition of "the same version's content"
 export * from './version-identity'
+export * from './update-runs-pipeline'
 
 // Version API response shapes (ADR-043), read by the server and the dashboard
 export * from './version-views'

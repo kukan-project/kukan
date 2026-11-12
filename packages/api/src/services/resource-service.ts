@@ -520,6 +520,13 @@ export class ResourceService {
   /**
    * Update resource
    */
+  /**
+   * Returns the row as written and the source it had just before — read under
+   * the row's lock in the same transaction, so the caller's "did the source
+   * change" is about this write. A read taken earlier can be from before another
+   * save landed: then a save that puts the source back looks like no change,
+   * and the run the new source needs is never queued (ADR-072 decision 6).
+   */
   async update(id: string, input: UpdateResourceInput) {
     const url = input.url ?? null
     const urlType = input.urlType ?? null
@@ -573,23 +580,36 @@ export class ResourceService {
       return updated
     }
 
+    const previousSource = async (tx: Pick<Database, 'select'>) => {
+      const [row] = await tx
+        .select({ url: resource.url, urlType: resource.urlType, format: resource.format })
+        .from(resource)
+        .where(eq(resource.id, id))
+        .for('update')
+      if (!row) throw new NotFoundError('Resource', id)
+      return row
+    }
+
     // A new label — or none, which can cut a run in two just as well — is
     // checked under the package's position lock, the lock every other writer of
     // the arrangement takes, so a concurrent reorder cannot slip a second run of
-    // the name in between the check and the write
+    // the name in between the check and the write. The row is locked after it,
+    // in the order the reorder takes them.
     const section = input.section
-    if (section === undefined) return await write(this.db)
     return await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ packageId: resource.packageId })
-        .from(resource)
-        .where(eq(resource.id, id))
-        .limit(1)
-      if (!row) throw new NotFoundError('Resource', id)
-      await this.lockResourcePositions(tx, row.packageId)
-      const rows = await this.activeSections(tx, row.packageId)
-      this.assertUnsplit(rows.map((r) => (r.id === id ? section : r.section)))
-      return await write(tx)
+      if (section !== undefined) {
+        const [row] = await tx
+          .select({ packageId: resource.packageId })
+          .from(resource)
+          .where(eq(resource.id, id))
+          .limit(1)
+        if (!row) throw new NotFoundError('Resource', id)
+        await this.lockResourcePositions(tx, row.packageId)
+        const rows = await this.activeSections(tx, row.packageId)
+        this.assertUnsplit(rows.map((r) => (r.id === id ? section : r.section)))
+      }
+      const previous = await previousSource(tx)
+      return { updated: await write(tx), previous }
     })
   }
 

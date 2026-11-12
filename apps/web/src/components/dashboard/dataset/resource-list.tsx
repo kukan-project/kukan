@@ -31,6 +31,7 @@ import {
   splitSection,
   MAX_UPLOAD_SIZE,
   MAX_UPLOAD_SIZE_MB,
+  updateRunsPipeline,
 } from '@kukan/shared'
 import {
   DndContext,
@@ -879,24 +880,41 @@ export function ResourceList({
     if (!extras) return
     setSaving(true)
     setFormError(null)
-    // Saving a url resource re-enqueues its pipeline server-side, and a
-    // pending replacement file leads to an upload — close the gate before
-    // the request goes out; on success scheduleRefetch / uploadingResourceId
-    // takes over in the same tick, so the gate never gaps
-    const startsPipeline = formState.urlType !== 'upload' || !!pendingFile
+    const before = resources.find((r) => r.id === editId)
+    // A file still to come carries the source and format with it, and its
+    // promotion applies them together with the bytes. Written here, they would
+    // switch the live resource before the file exists: the download would stop
+    // pointing at the link, and an abandoned upload would leave it that way.
+    // Otherwise the form's tab says the type (null is a link); on the upload
+    // tab the existing url is kept by leaving it out.
+    const source: Record<string, unknown> = pendingFile
+      ? {}
+      : {
+          urlType: formState.urlType,
+          format: formState.format || undefined,
+          ...(formState.urlType !== 'upload' && { url: formState.url || undefined }),
+        }
+    // What the server will compare — left-out fields keep the current value
+    const after = {
+      url: before?.url,
+      urlType: before?.urlType,
+      format: before?.format,
+      ...Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined)),
+    }
+    // Only a new source or format runs the pipeline (ADR-072 decision 6), and a
+    // pending file leads to an upload — close the gate before the request goes
+    // out; on success scheduleRefetch / uploadingResourceId takes over in the
+    // same tick, so the gate never gaps
+    const startsPipeline = !!pendingFile || !before || updateRunsPipeline(before, after)
     if (startsPipeline) setPipelineOps((n) => n + 1)
     try {
-      // Overwrite with form state (urlType reflects the user's tab choice); on
-      // the upload tab the existing url is kept by omitting it from the patch
       const patch: Record<string, unknown> = {
         name: formState.name || undefined,
-        urlType: formState.urlType ?? undefined,
-        format: formState.format || undefined,
+        ...source,
         description: formState.description || undefined,
         // Always sent: the PUT replaces extras whole, and the form holds all of them
         extras,
       }
-      if (formState.urlType !== 'upload') patch.url = formState.url || undefined
       const updated = await updateResource(editId, patch)
       if (!updated.ok) {
         // The server's reason when it gave one — the create path has always
@@ -1003,11 +1021,13 @@ export function ResourceList({
     scheduleRefetch()
     // Replacing an existing resource's file keeps its editor open — closing it
     // leaves nothing saying which row was just updated. url/format are set to
-    // what the promoted upload wrote server-side (`prepareForUpload` derives
-    // them from the same file), so the form names the new file right away.
+    // what the promoted upload wrote server-side, so the form names the new
+    // file right away: the format the upload carried — picking the file set it
+    // from the name, and a format chosen after that is the one the server took.
+    // Detected again here, a later save would write the name's back.
     if (editId && pendingFile) {
       const detected = detectFormat(pendingFile.name)
-      setFormState((s) => ({ ...s, url: pendingFile.name, format: detected || s.format }))
+      setFormState((s) => ({ ...s, url: pendingFile.name, format: s.format || detected || '' }))
       clearUploadState()
       return
     }
@@ -1089,6 +1109,7 @@ export function ResourceList({
         <FileUploadZone
           resourceId={uploadingResourceId}
           initialFile={pendingFile ?? undefined}
+          format={formState.format || undefined}
           onComplete={() => handleUploadComplete(uploadingResourceId)}
         />
       )

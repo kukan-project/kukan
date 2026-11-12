@@ -64,6 +64,7 @@ import {
   SysadminRequiredError,
   JSON_PREVIEW_LIMIT,
   TEXT_PREVIEW_LIMIT,
+  updateRunsPipeline,
 } from '@kukan/shared'
 import type { ColumnRolesView } from '@kukan/shared'
 import {
@@ -1211,10 +1212,18 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   await checkResourcePermission(db, user, resourceService, id)
 
   const input = c.req.valid('json')
-  const res = await resourceService.update(id, input)
+  // Against the source the write replaced, not the one the permission check
+  // read: another save can land in between
+  const { updated: res, previous } = await resourceService.update(id, input)
 
   await Promise.all([
-    settleResourceWrites(db, c.var, [res], 'high'),
+    settleResourceWrites(
+      db,
+      c.var,
+      [res],
+      'high',
+      updateRunsPipeline(previous, res) ? [res.id] : []
+    ),
     enqueueResourceEmbedsIfDue(db, c.var, { packageId: res.packageId }),
   ])
   return c.json(res)

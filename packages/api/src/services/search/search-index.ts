@@ -661,15 +661,19 @@ export async function syncPackageResources(
  * exists as not created, and the retry then refuses its name.
  *
  * `priority` is the caller's to say (ADR-058 §6): who waits for the runs.
+ * `runIds` is for a caller that knows better than "every link resource" which
+ * rows need one — an update runs only when the source or format moved
+ * (ADR-072 decision 6).
  */
 export async function settleResourceWrites(
   db: Database,
   deps: PackageSyncDeps,
   resources: { id: string; url: string | null; urlType: string | null }[],
-  priority: JobPriority
+  priority: JobPriority,
+  runIds: string[] = resources.filter((r) => r.url && r.urlType !== 'upload').map((r) => r.id)
 ): Promise<void> {
   if (resources.length === 0) return
-  const runs = resources.filter((r) => r.url && r.urlType !== 'upload').map((r) => ({ id: r.id }))
+  const runs = runIds.map((id) => ({ id }))
   await Promise.all([
     new PipelineService(db, deps.queue).enqueueMany(runs, { priority }).then(({ failed }) => {
       for (const { id, reason } of failed) {

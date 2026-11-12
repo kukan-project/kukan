@@ -16,6 +16,7 @@ import {
   getStorageKey,
   MAX_UPLOAD_SIZE,
   JSON_PREVIEW_LIMIT,
+  PIPELINE_JOB_TYPE,
   problemTypeUri,
   TEXT_PREVIEW_LIMIT,
 } from '@kukan/shared'
@@ -25,6 +26,7 @@ import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpe
 import { mapStorage } from '../test-helpers/fixtures'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline/pipeline-claim'
+import { ResourceService } from '../../services/resource-service'
 import { encodeSectionCursor } from '../../services/document-text'
 import {
   getTestDb,
@@ -1100,24 +1102,85 @@ describe('Resources API Routes', () => {
       expect(row.extras).toEqual({ unit: 'persons' })
     })
 
-    it('should enqueue pipeline when resource has an external URL', async () => {
-      const pkg = await createPackage('update-enqueue-pkg')
-      const resource = await createResource(pkg.id, {
-        url: 'https://example.com/data.csv',
+    describe('runs the pipeline only when the source or format moved (ADR-072 decision 6)', () => {
+      const url = 'https://example.com/data.csv'
+      const pipelineRuns = () =>
+        vi.mocked(mockQueue.enqueueMany).mock.calls.filter(([type]) => type === PIPELINE_JOB_TYPE)
+
+      async function put(id: string, body: Record<string, unknown>) {
+        const res = await app.request(`/api/v1/resources/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        expect(res.status).toBe(200)
+      }
+
+      it('does not re-fetch a link for a save that leaves its source alone', async () => {
+        // Renaming used to re-fetch, and publish a version when the remote file had moved on
+        const pkg = await createPackage('update-no-run-pkg')
+        const resource = await createResource(pkg.id, { url })
+        vi.mocked(mockQueue.enqueueMany).mockClear()
+
+        await put(resource.id, { url, format: 'CSV', name: 'renamed', description: 'new words' })
+
+        expect(pipelineRuns()).toHaveLength(0)
       })
 
-      // Metadata-only update on resource with URL
-      const res = await app.request(`/api/v1/resources/${resource.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: 'updated description' }),
-      })
-      expect(res.status).toBe(200)
+      it('re-fetches when the link points somewhere else', async () => {
+        const pkg = await createPackage('update-url-run-pkg')
+        const resource = await createResource(pkg.id, { url })
+        vi.mocked(mockQueue.enqueueMany).mockClear()
 
-      // Pipeline should be queued
-      const statusRes = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
-      const statusBody = await statusRes.json()
-      expect(statusBody.pipeline_status).toBe('queued')
+        await put(resource.id, { url: 'https://example.com/v2.csv', format: 'CSV' })
+
+        expect(pipelineRuns()).toHaveLength(1)
+      })
+
+      it('reads the content again when only the format changed', async () => {
+        const pkg = await createPackage('update-format-run-pkg')
+        const resource = await createResource(pkg.id, { url })
+        vi.mocked(mockQueue.enqueueMany).mockClear()
+
+        await put(resource.id, { url, format: 'TSV' })
+
+        expect(pipelineRuns()).toHaveLength(1)
+      })
+
+      it('waits for the file when a link switches to an upload', async () => {
+        // The file comes after the save; its promotion queues the run
+        const pkg = await createPackage('update-to-upload-pkg')
+        const resource = await createResource(pkg.id, { url })
+        vi.mocked(mockQueue.enqueueMany).mockClear()
+
+        await put(resource.id, { url: 'data.csv', urlType: 'upload', format: 'CSV' })
+
+        expect(pipelineRuns()).toHaveLength(0)
+      })
+
+      it('compares with the source the write replaced, not the one read before it', async () => {
+        // Another save lands between this request's permission read and its
+        // write. Putting the original link back changes the stored source, and
+        // compared with the earlier read it looked like no change at all
+        const pkg = await createPackage('update-race-pkg')
+        const resource = await createResource(pkg.id, { url })
+        vi.mocked(mockQueue.enqueueMany).mockClear()
+        const update = ResourceService.prototype.update
+        const spy = vi
+          .spyOn(ResourceService.prototype, 'update')
+          .mockImplementationOnce(async function (this: ResourceService, id, input) {
+            await db
+              .update(resourceTable)
+              .set({ url: 'https://example.com/v2.csv' })
+              .where(eq(resourceTable.id, id))
+            return update.call(this, id, input)
+          })
+
+        await put(resource.id, { url, format: 'CSV' })
+        spy.mockRestore()
+
+        expect(pipelineRuns()).toHaveLength(1)
+      })
     })
 
     it('should not enqueue pipeline when resource has no URL', async () => {

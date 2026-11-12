@@ -14,6 +14,11 @@ interface UseFileUploadOptions {
    * effects (timers, refetches) with the owner's own lifecycle.
    */
   onComplete?: () => void
+  /**
+   * The format the editor chose, sent with the upload so the promotion applies
+   * it together with the bytes. Without it the file's extension decides.
+   */
+  format?: string
 }
 
 interface UseFileUploadResult {
@@ -34,6 +39,7 @@ interface UseFileUploadResult {
 export function useFileUpload({
   resourceId,
   onComplete,
+  format: chosenFormat,
 }: UseFileUploadOptions): UseFileUploadResult {
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [progress, setProgress] = useState(0)
@@ -81,7 +87,7 @@ export function useFileUpload({
           throw new Error(`File exceeds ${MAX_UPLOAD_SIZE_MB}MB limit`)
         }
 
-        const format = detectFormat(file.name)
+        const format = chosenFormat || detectFormat(file.name)
         const contentType = detectContentType(file.name)
 
         // Step 1: Get presigned upload URL
@@ -174,7 +180,7 @@ export function useFileUpload({
         setError(err instanceof Error ? err.message : 'Upload failed')
       }
     },
-    [resourceId, onComplete, describeProblem]
+    [resourceId, onComplete, describeProblem, chosenFormat]
   )
 
   return { status, progress, error, upload, cancel, reset }

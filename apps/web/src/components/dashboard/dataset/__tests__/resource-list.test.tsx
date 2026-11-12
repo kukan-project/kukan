@@ -12,11 +12,23 @@ vi.mock('@/lib/client-api', async (importOriginal) => ({
 }))
 
 // Captures the latest onComplete so tests can fire it after unmount
-const uploadZone = vi.hoisted(() => ({ onComplete: undefined as (() => void) | undefined }))
+const uploadZone = vi.hoisted(() => ({
+  onComplete: undefined as (() => void) | undefined,
+  format: undefined as string | undefined,
+}))
 
 vi.mock('../file-upload-zone', () => ({
-  FileUploadZone: ({ resourceId, onComplete }: { resourceId: string; onComplete?: () => void }) => {
+  FileUploadZone: ({
+    resourceId,
+    onComplete,
+    format,
+  }: {
+    resourceId: string
+    onComplete?: () => void
+    format?: string
+  }) => {
     uploadZone.onComplete = onComplete
+    uploadZone.format = format
     return (
       <div data-testid="file-upload-zone">
         {resourceId}
@@ -510,8 +522,32 @@ describe('ResourceList drop-to-create', () => {
 
     // Row click opens the inline editor (the Edit button was removed)
     fireEvent.click(screen.getByText('data.csv'))
+    // A new link is what runs the pipeline (ADR-072 decision 6)
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/data.csv'), {
+      target: { value: 'https://example.com/b.csv' },
+    })
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+  })
+
+  it('should leave the gate open for a url-resource save that keeps its source', async () => {
+    // Renaming no longer re-fetches the link, so nothing is coming to wait for
+    const onUploadingChange = vi.fn()
+    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'data.csv', url: 'https://example.com/a.csv', urlType: null },
+        ]}
+        onUploadingChange={onUploadingChange}
+      />
+    )
+
+    fireEvent.click(screen.getByText('data.csv'))
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    expect(onUploadingChange).not.toHaveBeenCalledWith(true)
   })
 
   it('should close the gate before an upload-resource create resolves', async () => {
@@ -981,6 +1017,80 @@ describe('ResourceList custom fields', () => {
 
     await waitFor(() => expect(sentBody('PUT')).toBeDefined())
     expect(sentBody('PUT').extras).toEqual({ unit: 'persons', year: 2024 })
+  })
+
+  it('leaves the link live until the file that replaces it has arrived', async () => {
+    // The source and format travel with the upload and land at its promotion;
+    // written by the save, the download would stop pointing at the link before
+    // the file exists — and for good if the upload were abandoned
+    mockClientFetch.mockImplementation(async (_url, init) =>
+      jsonResponse(init?.method === 'PUT' ? {} : resources[0])
+    )
+    const { container } = render(<ResourceList {...baseProps} />)
+
+    fireEvent.click(screen.getByText('data.csv'))
+    // Radix tabs select on mousedown
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Upload' }))
+    fireEvent.click(screen.getByText('Replace file'))
+    const input = container.querySelector('input[type="file"]:not([multiple])')!
+    fireEvent.change(input, {
+      target: { files: [new File(['a'], 'b.tsv', { type: 'text/tab-separated-values' })] },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Auto-detected from URL or file'), {
+      target: { value: 'TSV' },
+    })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
+    const body = sentBody('PUT')
+    expect(body.urlType).toBeNull()
+    expect(body.url).toBe('https://example.com/a.csv')
+    expect(uploadZone.format).toBe('TSV')
+  })
+
+  it('keeps the format the upload carried once the file has landed', async () => {
+    // The server took the chosen format; the name's, put back in the form, would
+    // be written by the next save and run the pipeline under the wrong reading
+    const upload = { id: 'r1', name: 'data.csv', url: 'data.csv', urlType: 'upload', format: 'CSV' }
+    mockClientFetch.mockImplementation(async (_url, init) =>
+      jsonResponse(init?.method === 'PUT' ? {} : upload)
+    )
+    const { container } = render(<ResourceList {...baseProps} resources={[upload]} />)
+
+    fireEvent.click(screen.getByText('data.csv'))
+    fireEvent.click(screen.getByText('Replace file'))
+    fireEvent.change(container.querySelector('input[type="file"]:not([multiple])')!, {
+      target: { files: [new File(['a'], 'new.csv', { type: 'text/csv' })] },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Auto-detected from URL or file'), {
+      target: { value: 'TSV' },
+    })
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('complete-upload'))
+
+    await waitFor(() => expect(screen.getByText('Replace file')).toBeInTheDocument())
+    expect(screen.getByPlaceholderText('Auto-detected from URL or file')).toHaveValue('TSV')
+  })
+
+  it('turns an upload back into a link when the link tab is saved', async () => {
+    // A link is a null type; leaving it out kept the row an upload with a URL
+    const upload = { id: 'r1', name: 'data.csv', url: 'data.csv', urlType: 'upload', format: 'CSV' }
+    mockClientFetch.mockImplementation(async (_url, init) =>
+      jsonResponse(init?.method === 'PUT' ? {} : upload)
+    )
+    render(<ResourceList {...baseProps} resources={[upload]} />)
+
+    fireEvent.click(screen.getByText('data.csv'))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'External URL' }))
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/data.csv'), {
+      target: { value: 'https://example.com/b.csv' },
+    })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(sentBody('PUT')).toBeDefined())
+    expect(sentBody('PUT').urlType).toBeNull()
+    expect(sentBody('PUT').url).toBe('https://example.com/b.csv')
   })
 
   it('refuses a key typed twice before sending anything', () => {
