@@ -3,7 +3,7 @@
 ## Status
 
 **Proposed** — 2026-10-11 (option I added on 2026-10-27, measured on 2026-10-29, and the
-decision changed from F to I; on 2026-11-09 raised to 0.8.6, which moved DOC to the "Original" tab too)
+decision changed from F to I; on 2026-11-09 raised to 0.8.6, which moved DOC to the "Original" tab too; on 2026-11-14 raised to 0.8.7)
 
 Make Office documents (XLSX, XLS, DOCX, PPTX, PPT) viewable without relying on Microsoft's Office
 Online Viewer. **Bundle ibisOffice (an office suite written in Rust and compiled to WebAssembly)
@@ -25,7 +25,7 @@ environment with neither secrets nor network. Measured on the same samples (§Me
 version; it draws Japanese in the device's MS typefaces, and on devices without a GPU it still
 draws through WebGL2 with tables and documents usable. What I lacks (DOC, distributed alignment,
 the typeface of half-width characters, view-only polish) has been requested upstream (DOC and the
-alignment arrived in 0.8.6; the half-width typeface still has gaps in DOCX, open question 1).
+alignment arrived in 0.8.6, the half-width typeface in DOCX in 0.8.7, open question 1).
 
 The other ways of drawing in the browser are not adopted. LibreOffice's WebAssembly build
 (ZetaOffice) needs cross-origin isolation of the whole page, 50 MB per start (cached for 20 minutes) and 1 GB of WASM
@@ -456,7 +456,7 @@ scrolls smoothly, and on Windows the Japanese text comes out in the real MS type
 without a GPU still draw through WebGL2, and tables and documents remain usable. In 0.8.4, as
 measured, DOC did not open, distributed alignment was lost and half-width letters and digits came out in a
 substitute typeface; 0.8.6 fixed DOC and the alignment, and the
-half-width typeface in XLSX (what remains in DOCX is open question 1). Rendering fidelity and the view-only polish (the info bar in §I) are left to an upstream
+half-width typeface in XLSX, and 0.8.7 fixed it in DOCX (open question 1). Rendering fidelity and the view-only polish (the info bar in §I) are left to an upstream
 project two weeks old.
 
 I is adopted. F's hard part — opening untrusted documents on the server — disappears by
@@ -761,8 +761,11 @@ LibreOffice is not added to the worker image, and the implementation that assume
    remain. DOC and older DOCX files still show the compatibility-mode info bar ("Convert to the
    latest format") with `view=1` (ibisjp/ibis-office#139). Half-width letters and digits take the
    given typeface in XLSX, but in DOCX only serif faces do; sans-serif and monospace faces still come
-   out in the substitute (findings added to ibisjp/ibis-office#126). DOC's layout is not yet as
-   accurate as DOCX's (upstream says it keeps improving it)
+   out in the substitute (findings added to ibisjp/ibis-office#126). The version was raised to
+   0.8.7, where upstream fixed both (DOCX lays out each character at the width of the browser's
+   typeface and draws a typeface it lacks in the browser's; the compatibility-mode info bar no
+   longer shows with `view=1`). DOC's layout is not yet as accurate as DOCX's (upstream says it
+   keeps improving it)
 2. **View-only polish**: even with `view=1`, the spreadsheet's "+" (add sheet) and the slides'
    notes pane show. A view-only build (a smaller WASM without the editing features) would also cut
    the transfer. Request it after watching upstream for a while

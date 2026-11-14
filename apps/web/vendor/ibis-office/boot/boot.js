@@ -35,6 +35,13 @@ for (const name of [
 // resource page has its own button) and nothing to pick.
 globalThis.ibisOfficeEmbedAction = () => {}
 globalThis.ibisOfficePickFile = () => Promise.resolve(null)
+// The font setup (0.8.7) offers fonts from a list it fetches, at the first start
+// and after an update. This opaque origin keeps nothing, so every frame would be a
+// first start: no list, so no setup dialog, and no fonts installed or to install.
+globalThis.ibisOfficeFontFetchText = () => Promise.reject(new Error('no font setup here'))
+globalThis.ibisOfficeFontsInstalled = () => Promise.resolve([])
+globalThis.ibisOfficeFontsLoad = () => Promise.resolve([])
+globalThis.ibisOfficeFontDownload = () => Promise.reject(new Error('no font setup here'))
 
 const tell = (type) => window.parent.postMessage({ type }, '*')
 
