@@ -61,11 +61,14 @@ const XA: Pack = {
 describe('a pack of no real country', () => {
   const registry = createRegistry([XA], '2026-11-14')
 
-  it('matches codes with letters, folded by the scheme, but infers none without a check digit', () => {
+  it('matches codes with letters, folded by the scheme, but settles none by a few without a check digit', () => {
     const [codes] = matchValues(registry, ['NR000', 'kt101'])
     expect(codes.rep.kind).toBe('code')
     expect(codes.hits.map((h) => h.code)).toEqual(['NR000', 'KT101'])
-    expect(inferColumn(registry, ['NR000', 'KT101'])).toEqual([])
+    expect(inferColumn(registry, ['NR000', 'KT101'])).toMatchObject([{ standsAlone: false }])
+    expect(
+      judgeColumn(registry, ['NR000', 'KT101'], { heading: 'code', integer: false })
+    ).toHaveProperty('unconfirmed')
   })
 
   it('matches names with spaces, folded by the scheme, and qualified its own way', () => {
@@ -176,6 +179,14 @@ describe('periods over a pack of no real country', () => {
           code('RC001', 'ADM2', 'River City', { parent: 'NA000', validTo: '2010-01-01' }),
           code('RC001', 'ADM2', 'River City', { parent: 'SO000', validFrom: '2010-01-01' }),
           { ...code('WD001', 'ADM2', 'Harbor Ward', { parent: 'RC001' }), level: 'ADM3' },
+          // A region gone in 2010, a town written under it with no period, and a
+          // ward of the town made in 2020: each step meets, the whole way does not
+          code('OL000', 'ADM1', 'Old Land', { validTo: '2010-01-01' }),
+          code('OT001', 'ADM2', 'Old Town', { parent: 'OL000' }),
+          {
+            ...code('NW001', 'ADM2', 'New Ward', { parent: 'OT001', validFrom: '2020-01-01' }),
+            level: 'ADM3',
+          },
         ],
       },
     ],
@@ -185,6 +196,20 @@ describe('periods over a pack of no real country', () => {
     const [m] = matchValues(registry, values).filter((x) => x.rep.kind === kind)
     return summarizeCodes(m.scheme, m.hits)
   }
+
+  it('keeps each use of a reused code under its own parent', () => {
+    const [scheme] = registry.schemes
+    expect(scheme.ancestorsOf.get('MT001')).toEqual([['NA000'], ['SO000']])
+    // The quarter came after the code moved, so it climbs through the later use
+    expect(scheme.ancestorsOf.get('CQ001')).toEqual([['MT001', 'SO000']])
+    // The ward was in the city while it moved between the regions: both ways up
+    expect(scheme.ancestorsOf.get('WD001')).toEqual([
+      ['RC001', 'NA000'],
+      ['RC001', 'SO000'],
+    ])
+    // Made after the region was gone: never in it
+    expect(scheme.ancestorsOf.get('NW001')).toEqual([])
+  })
 
   it('does not take a reused code for valid between its uses', () => {
     // RU001 was in use before 2010 and after 2020; TM001 only in 2015
@@ -225,6 +250,32 @@ describe('periods over a pack of no real country', () => {
   it('qualifies a name by its parent’s former names, only while both were in use', () => {
     expect(summary(['Ash Town, Old County'], 'name').periods).toEqual([{ validTo: '2020-01-01' }])
     expect(summary(['Ash Town, New County'], 'name').periods).toEqual([{ validFrom: '2020-01-01' }])
+  })
+})
+
+describe('a heading naming a representation', () => {
+  const XC: Pack = {
+    ...XA,
+    id: 'XC',
+    schemes: [
+      {
+        ...XA.schemes[0],
+        id: 'xc-area',
+        codeHeadings: undefined,
+        representations: [{ id: 'id', kind: 'code', pattern: '\\d', headings: ['Area ID'] }],
+        codes: [
+          { code: '1', level: 'ADM1', names: [{ text: 'One', lang: 'en', kind: 'official' }] },
+        ],
+      },
+    ],
+  }
+
+  it('settles one integer down a column, with no heading for the scheme’s codes', () => {
+    const registry = createRegistry([XC], '2026-11-14')
+    expect(judgeColumn(registry, ['1'], { heading: 'Area ID', integer: true })).toMatchObject({
+      decided: { representation: 'id' },
+    })
+    expect(judgeColumn(registry, ['1'], { heading: 'Count', integer: true })).toBeNull()
   })
 })
 

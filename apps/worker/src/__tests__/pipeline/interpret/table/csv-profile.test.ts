@@ -481,6 +481,26 @@ describe('interpretCsv — vocabulary', () => {
     })
   })
 
+  it('takes two-digit codes the names beside them bear out, and no others', async () => {
+    const { columns } = await profile(
+      [
+        ['産地', '産地名', '順位'],
+        ['01', '北海道', '03'],
+        ['13', '東京都', '01'],
+        ['27', '大阪府', '02'],
+        ['47', '沖縄県', '04'],
+      ],
+      ['JP']
+    )
+    expect(columns['産地']).toMatchObject({
+      role: 'identifier',
+      roleBasis: { rule: 'vocabulary' },
+      vocabulary: { representation: 'pref2', levels: [{ level: 'ADM1', matched: 4 }] },
+    })
+    // Prefecture codes as far as their values go, but not the prefecture on their row
+    expect(columns['順位'].vocabulary).toBeUndefined()
+  })
+
   it('records no state where no enabled pack is one this release ships', async () => {
     // A setting a newer release wrote: the refresh takes it for no pack at all
     const { columns, registry } = await profile(prefectures, ['ZZ'])

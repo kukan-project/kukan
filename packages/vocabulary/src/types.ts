@@ -62,8 +62,18 @@ export interface CodeRepresentation {
   kind: 'code'
   /** The whole value, as a regular expression without anchors. */
   pattern: string
+  /**
+   * The length a value is filled out to with zeros at its end before
+   * `toCanonical`: a prefecture's `13` is the `13000` its code is made from.
+   */
+  padEnd?: number
   /** Absent: the value is the code. */
   toCanonical?: Transform
+  /**
+   * Words a heading names this way of writing by (`都道府県コード`): enough for a
+   * code with no check digit, unlike the scheme's bare `codeHeadings`.
+   */
+  headings?: string[]
 }
 
 /** Writing the area by name. */

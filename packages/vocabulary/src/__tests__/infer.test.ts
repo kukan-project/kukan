@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { createRegistry } from '../registry'
-import { inferColumn, judgeColumn, matchValues } from '../infer'
+import { corroborate, inferColumn, judgeColumn, matchValues } from '../infer'
 import { JP_PACK } from '../packs/jp'
 
 const registry = createRegistry([JP_PACK], '2026-11-14')
 const best = (values: string[]) => inferColumn(registry, values)[0]
+const TOKYO_WARDS = Array.from({ length: 23 }, (_, i) => String(13101 + i))
 
 describe('inferColumn over the Japan pack', () => {
   it('takes 6-digit codes with their check digits for codes, needing no heading', () => {
@@ -23,11 +24,34 @@ describe('inferColumn over the Japan pack', () => {
     expect(best(['０１０００６', '１３０００１'])).toMatchObject({ representation: 'code6' })
   })
 
-  it('does not infer 5-digit codes from the column alone', () => {
+  it('takes 5-digit codes on their own say-so only when many and in several prefectures', () => {
     // Five digits are too common to be a code on their own say-so (ADR-073 §決定 5)
-    expect(inferColumn(registry, ['01000', '13000', '27000'])).toEqual([])
+    expect(best(['01000', '13000', '27000'])).toMatchObject({
+      representation: 'code5',
+      standsAlone: false,
+    })
+    // Every ward of Tokyo is also a run numbered from 13101
+    expect(best(TOKYO_WARDS.slice(0, 20))).toMatchObject({ standsAlone: false })
+    expect(best([...TOKYO_WARDS.slice(0, 20), '27100'])).toMatchObject({
+      representation: 'code5',
+      standsAlone: true,
+    })
+    // Under one prefecture it takes more than any serial number can match
+    const hokkaido = JP_PACK.schemes[0].codes
+      .filter((e) => e.code.startsWith('01') && e.level !== 'ADM1' && !e.validTo)
+      .map((e) => e.code.slice(0, 5))
+    expect(best(hokkaido.slice(0, 49))).toMatchObject({ standsAlone: false })
+    expect(best(hokkaido.slice(0, 50))).toMatchObject({ standsAlone: true })
     const fiveDigits = matchValues(registry, ['01000', '13000']).find((m) => m.rep.id === 'code5')
     expect(fiveDigits?.hits).toHaveLength(2)
+  })
+
+  it('reads two digits as the prefecture whose code they start', () => {
+    expect(best(['01', '13', '47'])).toMatchObject({
+      representation: 'pref2',
+      standsAlone: false,
+      summary: { levels: [{ level: 'ADM1', matched: 3, total: 47 }] },
+    })
   })
 
   it('takes names, short prefecture names and names qualified by their prefecture', () => {
@@ -151,8 +175,89 @@ describe('judgeColumn over the Japan pack', () => {
     expect(judge(['401307'], '識別子')).toMatchObject({ decided: { representation: 'code6' } })
   })
 
+  it('leaves short codes unconfirmed, unless the heading names how they are written', () => {
+    // The days of a month are prefecture codes as far as their values go
+    const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'))
+    expect(judge(days, '日')).toMatchObject({ unconfirmed: [{ representation: 'pref2' }] })
+    expect(judge(['01', '13', '47'], '都道府県コード')).toMatchObject({
+      decided: { representation: 'pref2', standsAlone: true },
+    })
+    // `コード` heads any column of codes, and is no evidence of these
+    expect(judge(['01', '13', '47'], 'コード')).toHaveProperty('unconfirmed')
+    expect(judge(['13101'], '市区町村コード')).toMatchObject({
+      decided: { representation: 'code5' },
+    })
+  })
+
   it('reads no column past the most distinct values a column may have', () => {
     const many = Array.from({ length: 5_001 }, (_, i) => String(i))
     expect(judge(many, 'id')).toBeNull()
+  })
+})
+
+describe('corroborate over the Japan pack', () => {
+  const [pref2] = inferColumn(registry, ['01', '13', '47'])
+
+  it('takes codes the names beside them agree with', () => {
+    const pairs: [string, string][] = [
+      ['01', '北海道'],
+      ['13', '東京都'],
+      ['47', '沖縄'],
+      // A total, and a name of no one place, leave the count alone
+      ['00', '全国'],
+      ['13', '府中市'],
+    ]
+    expect(corroborate(registry, pref2, pairs)).toBe(true)
+  })
+
+  it('refuses codes the names beside them disagree with', () => {
+    // A rank beside the prefecture it ranks
+    const ranks: [string, string][] = [
+      ['01', '東京都'],
+      ['02', '神奈川県'],
+      ['03', '大阪府'],
+      ['04', '愛知県'],
+    ]
+    expect(corroborate(registry, pref2, ranks)).toBe(false)
+  })
+
+  it('takes a prefecture’s code beside the names of its cities', () => {
+    const cities: [string, string][] = [
+      ['01', '札幌市'],
+      ['01', '函館市'],
+      ['13', '八王子市'],
+      ['27', '堺市'],
+    ]
+    expect(corroborate(registry, pref2, cities)).toBe(true)
+  })
+
+  it('refuses one value down a table of one prefecture’s cities', () => {
+    // A category written `01` sits under every city of Hokkaido
+    const kinds: [string, string][] = [
+      ['01', '札幌市'],
+      ['01', '函館市'],
+      ['01', '小樽市'],
+      ['01', '旭川市'],
+    ]
+    expect(corroborate(registry, pref2, kinds)).toBe(false)
+  })
+
+  it('takes a code from before the place was renumbered', () => {
+    const [code5] = inferColumn(registry, ['22202', '15201', '33201'])
+    const before: [string, string][] = [
+      ['22202', '浜松市'],
+      ['15201', '新潟市'],
+      ['33201', '岡山市'],
+    ]
+    expect(corroborate(registry, code5, before)).toBe(true)
+  })
+
+  it('wants a few rows to agree on', () => {
+    expect(
+      corroborate(registry, pref2, [
+        ['13', '東京都'],
+        ['27', '大阪府'],
+      ])
+    ).toBe(false)
   })
 })

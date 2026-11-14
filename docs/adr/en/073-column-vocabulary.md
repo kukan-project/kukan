@@ -245,19 +245,33 @@ human decisions are in `column_settings`).
 
 Based on the trial, judgment relies mainly on values, with column names as support.
 
-| Level                  | Rule                                                                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Candidate for settling | Representation with a check digit (6-digit local government code): match rate against the code table ≥ 0.9, regardless of column name        |
-| Candidate for settling | Names: match rate ≥ 0.8 (including aliases, abbreviations and district names; non-area values are excluded from the denominator)             |
-| Needs corroboration    | Short codes (2 or 5 digits): agree with a name column in the same table on the rows present in the code table, or a reliable column name     |
-| Not used               | Rescuing by zero-padding from values alone                                                                                                   |
-| Not decided            | Schemes that both match with the same shape (such as the codes of Korea's two bodies) are left to a person to settle as "several candidates" |
+| Level                  | Rule                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidate for settling | Representation with a check digit (6-digit local government code): match rate against the code table ≥ 0.9, regardless of column name                                                                                                                                                                                                                |
+| Candidate for settling | Names: match rate ≥ 0.8 (including aliases, abbreviations and district names; non-area values are excluded from the denominator)                                                                                                                                                                                                                     |
+| Candidate for settling | Code without a check digit (5 digits): match rate ≥ 0.9, with at least 50 areas below the top level, or at least 20 spread under at least 2 areas at the top                                                                                                                                                                                         |
+| Needs corroboration    | Other short codes (2 digits, or few 5-digit values): on at least 90% and at least 3 of the pairs where both name an area (with at least 2 distinct codes), the code is the name's area (its codes before renumbering included) or an area containing it; or a column name naming the representation ("都道府県コード"; "コード" alone is not enough) |
+| Not used               | Rescuing by zero-padding from values alone                                                                                                                                                                                                                                                                                                           |
+| Not decided            | Schemes that both match with the same shape (such as the codes of Korea's two bodies) are left to a person to settle as "several candidates"                                                                                                                                                                                                         |
 
 - Judgment is done on the interpreted table's values read as strings, with no separate path of
   reading. The reader reads every row before settling a type (ADR-046), so a column with even one
   value starting with 0 stays text. A column inferred as integers has no 0 to lose, and read back as
   strings its values are the originals. A value whose 0 was already dropped in the file (`11002`) is
   not rescued: in the trial, padding with 0 on the values alone was almost all false positives
+- 5-digit codes without a check digit may be settled on values alone because the codes matched against are a tiny part of the 5-digit space (about 2,900, retired ones included), and unrelated numbers almost never match 90% of the
+  time by chance. The danger is codes that run in blocks overlapping a serial number: a number
+  counted from 13101 is exactly Tokyo's 23 wards. Measured on the code table, a serial run from any
+  start matches at most 42 codes while keeping 90% (2026-11-15). That is why a column within one
+  prefecture needs 50, and one spread over two or more needs 20. Areas at the top level are not
+  counted: they are few and nearly fill a short code's space (the days 01–31 of a month are 31
+  prefectures)
+- In corroboration by a name column, a prefecture code beside a municipality's name counts as
+  agreeing (the code's area contains the name's). A renumbered city (such as Hamamatsu) agrees under
+  its code from before the change too
+- A short-code column with neither corroboration nor a column name records no vocabulary at all.
+  Offering a column of dates as a join candidate does more harm than a miss, which a person's
+  assignment makes up for
 - A column with a single distinct value is also offered as a candidate for the dataset's target area
 - Point in time cannot be told from differences in match rate. The presence of codes valid only in
   that period is the evidence. The inferred point in time is stored on the profile as the set of
@@ -345,9 +359,12 @@ load on the core. The order lets the core be fixed while there are still only tw
 
 ## Trade-offs
 
-- **Schemes with few distinct values cannot be picked up automatically.** A 2-digit prefecture code
-  is not made a candidate unless the same table has a name column or there is a reliable column
-  name. Misses are made up for by human assignment
+- **Schemes with few distinct values cannot be picked up automatically.** A 2-digit prefecture code,
+  or a 5-digit code with few values, is not made a candidate unless the same table has a name column
+  or a column name naming the representation. Misses are made up for by human assignment. 2-digit
+  codes read as integers for lack of a leading 0 (columns of 10–47 only) are not read. A column of
+  ward names alone ("中央区") repeats too many names to be judged a name column, so it cannot
+  corroborate the codes of a designated city's wards
 - **At first, sites cannot add schemes.** In-house codes must wait until step 5
 - **The registry's shape is excessive for the Japan pack alone.** Accepted as the cost of not
   rebuilding the core when other countries are added

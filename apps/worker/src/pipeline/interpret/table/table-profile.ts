@@ -11,7 +11,16 @@ import type { DuckDBConnection } from '@duckdb/node-api'
 import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import { COLUMN_VALUES_KEPT, TABLE_SENTENCES_MAX_BYTES } from '@kukan/shared'
 import type { ColumnProfile, ResourceColumn, TableProfile } from '@kukan/shared'
-import { INFERENCE_RULES, judgeColumn, registryFor } from '@kukan/vocabulary'
+import {
+  INFERENCE_RULES,
+  corroborate,
+  judgeColumn,
+  registryFor,
+  verdictOf,
+  type ColumnInference,
+  type SettledVerdict,
+} from '@kukan/vocabulary'
+import { STATS_COLUMNS_PER_QUERY } from '@/config'
 import { aggregateByColumn } from './column-batches'
 import type { ProfileRequest } from './write-table'
 import { listsValues, readsVocabulary, textColumnRole, type TextColumnClues } from './column-role'
@@ -171,6 +180,11 @@ export async function profileTable(
  * role, its values being what a search looks for. A column more than one
  * scheme reaches is left undecided: its vocabulary names the candidates, and
  * its role is not changed on one of their say-so.
+ *
+ * A short code column its values and heading leave unsettled is taken only
+ * where a column of names in the same table bears it out (`corroborate`).
+ * Two-digit codes typed as integers fall below the registry's span and are
+ * not read: a column with no leading zero holds no prefecture before 10.
  */
 async function readVocabulary(
   conn: DuckDBConnection,
@@ -203,6 +217,8 @@ async function readVocabulary(
   const row = await aggregateByColumn(conn, read, (i) => [
     `list(DISTINCT ${value(names[i], { cast: true })}) AS c${i}_values`,
   ])
+  const unconfirmed = new Map<number, ColumnInference[]>()
+  const nameColumns = new Map<string, number[]>()
   for (const i of read) {
     const values = ((row[`c${i}_values`] as (string | null)[] | null) ?? []).filter(
       (v): v is string => v !== null
@@ -212,33 +228,88 @@ async function readVocabulary(
       integer: described[i].type === 'integer',
     })
     if (!verdict) continue
-    const decided = 'decided' in verdict
-    const [best, ...others] = decided ? [verdict.decided] : verdict.candidates
-    profiled[i] = {
-      ...profiled[i],
-      ...(decided &&
-        best.kind === 'code' && { role: 'identifier', roleBasis: { rule: 'vocabulary' } }),
-      vocabulary: {
-        concept: best.concept,
-        pack: best.pack,
-        scheme: best.scheme,
-        representation: best.representation,
-        share: best.share,
-        ambiguous: best.ambiguous,
-        levels: best.summary.levels,
-        periods: best.summary.periods,
-        narrowedBy: best.summary.narrowedBy,
-        ...(!decided && {
-          alternatives: others.map(({ pack, scheme, representation }) => ({
-            pack,
-            scheme,
-            representation,
-          })),
-        }),
-      },
+    if ('unconfirmed' in verdict) {
+      unconfirmed.set(i, verdict.unconfirmed)
+      continue
+    }
+    for (const f of 'decided' in verdict ? [verdict.decided] : verdict.candidates) {
+      if (f.kind === 'name')
+        (nameColumns.get(f.scheme) ?? nameColumns.set(f.scheme, []).get(f.scheme)!).push(i)
+    }
+    profiled[i] = withVocabulary(profiled[i], verdict)
+  }
+
+  // Short codes, borne out by a column of names in the same table row by row:
+  // pairs from a sample of rows, each batch judged and let go before the next
+  const compared = [...unconfirmed].flatMap(([i, found]) => {
+    const byNames = new Map<number, ColumnInference[]>()
+    for (const f of found) {
+      for (const j of nameColumns.get(f.scheme) ?? [])
+        byNames.set(j, [...(byNames.get(j) ?? []), f])
+    }
+    return [...byNames].map(([j, candidates]) => ({ i, j, candidates }))
+  })
+  if (compared.length === 0) return registry.state
+  const used = [...new Set(compared.flatMap(({ i, j }) => [i, j]))]
+  await conn.run(
+    `CREATE OR REPLACE TEMP TABLE vocabulary_sample AS ` +
+      `SELECT ${used.map((k) => sqlIdentifier(names[k])).join(', ')} FROM t ` +
+      `USING SAMPLE reservoir(${INFERENCE_RULES.corroboration.sampleRows} ROWS) REPEATABLE (0)`
+  )
+  const borne = new Map<number, ColumnInference[]>()
+  for (let start = 0; start < compared.length; start += STATS_COLUMNS_PER_QUERY) {
+    const batch = compared.slice(start, start + STATS_COLUMNS_PER_QUERY)
+    const lists = batch.map(({ i, j }, k) => {
+      const c = value(names[i], { cast: true })
+      const n = value(names[j], { cast: true })
+      return `list(DISTINCT [${c}, ${n}]) FILTER (WHERE ${c} IS NOT NULL AND ${n} IS NOT NULL) AS p${k}`
+    })
+    const [listed] = (
+      await conn.runAndReadAll(`SELECT ${lists.join(', ')} FROM vocabulary_sample`)
+    ).getRowObjectsJson() as Record<string, [string, string][] | null>[]
+    for (const [k, { i, candidates }] of batch.entries()) {
+      for (const f of candidates) {
+        if (corroborate(registry, f, listed[`p${k}`] ?? []))
+          borne.set(i, [...(borne.get(i) ?? []), f])
+      }
     }
   }
+  await conn.run('DROP TABLE vocabulary_sample')
+  for (const [i, found] of unconfirmed) {
+    // Best first, as judged; borne out by any one column of names is enough
+    const [first, ...rest] = found.filter((f) => borne.get(i)?.includes(f))
+    if (first) profiled[i] = withVocabulary(profiled[i], verdictOf([first, ...rest]))
+  }
   return registry.state
+}
+
+/** A column's profile with a verdict on it: a decided code is an identifier. */
+function withVocabulary(column: ColumnProfile, verdict: SettledVerdict): ColumnProfile {
+  const decided = 'decided' in verdict
+  const [best, ...others] = decided ? [verdict.decided] : verdict.candidates
+  return {
+    ...column,
+    ...(decided &&
+      best.kind === 'code' && { role: 'identifier', roleBasis: { rule: 'vocabulary' } }),
+    vocabulary: {
+      concept: best.concept,
+      pack: best.pack,
+      scheme: best.scheme,
+      representation: best.representation,
+      share: best.share,
+      ambiguous: best.ambiguous,
+      levels: best.summary.levels,
+      periods: best.summary.periods,
+      narrowedBy: best.summary.narrowedBy,
+      ...(!decided && {
+        alternatives: others.map(({ pack, scheme, representation }) => ({
+          pack,
+          scheme,
+          representation,
+        })),
+      }),
+    },
+  }
 }
 
 const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())

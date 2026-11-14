@@ -22,7 +22,7 @@ import type {
  * folding. Part of the registry state, so that a release changing only these
  * still rebuilds the inferences made under the old ones (ADR-073 §決定 4).
  */
-export const RULES_VERSION = '1'
+export const RULES_VERSION = '2'
 
 /**
  * A code, its level, and the spans in which a value named it: a set, so a code
@@ -34,8 +34,11 @@ export interface Hit {
   spans: Period[]
 }
 
-/** What a folded name stands for: one place, or several it cannot be told between. */
-export type NameIndexEntry = { hit: Hit } | { ambiguous: true }
+/**
+ * What a folded name stands for: one place — with every code it went by, when
+ * it was renumbered — or several it cannot be told between.
+ */
+export type NameIndexEntry = { hit: Hit; codes: string[] } | { ambiguous: true }
 
 export interface IndexedScheme {
   pack: string
@@ -49,6 +52,11 @@ export interface IndexedScheme {
   nameReps: NameRepresentation[]
   /** Entries valid on the registry's date, per level: what coverage is counted against. */
   validNow: Map<Level, number>
+  /**
+   * Code → its parents' codes, nearest first, for each use of it: a ward's
+   * city, then its prefecture; a code given out again may sit elsewhere.
+   */
+  ancestorsOf: Map<string, string[][]>
 }
 
 export interface Registry {
@@ -58,6 +66,7 @@ export interface Registry {
    */
   state: string
   schemes: IndexedScheme[]
+  schemeById: Map<string, IndexedScheme>
   /**
    * The span of the codes written in digits alone, as numbers; null where no
    * scheme has any. An integer column outside it holds counts or amounts, and
@@ -90,9 +99,13 @@ export function createRegistry(
   const digits = packs.flatMap((p) =>
     p.schemes.flatMap((s) => s.codes.flatMap((e) => (/^\d+$/.test(e.code) ? [Number(e.code)] : [])))
   )
+  const schemes = packs.flatMap((pack) =>
+    pack.schemes.map((def) => indexScheme(pack.id, def, today))
+  )
   return {
     state: [`rules@${RULES_VERSION}`, ...versions].join(';'),
-    schemes: packs.flatMap((pack) => pack.schemes.map((def) => indexScheme(pack.id, def, today))),
+    schemes,
+    schemeById: new Map(schemes.map((s) => [s.def.id, s])),
     integerRange:
       digits.length === 0
         ? null
@@ -153,6 +166,13 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
   const byName = new Map<string, NameIndexEntry>()
   for (const [key, hits] of named) byName.set(key, resolve(hits, entries, today))
 
+  const ancestorsOf = new Map<string, string[][]>()
+  for (const [code, list] of entries) {
+    const paths = list.flatMap((entry) => ancestorPaths(entry, entries))
+    const codes = paths.map((path) => path.map((e) => e.code).reverse())
+    ancestorsOf.set(code, [...new Map(codes.map((up) => [up.join(), up])).values()])
+  }
+
   const validNow = new Map<Level, number>()
   for (const entry of def.codes) {
     if (isValidOn(entry, today)) validNow.set(entry.level, (validNow.get(entry.level) ?? 0) + 1)
@@ -169,6 +189,7 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
     nameReps,
     notAreas: new Set((def.notAreas ?? []).map((v) => fold(def.nameFolding, v))),
     validNow,
+    ancestorsOf,
   }
 }
 
@@ -188,7 +209,7 @@ function resolve(hits: Hit[], entries: Map<string, CodeEntry[]>, today: IsoDate)
     perCode.set(h.code, seen ? { ...h, spans: union([...seen.spans, ...h.spans]) } : h)
   }
   const codes = [...perCode.values()]
-  if (codes.length === 1) return { hit: codes[0] }
+  if (codes.length === 1) return { hit: codes[0], codes: [codes[0].code] }
 
   const parents = new Set(codes.map((h) => entries.get(h.code)?.[0]?.parent))
   const inTurn = codes.every((a, i) =>
@@ -197,21 +218,19 @@ function resolve(hits: Hit[], entries: Map<string, CodeEntry[]>, today: IsoDate)
   const current = codes.filter((h) => h.spans.some((p) => isValidOn(p, today)))
   if (parents.size !== 1 || !inTurn || current.length !== 1) return { ambiguous: true }
   const [{ code, level }] = current
-  return { hit: { code, level, spans: union(codes.flatMap((h) => h.spans)) } }
+  return {
+    hit: { code, level, spans: union(codes.flatMap((h) => h.spans)) },
+    codes: codes.map((h) => h.code),
+  }
 }
 
 /**
- * The ancestors a name can be written with, top first: each one alone and each
- * run of them — `北海道`, `札幌市` and `北海道 札幌市` for a ward of Sapporo.
- *
- * Walked entry by entry, each step to the parent entries whose period meets
- * the child's: a parent code retired and given out again is two entries, which
- * may sit under different grandparents, and each use of it leads up its own way.
+ * Every way up from an entry, top first: each step to the parent entries whose
+ * period meets the child's. A parent code retired and given out again is two
+ * entries, which may sit under different grandparents, and a parent that moved
+ * while the child was in it led up both ways in turn.
  */
-function ancestorChains(
-  entry: CodeEntry,
-  entries: Map<string, CodeEntry[]>
-): { chain: CodeEntry[]; spans: Period[] }[] {
+function ancestorPaths(entry: CodeEntry, entries: Map<string, CodeEntry[]>): CodeEntry[][] {
   const paths: CodeEntry[][] = []
   const walk = (child: CodeEntry, path: CodeEntry[]) => {
     const parents = (child.parent ? (entries.get(child.parent) ?? []) : []).filter(
@@ -221,6 +240,23 @@ function ancestorChains(
     for (const p of parents) walk(p, [p, ...path])
   }
   walk(entry, [])
+  // Each step meeting its child is not the whole way meeting at once: a ward
+  // made after its town's region was gone was never in that region
+  return paths.filter(
+    (path) => path.reduce<Period[]>((acc, e) => intersect(acc, [e]), [entry]).length > 0
+  )
+}
+
+/**
+ * The ancestors a name can be written with, top first: each one alone and each
+ * run of them — `北海道`, `札幌市` and `北海道 札幌市` for a ward of Sapporo —
+ * along each of its `ancestorPaths`.
+ */
+function ancestorChains(
+  entry: CodeEntry,
+  entries: Map<string, CodeEntry[]>
+): { chain: CodeEntry[]; spans: Period[] }[] {
+  const paths = ancestorPaths(entry, entries)
   // Every subsequence of each path in order: few, since schemes are a handful
   // of levels deep and codes are seldom reused. A subsequence keeps the span of
   // its whole path, so an ancestor left out of the name still bounds it — the
@@ -228,7 +264,6 @@ function ancestorChains(
   const chains = new Map<string, { chain: CodeEntry[]; spans: Period[] }>()
   for (const path of paths) {
     const spans = path.reduce<Period[]>((acc, e) => intersect(acc, [e]), [entry])
-    if (spans.length === 0) continue
     for (const chain of path.reduce<CodeEntry[][]>(
       (subs, a) => [...subs, ...subs.map((s) => [...s, a])],
       [[]]
@@ -268,8 +303,9 @@ export function canonicalCode(
   folded: string
 ): string | null {
   if (!whole.test(folded)) return null
-  if (rep.toCanonical === undefined) return folded
-  const code = TRANSFORMS[rep.toCanonical].apply(scheme.def.checkDigit, folded)
+  const padded = rep.padEnd === undefined ? folded : folded.padEnd(rep.padEnd, '0')
+  if (rep.toCanonical === undefined) return padded
+  const code = TRANSFORMS[rep.toCanonical].apply(scheme.def.checkDigit, padded)
   return code === null ? null : fold(scheme.def.codeFolding, code)
 }
 

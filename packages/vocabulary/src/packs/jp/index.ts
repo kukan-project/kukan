@@ -25,11 +25,26 @@ const schemes: SchemeDefinition[] = [
     nameFolding: ['nfkc', 'strip-spaces', 'small-kana-ke'],
     representations: [
       { id: 'code6', kind: 'code', pattern: '\\d{6}' },
-      { id: 'code5', kind: 'code', pattern: '\\d{5}', toCanonical: 'append-check-digit' },
+      {
+        id: 'code5',
+        kind: 'code',
+        pattern: '\\d{5}',
+        toCanonical: 'append-check-digit',
+        headings: ['団体コード', '市区町村コード', '市町村コード', '自治体コード'],
+      },
+      // A prefecture by the two digits its code starts with: `13` is 130001
+      {
+        id: 'pref2',
+        kind: 'code',
+        pattern: '\\d{2}',
+        padEnd: 5,
+        toCanonical: 'append-check-digit',
+        headings: ['都道府県コード', '県コード', '都道府県番号'],
+      },
       { id: 'name', kind: 'name', qualified: { separator: '', order: 'parent-first' } },
     ],
-    // The totals and catch-alls statistics tables put among the places
     codeHeadings: ['コード', '番号', 'code'],
+    // The totals and catch-alls statistics tables put among the places
     notAreas: [
       '全国',
       '合計',
