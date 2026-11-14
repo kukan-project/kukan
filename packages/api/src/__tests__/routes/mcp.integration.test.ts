@@ -661,6 +661,17 @@ describe('MCP Server', () => {
             role: 'name',
             roleBasis: { rule: 'distinct-values', share: 1 },
             values: ['青森市', '弘前市'],
+            vocabulary: {
+              concept: 'admin-area',
+              pack: 'JP',
+              scheme: 'jp-lg-code',
+              representation: 'name',
+              share: 1,
+              ambiguous: 0,
+              levels: [{ level: 'ADM2', matched: 40, total: 1741 }],
+              periods: [{}],
+              narrowedBy: [],
+            },
           },
           {
             role: 'numeric-text',
@@ -676,7 +687,8 @@ describe('MCP Server', () => {
       const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
       const text = result.result.content[0].text as string
 
-      expect(text).toContain('市区町村名: string — name')
+      // What the column stands for, decided: what a join would go by (ADR-073)
+      expect(text).toContain('市区町村名: string — name; admin-area: jp-lg-code (name)')
       // The values kept, and how many more the column has
       expect(text).toContain('values: "青森市", "弘前市", … and 38 more')
       expect(text).toContain('定員: string — numeric-text (not numbers: "-", "1,000")')

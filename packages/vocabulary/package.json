@@ -12,6 +12,7 @@
   ],
   "exports": {
     ".": "./dist/index.js",
+    "./pack-ids": "./dist/pack-ids.js",
     "./packs/jp": "./dist/packs/jp/index.js"
   },
   "scripts": {

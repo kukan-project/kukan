@@ -482,6 +482,11 @@
       "registrationDescription": "サインアップページからの新規ユーザー登録を許可するかどうかです。オフの間はシステム管理者がユーザー管理画面から作成します。反映まで最大1分かかります。",
       "registrationLabel": "自己登録を許可する",
       "saved": "保存しました",
+      "vocabularyTitle": "列の語彙",
+      "vocabularyDescription": "表のリソースの列が何を表すか（行政区域のコードや名称など）を、選んだ地域のコード表に照らして推定します。変えると、表のリソースを低い優先度で読み直します。",
+      "vocabularyPacks": {
+        "JP": "日本（全国地方公共団体コード）"
+      },
       "exampleQueriesTitle": "検索例クエリ",
       "exampleQueriesDescription": "検索ボックスの下に表示するクエリ例です。1 件ずつ行に入れます（最大{max}件、各{length}文字まで。例: 避難所の場所）。すべて削除して保存するとクエリ例は非表示になります。反映まで最大1分かかります。",
       "exampleQueriesLabel": "クエリ例 {n}",
@@ -799,6 +804,7 @@
     "fieldTypeDate": "日付",
     "fieldTypeDatetime": "日時",
     "fieldRole": "役割",
+    "fieldVocabulary": "語彙",
     "fieldRoles": {
       "measure": "数値・日付",
       "numeric-text": "文字列表記数値",
@@ -829,6 +835,32 @@
     },
     "fieldRoleNotNumbers": "（数値として読めない値: {values}）",
     "fieldRoleSeparator": "、",
+    "vocabulary": {
+      "label": "{concept}・{scheme}（{representation}）",
+      "candidates": "候補が複数",
+      "share": "値の {percent}% が一致",
+      "level": "{level} {matched}/{total} 区域",
+      "periodNow": "今の体系と矛盾しない",
+      "periodFrom": "{from} 以降の体系",
+      "periodTo": "{to} より前の体系",
+      "periodRange": "{from}〜{to} の体系",
+      "periodMixed": "違う時点のコードが混ざっている",
+      "separator": "、",
+      "concepts": {
+        "admin-area": "行政区域"
+      },
+      "schemes": {
+        "jp-lg-code": "全国地方公共団体コード"
+      },
+      "representations": {
+        "jp-lg-code": {
+          "code6": "6 桁",
+          "code5": "5 桁",
+          "pref2": "都道府県 2 桁",
+          "name": "名称"
+        }
+      }
+    },
     "fieldPhysicalType": "物理型",
     "fieldLogicalType": "論理型",
     "fieldNullable": "Null許容",
@@ -1182,7 +1214,8 @@
       "loadError": "列の役割を読み込めませんでした",
       "column": "列",
       "type": "型（推定）",
-      "role": "役割"
+      "role": "役割",
+      "vocabulary": "語彙"
     },
     "chooseFileToSwitch": "アップロードに切り替えるには、ファイルを選んでください。",
     "backToFields": "項目の編集に戻る",

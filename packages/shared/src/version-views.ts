@@ -208,7 +208,7 @@ export type ColumnRolesView = { columns: ColumnRoleRow[] | null }
 /** One column, named by the interpretation the profile was built with. */
 export type ColumnRoleRow = { name: string; type: ResourceColumnType } & Pick<
   ColumnProfile,
-  'role' | 'roleBasis'
+  'role' | 'roleBasis' | 'vocabulary'
 >
 
 /** Why the interpretation's Parquet cannot be read for this resource. */

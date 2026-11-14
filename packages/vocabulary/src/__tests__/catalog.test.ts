@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { PACK_IDS, isPackId, registryFor } from '../catalog'
+import { registryFor } from '../catalog'
+import { PACK_IDS, isPackId } from '../pack-ids'
 
 describe('registryFor', () => {
   it('builds a set of packs once, whatever order they are named in', async () => {

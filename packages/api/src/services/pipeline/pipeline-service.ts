@@ -429,8 +429,14 @@ export function profiledColumns(
 ): ColumnRoleRow[] | null {
   if (!schema || !profile?.columns.length) return null
   return schema.columns.map((column, i) => {
-    const { role, roleBasis } = profile.columns[i]
-    return { name: column.name, type: column.type, role, roleBasis }
+    const { role, roleBasis, vocabulary } = profile.columns[i]
+    return {
+      name: column.name,
+      type: column.type,
+      role,
+      roleBasis,
+      ...(vocabulary && { vocabulary }),
+    }
   })
 }
 

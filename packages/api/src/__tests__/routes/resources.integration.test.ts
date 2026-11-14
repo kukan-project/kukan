@@ -3490,6 +3490,18 @@ describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
 
 describe('GET /api/v1/resources/:id/column-roles', () => {
   const COLUMNS = ['区分', '番号']
+  const VOCABULARY = {
+    concept: 'admin-area',
+    pack: 'JP',
+    scheme: 'jp-lg-code',
+    representation: 'code5',
+    share: 0.95,
+    ambiguous: 0,
+    levels: [{ level: 'ADM2', matched: 2, total: 1741 }],
+    periods: [{ validFrom: '2014-04-01' }],
+    narrowedBy: ['011002'],
+    alternatives: [{ pack: 'XA', scheme: 'xa', representation: 'c' }],
+  }
 
   /** A table the pipeline has profiled: 区分 a category, 番号 an identifier. */
   async function profiled(name: string) {
@@ -3517,7 +3529,11 @@ describe('GET /api/v1/resources/:id/column-roles', () => {
       profile: {
         columns: [
           { role: 'category' as const, roleBasis: { rule: 'other' as const } },
-          { role: 'identifier' as const, roleBasis: { rule: 'name-hint' as const, hint: '番号' } },
+          {
+            role: 'identifier' as const,
+            roleBasis: { rule: 'name-hint' as const, hint: '番号' },
+            vocabulary: VOCABULARY,
+          },
         ],
       },
     }
@@ -3542,6 +3558,8 @@ describe('GET /api/v1/resources/:id/column-roles', () => {
           type: 'string',
           role: 'identifier',
           roleBasis: { rule: 'name-hint', hint: '番号' },
+          // Whole, candidates and evidence too: the editors weigh them
+          vocabulary: VOCABULARY,
         },
       ],
     })

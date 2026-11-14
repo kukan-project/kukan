@@ -21,5 +21,6 @@ export type {
   RepresentationMatch,
   SettledVerdict,
 } from './infer'
-export { PACK_IDS, PACK_ID_PATTERN, isPackId, registryFor } from './catalog'
-export type { PackId } from './catalog'
+export { registryFor } from './catalog'
+export { PACK_IDS, PACK_ID_PATTERN, isPackId } from './pack-ids'
+export type { PackId } from './pack-ids'

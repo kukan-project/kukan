@@ -281,10 +281,33 @@ export const columnVocabularySchema = z.object({
    * these, for a person to choose, and the role was not changed on its say-so.
    */
   alternatives: z
-    .array(z.object({ pack: z.string(), scheme: z.string(), representation: z.string() }))
+    .array(
+      z.object({
+        // Absent on profiles made before candidates carried it
+        concept: z.string().optional(),
+        pack: z.string(),
+        scheme: z.string(),
+        representation: z.string(),
+      })
+    )
     .optional(),
 })
 export type ColumnVocabulary = z.infer<typeof columnVocabularySchema>
+
+/**
+ * What the public pages say of a column's vocabulary: a decided one alone, by
+ * what it is and how it is written. Candidates and the evidence are the
+ * editors' to weigh.
+ */
+export type PublicColumnVocabulary = Pick<ColumnVocabulary, 'concept' | 'scheme' | 'representation'>
+
+export function publicVocabulary(
+  vocabulary: ColumnVocabulary | undefined
+): PublicColumnVocabulary | undefined {
+  if (!vocabulary || vocabulary.alternatives) return undefined
+  const { concept, scheme, representation } = vocabulary
+  return { concept, scheme, representation }
+}
 
 /** One column's profile, at the same position as the column in the schema. */
 export const columnProfileSchema = z.object({

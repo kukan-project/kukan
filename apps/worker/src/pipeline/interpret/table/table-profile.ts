@@ -302,7 +302,8 @@ function withVocabulary(column: ColumnProfile, verdict: SettledVerdict): ColumnP
       periods: best.summary.periods,
       narrowedBy: best.summary.narrowedBy,
       ...(!decided && {
-        alternatives: others.map(({ pack, scheme, representation }) => ({
+        alternatives: others.map(({ concept, pack, scheme, representation }) => ({
+          concept,
           pack,
           scheme,
           representation,

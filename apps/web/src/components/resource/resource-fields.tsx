@@ -2,15 +2,17 @@
 
 import { Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import type { ColumnProfile, ResourceSchema } from '@kukan/shared'
+import type { ColumnProfile, PublicColumnVocabulary, ResourceSchema } from '@kukan/shared'
 import { useParquetSchema } from '@/hooks/use-parquet-schema'
 import { columnTypeKey, formatBytes } from '@/lib/format-utils'
+import { ColumnVocabularyLabel } from './column-vocabulary'
 
 /**
- * A column's role as `/schema` serves it (ADR-063): the role alone. Why the
- * rules decided it is for the resource's editors, on the column-role settings.
+ * A column's role as `/schema` serves it (ADR-063), and what it stands for
+ * where that is decided (ADR-073). Why the rules decided either is for the
+ * resource's editors, on the column-role settings.
  */
-export type ColumnRoleView = Pick<ColumnProfile, 'role'>
+export type ColumnRoleView = Pick<ColumnProfile, 'role'> & { vocabulary?: PublicColumnVocabulary }
 
 interface ResourceFieldsProps {
   resourceId: string
@@ -52,6 +54,8 @@ export function ResourceFields({
   // Absent on tables interpreted before roles; the column is left out rather
   // than shown empty
   const hasRoles = (columnRoles?.length ?? 0) > 0
+  // Left out where no column has one, as most tables have none
+  const hasVocabulary = columnRoles?.some((r) => r.vocabulary) ?? false
 
   // No schema (not a Parquet resource), still loading, or read error: hide entirely.
   // The footer read is cheap, so we omit a skeleton to avoid a flash-then-disappear
@@ -78,6 +82,11 @@ export function ResourceFields({
               {hasRoles && (
                 <th className="px-4 py-2 text-left font-medium text-muted-foreground">
                   {t('fieldRole')}
+                </th>
+              )}
+              {hasVocabulary && (
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">
+                  {t('fieldVocabulary')}
                 </th>
               )}
               <th className="px-4 py-2 text-left font-medium text-muted-foreground">
@@ -116,6 +125,11 @@ export function ResourceFields({
                   {hasRoles && (
                     <td className="px-4 py-2">
                       {role && <Badge variant="outline">{t(`fieldRoles.${role.role}`)}</Badge>}
+                    </td>
+                  )}
+                  {hasVocabulary && (
+                    <td className="px-4 py-2">
+                      {role?.vocabulary && <ColumnVocabularyLabel vocabulary={role.vocabulary} />}
                     </td>
                   )}
                   <td className="px-4 py-2 font-mono text-xs">{field.physicalType ?? '—'}</td>

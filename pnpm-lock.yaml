@@ -105,6 +105,9 @@ importers:
       '@kukan/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@kukan/vocabulary':
+        specifier: workspace:*
+        version: link:../../packages/vocabulary
       better-auth:
         specifier: 1.7.18
         version: 1.7.18(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(kysely@0.29.8)(pg@8.23.1))(next@16.4.5(@opentelemetry/api@1.9.1)(@playwright/test@1.65.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.0)

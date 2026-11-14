@@ -153,6 +153,34 @@ describe('ResourceFields', () => {
       expect(screen.getByText('Identifier')).toBeInTheDocument()
       // The reasons are on the editors' settings, not the public page
       expect(screen.queryByText(/number-shaped/)).not.toBeInTheDocument()
+      // No column has a vocabulary, so there is no column for it
+      expect(screen.queryByRole('columnheader', { name: 'Vocabulary' })).not.toBeInTheDocument()
+    })
+
+    it('says what a column stands for where its vocabulary is decided', () => {
+      setHook({ fields: [field('団体コード'), field('区分')] })
+      render(
+        <ResourceFields
+          resourceId="r1"
+          schema={schemaOf('団体コード', '区分')}
+          columnRoles={[
+            {
+              role: 'identifier',
+              vocabulary: { concept: 'admin-area', scheme: 'jp-lg-code', representation: 'code6' },
+            },
+            // A scheme newer than the screen is named by its id
+            {
+              role: 'category',
+              vocabulary: { concept: 'admin-area', scheme: 'zz', representation: 'n' },
+            },
+          ]}
+        />
+      )
+      expect(
+        screen.getByText('Administrative area: Local government code (Japan) (6 digits)')
+      ).toBeInTheDocument()
+      expect(screen.getByText('Administrative area: zz (n)')).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: 'Vocabulary' })).toBeInTheDocument()
     })
 
     it('leaves the role out where the table has none', () => {

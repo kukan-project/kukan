@@ -4,28 +4,16 @@
  */
 
 import { createRegistry, type Registry } from './registry'
+import { isPackId, type PackId } from './pack-ids'
 import type { Pack } from './types'
 
 /**
  * Each pack the product ships, loaded when asked for: a code table is hundreds
  * of kilobytes, and a site enabling no pack never reads one.
  */
-const PACKS = {
+const PACKS: Record<PackId, () => Promise<Pack>> = {
   JP: async () => (await import('./packs/jp')).JP_PACK,
-} satisfies Record<string, () => Promise<Pack>>
-
-export type PackId = keyof typeof PACKS
-export const PACK_IDS = Object.keys(PACKS) as PackId[]
-
-// Own keys only: `in` would take `constructor` and `toString` for packs
-export const isPackId = (id: string): id is PackId => Object.hasOwn(PACKS, id)
-
-/**
- * The shape a pack id has, whether or not this release ships the pack: a
- * region's code or a country's (`JP`, `EU`). What a site setting checks, so a
- * setting a newer release wrote reads here with its unknown packs ignored.
- */
-export const PACK_ID_PATTERN = /^[A-Z][A-Z0-9-]{1,15}$/
+}
 
 /** One registry per set of packs, rebuilt when the day moves on. */
 const registries = new Map<string, { today: string; registry: Promise<Registry> }>()

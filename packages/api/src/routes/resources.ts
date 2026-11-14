@@ -65,6 +65,7 @@ import {
   JSON_PREVIEW_LIMIT,
   TEXT_PREVIEW_LIMIT,
   updateRunsPipeline,
+  publicVocabulary,
 } from '@kukan/shared'
 import type { ColumnRolesView } from '@kukan/shared'
 import {
@@ -733,10 +734,15 @@ resourcesRouter.get('/:id/schema', async (c) => {
     odataKey: feed.key,
     primaryKey: primaryKeyOf(res.columnSettings),
     schema: target?.schema ?? null,
-    // Each column's role (ADR-063), at its position in `schema`. Without the
-    // values — get_resource_schema is where an agent reads those — and without
-    // the rule behind it, which the dashboard shows its editors.
-    columnRoles: profile?.columns.map(({ role }) => ({ role })) ?? null,
+    // Each column's role (ADR-063), at its position in `schema`, with what it
+    // stands for where that is decided (ADR-073). Without the values —
+    // get_resource_schema is where an agent reads those — and without the rule
+    // or the evidence behind either, which the dashboard shows its editors.
+    columnRoles:
+      profile?.columns.map(({ role, vocabulary }) => {
+        const shown = publicVocabulary(vocabulary)
+        return { role, ...(shown && { vocabulary: shown }) }
+      }) ?? null,
   })
 })
 

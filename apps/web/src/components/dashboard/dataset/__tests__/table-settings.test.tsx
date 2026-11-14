@@ -801,6 +801,71 @@ describe('TableSettings', () => {
         expect(within(rowOf('order')).getByText('Identifier')).toBeInTheDocument()
       )
       expect(rowOf('line')).toHaveTextContent('50%')
+      // No pack read either column: no column for a vocabulary
+      expect(screen.queryByRole('columnheader', { name: 'Vocabulary' })).not.toBeInTheDocument()
+    })
+
+    it(`shows a column's vocabulary with what it rests on, and the candidates of an undecided one`, async () => {
+      const vocabulary = {
+        concept: 'admin-area',
+        pack: 'JP',
+        scheme: 'jp-lg-code',
+        representation: 'code6',
+        share: 0.95,
+        ambiguous: 0,
+        levels: [{ level: 'ADM2', matched: 3, total: 1741 }],
+        periods: [{ validFrom: '2014-04-01' }],
+        narrowedBy: ['011002'],
+      }
+      route({
+        roles: roles([
+          {
+            name: 'order',
+            type: 'string',
+            role: 'identifier',
+            roleBasis: { rule: 'vocabulary' },
+            vocabulary,
+          },
+          {
+            name: 'line',
+            type: 'string',
+            role: 'category',
+            roleBasis: { rule: 'other' },
+            vocabulary: {
+              ...vocabulary,
+              representation: 'name',
+              // A code given out twice: both of its uses, with the gap between
+              periods: [
+                { validTo: '2010-01-01' },
+                { validFrom: '2020-01-01', validTo: '2024-04-01' },
+              ],
+              alternatives: [{ concept: 'xa-area', pack: 'XA', scheme: 'xa', representation: 'c' }],
+            },
+          },
+        ]),
+      })
+      render(<TableSettings resourceId="r1" />)
+
+      await waitFor(() =>
+        expect(rowOf('order')).toHaveTextContent(
+          'Administrative area: Local government code (Japan) (6 digits)'
+        )
+      )
+      expect(screen.getByRole('columnheader', { name: 'Vocabulary' })).toBeInTheDocument()
+      expect(rowOf('order')).toHaveTextContent('95% of values match')
+      expect(rowOf('order')).toHaveTextContent('ADM2 3/1741 areas')
+      expect(rowOf('order')).toHaveTextContent('the scheme from 2014-04-01')
+      // A badge for each candidate, and what they are said beneath
+      expect(
+        within(rowOf('line')).getByText(
+          'Administrative area: Local government code (Japan) (names)'
+        )
+      ).toBeInTheDocument()
+      expect(within(rowOf('line')).getByText('xa-area: xa (c)')).toBeInTheDocument()
+      expect(rowOf('line')).toHaveTextContent('several candidates')
+      expect(rowOf('line')).toHaveTextContent(
+        'the scheme before 2010-01-01; the scheme from 2020-01-01 to 2024-04-01'
+      )
     })
 
     it('leaves a role out that the profile has under another name, and keeps the key pickable', async () => {

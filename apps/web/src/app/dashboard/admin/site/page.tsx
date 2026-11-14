@@ -6,6 +6,7 @@ import { RegistrationCard } from '@/components/dashboard/site/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/site/search-examples-card'
 import { SiteMetadataCard } from '@/components/dashboard/site/site-metadata-card'
 import { SystemInfoCard } from '@/components/dashboard/site/system-info-card'
+import { VocabularyCard } from '@/components/dashboard/site/vocabulary-card'
 import { buildInfo } from '@/lib/build-info'
 import { getCurrentUser } from '@/lib/server-api'
 
@@ -32,6 +33,9 @@ export default async function AdminSitePage() {
 
       {/* Site-wide values brands read by key (ADR-064) */}
       <SiteMetadataCard />
+
+      {/* Which country's codes table columns are read against (ADR-073) */}
+      <VocabularyCard />
 
       {/* Example Query Chips */}
       <SearchExamplesCard />

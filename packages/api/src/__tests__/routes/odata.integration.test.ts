@@ -887,6 +887,26 @@ describe('GET /api/v1/resources/:id/schema', () => {
         { role: 'measure', roleBasis: { rule: 'typed' } },
       ],
     }
+    // A decided vocabulary is shown by what it is; a column left between
+    // candidates shows none (ADR-073)
+    const vocabulary = {
+      concept: 'admin-area',
+      pack: 'JP',
+      scheme: 'jp-lg-code',
+      representation: 'code6',
+      share: 1,
+      ambiguous: 0,
+      levels: [{ level: 'ADM2', matched: 3, total: 1741 }],
+      periods: [{}],
+      narrowedBy: [],
+    }
+    Object.assign(profile.columns[0], { vocabulary })
+    Object.assign(profile.columns[1], {
+      vocabulary: {
+        ...vocabulary,
+        alternatives: [{ pack: 'XA', scheme: 'xa', representation: 'c' }],
+      },
+    })
     await db.execute(sql`
       UPDATE resource_pipeline SET profile = ${JSON.stringify(profile)}::jsonb
       WHERE resource_id = ${id}::uuid
@@ -894,7 +914,10 @@ describe('GET /api/v1/resources/:id/schema', () => {
     const body = await (await app.request(`/api/v1/resources/${id}/schema`)).json()
     // The role alone: the rule behind it is on the editors' column-role settings
     expect(body.columnRoles).toEqual([
-      { role: 'identifier' },
+      {
+        role: 'identifier',
+        vocabulary: { concept: 'admin-area', scheme: 'jp-lg-code', representation: 'code6' },
+      },
       { role: 'category' },
       { role: 'measure' },
       { role: 'measure' },

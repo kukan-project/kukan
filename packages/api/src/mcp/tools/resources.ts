@@ -4,7 +4,7 @@
 
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { primaryKeyOf, feedServiceRoot, ODATA_ENTITY_SET } from '@kukan/shared'
+import { primaryKeyOf, feedServiceRoot, ODATA_ENTITY_SET, publicVocabulary } from '@kukan/shared'
 import type {
   ColumnProfile,
   Env,
@@ -90,13 +90,24 @@ function refusalSentence(refusal: OdataRefusal): string {
   return refusal.columns.length > 0 ? `${base}: ${refusal.columns.join(', ')}` : base
 }
 
-/** The column's role (ADR-063), and for numbers written as text what is mixed in. */
+/**
+ * The column's role (ADR-063), for numbers written as text what is mixed in,
+ * and what it stands for where that is decided (ADR-073) — what a join of two
+ * tables would go by.
+ */
 function roleText(profile: ColumnProfile | undefined): string {
   if (!profile) return ''
   const examples = profile.roleBasis.examples
-  return examples?.length
-    ? ` — ${profile.role} (not numbers: ${examples.map((v) => JSON.stringify(v)).join(', ')})`
-    : ` — ${profile.role}`
+  const vocabulary = publicVocabulary(profile.vocabulary)
+  return (
+    ` — ${profile.role}` +
+    (examples?.length
+      ? ` (not numbers: ${examples.map((v) => JSON.stringify(v)).join(', ')})`
+      : '') +
+    (vocabulary
+      ? `; ${vocabulary.concept}: ${vocabulary.scheme} (${vocabulary.representation})`
+      : '')
+  )
 }
 
 /** The most frequent values of a name or category column, and how many it has in all. */

@@ -482,6 +482,11 @@
       "registrationDescription": "Whether new users can sign up from the sign-up page. While off, system administrators create users from the user management screen. Changes take effect within a minute.",
       "registrationLabel": "Allow self-registration",
       "saved": "Saved",
+      "vocabularyTitle": "Column vocabulary",
+      "vocabularyDescription": "Works out what the columns of table resources stand for (such as codes or names of administrative areas) against the code tables of the regions chosen. Changing it reads table resources again at low priority.",
+      "vocabularyPacks": {
+        "JP": "Japan (local government codes)"
+      },
       "exampleQueriesTitle": "Example Search Queries",
       "exampleQueriesDescription": "Example queries shown under the search box, one per row (up to {max}, {length} characters each; for example evacuation shelters). Remove them all and save to hide the chips. Changes take effect within a minute.",
       "exampleQueriesLabel": "Example query {n}",
@@ -799,6 +804,7 @@
     "fieldTypeDate": "Date",
     "fieldTypeDatetime": "Datetime",
     "fieldRole": "Role",
+    "fieldVocabulary": "Vocabulary",
     "fieldRoles": {
       "measure": "Number / date",
       "numeric-text": "Number (written as text)",
@@ -829,6 +835,32 @@
     },
     "fieldRoleNotNumbers": "(values that do not read as numbers: {values})",
     "fieldRoleSeparator": ", ",
+    "vocabulary": {
+      "label": "{concept}: {scheme} ({representation})",
+      "candidates": "several candidates",
+      "share": "{percent}% of values match",
+      "level": "{level} {matched}/{total} areas",
+      "periodNow": "consistent with the scheme as it stands",
+      "periodFrom": "the scheme from {from}",
+      "periodTo": "the scheme before {to}",
+      "periodRange": "the scheme from {from} to {to}",
+      "periodMixed": "codes from different times are mixed",
+      "separator": "; ",
+      "concepts": {
+        "admin-area": "Administrative area"
+      },
+      "schemes": {
+        "jp-lg-code": "Local government code (Japan)"
+      },
+      "representations": {
+        "jp-lg-code": {
+          "code6": "6 digits",
+          "code5": "5 digits",
+          "pref2": "prefecture, 2 digits",
+          "name": "names"
+        }
+      }
+    },
     "fieldPhysicalType": "Physical type",
     "fieldLogicalType": "Logical type",
     "fieldNullable": "Nullable",
@@ -1182,7 +1214,8 @@
       "loadError": "Could not load the column roles",
       "column": "Column",
       "type": "Type (inferred)",
-      "role": "Role"
+      "role": "Role",
+      "vocabulary": "Vocabulary"
     },
     "chooseFileToSwitch": "Choose a file to switch this resource to an upload.",
     "backToFields": "Back to the fields",

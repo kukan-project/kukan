@@ -35,6 +35,7 @@ import { useFetch } from '@/hooks/use-fetch'
 import { columnTypeKey, formatCell } from '@/lib/format-utils'
 import { KEY_CELL_CLASS, KEY_HEADER_CLASS } from '@/lib/table-cells'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
+import { ColumnVocabularyDetails } from '@/components/resource/column-vocabulary'
 
 /** Rows to read. Enough to see how a column's values run; few enough that the
  *  read is one row group. About five show at once, the rest scroll. */
@@ -748,6 +749,8 @@ function ColumnTable({
   /** The profile's entry for a column — by place, as headings can repeat, and
    *  only where the name agrees: a profile of other content says nothing here */
   const roleOf = (name: string, i: number) => (roles?.[i]?.name === name ? roles[i] : null)
+  // Left out where no column has one: a site with no pack enabled reads none
+  const hasVocabulary = roles?.some((r) => r.vocabulary) ?? false
   const idPrefix = useId()
 
   return (
@@ -761,6 +764,7 @@ function ColumnTable({
             <TableHead scope="col">{tr('columnRoles.type')}</TableHead>
             <TableHead scope="col">{t('title')}</TableHead>
             <TableHead scope="col">{tr('columnRoles.role')}</TableHead>
+            {hasVocabulary && <TableHead scope="col">{tr('columnRoles.vocabulary')}</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -850,6 +854,15 @@ function ColumnTable({
                     <span className="text-muted-foreground">—</span>
                   )}
                 </TableCell>
+                {hasVocabulary && (
+                  <TableCell className="align-top whitespace-normal">
+                    {role?.vocabulary ? (
+                      <ColumnVocabularyDetails vocabulary={role.vocabulary} />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                )}
               </TableRow>
             )
           })}
