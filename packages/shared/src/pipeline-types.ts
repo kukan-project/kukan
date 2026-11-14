@@ -202,6 +202,7 @@ export type ColumnRole = (typeof COLUMN_ROLES)[number]
 export const COLUMN_ROLE_RULES = [
   'typed',
   'no-values',
+  'leading-zero',
   'number-shape',
   'date-shape',
   'url-shape',

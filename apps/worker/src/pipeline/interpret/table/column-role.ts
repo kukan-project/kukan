@@ -25,6 +25,11 @@ export interface TextColumnClues {
   ascii: number
   /** Digits only, half- or full-width. */
   digits: number
+  /**
+   * Digits only, the first a zero: `010006`, never a number as written. Read
+   * for whether there is one, so over every row where the sample saw none.
+   */
+  leadingZero: number
   /** Any digit, half- or full-width — what a code has and a name mostly does not. */
   digit: number
   /** The share of a value's characters that are digits, averaged over the values. */
@@ -71,6 +76,11 @@ export function textColumnRole(name: string, c: TextColumnClues): RoleDecision {
   // Before numbers, whose shape `2024.4.1` also has.
   if (c.date >= 0.9) {
     return { role: 'measure', roleBasis: { rule: 'date-shape', share: share(c.date) } }
+  }
+  // Before numbers, whose shape `010006` also has: digits stay text when the
+  // reader would lose a leading zero, and a value that has one is a code.
+  if (c.digits >= 0.9 && c.leadingZero > 0) {
+    return { role: 'identifier', roleBasis: { rule: 'leading-zero' } }
   }
   // Type inference leaves these as text: one `-` or `（8）` in the column does it.
   if (c.number >= 0.9) {

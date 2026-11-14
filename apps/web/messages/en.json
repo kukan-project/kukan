@@ -810,6 +810,7 @@
     "fieldRoleBasis": {
       "typed": "From the type",
       "no-values": "No values",
+      "leading-zero": "Holds digits starting with 0, which a number would drop",
       "number-shape": "{percent}% of values are number-shaped",
       "date-shape": "{percent}% of values are date-shaped",
       "url-shape": "{percent}% of values are URLs",

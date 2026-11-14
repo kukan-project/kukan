@@ -810,6 +810,7 @@
     "fieldRoleBasis": {
       "typed": "型から判定",
       "no-values": "値がない",
+      "leading-zero": "先頭が 0 の数字を含む。数値として読むと 0 が落ちる",
       "number-shape": "値の {percent}% が数値の形",
       "date-shape": "値の {percent}% が日付の形",
       "url-shape": "値の {percent}% が URL の形",

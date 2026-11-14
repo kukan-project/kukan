@@ -32,6 +32,8 @@ const CLUES: Record<string, { full: boolean; re: string }> = {
   ascii: { full: true, re: '[0-9A-Za-z._/:\\-]+' },
   digits: { full: true, re: '[0-9０-９]+' },
   digit: { full: false, re: '[0-9０-９]' },
+  // A number never starts with a zero, so digits that do are a code the type left as text
+  leadingZero: { full: true, re: '[0０][0-9０-９]+' },
   // Japanese marks only: a Western `.` or `,` is as often an abbreviation
   // (`Sta. North exit`) or an inverted name (`Crane, wattled`) as a sentence
   punctuation: { full: false, re: '[。、．，]' },
@@ -207,6 +209,19 @@ async function countClues(
       return sampled < SHAPE_SAMPLE_MIN_VALUES && sampled < present(i)
     })
     Object.assign(row, await aggregateByColumn(conn, thin, parts))
+
+    // `leadingZero` is asked whether there is one, not how many: a column of
+    // digits the sample found none in is asked again over every row, where the
+    // one `010006` that kept it text may sit
+    const unseen = text.filter(
+      (i) => Number(row[`c${i}_digits`]) >= 0.9 && Number(row[`c${i}_leadingZero`]) === 0
+    )
+    Object.assign(
+      row,
+      await aggregateByColumn(conn, unseen, (i) => [
+        `bool_or(regexp_full_match(${value(names[i])}, ${sqlLiteral(CLUES.leadingZero.re)}))::INTEGER AS c${i}_leadingZero`,
+      ])
+    )
   }
 
   const measured = ['avgLength', 'minLength', 'maxLength', 'digitChars', ...Object.keys(CLUES)]

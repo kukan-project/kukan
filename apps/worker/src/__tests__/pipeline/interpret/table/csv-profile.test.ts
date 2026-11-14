@@ -125,6 +125,34 @@ describe('interpretCsv — column roles', () => {
     expect(cols['金額'].role).toBe('numeric-text')
   })
 
+  it('takes digits that start with a zero for a code, not a number written as text', async () => {
+    // The reader keeps `010006` as text for its zero, and the number shape
+    // takes it too; repeated prefecture codes are a code all the same
+    const cols = await columns(
+      ['団体コード', '都道府県コード', '件数'],
+      Array.from({ length: 47 }, (_, i) => [
+        `${String(i + 1).padStart(2, '0')}0006`,
+        String((i % 5) + 1).padStart(2, '0'),
+        i === 0 ? '-' : `${i}`,
+      ])
+    )
+    expect(cols['団体コード'].roleBasis).toMatchObject({ rule: 'leading-zero' })
+    expect(cols['都道府県コード'].role).toBe('identifier')
+    // A dash keeps a count as text; no zero makes it a code
+    expect(cols['件数'].role).toBe('numeric-text')
+  })
+
+  it('finds the one code with a leading zero on a row the sample skips', async () => {
+    // 60,000 rows sample every second; the zero that kept the column text sits
+    // on a row it skips
+    const rows = Array.from({ length: 60_000 }, (_, i) => [i === 1 ? '010006' : `${130001 + i}`])
+    const cols = await columns(['団体コード'], rows)
+    expect(cols['団体コード']).toMatchObject({
+      role: 'identifier',
+      roleBasis: { rule: 'leading-zero' },
+    })
+  })
+
   it('matches a sparse column over every row when the sample misses its values', async () => {
     // 120,000 rows sample every third; the remarks sit on the rows it skips
     const rows = Array.from({ length: 120_000 }, (_, i) => [
