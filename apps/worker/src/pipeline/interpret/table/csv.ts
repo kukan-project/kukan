@@ -39,6 +39,7 @@ import {
   writeTable,
   type Column,
   type InterpretedTableFile,
+  type ProfileRequest,
 } from './write-table'
 
 /**
@@ -112,14 +113,14 @@ function readOptions(
  * @param skipRows - leading rows to drop before the header, from the caller's
  *   title-row scan. DuckDB finds the header but has no notion of the title
  *   lines Japanese spreadsheets put above it.
- * @param profilePath - where to write the profile artifact (ADR-063), when the
- *   caller publishes one; a lake retry wants the table alone.
+ * @param profileRequest - the profile to write too (ADR-063), when the caller
+ *   publishes one; a lake retry wants the table alone.
  */
 export async function interpretCsv(
   csvPath: string,
   parquetPath: string,
   skipRows: number,
-  profilePath?: string
+  profileRequest?: ProfileRequest
 ): Promise<InterpretedTableFile> {
   // Somewhere of its own to spill, because the load below is meant to: a
   // spill file shared with the lake instance this process also holds fails
@@ -196,7 +197,7 @@ export async function interpretCsv(
       columns,
       rowCount,
       parquetPath,
-      profilePath
+      profileRequest
     )
     return {
       rowGroupRows,

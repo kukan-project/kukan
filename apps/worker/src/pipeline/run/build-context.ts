@@ -2,6 +2,7 @@
  * Build PipelineContext from adapters and database.
  */
 
+import { SystemSettingService, VOCABULARY_PACKS_KEY } from '@kukan/api/services/system-setting'
 import { randomUUID } from 'node:crypto'
 import { eq, and, ne, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
@@ -59,6 +60,15 @@ export function buildPipelineContext(
   return {
     storage,
     summary: summary ?? null,
+    // Read fresh on every call, past the service's cache: the run a refresh
+    // queues must read the packs it was queued for (ADR-073 §決定 4), and a
+    // cached read from before the change would record the old state again,
+    // which nothing then queues a refresh for. One small read per table
+    // interpreted. A failed read profiles without a vocabulary rather than
+    // failing the interpretation — the profile then records no state, and the
+    // refresh at the next start reads it again
+    vocabularyPacks: () =>
+      new SystemSettingService(db).getSetting(VOCABULARY_PACKS_KEY).catch(() => []),
 
     async getResource(id: string): Promise<ResourceForPipeline | null> {
       const [res] = await db

@@ -58,6 +58,12 @@ export interface Registry {
    */
   state: string
   schemes: IndexedScheme[]
+  /**
+   * The span of the codes written in digits alone, as numbers; null where no
+   * scheme has any. An integer column outside it holds counts or amounts, and
+   * need not be listed to know it names no code.
+   */
+  integerRange: { min: number; max: number } | null
 }
 
 const push = <K, V>(map: Map<K, V[]>, key: K, value: V) => {
@@ -81,9 +87,19 @@ export function createRegistry(
   const versions = [...packs]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((p) => `${p.id}@${p.version}`)
+  const digits = packs.flatMap((p) =>
+    p.schemes.flatMap((s) => s.codes.flatMap((e) => (/^\d+$/.test(e.code) ? [Number(e.code)] : [])))
+  )
   return {
     state: [`rules@${RULES_VERSION}`, ...versions].join(';'),
     schemes: packs.flatMap((pack) => pack.schemes.map((def) => indexScheme(pack.id, def, today))),
+    integerRange:
+      digits.length === 0
+        ? null
+        : {
+            min: digits.reduce((a, b) => Math.min(a, b)),
+            max: digits.reduce((a, b) => Math.max(a, b)),
+          },
   }
 }
 

@@ -34,7 +34,12 @@ describe('interpretJson', () => {
     writeFileSync(jsonPath, json)
     const parquetPath = join(dir, 'out.parquet')
     const profilePath = withProfile ? join(dir, 'profile.ndjson.zst') : undefined
-    const result = await interpretJson(jsonPath, parquetPath, profilePath, MAX_OBJECT)
+    const result = await interpretJson(
+      jsonPath,
+      parquetPath,
+      profilePath === undefined ? undefined : { path: profilePath, vocabularyPacks: [] },
+      MAX_OBJECT
+    )
     return { ...result, parquetPath, profilePath }
   }
 

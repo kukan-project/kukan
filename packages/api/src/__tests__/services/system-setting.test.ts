@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
 import {
+  VOCABULARY_PACKS_KEY,
   SystemSettingService,
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
@@ -74,6 +75,19 @@ describe('SystemSettingService', () => {
 
     await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 5, ACTOR)).rejects.toThrow()
     await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 0.5, ACTOR)).rejects.toThrow()
+  })
+
+  it('vocabulary-packs defaults to none and takes pack ids, once each', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([]) // vocabulary-packs miss, which the write then takes as the previous value
+    addResult([{ id: 'row-id' }])
+    const service = new SystemSettingService(db)
+
+    expect(await service.getSetting(VOCABULARY_PACKS_KEY)).toEqual([])
+    await service.setSetting(VOCABULARY_PACKS_KEY, ['JP'], ACTOR)
+    expect(await service.getSetting(VOCABULARY_PACKS_KEY)).toEqual(['JP'])
+    await expect(service.setSetting(VOCABULARY_PACKS_KEY, ['jp'], ACTOR)).rejects.toThrow()
+    await expect(service.setSetting(VOCABULARY_PACKS_KEY, ['JP', 'JP'], ACTOR)).rejects.toThrow()
   })
 
   it('ai-suggest settings default to empty model + enabled', async () => {

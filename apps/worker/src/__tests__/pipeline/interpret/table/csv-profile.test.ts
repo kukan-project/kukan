@@ -33,12 +33,10 @@ describe('interpretCsv — column roles', () => {
   ): Promise<Record<string, ColumnProfile>> {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, [header, ...rows].map((r) => r.join(',')).join('\n') + '\n')
-    const { schema, profile } = await interpretCsv(
-      csvPath,
-      join(dir, 'out.parquet'),
-      0,
-      join(dir, 'profile.ndjson.zst')
-    )
+    const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
+      path: join(dir, 'profile.ndjson.zst'),
+      vocabularyPacks: [],
+    })
     return Object.fromEntries(schema.columns.map((c, i) => [c.name, profile!.columns[i]]))
   }
 
@@ -273,7 +271,10 @@ describe('interpretCsv — the profile artifact', () => {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, lines.join('\n') + '\n')
     const path = join(dir, 'profile.ndjson.zst')
-    const result = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, path)
+    const result = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
+      path,
+      vocabularyPacks: [],
+    })
     const read = () =>
       zstdDecompressSync(readFileSync(path))
         .toString('utf8')
@@ -384,7 +385,10 @@ describe('interpretCsv — the profile artifact', () => {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, '区分\n公園\n')
     const parquetPath = join(dir, 'out.parquet')
-    const result = await interpretCsv(csvPath, parquetPath, 0, join(dir, 'missing', 'p.gz'))
+    const result = await interpretCsv(csvPath, parquetPath, 0, {
+      path: join(dir, 'missing', 'p.gz'),
+      vocabularyPacks: [],
+    })
     expect(existsSync(parquetPath)).toBe(true)
     expect(result.schema.columns.map((c) => c.name)).toEqual(['区分'])
     expect(result.profile).toEqual({ columns: [], error: expect.any(String) })
@@ -394,5 +398,100 @@ describe('interpretCsv — the profile artifact', () => {
     const { result } = await profile(['id,金額', '1,100', '2,200'])
     expect(result.profile?.path).toBeUndefined()
     expect(existsSync(join(dir, 'profile.ndjson.zst'))).toBe(false)
+  })
+})
+
+describe('interpretCsv — vocabulary', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kukan-vocab-'))
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  async function profile(rows: string[][], packs: string[]) {
+    const csvPath = join(dir, 'in.csv')
+    writeFileSync(csvPath, rows.map((r) => r.join(',')).join('\n') + '\n')
+    const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
+      path: join(dir, 'profile.ndjson.zst'),
+      vocabularyPacks: packs,
+    })
+    const columns = Object.fromEntries(schema.columns.map((c, i) => [c.name, profile!.columns[i]]))
+    return { columns, registry: profile!.registry }
+  }
+
+  const prefectures = [
+    ['団体コード', '団体名', '区コード'],
+    ['010006', '北海道', '131016'],
+    ['020001', '青森県', '131024'],
+    ['030007', '岩手県', '131032'],
+    ['130001', '東京都', '131041'],
+  ]
+
+  it('reads codes as identifiers and names as names, under the registry it records', async () => {
+    const { columns, registry } = await profile(prefectures, ['JP'])
+    expect(columns['団体コード']).toMatchObject({
+      role: 'identifier',
+      roleBasis: { rule: 'vocabulary' },
+      vocabulary: {
+        concept: 'admin-area',
+        pack: 'JP',
+        scheme: 'jp-lg-code',
+        representation: 'code6',
+        share: 1,
+        levels: [{ level: 'ADM1', matched: 4, total: 47 }],
+      },
+    })
+    // A name keeps the role it had — four names are a category — its values
+    // being what a search looks for
+    expect(columns['団体名']).toMatchObject({
+      role: 'category',
+      vocabulary: { representation: 'name' },
+    })
+    expect(registry).toMatch(/^rules@\d+;JP@/)
+  })
+
+  it('reads an integer column as the codes it was written as', async () => {
+    // Tokyo's wards: no leading zero, so DuckDB types the column an integer
+    const { columns } = await profile(prefectures, ['JP'])
+    expect(columns['区コード']).toMatchObject({
+      role: 'identifier',
+      vocabulary: { representation: 'code6', levels: [{ level: 'ADM2', matched: 4 }] },
+    })
+  })
+
+  it('reads one integer down a column only under a heading that names a code', async () => {
+    // A month checks out as a code as often as a code does
+    const { columns } = await profile(
+      [
+        ['年月', '全国地方公共団体コード'],
+        ['202011', '131032'],
+        ['202011', '131032'],
+      ],
+      ['JP']
+    )
+    expect(columns['年月']).toMatchObject({ role: 'measure' })
+    expect(columns['年月'].vocabulary).toBeUndefined()
+    expect(columns['全国地方公共団体コード']).toMatchObject({
+      role: 'identifier',
+      vocabulary: { representation: 'code6' },
+    })
+  })
+
+  it('records no state where no enabled pack is one this release ships', async () => {
+    // A setting a newer release wrote: the refresh takes it for no pack at all
+    const { columns, registry } = await profile(prefectures, ['ZZ'])
+    expect(columns['団体コード'].vocabulary).toBeUndefined()
+    expect(registry).toBeUndefined()
+  })
+
+  it('reads nothing with no pack enabled', async () => {
+    const { columns, registry } = await profile(prefectures, [])
+    expect(columns['団体名'].vocabulary).toBeUndefined()
+    expect(columns['団体コード'].vocabulary).toBeUndefined()
+    expect(registry).toBeUndefined()
   })
 })

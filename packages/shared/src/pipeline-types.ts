@@ -202,6 +202,7 @@ export type ColumnRole = (typeof COLUMN_ROLES)[number]
 export const COLUMN_ROLE_RULES = [
   'typed',
   'no-values',
+  'vocabulary',
   'leading-zero',
   'number-shape',
   'date-shape',
@@ -240,6 +241,51 @@ export type ColumnRoleBasis = z.infer<typeof columnRoleBasisSchema>
 /** Values of a `name` or `category` column kept in the database, to show and for agents. */
 export const COLUMN_VALUES_KEPT = 30
 
+/** A period of the vocabulary, half-open; a side left out is open (ADR-073). */
+const vocabularyPeriodSchema = z.object({
+  validFrom: z.string().optional(),
+  validTo: z.string().optional(),
+})
+
+/**
+ * What a column was inferred to mean, from its values against the site's
+ * enabled packs (ADR-073 §決定 4). Inferred, so rewritten with the profile; a
+ * person's decision lives in `column_settings` instead. Strings rather than
+ * the vocabulary's own types: the packs are data, and a reader of an old
+ * profile must not refuse it over a scheme a later release stopped shipping.
+ */
+export const columnVocabularySchema = z.object({
+  concept: z.string(),
+  pack: z.string(),
+  scheme: z.string(),
+  representation: z.string(),
+  /** Values naming a single place, over the distinct values looked at. */
+  share: z.number().min(0).max(1),
+  /** Values naming several places, counted toward neither the share nor the levels. */
+  ambiguous: z.number().int().nonnegative(),
+  /** Per level present: places matched, and the level's places on the day it was worked out. */
+  levels: z.array(
+    z.object({
+      level: z.string(),
+      matched: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+    })
+  ),
+  /** The spans the values all point to: `[{}]` is the scheme as it stands, `[]` none shared. */
+  periods: z.array(vocabularyPeriodSchema),
+  /** The codes whose spans narrowed the periods, their evidence. */
+  narrowedBy: z.array(z.string()),
+  /**
+   * Other schemes the column reached the share of too. Where present the column
+   * is undecided (ADR-073 §決定 5): the scheme above is one candidate among
+   * these, for a person to choose, and the role was not changed on its say-so.
+   */
+  alternatives: z
+    .array(z.object({ pack: z.string(), scheme: z.string(), representation: z.string() }))
+    .optional(),
+})
+export type ColumnVocabulary = z.infer<typeof columnVocabularySchema>
+
 /** One column's profile, at the same position as the column in the schema. */
 export const columnProfileSchema = z.object({
   role: z.enum(COLUMN_ROLES),
@@ -250,6 +296,7 @@ export const columnProfileSchema = z.object({
    * value is in the artifact, which is what the index is built from.
    */
   values: z.array(z.string()).optional(),
+  vocabulary: columnVocabularySchema.optional(),
 })
 export type ColumnProfile = z.infer<typeof columnProfileSchema>
 
@@ -263,6 +310,12 @@ export const tableProfileSchema = z.object({
   sentencesOmitted: z.number().int().positive().optional(),
   /** Why there is no profile, where working it out failed. The preview stands without it. */
   error: z.string().optional(),
+  /**
+   * The registry state the columns' vocabulary was worked out under: the rules'
+   * version and each enabled pack's (ADR-073 §決定 4), absent where no pack was
+   * enabled. A profile whose state is not the current one is out of date.
+   */
+  registry: z.string().optional(),
 })
 export type TableProfile = z.infer<typeof tableProfileSchema>
 
@@ -702,6 +755,14 @@ export const BACKFILL_VERSIONS_JOB_TYPE = 'backfill-resource-versions' as const
  */
 export const RECORD_ROW_GROUPS_JOB_TYPE = 'record-preview-row-groups' as const
 
+/**
+ * Read again the tables whose profile was worked out under another vocabulary
+ * registry state (ADR-073 §決定 4): queued when a site changes the packs it
+ * enables, and once at start, which a release changing a pack or the rules
+ * reaches. One waiting job covers every reason (`unlessWaiting`).
+ */
+export const REFRESH_VOCABULARY_JOB_TYPE = 'refresh-vocabulary-profiles' as const
+
 /** One-time migration: convert the versions the revert before ADR-044 §4 set
  *  aside, so `superseded` can leave the language. */
 export const CONVERT_SET_ASIDE_JOB_TYPE = 'convert-set-aside-versions' as const
@@ -810,6 +871,8 @@ export const pipelineJobSchema = z.object({
   fetchTurn: z.boolean().optional(),
 })
 export type PipelineJobPayload = z.infer<typeof pipelineJobSchema>
+export const refreshVocabularyJobSchema = z.object({})
+
 export const reindexJobSchema = z.object({
   includeContent: z.boolean().optional(),
   reindexContent: z.boolean().optional(),

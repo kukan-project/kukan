@@ -98,6 +98,12 @@ export interface SchemeDefinition {
    * which are left out of the count a share is taken over (ADR-073 §決定 5).
    */
   notAreas?: string[]
+  /**
+   * Words a column heading uses for the scheme's codes (`コード`, `code`),
+   * folded and found anywhere in it. What lets one integer repeated down a
+   * column be read as a code (ADR-073 §決定 5).
+   */
+  codeHeadings?: string[]
   codes: CodeEntry[]
 }
 

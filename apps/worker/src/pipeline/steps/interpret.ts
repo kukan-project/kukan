@@ -54,6 +54,11 @@ export interface InterpretResult {
   reason?: NoTableReason
   /** The table profile (ADR-063), with its artifact uploaded beside the preview. */
   profile?: TableProfile
+  /**
+   * The vocabulary packs the profile was read against (ADR-073), for the run
+   * to check the setting has not moved on while it read.
+   */
+  vocabularyPacks?: string[]
   /** A document's text artifact, uploaded. */
   documentText?: InterpretedDocument
 }
@@ -183,6 +188,7 @@ export async function executeInterpret(
   // CSV/TSV and JSON/GeoJSON: publish what the interpretation produced. The
   // interpretation itself is shared with the lake retry, which wants the table
   // and nothing else (ADR-046).
+  const vocabularyPacks = (await ctx.vocabularyPacks?.()) ?? []
   const { encoding, schema, used, reason, rowGroupRows } = await withInterpretedVersion(
     source,
     fmt,
@@ -216,7 +222,7 @@ export async function executeInterpret(
       }
     },
     hooks.onEncoding,
-    { profile: true }
+    { profile: { vocabularyPacks } }
   )
 
   // The schema goes back whether or not there was a table. An empty one is not
@@ -233,6 +239,7 @@ export async function executeInterpret(
     // an operator to confirm it
     rowGroupRows: used ? (rowGroupRows ?? NO_ROW_GROUP_FIGURE) : rowGroupRows,
     ...used,
+    ...(used?.profile && { vocabularyPacks }),
   }
 }
 

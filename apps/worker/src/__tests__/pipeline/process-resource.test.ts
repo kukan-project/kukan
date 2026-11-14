@@ -169,6 +169,54 @@ describe('processResource', () => {
     vi.mocked(executeLake).mockResolvedValue({ status: 'skipped' })
   })
 
+  describe('when the vocabulary packs change while the table is read (ADR-073)', () => {
+    const tableRead = (packs: string[]) => {
+      vi.mocked(executeFetch).mockResolvedValue({
+        storageKey: 'resources/pkg-1/res-1',
+        format: 'CSV',
+        packageId: 'pkg-1',
+        hash: 'sha256:abc',
+        size: 42,
+        status: 'fetched',
+      })
+      vi.mocked(executeInterpret).mockResolvedValue({
+        previewKey: TABLE_PREVIEW_KEY,
+        encoding: 'UTF8',
+        profile: { columns: [] },
+        vocabularyPacks: packs,
+      })
+      vi.mocked(executeIndexContent).mockResolvedValue(null)
+    }
+    const rebuilds = () =>
+      vi
+        .mocked(queue.enqueue)
+        .mock.calls.filter(([, payload]) => (payload as { rebuildOnly?: boolean }).rebuildOnly)
+
+    it('queues the table to be read again under the packs as they are now', async () => {
+      tableRead([])
+      ctx.vocabularyPacks = vi.fn().mockResolvedValue(['JP'])
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(rebuilds()).toEqual([
+        [
+          'resource-pipeline',
+          { resourceId: 'res-1', rebuildOnly: true },
+          { unlessWaiting: true, priority: 'low' },
+        ],
+      ])
+    })
+
+    it('queues nothing when the packs are as they were read, in any order', async () => {
+      tableRead(['JP', 'XA'])
+      ctx.vocabularyPacks = vi.fn().mockResolvedValue(['XA', 'JP'])
+
+      await processResource({ resourceId: 'res-1' }, ctx, db, queue)
+
+      expect(rebuilds()).toEqual([])
+    })
+  })
+
   it('should run all steps for CSV resource', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',

@@ -124,6 +124,12 @@ export function summarizeCodes(scheme: IndexedScheme, hits: Hit[]): CodeSummary 
 export const INFERENCE_RULES = {
   checkedCode: { share: 0.9, minValues: 1 },
   name: { share: 0.8, minValues: 3 },
+  /**
+   * The most distinct values a column may have and be read at all: more than
+   * any one level of a country's areas, so a column past it is addresses or
+   * identifiers of something else, and listing it costs more than it tells.
+   */
+  maxValues: 5_000,
 } as const
 
 const ruleFor = (scheme: IndexedScheme, rep: Representation) =>
@@ -138,6 +144,8 @@ export interface ColumnInference {
   pack: string
   scheme: string
   representation: string
+  /** A code is an identifier to search by; a name stays a word to search for. */
+  kind: Representation['kind']
   /** Values naming a single place, over distinct values looked at. */
   share: number
   ambiguous: number
@@ -160,9 +168,53 @@ export function inferColumn(registry: Registry, values: string[]): ColumnInferen
       pack: m.scheme.pack,
       scheme: m.scheme.def.id,
       representation: m.rep.id,
-      share: m.hits.length / m.values,
+      kind: m.rep.kind,
+      // Two places are enough: the share is compared at a tenth, and a stored
+      // profile need not carry fifteen digits of it
+      share: Math.round((m.hits.length / m.values) * 100) / 100,
       ambiguous: m.ambiguous,
       summary: summarizeCodes(m.scheme, m.hits),
     }))
     .sort((a, b) => b.share - a.share)
+}
+
+/** What is known of a column besides its values. */
+export interface ColumnContext {
+  heading: string
+  /** Typed as integers by the reader, which a code column is when no value kept a leading zero. */
+  integer: boolean
+}
+
+/**
+ * A column's verdict (ADR-073 §決定 4・5): one scheme decided, or several that
+ * reach their share — left for a person, the first being no answer.
+ */
+export type ColumnVerdict = { decided: ColumnInference } | { candidates: ColumnInference[] }
+
+/**
+ * What a column is taken to be, or null when nothing in the registry fits it.
+ *
+ * One integer repeated down a column is taken for a code only under a heading
+ * that names the scheme's codes: a month written `202011` checks out as a code
+ * as often as a code does, and a single value is all the evidence there is.
+ */
+export function judgeColumn(
+  registry: Registry,
+  values: string[],
+  context: ColumnContext
+): ColumnVerdict | null {
+  const distinct = new Set(values).size
+  if (distinct === 0 || distinct > INFERENCE_RULES.maxValues) return null
+  const heading = fold(['nfkc', 'lowercase'], context.heading)
+  const found = inferColumn(registry, values).filter(
+    (f) =>
+      !(context.integer && distinct === 1) ||
+      (registry.schemes.find((s) => s.def.id === f.scheme)?.def.codeHeadings ?? []).some((w) =>
+        heading.includes(fold(['nfkc', 'lowercase'], w))
+      )
+  )
+  if (found.length === 0) return null
+  return new Set(found.map((f) => f.scheme)).size === 1
+    ? { decided: found[0] }
+    : { candidates: found }
 }

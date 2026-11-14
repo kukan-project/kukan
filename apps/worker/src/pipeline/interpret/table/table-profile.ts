@@ -11,8 +11,10 @@ import type { DuckDBConnection } from '@duckdb/node-api'
 import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import { COLUMN_VALUES_KEPT, TABLE_SENTENCES_MAX_BYTES } from '@kukan/shared'
 import type { ColumnProfile, ResourceColumn, TableProfile } from '@kukan/shared'
+import { INFERENCE_RULES, judgeColumn, registryFor } from '@kukan/vocabulary'
 import { aggregateByColumn } from './column-batches'
-import { listsValues, textColumnRole, type TextColumnClues } from './column-role'
+import type { ProfileRequest } from './write-table'
+import { listsValues, readsVocabulary, textColumnRole, type TextColumnClues } from './column-role'
 
 /** Values shown for why a `numeric-text` column is not a number. */
 const NUMBER_EXAMPLES = 3
@@ -72,7 +74,8 @@ const SHAPE_SAMPLE_MIN_VALUES = 1_000
 const PLAIN_NUMBER = '-?[0-9]+(\\.[0-9]+)?'
 
 /** The trimmed value of a column, with blank as missing. */
-const value = (name: string) => `nullif(trim(${sqlIdentifier(name)}), '')`
+const value = (name: string, { cast = false } = {}) =>
+  `nullif(trim(${cast ? `CAST(${sqlIdentifier(name)} AS VARCHAR)` : sqlIdentifier(name)}), '')`
 
 /** The profile as the interpretation hands it on: the artifact still on local disk. */
 export type InterpretedProfile = Omit<TableProfile, 'key'> & {
@@ -91,7 +94,7 @@ export async function profileTable(
   columns: { name: string; duckType: string }[],
   described: ResourceColumn[],
   rowCount: number,
-  path: string
+  { path, vocabularyPacks }: ProfileRequest
 ): Promise<InterpretedProfile> {
   // Every row number below is DuckDB's own rowid, and a heading must not hide it.
   const names = await freeRowid(
@@ -123,9 +126,17 @@ export async function profileTable(
     profiled.push(decision)
   }
 
+  // Before the values are listed: a column found to hold codes is an
+  // identifier, and its values then stay out of the artifact and the index
+  const registry =
+    vocabularyPacks.length > 0
+      ? await readVocabulary(conn, names, described, profiled, vocabularyPacks)
+      : undefined
+  const done = { columns: profiled, ...(registry && { registry }) }
+
   const listed = profiled.flatMap((c, i) => (listsValues(c.role) ? [i] : []))
   const free = described.flatMap((_, i) => (profiled[i].role === 'free-text' ? [i] : []))
-  if (listed.length === 0 && free.length === 0) return { columns: profiled }
+  if (listed.length === 0 && free.length === 0) return done
 
   await countValues(conn, names, listed)
   for (const [i, values] of await mostFrequentValues(conn)) {
@@ -143,7 +154,91 @@ export async function profileTable(
     free,
     path
   )
-  return { columns: profiled, path, ...(sentencesOmitted > 0 && { sentencesOmitted }) }
+  return { ...done, path, ...(sentencesOmitted > 0 && { sentencesOmitted }) }
+}
+
+/**
+ * What each column means against the site's enabled packs (ADR-073 §決定 4・5),
+ * written onto its profile, and the registry state it was worked out under —
+ * none where no enabled pack is one this release ships.
+ *
+ * Text columns are read, and integer columns within the span the registry's
+ * codes are written in: an integer column is a code column whose values had no
+ * leading zero to keep them text, and reads back as the digits it was written
+ * with. Prose, links, phone numbers and dates are not read (`readsVocabulary`).
+ *
+ * A column decided to hold codes becomes an identifier; one of names keeps its
+ * role, its values being what a search looks for. A column more than one
+ * scheme reaches is left undecided: its vocabulary names the candidates, and
+ * its role is not changed on one of their say-so.
+ */
+async function readVocabulary(
+  conn: DuckDBConnection,
+  names: string[],
+  described: ResourceColumn[],
+  profiled: ColumnProfile[],
+  packs: string[]
+): Promise<string | undefined> {
+  const registry = await registryFor(packs)
+  // No pack this release ships reads nothing, and records no state: what the
+  // refresh takes a site with no pack enabled to have
+  if (registry.schemes.length === 0) return undefined
+  const range = registry.integerRange
+  const read = described.flatMap((c, i) => {
+    const distinct = c.distinctCount ?? 0
+    const inRange =
+      c.type === 'string' ||
+      (c.type === 'integer' &&
+        range !== null &&
+        c.stats !== undefined &&
+        Number(c.stats.max) >= range.min &&
+        Number(c.stats.min) <= range.max)
+    return inRange &&
+      distinct > 0 &&
+      distinct <= INFERENCE_RULES.maxValues &&
+      readsVocabulary(profiled[i])
+      ? [i]
+      : []
+  })
+  const row = await aggregateByColumn(conn, read, (i) => [
+    `list(DISTINCT ${value(names[i], { cast: true })}) AS c${i}_values`,
+  ])
+  for (const i of read) {
+    const values = ((row[`c${i}_values`] as (string | null)[] | null) ?? []).filter(
+      (v): v is string => v !== null
+    )
+    const verdict = judgeColumn(registry, values, {
+      heading: described[i].name,
+      integer: described[i].type === 'integer',
+    })
+    if (!verdict) continue
+    const decided = 'decided' in verdict
+    const [best, ...others] = decided ? [verdict.decided] : verdict.candidates
+    profiled[i] = {
+      ...profiled[i],
+      ...(decided &&
+        best.kind === 'code' && { role: 'identifier', roleBasis: { rule: 'vocabulary' } }),
+      vocabulary: {
+        concept: best.concept,
+        pack: best.pack,
+        scheme: best.scheme,
+        representation: best.representation,
+        share: best.share,
+        ambiguous: best.ambiguous,
+        levels: best.summary.levels,
+        periods: best.summary.periods,
+        narrowedBy: best.summary.narrowedBy,
+        ...(!decided && {
+          alternatives: others.map(({ pack, scheme, representation }) => ({
+            pack,
+            scheme,
+            representation,
+          })),
+        }),
+      },
+    }
+  }
+  return registry.state
 }
 
 const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())

@@ -59,6 +59,7 @@ import {
   PIPELINE_INDEX_ONLY_KIND,
   MAX_CONTENT_CHUNK_SIZE,
   RECORD_ROW_GROUPS_JOB_TYPE,
+  REFRESH_VOCABULARY_JOB_TYPE,
   JOB_STATUSES,
   SysadminRequiredError,
   NotFoundError,
@@ -88,6 +89,7 @@ import {
   AI_SUGGEST_ENABLED_KEY,
   SETTING_KEYS,
   REGISTRATION_ENABLED_KEY,
+  VOCABULARY_PACKS_KEY,
   isSettingKey,
   parseSettingValue,
 } from '../services/system-setting'
@@ -393,6 +395,10 @@ adminRouter.put(
     }
 
     await c.get('settings').setSetting(key, parsed.data, c.get('user')!)
+    // The tables read under the packs before read again under these (ADR-073 §決定 4)
+    if (key === VOCABULARY_PACKS_KEY) {
+      await c.get('queue').enqueue(REFRESH_VOCABULARY_JOB_TYPE, {}, { unlessWaiting: true })
+    }
 
     return c.json({ key, value: parsed.data })
   }

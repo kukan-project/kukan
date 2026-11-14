@@ -42,6 +42,7 @@ import {
   writeTable,
   type Column,
   type InterpretedTableFile,
+  type ProfileRequest,
 } from './write-table'
 
 /** What reading the file produced nothing from. */
@@ -157,8 +158,8 @@ const JSON_WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d])
 /**
  * Interpret `jsonPath` and write its Parquet preview to `parquetPath`.
  *
- * @param profilePath - where to write the profile artifact (ADR-063), when the
- *   caller publishes one.
+ * @param profileRequest - the profile to write too (ADR-063), when the caller
+ *   publishes one.
  * @param maxObjectBytes - the largest JSON value the reader takes: a record of
  *   an array, or the whole file when it is one object. The caller refused
  *   files past it already (`version.ts`); here it bounds what the reader
@@ -167,7 +168,7 @@ const JSON_WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d])
 export async function interpretJson(
   jsonPath: string,
   parquetPath: string,
-  profilePath?: string,
+  profileRequest?: ProfileRequest,
   maxObjectBytes: number = MAX_JSON_OBJECT_SIZE
 ): Promise<InterpretedTableFile> {
   const { conn, close } = await openDuckdb({
@@ -211,7 +212,7 @@ export async function interpretJson(
       columns,
       rowCount,
       parquetPath,
-      profilePath
+      profileRequest
     )
     return {
       rowGroupRows,

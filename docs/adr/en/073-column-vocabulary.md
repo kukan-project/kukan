@@ -236,9 +236,10 @@ human decisions are in `column_settings`).
   updating its code tables, or a site enabling or disabling a pack), the inference of tables matched
   against the old state stays stale. Since some columns first match through a post-merger code, a
   newly added alias or a newly enabled scheme, a change of state queues a job that rebuilds the
-  inference of every resource with a table profile matched against an older state. The rebuild
-  redoes neither the fetch nor the interpretation, only the profile and the index (the procedure is
-  settled in implementation)
+  inference of every resource with a table profile matched against an older state. The job (`refresh-vocabulary-profiles`) is queued when the setting
+  changes and when a worker starts, which a release changing a pack or the rules reaches. For now the
+  rebuild interprets the table again from the stored original (`rebuildOnly`, ADR-044 §4); since the
+  state changes seldom, a route that rebuilds the profile alone waits until the volume calls for it
 
 ### 5. Rules for judging
 
@@ -306,7 +307,7 @@ resources nor adding schemes changes the shape of the registry.
 
 - Nothing country-specific goes in the core. The local government code's check digit and "the first
   2 digits are the parent" go inside the Japan pack
-- Packs are identified by country/region code (such as ISO 3166 `JP`) and enabled in site settings.
+- Packs are identified by country/region code (such as ISO 3166 `JP`) and enabled in site settings (the runtime setting `vocabulary-packs`, ADR-036), empty by default.
   No default country is embedded in the core
 - The registry's shape is general from the start (names with languages, validity periods,
   correspondence tables with ratios, multi-column representations, hierarchies whose parent is

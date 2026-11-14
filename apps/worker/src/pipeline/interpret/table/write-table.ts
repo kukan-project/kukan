@@ -88,6 +88,14 @@ export async function describe(conn: DuckDBConnection, table = 't'): Promise<Col
   return reader.columnNames().map((name, i) => ({ name, duckType: String(types[i]) }))
 }
 
+/** What a caller that publishes the profile asks of it (ADR-063, ADR-073). */
+export interface ProfileRequest {
+  /** Where the profile artifact goes. */
+  path: string
+  /** The packs the profile reads columns against; none reads no vocabulary. */
+  vocabularyPacks: string[]
+}
+
 /**
  * Write `t` out: its Parquet preview, the per-column facts, and — for a caller
  * that publishes one — the profile.
@@ -99,7 +107,7 @@ export async function writeTable(
   columns: Column[],
   rowCount: number,
   parquetPath: string,
-  profilePath?: string
+  profileRequest?: ProfileRequest
 ): Promise<{ described: ResourceColumn[]; rowGroupRows?: number; profile?: InterpretedProfile }> {
   // ZSTD rather than DuckDB's default: measured at 3.25 MB against Snappy's
   // 8.40 MB on the same input, and a preview page costs a third of the bytes
@@ -123,8 +131,8 @@ export async function writeTable(
   // the same rows, and no second read of anything. Only for a caller that
   // publishes it — a lake retry wants the table alone. Search material, so a
   // failure here costs the profile and not the preview.
-  const profile = profilePath
-    ? await profileTable(conn, columns, described, rowCount, profilePath).catch(
+  const profile = profileRequest
+    ? await profileTable(conn, columns, described, rowCount, profileRequest).catch(
         (err: unknown): InterpretedProfile => ({
           columns: [],
           error: err instanceof Error ? err.message : String(err),

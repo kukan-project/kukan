@@ -374,6 +374,20 @@ dead になっても、組織が `purging` のままなら毎時 17 分の回収
    3. 各実行が自分のリソースのチャンクを差し替えるまでは、古いチャンクでデータセットの検索に出る（2 段目の
       箇所検索は今の規則で位置を探すので、作り直すまで拾えない）。
 
+**`refresh-vocabulary-profiles`** — 今と違う登録簿の状態で語彙を判定した表を、判定し直す（ADR-073 決定 4）。
+
+1. サイトの設定 `vocabulary-packs` を読み、有効な束から今の登録簿の状態を作る。この版が持つ束が 1 つも無ければ
+   「状態なし」とする。
+2. `active` なリソースのうち、`active` か下書きのデータセットにあり、保存済みのオブジェクトがあり、表の
+   プロファイルを持つものから、記録された状態が今の状態と違うものを id 順に 1,000 件ずつ読み、
+   `resource-pipeline(rebuildOnly)` を積む。「状態なし」なら、状態が記録されたもの（以前に語彙を判定したもの）を
+   積む。投入に失敗したバッチがあれば、走査を終えてから失敗し、ジョブごと再試行する。
+3. 走査の時点でまだ解釈中だった表は、プロファイルが無いので対象にならない。その実行は保存の後に設定を読み直し、
+   読んだときと違っていれば自分のリソースに `resource-pipeline(rebuildOnly)` を積む（claim の順番待ちの後、新しい
+   設定で読み直す）。
+4. 判定し直しは解釈ごとやり直す。プロファイルだけを作り直す経路は無い。状態が変わるのは設定の変更と、束や
+   規則が変わるリリースのときだけなので、まれである。
+
 **`reanalyse-search-index`** — 解析設定（kuromoji など）が変わった索引を作り直す（ADR-025）。
 
 1. OpenSearch が無いサイトでは何もしない。
@@ -429,11 +443,13 @@ dead になっても、組織が `purging` のままなら毎時 17 分の回収
   データセットの削除 ───────────────────────────→ （配下の文書をロックの下で消す）
   版の削除 / 組織の完全削除 ─────────────────────→ purge-resource-version / purge-organization
   データセット・下書きの完全削除 ─────────────────→ drop-lake-tables（全リソース、行の削除と同じトランザクション）
+  設定 vocabulary-packs の変更 ──────────────────→ refresh-vocabulary-profiles（同じものが待っていれば積まない）
   版の差分の取得が失敗 ─────────────────────────→ rebuild-lake-catalog（同じものが待っていれば積まない）
 
 resource-pipeline
   ├ claim が取れない / 取得がレート制限 ──→ resource-pipeline（遅延つきで積み直す）
   ├ Lake が失敗 ─────────────────────────→ lake-ingest-version
+  ├ 表を読む間に vocabulary-packs が変わった ──→ resource-pipeline(rebuildOnly)（同じものが待っていれば積まない）
   ├ Lake が移行前のリソースに当たった・片付けきれなかった ──→ rebuild-lake-catalog
   └ 実行の終わりに未反映フラグが立っていれば ──────→ sync-search-docs / embed-resources
 
@@ -475,7 +491,8 @@ purge-resource-version
   毎時 52 分 ──→ embed-resources（embedding_due_at が 10 分以上立ったままの行があれば 1 件）
   毎時 57 分 ──→ resource-pipeline(indexOnly)（content_index_due_at が 10 分以上立ったままで、
                  実行すれば本文を索引するリソース。それ以外は本文をその場で消す。上限 500 件）
-  worker 起動の 10 分後 ──→ sync-search-docs / embed-resources / 本文の索引の sweep
+  worker 起動の 10 分後 ──→ sync-search-docs / embed-resources / 本文の索引の sweep /
+                            refresh-vocabulary-profiles（同じものが待っていれば積まない）
                           （未反映フラグが立った行があれば）
   60 秒ごと ───→ reindex-metadata{includeContent:true}（索引が空で DB に公開中のデータセットがあるとき）
 ```
@@ -525,6 +542,7 @@ purge-resource-version
 | `summarize-all`                    | 抄録を後から有効にした・プロンプトを変えた                                                                 | パイプラインの Summarize                      |
 | `reindex-metadata{includeContent}` | 抽出・解釈のコードが変わった・索引を失った。派生物がどのコードで作られたかの記録が無いので、条件で絞れない | `resource-pipeline`                           |
 | `reindex-metadata{reindexContent}` | 本文の索引の作り方（チャンクの大きさ、プロファイルの行の組み方など）が変わった。解釈は前回のものを使う     | `resource-pipeline(indexOnly)`                |
+| `refresh-vocabulary-profiles`      | 取らない                                                                                                   | 積むだけ。判定し直しは run に任せる           |
 | `POST /admin/jobs/enqueue-all`     | 全件の再取得                                                                                               | `resource-pipeline`                           |
 
 `rebuildOnly` の run は「同じバイト列なら Interpret と Index を飛ばす」判定（`derivativesReused`）を

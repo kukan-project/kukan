@@ -250,6 +250,9 @@ importers:
       '@kukan/storage-adapter':
         specifier: workspace:*
         version: link:../../packages/adapters/storage
+      '@kukan/vocabulary':
+        specifier: workspace:*
+        version: link:../../packages/vocabulary
       '@opensearch-project/opensearch':
         specifier: ^3.6.0
         version: 3.6.0
@@ -465,6 +468,9 @@ importers:
       '@kukan/storage-adapter':
         specifier: workspace:*
         version: link:../adapters/storage
+      '@kukan/vocabulary':
+        specifier: workspace:*
+        version: link:../vocabulary
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)

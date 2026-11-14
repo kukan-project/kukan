@@ -606,6 +606,7 @@
         "summarize-package": "AI による説明の生成（リソース）",
         "summarize-all": "AI による説明の一括生成（全リソース）",
         "reindex-metadata": "検索インデックスの再構築",
+        "refresh-vocabulary-profiles": "語彙の判定のやり直し（表のリソース）",
         "resource-pipeline-reprocess-all": "全リソースの再処理（リソース）",
         "resource-pipeline-index-only": "本文の索引の作り直し（リソース）",
         "reanalyse-search-index": "検索インデックスの再解析（索引全体）",
@@ -810,6 +811,7 @@
     "fieldRoleBasis": {
       "typed": "型から判定",
       "no-values": "値がない",
+      "vocabulary": "語彙の判定で、コードの列と分かった",
       "leading-zero": "先頭が 0 の数字を含む。数値として読むと 0 が落ちる",
       "number-shape": "値の {percent}% が数値の形",
       "date-shape": "値の {percent}% が日付の形",

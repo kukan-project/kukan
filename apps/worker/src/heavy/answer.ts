@@ -17,7 +17,7 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
         request.csvPath,
         request.parquetPath,
         request.skipRows,
-        request.profilePath
+        request.profile
       )) as HeavyResult<R>
     }
     case 'interpret-json': {
@@ -25,7 +25,7 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
       return (await interpretJson(
         request.jsonPath,
         request.parquetPath,
-        request.profilePath
+        request.profile
       )) as HeavyResult<R>
     }
     case 'extract-text': {

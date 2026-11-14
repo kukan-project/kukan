@@ -15,6 +15,7 @@ import {
   PURGE_VERSION_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
   RECORD_ROW_GROUPS_JOB_TYPE,
+  REFRESH_VOCABULARY_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
   LAKE_REBUILD_JOB_TYPE,
@@ -29,6 +30,7 @@ import {
   purgeVersionJobSchema,
   backfillVersionsJobSchema,
   recordRowGroupsJobSchema,
+  refreshVocabularyJobSchema,
   convertSetAsideJobSchema,
   lakeIngestJobSchema,
   lakeRebuildJobSchema,
@@ -64,7 +66,13 @@ import {
   ResourceVersionService,
 } from '@kukan/api/services/resource-version-service'
 import { createMeteredAI } from '@kukan/api/adapters'
-import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
+import {
+  AI_SUMMARY_LOCALE_KEY,
+  SystemSettingService,
+  VOCABULARY_PACKS_KEY,
+} from '@kukan/api/services/system-setting'
+import { requestVocabularyRefresh } from '@kukan/api/services/pipeline/vocabulary-refresh'
+import { registryFor } from '@kukan/vocabulary'
 import { reanalyseSearchIndex } from './search/reanalyse-index'
 import type { SummaryDeps } from './pipeline/steps/summarize'
 import { enqueueSummarizePackages, summarizeNextInPackage } from './summary/backfill'
@@ -403,6 +411,9 @@ const startSweep = setTimeout(() => {
     sweepSearchDocs(db, queue, resourceDocSweepLog, 0),
     sweepResourceEmbeds(db, queue, ai, resourceEmbedSweepLog, 0),
     sweepContentIndex(db, queue, docSearch, contentIndexSweepLog, 0),
+    // A release may have changed a pack or the rules: tables read under the
+    // old ones are read again (ADR-073 §決定 4)
+    queue.enqueue(REFRESH_VOCABULARY_JOB_TYPE, {}, { unlessWaiting: true }),
   ]).catch((err) => log.warn({ err }, 'Post-start sweep failed; the hourly one will retry'))
 }, START_SWEEP_DELAY_MS)
 startSweep.unref()
@@ -525,6 +536,19 @@ await queue.process({
       },
       'Record row groups job completed'
     )
+  },
+
+  // Tables profiled under another vocabulary registry state, read again
+  // (ADR-073 §決定 4). The state is the one this worker builds from the
+  // site's setting now; none enabled reads as none.
+  [REFRESH_VOCABULARY_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, refreshVocabularyJobSchema)) return
+    const packs = await new SystemSettingService(db).getSetting(VOCABULARY_PACKS_KEY)
+    const registry = await registryFor(packs)
+    // No pack this release ships is no vocabulary, as the profile writes it
+    const state = registry.schemes.length > 0 ? registry.state : null
+    const result = await requestVocabularyRefresh(db, queue, state)
+    log.info({ jobId: job.id, type: job.type, state, ...result }, 'Vocabulary refresh enqueued')
   },
 
   // Maintenance (control-plane): rebuild the search index.

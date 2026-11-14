@@ -855,7 +855,26 @@ describe('Admin API Routes', () => {
         'ai-suggest-enabled': true,
         'ai-summary-locale': 'ja',
         'site-metadata': [],
+        'vocabulary-packs': [],
       })
+    })
+
+    it('reads the tables again when the packs enabled change (ADR-073)', async () => {
+      const queue = { enqueue: vi.fn().mockResolvedValue('job') } as unknown as JobQueue
+      const res = await createTestApp(db, { search: mockSearch, queue }).request(
+        '/api/v1/admin/settings/vocabulary-packs',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: ['JP'] }),
+        }
+      )
+      expect(res.status).toBe(200)
+      expect(queue.enqueue).toHaveBeenCalledWith(
+        'refresh-vocabulary-profiles',
+        {},
+        { unlessWaiting: true }
+      )
     })
 
     it('should persist example queries (trimmed) and audit the change', async () => {

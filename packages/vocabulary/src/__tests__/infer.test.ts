@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createRegistry } from '../registry'
-import { inferColumn, matchValues } from '../infer'
+import { inferColumn, judgeColumn, matchValues } from '../infer'
 import { JP_PACK } from '../packs/jp'
 
 const registry = createRegistry([JP_PACK], '2026-11-14')
@@ -128,5 +128,31 @@ describe('inferColumn over the Japan pack', () => {
 
   it('infers nothing with no pack enabled', () => {
     expect(inferColumn(createRegistry([]), ['010006', '北海道'])).toEqual([])
+  })
+})
+
+describe('judgeColumn over the Japan pack', () => {
+  const judge = (values: string[], heading: string, integer = false) =>
+    judgeColumn(registry, values, { heading, integer })
+
+  it('decides a column of codes', () => {
+    expect(judge(['010006', '020001'], '団体コード')).toMatchObject({
+      decided: { scheme: 'jp-lg-code', representation: 'code6', kind: 'code' },
+    })
+  })
+
+  it('reads one integer down a column only under a heading naming a code', () => {
+    // 202011 is a month, and checks out as a code all the same
+    expect(judge(['202011'], '年月', true)).toBeNull()
+    expect(judge(['131032'], '全国地方公共団体コード', true)).toMatchObject({
+      decided: { representation: 'code6' },
+    })
+    // Text keeps its say: the standard sets write their one code as text
+    expect(judge(['401307'], '識別子')).toMatchObject({ decided: { representation: 'code6' } })
+  })
+
+  it('reads no column past the most distinct values a column may have', () => {
+    const many = Array.from({ length: 5_001 }, (_, i) => String(i))
+    expect(judge(many, 'id')).toBeNull()
   })
 })

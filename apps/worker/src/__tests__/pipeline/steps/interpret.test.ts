@@ -106,6 +106,9 @@ describe('executeInterpret', () => {
         ],
         key: previewKeyMatching('pkg-1', 'res-1', 'profile\\.ndjson\\.zst'),
       },
+      // The packs it was read against, none here: the run checks the setting has
+      // not moved on since (ADR-073)
+      vocabularyPacks: [],
       schema: {
         rowCount: 2,
         columns: [

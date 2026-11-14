@@ -28,7 +28,7 @@ import { countTitleRows } from './table/csv-title-rows'
 import { jsonNestsDeeperThan, jsonStartsWithObject } from './table/json'
 import type { PipelineContext } from '../run/types'
 import type { InterpretedProfile } from './table/table-profile'
-import type { InterpretedTableFile } from './table/write-table'
+import type { InterpretedTableFile, ProfileRequest } from './table/write-table'
 import { MAX_JSON_DEPTH, MAX_JSON_OBJECT_SIZE, MAX_TABLE_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
@@ -85,8 +85,8 @@ const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
  *   is one an interpretation may make a table from (`isTableSourceFormat`).
  *   Whether it is within the interpret cap is this function's to answer, so
  *   both callers give one answer.
- * @param opts.profile - write the profile artifact too (ADR-063), for a caller
- *   that publishes one.
+ * @param opts.profile - write the profile artifact too (ADR-063), reading
+ *   columns against the packs given (ADR-073), for a caller that publishes one.
  */
 export async function withInterpretedVersion<T>(
   source: { storageKey: string; size: number },
@@ -94,7 +94,7 @@ export async function withInterpretedVersion<T>(
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>,
-  opts: { profile?: boolean } = {}
+  opts: { profile?: { vocabularyPacks: string[] } } = {}
 ): Promise<InterpretOutcome<T>> {
   // Too large to interpret. Answered here rather than by each caller, so the
   // pipeline and the lake retry give the same answer — and answered as an
@@ -151,12 +151,12 @@ export async function withInterpretedVersion<T>(
     return await interpretOnDisk(
       csvPath,
       encoding,
-      (parquetPath, profilePath) => ({
+      (parquetPath, profile) => ({
         kind: 'interpret-csv',
         csvPath,
         parquetPath,
         skipRows: titleRows,
-        profilePath,
+        profile,
       }),
       ctx,
       use,
@@ -183,7 +183,7 @@ async function interpretJsonVersion<T>(
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>,
-  opts: { profile?: boolean } = {}
+  opts: { profile?: { vocabularyPacks: string[] } } = {}
 ): Promise<InterpretOutcome<T>> {
   const encoding = JSON_ENCODING
   await onEncoding?.(encoding)
@@ -210,11 +210,11 @@ async function interpretJsonVersion<T>(
     return await interpretOnDisk(
       jsonPath,
       encoding,
-      (parquetPath, profilePath) => ({
+      (parquetPath, profile) => ({
         kind: 'interpret-json',
         jsonPath,
         parquetPath,
-        profilePath,
+        profile,
       }),
       ctx,
       use,
@@ -237,14 +237,17 @@ async function interpretOnDisk<T>(
   encoding: string,
   request: (
     parquetPath: string,
-    profilePath: string | undefined
+    profile: ProfileRequest | undefined
   ) => Extract<HeavyRequest, { kind: 'interpret-csv' | 'interpret-json' }>,
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
-  opts: { profile?: boolean }
+  opts: { profile?: { vocabularyPacks: string[] } }
 ): Promise<InterpretOutcome<T>> {
   const parquetPath = `${sourcePath}.parquet`
-  const profilePath = opts.profile ? `${sourcePath}.profile.ndjson.zst` : undefined
+  const profileRequest = opts.profile && {
+    path: `${sourcePath}.profile.ndjson.zst`,
+    ...opts.profile,
+  }
   // In the heavy process, where a file that outgrows the memory takes that
   // process and not the worker (ADR-059). Recorded like the bounds above:
   // interpreting it again on the same task would end the same way, and the
@@ -252,7 +255,7 @@ async function interpretOnDisk<T>(
   let interpreted: InterpretedTableFile
   try {
     interpreted = (await runHeavy(
-      request(parquetPath, profilePath),
+      request(parquetPath, profileRequest),
       ctx.keepHeld
     )) as InterpretedTableFile
   } catch (err) {

@@ -304,6 +304,20 @@ async function runPipeline(
             // The table profile (ADR-063), which only the live version has
             interpretResult.profile ?? null
           )
+          // The packs changed while this read the table: a refresh then may
+          // have passed it over, having found no profile yet, and the one just
+          // written is under the old packs. A rebuild queued now waits on this
+          // run's claim and reads the table under the new ones (ADR-073 §決定 4)
+          if (
+            interpretResult.vocabularyPacks &&
+            !samePacks(interpretResult.vocabularyPacks, (await ctx.vocabularyPacks?.()) ?? [])
+          ) {
+            await queue.enqueue(
+              PIPELINE_JOB_TYPE,
+              { resourceId, rebuildOnly: true },
+              { unlessWaiting: true, priority: 'low' }
+            )
+          }
           // And onto the version itself, which is where the interpretation
           // belongs (ADR-046). Still written to the pipeline row above: the
           // readers of ADR-032 go through it, and moving them to the version is
@@ -553,3 +567,7 @@ async function runSummarizeStep(
     await tracker.failStep(stepId, (err as Error).message)
   }
 }
+
+/** Whether two settings of the packs name the same packs, in whatever order. */
+const samePacks = (a: string[], b: string[]) =>
+  a.length === b.length && [...a].sort().every((p, i) => p === [...b].sort()[i])

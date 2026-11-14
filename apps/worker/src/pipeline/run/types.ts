@@ -41,6 +41,11 @@ export interface PipelineContext {
    */
   summary: SummaryDeps | null
   /**
+   * The vocabulary packs the site enables (ADR-073 §決定 8), read per call: the
+   * setting is runtime. Absent where a caller reads no vocabulary.
+   */
+  vocabularyPacks?: () => Promise<string[]>
+  /**
    * Reading only. Creating an object goes through {@link putObject}, and not
    * offering the raw write here is what keeps that from being bypassed — a step
    * cannot record nothing if it has nothing to write with (ADR-045).

@@ -606,6 +606,7 @@
         "summarize-package": "AI descriptions (resources)",
         "summarize-all": "AI descriptions in bulk (all resources)",
         "reindex-metadata": "Search index rebuild",
+        "refresh-vocabulary-profiles": "Vocabulary read again (tables)",
         "resource-pipeline-reprocess-all": "Reprocess of every resource (resources)",
         "resource-pipeline-index-only": "Content index rebuild (resources)",
         "reanalyse-search-index": "Search index re-analysis (whole index)",
@@ -810,6 +811,7 @@
     "fieldRoleBasis": {
       "typed": "From the type",
       "no-values": "No values",
+      "vocabulary": "Matched a code in the site's vocabulary",
       "leading-zero": "Holds digits starting with 0, which a number would drop",
       "number-shape": "{percent}% of values are number-shaped",
       "date-shape": "{percent}% of values are date-shaped",

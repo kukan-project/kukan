@@ -133,6 +133,21 @@ export function textColumnRole(name: string, c: TextColumnClues): RoleDecision {
   return { role: 'category', roleBasis: { rule: 'other' } }
 }
 
+/**
+ * Whether a column's values may be codes or the names of places, worth reading
+ * against the vocabulary (ADR-073): not prose, links, numbers to call or dates.
+ */
+export function readsVocabulary({ role, roleBasis }: RoleDecision): boolean {
+  switch (roleBasis.rule) {
+    case 'url-shape':
+    case 'phone-shape':
+    case 'date-shape':
+      return false
+    default:
+      return role !== 'free-text'
+  }
+}
+
 /** Whether a role's values are listed in the profile (ADR-063 §決定 2). */
 export function listsValues(role: ColumnRole): boolean {
   return role === 'name' || role === 'category'

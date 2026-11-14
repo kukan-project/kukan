@@ -29,6 +29,7 @@ const schemes: SchemeDefinition[] = [
       { id: 'name', kind: 'name', qualified: { separator: '', order: 'parent-first' } },
     ],
     // The totals and catch-alls statistics tables put among the places
+    codeHeadings: ['コード', '番号', 'code'],
     notAreas: [
       '全国',
       '合計',

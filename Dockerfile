@@ -53,6 +53,7 @@ COPY packages/api/package.json packages/api/
 COPY packages/lake/package.json packages/lake/
 COPY packages/ui/package.json packages/ui/
 COPY packages/queue/package.json packages/queue/
+COPY packages/vocabulary/package.json packages/vocabulary/
 COPY packages/adapters/search/package.json packages/adapters/search/
 COPY packages/adapters/storage/package.json packages/adapters/storage/
 COPY packages/adapters/ai/package.json packages/adapters/ai/

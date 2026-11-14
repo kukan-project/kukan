@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createRegistry, RULES_VERSION } from '../registry'
 import { packVersion } from '../fingerprint'
-import { inferColumn, matchValues, summarizeCodes } from '../infer'
+import { inferColumn, judgeColumn, matchValues, summarizeCodes } from '../infer'
 import { JP_PACK } from '../packs/jp'
 import type { Pack } from '../types'
 
@@ -225,5 +225,26 @@ describe('periods over a pack of no real country', () => {
   it('qualifies a name by its parent’s former names, only while both were in use', () => {
     expect(summary(['Ash Town, Old County'], 'name').periods).toEqual([{ validTo: '2020-01-01' }])
     expect(summary(['Ash Town, New County'], 'name').periods).toEqual([{ validFrom: '2020-01-01' }])
+  })
+})
+
+describe('a column two schemes fit', () => {
+  // Another region's scheme naming the same places
+  const XC: Pack = {
+    ...XA,
+    id: 'XC',
+    schemes: [{ ...XA.schemes[0], id: 'xc-region' }],
+  }
+
+  it('is left undecided, with every scheme that fits as a candidate', () => {
+    const verdict = judgeColumn(
+      createRegistry([XA, XC], '2026-11-14'),
+      ['Northern Region', 'Southern Region', 'North Harbor'],
+      { heading: 'region', integer: false }
+    )
+    expect(verdict && 'candidates' in verdict && verdict.candidates.map((c) => c.scheme)).toEqual([
+      'xa-region',
+      'xc-region',
+    ])
   })
 })

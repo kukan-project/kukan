@@ -15,6 +15,7 @@ import {
   type SiteMetadataEntry,
   type SummaryLocale,
 } from '@kukan/shared'
+import { PACK_ID_PATTERN } from '@kukan/vocabulary'
 import { SYSTEM_SETTING_CACHE_TTL_MS, VECTOR_SIMILARITY_MAX_NOTCHES } from '../config'
 import { writeAudit, type AuditActor } from './audit'
 
@@ -26,6 +27,7 @@ export const AI_SUGGEST_MODEL_KEY = 'ai-suggest-model'
 export const AI_SUGGEST_ENABLED_KEY = 'ai-suggest-enabled'
 export const AI_SUMMARY_LOCALE_KEY = 'ai-summary-locale'
 export const SITE_METADATA_KEY = 'site-metadata'
+export const VOCABULARY_PACKS_KEY = 'vocabulary-packs'
 
 /** Registry of runtime settings — adding a setting means adding an entry here */
 const SETTING_DEFINITIONS = {
@@ -76,6 +78,18 @@ const SETTING_DEFINITIONS = {
   [SITE_METADATA_KEY]: {
     schema: siteMetadataSchema,
     default: [] as SiteMetadataEntry[],
+  },
+  // The vocabulary packs columns are read against (ADR-073 §決定 8). None by
+  // default: which country's codes a site reads is the site's to say, not the
+  // product's. Changing it changes the registry state the profiles record.
+  // Checked for shape only: a pack this release does not ship is ignored where
+  // the packs are read, so a setting a newer release wrote does not turn the
+  // ones this release knows off with it
+  [VOCABULARY_PACKS_KEY]: {
+    schema: z
+      .array(z.string().regex(PACK_ID_PATTERN))
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'A pack named twice' }),
+    default: [] as string[],
   },
 } as const
 
