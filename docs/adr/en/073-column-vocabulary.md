@@ -163,19 +163,21 @@ Administrative area   Local Government Code (JP)                6 digits (with c
 
 ### 2. What a scheme holds
 
-| Item                                                     | Example (Local Government Code)                                                                  |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Country/region, issuer                                   | `JP`, Ministry of Internal Affairs and Communications                                            |
-| Terms of use (including whether modification is allowed) | Government Standard Terms of Use                                                                 |
-| Level                                                    | Prefecture → ADM1, municipality → ADM2, ward of a designated city → ADM3                         |
-| How the parent is derived                                | Position (first 2 digits). Otherwise a variable-length rule, or lookup in a correspondence table |
-| Check digit                                              | mod 11 (rules carry versions too)                                                                |
-| Representations                                          | 6 digits, 5 digits, name                                                                         |
+| Item                                                     | Example (Local Government Code)                                               |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Country/region, issuer                                   | `JP`, Ministry of Internal Affairs and Communications                         |
+| Terms of use (including whether modification is allowed) | Public Data License (version 1.0): modification allowed, attribution required |
+| Level                                                    | Prefecture → ADM1, municipality → ADM2, ward of a designated city → ADM3      |
+| Parent                                                   | Given on each entry (worked out by the pack's generator)                      |
+| Check digit                                              | mod 11 (chosen from a closed list)                                            |
+| Representations                                          | 6 digits, 5 digits, name                                                      |
 
-The way to derive the parent is chosen from three kinds. French overseas departments (the parent of
-`97101` is `971`) use a variable-length rule; the UK GSS and the US Place are looked up in a
-correspondence table. Some schemes may change their check digit rule in a revision, so rules carry
-versions too.
+The parent is given on each entry of the code table, and the core holds no rule for working it out
+from a code. How a parent is found differs by country (the first 2 digits; a varying length, as for
+the French overseas departments, where the parent of `97101` is `971`; a table to look up, as for
+the UK GSS and the US Place), so the pack's generator, which knows it, works it out and writes it in.
+When a revision changes a check digit rule, the rule is added to the closed list and the pack's
+version goes up. The pack's version is part of the registry state, so the inferences are rebuilt.
 
 ### 3. Code tables and correspondence tables become KUKAN resources once sites can update them
 
@@ -257,8 +259,10 @@ Based on the trial, judgment relies mainly on values, with column names as suppo
   not rescued: in the trial, padding with 0 on the values alone was almost all false positives
 - A column with a single distinct value is also offered as a candidate for the dataset's target area
 - Point in time cannot be told from differences in match rate. The presence of codes valid only in
-  that period is the evidence. The inferred point in time is stored on the profile as the period where
-  the validity periods of all matched codes overlap, with its basis (which codes narrowed it). With no
+  that period is the evidence. The inferred point in time is stored on the profile as the set of
+  periods where the validity periods of all matched codes overlap, with its basis (which codes
+  narrowed it). A set, so that a code retired and later given out again does not count as valid in
+  between. With no
   code narrowing it, it is "consistent with the current scheme", and normalization and joins read it
   as the present. With no overlap (codes from different points in time mixed), no point in time is
   decided, and that is recorded as is

@@ -118,6 +118,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'vocabulary',
+          root: './packages/vocabulary',
+          include: ['src/__tests__/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'adapter-ai',
           root: './packages/adapters/ai',
           include: ['src/__tests__/**/*.test.ts'],

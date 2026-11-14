@@ -10,3 +10,6 @@ apps/web/public/vendor/
 
 # Vendored shadcn skill (shadcn/ui's skills/shadcn) — kept as upstream writes it.
 .claude/skills/shadcn/
+
+# Code tables a pack script generates (packages/vocabulary/scripts) — rewritten whole on each run.
+packages/vocabulary/src/packs/*/codes.json

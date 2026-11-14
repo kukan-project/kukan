@@ -683,6 +683,18 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/vocabulary:
+    devDependencies:
+      '@duckdb/node-api':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+
   site:
     dependencies:
       '@astrojs/starlight':

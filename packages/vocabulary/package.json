@@ -1,0 +1,30 @@
+{
+  "name": "@kukan/vocabulary",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "KUKAN column vocabulary: concepts, schemes and the packs that carry them (ADR-073)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./packs/jp": "./dist/packs/jp/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/__tests__ && tsc --noEmit -p scripts",
+    "lint": "eslint src scripts",
+    "clean": "rm -rf dist",
+    "build:jp-pack": "tsx scripts/build-jp-pack.ts"
+  },
+  "devDependencies": {
+    "@duckdb/node-api": "1.5.5-r.5",
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15"
+  }
+}

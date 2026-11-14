@@ -23,6 +23,7 @@
       "@kukan/storage-adapter": ["../packages/adapters/storage/src"],
       "@kukan/search-adapter": ["../packages/adapters/search/src"],
       "@kukan/queue": ["../packages/queue/src"],
+      "@kukan/vocabulary": ["../packages/vocabulary/src"],
       "@kukan/ai-adapter": ["../packages/adapters/ai/src"],
       "@kukan/ui": ["../packages/ui/src"]
     }
