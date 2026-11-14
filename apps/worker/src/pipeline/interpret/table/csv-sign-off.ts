@@ -32,10 +32,17 @@
  * quotes on the values and breaks any cell that holds one. Refusing every quoted
  * line instead — which is what this did first — refuses that file outright, which
  * is the file the whole change exists for.
+ *
+ * **The table can vouch for a line the shape cannot.** A list of prefectures in
+ * which only some have a second URL has rows of three values in seven columns —
+ * a note's shape — and the sparse ones at the bottom went as footers. A line is
+ * a row when the table already has rows like it ({@link vouches}): the same
+ * cells filled, each value the kind its column mostly holds.
  */
 
 import Papa from 'papaparse'
-import { SIGN_OFF_MAX_CELLS, SIGN_OFF_MIN_MISSING } from '@/config'
+import { BODY_SHAPE_SHARE, SIGN_OFF_MAX_CELLS, SIGN_OFF_MIN_MISSING } from '@/config'
+import { CLUES } from './table-profile'
 
 // How the file is punctuated, as the scan settled it — never guessed a second
 // time here, or the line would be measured against a column count taken with
@@ -46,12 +53,60 @@ import { trimTrailing, type CsvDialect } from '@kukan/shared'
 export type { CsvDialect }
 
 /**
- * Whether a line the reader refused reads as a sign-off rather than a row.
+ * The kind of value a cell holds, coarse on purpose: enough to tell `出典: 港区`
+ * from the numbers it sits under, not enough to tell two names apart. The
+ * patterns are the profile's (RE2, whole value), read here by JavaScript for a
+ * line and by DuckDB for the table; they read alike but for `\s`, which only
+ * JavaScript stretches past ASCII.
+ */
+export const CELL_SHAPES = [
+  ['url', CLUES.url.re],
+  ['number', CLUES.number.re],
+] as const
+export type CellShape = (typeof CELL_SHAPES)[number][0] | 'text'
+
+const SHAPE_TESTS = CELL_SHAPES.map(([shape, re]) => [shape, new RegExp(`^(?:${re})$`)] as const)
+
+/** Each cell's shape by position, blank as null — all the rules need of a line. */
+export type LineShape = (CellShape | null)[]
+
+/** Characters a cell is trimmed of, in the line's cells and the table's alike. */
+export const CELL_BLANKS = ' \t　'
+const BLANK_ENDS = new RegExp(`^[${CELL_BLANKS}]+|[${CELL_BLANKS}]+$`, 'g')
+
+/** A cell's value, trimmed; blank as null. */
+export function cellValue(cell: string | null | undefined): string | null {
+  const v = cell?.replace(BLANK_ENDS, '')
+  return v ? v : null
+}
+
+/**
+ * The shape of a line or a row that reads as a sign-off, padded to the table's
+ * width; null when it does not read as one.
+ *
+ * @param cells - as parsed, or as the table holds them
+ */
+export function signOffShape(cells: (string | null)[], columnCount: number): LineShape | null {
+  const values = cells.map(cellValue)
+  if (!isSignOffShape(values.filter((v) => v !== null).length, columnCount)) return null
+  return Array.from({ length: Math.max(columnCount, values.length) }, (_, i) => {
+    const v = values[i] ?? null
+    return v === null ? null : (SHAPE_TESTS.find(([, re]) => re.test(v))?.[0] ?? 'text')
+  })
+}
+
+/**
+ * The shape of a line the reader refused, when it reads as a sign-off; null
+ * when it does not.
  *
  * @param text - the line as stored, terminators and all
  * @param columnCount - what the table ended up with
  */
-export function looksLikeSignOff(text: string, dialect: CsvDialect, columnCount: number): boolean {
+export function refusedLineShape(
+  text: string,
+  dialect: CsvDialect,
+  columnCount: number
+): LineShape | null {
   const { delimiter, quote, escape } = dialect
   /** A character the text cannot hold, for a dialect the file does not use. */
   const NONE = '\u0000'
@@ -72,32 +127,55 @@ export function looksLikeSignOff(text: string, dialect: CsvDialect, columnCount:
   // quote parses to something, and what it parses to says nothing about how many
   // values the publisher wrote; more than one row means the text held a newline,
   // which a single line does not.
-  if (parsed.errors.length > 0 || parsed.data.length !== 1) return false
-
-  return isSignOffShape(countValues(parsed.data[0]), columnCount)
+  if (parsed.errors.length > 0 || parsed.data.length !== 1) return null
+  return signOffShape(parsed.data[0], columnCount)
 }
 
 /**
- * Values a line carries, which is its non-blank cells.
+ * The rule itself, over a count of values: a short line in a table far wider
+ * than it.
  *
- * **Trailing commas are punctuation, not content.** `出典: 港区,2026` and
- * `出典: 港区,2026,,` are one note written twice, and counting the blanks made
- * the second four values — past what a sign-off holds — so the table was
- * refused over a keystroke. Counted this way the two agree, and so does the
- * same note padded out to the width, which arrives as a row and is measured by
- * `trimFooter` rather than here.
- */
-export function countValues(cells: string[]): number {
-  return cells.reduce((n, cell) => (cell.trim() === '' ? n : n + 1), 0)
-}
-
-/**
- * The rule itself, over a count of values.
- *
- * Exported because `trimFooter` asks it of a row rather than of a line, in SQL
- * and over the table — the two cannot share an implementation, so they share
- * this statement of it and the constants underneath.
+ * Trailing commas are punctuation, not content, so the count is of non-blank
+ * cells: `出典: 港区,2026` and `出典: 港区,2026,,` are one note written twice, and
+ * counting the blanks made the second four values — past what a sign-off holds.
  */
 export function isSignOffShape(values: number, columnCount: number): boolean {
   return values <= SIGN_OFF_MAX_CELLS && columnCount - values >= SIGN_OFF_MIN_MISSING
+}
+
+/** The cells a line fills, as a string of `0`s and `1`s the table's rows are matched on. */
+export const maskOf = (shape: LineShape) => shape.map((s) => (s === null ? '0' : '1')).join('')
+
+/**
+ * What the rows of the table above any footer say about the lines in question:
+ * which of their masks the table has, and how the values of the columns they
+ * fill are shaped.
+ */
+export interface TableBody {
+  masks: Set<string>
+  columns: Map<number, { values: number; shapes: Map<CellShape, number> }>
+}
+
+/**
+ * Whether the table has rows like this line: one with the same cells filled,
+ * and each value the kind most of its column holds.
+ *
+ * Both, because each alone keeps a note: a note in the first column of a table
+ * of names is text under text, and a note the publisher also left mid-table has
+ * a row with its cells filled. A line with nothing in it is never vouched for.
+ *
+ * What this cannot tell apart it leaves as a row: a note that looks like the
+ * rows of its table in every way — under section headings that fill only the
+ * first cell, say — is kept, and is a row of the table to anyone reading it too.
+ */
+export function vouches(body: TableBody, shape: LineShape): boolean {
+  return (
+    shape.some((s) => s !== null) &&
+    body.masks.has(maskOf(shape)) &&
+    shape.every((s, i) => {
+      if (s === null) return true
+      const column = body.columns.get(i)
+      return !!column && (column.shapes.get(s) ?? 0) > BODY_SHAPE_SHARE * column.values
+    })
+  )
 }

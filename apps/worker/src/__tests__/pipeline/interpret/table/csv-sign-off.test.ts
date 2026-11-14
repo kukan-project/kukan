@@ -8,13 +8,22 @@
  * costs nothing here.
  */
 import { describe, it, expect } from 'vitest'
-import { looksLikeSignOff } from '@/pipeline/interpret/table/csv-sign-off'
+import {
+  refusedLineShape,
+  vouches,
+  type CsvDialect,
+  type TableBody,
+} from '@/pipeline/interpret/table/csv-sign-off'
+
+/** Whether a refused line reads as a sign-off, before the table is asked. */
+const looksLikeSignOff = (text: string, dialect: CsvDialect, columns: number) =>
+  refusedLineShape(text, dialect, columns) !== null
 
 /** The scan's answer for an ordinary comma-separated file. */
 const signOff = (text: string, columns: number) =>
   looksLikeSignOff(text, { delimiter: ',', quote: '"', escape: '"' }, columns)
 
-describe('looksLikeSignOff', () => {
+describe('refusedLineShape', () => {
   it('reads two values in a table of thirty-one columns as a sign-off', () => {
     // The file #449 was reported on, quoted as it really is.
     expect(signOff('"港区施設情報 区役所・総合支所","Ver20260804"', 31)).toBe(true)
@@ -102,5 +111,53 @@ describe('looksLikeSignOff', () => {
     // …and three values two columns short of the table is a row, however few.
     expect(signOff('a,b,c', 5)).toBe(false)
     expect(signOff('a,b,c', 6)).toBe(true)
+  })
+})
+
+describe('vouches', () => {
+  /** A table of codes, names and URLs, some rows with their dates left blank. */
+  const body: TableBody = {
+    masks: new Set(['1110000']),
+    columns: new Map([
+      [0, { values: 10, shapes: new Map([['number', 10]]) }],
+      [1, { values: 10, shapes: new Map([['text', 10]]) }],
+      [2, { values: 10, shapes: new Map([['url', 9]]) }],
+    ]),
+  }
+
+  it('vouches for a line the table has rows like', () => {
+    expect(vouches(body, ['number', 'text', 'url', null, null, null, null])).toBe(true)
+  })
+
+  it('does not vouch for cells the table never fills that way', () => {
+    expect(vouches(body, ['text', null, null, null, null, null, null])).toBe(false)
+  })
+
+  it('does not vouch for a value its column mostly does not hold', () => {
+    expect(vouches(body, ['text', 'text', 'url', null, null, null, null])).toBe(false)
+  })
+
+  it('does not take half a column for most of it', () => {
+    const even: TableBody = {
+      masks: new Set(['1000000']),
+      columns: new Map([
+        [
+          0,
+          {
+            values: 4,
+            shapes: new Map([
+              ['number', 2],
+              ['text', 2],
+            ]),
+          },
+        ],
+      ]),
+    }
+    expect(vouches(even, ['text', null, null, null, null, null, null])).toBe(false)
+  })
+
+  it('never vouches for a line with nothing in it', () => {
+    const blank = { ...body, masks: new Set(['0000000']) }
+    expect(vouches(blank, [null, null, null, null, null, null, null])).toBe(false)
   })
 })

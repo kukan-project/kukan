@@ -16,13 +16,22 @@ import { openDuckdb, sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import {
   CSV_FOOTER_SCAN_ROWS,
   DROPPED_LINE_SAMPLE,
-  SIGN_OFF_MAX_CELLS,
-  SIGN_OFF_MIN_MISSING,
   INTERPRET_MAX_SPILL_BYTES,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
 } from '@/config'
-import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
+import {
+  CELL_BLANKS,
+  CELL_SHAPES,
+  maskOf,
+  refusedLineShape,
+  signOffShape,
+  vouches,
+  type CellShape,
+  type CsvDialect,
+  type LineShape,
+  type TableBody,
+} from './csv-sign-off'
 import {
   describe,
   isOutOfMemory,
@@ -155,9 +164,10 @@ export async function interpretCsv(
     // Before the trim, because this is about what the *reader* did: which lines
     // it refused, and whether all of them read as sign-offs.
     const dropped = await rejectedLines(conn, columns)
-    if (dropped.notAllNotes) {
+    const settled = dropped.notes && (await settleSignOffs(conn, columns, dropped.notes))
+    if (!settled || settled.brokenRow) {
       // Refused. Something the reader would not take was not a sign-off either,
-      // and a table quietly short of a row publishes counts that are wrong with
+      // or was a row the table has more of, and a table quietly short of a row publishes counts that are wrong with
       // nothing to show for it.
       return {
         schema: {
@@ -172,7 +182,9 @@ export async function interpretCsv(
       }
     }
 
-    const { rowCount, trimmed } = await trimFooter(conn, columns)
+    if (settled.footer > 0) await cutFooter(conn, settled.total, settled.footer)
+    const rowCount = settled.total - settled.footer
+    const trimmed = settled.footer
     // Both paths, one number: which of them took a row is this file's business,
     // and a reader comparing the table against the download only wants to know
     // that something is not here. Only the reader's refusals can be located,
@@ -408,11 +420,11 @@ async function countEach(
 async function rejectedLines(
   conn: DuckDBConnection,
   columns: Column[]
-): Promise<{ count: number; lines: number[]; dialect?: CsvDialect; notAllNotes: boolean }> {
+): Promise<{ count: number; lines: number[]; dialect?: CsvDialect; notes: LineShape[] | null }> {
   const [{ n }] = (
     await conn.runAndReadAll('SELECT count(DISTINCT line) AS n FROM reject_errors')
   ).getRowObjectsJson() as { n: number }[]
-  if (Number(n) === 0) return { count: 0, lines: [], notAllNotes: false }
+  if (Number(n) === 0) return { count: 0, lines: [], notes: [] }
 
   // Read once and carried out on the schema: the refused lines are numbered
   // under this dialect, and a reader counting the file any other way puts
@@ -430,29 +442,32 @@ async function rejectedLines(
     count: Number(n),
     lines: rows.map((row) => Number(row.line)),
     dialect,
-    notAllNotes: await refusedMoreThanNotes(conn, columns, dialect, Number(n)),
+    notes: await refusedShapes(conn, columns, dialect, Number(n)),
   }
 }
 
 /**
- * Whether the reader refused anything that does not read as a sign-off.
+ * The shapes of the lines the reader refused, each once, or null when one of
+ * them does not read as a sign-off.
  *
  * The rule itself is `csv-sign-off.ts`; this fetches what it needs. The lines
  * come back as text because counting their values is a parser's job — the file
  * this exists for quotes every cell — and in batches because a file can be
  * refused from end to end. **Every refused line is judged**, not a sample of
  * them: how many the schema carries out to a reader is a separate question, and
- * a file with one more note than that must not become a different file.
+ * a file with one more note than that must not become a different file. What
+ * the table says of them is asked once, of their shapes, in {@link settleSignOffs}.
  *
  * The walk stops at the first line that is not a sign-off, which is every case
  * but the one where they all are.
  */
-async function refusedMoreThanNotes(
+async function refusedShapes(
   conn: DuckDBConnection,
   columns: Column[],
   dialect: CsvDialect,
   count: number
-): Promise<boolean> {
+): Promise<LineShape[] | null> {
+  const shapes = new Map<string, LineShape>()
   for (let seen = 0; seen < count; seen += REJECT_BATCH) {
     // One row per refused line: a line files an error per column it could not
     // fill, and they all carry the same text.
@@ -464,21 +479,23 @@ async function refusedMoreThanNotes(
     ).getRowObjectsJson() as { line: number; csv_line: string | null }[]
     if (rows.length === 0) break
 
-    const notes = rows.every(
-      (row) => row.csv_line !== null && looksLikeSignOff(row.csv_line, dialect, columns.length)
-    )
-    if (!notes) return true
+    for (const row of rows) {
+      const shape =
+        row.csv_line === null ? null : refusedLineShape(row.csv_line, dialect, columns.length)
+      if (shape === null) return null
+      shapes.set(shape.join(), shape)
+    }
   }
-  return false
+  return [...shapes.values()]
 }
 
 /**
- * Drop the trailing run of footer rows and return what remains, with how many
- * went.
+ * Find the trailing run of footer rows, and whether a refused line the table
+ * vouches for makes the file one with a broken row.
  *
  * A row is a footer on the same terms a refused line is a sign-off: it carries
- * at most {@link SIGN_OFF_MAX_CELLS} values, and at least
- * {@link SIGN_OFF_MIN_MISSING} fewer than the table has columns. The two paths
+ * at most `SIGN_OFF_MAX_CELLS` values, and at least
+ * `SIGN_OFF_MIN_MISSING` fewer than the table has columns. The two paths
  * see the same note written two ways — `出典: 港区,2026` is refused by the
  * reader, and the same note padded out to the width arrives here as a row of
  * mostly empty cells — so they answer with one rule, or the publisher's choice
@@ -503,49 +520,126 @@ async function refusedMoreThanNotes(
  *
  * Only the last {@link CSV_FOOTER_SCAN_ROWS} rows are examined, since the run
  * has to reach the bottom of the file to be a footer at all.
+ *
+ * **A sparse row shaped like the rows above it is a row.** The shape alone
+ * cannot tell a note from a table whose rows are mostly blank: a list of
+ * prefectures where only some have a second URL or a date has rows of three
+ * values in seven columns, and the last two were dropped because they happened
+ * to be the sparse ones. The rows above the run are what both the run and the
+ * refused lines are measured against, once, and the footer starts below the
+ * lowest row of the run the table vouches for ({@link vouches}). A refused line
+ * it vouches for is a row of the table that broke.
  */
-async function trimFooter(
+async function settleSignOffs(
   conn: DuckDBConnection,
-  columns: Column[]
-): Promise<{ rowCount: number; trimmed: number }> {
+  columns: Column[],
+  refused: LineShape[]
+): Promise<{ total: number; footer: number; brokenRow: boolean }> {
   const [{ n }] = (await conn.runAndReadAll('SELECT count(*) AS n FROM t')).getRowObjectsJson() as {
     n: number
   }[]
   const total = Number(n)
-  if (total === 0) return { rowCount: 0, trimmed: 0 }
+  if (total === 0) return { total, footer: 0, brokenRow: false }
 
-  const nonEmpty = columns
-    .map(
-      (c) =>
-        `CASE WHEN nullif(trim(CAST(${sqlIdentifier(c.name)} AS VARCHAR)), '') IS NULL THEN 0 ELSE 1 END`
-    )
-    .join(' + ')
-  // `isSignOffShape`, in SQL and over a row: its values are the non-blank cells,
-  // which is `countValues` — the blank ones are the width it was padded to.
-  const signOff =
-    columns.length - SIGN_OFF_MIN_MISSING >= 1
-      ? `(${nonEmpty}) <= least(${SIGN_OFF_MAX_CELLS}, ${columns.length - SIGN_OFF_MIN_MISSING})`
-      : 'false'
-
-  const reader = await conn.runAndReadAll(`
-    SELECT rn, ${signOff} AS sign_off
-    FROM (SELECT *, row_number() OVER () AS rn FROM t)
-    WHERE rn > ${Math.max(0, total - CSV_FOOTER_SCAN_ROWS)}
-    ORDER BY rn DESC
-  `)
-  const rows = reader.getRowObjectsJson() as { rn: number; sign_off: boolean }[]
-
-  let keep = total
-  for (const row of rows) {
-    if (!row.sign_off) break
-    keep = Number(row.rn) - 1
+  const tail = (
+    await conn.runAndReadAll(`
+      SELECT [${columns.map((c) => `CAST(${sqlIdentifier(c.name)} AS VARCHAR)`).join(', ')}] AS cells
+      FROM (SELECT *, row_number() OVER () AS rn FROM t)
+      WHERE rn > ${Math.max(0, total - CSV_FOOTER_SCAN_ROWS)}
+      ORDER BY rn DESC
+    `)
+  ).getRowObjectsJson() as { cells: (string | null)[] }[]
+  const run: LineShape[] = []
+  for (const { cells } of tail) {
+    const shape = signOffShape(cells, columns.length)
+    if (shape === null) break
+    run.push(shape)
   }
-  if (keep === total) return { rowCount: total, trimmed: 0 }
 
+  // A run from the top is the table, sparse throughout — a table of two used
+  // columns in six — not a footer with nothing above it; a refused line is
+  // still measured against it, every row being a row
+  const above = total - run.length
+  if (above === 0) {
+    const body = await tableBody(conn, columns, total, refused)
+    return { total, footer: 0, brokenRow: refused.some((shape) => vouches(body, shape)) }
+  }
+  if (run.length === 0 && refused.length === 0) return { total, footer: 0, brokenRow: false }
+
+  const body = await tableBody(conn, columns, above, [...refused, ...run])
+  const lowestRow = run.findIndex((shape) => vouches(body, shape))
+  return {
+    total,
+    footer: lowestRow < 0 ? run.length : lowestRow,
+    brokenRow: refused.some((shape) => vouches(body, shape)),
+  }
+}
+
+/** A cell as the table holds it, trimmed as `cellValue` trims a line's; blank as null. */
+const cellSql = (name: string) =>
+  `nullif(trim(CAST(${sqlIdentifier(name)} AS VARCHAR), ${sqlLiteral(CELL_BLANKS)}), '')`
+
+/** `CellShape` in SQL, of a cell already read by {@link cellSql}. */
+function shapeSql(expr: string): string {
+  const arms = CELL_SHAPES.map(
+    ([shape, re]) => `WHEN regexp_full_match(${expr}, ${sqlLiteral(re)}) THEN '${shape}'`
+  ).join(' ')
+  return `CASE WHEN ${expr} IS NULL THEN NULL ${arms} ELSE 'text' END`
+}
+
+/**
+ * What the first `rows` rows of the table say about `lines` ({@link TableBody}):
+ * only their masks are looked for and only the columns they fill are shaped,
+ * so one scan answers every line however many were refused.
+ */
+async function tableBody(
+  conn: DuckDBConnection,
+  columns: Column[],
+  rows: number,
+  lines: LineShape[]
+): Promise<TableBody> {
+  const asked = new Map<number, Set<CellShape>>()
+  for (const line of lines) {
+    line.forEach((shape, i) => {
+      if (shape !== null && i < columns.length) asked.set(i, (asked.get(i) ?? new Set()).add(shape))
+    })
+  }
+  const body: TableBody = { masks: new Set(), columns: new Map() }
+  if (asked.size === 0) return body
+
+  const masks = [...new Set(lines.map(maskOf))]
+  const mask = columns.map((_, i) => `CASE WHEN v${i} IS NULL THEN '0' ELSE '1' END`).join(' || ')
+  const measures = [
+    `list(DISTINCT m) FILTER (WHERE m IN (${masks.map(sqlLiteral).join(', ')})) AS masks`,
+    ...[...asked].flatMap(([i, shapes]) => [
+      `count(s${i}) AS n${i}`,
+      ...[...shapes].map((s) => `count(*) FILTER (WHERE s${i} = '${s}') AS "${s}${i}"`),
+    ]),
+  ]
+  const [row] = (
+    await conn.runAndReadAll(`
+      SELECT ${measures.join(', ')} FROM (
+        SELECT ${mask} AS m, ${[...asked.keys()].map((i) => `${shapeSql(`v${i}`)} AS s${i}`).join(', ')}
+        FROM (SELECT ${columns.map((c, i) => `${cellSql(c.name)} AS v${i}`).join(', ')} FROM t LIMIT ${rows})
+      )
+    `)
+  ).getRowObjectsJson() as Record<string, unknown>[]
+
+  for (const m of (row.masks as string[] | null) ?? []) body.masks.add(m)
+  for (const [i, shapes] of asked) {
+    body.columns.set(i, {
+      values: Number(row[`n${i}`]),
+      shapes: new Map([...shapes].map((s) => [s, Number(row[`${s}${i}`])])),
+    })
+  }
+  return body
+}
+
+/** Drop the last `footer` rows of the table. */
+async function cutFooter(conn: DuckDBConnection, total: number, footer: number): Promise<void> {
   // Rewritten rather than deleted by row number: `row_number()` has no stable
   // meaning across statements, so the cut has to happen inside the one that
   // computed it.
   await conn.run(`CREATE OR REPLACE TABLE t AS
-    SELECT * EXCLUDE (rn) FROM (SELECT *, row_number() OVER () AS rn FROM t) WHERE rn <= ${keep}`)
-  return { rowCount: keep, trimmed: total - keep }
+    SELECT * EXCLUDE (rn) FROM (SELECT *, row_number() OVER () AS rn FROM t) WHERE rn <= ${total - footer}`)
 }

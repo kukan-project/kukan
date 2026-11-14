@@ -109,6 +109,107 @@ describe('interpretCsv — reading the file', () => {
     expect(await previewColumn('c0')).toEqual(['10', '出典: 港区', '20'])
   })
 
+  it('keeps sparse rows at the bottom that are shaped like rows above them', async () => {
+    // Seven columns, three of them filled: a note's shape, and the last two
+    // prefectures of the list have it — as does Osaka, mid-table
+    const { schema } = await interpret(
+      [
+        '団体コード,団体名,URL1,URL2,URL3,初回登録日,更新日',
+        '010006,北海道,http://a.example/,http://b.example/,,,2019/3/11',
+        '270008,大阪府,http://c.example/,,,,',
+        '450006,宮崎県,http://d.example/,,,2019/6/17,',
+        '460001,鹿児島県,http://e.example/,,,,',
+        '470007,沖縄県,http://f.example/,,,,',
+        '',
+      ].join('\n')
+    )
+
+    expect(schema.rowCount).toBe(5)
+    expect(schema.droppedRows).toBeUndefined()
+    expect(await previewColumn('団体名')).toEqual([
+      '北海道',
+      '大阪府',
+      '宮崎県',
+      '鹿児島県',
+      '沖縄県',
+    ])
+  })
+
+  it('still trims a note under a column of names', async () => {
+    // Text under text: the cell alone passes, but no row above has only its
+    // first cell filled
+    const { schema } = await interpret(
+      [
+        'name,kind,ward,lat,lon,url',
+        'Shiba Park,park,Minato,35.65,139.75,http://a.example/',
+        '出典: 港区,,,,,',
+        '',
+      ].join('\n')
+    )
+
+    expect(schema.rowCount).toBe(1)
+    expect(schema.droppedRows).toBe(1)
+  })
+
+  it('trims blank rows at the bottom though the table has one mid-way', async () => {
+    const { schema } = await interpret(
+      ['a,b,c,d,e,f', '1,2,3,4,5,6', ',,,,,', '7,8,9,10,11,12', ',,,,,', ',,,,,', ''].join('\n')
+    )
+
+    expect(schema.rowCount).toBe(3)
+    expect(schema.droppedRows).toBe(2)
+  })
+
+  it('takes whole numbers and decimals in a column for one kind of value', async () => {
+    // Most prices carry a fraction; the sparse row at the bottom does not
+    const { schema } = await interpret(
+      [
+        'item,price,note,a,b,c',
+        'x,120.5,sale,1,2,3',
+        'y,99.9,,,,',
+        'z,10.5,sale,4,5,6',
+        'w,300,,,,',
+        '',
+      ].join('\n')
+    )
+
+    expect(schema.rowCount).toBe(4)
+    expect(schema.droppedRows).toBeUndefined()
+  })
+
+  it('refuses a short line shaped like a table whose every row is sparse', async () => {
+    // No footer to find, so every row is the table — and `r,3` is one of them.
+    // Not `x`, which the profile reads as a table's placeholder, like ×
+    const { schema, reason } = await interpret(
+      ['a,b,c,d,e,f', 'p,1,,,,', 'q,2,,,,', 'r,3', ''].join('\n')
+    )
+
+    expect(reason).toBe('ragged-rows')
+    expect(schema).toMatchObject({ columns: [], droppedLines: [4] })
+  })
+
+  it('keeps a table whose every row is sparse, which has no footer to find', async () => {
+    const { schema } = await interpret(['a,b,c,d,e,f', 'x,1,,,,', 'y,2,,,,', ''].join('\n'))
+
+    expect(schema.rowCount).toBe(2)
+    expect(schema.droppedRows).toBeUndefined()
+  })
+
+  it('keeps a note under section headings, which it cannot be told from', async () => {
+    const { schema } = await interpret(
+      [
+        'name,kind,ward,lat,lon,url',
+        '【港区】,,,,,',
+        'Shiba Park,park,Minato,35.65,139.75,http://a.example/',
+        '出典: 港区,,,,,',
+        '',
+      ].join('\n')
+    )
+
+    expect(schema.rowCount).toBe(3)
+    expect(schema.droppedRows).toBeUndefined()
+  })
+
   it('reads a file the sniffer cannot settle off the standard, and says so', async () => {
     // Line endings mixed within one file: the standard reader fails before a row
     const { schema, reason } = await interpret('a,b,c\r\n1,2,3\n4,5,6\r\n7,8,9\n')
@@ -133,6 +234,24 @@ describe('interpretCsv — reading the file', () => {
     expect(reason).toBe('ragged-rows')
     expect(schema).toMatchObject({ columns: [], droppedLines: [3], lenient: true })
     expect(existsSync(join(dir, 'out.parquet'))).toBe(false)
+  })
+
+  it('refuses a short line shaped like the rows of its table', async () => {
+    // The padded row at the bottom is kept; the same row without its trailing
+    // commas is refused by the reader, and is a row that broke, not a note
+    const { schema, reason } = await interpret(
+      [
+        '団体コード,団体名,URL1,URL2,URL3,初回登録日,更新日',
+        '010006,北海道,http://a.example/,http://b.example/,,,2019/3/11',
+        '270008,大阪府,http://c.example/,,,,',
+        '450006,宮崎県,http://d.example/,,,2019/6/17,',
+        '470007,沖縄県,http://f.example/',
+        '',
+      ].join('\n')
+    )
+
+    expect(reason).toBe('ragged-rows')
+    expect(schema).toMatchObject({ columns: [], droppedLines: [5] })
   })
 
   it('fails on a file it cannot open, which is no failed sniff', async () => {

@@ -28,7 +28,7 @@ const SENTENCE_CONTEXT_COLUMNS = 3
  *
  * A date separated by dots needs all three parts: `1234.56` is a number.
  */
-const CLUES: Record<string, { full: boolean; re: string }> = {
+export const CLUES = {
   ascii: { full: true, re: '[0-9A-Za-z._/:\\-]+' },
   digits: { full: true, re: '[0-9０-９]+' },
   digit: { full: false, re: '[0-9０-９]' },
@@ -50,7 +50,7 @@ const CLUES: Record<string, { full: boolean; re: string }> = {
     full: true,
     re: '[-−‐－▲△+＋]?\\s*[(（]?[0-9０-９][0-9０-９,，.．]*[)）]?\\s*[%％]?|[-−‐－…・*＊xX×]+',
   },
-}
+} satisfies Record<string, { full: boolean; re: string }>
 
 /**
  * Rows the shapes and lengths are measured over. The regexes are what a pass

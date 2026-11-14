@@ -238,9 +238,10 @@ export const DROPPED_LINE_SAMPLE = 20
  *
  * A line that does not split into the table's columns is either a note the
  * publisher signed the file off with, or a row of theirs that did not survive.
- * Which it is cannot be known; the worker's `refusedMoreThanNotes` argues why,
+ * Which it is cannot be known; `csv-sign-off.ts` argues why,
  * and settles for asking whether the line is *shaped* like a row that lost
- * fields. These two numbers are that shape.
+ * fields. These two numbers are that shape; a line that has it is still a row
+ * when the table has rows like it ({@link BODY_SHAPE_SHARE}).
  *
  * A note carries a sentence or two whatever the table is: it holds at most
  * {@link SIGN_OFF_MAX_CELLS} values. A truncated row usually keeps most of its
@@ -259,6 +260,14 @@ export const DROPPED_LINE_SAMPLE = 20
  */
 export const SIGN_OFF_MAX_CELLS = 3
 export const SIGN_OFF_MIN_MISSING = 3
+
+/**
+ * The share of a column's values a cell's shape must pass for the table to
+ * vouch for a line shaped like a sign-off (`vouches`): more than half, so one
+ * note left mid-table does not vouch for the notes below it, and a column split
+ * evenly between numbers and text vouches for neither.
+ */
+export const BODY_SHAPE_SHARE = 0.5
 
 /** Leading rows scanned for the title lines Japanese spreadsheets put above the header */
 export const CSV_TITLE_SCAN_BYTES = 64 * 1024
