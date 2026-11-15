@@ -248,9 +248,10 @@ Based on the trial, judgment relies mainly on values, with column names as suppo
 | Level                  | Rule                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Candidate for settling | Representation with a check digit (6-digit local government code): match rate against the code table ≥ 0.9, regardless of column name                                                                                                                                                                                                                |
-| Candidate for settling | Names: match rate ≥ 0.8 (including aliases, abbreviations and district names; non-area values are excluded from the denominator)                                                                                                                                                                                                                     |
+| Candidate for settling | Names: match rate ≥ 0.8 (including aliases, abbreviations and district names; non-area values and values that stay ambiguous are excluded from the denominator, provided the rate with the ambiguous counted as misses is still ≥ 0.5)                                                                                                               |
 | Candidate for settling | Code without a check digit (5 digits): match rate ≥ 0.9, with at least 50 areas below the top level, or at least 20 spread under at least 2 areas at the top                                                                                                                                                                                         |
 | Needs corroboration    | Other short codes (2 digits, or few 5-digit values): on at least 90% and at least 3 of the pairs where both name an area (with at least 2 distinct codes), the code is the name's area (its codes before renumbering included) or an area containing it; or a column name naming the representation ("都道府県コード"; "コード" alone is not enough) |
+| Needs corroboration    | Codes with a match rate of at least 0.8 but under 0.9 (a statistics table with aggregate rows): settled only by a name column of the same table, not by a column name                                                                                                                                                                                |
 | Not used               | Rescuing by zero-padding from values alone                                                                                                                                                                                                                                                                                                           |
 | Not decided            | Schemes that both match with the same shape (such as the codes of Korea's two bodies) are left to a person to settle as "several candidates"                                                                                                                                                                                                         |
 
@@ -285,8 +286,20 @@ Based on the trial, judgment relies mainly on values, with column names as suppo
   clue
 - A name that matches several codes within one scheme (府中市 Fuchū, 伊達市 Date) is resolved when a
   parent column (the prefecture name) or the publishing organization makes it unique, and is otherwise
-  kept as several candidates. A value that stays ambiguous counts toward neither the match rate nor
-  the coverage
+  kept as several candidates. Where the same table has a code column of the same scheme, the row's
+  code decides it (the place that code names, or one it lies in: 中央区 beside 13102 is Tokyo's). With
+  a name column alone, a value that stays ambiguous counts toward neither the match rate nor the
+  coverage, and is left out of the denominator too (counted as a miss, it lowers the rate most in the
+  tables with the most special wards or shared city names), though a column whose rate with them
+  counted as misses is under 0.5 is not decided
+- The aggregate rows statistics tables put between municipalities are non-area values, left out of
+  the denominator: 区部, 市部, 郡部, 町村部, 島部, and values ending in 計, 郡, 地域, 圏域, 支庁 or 振興局 (no
+  municipality's name ends so). Tokyo's population table has 9 of them in 72 rows, and without
+  leaving them out its rate fell short of 0.8 (2026-11-15)
+- The codes of aggregate rows (13100 区部, 13360 大島支庁) are in no code table, so a code column whose
+  rate is at least 0.8 but under 0.9 is settled only when a name column of the same table bears it
+  out. Rows whose code is in no table drop out of the pairs (the name beside them is not checked).
+  Tokyo's codes match 63/72 = 0.875, and the other 9 rows are all aggregates
 - AI is limited to suggestions for columns the rules could not decide (a person settles, as in
   ADR-040 and ADR-057)
 
@@ -449,8 +462,8 @@ load on the core. The order lets the core be fixed while there are still only tw
   or a 5-digit code with few values, is not made a candidate unless the same table has a name column
   or a column name naming the representation. Misses are made up for by human assignment. 2-digit
   codes read as integers for lack of a leading 0 (columns of 10–47 only) are not read. A column of
-  ward names alone ("中央区") repeats too many names to be judged a name column, so it cannot
-  corroborate the codes of a designated city's wards
+  ward names alone ("中央区") is judged a name column only with at least 3 wards whose names are not
+  shared, and otherwise cannot corroborate the codes of a designated city's wards
 - **At first, sites cannot add schemes.** In-house codes must wait until step 5
 - **The registry's shape is excessive for the Japan pack alone.** Accepted as the cost of not
   rebuilding the core when other countries are added

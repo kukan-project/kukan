@@ -501,6 +501,70 @@ describe('interpretCsv — vocabulary', () => {
     expect(columns['順位'].vocabulary).toBeUndefined()
   })
 
+  it('takes a statistics table’s codes, its groups said by the names beside them', async () => {
+    // Tokyo's population table: wards and cities, with 区部 and 市部 between
+    const { columns } = await profile(
+      [
+        ['地域コード', '地域', '人口'],
+        ['13100', '区部', '9700000'],
+        ['13101', '千代田区', '68000'],
+        ['13104', '新宿区', '350000'],
+        ['13105', '文京区', '240000'],
+        ['13200', '市部', '4200000'],
+        ['13201', '八王子市', '560000'],
+        ['13202', '立川市', '180000'],
+        ['13203', '武蔵野市', '150000'],
+        ['13204', '三鷹市', '190000'],
+        ['13205', '青梅市', '130000'],
+      ],
+      ['JP']
+    )
+    expect(columns['地域']).toMatchObject({ vocabulary: { representation: 'name', share: 1 } })
+    expect(columns['地域コード']).toMatchObject({
+      role: 'identifier',
+      vocabulary: { representation: 'code5', share: 0.8 },
+    })
+  })
+
+  it('reads names several places share by the codes beside them', async () => {
+    // Each name alone could be in several prefectures; the codes say Tokyo
+    const { columns } = await profile(
+      [
+        ['コード', '区市町村'],
+        ['13102', '中央区'],
+        ['13103', '港区'],
+        ['13117', '北区'],
+        ['13206', '府中市'],
+        ['13303', '瑞穂町'],
+        ['13361', '大島町'],
+      ],
+      ['JP']
+    )
+    expect(columns['区市町村']).toMatchObject({
+      vocabulary: { representation: 'name', share: 1, ambiguous: 0 },
+    })
+    expect(columns['コード']).toMatchObject({
+      role: 'identifier',
+      vocabulary: { representation: 'code5' },
+    })
+  })
+
+  it('prefers the reading the codes give over one with names left undecided', async () => {
+    // 中央区 and 港区 are several places alone; the share is 1 either way
+    const { columns } = await profile(
+      [
+        ['団体コード', '区名'],
+        ['131016', '千代田区'],
+        ['131024', '中央区'],
+        ['131032', '港区'],
+        ['131041', '新宿区'],
+        ['131059', '文京区'],
+      ],
+      ['JP']
+    )
+    expect(columns['区名']).toMatchObject({ vocabulary: { share: 1, ambiguous: 0 } })
+  })
+
   it('records no state where no enabled pack is one this release ships', async () => {
     // A setting a newer release wrote: the refresh takes it for no pack at all
     const { columns, registry } = await profile(prefectures, ['ZZ'])

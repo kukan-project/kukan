@@ -109,6 +109,11 @@ export interface SchemeDefinition {
    */
   notAreas?: string[]
   /**
+   * The same, as regular expressions matched whole against the folded value,
+   * for the kinds a list cannot hold: a prefecture's branch offices (`大島支庁`).
+   */
+  notAreaPatterns?: string[]
+  /**
    * Words a column heading uses for the scheme's codes (`コード`, `code`),
    * folded and found anywhere in it. What lets one integer repeated down a
    * column be read as a code (ADR-073 §決定 5).

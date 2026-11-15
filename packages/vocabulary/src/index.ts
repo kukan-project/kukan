@@ -9,7 +9,10 @@ export {
   corroborate,
   inferColumn,
   judgeColumn,
+  judgeNamesByCodes,
   matchValues,
+  nameSchemes,
+  outranks,
   summarizeCodes,
   verdictOf,
 } from './infer'

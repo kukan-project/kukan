@@ -58,7 +58,18 @@ const schemes: SchemeDefinition[] = [
       '（海上）',
       '県外',
       '国外',
+      // A prefecture's statistics group its municipalities
+      '区部',
+      '市部',
+      '郡部',
+      '町村部',
+      '島部',
     ],
+    // The other groups statistics tables put among the places, by how their
+    // names end: a total (県計, 市計), a county, a region (大阪市地域, 北九州市圏域),
+    // a prefecture's branch office (大島支庁, 石狩振興局). No municipality's name
+    // ends so
+    notAreaPatterns: ['.*計', '.+郡', '.+地域', '.+圏域', '.+支庁', '.+振興局'],
     codes: data.codes as CodeEntry[],
   },
 ]

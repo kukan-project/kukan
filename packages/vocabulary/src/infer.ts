@@ -7,6 +7,9 @@ import { fold } from './fold'
 import { intersect } from './period'
 import {
   canonicalCode,
+  codesOf,
+  isNotArea,
+  liesIn,
   carriesCheckDigit,
   type Hit,
   type IndexedScheme,
@@ -58,7 +61,7 @@ export function matchValues(registry: Registry, values: string[]): Representatio
 
     if (scheme.nameReps.length === 0) continue
     // A total or `全国` is no name of a place, so not a name that failed to match
-    const names = distinct(scheme.def.nameFolding).filter((v) => !scheme.notAreas.has(v))
+    const names = distinct(scheme.def.nameFolding).filter((v) => !isNotArea(scheme, v))
     const hits: Hit[] = []
     let ambiguous = 0
     for (const v of names) {
@@ -122,7 +125,12 @@ export function summarizeCodes(scheme: IndexedScheme, hits: Hit[]): CodeSummary 
  * same table that agrees with it row by row.
  */
 export const INFERENCE_RULES = {
-  checkedCode: { share: 0.9, minValues: 1 },
+  /**
+   * `shortShare`: the least a column of codes may have and still be borne out.
+   * A statistics table puts groups of places among its places, whose codes are
+   * in no code table: names beside the rest are what settles such a column.
+   */
+  checkedCode: { share: 0.9, minValues: 1, shortShare: 0.8 },
   /**
    * `alone`: places below the top level, or fewer spread under several at the
    * top. A serial number runs through Japan's codes as far as 42 matches before
@@ -132,9 +140,15 @@ export const INFERENCE_RULES = {
   uncheckedCode: {
     share: 0.9,
     minValues: 1,
+    shortShare: 0.8,
     alone: { values: 50, spread: { values: 20, roots: 2 } },
   },
-  name: { share: 0.8, minValues: 3 },
+  /**
+   * A name several places share is left out of the share, but not without
+   * bound: `overAll` is the share with those counted as misses. A column of
+   * town names that cities share would otherwise be decided by its few others.
+   */
+  name: { share: 0.8, minValues: 3, overAll: 0.5 },
   /**
    * Pairs a column of codes and one of names have to agree on, of those where
    * both name a place, and the codes among them: one value down a table of one
@@ -177,12 +191,17 @@ export interface ColumnInference {
   representation: string
   /** A code is an identifier to search by; a name stays a word to search for. */
   kind: Representation['kind']
-  /** Values naming a single place, over distinct values looked at. */
+  /**
+   * Values naming a single place, over those naming one place or none: a name
+   * several places share says nothing either way (ADR-073 §決定 5).
+   */
   share: number
   ambiguous: number
   summary: CodeSummary
   /** Whether the values settle it; a short code that does not awaits a heading or names. */
   standsAlone: boolean
+  /** Short of its share, as a column of codes with groups among them is: names alone settle it. */
+  shortOfShare: boolean
 }
 
 /**
@@ -192,23 +211,31 @@ export interface ColumnInference {
  */
 export function inferColumn(registry: Registry, values: string[]): ColumnInference[] {
   return matchValues(registry, values)
-    .filter((m) => {
+    .flatMap((m): ColumnInference[] => {
       const rule = ruleFor(m.scheme, m.rep)
-      return m.values >= rule.minValues && m.hits.length / m.values >= rule.share
+      const counted = m.values - m.ambiguous
+      if (counted < rule.minValues) return []
+      const share = m.hits.length / counted
+      const short = share < rule.share
+      if (short && !('shortShare' in rule && share >= rule.shortShare)) return []
+      if ('overAll' in rule && m.hits.length / m.values < rule.overAll) return []
+      return [
+        {
+          concept: m.scheme.def.concept,
+          pack: m.scheme.pack,
+          scheme: m.scheme.def.id,
+          representation: m.rep.id,
+          kind: m.rep.kind,
+          // Two places are enough for a stored profile, and down, so a share
+          // the rules found short never reads as one that reached them
+          share: Math.floor(share * 100) / 100,
+          ambiguous: m.ambiguous,
+          summary: summarizeCodes(m.scheme, m.hits),
+          standsAlone: !short && standsAlone(m),
+          shortOfShare: short,
+        },
+      ]
     })
-    .map((m) => ({
-      concept: m.scheme.def.concept,
-      pack: m.scheme.pack,
-      scheme: m.scheme.def.id,
-      representation: m.rep.id,
-      kind: m.rep.kind,
-      // Two places are enough: the share is compared at a tenth, and a stored
-      // profile need not carry fifteen digits of it
-      share: Math.round((m.hits.length / m.values) * 100) / 100,
-      ambiguous: m.ambiguous,
-      summary: summarizeCodes(m.scheme, m.hits),
-      standsAlone: standsAlone(m),
-    }))
     .sort((a, b) => b.share - a.share)
 }
 
@@ -258,8 +285,9 @@ export function judgeColumn(
   const found = inferColumn(registry, values).flatMap((f) => {
     const def = registry.schemeById.get(f.scheme)!.def
     const rep = def.representations.find((r) => r.id === f.representation)
-    // A heading naming the representation settles it, and names its codes too
-    const named = rep?.kind === 'code' && headingNames(heading, rep.headings)
+    // A heading naming the representation settles it and names its codes too,
+    // unless the column is short of its share: only names can account for that
+    const named = !f.shortOfShare && rep?.kind === 'code' && headingNames(heading, rep.headings)
     if (one && !named && !headingNames(heading, def.codeHeadings)) return []
     return [named ? { ...f, standsAlone: true } : f]
   })
@@ -269,10 +297,20 @@ export function judgeColumn(
 }
 
 /**
+ * The place a code column's value names, by a pair's code: null where it is
+ * not a code of the candidate's representation, or one the table lacks.
+ */
+function placeOfCode(scheme: IndexedScheme, candidate: ColumnInference, code: string | null) {
+  const rep = scheme.codeReps.find((r) => r.rep.id === candidate.representation)
+  const key = rep && code !== null && canonicalCode(scheme, rep, fold(scheme.def.codeFolding, code))
+  return (key && scheme.byCode.get(key)) || null
+}
+
+/**
  * Whether a column of names in the same table bears out a code column's
  * candidate: on nearly every row where both name a place, the code is that
- * place — under any code it went by — or one it lies in, as a prefecture's
- * code beside the names of its cities.
+ * place — under any code it went by, or as one of the places a shared name may
+ * be — or one it lies in, as a prefecture's code beside its cities' names.
  *
  * @param pairs - the table's distinct pairs of the code column's value and the
  *   name column's, as written.
@@ -280,26 +318,113 @@ export function judgeColumn(
 export function corroborate(
   registry: Registry,
   candidate: ColumnInference,
-  pairs: [code: string, name: string][]
+  pairs: [code: string | null, name: string][]
 ): boolean {
   const scheme = registry.schemeById.get(candidate.scheme)
-  const rep = scheme?.codeReps.find((r) => r.rep.id === candidate.representation)
-  if (!scheme || !rep) return false
+  if (!scheme) return false
   let both = 0
   let agreed = 0
   const codes = new Set<string>()
   for (const [code, name] of pairs) {
-    const key = canonicalCode(scheme, rep, fold(scheme.def.codeFolding, code))
-    const byCode = key === null ? undefined : scheme.byCode.get(key)
+    const byCode = placeOfCode(scheme, candidate, code)
     const byName = scheme.byName.get(fold(scheme.def.nameFolding, name))
-    if (!byCode || !byName || 'ambiguous' in byName) continue
+    if (!byCode || !byName) continue
     both++
-    const within = (c: string) =>
-      c === byCode.code || (scheme.ancestorsOf.get(c) ?? []).some((up) => up.includes(byCode.code))
-    if (!byName.codes.some(within)) continue
+    if (!codesOf(byName).some((c) => liesIn(scheme, c, byCode.code))) continue
     agreed++
     codes.add(byCode.code)
   }
   const { share, minPairs, minCodes } = INFERENCE_RULES.corroboration
   return agreed >= minPairs && codes.size >= minCodes && agreed / both >= share
+}
+
+/**
+ * A column of names read beside a column of codes (ADR-073 §決定 5): a name
+ * several places share is the one its row's code names, or lies in — 中央区
+ * beside 13102 is Tokyo's. A name on a row with no code counts as it would
+ * alone. Null where the names do not reach the share even so.
+ *
+ * @param codes - the code column's inference, settled or borne out.
+ * @param pairs - as {@link corroborate} takes them, rows with no code included.
+ */
+export function judgeNamesByCodes(
+  registry: Registry,
+  codes: ColumnInference,
+  pairs: [code: string | null, name: string][]
+): ColumnInference | null {
+  const scheme = registry.schemeById.get(codes.scheme)
+  const rep = scheme?.nameReps[0]
+  if (!scheme || !rep) return null
+  // Each name, and the places its rows' codes name
+  const rows = new Map<string, Hit[]>()
+  for (const [code, name] of pairs) {
+    const folded = fold(scheme.def.nameFolding, name)
+    if (folded === '' || isNotArea(scheme, folded)) continue
+    const coded = rows.get(folded) ?? rows.set(folded, []).get(folded)!
+    const byCode = placeOfCode(scheme, codes, code)
+    if (byCode) coded.push(byCode)
+  }
+  const hits: Hit[] = []
+  let named = 0
+  let ambiguous = 0
+  for (const [name, coded] of rows) {
+    const entry = scheme.byName.get(name)
+    if (!entry) continue
+    // A row's code picks the one place of the name that lies in it, and a
+    // code as wide as a prefecture may leave two (大阪市北区 and 堺市北区 in 27).
+    // A name shared by places in two prefectures may be both in one table
+    const picked =
+      'ambiguous' in entry
+        ? [
+            ...new Set(
+              coded.flatMap((c) => {
+                const inside = entry.hits.filter((h) => liesIn(scheme, h.code, c.code))
+                return inside.length === 1 ? inside : []
+              })
+            ),
+          ]
+        : [entry.hit]
+    if (picked.length === 0) ambiguous++
+    else {
+      named++
+      hits.push(...picked)
+    }
+  }
+  const rule = INFERENCE_RULES.name
+  const share = named / rows.size
+  if (rows.size < rule.minValues || share < rule.share) return null
+  return {
+    concept: scheme.def.concept,
+    pack: scheme.pack,
+    scheme: scheme.def.id,
+    representation: rep.id,
+    kind: 'name',
+    share: Math.floor(share * 100) / 100,
+    ambiguous,
+    summary: summarizeCodes(scheme, hits),
+    standsAlone: true,
+    shortOfShare: false,
+  }
+}
+
+/** Whether a reading is better evidence than one held: a higher share, or as high with fewer names undecided. */
+export function outranks(
+  read: { share: number; ambiguous: number },
+  held: { share: number; ambiguous: number }
+): boolean {
+  return read.share > held.share || (read.share === held.share && read.ambiguous < held.ambiguous)
+}
+
+/**
+ * The schemes a column's values are names of, in part at least: as many as a
+ * column of names needs, naming one place or several — counted with the
+ * shared names, which a column of codes beside it may yet pick between. What a column has to
+ * show to be read beside a column of codes, though it decides nothing alone.
+ */
+export function nameSchemes(registry: Registry, values: string[]): string[] {
+  return matchValues(registry, values)
+    .filter(
+      (m) => m.rep.kind === 'name' && m.hits.length + m.ambiguous >= INFERENCE_RULES.name.minValues
+    )
+    .map((m) => m.scheme.def.id)
 }

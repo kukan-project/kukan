@@ -22,7 +22,7 @@ import type {
  * folding. Part of the registry state, so that a release changing only these
  * still rebuilds the inferences made under the old ones (ADR-073 §決定 4).
  */
-export const RULES_VERSION = '2'
+export const RULES_VERSION = '3'
 
 /**
  * A code, its level, and the spans in which a value named it: a set, so a code
@@ -38,7 +38,7 @@ export interface Hit {
  * What a folded name stands for: one place — with every code it went by, when
  * it was renumbered — or several it cannot be told between.
  */
-export type NameIndexEntry = { hit: Hit; codes: string[] } | { ambiguous: true }
+export type NameIndexEntry = { hit: Hit; codes: string[] } | { ambiguous: true; hits: Hit[] }
 
 export interface IndexedScheme {
   pack: string
@@ -48,6 +48,8 @@ export interface IndexedScheme {
   byName: Map<string, NameIndexEntry>
   /** Folded values that stand for no area — totals, `全国` — left out of a name column's count. */
   notAreas: Set<string>
+  /** The scheme's `notAreaPatterns`, as one expression matched whole; null where it has none. */
+  notAreaPattern: RegExp | null
   codeReps: { rep: CodeRepresentation; whole: RegExp }[]
   nameReps: NameRepresentation[]
   /** Entries valid on the registry's date, per level: what coverage is counted against. */
@@ -188,6 +190,9 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
       .map((rep) => ({ rep, whole: new RegExp(`^(?:${rep.pattern})$`) })),
     nameReps,
     notAreas: new Set((def.notAreas ?? []).map((v) => fold(def.nameFolding, v))),
+    notAreaPattern: def.notAreaPatterns?.length
+      ? new RegExp(`^(?:${def.notAreaPatterns.join('|')})$`)
+      : null,
     validNow,
     ancestorsOf,
   }
@@ -216,7 +221,8 @@ function resolve(hits: Hit[], entries: Map<string, CodeEntry[]>, today: IsoDate)
     codes.every((b, j) => i === j || intersect(a.spans, b.spans).length === 0)
   )
   const current = codes.filter((h) => h.spans.some((p) => isValidOn(p, today)))
-  if (parents.size !== 1 || !inTurn || current.length !== 1) return { ambiguous: true }
+  // The places it may be, for a code on the same row to pick between
+  if (parents.size !== 1 || !inTurn || current.length !== 1) return { ambiguous: true, hits: codes }
   const [{ code, level }] = current
   return {
     hit: { code, level, spans: union(codes.flatMap((h) => h.spans)) },
@@ -307,6 +313,21 @@ export function canonicalCode(
   if (rep.toCanonical === undefined) return padded
   const code = TRANSFORMS[rep.toCanonical].apply(scheme.def.checkDigit, padded)
   return code === null ? null : fold(scheme.def.codeFolding, code)
+}
+
+/** Whether a folded value stands for no area — a total, or a group of areas. */
+export function isNotArea(scheme: IndexedScheme, folded: string): boolean {
+  return scheme.notAreas.has(folded) || !!scheme.notAreaPattern?.test(folded)
+}
+
+/** The codes a name entry may stand for: its place's, under any code it went by, or each candidate's. */
+export function codesOf(entry: NameIndexEntry): string[] {
+  return 'ambiguous' in entry ? entry.hits.map((h) => h.code) : entry.codes
+}
+
+/** Whether the place coded `code` is the one coded `outer`, or lies in it. */
+export function liesIn(scheme: IndexedScheme, code: string, outer: string): boolean {
+  return code === outer || (scheme.ancestorsOf.get(code) ?? []).some((up) => up.includes(outer))
 }
 
 /** Whether a value written in `rep` carries the digit that checks it. */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createRegistry } from '../registry'
-import { corroborate, inferColumn, judgeColumn, matchValues } from '../infer'
+import { corroborate, inferColumn, judgeColumn, judgeNamesByCodes, matchValues } from '../infer'
 import { JP_PACK } from '../packs/jp'
 
 const registry = createRegistry([JP_PACK], '2026-11-14')
@@ -74,6 +74,31 @@ describe('inferColumn over the Japan pack', () => {
     expect(m.hits.map((h) => h.code)).toEqual(['022021'])
   })
 
+  it('takes the share over the names that name one place or none', () => {
+    // Two of four name several places: the other two decide it
+    expect(best(['府中市', '中央区', '弘前市', '八王子市', '立川市'])).toMatchObject({
+      representation: 'name',
+      share: 1,
+      ambiguous: 2,
+    })
+    // Every one of them a name several places share: nothing to go by
+    expect(best(['中央区', '北区', '南区'])).toBeUndefined()
+    // Town names cities share, and three that happen to be one place's: not enough
+    const towns = [
+      '栄町',
+      '旭町',
+      '錦町',
+      '朝日町',
+      '新町',
+      '中町',
+      '東町',
+      '清水町',
+      '大和町',
+      '吉田町',
+    ]
+    expect(best(towns)).toBeUndefined()
+  })
+
   it('keeps apart places in different prefectures that shared a name in turn', () => {
     // 大和町 in Saga was retired in 2005; 大和町 in Miyagi is current
     const [m] = matchValues(registry, ['大和町']).filter((x) => x.rep.kind === 'name')
@@ -114,6 +139,20 @@ describe('inferColumn over the Japan pack', () => {
       representation: 'name',
       share: 1,
     })
+  })
+
+  it('leaves out the groups a prefecture’s statistics put among its municipalities', () => {
+    // Tokyo's population table: its wards and towns, and the groups between them
+    const names = ['総数', '区部', '千代田区', '新宿区', '文京区', '市部', '八王子市', '郡部']
+    const tail = ['瑞穂町', '島部', '大島支庁', '利島村', '町村部']
+    expect(best([...names, ...tail])).toMatchObject({ representation: 'name', share: 1 })
+    // Hokkaido's subprefectures, by the same token
+    expect(best(['石狩振興局', '札幌市', '江別市', '千歳市'])).toMatchObject({ share: 1 })
+    // Saitama's totals and counties, Osaka's regions, Fukuoka's areas
+    const saitama = ['埼玉県　市計', '町村計', '北足立郡', '入間郡', '川越市', '熊谷市', '川口市']
+    expect(best(saitama)).toMatchObject({ representation: 'name', share: 1 })
+    const osaka = ['大阪市地域', '北大阪地域', '北九州市圏域', '堺市', '岸和田市', '豊中市']
+    expect(best(osaka)).toMatchObject({ representation: 'name', share: 1 })
   })
 
   it('does not take a couple of surnames for prefectures', () => {
@@ -189,6 +228,31 @@ describe('judgeColumn over the Japan pack', () => {
     })
   })
 
+  it('leaves codes short of their share by a statistics table’s groups for names to bear out', () => {
+    // 13100 区部 and 13200 市部 are codes of no code table
+    const codes = [
+      '13100',
+      '13101',
+      '13104',
+      '13105',
+      '13200',
+      '13201',
+      '13202',
+      '13203',
+      '13204',
+      '13205',
+    ]
+    expect(judge(codes, '地域コード')).toMatchObject({
+      unconfirmed: [
+        { representation: 'code5', share: 0.8, shortOfShare: true, standsAlone: false },
+      ],
+    })
+    // A heading does not stand in for the names that say the rest are groups
+    expect(judge(codes, '市区町村コード')).toHaveProperty('unconfirmed')
+    // Below that, nothing
+    expect(judge([...codes, '13300', '13350'], '地域コード')).toBeNull()
+  })
+
   it('reads no column past the most distinct values a column may have', () => {
     const many = Array.from({ length: 5_001 }, (_, i) => String(i))
     expect(judge(many, 'id')).toBeNull()
@@ -252,6 +316,27 @@ describe('corroborate over the Japan pack', () => {
     expect(corroborate(registry, code5, before)).toBe(true)
   })
 
+  it('bears out codes short of their share, the names beside the groups being no place', () => {
+    const rows: [string, string][] = [
+      ['13100', '区部'],
+      ['13101', '千代田区'],
+      ['13104', '新宿区'],
+      ['13105', '文京区'],
+      ['13200', '市部'],
+      ['13201', '八王子市'],
+      ['13202', '立川市'],
+      ['13203', '武蔵野市'],
+      ['13204', '三鷹市'],
+      ['13205', '青梅市'],
+    ]
+    const [short] = inferColumn(
+      registry,
+      rows.map(([code]) => code)
+    )
+    expect(short).toMatchObject({ representation: 'code5', shortOfShare: true })
+    expect(corroborate(registry, short, rows)).toBe(true)
+  })
+
   it('wants a few rows to agree on', () => {
     expect(
       corroborate(registry, pref2, [
@@ -259,5 +344,92 @@ describe('corroborate over the Japan pack', () => {
         ['27', '大阪府'],
       ])
     ).toBe(false)
+  })
+})
+
+describe('judgeNamesByCodes over the Japan pack', () => {
+  // Names every one of which several places share: Tokyo's, by the codes beside them
+  const rows: [string, string][] = [
+    ['13102', '中央区'],
+    ['13103', '港区'],
+    ['13117', '北区'],
+    ['13206', '府中市'],
+    ['13100', '区部'],
+  ]
+  const [codes] = inferColumn(
+    registry,
+    rows.map(([code]) => code)
+  )
+
+  it('reads a name several places share as the one its row’s code names', () => {
+    expect(best(rows.map(([, name]) => name))).toBeUndefined()
+    expect(judgeNamesByCodes(registry, codes, rows)).toMatchObject({
+      representation: 'name',
+      share: 1,
+      ambiguous: 0,
+      summary: { levels: [{ level: 'ADM2', matched: 4 }] },
+    })
+  })
+
+  it('takes a prefecture’s code beside them for where they lie', () => {
+    const [pref] = inferColumn(registry, ['13', '27', '01'])
+    const byPrefecture: [string, string][] = [
+      ['13', '中央区'],
+      ['27', '中央区'],
+      ['01', '中央区'],
+      ['13', '港区'],
+      ['13', '北区'],
+    ]
+    expect(judgeNamesByCodes(registry, pref, byPrefecture)).toMatchObject({ ambiguous: 0 })
+  })
+
+  it('leaves a name its row’s code does not narrow to one place undecided', () => {
+    // 北区 is a ward of Osaka and of Sakai, both in 27
+    const [pref] = inferColumn(registry, ['13', '27', '01'])
+    const wide: [string, string][] = [
+      ['27', '北区'],
+      ['13', '中央区'],
+      ['13', '港区'],
+      ['13', '新宿区'],
+      ['01', '札幌市'],
+    ]
+    expect(judgeNamesByCodes(registry, pref, wide)).toMatchObject({ ambiguous: 1, share: 0.8 })
+  })
+
+  it('leaves the names unread where the codes do not pick among them', () => {
+    const wrong: [string, string][] = [
+      ['01101', '中央区'],
+      ['01102', '港区'],
+      ['01103', '北区'],
+    ]
+    const [other] = inferColumn(registry, ['01101', '01102', '01103'])
+    expect(judgeNamesByCodes(registry, other, wrong)).toBeNull()
+  })
+
+  it('counts the names on rows with no code, as a column of names alone would', () => {
+    // Three wards coded, then parks on rows with no code: no column of names
+    const parks = ['公園', '広場', '緑地', '霊園', '運動場'].map((n): [null, string] => [null, n])
+    expect(judgeNamesByCodes(registry, codes, [...rows.slice(0, 3), ...parks])).toBeNull()
+  })
+
+  it('counts every place a shared name is in one table', () => {
+    const both: [string, string][] = [
+      ['13102', '中央区'],
+      ['27128', '中央区'],
+      ['13103', '港区'],
+      ['13117', '北区'],
+    ]
+    const [mixed] = inferColumn(
+      registry,
+      both.map(([code]) => code)
+    )
+    expect(judgeNamesByCodes(registry, mixed, both)?.summary.levels).toEqual([
+      { level: 'ADM2', matched: 3, total: 1747 },
+      { level: 'ADM3', matched: 1, total: 171 },
+    ])
+  })
+
+  it('counts the names several places share in corroborating the codes', () => {
+    expect(corroborate(registry, codes, rows)).toBe(true)
   })
 })

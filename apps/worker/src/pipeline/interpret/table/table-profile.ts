@@ -15,6 +15,9 @@ import {
   INFERENCE_RULES,
   corroborate,
   judgeColumn,
+  judgeNamesByCodes,
+  nameSchemes,
+  outranks,
   registryFor,
   verdictOf,
   type ColumnInference,
@@ -217,38 +220,40 @@ async function readVocabulary(
   const row = await aggregateByColumn(conn, read, (i) => [
     `list(DISTINCT ${value(names[i], { cast: true })}) AS c${i}_values`,
   ])
-  const unconfirmed = new Map<number, ColumnInference[]>()
+  // Columns of codes, and columns that hold names of a scheme in part — read
+  // pairwise below, each settling what the other cannot alone. A column of
+  // codes is trusted once decided, or once a column of names bears it out
+  const codeColumns = new Map<number, ColumnInference[]>()
+  const trusted = new Set<ColumnInference>()
   const nameColumns = new Map<string, number[]>()
   for (const i of read) {
     const values = ((row[`c${i}_values`] as (string | null)[] | null) ?? []).filter(
       (v): v is string => v !== null
     )
+    for (const scheme of nameSchemes(registry, values)) {
+      ;(nameColumns.get(scheme) ?? nameColumns.set(scheme, []).get(scheme)!).push(i)
+    }
     const verdict = judgeColumn(registry, values, {
       heading: described[i].name,
       integer: described[i].type === 'integer',
     })
     if (!verdict) continue
     if ('unconfirmed' in verdict) {
-      unconfirmed.set(i, verdict.unconfirmed)
+      codeColumns.set(i, verdict.unconfirmed)
       continue
     }
-    for (const f of 'decided' in verdict ? [verdict.decided] : verdict.candidates) {
-      if (f.kind === 'name')
-        (nameColumns.get(f.scheme) ?? nameColumns.set(f.scheme, []).get(f.scheme)!).push(i)
+    if ('decided' in verdict && verdict.decided.kind === 'code') {
+      codeColumns.set(i, [verdict.decided])
+      trusted.add(verdict.decided)
     }
     profiled[i] = withVocabulary(profiled[i], verdict)
   }
 
-  // Short codes, borne out by a column of names in the same table row by row:
-  // pairs from a sample of rows, each batch judged and let go before the next
-  const compared = [...unconfirmed].flatMap(([i, found]) => {
-    const byNames = new Map<number, ColumnInference[]>()
-    for (const f of found) {
-      for (const j of nameColumns.get(f.scheme) ?? [])
-        byNames.set(j, [...(byNames.get(j) ?? []), f])
-    }
-    return [...byNames].map(([j, candidates]) => ({ i, j, candidates }))
-  })
+  const compared = [...codeColumns].flatMap(([i, found]) =>
+    [...new Set(found.flatMap((f) => nameColumns.get(f.scheme) ?? []))]
+      .filter((j) => j !== i)
+      .map((j) => ({ i, j, found: found.filter((f) => nameColumns.get(f.scheme)!.includes(j)) }))
+  )
   if (compared.length === 0) return registry.state
   const used = [...new Set(compared.flatMap(({ i, j }) => [i, j]))]
   await conn.run(
@@ -256,29 +261,43 @@ async function readVocabulary(
       `SELECT ${used.map((k) => sqlIdentifier(names[k])).join(', ')} FROM t ` +
       `USING SAMPLE reservoir(${INFERENCE_RULES.corroboration.sampleRows} ROWS) REPEATABLE (0)`
   )
-  const borne = new Map<number, ColumnInference[]>()
+  // Pairs from a sample of rows, each batch judged and let go before the next.
+  // A row with a name and no code is one too: its name still has to be one
+  const readings: { j: number; codes: ColumnInference; names: ColumnInference }[] = []
   for (let start = 0; start < compared.length; start += STATS_COLUMNS_PER_QUERY) {
     const batch = compared.slice(start, start + STATS_COLUMNS_PER_QUERY)
     const lists = batch.map(({ i, j }, k) => {
       const c = value(names[i], { cast: true })
       const n = value(names[j], { cast: true })
-      return `list(DISTINCT [${c}, ${n}]) FILTER (WHERE ${c} IS NOT NULL AND ${n} IS NOT NULL) AS p${k}`
+      return `list(DISTINCT [${c}, ${n}]) FILTER (WHERE ${n} IS NOT NULL) AS p${k}`
     })
     const [listed] = (
       await conn.runAndReadAll(`SELECT ${lists.join(', ')} FROM vocabulary_sample`)
-    ).getRowObjectsJson() as Record<string, [string, string][] | null>[]
-    for (const [k, { i, candidates }] of batch.entries()) {
-      for (const f of candidates) {
-        if (corroborate(registry, f, listed[`p${k}`] ?? []))
-          borne.set(i, [...(borne.get(i) ?? []), f])
+    ).getRowObjectsJson() as Record<string, [string | null, string][] | null>[]
+    for (const [k, { j, found }] of batch.entries()) {
+      const pairs = listed[`p${k}`] ?? []
+      for (const codes of found) {
+        if (!trusted.has(codes) && corroborate(registry, codes, pairs)) trusted.add(codes)
+        const names = judgeNamesByCodes(registry, codes, pairs)
+        if (names) readings.push({ j, codes, names })
       }
     }
   }
   await conn.run('DROP TABLE vocabulary_sample')
-  for (const [i, found] of unconfirmed) {
-    // Best first, as judged; borne out by any one column of names is enough
-    const [first, ...rest] = found.filter((f) => borne.get(i)?.includes(f))
+
+  for (const [i, found] of codeColumns) {
+    if (profiled[i].vocabulary) continue
+    // Best first, as judged
+    const [first, ...rest] = found.filter((f) => trusted.has(f))
     if (first) profiled[i] = withVocabulary(profiled[i], verdictOf([first, ...rest]))
+  }
+  for (const { j, codes, names } of readings) {
+    const held = profiled[j].vocabulary
+    // Read only by codes that stand; a decided column of codes stays one
+    if (!trusted.has(codes) || (profiled[j].role === 'identifier' && held && !held.alternatives))
+      continue
+    if (held && !held.alternatives && !outranks(names, held)) continue
+    profiled[j] = withVocabulary(profiled[j], { decided: names })
   }
   return registry.state
 }
