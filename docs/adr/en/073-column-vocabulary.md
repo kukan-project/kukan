@@ -331,6 +331,92 @@ resources nor adding schemes changes the shape of the registry.
 - Display names of countries/regions are set per language. Keys are ISO codes, and names carrying a
   political claim are not written into the core
 
+### 9. The master of a scheme, and its extensions
+
+The Japan pack's master changes from the Local Government Code to the Ministry of Internal Affairs
+and Communications' "Standard Area Code for Statistics" (統計に用いる標準地域コード). Statistics tables
+put groups of areas such as counties (郡), subprefectures (支庁) and the ward area (区部) among the
+municipalities, and their codes are not in the local government code table (§5). The standard area
+code holds the groups as entries. The scheme called the Local Government Code in §1 and elsewhere is
+read as the standard area code from this section on.
+
+**The master contains the local government codes.** The standard area code's nationwide CSV (updated
+2023-08-22, 2,291 rows) contains all 1,965 current local government codes (prefectures,
+municipalities and the wards of designated cities: every 5-digit body is there, and the check digit
+is the same mod 11), and in addition 326 groups of areas: 307 counties, 18 subprefectures and
+regional promotion bureaus (支庁・振興局), and 1 ward area (特別区部). Only one name differs: the local
+government list's 「梼原町」 is 「檮原町」 in the standard area code (「檮」 is the formal character, 「梼」 a
+common substitute) (2026-11-15).
+
+- **The scheme's ID changes from `jp-lg-code` to `jp-area-code`,** labelled "Standard Area Code for
+  Statistics (including the Local Government Code)". No person has settled an assignment yet
+  (`column_settings.concepts`), so nothing needs moving; inferences are rebuilt by raising the rules'
+  version (§4)
+- **Entries carry a kind:** a local government (including the wards of designated cities), or a
+  group of areas (county, subprefecture, regional promotion bureau, ward area). The local government
+  codes are the subset of local governments, so the representations (6 digits, 5 digits, the 2-digit
+  prefecture code, name) stay as they are. The CSV has 5 digits; the 6 digits are made by appending
+  the check digit by the same rule. The Ministry's own resident register population tables also write
+  counties in 6 digits with the same check digit (`023001` 東津軽郡)
+- **Groups are not counted as levels and do not enter the tree of parents.** A group's parent is its
+  prefecture; a town's parent stays its prefecture, and the group it belongs to is held separately.
+  Hokkaido's towns are placed under regional promotion bureaus, not counties, so putting groups in the
+  tree would give towns of the same level parents of different kinds: a bureau in Hokkaido, a county
+  elsewhere. Levels and coverage ("45 of the 47 prefectures") are counted over local governments only
+- **Aggregate numbers a prefecture assigns on its own go in an extension layer on top of the
+  master.** Each entry has its source (publisher, dataset), its kind (aggregate), its name, and its
+  hierarchy level where there is one. Tokyo has `13200` 市部, `13350` 島部 and `13550` 町村部 (the
+  Tokyo Metropolitan Government Bureau of General Affairs Statistics Division's CSVs, area hierarchy
+  column 0–4); Saitama has `11001` 市計 and `11002` 町村計 (area identifier a/b/c/0/1); Akita has
+  `05001` 市部計 and `05002` 郡部計. Akita's tables write `5001`, with the leading zero dropped, and it
+  is not rescued (§5)
+- **Extension entries are matched as a pair of code and name.** The same number covers different
+  areas by source: the Ministry's resident register population table uses `133604` for 「島しょ」 (all
+  the islands, 23,272 people, the same as Tokyo's 島部), while `13360` in the standard area code is
+  大島支庁. In a column of codes alone, extension entries are not counted as hits. Generic words such
+  as 区部, 市部 and 郡部 are likewise matched only in a pair with a code, never by a column of names
+  alone
+- **The patterns of values that are not areas (ending in 「〜計」「〜郡」「〜地域」「〜圏域」「〜支庁」
+  「〜振興局」, §5) are kept.** Over 2,060 e-Gov CSV files and 30,347 columns, adding the standard area
+  code's groups with the patterns kept changed nothing (204 columns settled, 234 unsettled), and
+  removing the patterns lost one column (old subprefecture names absent from today's list). The sample
+  had no code column holding group codes, so the gain could not be measured. Measuring it on the
+  statistics CSVs of Tokyo and Saitama is the next measurement
+- **Name folding gains variant-character folding** (「梼」→「檮」 and others). The character pairs are
+  held as the pack's data; the core holds only a folding "replace characters by the pack's table" in
+  its closed list (§8). Over the current names, switching the master found one difference, 梼原町
+- **Matching a county by its name alone is weak.** Hokkaido's towns sit under regional promotion
+  bureaus and have no county entries, and 6 county names repeat across prefectures (三島郡, 大島郡,
+  安芸郡, 愛知郡, 海部郡, 熊毛郡). A county name is settled only in a pair with a parent column or a code
+- **History combines two lists.** The standard area code's list of changes covers only 2007-04-02
+  onward. Changes of local governments keep the current source (the Local Government Code's list of
+  changes since 2005) over the whole period, and from the standard area code's list come the changes
+  of groups (27 counties deleted, and 14 subprefectures renamed to regional promotion bureaus on
+  2010-04-01). The 113 local governments retired since 2007-04-02 agreed in both code and date between
+  the two lists. The generator checks the overlap and stops on a disagreement. Groups gone by
+  2007-04-01 are not held
+- **The terms of use are the same as now.** The standard area code's page and CSV carry no rights
+  notice, so they fall under the Ministry site's copyright terms: 「当ホームページで公開している情報
+  （以下「コンテンツ」といいます。）の著作権は、特記されていない限り総務省に帰属し、権利表記の記載がない
+  限り「公共データ利用規約（第1.0版）」に準拠した利用条件の下で利用することができます」 ("The copyright
+  of the information published on this website ... belongs to the Ministry unless otherwise noted, and
+  unless a rights notice states otherwise it may be used under terms conforming to the Public Data
+  License (version 1.0)"). The only exclusions are 「組織や特定の事業を表すシンボルマーク、ロゴ、
+  キャラクターデザイン」 (symbol marks, logos and character designs) and 「別の利用ルールの適用を明示して
+  いるコンテンツ」 (content that states another rule applies), and neither applies. The pack appends
+  check digits and changes the shape, so besides the source it states 「編集・加工等を行ったこと」 (that
+  it was edited or processed; item 1.1 イ of the same terms). Each extension entry's terms follow its
+  source
+
+Sources (retrieved 2026-11-15):
+
+- Ministry of Internal Affairs and Communications, 「統計に用いる標準地域コード」
+  <https://www.soumu.go.jp/toukei_toukatsu/index/seido/9-5.htm> (nationwide CSV
+  <https://www.soumu.go.jp/main_content/000323625.csv>; changes since 2007-04-02
+  <https://www.soumu.go.jp/main_content/000323626.xls>)
+- Ministry of Internal Affairs and Communications, 「当省ホームページについて」, copyright
+  <https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html>
+
 ## Consequences
 
 | Location                                                    | What changes                                                                                                                                    |
