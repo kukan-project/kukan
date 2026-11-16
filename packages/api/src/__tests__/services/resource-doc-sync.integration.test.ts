@@ -178,6 +178,47 @@ describe('syncDueSearchDocs', () => {
     expect(docs[file]).not.toHaveProperty('columns')
   })
 
+  it("carries what a table's columns stand for onto its document (ADR-073)", async () => {
+    const table = await seed()
+    const file = await seed()
+    await db.insert(resourcePipeline).values({
+      resourceId: table,
+      profile: {
+        columns: [
+          {
+            role: 'identifier',
+            roleBasis: { rule: 'vocabulary' },
+            vocabulary: {
+              concept: 'admin-area',
+              pack: 'JP',
+              scheme: 'jp-lg-code',
+              representation: 'code6',
+              share: 1,
+              ambiguous: 0,
+              levels: [],
+              periods: [{}],
+              narrowedBy: [],
+              kind: 'code',
+              places: ['130001', '131016'],
+              roots: ['130001'],
+            },
+          },
+        ],
+      },
+    })
+    const { search, bulkIndexResources } = fakeSearch()
+
+    await syncDueSearchDocs(db, search)
+
+    const docs = Object.fromEntries(bulkIndexResources.mock.calls[0][0].map((d) => [d.id, d]))
+    expect(docs[table]).toMatchObject({
+      vocab_meanings: ['admin-area:code'],
+      area_roots: ['130001'],
+      area_places: ['131016'],
+    })
+    expect(docs[file]).not.toHaveProperty('area_roots')
+  })
+
   it('carries extras onto the document as a reader sees them (ADR-062)', async () => {
     const id = await seed()
     await db

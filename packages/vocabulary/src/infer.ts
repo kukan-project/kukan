@@ -175,12 +175,11 @@ const ruleFor = (scheme: IndexedScheme, rep: Representation) =>
 function standsAlone({ scheme, rep, hits }: RepresentationMatch): boolean {
   if (rep.kind === 'name' || carriesCheckDigit(scheme, rep)) return true
   const { alone } = INFERENCE_RULES.uncheckedCode
-  const tops = (code: string) => (scheme.ancestorsOf.get(code) ?? []).flatMap((up) => up.slice(-1))
-  const below = hits.filter((h) => tops(h.code).length > 0)
+  const below = hits.filter((h) => topsOf(scheme, h.code).length > 0)
   return (
     below.length >= alone.values ||
     (below.length >= alone.spread.values &&
-      new Set(below.flatMap((h) => tops(h.code))).size >= alone.spread.roots)
+      new Set(below.flatMap((h) => topsOf(scheme, h.code))).size >= alone.spread.roots)
   )
 }
 
@@ -202,6 +201,24 @@ export interface ColumnInference {
   standsAlone: boolean
   /** Short of its share, as a column of codes with groups among them is: names alone settle it. */
   shortOfShare: boolean
+  /** The places matched, by code, sorted: what a search by area finds the table by. */
+  places: string[]
+  /** The top-level places they lie in — a prefecture's own code is its own top. */
+  roots: string[]
+}
+
+/** The top-level places a place lies in; none for a top-level place itself. */
+const topsOf = (scheme: IndexedScheme, code: string) =>
+  (scheme.ancestorsOf.get(code) ?? []).flatMap((up) => up.slice(-1))
+
+/** The places of the hits, and the top-level places they lie in, each sorted once. */
+function placesOf(scheme: IndexedScheme, hits: Hit[]): { places: string[]; roots: string[] } {
+  const places = [...new Set(hits.map((h) => h.code))].sort()
+  const roots = places.flatMap((code) => {
+    const tops = topsOf(scheme, code)
+    return tops.length > 0 ? tops : [code]
+  })
+  return { places, roots: [...new Set(roots)].sort() }
 }
 
 /**
@@ -233,6 +250,7 @@ export function inferColumn(registry: Registry, values: string[]): ColumnInferen
           summary: summarizeCodes(m.scheme, m.hits),
           standsAlone: !short && standsAlone(m),
           shortOfShare: short,
+          ...placesOf(m.scheme, m.hits),
         },
       ]
     })
@@ -404,7 +422,21 @@ export function judgeNamesByCodes(
     summary: summarizeCodes(scheme, hits),
     standsAlone: true,
     shortOfShare: false,
+    ...placesOf(scheme, hits),
   }
+}
+
+/**
+ * The values of a column that are names several places of a scheme share:
+ * those a reading by codes has to pick between, and so the rows to read whole.
+ */
+export function sharedNames(registry: Registry, scheme: string, values: string[]): string[] {
+  const indexed = registry.schemeById.get(scheme)
+  if (!indexed) return []
+  return values.filter((v) => {
+    const entry = indexed.byName.get(fold(indexed.def.nameFolding, v))
+    return entry !== undefined && 'ambiguous' in entry
+  })
 }
 
 /** Whether a reading is better evidence than one held: a higher share, or as high with fewer names undecided. */

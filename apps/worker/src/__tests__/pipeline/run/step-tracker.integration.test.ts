@@ -138,6 +138,46 @@ describe('updateInterpretResult', () => {
     expect(await dueAt()).not.toBeNull()
   })
 
+  it('marks the search document when the columns are read with another vocabulary (ADR-073)', async () => {
+    const dueAt = async () =>
+      (await db.select().from(resource).where(eq(resource.id, resourceId)))[0].docSyncDueAt
+    const vocabulary = (places: string[]) => ({
+      concept: 'admin-area',
+      pack: 'JP',
+      scheme: 'jp-lg-code',
+      representation: 'code6',
+      share: 1,
+      ambiguous: 0,
+      levels: [],
+      periods: [{}],
+      narrowedBy: [],
+      kind: 'code' as const,
+      places,
+      roots: ['130001'],
+    })
+    const profileOf = (places: string[]) => ({
+      columns: [
+        {
+          role: 'identifier' as const,
+          roleBasis: { rule: 'vocabulary' as const },
+          vocabulary: vocabulary(places),
+        },
+      ],
+    })
+    const tracker = new StepTracker(db, claim)
+
+    await tracker.updateInterpretResult(NEW_PREVIEW, {}, profileOf(['131016']))
+    expect(await dueAt()).not.toBeNull()
+
+    await db.update(resource).set({ docSyncDueAt: null }).where(eq(resource.id, resourceId))
+    await tracker.updateInterpretResult(NEW_PREVIEW, {}, profileOf(['131016']))
+    // The same vocabulary: the document says what it said
+    expect(await dueAt()).toBeNull()
+
+    await tracker.updateInterpretResult(NEW_PREVIEW, {}, profileOf(['131016', '131024']))
+    expect(await dueAt()).not.toBeNull()
+  })
+
   it('leaves the preview tracked when the run no longer holds the claim', async () => {
     await withPreviousRun()
     await reserve(NEW_PREVIEW)

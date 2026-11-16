@@ -2570,6 +2570,7 @@ describe('the artifacts derived from retracted content', () => {
     await addVersion(1, 'sha256:v1')
     const deps = mockDeps()
 
+    await db.update(resource).set({ docSyncDueAt: null }).where(eq(resource.id, resourceId))
     await revertFromLive(deps)
 
     expect(vi.mocked(deps.storage.deleteMany).mock.calls[0][0].sort()).toEqual(
@@ -2577,6 +2578,12 @@ describe('the artifacts derived from retracted content', () => {
     )
     expect((await pipelineRow()).metadata).toEqual({ contentIndexed: false })
     expect((await pipelineRow()).profile).toBeNull()
+    // The search document carried what the profile said of the columns (ADR-073)
+    const [{ docSyncDueAt }] = await db
+      .select({ docSyncDueAt: resource.docSyncDueAt })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+    expect(docSyncDueAt).not.toBeNull()
   })
 
   it('leaves a pointer another run has moved on', async () => {

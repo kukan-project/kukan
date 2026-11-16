@@ -156,6 +156,18 @@ export function schemaColumnNames(metadata: SQL | AnyColumn): SQL<string[]> {
   >`jsonb_path_query_array(COALESCE(${metadata}, '{}'::jsonb), '$.schema.columns[*].name')`
 }
 
+/**
+ * A pipeline row's column vocabularies (ADR-073) as a jsonb array, `[]` for a
+ * row with none: what the resource's search document's vocabulary fields are
+ * built from, and so what a writer of the profile compares to know whether
+ * that document is stale.
+ */
+export function profileVocabularies(profile: SQL | AnyColumn): SQL<unknown[]> {
+  return sql<
+    unknown[]
+  >`jsonb_path_query_array(COALESCE(${profile}, '{}'::jsonb), '$.columns[*].vocabulary')`
+}
+
 export const resourcePipelineStep = pgTable(
   'resource_pipeline_step',
   {

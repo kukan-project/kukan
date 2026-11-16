@@ -13,6 +13,7 @@ export {
   matchValues,
   nameSchemes,
   outranks,
+  sharedNames,
   summarizeCodes,
   verdictOf,
 } from './infer'

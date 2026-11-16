@@ -22,7 +22,7 @@ import type {
  * folding. Part of the registry state, so that a release changing only these
  * still rebuilds the inferences made under the old ones (ADR-073 §決定 4).
  */
-export const RULES_VERSION = '3'
+export const RULES_VERSION = '4'
 
 /**
  * A code, its level, and the spans in which a value named it: a set, so a code

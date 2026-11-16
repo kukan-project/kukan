@@ -12,7 +12,13 @@
 
 import { eq, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { pipelineObjectKeys, resource, resourcePipeline, schemaColumnNames } from '@kukan/db'
+import {
+  pipelineObjectKeys,
+  profileVocabularies,
+  resource,
+  resourcePipeline,
+  schemaColumnNames,
+} from '@kukan/db'
 import type {
   PipelineStatus,
   PipelineStepStatus,
@@ -146,14 +152,16 @@ export class StepTracker {
    * there is parked here without another word.
    *
    * The table's column names are in the resource's search document (ADR-063
-   * §決定 7), so a rewrite that changes them marks it, in the same statement:
-   * a sync between a mark and the write would clear it over the old names.
+   * §決定 7), and so is what its columns' vocabulary says (ADR-073 Step 1c), so
+   * a rewrite that changes either marks it, in the same statement: a sync
+   * between a mark and the write would clear it over the old ones.
    */
   private async movePointers(set: SQL) {
     await this.db.execute(sql`
       WITH before AS (
         SELECT id, resource_id, ARRAY[${sql.join(pipelineObjectKeys('r'), sql`, `)}] AS keys,
-               ${schemaColumnNames(sql`r.metadata`)} AS columns
+               ${schemaColumnNames(sql`r.metadata`)} AS columns,
+               ${profileVocabularies(sql`r.profile`)} AS vocabularies
         FROM resource_pipeline r WHERE ${this.held} FOR UPDATE
       ),
       moved AS (
@@ -164,11 +172,12 @@ export class StepTracker {
         RETURNING b.keys AS previous,
                   array_remove(ARRAY[${sql.join(pipelineObjectKeys('p'), sql`, `)}], NULL) AS current,
                   b.resource_id,
-                  b.columns IS DISTINCT FROM ${schemaColumnNames(sql`p.metadata`)} AS renamed
+                  b.columns IS DISTINCT FROM ${schemaColumnNames(sql`p.metadata`)}
+                    OR b.vocabularies IS DISTINCT FROM ${profileVocabularies(sql`p.profile`)} AS stale
       ),
       marked AS (
         UPDATE resource SET doc_sync_due_at = NOW()
-        FROM moved WHERE resource.id = moved.resource_id AND moved.renamed
+        FROM moved WHERE resource.id = moved.resource_id AND moved.stale
       ),
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)

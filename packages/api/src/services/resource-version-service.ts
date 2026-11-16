@@ -3222,6 +3222,11 @@ export class ResourceVersionService {
         WHERE id = ${pipe!.id}::uuid AND ${onRevision(resourceId, ifRevision)}
         RETURNING id
       ),
+      -- The profile goes too, and the search document carries its vocabulary (ADR-073)
+      marked AS (
+        UPDATE resource SET doc_sync_due_at = NOW()
+        WHERE id = ${resourceId}::uuid AND EXISTS (SELECT FROM cleared)
+      ),
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)
         SELECT v.key, ${PARKED_UNTIL}

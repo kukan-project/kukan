@@ -211,10 +211,15 @@ exports[`emitted SQL shape > ResourceVersionService.discardDerivedArtifacts > pi
         WHERE id = $5::uuid AND TRUE
         RETURNING id
       ),
+      -- The profile goes too, and the search document carries its vocabulary (ADR-073)
+      marked AS (
+        UPDATE resource SET doc_sync_due_at = NOW()
+        WHERE id = $6::uuid AND EXISTS (SELECT FROM cleared)
+      ),
       parked AS (
         INSERT INTO orphaned_object (key, expires_at)
         SELECT v.key, NOW() + INTERVAL '1 hour'
-        FROM (VALUES ($6::text), ($7::text), ($8::text), ($9::text)) AS v(key), cleared
+        FROM (VALUES ($7::text), ($8::text), ($9::text), ($10::text)) AS v(key), cleared
         ON CONFLICT (key) DO NOTHING
       )
       SELECT id FROM cleared",

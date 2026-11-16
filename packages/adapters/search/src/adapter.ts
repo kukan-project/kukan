@@ -67,6 +67,14 @@ export interface ResourceDoc {
   summary?: string
   /** A table's column names, the most telling thing about it to search (ADR-063) */
   columns?: string[]
+  /**
+   * What the table's columns stand for (ADR-073 Step 1c): `<concept>:<kind>`,
+   * the top-level places they cover (`*` nationwide), and the places below
+   * them. Filtered on and counted, not searched; experimental
+   */
+  vocab_meanings?: string[]
+  area_roots?: string[]
+  area_places?: string[]
   /** Filtered on by key and value, not searched (ADR-062) */
   extras?: Record<string, unknown>
 }

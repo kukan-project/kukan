@@ -150,6 +150,12 @@ const SEARCH_PROPERTIES: MappingProperties = {
     analyzer: 'kuromoji_analyzer',
     search_analyzer: 'kuromoji_query_analyzer',
   },
+  // What a table's columns stand for (ADR-073 Step 1c): filtered on and
+  // counted by exact value, never searched as text
+  vocab_meanings: { type: 'keyword' },
+  area_roots: { type: 'keyword' },
+  area_places: { type: 'keyword' },
+
   // --- Content fields ---
   resourceId: { type: 'keyword' },
   extractedText: {

@@ -98,9 +98,13 @@
 ### 4.3 文書の書き直し
 
 - **語彙から作る項目が変わったら、リソースの未反映フラグを立てる。** `movePointers` の条件
-  「列名が変わった」に、「`vocab_meanings` / `area_roots` / `area_places` が変わった」を足す。
-  前の値と新しい値を同じ関数（§4.1 の組み立て）で作って比べる
-- 版の採用（`resource-version-service.ts`）の同じ条件にも足す
+  「列名が変わった」に、「列の語彙が変わった」を足す。比べるのは、プロファイルの列の `vocabulary` の
+  一覧（jsonb）そのものである（`profileVocabularies`、列名の `schemaColumnNames` と同じ形）。一致率だけが
+  変わったときにも立つが、余分な同期が 1 回増えるだけで、同じ SQL 文の中で比べられる
+- パージ・巻き戻しで派生物を消すとき（`discardDerivedArtifacts`）は、プロファイルも消えるので、
+  同じ文の中で未反映フラグを立てる
+- 版の採用（`resource-version-service.ts`）には足さない。版の採用は列名を書き換えるが、プロファイルには
+  触れないので、語彙の項目は変わらない
 - 語彙の読み直し（`refresh-vocabulary-profiles` → `rebuildOnly`）は、この条件で検索の文書まで届く
 
 ### 4.4 PostgreSQL の代わりの経路

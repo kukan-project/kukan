@@ -565,6 +565,56 @@ describe('interpretCsv — vocabulary', () => {
     expect(columns['区名']).toMatchObject({ vocabulary: { share: 1, ambiguous: 0 } })
   })
 
+  it('records the places a search finds the table by, from every row', async () => {
+    // Osaka's 中央区 is one row of fifty thousand: the sample a reading by codes
+    // is judged on may miss it, and the places must not
+    const tokyo: [string, string][] = [
+      ['13101', '千代田区'],
+      ['13102', '中央区'],
+      ['13103', '港区'],
+      ['13104', '新宿区'],
+      ['13105', '文京区'],
+    ]
+    const rows = [
+      ['コード', '区'],
+      ...Array.from({ length: 50_000 }, (_, k) => [...tokyo[k % tokyo.length]]),
+      ['27128', '中央区'],
+    ]
+    const { columns } = await profile(rows, ['JP'])
+    expect(columns['区']).toMatchObject({
+      vocabulary: { kind: 'name', roots: ['130001', '270008'] },
+    })
+    expect(columns['区'].vocabulary?.places).toContain('271284')
+    expect(columns['コード']).toMatchObject({
+      vocabulary: { kind: 'code', roots: ['130001', '270008'] },
+    })
+  })
+
+  it('reads names by the codes beside them from every row, shared or not', async () => {
+    // No name here is shared, and the rows a sample may miss hold Osaka's ward
+    // and a name of no place: the reading is judged and its places recorded
+    // over the whole column, not over the sample's share
+    const tokyo: [string, string][] = [
+      ['13101', '千代田区'],
+      ['13104', '新宿区'],
+      ['13105', '文京区'],
+      ['13106', '台東区'],
+      ['13107', '墨田区'],
+    ]
+    const rows = [
+      ['コード', '区'],
+      ...Array.from({ length: 50_000 }, (_, k) => [...tokyo[k % tokyo.length]]),
+      ['27119', '阿倍野区'],
+      ['13108', 'ほげ'],
+      // A row whose code is blank: only the names say where it is
+      ['', '大阪府'],
+    ]
+    const { columns } = await profile(rows, ['JP'])
+    expect(columns['区'].vocabulary?.places).toContain('271195')
+    expect(columns['区'].vocabulary?.places).toContain('270008')
+    expect(columns['区'].vocabulary?.share).toBeLessThan(1)
+  })
+
   it('records no state where no enabled pack is one this release ships', async () => {
     // A setting a newer release wrote: the refresh takes it for no pack at all
     const { columns, registry } = await profile(prefectures, ['ZZ'])

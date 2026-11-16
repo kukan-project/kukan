@@ -20,6 +20,18 @@ describe('inferColumn over the Japan pack', () => {
     })
   })
 
+  it('records the places matched and the top-level places they lie in', () => {
+    expect(best(['131016', '131024', '271004', '011002'])).toMatchObject({
+      places: ['011002', '131016', '131024', '271004'],
+      roots: ['010006', '130001', '270008'],
+    })
+    // A prefecture is its own top
+    expect(best(['010006', '130001'])).toMatchObject({
+      places: ['010006', '130001'],
+      roots: ['010006', '130001'],
+    })
+  })
+
   it('reads full-width digits as the code they spell', () => {
     expect(best(['０１０００６', '１３０００１'])).toMatchObject({ representation: 'code6' })
   })

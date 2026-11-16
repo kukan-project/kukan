@@ -19,6 +19,7 @@ import {
   packageTag,
   tag,
   resourcePipeline,
+  profileVocabularies,
   schemaColumnNames,
 } from '@kukan/db'
 import {
@@ -29,7 +30,13 @@ import {
 } from '@kukan/search-adapter'
 import type { JobQueue } from '@kukan/queue'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { SYNC_SEARCH_DOCS_JOB_TYPE, isUuid, type JobPriority, type Logger } from '@kukan/shared'
+import {
+  SYNC_SEARCH_DOCS_JOB_TYPE,
+  isUuid,
+  vocabularySearchFields,
+  type JobPriority,
+  type Logger,
+} from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from '../resource-service'
 import { PipelineService } from '../pipeline/pipeline-service'
 import { enqueueResourceEmbedsIfDue } from './resource-embedding'
@@ -236,8 +243,10 @@ async function syncMarkedDocs(
   const rows = await tx
     .select({
       ...resourceDocColumns,
-      // The pipeline row is joined so the document carries the table's column names (ADR-063)
+      // The pipeline row is joined so the document carries the table's column
+      // names (ADR-063) and what their vocabulary says (ADR-073)
       columns: schemaColumnNames(resourcePipeline.metadata),
+      vocabularies: profileVocabularies(resourcePipeline.profile),
       action: sql<'write' | 'remove' | 'clear'>`CASE
         WHEN ${packageTable.state} = 'draft' THEN 'clear'
         WHEN ${indexedResource()} THEN 'write'
@@ -602,7 +611,11 @@ async function buildDatasetDocs(q: Database | Transaction, ids: string[]): Promi
 /** Resource rows the index may hold: active, under an active package (ADR-039). */
 function activeResourceDocRows(db: Database | Transaction, where: SQL | undefined) {
   return db
-    .select({ ...resourceDocColumns, columns: schemaColumnNames(resourcePipeline.metadata) })
+    .select({
+      ...resourceDocColumns,
+      columns: schemaColumnNames(resourcePipeline.metadata),
+      vocabularies: profileVocabularies(resourcePipeline.profile),
+    })
     .from(resource)
     .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
     .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
@@ -622,6 +635,7 @@ function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
     section: row.section ?? undefined,
     summary: row.summary ?? undefined,
     ...(row.columns?.length && { columns: row.columns }),
+    ...vocabularySearchFields(row.vocabularies),
     extras: row.extras,
   }
 }

@@ -275,6 +275,15 @@ export const columnVocabularySchema = z.object({
   periods: z.array(vocabularyPeriodSchema),
   /** The codes whose spans narrowed the periods, their evidence. */
   narrowedBy: z.array(z.string()),
+  /** A code to search by, or a name to search for; absent on profiles from before it was kept. */
+  kind: z.enum(['code', 'name']).optional(),
+  /**
+   * The places matched, by the pack's canonical codes, and the top-level places
+   * they lie in: what a search by area finds the table by. Read from the whole
+   * column, never a sample, and only for a decided vocabulary.
+   */
+  places: z.array(z.string()).optional(),
+  roots: z.array(z.string()).optional(),
   /**
    * Other schemes the column reached the share of too. Where present the column
    * is undecided (ADR-073 §決定 5): the scheme above is one candidate among

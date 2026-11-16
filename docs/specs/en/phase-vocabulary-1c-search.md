@@ -106,9 +106,14 @@ areas themselves. The index needs them.
 ### 4.3 Rewriting documents
 
 - **Set the resource's pending mark when the vocabulary-derived fields change.** Extend
-  `movePointers`' condition "the column names changed" with "`vocab_meanings` / `area_roots` /
-  `area_places` changed", building both the old and new values with the same function (§4.1)
-- Add the same condition to version adoption (`resource-version-service.ts`)
+  `movePointers`' condition "the column names changed" with "the columns' vocabulary changed". What
+  is compared is the list of the profile's columns' `vocabulary` (jsonb) itself (`profileVocabularies`,
+  shaped like `schemaColumnNames` for the names). A change of share alone sets it too, costing one
+  more sync, and the comparison stays inside the one SQL statement
+- Discarding derivatives on a purge or a revert (`discardDerivedArtifacts`) clears the profile as
+  well, so it sets the mark in the same statement
+- Version adoption (`resource-version-service.ts`) needs no such condition: it rewrites the column
+  names but never touches the profile, so the vocabulary fields do not change
 - The vocabulary re-read (`refresh-vocabulary-profiles` → `rebuildOnly`) reaches the search
   documents through this condition
 

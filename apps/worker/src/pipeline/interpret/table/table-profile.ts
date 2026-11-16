@@ -19,6 +19,7 @@ import {
   nameSchemes,
   outranks,
   registryFor,
+  sharedNames,
   verdictOf,
   type ColumnInference,
   type SettledVerdict,
@@ -226,10 +227,12 @@ async function readVocabulary(
   const codeColumns = new Map<number, ColumnInference[]>()
   const trusted = new Set<ColumnInference>()
   const nameColumns = new Map<string, number[]>()
+  const valuesOf = new Map<number, string[]>()
   for (const i of read) {
     const values = ((row[`c${i}_values`] as (string | null)[] | null) ?? []).filter(
       (v): v is string => v !== null
     )
+    valuesOf.set(i, values)
     for (const scheme of nameSchemes(registry, values)) {
       ;(nameColumns.get(scheme) ?? nameColumns.set(scheme, []).get(scheme)!).push(i)
     }
@@ -263,23 +266,19 @@ async function readVocabulary(
   )
   // Pairs from a sample of rows, each batch judged and let go before the next.
   // A row with a name and no code is one too: its name still has to be one
-  const readings: { j: number; codes: ColumnInference; names: ColumnInference }[] = []
+  const readings: { i: number; j: number; codes: ColumnInference; names: ColumnInference }[] = []
   for (let start = 0; start < compared.length; start += STATS_COLUMNS_PER_QUERY) {
     const batch = compared.slice(start, start + STATS_COLUMNS_PER_QUERY)
-    const lists = batch.map(({ i, j }, k) => {
-      const c = value(names[i], { cast: true })
-      const n = value(names[j], { cast: true })
-      return `list(DISTINCT [${c}, ${n}]) FILTER (WHERE ${n} IS NOT NULL) AS p${k}`
-    })
+    const lists = batch.map(({ i, j }, k) => `${pairList(names[i], names[j])} AS p${k}`)
     const [listed] = (
       await conn.runAndReadAll(`SELECT ${lists.join(', ')} FROM vocabulary_sample`)
     ).getRowObjectsJson() as Record<string, [string | null, string][] | null>[]
-    for (const [k, { j, found }] of batch.entries()) {
+    for (const [k, { i, j, found }] of batch.entries()) {
       const pairs = listed[`p${k}`] ?? []
       for (const codes of found) {
         if (!trusted.has(codes) && corroborate(registry, codes, pairs)) trusted.add(codes)
         const names = judgeNamesByCodes(registry, codes, pairs)
-        if (names) readings.push({ j, codes, names })
+        if (names) readings.push({ i, j, codes, names })
       }
     }
   }
@@ -291,15 +290,40 @@ async function readVocabulary(
     const [first, ...rest] = found.filter((f) => trusted.has(f))
     if (first) profiled[i] = withVocabulary(profiled[i], verdictOf([first, ...rest]))
   }
-  for (const { j, codes, names } of readings) {
+  // A reading by codes is judged on a sample, and what it records — its places
+  // above all, which a search by area finds the table by — is read from every
+  // row: the column's distinct values, and the rows of its shared names whole.
+  // Taken only where that reading still holds
+  for (const { i, j, codes } of readings) {
     const held = profiled[j].vocabulary
     // Read only by codes that stand; a decided column of codes stays one
     if (!trusted.has(codes) || (profiled[j].role === 'identifier' && held && !held.alternatives))
       continue
-    if (held && !held.alternatives && !outranks(names, held)) continue
-    profiled[j] = withVocabulary(profiled[j], { decided: names })
+    const values = valuesOf.get(j) ?? []
+    const shared = sharedNames(registry, codes.scheme, values)
+    const [whole] =
+      shared.length === 0
+        ? [{ p: [] }]
+        : ((
+            await conn.runAndReadAll(`SELECT ${pairList(names[i], names[j], shared)} AS p FROM t`)
+          ).getRowObjectsJson() as { p: [string | null, string][] | null }[])
+    const pairs = [...(whole.p ?? []), ...values.map((v): [null, string] => [null, v])]
+    const read = judgeNamesByCodes(registry, codes, pairs)
+    if (!read || (held && !held.alternatives && !outranks(read, held))) continue
+    profiled[j] = withVocabulary(profiled[j], { decided: read })
   }
   return registry.state
+}
+
+/**
+ * The distinct (code, name) pairs of two columns, over the rows with a name —
+ * those with no code too — or only the rows of the names given.
+ */
+function pairList(code: string, name: string, only?: string[]): string {
+  const c = value(code, { cast: true })
+  const n = value(name, { cast: true })
+  const where = only ? `${n} IN (${only.map(sqlLiteral).join(', ')})` : `${n} IS NOT NULL`
+  return `list(DISTINCT [${c}, ${n}]) FILTER (WHERE ${where})`
 }
 
 /** A column's profile with a verdict on it: a decided code is an identifier. */
@@ -320,6 +344,9 @@ function withVocabulary(column: ColumnProfile, verdict: SettledVerdict): ColumnP
       levels: best.summary.levels,
       periods: best.summary.periods,
       narrowedBy: best.summary.narrowedBy,
+      kind: best.kind,
+      // What a search by area finds the table by: a decided reading only
+      ...(decided && { places: best.places, roots: best.roots }),
       ...(!decided && {
         alternatives: others.map(({ concept, pack, scheme, representation }) => ({
           concept,
