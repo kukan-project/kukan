@@ -346,28 +346,47 @@ resources nor adding schemes changes the shape of the registry.
 
 ### 9. The master of a scheme, and its extensions
 
-The Japan pack's master changes from the Local Government Code to the Ministry of Internal Affairs
-and Communications' "Standard Area Code for Statistics" (統計に用いる標準地域コード). Statistics tables
+The Japan pack's scheme changes from the Ministry of Internal Affairs and Communications' Local
+Government Code (全国地方公共団体コード) to the same Ministry's "Standard Area Code for Statistics"
+(統計に用いる標準地域コード). Statistics tables
 put groups of areas such as counties (郡), subprefectures (支庁) and the ward area (区部) among the
 municipalities, and their codes are not in the local government code table (§5). The standard area
 code holds the groups as entries. The scheme called the Local Government Code in §1 and elsewhere is
 read as the standard area code from this section on.
 
+The entries are built from two lists. Local governments (prefectures, municipalities and the wards
+of designated cities) come from the Digital Agency's City Master (市区町村マスター, part of the Address
+Base Registry), and only the groups of areas it lacks are added from the Ministry's standard area
+code. The City Master holds each local government's code, name, kana and romanization, and also the
+name, kana and romanization of the county on each town's row.
+
 **The master contains the local government codes.** The standard area code's nationwide CSV (updated
 2023-08-22, 2,291 rows) contains all 1,965 current local government codes (prefectures,
 municipalities and the wards of designated cities: every 5-digit body is there, and the check digit
 is the same mod 11), and in addition 326 groups of areas: 307 counties, 18 subprefectures and
-regional promotion bureaus (支庁・振興局), and 1 ward area (特別区部). Only one name differs: the local
-government list's 「梼原町」 is 「檮原町」 in the standard area code (「檮」 is the formal character, 「梼」 a
+regional promotion bureaus (支庁・振興局), and 1 ward area (特別区部). Only one name differs: the Ministry's
+Local Government Code list's 「梼原町」 is 「檮原町」 in the standard area code (「檮」 is the formal character, 「梼」 a
 common substitute) (2026-11-15).
+
+**The City Master agrees with the standard area code's local governments.** Its nationwide CSV
+(updated 2024-03-12, 1,918 rows) has one row per municipality and designated-city ward, with the
+prefecture in columns of each row. Its codes match all 1,918 local governments of the standard area
+code other than prefectures, with no name differing (「檮原町」 there too). It includes Hamamatsu's ward
+reorganization of 2024-01-01. It holds no retired local government (`ablt_date` is empty
+throughout). All 307 counties of the standard area code joined the City Master's counties by
+prefecture and county name; 66 Hokkaido counties are in the City Master only (the standard area code
+divides Hokkaido by regional promotion bureau) (2026-11-16).
 
 - **The scheme's ID changes from `jp-lg-code` to `jp-area-code`,** labelled "Standard Area Code for
   Statistics (including the Local Government Code)". No person has settled an assignment yet
   (`column_settings.concepts`), so nothing needs moving; inferences are rebuilt by raising the rules'
   version (§4)
-- **Entries carry a kind:** a local government (including the wards of designated cities), or a
-  group of areas (county, subprefecture, regional promotion bureau, ward area). The local government
-  codes are the subset of local governments, so the representations (6 digits, 5 digits, the 2-digit
+- **Entries carry a kind:** `lg` (holding a local government code: prefectures, municipalities and
+  the wards of designated cities) or `group` (a group of areas, with a finer division of county,
+  subprefecture, regional promotion bureau or ward area). A designated city's ward is not a local
+  public entity but has a local government code, so the kind divides by "has a local government
+  code", not by "is a municipality". The kind also decides the source (`lg` from the City Master,
+  `group` from the standard area code). The local government codes are exactly the `lg` entries, so the representations (6 digits, 5 digits, the 2-digit
   prefecture code, name) stay as they are. The CSV has 5 digits; the 6 digits are made by appending
   the check digit by the same rule. The Ministry's own resident register population tables also write
   counties in 6 digits with the same check digit (`023001` 東津軽郡)
@@ -389,6 +408,26 @@ common substitute) (2026-11-15).
   大島支庁. In a column of codes alone, extension entries are not counted as hits. Generic words such
   as 区部, 市部 and 郡部 are likewise matched only in a pair with a code, never by a column of names
   alone
+- **Names, kana and English names come from the City Master.** Disagreements are listed at
+  generation, and the City Master wins by default. Its kana differed from the standard area code's
+  readings (hiragana) for 6 local governments and 2 counties (別海町, 留夜別村, 田子町, 南部町, 真鶴町,
+  有田町; 三潴郡, 与謝郡). Only those confirmed wrong (真鶴町 reads 「まなづる」, as the town gives it) are
+  corrected, by the pack's table of corrections. Subprefectures' and bureaus' kana come from the
+  standard area code's readings; the ward area (its reading blank) is filled by the pack
+- **English names take the form of the Geospatial Information Authority of Japan's rules for English
+  place names (地名等の英語表記規程).** The City Master's romanization is not in that form: it keeps the
+  Japanese suffix (`Sapporo-shi`, `Chiyoda-ku`, `Manazuru-machi`, counties `Takaoka-gun`, prefectures
+  with no suffix, `Tokyo`), and writes 「ん」 before b, m and p as m (`Gumma`, `Gotemba-shi` and 30
+  more). The generator keeps the name part and changes two things. The suffix is replaced by the
+  English word as articles 13–15 of the rules give (`-shi` City; `-ku` Ward, City for Tokyo's 23
+  wards only; `-cho`/`-machi` Town; `-mura`/`-son` Village; `-gun` County; prefectures Prefecture;
+  Tokyo Metropolis; Hokkaido Prefecture), and 「ん」 is always n, as the rules' notes say (`Gunma`).
+  Long vowels (`Ome`, `Chuo`) are already as the rules have them. The 19 subprefectures, bureaus and
+  the ward area are outside the rules and are named by the pack (e.g. Ishikari Subprefecture).
+  Matching English names (columns of names in English tables) is a later step
+- **The generator checks the two lists against each other.** It stops when the set of local
+  government codes differs between the City Master and the standard area code, and when a county does
+  not join by prefecture and name
 - **The patterns of values that are not areas (ending in 「〜計」「〜郡」「〜地域」「〜圏域」「〜支庁」
   「〜振興局」, §5) are kept.** Over 2,060 e-Gov CSV files and 30,347 columns, adding the standard area
   code's groups with the patterns kept changed nothing (204 columns settled, 234 unsettled), and
@@ -401,9 +440,9 @@ common substitute) (2026-11-15).
 - **Matching a county by its name alone is weak.** Hokkaido's towns sit under regional promotion
   bureaus and have no county entries, and 6 county names repeat across prefectures (三島郡, 大島郡,
   安芸郡, 愛知郡, 海部郡, 熊毛郡). A county name is settled only in a pair with a parent column or a code
-- **History combines two lists.** The standard area code's list of changes covers only 2007-04-02
-  onward. Changes of local governments keep the current source (the Local Government Code's list of
-  changes since 2005) over the whole period, and from the standard area code's list come the changes
+- **History combines two lists.** The City Master holds no retired local government, and the
+  standard area code's list of changes covers only 2007-04-02 onward. Changes of local governments
+  keep the current source (the Ministry's Local Government Code list of changes since 2005) over the whole period, and from the standard area code's list come the changes
   of groups (27 counties deleted, and 14 subprefectures renamed to regional promotion bureaus on
   2010-04-01). The 113 local governments retired since 2007-04-02 agreed in both code and date between
   the two lists. The generator checks the overlap and stops on a disagreement. Groups gone by
@@ -418,10 +457,15 @@ common substitute) (2026-11-15).
   キャラクターデザイン」 (symbol marks, logos and character designs) and 「別の利用ルールの適用を明示して
   いるコンテンツ」 (content that states another rule applies), and neither applies. The pack appends
   check digits and changes the shape, so besides the source it states 「編集・加工等を行ったこと」 (that
-  it was edited or processed; item 1.1 イ of the same terms). Each extension entry's terms follow its
-  source
+  it was edited or processed; item 1.1 イ of the same terms). The City Master is under the Public Data
+  License (version 1.0) too: the pack states the source and that it was processed (English names
+  replaced, readings corrected). Each extension entry's terms follow its source
+- **e-Stat's Statistical LOD (統計 LOD) is not used.** It holds the standard area code as RDF (CC BY
+  4.0); its current entries match the standard area code's CSV, with English names and readings.
+  But it has no bulk dump, SPARQL returns at most 10,000 rows a query, and its English names have
+  the same suffixed form as the City Master's. It adds nothing, so it does not become another source
 
-Sources (retrieved 2026-11-15):
+Sources (retrieved 2026-11-15 and 16):
 
 - Ministry of Internal Affairs and Communications, 「統計に用いる標準地域コード」
   <https://www.soumu.go.jp/toukei_toukatsu/index/seido/9-5.htm> (nationwide CSV
@@ -429,6 +473,11 @@ Sources (retrieved 2026-11-15):
   <https://www.soumu.go.jp/main_content/000323626.xls>)
 - Ministry of Internal Affairs and Communications, 「当省ホームページについて」, copyright
   <https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html>
+- Digital Agency, 「アドレス・ベース・レジストリ」 <https://www.digital.go.jp/policies/base_registry_address>
+  (City Master, nationwide <https://data.address-br.digital.go.jp/mt_city/mt_city_all.csv.zip>;
+  terms of use <https://www.digital.go.jp/policies/base_registry_address_tos>)
+- Geospatial Information Authority of Japan, Ministry of Land, Infrastructure, Transport and Tourism,
+  「地名等の英語表記規程」 (revised 2026-03-24) <https://www.gsi.go.jp/common/000138865.pdf>
 
 ## Consequences
 
