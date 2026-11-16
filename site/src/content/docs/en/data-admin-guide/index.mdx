@@ -357,14 +357,23 @@ The organization management page toggles between "Public" and "Deleted" cards (o
 ## Categories (Groups)
 
 Categories classify datasets across organizations.
-Assign categories when creating a dataset.
+Assign categories on the dataset's create and edit screens.
+Adding a dataset to a category, or taking it out, takes **the right to edit that dataset**
+(editor or above in its organization); no role in the category is needed.
+
+:::note[Difference from CKAN]
+CKAN requires membership of a group to add a dataset to it or take one out.
+KUKAN does not, so a category's admins cannot take out a dataset someone put in from the category's side;
+whoever can edit the dataset can.
+:::
 
 ### Category member management
 
-Categories also have member management with the same role structure as organizations.
+Categories also have member management, with the same three roles as organizations.
+For now an editor can do what a member can.
 
-| Role   | View category | Add datasets | Manage members |
-| ------ | :-----------: | :----------: | :------------: |
-| Member |      Yes      |      -       |       -        |
-| Editor |      Yes      |     Yes      |       -        |
-| Admin  |      Yes      |     Yes      |      Yes       |
+| Role   | View members | Edit or delete the category | Manage members |
+| ------ | :----------: | :-------------------------: | :------------: |
+| Member |     Yes      |              -              |       -        |
+| Editor |     Yes      |              -              |       -        |
+| Admin  |     Yes      |             Yes             |      Yes       |
