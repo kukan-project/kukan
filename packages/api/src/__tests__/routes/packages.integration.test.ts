@@ -12,7 +12,7 @@ import {
 } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { ServiceUnavailableError } from '@kukan/shared'
-import { packageGroup } from '@kukan/db'
+import { packageGroup, resourcePipeline, systemSetting } from '@kukan/db'
 import { holdDocSyncLock, packageDueAt } from '../test-helpers/doc-sync'
 import { pagedField, rankedId } from '../test-helpers/paging'
 
@@ -124,6 +124,44 @@ describe('Packages API Routes', () => {
         'tie-b',
         'tie-a',
       ])
+    })
+
+    it('filters and counts by what tables’ columns stand for, reading the area as the site’s packs do (ADR-073)', async () => {
+      await db.insert(systemSetting).values({ key: 'vocabulary-packs', value: ['JP'] })
+      const table = async (name: string, search: Record<string, string[]>) => {
+        const pkg = await (await createPackage({ name })).json()
+        const res = await (await createResource(pkg.id, { name: 't.csv', format: 'CSV' })).json()
+        await db
+          .insert(resourcePipeline)
+          .values({ resourceId: res.id, profile: { columns: [], search } })
+        return pkg
+      }
+      await table('vocab-tokyo-osaka', {
+        vocab_meanings: ['admin-area:code'],
+        area_roots: ['130001', '270008'],
+        area_places: ['131016', '271004'],
+      })
+      await table('vocab-osaka', { vocab_meanings: ['admin-area:code'], area_roots: ['270008'] })
+
+      // `13` is Tokyo however it is written
+      const body = await (await app.request('/api/v1/packages?include_facets=true&area=13')).json()
+
+      expect(body.items.map((i: { name: string }) => i.name)).toEqual(['vocab-tokyo-osaka'])
+      expect(body.facets.areas).toEqual(
+        expect.arrayContaining([{ name: '130001', count: 1, title: '東京都' }])
+      )
+      // Osaka's ward is not a place under Tokyo, though the dataset holds both
+      expect(body.facets.areaPlaces).toEqual([
+        { name: '131016', count: 1, title: '千代田区', parent: '130001' },
+      ])
+      expect(body.facets.meanings).toEqual([{ name: 'admin-area:code', count: 1 }])
+      // The filter as it was read, for the screen to mark and undo it by
+      expect(body.vocabularyFilters).toEqual({ area: ['130001'], area_place: [] })
+    })
+
+    it('refuses the vocabulary filters on the draft listing', async () => {
+      const res = await app.request('/api/v1/packages?state=draft&area=13')
+      expect(res.status).toBe(400)
     })
 
     it('does not name facet values that only private datasets carry', async () => {

@@ -333,6 +333,16 @@ export const columnProfileSchema = z.object({
 export type ColumnProfile = z.infer<typeof columnProfileSchema>
 
 /** `resource_pipeline.profile`: the live version's table profile. */
+/**
+ * What a table's column vocabulary puts in its search document (ADR-073 Step
+ * 1c §4.1), as `vocabularySearchFields` makes it.
+ */
+export const vocabularySearchSchema = z.object({
+  vocab_meanings: z.array(z.string()).optional(),
+  area_roots: z.array(z.string()).optional(),
+  area_places: z.array(z.string()).optional(),
+})
+
 export const tableProfileSchema = z.object({
   /** Aligned with the schema's columns; empty where working them out failed. */
   columns: z.array(columnProfileSchema),
@@ -348,6 +358,12 @@ export const tableProfileSchema = z.object({
    * enabled. A profile whose state is not the current one is out of date.
    */
   registry: z.string().optional(),
+  /**
+   * The search fields of the columns' vocabulary, made once where the profile
+   * is: what the PostgreSQL search filters and counts read, so it holds the one
+   * rule the index holds rather than spelling it again in SQL (Step 1c §4.4).
+   */
+  search: vocabularySearchSchema.optional(),
 })
 export type TableProfile = z.infer<typeof tableProfileSchema>
 

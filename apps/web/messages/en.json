@@ -91,6 +91,16 @@
     "filterByTag": "Filter by tag",
     "filterByFormat": "Filter by format",
     "filterByLicense": "Filter by license",
+    "filterByArea": "Filter by area",
+    "filterByMeaning": "Filter by column meaning",
+    "areaNationwide": "Nationwide",
+    "experimental": "Experimental",
+    "experimentalHint": "An experimental feature: its rules and display may change.",
+    "meaningLabel": "{concept} {kind}",
+    "meaningKinds": {
+      "code": "code",
+      "name": "name"
+    },
     "clear": "Clear",
     "semanticToggle": "Include related results",
     "semanticUnavailable": "Related results are unavailable right now (keyword matches only)",

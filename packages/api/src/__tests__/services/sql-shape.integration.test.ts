@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { packageTable, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createTestApp, mockTransaction } from '../test-helpers/test-app'
+import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { PackageService } from '../../services/package-service'
 import { OrganizationService } from '../../services/organization-service'
 import { sweepContentIndexMarks } from '../../services/search/content-index-sweep'
@@ -140,6 +141,18 @@ describe('emitted SQL shape', () => {
   describe('PackageService.list', () => {
     it('pins the list shape', async () => {
       await new PackageService(recorder).list({ limit: 20, viewer: undefined })
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
+  describe('PostgresSearchAdapter.search, by vocabulary (ADR-073)', () => {
+    it('pins the shape', async () => {
+      await new PostgresSearchAdapter(recorder).search({
+        q: '',
+        facets: true,
+        vocabularyFacets: true,
+        filters: { areas: ['130001'], areaPlaces: ['131016'], meanings: ['admin-area:code'] },
+      })
       expect(recorded()).toMatchSnapshot()
     })
   })

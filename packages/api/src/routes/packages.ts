@@ -42,6 +42,11 @@ import {
 } from '../services/search/search-index'
 import { markContentUnindexed } from '../services/search/content-index-record'
 import { hybridSearch } from '../services/search/hybrid-search'
+import {
+  canonicalAreas,
+  nameVocabularyFacets,
+  siteRegistry,
+} from '../services/search/vocabulary-facets'
 import { enqueueResourceEmbedsIfDue } from '../services/search/resource-embedding'
 import { MetadataSuggestService } from '../services/suggest/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
@@ -101,6 +106,10 @@ packagesRouter.get(
       tags: repeatedParam,
       res_format: repeatedParam,
       license_id: repeatedParam,
+      // What some resource's columns stand for (ADR-073 Step 1c; experimental)
+      area: repeatedParam,
+      area_place: repeatedParam,
+      meaning: repeatedParam,
       creator_user_id: z.string().optional(),
       state: stateParam,
       my_org: z
@@ -145,6 +154,9 @@ packagesRouter.get(
         groups: rest.groups?.length,
         res_format: res_format?.length,
         license_id: rest.license_id?.length,
+        area: rest.area?.length,
+        area_place: rest.area_place?.length,
+        meaning: rest.meaning?.length,
         'extras_*': extras.extras?.length,
         'res_extras_*': extras.resourceExtras?.length,
         creator_user_id: rest.creator_user_id,
@@ -200,6 +212,12 @@ packagesRouter.get(
       return c.json({ items: [], total: 0, offset: rest.offset, limit: rest.limit })
     }
 
+    // The site's packs read the area filters (`13` is Tokyo's `130001`) and name their counts
+    const asksVocabulary = include_facets || rest.area?.length || rest.area_place?.length
+    const registry = asksVocabulary ? await siteRegistry(c.get('settings')) : undefined
+    const areas = registry && canonicalAreas(registry, rest.area)
+    const areaPlaces = registry && canonicalAreas(registry, rest.area_place)
+
     // Build visibility + access filters for SearchAdapter
     const filters: SearchFilters = {
       name: rest.name,
@@ -208,6 +226,9 @@ packagesRouter.get(
       formats: res_format,
       licenses: rest.license_id,
       groups: rest.groups,
+      ...(areas && { areas }),
+      ...(areaPlaces && { areaPlaces }),
+      ...(rest.meaning?.length && { meanings: rest.meaning }),
       ...extras,
       ...buildVisibilityFilters(user, userOrgIds),
       // my_org filter
@@ -230,6 +251,8 @@ packagesRouter.get(
         limit: rest.limit,
         filters,
         facets: include_facets,
+        // Only a site with a vocabulary pack enabled has anything to count
+        vocabularyFacets: include_facets && (registry?.schemes.length ?? 0) > 0,
         sortBy: sort_by,
         sortOrder: sort_order,
         // Dashboard filtering (my_org) must stay deterministic — no fusion there
@@ -286,9 +309,23 @@ packagesRouter.get(
     const semantic = searchResult.semantic
     // Present only where no dataset held every word (undefined is left out of the JSON)
     const { minWords } = searchResult
-    if (include_facets && searchResult.facets) {
-      const facets = await service.enrichFacets(searchResult.facets, user)
-      return c.json({ ...result, facets, semantic, minWords })
+    if (include_facets && searchResult.facets && registry) {
+      const enriched = await service.enrichFacets(searchResult.facets, user)
+      const facets = {
+        ...enriched,
+        ...nameVocabularyFacets(enriched, registry, {
+          areas,
+          places: areaPlaces,
+          meanings: rest.meaning,
+        }),
+      }
+      // The area filters as they were read (`13` is `130001`), so the screen
+      // marks and undoes them by the codes its counts carry (experimental)
+      const vocabularyFilters = (areas || areaPlaces) && {
+        area: areas ?? [],
+        area_place: areaPlaces ?? [],
+      }
+      return c.json({ ...result, facets, semantic, minWords, vocabularyFilters })
     }
     return c.json({ ...result, semantic, minWords })
   }

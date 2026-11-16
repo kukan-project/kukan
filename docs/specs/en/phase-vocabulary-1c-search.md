@@ -120,10 +120,13 @@ areas themselves. The index needs them.
 ### 4.4 The PostgreSQL fallback
 
 - No index table. Join `resource_pipeline.profile` and read the jsonb
-- Filters: `EXISTS` (join the resource and look at each element's `vocabulary` under
-  `profile -> 'columns'`). One function builds the same values as §4.1 in SQL, shared by filters
-  and counts
-- Counts: `COUNT(DISTINCT package.id)`, as the format filter does
+- **The worker writes §4.1's three fields onto the profile's `search`** (`vocabularySearchFields`,
+  the same function the index projection uses). The fallback only reads `profile -> 'search'`:
+  spelling a rule such as nationwide again in SQL could drift from the index's
+- Filters: `EXISTS` (join the resource; `profile -> 'search' -> '<field>' ?| <values>`)
+- Counts: expand the values with `jsonb_array_elements_text` and count
+  `COUNT(DISTINCT package.id)`, as the format filter does. The second level (`area_places`) is
+  counted only when `area` is given, over the resources whose `area_roots` hold it
 - The fallback serves small sites, so the cost of expanding jsonb is accepted. If slow, add a
   generated column or an index later
 

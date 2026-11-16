@@ -22,7 +22,7 @@ import type {
  * folding. Part of the registry state, so that a release changing only these
  * still rebuilds the inferences made under the old ones (ADR-073 §決定 4).
  */
-export const RULES_VERSION = '4'
+export const RULES_VERSION = '5'
 
 /**
  * A code, its level, and the spans in which a value named it: a set, so a code
@@ -54,6 +54,8 @@ export interface IndexedScheme {
   nameReps: NameRepresentation[]
   /** Entries valid on the registry's date, per level: what coverage is counted against. */
   validNow: Map<Level, number>
+  /** Code → the place's official name, as of the registry's date or its last use. */
+  nameOf: Map<string, Name[]>
   /**
    * Code → its parents' codes, nearest first, for each use of it: a ward's
    * city, then its prefecture; a code given out again may sit elsewhere.
@@ -180,6 +182,15 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
     if (isValidOn(entry, today)) validNow.set(entry.level, (validNow.get(entry.level) ?? 0) + 1)
   }
 
+  // Each code's official names as of today, or as of its last use for one retired
+  const nameOf = new Map<string, Name[]>()
+  for (const [code, list] of entries) {
+    const entry = list.find((e) => isValidOn(e, today)) ?? list[list.length - 1]
+    const names = entry.names.filter((n) => n.kind === 'official')
+    const current = names.filter((n) => isValidOn(n, today))
+    nameOf.set(code, current.length > 0 ? current : names)
+  }
+
   return {
     pack,
     def,
@@ -195,6 +206,7 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
       : null,
     validNow,
     ancestorsOf,
+    nameOf,
   }
 }
 
@@ -328,6 +340,44 @@ export function codesOf(entry: NameIndexEntry): string[] {
 /** Whether the place coded `code` is the one coded `outer`, or lies in it. */
 export function liesIn(scheme: IndexedScheme, code: string, outer: string): boolean {
   return code === outer || (scheme.ancestorsOf.get(code) ?? []).some((up) => up.includes(outer))
+}
+
+/**
+ * A place's canonical code from however a request writes it — `13` or `130001`
+ * for Tokyo — or null where no enabled scheme has it.
+ */
+export function canonicalPlace(registry: Registry, value: string): string | null {
+  for (const scheme of registry.schemes) {
+    const folded = fold(scheme.def.codeFolding, value)
+    const direct = scheme.byCode.get(folded)
+    if (direct) return direct.code
+    for (const cr of scheme.codeReps) {
+      const key = canonicalCode(scheme, cr, folded)
+      const hit = key === null ? undefined : scheme.byCode.get(key)
+      if (hit) return hit.code
+    }
+  }
+  return null
+}
+
+/** A place's official name in `lang`, or in any language where none is in it. */
+export function placeName(registry: Registry, code: string, lang = 'ja'): string | undefined {
+  for (const scheme of registry.schemes) {
+    const names = scheme.nameOf.get(code)
+    if (names?.length) return (names.find((n) => n.lang === lang) ?? names[0]).text
+  }
+  return undefined
+}
+
+/** The top-level places a place lies in; the place itself where it is top-level. */
+export function placeRoots(registry: Registry, code: string): string[] {
+  for (const scheme of registry.schemes) {
+    const paths = scheme.ancestorsOf.get(code)
+    if (!paths) continue
+    const tops = [...new Set(paths.flatMap((up) => up.slice(-1)))]
+    return tops.length > 0 ? tops : [code]
+  }
+  return []
 }
 
 /** Whether a value written in `rep` carries the digit that checks it. */

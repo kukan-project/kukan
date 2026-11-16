@@ -454,6 +454,20 @@ describe('interpretCsv — vocabulary', () => {
     expect(registry).toMatch(/^rules@\d+;JP@/)
   })
 
+  it('writes the search fields of the columns’ vocabulary onto the profile', async () => {
+    const csvPath = join(dir, 'in.csv')
+    writeFileSync(csvPath, prefectures.map((r) => r.join(',')).join('\n') + '\n')
+    const { profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
+      path: join(dir, 'profile.ndjson.zst'),
+      vocabularyPacks: ['JP'],
+    })
+    expect(profile?.search).toEqual({
+      vocab_meanings: ['admin-area:code', 'admin-area:name'],
+      area_roots: ['010006', '020001', '030007', '130001'],
+      area_places: ['131016', '131024', '131032', '131041'],
+    })
+  })
+
   it('reads an integer column as the codes it was written as', async () => {
     // Tokyo's wards: no leading zero, so DuckDB types the column an integer
     const { columns } = await profile(prefectures, ['JP'])

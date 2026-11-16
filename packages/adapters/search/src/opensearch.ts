@@ -10,7 +10,7 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { Client, errors as osErrors } from '@opensearch-project/opensearch'
+import { Client, errors as osErrors, type Types } from '@opensearch-project/opensearch'
 import { AwsSigv4Signer } from '@opensearch-project/opensearch/aws'
 import { defaultProvider } from '@aws-sdk/credential-provider-node'
 import {
@@ -284,6 +284,55 @@ function parseFormatBuckets(agg: unknown): SearchFacetBucket[] {
   return [...counts]
     .map(([name, count]) => ({ name, count }))
     .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
+}
+
+/**
+ * Datasets per value of a resource field, from their resources and ranked by
+ * datasets, as formats are counted; over the resources `only` holds for, where given.
+ */
+function childFacet(
+  field: string,
+  size: number,
+  only?: Types.Common_QueryDsl.QueryContainer
+): Types.Common_Aggregations.AggregationContainer {
+  const byValue: Types.Common_Aggregations.AggregationContainer = {
+    terms: { field, size, order: [{ datasets: 'desc' }, { _key: 'asc' }] },
+    aggs: { datasets: { parent: { type: 'resource' } } },
+  }
+  return {
+    children: { type: 'resource' },
+    aggs: only ? { only: { filter: only, aggs: { byValue } } } : { byValue },
+  }
+}
+
+/**
+ * The vocabulary counts (ADR-073 Step 1c). The places below, only from the
+ * resources holding the areas — or the places — chosen: never all of a
+ * country's at once.
+ */
+function vocabularyAggs(
+  filters: SearchFilters | undefined
+): Record<string, Types.Common_Aggregations.AggregationContainer> {
+  const only = filters?.areas?.length
+    ? { terms: { area_roots: filters.areas } }
+    : filters?.areaPlaces?.length
+      ? { terms: { area_places: filters.areaPlaces } }
+      : undefined
+  return {
+    areas: childFacet('area_roots', 100),
+    meanings: childFacet('vocab_meanings', 50),
+    ...(only && { areaPlaces: childFacet('area_places', 3000, only) }),
+  }
+}
+
+/** The buckets of a {@link childFacet}, none where it was not asked for. */
+function parseChildFacet(agg: unknown): SearchFacetBucket[] {
+  type Buckets = { byValue?: { buckets?: { key: string; datasets: { doc_count: number } }[] } }
+  const node = agg as (Buckets & { only?: Buckets }) | undefined
+  return ((node?.only ?? node)?.byValue?.buckets ?? []).map((b) => ({
+    name: b.key,
+    count: b.datasets.doc_count,
+  }))
 }
 
 /** The clauses a content filter adds to the content documents */
@@ -1296,6 +1345,17 @@ export class OpenSearchAdapter implements SearchAdapter {
     if (filters?.licenses?.length) {
       clauses.push({ terms: { license_id: filters.licenses } })
     }
+    // What some resource's columns stand for (ADR-073 Step 1c), any of the
+    // values asked for: "Tokyo or Kanagawa" is how areas are chosen
+    for (const [field, values] of [
+      ['area_roots', filters?.areas],
+      ['area_places', filters?.areaPlaces],
+      ['vocab_meanings', filters?.meanings],
+    ] as const) {
+      if (values?.length) {
+        clauses.push({ has_child: { type: 'resource', query: { terms: { [field]: values } } } })
+      }
+    }
     for (const { key, value } of filters?.extras ?? []) {
       clauses.push({ term: { extras_pairs: extrasPair(key, value) } })
     }
@@ -1498,6 +1558,7 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
           licenses: { terms: { field: 'license_id', size: 200 } },
           groups: { terms: { field: 'groups', size: 200 } },
+          ...(query.vocabularyFacets && vocabularyAggs(query.filters)),
         }
       : undefined
 
@@ -1672,6 +1733,9 @@ export class OpenSearchAdapter implements SearchAdapter {
         formats: parseFormatBuckets(aggregations.formats),
         licenses: parseBuckets('licenses'),
         groups: parseBuckets('groups'),
+        areas: parseChildFacet(aggregations.areas),
+        areaPlaces: parseChildFacet(aggregations.areaPlaces),
+        meanings: parseChildFacet(aggregations.meanings),
       }
     }
 

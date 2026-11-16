@@ -17,6 +17,7 @@ import type {
   ContentDoc,
   IndexContentOptions,
   VectorHit,
+  VocabularyFacetQuery,
 } from './adapter'
 import {
   MAX_MATCHED_RESOURCES_PER_PACKAGE,
@@ -35,6 +36,7 @@ import {
   group,
   packageGroup,
   publicSummary,
+  resourcePipeline,
   scrubbedExtras,
 } from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, asc, desc, gte, lte } from 'drizzle-orm'
@@ -82,6 +84,19 @@ export const DEFAULT_VECTOR_MIN_SIMILARITY = 0.45
 export interface PostgresSearchAdapterOptions {
   vectorMinSimilarity?: number
 }
+
+type VocabularyField = 'area_roots' | 'area_places' | 'vocab_meanings'
+
+/** One of the vocabulary search fields the profile holds (ADR-073 Step 1c §4.4), as jsonb. */
+const vocabularyField = (field: VocabularyField) =>
+  sql`(${resourcePipeline.profile} -> 'search' -> ${sql.raw(`'${field}'`)})`
+
+/** A list of strings as a `text[]`, for `?|`. */
+const textArray = (values: string[]) =>
+  sql`ARRAY[${sql.join(
+    values.map((v) => sql`${v}`),
+    sql`, `
+  )}]::text[]`
 
 export class PostgresSearchAdapter implements SearchAdapter {
   private db: Database
@@ -176,6 +191,25 @@ export class PostgresSearchAdapter implements SearchAdapter {
           WHERE ${resource.packageId} = ${packageTable.id}
           AND ${resource.state} = 'active'
           AND ${extrasHold(scrubbedExtras, condition)}
+        )`
+      )
+    }
+
+    // What some resource's columns stand for (ADR-073 Step 1c), any of the
+    // values asked for, as the index's projection put it on the profile
+    for (const [field, values] of [
+      ['area_roots', query.filters?.areas],
+      ['area_places', query.filters?.areaPlaces],
+      ['vocab_meanings', query.filters?.meanings],
+    ] as const) {
+      if (!values?.length) continue
+      conditions.push(
+        sql`EXISTS (
+          SELECT FROM ${resource}
+          JOIN ${resourcePipeline} ON ${resourcePipeline.resourceId} = ${resource.id}
+          WHERE ${resource.packageId} = ${packageTable.id}
+          AND ${resource.state} = 'active'
+          AND ${vocabularyField(field)} ?| ${textArray(values)}
         )`
       )
     }
@@ -381,76 +415,98 @@ export class PostgresSearchAdapter implements SearchAdapter {
     // Compute facets if requested
     let facets: SearchFacets | undefined
     if (query.facets) {
-      facets = await this.computeFacets(where!)
+      facets = await this.computeFacets(
+        where!,
+        query.vocabularyFacets
+          ? { areas: query.filters?.areas, places: query.filters?.areaPlaces }
+          : undefined
+      )
     }
 
     return { items, total: count, offset, limit, ...(facets && { facets }) }
   }
 
   /** Compute facet counts via SQL aggregations */
-  private async computeFacets(where: SQL): Promise<SearchFacets> {
-    const [orgRows, tagRows, formatRows, licenseRows, groupRows] = await Promise.all([
-      // Organization facet
-      this.db
-        .select({
-          name: organization.name,
-          count: sql<number>`COUNT(*)::int`.as('count'),
-        })
-        .from(packageTable)
-        .innerJoin(organization, eq(packageTable.ownerOrg, organization.id))
-        .where(where)
-        .groupBy(organization.name),
+  private async computeFacets(
+    where: SQL,
+    vocabulary?: VocabularyFacetQuery
+  ): Promise<SearchFacets> {
+    const [orgRows, tagRows, formatRows, licenseRows, groupRows, areaRows, placeRows, meaningRows] =
+      await Promise.all([
+        // Organization facet
+        this.db
+          .select({
+            name: organization.name,
+            count: sql<number>`COUNT(*)::int`.as('count'),
+          })
+          .from(packageTable)
+          .innerJoin(organization, eq(packageTable.ownerOrg, organization.id))
+          .where(where)
+          .groupBy(organization.name),
 
-      // Tags facet
-      this.db
-        .select({
-          name: tag.name,
-          count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
-        })
-        .from(packageTable)
-        .innerJoin(packageTag, eq(packageTag.packageId, packageTable.id))
-        .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(where)
-        .groupBy(tag.name),
+        // Tags facet
+        this.db
+          .select({
+            name: tag.name,
+            count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
+          })
+          .from(packageTable)
+          .innerJoin(packageTag, eq(packageTag.packageId, packageTable.id))
+          .innerJoin(tag, eq(packageTag.tagId, tag.id))
+          .where(where)
+          .groupBy(tag.name),
 
-      // Formats facet
-      this.db
-        .select({
-          name: sql<string>`UPPER(${resource.format})`.as('name'),
-          count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
-        })
-        .from(packageTable)
-        .innerJoin(
-          resource,
-          and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active'))
-        )
-        .where(and(where, sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`))
-        .groupBy(sql`UPPER(${resource.format})`),
+        // Formats facet
+        this.db
+          .select({
+            name: sql<string>`UPPER(${resource.format})`.as('name'),
+            count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
+          })
+          .from(packageTable)
+          .innerJoin(
+            resource,
+            and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active'))
+          )
+          .where(and(where, sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`))
+          .groupBy(sql`UPPER(${resource.format})`),
 
-      // Licenses facet
-      this.db
-        .select({
-          name: packageTable.licenseId,
-          count: sql<number>`COUNT(*)::int`.as('count'),
-        })
-        .from(packageTable)
-        .where(
-          and(where, sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`)
-        )
-        .groupBy(packageTable.licenseId),
+        // Licenses facet
+        this.db
+          .select({
+            name: packageTable.licenseId,
+            count: sql<number>`COUNT(*)::int`.as('count'),
+          })
+          .from(packageTable)
+          .where(
+            and(
+              where,
+              sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
+            )
+          )
+          .groupBy(packageTable.licenseId),
 
-      // Groups facet
-      this.db
-        .select({
-          name: group.name,
-          count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
-        })
-        .from(packageTable)
-        .innerJoin(packageGroup, eq(packageGroup.packageId, packageTable.id))
-        .innerJoin(group, and(eq(packageGroup.groupId, group.id), eq(group.state, 'active')))
-        .where(where)
-        .groupBy(group.name),
-    ])
+        // Groups facet
+        this.db
+          .select({
+            name: group.name,
+            count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
+          })
+          .from(packageTable)
+          .innerJoin(packageGroup, eq(packageGroup.packageId, packageTable.id))
+          .innerJoin(group, and(eq(packageGroup.groupId, group.id), eq(group.state, 'active')))
+          .where(where)
+          .groupBy(group.name),
+
+        // What the resources' columns stand for (ADR-073 Step 1c). The places
+        // below the top-level ones asked for, only where they are asked for
+        vocabulary ? this.vocabularyFacet(where, 'area_roots') : [],
+        vocabulary?.areas?.length
+          ? this.vocabularyFacet(where, 'area_places', 'area_roots', vocabulary.areas)
+          : vocabulary?.places?.length
+            ? this.vocabularyFacet(where, 'area_places', 'area_places', vocabulary.places)
+            : [],
+        vocabulary ? this.vocabularyFacet(where, 'vocab_meanings') : [],
+      ])
 
     const toBuckets = (rows: { name: string | null; count: number }[]): SearchFacetBucket[] =>
       rows.filter((r) => r.name != null).map((r) => ({ name: r.name!, count: r.count }))
@@ -461,7 +517,33 @@ export class PostgresSearchAdapter implements SearchAdapter {
       formats: toBuckets(formatRows),
       licenses: toBuckets(licenseRows),
       groups: toBuckets(groupRows),
+      areas: toBuckets(areaRows),
+      areaPlaces: toBuckets(placeRows),
+      meanings: toBuckets(meaningRows),
     }
+  }
+
+  /**
+   * Datasets per value of one of the profile's vocabulary search fields, over
+   * the resources whose `onlyField` holds one of `only` where given.
+   */
+  private async vocabularyFacet(
+    where: SQL,
+    field: VocabularyField,
+    onlyField?: VocabularyField,
+    only?: string[]
+  ): Promise<{ name: string; count: number }[]> {
+    const { rows } = await this.db.execute<{ name: string; count: number }>(sql`
+      SELECT v.value AS name, COUNT(DISTINCT ${packageTable.id})::int AS count
+      FROM ${packageTable}
+      JOIN ${resource} ON ${resource.packageId} = ${packageTable.id} AND ${resource.state} = 'active'
+      JOIN ${resourcePipeline} ON ${resourcePipeline.resourceId} = ${resource.id}
+      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(${vocabularyField(field)}, '[]'::jsonb)) AS v(value)
+      WHERE ${where}
+      ${onlyField && only ? sql`AND ${vocabularyField(onlyField)} ?| ${textArray(only)}` : sql``}
+      GROUP BY v.value
+    `)
+    return rows
   }
 
   // No-op: PostgreSQL adapter searches directly via SQL.
@@ -590,8 +672,8 @@ export class PostgresSearchAdapter implements SearchAdapter {
       .map((row) => ({ id: row.id, resourceId: row.resourceId, similarity: 1 - row.distance }))
   }
 
-  async facetsForIds(ids: string[]): Promise<SearchFacets> {
-    return this.computeFacets(inArray(packageTable.id, ids))
+  async facetsForIds(ids: string[], vocabulary?: VocabularyFacetQuery): Promise<SearchFacets> {
+    return this.computeFacets(inArray(packageTable.id, ids), vocabulary)
   }
 
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {

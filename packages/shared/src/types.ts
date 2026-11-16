@@ -38,6 +38,8 @@ export interface FacetItem {
   name: string
   title?: string | null
   count: number
+  /** The top-level place a place facet's value lies in (`areaPlaces`) */
+  parent?: string
 }
 
 /**
@@ -49,6 +51,25 @@ export interface FacetCounts {
   tags: FacetItem[]
   formats: FacetItem[]
   licenses: FacetItem[]
+  /**
+   * What tables' columns stand for (ADR-073 Step 1c; experimental): top-level
+   * places (`*` nationwide), the places below the ones asked for, and meanings
+   */
+  areas: FacetItem[]
+  areaPlaces: FacetItem[]
+  meanings: FacetItem[]
+}
+
+/** Every facet with nothing in it: what a list shows before or without its counts. */
+export const EMPTY_FACETS: FacetCounts = {
+  organizations: [],
+  groups: [],
+  tags: [],
+  formats: [],
+  licenses: [],
+  areas: [],
+  areaPlaces: [],
+  meanings: [],
 }
 
 /**

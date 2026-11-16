@@ -3,7 +3,8 @@
  * (ADR-073 Step 1c §4.1; experimental)
  */
 
-import { columnVocabularySchema } from './pipeline-types'
+import type { z } from 'zod'
+import { columnVocabularySchema, type vocabularySearchSchema } from './pipeline-types'
 
 /**
  * Top-level places a table has to cover to be nationwide: indexed as such, not
@@ -16,11 +17,7 @@ export const NATIONWIDE_ROOTS = 40
 /** The `area_roots` value of a nationwide table. */
 export const NATIONWIDE = '*'
 
-export interface VocabularySearchFields {
-  vocab_meanings?: string[]
-  area_roots?: string[]
-  area_places?: string[]
-}
+export type VocabularySearchFields = z.infer<typeof vocabularySearchSchema>
 
 /**
  * The search fields of a table's column vocabularies, as its profile holds

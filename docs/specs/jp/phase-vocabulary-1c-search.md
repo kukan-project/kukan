@@ -110,9 +110,12 @@
 ### 4.4 PostgreSQL の代わりの経路
 
 - 索引の表は持たない。`resource_pipeline.profile` を結合して、jsonb から読む
-- 絞り込み: `EXISTS`（リソースと結合し、`profile -> 'columns'` の要素の `vocabulary` を見る）。
-  §4.1 と同じ値を SQL で作る関数を 1 つにまとめ、絞り込みと件数で共用する
-- 件数: 形式の絞り込みと同じく、`COUNT(DISTINCT package.id)`
+- **worker が、§4.1 の 3 項目をプロファイルの `search` に書いておく**（`vocabularySearchFields`、索引を組む側と
+  同じ関数）。代わりの経路は `profile -> 'search'` を読むだけにする。「全国」の判定のような決まりを SQL で
+  もう一度書くと、索引の側と食い違いうるため
+- 絞り込み: `EXISTS`（リソースと結合し、`profile -> 'search' -> '<項目>' ?| <値の配列>`）
+- 件数: `jsonb_array_elements_text` で値を行に展開し、形式の絞り込みと同じく `COUNT(DISTINCT package.id)`。
+  2 段目（`area_places`）は、`area` を指定したときだけ、`area_roots` がそれを持つリソースで数える
 - 代わりの経路は小さなサイト向けなので、jsonb の展開の重さは受け入れる。遅ければ、後で
   生成列か索引を足す
 

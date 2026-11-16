@@ -942,6 +942,88 @@ describe('OpenSearchAdapter', () => {
       )
     })
 
+    it("filters by what some resource's columns stand for, any value of each (ADR-073)", async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.search({
+        q: '',
+        filters: {
+          areas: ['130001', '140007'],
+          areaPlaces: ['131016'],
+          meanings: ['admin-area:code'],
+        },
+      })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.query.bool.filter).toEqual(
+        expect.arrayContaining([
+          {
+            has_child: { type: 'resource', query: { terms: { area_roots: ['130001', '140007'] } } },
+          },
+          { has_child: { type: 'resource', query: { terms: { area_places: ['131016'] } } } },
+          {
+            has_child: {
+              type: 'resource',
+              query: { terms: { vocab_meanings: ['admin-area:code'] } },
+            },
+          },
+        ])
+      )
+    })
+
+    it('counts the places below only where areas are asked for, over the resources holding them', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: { total: { value: 0 }, hits: [] },
+          aggregations: {
+            areas: { byValue: { buckets: [{ key: '130001', datasets: { doc_count: 4 } }] } },
+            meanings: {
+              byValue: { buckets: [{ key: 'admin-area:code', datasets: { doc_count: 2 } }] },
+            },
+            areaPlaces: {
+              only: { byValue: { buckets: [{ key: '131016', datasets: { doc_count: 1 } }] } },
+            },
+          },
+        },
+      })
+
+      const result = await adapter.search({
+        q: '',
+        facets: true,
+        vocabularyFacets: true,
+        filters: { areas: ['130001'] },
+      })
+
+      const aggs = mockClient.search.mock.calls[0][0].body.aggs
+      expect(aggs.areaPlaces.aggs.only.filter).toEqual({ terms: { area_roots: ['130001'] } })
+      expect(result.facets).toMatchObject({
+        areas: [{ name: '130001', count: 4 }],
+        areaPlaces: [{ name: '131016', count: 1 }],
+        meanings: [{ name: 'admin-area:code', count: 2 }],
+      })
+
+      await adapter.search({ q: '', facets: true, vocabularyFacets: true })
+      // Never every place of a country at once
+      expect(mockClient.search.mock.calls[1][0].body.aggs).not.toHaveProperty('areaPlaces')
+
+      // Places chosen without their area are counted over the resources holding them
+      await adapter.search({
+        q: '',
+        facets: true,
+        vocabularyFacets: true,
+        filters: { areaPlaces: ['131016'] },
+      })
+      expect(mockClient.search.mock.calls[2][0].body.aggs.areaPlaces.aggs.only.filter).toEqual({
+        terms: { area_places: ['131016'] },
+      })
+
+      // A site with no vocabulary pack counts none of it
+      await adapter.search({ q: '', facets: true })
+      expect(mockClient.search.mock.calls[3][0].body.aggs).not.toHaveProperty('areas')
+    })
+
     it('counts datasets per format from their resources, merging spellings', async () => {
       mockClient.search.mockResolvedValue({
         body: {

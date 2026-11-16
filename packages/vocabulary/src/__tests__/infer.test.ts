@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createRegistry } from '../registry'
+import { canonicalPlace, createRegistry, placeName, placeRoots } from '../registry'
 import { corroborate, inferColumn, judgeColumn, judgeNamesByCodes, matchValues } from '../infer'
 import { JP_PACK } from '../packs/jp'
 
@@ -443,5 +443,22 @@ describe('judgeNamesByCodes over the Japan pack', () => {
 
   it('counts the names several places share in corroborating the codes', () => {
     expect(corroborate(registry, codes, rows)).toBe(true)
+  })
+})
+
+describe('places by code', () => {
+  it('reads a place however a request writes its code', () => {
+    expect(canonicalPlace(registry, '13')).toBe('130001')
+    expect(canonicalPlace(registry, '130001')).toBe('130001')
+    expect(canonicalPlace(registry, '13101')).toBe('131016')
+    expect(canonicalPlace(registry, '99')).toBeNull()
+  })
+
+  it('names a place, and finds the top-level places it lies in', () => {
+    expect(placeName(registry, '130001')).toBe('東京都')
+    expect(placeRoots(registry, '011011')).toEqual(['010006'])
+    // A prefecture is its own top
+    expect(placeRoots(registry, '130001')).toEqual(['130001'])
+    expect(placeRoots(registry, 'XX')).toEqual([])
   })
 })

@@ -210,6 +210,9 @@ export function mergeFacets(base: SearchFacets | undefined, add: SearchFacets): 
     tags: mergeBuckets(base.tags, add.tags),
     formats: mergeBuckets(base.formats, add.formats),
     licenses: mergeBuckets(base.licenses, add.licenses),
+    areas: mergeBuckets(base.areas, add.areas),
+    areaPlaces: mergeBuckets(base.areaPlaces, add.areaPlaces),
+    meanings: mergeBuckets(base.meanings, add.meanings),
   }
 }
 
@@ -402,7 +405,12 @@ export async function hybridSearch(
     // window hits too. The vector leg already applied the same visibility
     // filters. Window-limited, the same asymmetry as `total`.
     query.facets && windowSemanticIds.length > 0 && dbSearch.facetsForIds
-      ? dbSearch.facetsForIds(windowSemanticIds)
+      ? dbSearch.facetsForIds(
+          windowSemanticIds,
+          query.vocabularyFacets
+            ? { areas: query.filters?.areas, places: query.filters?.areaPlaces }
+            : undefined
+        )
       : undefined,
   ])
   const facets = vectorFacets ? mergeFacets(bm25.facets, vectorFacets) : bm25.facets

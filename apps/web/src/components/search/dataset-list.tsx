@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import {
+  EMPTY_FACETS,
   SEARCH_QUERY_MAX_CHARS,
   SEARCH_RESULT_WINDOW,
   type PaginatedResult,
@@ -25,15 +26,13 @@ import { foldMatched } from '@/lib/matched-resources'
 export type DatasetData = PaginatedResult<DatasetCardItem> & {
   facets?: FacetCounts
   semantic?: SemanticState
+  /** The area filters as the API read them: `13` comes back as `130001` (experimental) */
+  vocabularyFilters?: { area: string[]; area_place: string[] }
 }
 
-const emptyFacets: FacetCounts = {
-  organizations: [],
-  groups: [],
-  tags: [],
-  formats: [],
-  licenses: [],
-}
+const emptyFacets = EMPTY_FACETS
+
+const orUndefined = (values: string[]) => (values.length > 0 ? values : undefined)
 
 interface Props {
   /** SSR-fetched initial data (only when no query and initial page load) */
@@ -55,6 +54,9 @@ export function DatasetList({ initialData }: Props) {
   const currentTags = searchParams.getAll('tags')
   const currentFormats = searchParams.getAll('res_format')
   const currentLicenses = searchParams.getAll('license_id')
+  const currentAreas = searchParams.getAll('area')
+  const currentAreaPlaces = searchParams.getAll('area_place')
+  const currentMeanings = searchParams.getAll('meaning')
   const sortBy = searchParams.get('sort_by') ?? undefined
   const sortOrder = searchParams.get('sort_order') ?? undefined
 
@@ -66,6 +68,9 @@ export function DatasetList({ initialData }: Props) {
   if (isInitialSsr) ssrUsed.current = true
 
   const [data, setData] = useState<DatasetData | null>(isInitialSsr ? initialData : null)
+  // The search the data answers: kept until the next lands, so what it read
+  // the filters as is only for links while the URL still asks the same
+  const [dataFor, setDataFor] = useState<string | null>(isInitialSsr ? paramsKey : null)
   const [loading, setLoading] = useState(!isInitialSsr)
   // Distinguish a backend failure (e.g. search 503) from a genuine empty result set.
   const [error, setError] = useState(false)
@@ -80,6 +85,9 @@ export function DatasetList({ initialData }: Props) {
     tags: currentTags.length ? currentTags : undefined,
     res_format: currentFormats.length ? currentFormats : undefined,
     license_id: currentLicenses.length ? currentLicenses : undefined,
+    area: currentAreas.length ? currentAreas : undefined,
+    area_place: currentAreaPlaces.length ? currentAreaPlaces : undefined,
+    meaning: currentMeanings.length ? currentMeanings : undefined,
     sort_by: sortBy,
     sort_order: sortOrder,
     semantic: searchParams.get('semantic') ?? undefined,
@@ -106,6 +114,7 @@ export function DatasetList({ initialData }: Props) {
     if (q) query.set('q', q)
     query.set('include_facets', 'true')
     if (!query.has('limit')) query.set('limit', '20')
+    const asked = paramsKey
 
     clientFetch(`/api/v1/packages?${query}`, { signal: controller.signal })
       .then(async (res) => {
@@ -117,6 +126,7 @@ export function DatasetList({ initialData }: Props) {
         }
         const result: DatasetData = await res.json()
         setData(result)
+        setDataFor(asked)
 
         // Lazy-load content highlights after rendering search results
         if (query.get('q')) {
@@ -228,7 +238,20 @@ export function DatasetList({ initialData }: Props) {
 
       <div className="flex flex-col gap-6 md:flex-row">
         <aside className="w-full shrink-0 md:w-64">
-          <DatasetFilters baseParams={carriedParams} facets={facets} />
+          <DatasetFilters
+            baseParams={
+              // Marked and undone by the codes the counts carry, however the URL
+              // wrote them — only by an answer to the search the URL asks now
+              data?.vocabularyFilters && dataFor === paramsKey
+                ? {
+                    ...carriedParams,
+                    area: orUndefined(data.vocabularyFilters.area),
+                    area_place: orUndefined(data.vocabularyFilters.area_place),
+                  }
+                : carriedParams
+            }
+            facets={facets}
+          />
         </aside>
 
         <div className="min-w-0 flex-1">

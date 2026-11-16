@@ -91,6 +91,16 @@
     "filterByTag": "タグで絞り込み",
     "filterByFormat": "フォーマットで絞り込み",
     "filterByLicense": "ライセンスで絞り込み",
+    "filterByArea": "地域で絞り込み",
+    "filterByMeaning": "列の意味で絞り込み",
+    "areaNationwide": "全国",
+    "experimental": "試験的",
+    "experimentalHint": "試験的な機能です。判定の規則や表示が変わることがあります。",
+    "meaningLabel": "{concept}の{kind}",
+    "meaningKinds": {
+      "code": "コード",
+      "name": "名前"
+    },
     "clear": "クリア",
     "semanticToggle": "意味の近い結果を含める",
     "semanticUnavailable": "意味の近い結果は現在利用できません（キーワード一致のみ）",

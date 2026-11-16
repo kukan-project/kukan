@@ -16,6 +16,9 @@ interface Props {
     tags?: string | string[]
     res_format?: string | string[]
     license_id?: string | string[]
+    area?: string | string[]
+    area_place?: string | string[]
+    meaning?: string | string[]
     sort_by?: string
     sort_order?: string
   }>
@@ -39,7 +42,16 @@ export default async function DatasetsPage({ searchParams }: Props) {
       const query = new URLSearchParams()
       query.set('offset', String(Number(params.offset) || 0))
       query.set('limit', String(Number(params.limit) || 20))
-      const filterKeys = ['organization', 'groups', 'tags', 'res_format', 'license_id'] as const
+      const filterKeys = [
+        'organization',
+        'groups',
+        'tags',
+        'res_format',
+        'license_id',
+        'area',
+        'area_place',
+        'meaning',
+      ] as const
       for (const key of filterKeys) {
         for (const v of toArray(params[key])) query.append(key, v)
       }

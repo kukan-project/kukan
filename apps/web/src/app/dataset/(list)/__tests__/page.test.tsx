@@ -51,6 +51,9 @@ const sampleFacets = {
     { name: 'PDF', count: 7 },
   ],
   licenses: [{ name: 'CC-BY-4.0', count: 20 }],
+  areas: [],
+  areaPlaces: [],
+  meanings: [],
 }
 
 function makeSearchParams(params: Record<string, string> = {}) {

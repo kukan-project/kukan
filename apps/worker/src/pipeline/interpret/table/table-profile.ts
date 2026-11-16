@@ -9,7 +9,11 @@
 
 import type { DuckDBConnection } from '@duckdb/node-api'
 import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
-import { COLUMN_VALUES_KEPT, TABLE_SENTENCES_MAX_BYTES } from '@kukan/shared'
+import {
+  COLUMN_VALUES_KEPT,
+  TABLE_SENTENCES_MAX_BYTES,
+  vocabularySearchFields,
+} from '@kukan/shared'
 import type { ColumnProfile, ResourceColumn, TableProfile } from '@kukan/shared'
 import {
   INFERENCE_RULES,
@@ -145,7 +149,12 @@ export async function profileTable(
     vocabularyPacks.length > 0
       ? await readVocabulary(conn, names, described, profiled, vocabularyPacks)
       : undefined
-  const done = { columns: profiled, ...(registry && { registry }) }
+  const search = registry ? vocabularySearchFields(profiled.map((c) => c.vocabulary)) : {}
+  const done = {
+    columns: profiled,
+    ...(registry && { registry }),
+    ...(Object.keys(search).length > 0 && { search }),
+  }
 
   const listed = profiled.flatMap((c, i) => (listsValues(c.role) ? [i] : []))
   const free = described.flatMap((_, i) => (profiled[i].role === 'free-text' ? [i] : []))

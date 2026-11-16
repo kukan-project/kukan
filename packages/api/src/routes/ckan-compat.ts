@@ -10,6 +10,7 @@
 
 import { Hono, type Context } from 'hono'
 import {
+  EMPTY_FACETS,
   KukanError,
   LICENSES,
   publicOrigin,
@@ -411,17 +412,7 @@ action('package_search', async (c, params) => {
   // counts are what an unmatched search's would be
   const zeroOnly =
     fq.empty && facetFields.length > 0 && facetMinCount === 0
-      ? await withZeroCounts(
-          c,
-          {
-            organizations: [],
-            groups: [],
-            tags: [],
-            formats: [],
-            licenses: [],
-          },
-          includePrivate
-        )
+      ? await withZeroCounts(c, EMPTY_FACETS, includePrivate)
       : undefined
   const { count, results, facets, titles } = fq.empty
     ? { count: 0, results: [], facets: zeroOnly?.counts, titles: zeroOnly?.titles }

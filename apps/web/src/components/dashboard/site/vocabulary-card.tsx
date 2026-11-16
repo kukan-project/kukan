@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button, Card, CardContent, CardHeader, CardTitle, Checkbox, Label } from '@kukan/ui'
+import { ExperimentalMark } from '@/components/experimental-mark'
 import { PACK_IDS } from '@kukan/vocabulary/pack-ids'
 import { clientFetch } from '@/lib/client-api'
 
@@ -68,7 +69,10 @@ export function VocabularyCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{t('vocabularyTitle')}</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">
+          {t('vocabularyTitle')}
+          <ExperimentalMark />
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">{t('vocabularyDescription')}</p>

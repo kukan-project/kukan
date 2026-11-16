@@ -90,6 +90,222 @@ exports[`emitted SQL shape > PackageService.list > pins the list shape 1`] = `
 ]
 `;
 
+exports[`emitted SQL shape > PostgresSearchAdapter.search, by vocabulary (ADR-073) > pins the shape 1`] = `
+[
+  "select count(*)::int from "package" left join "organization" on "package"."owner_org" = "organization"."id" where ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        ))",
+  "select "package"."id", "package"."name", "package"."title", "package"."notes", "organization"."name" from "package" left join "organization" on "package"."owner_org" = "organization"."id" where ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        )) order by "package"."updated" desc, "package"."id" desc limit $5",
+  "SELECT v.value AS name, COUNT(DISTINCT "package"."id")::int AS count
+      FROM "package"
+      JOIN "resource" ON "resource"."package_id" = "package"."id" AND "resource"."state" = 'active'
+      JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(("resource_pipeline"."profile" -> 'search' -> 'area_roots'), '[]'::jsonb)) AS v(value)
+      WHERE ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        ))
+      
+      GROUP BY v.value",
+  "SELECT v.value AS name, COUNT(DISTINCT "package"."id")::int AS count
+      FROM "package"
+      JOIN "resource" ON "resource"."package_id" = "package"."id" AND "resource"."state" = 'active'
+      JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(("resource_pipeline"."profile" -> 'search' -> 'area_places'), '[]'::jsonb)) AS v(value)
+      WHERE ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        ))
+      AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$5]::text[]
+      GROUP BY v.value",
+  "SELECT v.value AS name, COUNT(DISTINCT "package"."id")::int AS count
+      FROM "package"
+      JOIN "resource" ON "resource"."package_id" = "package"."id" AND "resource"."state" = 'active'
+      JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings'), '[]'::jsonb)) AS v(value)
+      WHERE ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        ))
+      
+      GROUP BY v.value",
+  "select "organization"."name", COUNT(*)::int as "count" from "package" inner join "organization" on "package"."owner_org" = "organization"."id" where ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        )) group by "organization"."name"",
+  "select "tag"."name", COUNT(DISTINCT "package"."id")::int as "count" from "package" inner join "package_tag" on "package_tag"."package_id" = "package"."id" inner join "tag" on "package_tag"."tag_id" = "tag"."id" where ("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        )) group by "tag"."name"",
+  "select UPPER("resource"."format") as "name", COUNT(DISTINCT "package"."id")::int as "count" from "package" inner join "resource" on ("resource"."package_id" = "package"."id" and "resource"."state" = $1) where (("package"."state" = $2 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$4]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$5]::text[]
+        )) and "resource"."format" IS NOT NULL AND "resource"."format" != '') group by UPPER("resource"."format")",
+  "select "license_id", COUNT(*)::int as "count" from "package" where (("package"."state" = $1 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$2]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$4]::text[]
+        )) and "package"."license_id" IS NOT NULL AND "package"."license_id" != '') group by "package"."license_id"",
+  "select "group"."name", COUNT(DISTINCT "package"."id")::int as "count" from "package" inner join "package_group" on "package_group"."package_id" = "package"."id" inner join "group" on ("package_group"."group_id" = "group"."id" and "group"."state" = $1) where ("package"."state" = $2 and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_roots') ?| ARRAY[$3]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'area_places') ?| ARRAY[$4]::text[]
+        ) and EXISTS (
+          SELECT FROM "resource"
+          JOIN "resource_pipeline" ON "resource_pipeline"."resource_id" = "resource"."id"
+          WHERE "resource"."package_id" = "package"."id"
+          AND "resource"."state" = 'active'
+          AND ("resource_pipeline"."profile" -> 'search' -> 'vocab_meanings') ?| ARRAY[$5]::text[]
+        )) group by "group"."name"",
+]
+`;
+
 exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pins the shape 1`] = `
 [
   "select distinct "resource_id" from "resource_version" where "resource_version"."state" = $1",

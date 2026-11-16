@@ -66,4 +66,45 @@ describe('DatasetList', () => {
     rerender(<DatasetList initialData={null} />)
     await waitFor(() => expect(degradedNotice()).toBeInTheDocument())
   })
+
+  it('marks an area by the code the answer read it as, and only for the search the URL still asks', async () => {
+    const tokyo = {
+      ok: true,
+      json: async () => ({
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 20,
+        semantic: 'applied',
+        facets: {
+          organizations: [],
+          groups: [],
+          tags: [{ name: 'env', count: 1 }],
+          formats: [],
+          licenses: [],
+          areas: [{ name: '130001', title: '東京都', count: 1 }],
+          areaPlaces: [],
+          meanings: [],
+        },
+        // `13` in the URL, read as Tokyo's code
+        vocabularyFilters: { area: ['130001'], area_place: [] },
+      }),
+    }
+    mockSearchParams.mockReturnValue(new URLSearchParams('area=13'))
+    mockClientFetch.mockResolvedValueOnce(tokyo)
+    const { rerender } = render(<DatasetList initialData={null} />)
+
+    // Chosen, so its link takes it away
+    const area = await screen.findByText('東京都')
+    expect(area.closest('a')?.getAttribute('href')).toBe('/dataset?')
+
+    // Tokyo taken away; the next answer is still on its way, and the links must
+    // not bring Tokyo back from the last one
+    mockClientFetch.mockReturnValueOnce(new Promise(() => {}))
+    mockSearchParams.mockReturnValue(new URLSearchParams(''))
+    rerender(<DatasetList initialData={null} />)
+    await waitFor(() =>
+      expect(screen.getByText('env').closest('a')?.getAttribute('href')).toBe('/dataset?tags=env')
+    )
+  })
 })

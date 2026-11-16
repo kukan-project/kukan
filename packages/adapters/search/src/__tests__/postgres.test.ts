@@ -37,6 +37,8 @@ function createMockDb(selectResults: unknown[][]) {
   let idx = 0
   return {
     select: vi.fn(() => queryChain(selectResults[idx++] ?? [])),
+    // The vocabulary counts (ADR-073), raw SQL: none here, the integration test has them
+    execute: vi.fn(async () => ({ rows: [] })),
   } as unknown as Database
 }
 
@@ -270,6 +272,9 @@ describe('PostgresSearchAdapter', () => {
         formats: [{ name: 'CSV', count: 2 }],
         licenses: [{ name: 'cc-by', count: 4 }],
         groups: [],
+        areas: [],
+        areaPlaces: [],
+        meanings: [],
       })
     })
 

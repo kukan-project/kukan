@@ -476,6 +476,11 @@ export class PackageService {
           count: licenseCountMap.get(l) ?? 0,
         }))
         .sort(byCount),
+      // Only what holds them: a list of every place a country has, at 0, is no
+      // filter. Named by the route, which knows the site's packs (ADR-073)
+      areas: [...facets.areas].sort(byCount),
+      areaPlaces: [...facets.areaPlaces].sort(byCount),
+      meanings: [...facets.meanings].sort(byCount),
     }
   }
 

@@ -79,6 +79,9 @@ const emptyFacets: SearchFacets = {
   tags: [],
   formats: [],
   licenses: [],
+  areas: [],
+  areaPlaces: [],
+  meanings: [],
 }
 
 describe('mergeFacets', () => {
@@ -433,7 +436,8 @@ describe('hybridSearch — fusion', () => {
 
     const result = await hybridSearch(d, { q: 'q-facet-merge', facets: true, limit: 20 })
 
-    expect(facetsForIds).toHaveBeenCalledWith(['c'])
+    // No areas asked for, so no places below them to count
+    expect(facetsForIds).toHaveBeenCalledWith(['c'], undefined)
     expect(result.facets?.organizations).toEqual([
       { name: 'org-a', count: 1 },
       { name: 'org-c', count: 1 },

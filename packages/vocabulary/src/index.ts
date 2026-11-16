@@ -2,7 +2,7 @@
 // is hundreds of kilobytes, and loading the core must not load a country's
 export type * from './types'
 export { LEVELS } from './types'
-export { RULES_VERSION, createRegistry } from './registry'
+export { RULES_VERSION, canonicalPlace, createRegistry, placeName, placeRoots } from './registry'
 export type { Hit, IndexedScheme, Registry } from './registry'
 export {
   INFERENCE_RULES,

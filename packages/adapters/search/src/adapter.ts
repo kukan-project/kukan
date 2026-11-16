@@ -220,6 +220,14 @@ export interface SearchFilters {
   extras?: ExtrasCondition[]
   /** Each must hold on some resource's `extras` — not necessarily the same one (ADR-062) */
   resourceExtras?: ExtrasCondition[]
+  /**
+   * What some resource's columns stand for (ADR-073 Step 1c; experimental),
+   * each held by any of its values: top-level places by canonical code (`*`
+   * nationwide), the places below them, and `<concept>:<kind>` meanings
+   */
+  areas?: string[]
+  areaPlaces?: string[]
+  meanings?: string[]
   /** `updated` within this range, either end open — CKAN's `metadata_modified:[a TO b]` */
   updatedFrom?: Date
   updatedTo?: Date
@@ -233,6 +241,12 @@ export interface SearchFilters {
   state?: 'active' | 'deleted'
 }
 
+/** The vocabulary counts asked for: the places below are counted where areas or places are chosen */
+export interface VocabularyFacetQuery {
+  areas?: string[]
+  places?: string[]
+}
+
 export interface SearchQuery {
   q: string
   offset?: number
@@ -240,6 +254,11 @@ export interface SearchQuery {
   filters?: SearchFilters
   /** Request aggregation-based facet counts */
   facets?: boolean
+  /**
+   * With `facets`, count what tables' columns stand for too (ADR-073 Step 1c):
+   * only where the site enables a vocabulary pack, so no other site pays for it
+   */
+  vocabularyFacets?: boolean
   /**
    * Sort field. When omitted, adapters use their default (OpenSearch: _score
    * then updated for queries, updated for browse; PostgreSQL: updated DESC).
@@ -292,6 +311,11 @@ export interface SearchFacets {
   tags: SearchFacetBucket[]
   formats: SearchFacetBucket[]
   licenses: SearchFacetBucket[]
+  /** Datasets per value of the resources' vocabulary fields (ADR-073 Step 1c). `areaPlaces`
+   *  is counted only where `areas` is asked for, over the datasets that hold them */
+  areas: SearchFacetBucket[]
+  areaPlaces: SearchFacetBucket[]
+  meanings: SearchFacetBucket[]
 }
 
 export interface SearchResult {
@@ -524,7 +548,7 @@ export interface SearchAdapter {
 
   /** Facet counts for an explicit set of package IDs — used to merge vector-only
    *  hits into the BM25 facets (hybrid search). PostgreSQL-only, like searchByVector. */
-  facetsForIds?(ids: string[]): Promise<SearchFacets>
+  facetsForIds?(ids: string[], vocabulary?: VocabularyFacetQuery): Promise<SearchFacets>
 }
 
 export interface BrowseResult {

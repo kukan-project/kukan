@@ -1,8 +1,18 @@
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Building2, FolderOpen, Tag, FileText, Scale, ChevronDown } from 'lucide-react'
+import {
+  Building2,
+  FolderOpen,
+  Tag,
+  FileText,
+  Scale,
+  ChevronDown,
+  MapPin,
+  Link2,
+} from 'lucide-react'
 import { Badge } from '@kukan/ui'
-import { resolveLicenseLabel, type FacetCounts, type FacetItem } from '@kukan/shared'
+import { NATIONWIDE, resolveLicenseLabel, type FacetCounts, type FacetItem } from '@kukan/shared'
+import { ExperimentalMark } from '@/components/experimental-mark'
 import { buildQuery } from '@/lib/query'
 
 interface DatasetFiltersProps {
@@ -34,12 +44,15 @@ function FilterSection({
   title,
   defaultOpen,
   active,
+  experimental,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>
   title: string
   defaultOpen?: boolean
   active?: boolean
+  /** Marked as a feature whose behaviour may still change */
+  experimental?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -48,6 +61,7 @@ function FilterSection({
         <span className="flex items-center gap-1.5">
           <Icon className="h-4 w-4 text-muted-foreground" />
           {title}
+          {experimental && <ExperimentalMark />}
           {active && <span className="h-2 w-2 rounded-full bg-primary" />}
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -63,12 +77,15 @@ function FilterList({
   buildHref,
   displayName,
   className,
+  below,
 }: {
   items: FacetItem[]
   activeValues: string[]
   buildHref: (name: string) => string
   displayName?: (item: FacetItem) => string
   className?: string
+  /** What goes under an item's row, inside its entry: the places under an area */
+  below?: (item: FacetItem) => React.ReactNode
 }) {
   const baseClass = `flex items-center justify-between rounded-md px-2 py-1 text-sm${className ? ` ${className}` : ''}`
   return (
@@ -90,6 +107,7 @@ function FilterList({
               <span className={`${baseClass} cursor-default text-muted-foreground/50`}>
                 {content}
               </span>
+              {below?.(item)}
             </li>
           )
         }
@@ -105,6 +123,7 @@ function FilterList({
             >
               {content}
             </Link>
+            {below?.(item)}
           </li>
         )
       })}
@@ -122,6 +141,37 @@ export function DatasetFilters({ baseParams, facets }: DatasetFiltersProps) {
   const currentTags = toArray(baseParams.tags)
   const currentFormats = toArray(baseParams.res_format)
   const currentLicenses = toArray(baseParams.license_id)
+  const currentAreas = toArray(baseParams.area)
+  const currentAreaPlaces = toArray(baseParams.area_place)
+  const currentMeanings = toArray(baseParams.meaning)
+  const tv = useTranslations('resource.vocabulary')
+  const meaningLabel = (name: string) => {
+    const [concept, kind] = name.split(':')
+    const conceptKey = `concepts.${concept}`
+    return t('meaningLabel', {
+      concept: tv.has(conceptKey) ? tv(conceptKey) : concept,
+      kind: t.has(`meaningKinds.${kind}`) ? t(`meaningKinds.${kind}`) : kind,
+    })
+  }
+  const placeList = (places: FacetItem[]) =>
+    places.length > 0 && (
+      <div className="mt-1 mb-1 ml-2 border-l pl-3">
+        <FilterList
+          items={places}
+          activeValues={currentAreaPlaces}
+          buildHref={(name) =>
+            buildDatasetUrl({ ...baseParams, area_place: toggleArray(currentAreaPlaces, name) })
+          }
+        />
+      </div>
+    )
+  // Taking an area away takes the places chosen under it with it: left alone
+  // they would narrow the results with nothing on the screen to undo them
+  const withoutArea = (area: string) => {
+    const under = new Set(facets.areaPlaces.filter((p) => p.parent === area).map((p) => p.name))
+    const places = currentAreaPlaces.filter((p) => !under.has(p))
+    return places.length ? places : undefined
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -222,6 +272,61 @@ export function DatasetFilters({ baseParams, facets }: DatasetFiltersProps) {
               })
             }
             className="font-mono uppercase"
+          />
+        </FilterSection>
+      )}
+
+      {/* What tables' columns stand for (ADR-073; experimental) */}
+      {(facets.areas.length > 0 || currentAreas.length > 0 || currentAreaPlaces.length > 0) && (
+        <FilterSection
+          icon={MapPin}
+          title={t('filterByArea')}
+          experimental
+          defaultOpen={currentAreas.length > 0 || currentAreaPlaces.length > 0}
+          active={currentAreas.length > 0 || currentAreaPlaces.length > 0}
+        >
+          <FilterList
+            items={facets.areas}
+            activeValues={currentAreas}
+            buildHref={(name) => {
+              const removing = currentAreas.includes(name)
+              return buildDatasetUrl({
+                ...baseParams,
+                area: toggleArray(currentAreas, name),
+                ...(removing && { area_place: withoutArea(name) }),
+              })
+            }}
+            displayName={(item) =>
+              item.name === NATIONWIDE ? t('areaNationwide') : item.title || item.name
+            }
+            // An area's places right under its own row, not after every area
+            below={(area) => placeList(facets.areaPlaces.filter((p) => p.parent === area.name))}
+          />
+          {/* Places chosen with no area of theirs listed: still there to take away */}
+          {placeList(
+            facets.areaPlaces.filter((p) => !facets.areas.some((a) => a.name === p.parent))
+          )}
+        </FilterSection>
+      )}
+
+      {(facets.meanings.length > 0 || currentMeanings.length > 0) && (
+        <FilterSection
+          icon={Link2}
+          title={t('filterByMeaning')}
+          experimental
+          defaultOpen={currentMeanings.length > 0}
+          active={currentMeanings.length > 0}
+        >
+          <FilterList
+            items={facets.meanings}
+            activeValues={currentMeanings}
+            buildHref={(name) =>
+              buildDatasetUrl({
+                ...baseParams,
+                meaning: toggleArray(currentMeanings, name),
+              })
+            }
+            displayName={(item) => meaningLabel(item.name)}
           />
         </FilterSection>
       )}

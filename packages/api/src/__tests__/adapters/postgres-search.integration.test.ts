@@ -13,6 +13,7 @@ import {
   packageTag,
   tag,
   resource,
+  resourcePipeline,
   group,
   packageGroup,
 } from '@kukan/db'
@@ -81,6 +82,18 @@ async function addResource(packageId: string, data: { name: string; format: stri
     name: data.name,
     format: data.format,
   })
+}
+
+/** A table whose profile holds the vocabulary search fields the worker writes (ADR-073) */
+async function addTable(
+  packageId: string,
+  search: { vocab_meanings?: string[]; area_roots?: string[]; area_places?: string[] }
+) {
+  const [res] = await db
+    .insert(resource)
+    .values({ packageId, name: 'table.csv', format: 'CSV' })
+    .returning()
+  await db.insert(resourcePipeline).values({ resourceId: res.id, profile: { columns: [], search } })
 }
 
 async function insertGroup(name: string) {
@@ -189,6 +202,87 @@ describe('PostgresSearchAdapter', () => {
         filters: { formats: ['CSV'] },
       })
       expect(result.total).toBe(1)
+    })
+  })
+
+  describe('vocabulary filters and counts (ADR-073)', () => {
+    async function seedAreas() {
+      const tokyo = await insertPkg({ name: 'tokyo' })
+      await addTable(tokyo.id, {
+        vocab_meanings: ['admin-area:code'],
+        area_roots: ['130001'],
+        area_places: ['131016', '131024'],
+      })
+      const both = await insertPkg({ name: 'tokyo-osaka' })
+      await addTable(both.id, {
+        vocab_meanings: ['admin-area:name'],
+        area_roots: ['130001', '270008'],
+        area_places: ['131016', '271004'],
+      })
+      const nationwide = await insertPkg({ name: 'nationwide' })
+      await addTable(nationwide.id, { vocab_meanings: ['admin-area:code'], area_roots: ['*'] })
+      await insertPkg({ name: 'no-table' })
+    }
+
+    it('filters by any of the areas, places and meanings asked for', async () => {
+      await seedAreas()
+      const names = async (filters: object) =>
+        (await adapter.search({ q: '', filters })).items.map((i) => i.name).sort()
+
+      expect(await names({ areas: ['130001'] })).toEqual(['tokyo', 'tokyo-osaka'])
+      expect(await names({ areas: ['270008', '*'] })).toEqual(['nationwide', 'tokyo-osaka'])
+      expect(await names({ areaPlaces: ['271004'] })).toEqual(['tokyo-osaka'])
+      expect(await names({ meanings: ['admin-area:code'] })).toEqual(['nationwide', 'tokyo'])
+      // Across conditions, both must hold
+      expect(await names({ areas: ['130001'], meanings: ['admin-area:code'] })).toEqual(['tokyo'])
+    })
+
+    it('counts datasets per value, the places below only under the areas asked for', async () => {
+      await seedAreas()
+
+      const plain = await adapter.search({ q: '', facets: true, vocabularyFacets: true })
+      expect(plain.facets?.areas).toEqual(
+        expect.arrayContaining([
+          { name: '130001', count: 2 },
+          { name: '270008', count: 1 },
+          { name: '*', count: 1 },
+        ])
+      )
+      expect(plain.facets?.meanings).toEqual(
+        expect.arrayContaining([
+          { name: 'admin-area:code', count: 2 },
+          { name: 'admin-area:name', count: 1 },
+        ])
+      )
+      expect(plain.facets?.areaPlaces).toEqual([])
+
+      const tokyo = await adapter.search({
+        q: '',
+        facets: true,
+        vocabularyFacets: true,
+        filters: { areas: ['130001'] },
+      })
+      expect(tokyo.facets?.areaPlaces).toEqual(
+        expect.arrayContaining([
+          { name: '131016', count: 2 },
+          { name: '131024', count: 1 },
+        ])
+      )
+
+      // A place chosen without its area is still counted
+      const place = await adapter.search({
+        q: '',
+        facets: true,
+        vocabularyFacets: true,
+        filters: { areaPlaces: ['271004'] },
+      })
+      expect(place.facets?.areaPlaces).toEqual(
+        expect.arrayContaining([{ name: '271004', count: 1 }])
+      )
+
+      // Not asked for, not counted
+      const none = await adapter.search({ q: '', facets: true })
+      expect(none.facets).toMatchObject({ areas: [], areaPlaces: [], meanings: [] })
     })
   })
 
