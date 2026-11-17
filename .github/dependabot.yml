@@ -16,11 +16,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     ignore:
-      # 3.9.0's generated types drop `field` and `script` from a terms
-      # aggregation, so the search adapter no longer compiles. Lift this once a
-      # release restores them.
+      # From 3.9.0 the generated types drop `field` and `script` from a terms
+      # aggregation and a metric one, so the search adapter no longer compiles;
+      # 3.10.0 still does. Lift this once a release restores them.
       - dependency-name: '@opensearch-project/opensearch'
-        versions: ['3.9.x']
+        versions: ['>=3.9.0']
       # The types follow the runtime's major, which moves with the base image
       # and .node-version in one change (docs/node-version.md). A lone bump
       # leaves two majors in the lock; vitest then loaded both and broke.
