@@ -5,19 +5,24 @@ import { usePipelineStatus } from '@/hooks/use-pipeline-status'
 import { PipelineStatusDetail } from '../pipeline-status-detail'
 
 vi.mock('@/lib/client-api', () => ({ clientFetch: vi.fn() }))
-vi.mock('@/hooks/use-pipeline-status', () => ({ usePipelineStatus: vi.fn() }))
+vi.mock('@/hooks/use-pipeline-status', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/use-pipeline-status')>()),
+  usePipelineStatus: vi.fn(),
+}))
 
 const mockFetch = vi.mocked(clientFetch)
 const mockStatus = vi.mocked(usePipelineStatus)
 const refetch = vi.fn()
 
-function showing(status: string, steps: unknown[] = []) {
+/** `hasContent` as the server says it: a file held unless told otherwise */
+function showing(status: string, steps: unknown[] = [], hasContent: boolean | undefined = true) {
   mockStatus.mockReturnValue({
     status,
     steps,
     error: null,
     revertTarget: 1,
     liveRevision: 'rev-1',
+    hasContent,
     refetch,
   } as unknown as ReturnType<typeof usePipelineStatus>)
 }
@@ -155,19 +160,19 @@ describe('PipelineStatusDetail', () => {
     fireEvent.click(confirm)
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/Rebuild preview & index/)
+    expect(alert).toHaveTextContent(/without fetching from the URL again/)
     expect(alert).toHaveTextContent(/do not revert again/i)
   })
 
-  it('offers a rebuild that fetches nothing, without needing anything remembered', async () => {
+  it('reprocesses without fetching unless asked, needing nothing remembered', async () => {
     // This view lives in a dialog. A revert whose rebuild fails later leaves
-    // whoever comes back — a reload, another admin — with only the plain
-    // reprocess, which re-reads an external URL and undoes the revert. The
-    // repair has to be reachable from the screen alone (ADR-044 §4).
-    showing('complete', [])
+    // whoever comes back — a reload, another admin — with only this screen,
+    // and fetching an external URL again undoes the revert. So the press, as
+    // it stands, is the repair (ADR-044 §4).
+    showing('complete')
     render(<PipelineStatusDetail resourceId="r1" />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Reprocess$/ }))
 
     await waitFor(() =>
       expect(mockFetch).toHaveBeenCalledWith(
@@ -204,7 +209,7 @@ describe('PipelineStatusDetail', () => {
     } as Response)
     showing('complete', [])
     rerender(<PipelineStatusDetail resourceId="r1" />)
-    fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Reprocess$/ }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
   })
@@ -234,7 +239,7 @@ describe('PipelineStatusDetail', () => {
     } as Response)
     showing('complete', [])
     rerender(<PipelineStatusDetail resourceId="r1" />)
-    fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Reprocess$/ }))
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
@@ -270,7 +275,7 @@ describe('PipelineStatusDetail', () => {
     render(<PipelineStatusDetail resourceId="r1" />)
 
     expect(screen.getByText(/before this resource's current content was saved/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Reprocess/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Reprocess$/ })).toBeInTheDocument()
   })
 
   it('does not claim the content is unsaved when the Version step settled it', async () => {
@@ -283,6 +288,91 @@ describe('PipelineStatusDetail', () => {
     render(<PipelineStatusDetail resourceId="r1" />)
 
     expect(screen.getByText(/preview and search content may be missing/)).toBeInTheDocument()
+  })
+
+  it('fetches the file from its URL again only when that is ticked', async () => {
+    showing('complete')
+
+    render(<PipelineStatusDetail resourceId="r1" />)
+    const option = screen.getByRole('checkbox', { name: /Fetch the file from its URL again/ })
+    expect(option).not.toBeChecked()
+    fireEvent.click(option)
+    fireEvent.click(screen.getByRole('button', { name: /^Reprocess$/ }))
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/resources/r1/run-pipeline',
+        expect.not.objectContaining({ body: expect.anything() })
+      )
+    )
+  })
+
+  it('fetches again by default where the resource holds no file to rebuild from', async () => {
+    // A URL never fetched: rebuilding alone would have nothing to work from
+    showing('error', [], false)
+
+    render(<PipelineStatusDetail resourceId="r1" />)
+
+    expect(
+      screen.getByRole('checkbox', { name: /Fetch the file from its URL again/ })
+    ).toBeChecked()
+  })
+
+  it.each([
+    // Read before the status has loaded: a press must not fetch on a guess
+    ['until the server has answered', undefined],
+    // A revert whose rebuild never ran leaves the stopped run's steps showing,
+    // its fetch unfinished; the file it put back is what must not be fetched over
+    ['where a file is held, whatever the last run did', true],
+  ])('does not fetch by default %s', async (_label, hasContent) => {
+    showing('cancelled', [runningStep(5)], hasContent)
+
+    render(<PipelineStatusDetail resourceId="r1" />)
+
+    expect(
+      screen.getByRole('checkbox', { name: /Fetch the file from its URL again/ })
+    ).not.toBeChecked()
+  })
+
+  it('forgets a tick to fetch once a revert has landed', async () => {
+    // Ticked, then the run stopped and reverted: kept, the tick would have the
+    // next press fetch over the content the revert put back
+    const option = () => screen.getByRole('checkbox', { name: /Fetch the file from its URL again/ })
+    showing('complete')
+    const { rerender } = render(<PipelineStatusDetail resourceId="r1" />)
+    fireEvent.click(option())
+    expect(option()).toBeChecked()
+
+    showing('processing', [runningStep(5)])
+    rerender(<PipelineStatusDetail resourceId="r1" />)
+    fireEvent.click(screen.getByRole('button', { name: /Stop and revert/ }))
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: /Stop and revert/ })
+        .find((b) => b.closest('[role="dialog"]'))!
+    )
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled())
+
+    showing('complete')
+    rerender(<PipelineStatusDetail resourceId="r1" />)
+    await waitFor(() => expect(option()).not.toBeChecked())
+  })
+
+  it('offers an upload no fetch, there being no source to fetch again', async () => {
+    showing('error', [], false)
+
+    render(<PipelineStatusDetail resourceId="r1" uploaded />)
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Fetching from the URL again/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Reprocess$/ }))
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/resources/r1/run-pipeline',
+        expect.objectContaining({ body: JSON.stringify({ rebuildOnly: true }) })
+      )
+    )
   })
 
   it('offers no stop button once nothing is running', async () => {

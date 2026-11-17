@@ -127,6 +127,10 @@ describe('DatasetDetailLayout', () => {
       vi.mocked(getCurrentUser).mockResolvedValue({ sysadmin: true } as User)
       await renderLayout()
       expect(explorer()).toHaveAttribute('data-can-manage', 'true')
+      expect(screen.getByRole('link', { name: 'Manage this dataset' })).toHaveAttribute(
+        'href',
+        '/dashboard/datasets/pkg-1'
+      )
     })
 
     it('lets an editor of the owning organization manage', async () => {
@@ -157,6 +161,7 @@ describe('DatasetDetailLayout', () => {
       vi.mocked(serverFetch).mockImplementation(orgs)
       await renderLayout()
       expect(explorer()).toHaveAttribute('data-can-manage', 'false')
+      expect(screen.queryByRole('link', { name: 'Manage this dataset' })).not.toBeInTheDocument()
     })
 
     it('does not let a reader of the owning organization manage, who cannot write', async () => {

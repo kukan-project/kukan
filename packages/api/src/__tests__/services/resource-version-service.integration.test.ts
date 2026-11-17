@@ -1317,14 +1317,16 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     // A first upload that was wrong: there is nothing to go back to, and
     // leaving it live would be the one thing the caller asked against.
     const deps = mockDeps()
+    expect((await service.revertContext(resourceId)).hasContent).toBe(true)
     const result = await revertFromLive(deps)
 
     expect(result.restored).toBeNull()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.storageKey).toBeNull()
     expect(res.hash).toBeNull()
-    // Nothing to rebuild from.
+    // Nothing to rebuild from — and the screen is told so, for its reprocess
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
+    expect((await service.revertContext(resourceId)).hasContent).toBe(false)
   })
 
   it('reports when there was no run to stop', async () => {

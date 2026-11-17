@@ -26,6 +26,8 @@ export interface PipelineStatusData {
    *  place, the generation refuses one overtaken by newer content (ADR-044 §4). */
   revert_target?: number | null
   live_revision?: string | null
+  /** Whether the resource holds a file a reprocess can rebuild from */
+  has_content?: boolean
   steps: PipelineStep[]
 }
 
@@ -53,6 +55,16 @@ export function failureReason(data: Pick<PipelineStatusData, 'error' | 'steps'>)
 export function storedNoVersion(data: Pick<PipelineStatusData, 'pipeline_status' | 'steps'>) {
   if (data.pipeline_status !== 'complete') return false
   return data.steps.some((s) => s.step_name === 'version' && s.status === 'skipped')
+}
+
+/**
+ * Whether the run settled that the current content is a version: complete
+ * means it created one, skipped that an identical one already existed (ADR-044
+ * §4). Missing, running or failed mean it did not.
+ */
+export function versionSaved(steps: PipelineStatusData['steps']) {
+  const status = steps.find((s) => s.step_name === 'version')?.status
+  return status === 'complete' || status === 'skipped'
 }
 
 interface UsePipelineStatusOptions {
@@ -204,6 +216,7 @@ export function usePipelineStatus({
     error: data?.error ?? null,
     revertTarget: data?.revert_target ?? null,
     liveRevision: data?.live_revision ?? null,
+    hasContent: data?.has_content,
     refetch,
   }
 }

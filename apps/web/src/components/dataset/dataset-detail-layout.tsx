@@ -9,7 +9,8 @@ import { DateTime } from '@/components/date-time'
 import { DatasetMetadata } from './dataset-metadata'
 import { ResourceExplorer, type Resource } from '@/components/resource/resource-explorer'
 import { LinkPendingIndicator } from '@/components/link-pending-indicator'
-import { keepsFilesPrivate, tagPath } from '@/lib/paths'
+import { datasetEditPath, keepsFilesPrivate, tagPath } from '@/lib/paths'
+import { ManageLink } from '@/components/manage-link'
 import { canEditPackage } from '@/lib/roles'
 
 interface Organization {
@@ -78,7 +79,16 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
 
         {/* Title */}
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{pkg.title || pkg.name}</h1>
+          <div className="flex items-start gap-2">
+            <h1 className="min-w-0 text-3xl font-bold tracking-tight">{pkg.title || pkg.name}</h1>
+            {canManage && (
+              <ManageLink
+                href={datasetEditPath(pkg.id)}
+                label={t('manageDataset')}
+                className="mt-0.5"
+              />
+            )}
+          </div>
           {pkg.title && (
             <p className="mt-1 break-all font-mono text-sm text-muted-foreground">{pkg.name}</p>
           )}

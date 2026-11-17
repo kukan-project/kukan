@@ -1,17 +1,28 @@
 'use client'
 
-import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
-import { RefreshCw, Undo2, Wrench, X } from 'lucide-react'
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Checkbox,
+  Field,
+  FieldControl,
+  FieldLabel,
+} from '@kukan/ui'
+import { RefreshCw, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { isRunActive, type LegacyPipelineStepName, type PipelineStepName } from '@kukan/shared'
-import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-status'
+import { usePipelineStatus, versionSaved, type PipelineStatus } from '@/hooks/use-pipeline-status'
 import { STATUS_KEYS } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { clientFetch } from '@/lib/client-api'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
 interface PipelineStatusDetailProps {
   resourceId: string
+  /** An uploaded file has no source to fetch again, so the option is not offered */
+  uploaded?: boolean
   /** Called when pipeline reaches a terminal state after reprocessing */
   onSettled?: (status: PipelineStatus) => void
   /** Called once a reprocess, cancel or revert was accepted, for views that show the run elsewhere */
@@ -90,31 +101,12 @@ const STATUS_BADGE_VARIANTS: Record<
 }
 
 /**
- * Regenerate the derivatives from the object the resource already holds.
- *
- * Offered beside the plain reprocess rather than only after a failure, because
- * the repair has to outlive the screen: this view lives in a dialog, and a
- * revert whose rebuild fails later leaves whoever comes back — a reload, a
- * different admin — with nothing but the reprocess, which re-reads an external
- * URL and undoes the revert (ADR-044 §4). Stateless and safe to press at any
- * time, so nothing has to be remembered for it to be available.
- */
-function RebuildButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
-  const t = useTranslations('resource')
-  return (
-    <Button variant="ghost" size="sm" onClick={onClick} disabled={disabled}>
-      <Wrench className="mr-1 size-3" />
-      {t('rebuildDerivatives')}
-    </Button>
-  )
-}
-
-/**
  * Pipeline status display with reprocess button.
  * Polls automatically; fires onSettled when pipeline reaches terminal state.
  */
 export function PipelineStatusDetail({
   resourceId,
+  uploaded = false,
   onSettled,
   onStarted,
 }: PipelineStatusDetailProps) {
@@ -123,13 +115,17 @@ export function PipelineStatusDetail({
   // treated as an in-flight reprocess, or onSettled would fire immediately on an
   // already-complete pipeline (triggering a refresh that closes the dialog).
   // A real reprocess goes through refetch(), which arms onSettled itself.
-  const { status, steps, error, revertTarget, liveRevision, refetch } = usePipelineStatus({
-    resourceId,
-    onSettled,
-  })
+  const { status, steps, error, revertTarget, liveRevision, hasContent, refetch } =
+    usePipelineStatus({
+      resourceId,
+      onSettled,
+    })
   // At most one action can be in flight, so one value rather than a flag each —
   // which also makes "something is running, disable the others" a single check.
   const [busy, setBusy] = useState<'run-pipeline' | 'cancel-pipeline' | 'revert' | null>(null)
+  // What the person ticked for the next press; until then, and again after
+  // anything lands, the screen's default
+  const [fetchAgainChoice, setFetchAgainChoice] = useState<boolean | null>(null)
   // The revert the user was shown, frozen when the dialog opened. Polling keeps
   // moving the live target underneath, so sending whatever is current at confirm
   // time can retract content they never saw. Kept afterwards too: an outcome
@@ -168,12 +164,12 @@ export function PipelineStatusDetail({
   const isRunning = active && !stuck
   const elapsed = active ? getElapsed(steps) : null
 
-  // The Version step settles whether the current content was created: complete
-  // means it was, skipped means an identical version already existed. Anything
-  // else — missing, running, failed — means it was not, and replacing the file
-  // would lose it (ADR-044 §4).
-  const versionStep = steps.find((s) => s.step_name === 'version')
-  const versionSaved = versionStep?.status === 'complete' || versionStep?.status === 'skipped'
+  // Fetching again is off by default: it re-reads an external URL, which undoes
+  // a revert (ADR-044 §4). On only where the resource holds no file — a URL
+  // never fetched leaves a rebuild nothing to work from. Read from the server,
+  // not this screen's history, so a reload or another admin gets the same
+  // default; and off until it has answered.
+  const fetchAgain = !uploaded && (fetchAgainChoice ?? hasContent === false)
 
   // None of these return the new pipeline state, so each ends by refetching it.
   //
@@ -225,6 +221,9 @@ export function PipelineStatusDetail({
         }
         setPartial(result.cleared === false || result.queued === false)
       }
+      // A tick is for one press. Kept, it would outlive what changed under it —
+      // a revert above all, which the next press would then fetch over.
+      setFetchAgainChoice(null)
       onStarted?.()
       refetch()
     } catch {
@@ -238,6 +237,38 @@ export function PipelineStatusDetail({
       setBusy(null)
     }
   }
+
+  // One run, rebuilding from the file already held, which always runs and is
+  // safe at any time — the repair after a revert has to be reachable from this
+  // screen alone (ADR-044 §4). Fetching the source again is an option on it,
+  // and only where there is a source to fetch.
+  const runControls = (
+    <>
+      {!uploaded && (
+        <Field orientation="horizontal" className="w-fit gap-1.5">
+          <FieldControl>
+            <Checkbox
+              checked={fetchAgain}
+              disabled={busy !== null}
+              onCheckedChange={(checked) => setFetchAgainChoice(checked === true)}
+            />
+          </FieldControl>
+          <FieldLabel className="cursor-pointer text-xs font-normal">
+            {t('refetchFromSource')}
+          </FieldLabel>
+        </Field>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => post('run-pipeline', fetchAgain ? undefined : { rebuildOnly: true })}
+        disabled={busy !== null}
+      >
+        <RefreshCw className={`mr-1 size-3 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`} />
+        {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
+      </Button>
+    </>
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -284,40 +315,17 @@ export function PipelineStatusDetail({
                 </Button>
               </>
             )}
-            {!isRunning && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => post('run-pipeline')}
-                  disabled={busy !== null}
-                >
-                  <RefreshCw
-                    className={`mr-1 size-3 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`}
-                  />
-                  {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
-                </Button>
-                <RebuildButton
-                  disabled={busy !== null}
-                  onClick={() => post('run-pipeline', { rebuildOnly: true })}
-                />
-              </>
-            )}
+            {!isRunning && runControls}
           </div>
         </div>
       )}
 
-      {!status && (
-        <div className="flex items-center justify-center py-4">
-          <Button variant="outline" onClick={() => post('run-pipeline')} disabled={busy !== null}>
-            <RefreshCw className={`mr-1 size-4 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`} />
-            {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
-          </Button>
-          <RebuildButton
-            disabled={busy !== null}
-            onClick={() => post('run-pipeline', { rebuildOnly: true })}
-          />
-        </div>
+      {!status && <div className="flex items-center justify-center gap-3 py-4">{runControls}</div>}
+
+      {!isRunning && (
+        <p className="text-xs text-muted-foreground">
+          {t(uploaded ? 'reprocessHelpUpload' : 'reprocessHelp')}
+        </p>
       )}
 
       {/* What a stopped run leaves behind depends on how far it got, and the
@@ -327,7 +335,7 @@ export function PipelineStatusDetail({
       {status === 'cancelled' && (
         <Alert>
           <AlertDescription>
-            {t(versionSaved ? 'cancelledNotice' : 'cancelledNoticeUnsaved')}
+            {t(versionSaved(steps) ? 'cancelledNotice' : 'cancelledNoticeUnsaved')}
           </AlertDescription>
         </Alert>
       )}
@@ -349,7 +357,9 @@ export function PipelineStatusDetail({
 
       {partial && (
         <Alert variant="warning" role="alert">
-          <AlertDescription>{t('revertPartial')}</AlertDescription>
+          <AlertDescription>
+            {t(uploaded ? 'revertPartialUpload' : 'revertPartial')}
+          </AlertDescription>
         </Alert>
       )}
 

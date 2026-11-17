@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { ResourcePipelinePreview } from '../resource-pipeline-preview'
 
 const mockUseFetch = vi.fn()
@@ -85,15 +85,6 @@ describe('ResourcePipelinePreview', () => {
   it('should not show pipeline settings button when canManage is false', () => {
     render(<ResourcePipelinePreview resourceId="r1" canManage={false} />)
     expect(screen.queryByRole('button', { name: 'Processing Status' })).not.toBeInTheDocument()
-  })
-
-  it('links the status view to the resource’s page in the dashboard', () => {
-    render(<ResourcePipelinePreview resourceId="r 1" packageId="pkg 1" canManage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Processing Status' }))
-
-    const link = screen.getByRole('link', { name: /Manage this resource/ })
-    expect(link).toHaveAttribute('href', '/dashboard/datasets/pkg%201/resources/r%201')
-    expect(link).toHaveAttribute('target', '_blank')
   })
 
   it('should show generated date when pipeline is complete', () => {

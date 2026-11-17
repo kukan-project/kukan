@@ -17,7 +17,8 @@ import { LinkHealthWarning } from './link-health-warning'
 import { sectionLayout, type OfficePreviewViewer, type ResourceSummaryMeta } from '@kukan/shared'
 import { ResourceAbstract } from './resource-abstract'
 import { indentClass, headingTag } from '@/lib/resource-sections'
-import { externalUrl } from '@/lib/paths'
+import { externalUrl, resourceEditPath } from '@/lib/paths'
+import { ManageLink } from '@/components/manage-link'
 
 export interface Resource {
   id: string
@@ -211,9 +212,18 @@ export function ResourceExplorer({
           {/* Wraps rather than squeezing: below the title's basis the download
               column drops to its own line instead of shaving the name. */}
           <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-            <h3 className="min-w-0 flex-1 basis-64 text-xl leading-tight font-semibold break-all">
-              {selected.name || t('unnamed')}
-            </h3>
+            <div className="flex min-w-0 flex-1 basis-64 items-start gap-1">
+              <h3 className="min-w-0 text-xl leading-tight font-semibold break-all">
+                {selected.name || t('unnamed')}
+              </h3>
+              {canManage && packageId && (
+                <ManageLink
+                  href={resourceEditPath(packageId, selected.id)}
+                  label={t('manageResource')}
+                  className="-mt-1"
+                />
+              )}
+            </div>
             <div className="ml-auto flex min-w-0 flex-col items-end gap-1">
               <DownloadButton
                 datasetNameOrId={packageName}
@@ -287,7 +297,6 @@ export function ResourceExplorer({
                   format={r.format}
                   url={externalUrl(r)}
                   size={r.size}
-                  packageId={packageId}
                   canManage={canManage}
                   notPublic={notPublic}
                   officePreviewViewer={officePreviewViewer}

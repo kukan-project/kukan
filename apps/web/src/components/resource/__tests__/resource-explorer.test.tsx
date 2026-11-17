@@ -72,6 +72,28 @@ describe('ResourceExplorer', () => {
 
     expect(screen.queryByText(/Hosted on an external site/)).not.toBeInTheDocument()
   })
+
+  it("links a writer to the open resource's page in the editor, by the dataset's id", () => {
+    render(
+      <ResourceExplorer
+        resources={[{ ...baseResource, id: 'r 1' }]}
+        packageName="population"
+        packageId="pkg 1"
+        canManage
+      />
+    )
+
+    const link = screen.getByRole('link', { name: 'Manage this resource' })
+    expect(link).toHaveAttribute('href', '/dashboard/datasets/pkg%201/resources/r%201')
+  })
+
+  it('offers no way into the editor to someone who cannot write', () => {
+    render(
+      <ResourceExplorer resources={[baseResource]} packageName="population" packageId="pkg-1" />
+    )
+
+    expect(screen.queryByRole('link', { name: 'Manage this resource' })).not.toBeInTheDocument()
+  })
 })
 
 function ExplorerWithNames({ names }: { names: string[] }) {

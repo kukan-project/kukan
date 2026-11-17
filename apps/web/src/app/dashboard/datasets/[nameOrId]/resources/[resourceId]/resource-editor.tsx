@@ -284,6 +284,7 @@ export function ResourceEditor({
                 dot, the preview's notes and the panels here all follow that */}
             <PipelineStatusDetail
               resourceId={resource.id}
+              uploaded={!externalUrl(resource)}
               onStarted={() => editor?.reload()}
               onSettled={() => editor?.reload()}
             />

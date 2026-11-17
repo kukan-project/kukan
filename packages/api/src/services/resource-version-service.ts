@@ -2044,10 +2044,15 @@ export class ResourceVersionService {
    * created — it is the newest active version, since there is nothing to step
    * off and that is where a step back goes. Null means the revert empties the
    * resource.
+   *
+   * `hasContent` says whether the resource holds a file to rebuild from. The
+   * screen reads it to decide whether a reprocess has to fetch: one that only
+   * rebuilds has nothing to work from otherwise, and one that fetches where a
+   * file is held would undo a revert.
    */
   async revertContext(
     resourceId: string
-  ): Promise<{ revertTarget: number | null; liveRevision: string }> {
+  ): Promise<{ revertTarget: number | null; liveRevision: string; hasContent: boolean }> {
     const [row] = await this.db
       .select({
         storageKey: resource.storageKey,
@@ -2075,7 +2080,11 @@ export class ResourceVersionService {
       )
       .orderBy(desc(resourceVersion.version))
       .limit(1)
-    return { revertTarget: below?.version ?? null, liveRevision: row?.revision ?? '' }
+    return {
+      revertTarget: below?.version ?? null,
+      liveRevision: row?.revision ?? '',
+      hasContent: !!row?.storageKey,
+    }
   }
 
   /**

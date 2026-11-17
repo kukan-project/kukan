@@ -669,7 +669,11 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
     pipelineService.getStatus(id),
     new ResourceVersionService(db).revertContext(id),
   ])
-  const revertFields = { revert_target: revert.revertTarget, live_revision: revert.liveRevision }
+  const revertFields = {
+    revert_target: revert.revertTarget,
+    live_revision: revert.liveRevision,
+    has_content: revert.hasContent,
+  }
 
   if (!status) {
     return c.json({ id, pipeline_status: null, steps: [], ...revertFields })

@@ -25,8 +25,6 @@ import { ResourceFields, type ColumnRoleView } from './resource-fields'
 import { DataApiDialog } from './data-api-dialog'
 import { OdataDialog, type ReportedRefusal } from './odata-dialog'
 import { useFormattedDateTime } from '@/components/date-time'
-import { NewTabLink } from '@/components/new-tab-link'
-import { resourceEditPath } from '@/lib/paths'
 import { useFetch } from '@/hooks/use-fetch'
 import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
 
@@ -35,9 +33,6 @@ interface ResourcePipelinePreviewProps {
   format?: string | null
   url?: string | null
   size?: number | null
-  /** For the link into this resource's page in the dashboard editor, which is
-   *  addressed by id: a dataset named `new` would reach the creation page */
-  packageId?: string
   canManage?: boolean
   notPublic?: boolean
   officePreviewViewer?: OfficePreviewViewer
@@ -54,7 +49,6 @@ export function ResourcePipelinePreview({
   format,
   url,
   size,
-  packageId,
   canManage,
   notPublic,
   officePreviewViewer,
@@ -137,19 +131,12 @@ export function ResourcePipelinePreview({
                   <DialogTitle>{t('pipelineStatus')}</DialogTitle>
                   <DialogDescription>{t('pipelineStatusDescription')}</DialogDescription>
                 </DialogHeader>
-                <PipelineStatusDetail resourceId={resourceId} onSettled={handleSettled} />
-                {/* Everything the status view cannot do — renaming, replacing
-                    the file, the key, deleting — lives on the row this opens,
-                    and finding it meant walking back through the dashboard. */}
-                {packageId && (
-                  <div className="flex justify-end border-t pt-3">
-                    <NewTabLink
-                      href={resourceEditPath(packageId, resourceId)}
-                      label={t('manageResource')}
-                      variant="outline"
-                    />
-                  </div>
-                )}
+                {/* `url` is only set for a source to fetch, never for an upload */}
+                <PipelineStatusDetail
+                  resourceId={resourceId}
+                  uploaded={!url}
+                  onSettled={handleSettled}
+                />
               </DialogContent>
             </Dialog>
           )}

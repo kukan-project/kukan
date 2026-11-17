@@ -240,7 +240,7 @@ read-only list.
 | Preview         | The public page's preview (for a draft or private dataset too)                                                                                                  | None                                                             |
 | Table settings  | Every per-column decision in one table (decision 5). Only for formats read as tables                                                                            | Apply the columns (a version if the reading changes, decision 5) |
 | Version history | History, diffs, revert, purge, type-change review                                                                                                               | Press and confirm                                                |
-| Processing      | Per-step state, reprocess (re-fetches a URL)                                                                                                                    | Press and confirm                                                |
+| Processing      | Per-step state, reprocess (re-fetches a URL only when chosen, decision 7)                                                                                       | Press and confirm                                                |
 
 **The two tables above show where things go; they are not an inventory of operations.** Every operation
 today's editor offers stays somewhere on the new screens, including ones not listed here. The Step 1
@@ -348,7 +348,7 @@ pipeline next runs. Both contradict the confirmation shown before saving. So thi
   ADR-050's choice to carry reordering on reorder rather than `PUT` still holds (changing a
   heading needs no processing)
 - A save that only changes name, description or extras does not queue it (the search index is
-  still updated as before). To re-fetch a URL, use reprocess on the Processing tab (today's `POST /resources/:id/run-pipeline`, which re-fetches a URL resource)
+  still updated as before). To re-fetch a URL, use reprocess on the Processing tab with "Fetch the file from its URL again" chosen (`POST /resources/:id/run-pipeline`)
 
 | What changes     | Version                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------- |
@@ -366,9 +366,11 @@ version is not known at save time, so the message is conditional — "this creat
 if the contents have changed" — and whether a version was created is shown once processing
 ends, on the Version history tab and by the list's dot.
 
-### 7. The entry from the public page is a "Manage" button
+### 7. The entry from the public page is a "Manage" icon in the heading
 
-- Put "Manage" in the heading of the dataset page and the resource page, shown only to people
+- Put a pencil icon beside the dataset's name and beside the open resource's name. "Manage" is
+  its tooltip and accessible name, not shown as text, so the page does not look much different
+  from what a reader sees. It moves to the editor in the same tab. Shown only to people
   who can write the dataset (`editor` or higher in its organization, sysadmins, and the creator
   of a draft — the same rule as the API's `packageWriteDenial`). Requests with a
   session bypass the CDN cache (the HTML behavior in `infra/lib/constructs/cdn.ts`), so showing
@@ -379,8 +381,14 @@ ends, on the Version history tab and by the list's dot.
   (`makePackageAuthorize(db, user, 'editor')`), so ⚙ was shown to people who could not save
   anything. This was put into today's public page and editor ahead of time, while this ADR was
   being proposed
-- Keep the pipeline status dialog (⚙), and point its link at the editor's Processing tab. Show
-  it under the same check as above
+- Keep the pipeline status dialog (⚙), shown under the same check as above. Drop the link to the
+  editor it used to hold: it went where the heading's icon goes
+- The dialog and the Processing tab have one reprocess button. It rebuilds from the file held
+  (`rebuildOnly`), and only a URL resource offers "Fetch the file from its URL again". Not chosen
+  by default, because fetching again undoes a revert (ADR-044 §4) — except when the resource holds no
+  file (it was never fetched), where there is nothing to rebuild from. Whether it holds one comes from
+  the processing status API (`has_content`), not from what this screen saw happen, so a reload or
+  another admin gets the same default
 
 ### 8. On narrow screens the list stacks above
 
@@ -397,7 +405,7 @@ collapsible form.
 | `components/dashboard/dataset/resource-list.tsx`                                | Split the table and row expansion into the left list and right tabs                                                |
 | `primary-key-picker.tsx`, `column-roles.tsx`                                    | Merge into the Table settings tab's single table                                                                   |
 | `resource-version-history.tsx`, `version-diff-panel.tsx`                        | Move to the Version history tab                                                                                    |
-| `components/resource/resource-pipeline-preview.tsx` and other public components | "Manage" button, ⚙ link target                                                                                     |
+| `components/resource/resource-pipeline-preview.tsx` and other public components | "Manage" icon, drop the ⚙ link, one reprocess                                                                      |
 | `components/dataset/dataset-detail-layout.tsx`                                  | (Done) Decide `canManage` with `canEditPackage`                                                                    |
 | `apps/web/src/lib/paths.ts`                                                     | `resourceEditPath` to the new URL                                                                                  |
 | E2E (`apps/web/src/__tests__/e2e/`)                                             | URLs and steps of tests that walk through editing                                                                  |
@@ -419,7 +427,7 @@ Applying settled types on the Table settings tab adds them to the same write tha
 | Step   | Contents                                                                                                                                                                                                                 | Depends on |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
 | Step 1 | Move to the new URLs and two-column skeleton. Merge key and role into the Table settings tab's single table (roles still read-only), with draft → apply for the key. Narrow when saving queues the pipeline (decision 6) | none       |
-| Step 2 | "Manage" on the public page; change the ⚙ link target                                                                                                                                                                    | Step 1     |
+| Step 2 | "Manage" icon on the public page; drop the ⚙ link; one reprocess                                                                                                                                                         | Step 1     |
 | Step 3 | Put ii-c (settled types, type-change review, AI suggestions) on the Table settings and Version history tabs                                                                                                              | Step 1     |
 | Step 4 | Role overrides (ADR-063, next step): a write that adds roles to `column_settings`, and rebuilding the profile and index. Make the Table settings tab's role column editable                                              | Step 1     |
 
@@ -427,7 +435,7 @@ Step 1 changes appearance and placement but adds no capability. Applying a key i
 "choose, then apply", so draft → apply does not change its meaning. Roles are listed read-only
 as today; overrides arrive in Step 4. Narrowing when saving queues the pipeline removes a
 behavior (saving a name no longer re-fetches the URL); re-fetching remains available through
-reprocess on the Processing tab.
+reprocess on the Processing tab ("Fetch the file from its URL again").
 
 ## Trade-offs
 

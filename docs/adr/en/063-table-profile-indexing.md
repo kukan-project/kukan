@@ -283,8 +283,8 @@ nothing in DuckDB reads them) are separate issues.
    - Implemented: roles and their basis (Decision §1), the profile (Decision §4, `resource_pipeline.profile`),
      shown in the field list and by `get_resource_schema` (Decision §4, §5), and the profile artifact
      (Decision §3, §4)
-   - Existing resources get them from "rebuild the preview and index" or "reprocess all resources". A plain
-     reprocess reuses the derivatives when the content has not changed, so it does not
+   - Existing resources get them from "reprocess" or "reprocess all resources". A reprocess that fetches the file from its URL
+     again reuses the derivatives when the content has not changed, so it does not
    - The artifact holds **every** value of the name and categorical columns, with no cap, and the free-text
      sentences (zstd-compressed NDJSON, under `previews/` with the preview's token, named by `profile.key`). The
      index is built from all of them; the values in the database (30 a column) are a head of them for
