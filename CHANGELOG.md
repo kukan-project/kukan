@@ -6,6 +6,130 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.43.0] - 2026-11-17
+
+**Breaking Changes**
+
+- **A sysadmin's API token can no longer manage users, wipe the catalog or open registration.** Creating, changing, deleting, restoring and purging users (`/admin/users`), deleting all data (`DELETE /admin/data`) and turning self-registration on or off (`PUT /admin/settings/registration-enabled`) now answer 403 when called with an API token (#1205). Until now, a leaked sysadmin token could create a sysadmin account that outlived the token's revocation. Do these signed in to the dashboard; the first sysadmin can also be created with `pnpm db:create-user`. Listing users and the other `/admin` operations still take a token.
+
+**Highlights**
+
+- **Tables tell what their columns stand for (experimental).** KUKAN can now work out that a column holds codes or names of administrative areas, by checking its values against a code list, and dataset search can filter by the area a table covers — a prefecture, then a municipality under it — and by what its columns mean (#1214–#1218, #1223, #1224, #1232). A site turns it on by picking a vocabulary pack in Site Management; the first pack is Japan's, built from the Digital Agency's City Master and the Standard Area Code for Statistics, with places named in Japanese and English. It is off until a site turns it on.
+- **The dataset editor is rebuilt as a pair to the public page.** Opening a dataset in the dashboard turns the sidebar into its list of resources, and each resource is edited in tabs: Basic, Preview, Table settings, Version history and Processing (#1204). The primary key and the column roles share one table on the Table settings tab, and a key change is confirmed before it is applied (#1208). Those who can edit a dataset get a pencil icon on its public page that opens the same thing in the editor (#1240).
+- **A round of fixes from a security review.** Small crafted files can no longer make the worker spend minutes or gigabytes on old Office formats, Ichitaro, XLSX, JSON, ZIP or long-lined HTML; failures that used to come back for ever now settle; privileged changes are written to the audit log; and a few gaps in fetching and caching are closed (#1182–#1184, #1190, #1193, #1194, #1197, #1198, #1200, #1201, #1206, #1207).
+
+**Features**
+
+- Column vocabulary (experimental): pick packs under "Column vocabulary" in Site Management (runtime setting `vocabulary-packs`, empty by default) (#1215, #1217). Settled vocabularies show in the field list on the public page, in the `/schema` API and in MCP's `get_resource_schema`; the Table settings tab also shows how many values matched, at which level and from when, and lists candidates for columns left unsettled (#1217). Dataset search gains "Area" and "Column meaning" filters, and the REST API takes `area`, `area_place`, `meaning` and `lang` (#1224, #1232). Codes are settled from their values when they spread widely enough, or from a heading or a column of names beside them; rows that total groups of places in a statistics table no longer keep a column from being read (#1216, #1218).
+- The dashboard's dataset editor has new addresses, `/dashboard/datasets/<ID>` and `/dashboard/datasets/<ID>/resources/<resource ID>`; the old `…/edit` addresses forward to them (#1204). Unsaved changes are kept across tabs and confirmed before leaving the page, and the dataset list keeps its view, filters and page in the address so "back" returns to the same place.
+- Saving a published dataset keeps you in the editor, as saving a draft or a resource already did (#1238).
+- "Reprocess" is now one button that always rebuilds the preview, the reading of the table and the search index from the current file. For a URL resource, "Fetch the file from its URL again" is offered and starts unticked, except when the last fetch failed or has not run (#1240).
+- Saving a resource runs the pipeline only when its source or format changed; saving just its name, description or custom fields no longer fetches its URL again (#1203).
+- Privileged changes are recorded in the audit log: creating users (including `pnpm db:create-user`), role changes, deleting and restoring users, organization and category membership, issuing and revoking API tokens, and the catalog wipe, each with whether it was made signed in or with a token (#1200).
+- AI abstracts are now written for private datasets too, shown only to those who can see them (#1206). See the Upgrade Notes if your site uses an OpenAI-compatible provider.
+- Office originals are drawn with ibisOffice 0.8.7, which renders half-width Gothic and monospaced text in DOCX in the right typeface and no longer shows a compatibility-mode bar for DOC and older DOCX (#1209).
+
+**Bug Fixes**
+
+- Rows at the bottom of a CSV that have few values but look like the table's other rows are kept, instead of being dropped as a footer note; a small table whose rows are all sparse no longer comes out empty (#1211).
+- Columns of digits that start with a zero (local government codes, prefecture codes) are taken for identifiers rather than numbers written as text (#1212).
+- Switching a resource from a link to an upload keeps the link working until the upload lands, and switching back clears the upload's leftovers (#1203).
+- Editing is offered only to those who can save it: organization members with the member role no longer see the processing dialog or an editor whose saves all fail (#1189).
+- A deleted category no longer shows on its datasets' public pages, in the API or in search, and a dataset that belonged to one can be saved again (#1192).
+- When several high-priority runs wait on the same host, other runs no longer queue behind them for minutes (#1196).
+- A run that keeps running the worker out of memory settles after a few tries instead of coming back every hour; the heavy child process gets an explicit heap limit (#1193).
+- An AI abstract the provider answers but that cannot be used is recorded once with its reason instead of being retried (and paid for) three times; regenerating from the dashboard tries it again (#1194).
+- DuckDB's limit on temporary files now takes effect — it was shown but not enforced — and the worker's CSV and JSON reading gets a 4 GiB limit; a CSV that runs out of memory is marked so once instead of being retried (#1201).
+
+**Security**
+
+- On AWS, requests carrying an API token are no longer answered from the edge cache, and each cache bypass gets a key of its own (#1182).
+- The worker refuses ZIP reads outside the file instead of crashing, and strips tags from long HTML lines in linear time (#1183).
+- Small crafted XLS, XLSX, PPT, DOC, Ichitaro and JSON files can no longer make the worker's parsers use minutes of CPU or gigabytes of memory (#1190, #1197, #1198).
+- AI abstracts are refused above 2,000 characters, and the cleaning that removes addresses runs in linear time and also catches full-width and unusual forms (#1184).
+- Fetching refuses the cloud metadata address `100.100.100.200` and the local-use NAT64 range `64:ff9b:1::/48` whatever `FETCH_DENY_PRIVATE_NETWORKS` says (#1201, #1206). Control characters are refused in media types (#1206).
+- CKAN-compatible `offset` and `limit` are bounded, DuckDB error messages no longer carry URLs from the SQL, and a brand page path such as `/constructor` is a 404 instead of a 500 (#1192).
+- Errors written to the logs are capped in size, so an AI provider's whole response body is no longer logged (#1194).
+- In a multi-site deployment on AWS, site database roles can no longer connect to the cluster's default databases `postgres` and `template1` (#1207).
+
+**Dependencies**
+
+- Next.js 16.4.6, Better Auth 1.7.25, Hono, the AWS SDK and CDK, and other minor and patch updates (#1241). The PostgreSQL (pgvector) and Caddy images are moved to their latest digests (#1233–#1236).
+
+**Upgrade Notes** (for system administrators)
+
+- **Database:** no migrations.
+- **Search index:** the resource index gains three fields for the column vocabulary; they are added to the existing index when the new version starts. Nothing to rebuild.
+- **Deleted categories:** after deploying, run "Rebuild the search index" (Index Management) once, so search stops showing categories deleted before this version on their datasets. Categories deleted from now on are handled as they are deleted (#1192).
+- **Column vocabulary:** nothing changes until you pick a pack. Picking one reads the site's table resources again at low priority. Pick it once the deployment has finished: a worker of the previous version drops the job that starts the re-read.
+- **Existing resources:** CSVs that lost their last rows (#1211), and code columns read as numbers written as text (#1212), are put right by "Reprocess" on the resource.
+- **AI abstracts for private datasets:** on a site whose abstracts use an OpenAI-compatible provider, the content of private datasets is now sent to it too. If that is not acceptable, unset `AI_SUMMARY_MODEL`. Existing private datasets get abstracts from "Write the missing ones" under "Generate AI descriptions in bulk" in AI Management (#1206). Abstracts written before #1184 are cleaned again when they are regenerated.
+- **Closed networks:** replace the ibisOffice archive you place in advance with `ibisOffice-0.8.7-Web.zip` (#1209).
+- **AWS, multi-site:** the next deployment updates every site's database custom resource; nothing is replaced. It takes `CONNECT` on `postgres` and `template1` away from `PUBLIC`; a role other than the master user that connects to `postgres` needs an explicit grant (#1207).
+- **Dashboard bookmarks:** old editor addresses forward to the new ones (#1204).
+
+---
+
+**破壊的変更**
+
+- **sysadmin の API トークンでは、利用者の管理・全データの削除・登録の設定の変更ができなくなりました。** 利用者の作成・変更・削除・復元・完全削除（`/admin/users`）、全データの削除（`DELETE /admin/data`）、自己登録の切り替え（`PUT /admin/settings/registration-enabled`）は、API トークンで呼ぶと 403 になります（#1205）。これまでは、漏れた sysadmin のトークンで sysadmin のアカウントを作られると、トークンを失効させてもそのアカウントが残りました。管理画面にログインして行ってください。最初の sysadmin は `pnpm db:create-user` でも作れます。利用者の一覧と、ほかの `/admin` の操作は、これまでどおりトークンで使えます。
+
+**ハイライト**
+
+- **表の列が何を表しているかが分かるようになりました（試験的）。** 列の値をコード表に照らして、行政区域のコードや名称の列を見分けます。データセットの検索では、表が扱う地域（都道府県と、その下の市区町村）や、列の意味で絞り込めます（#1214〜#1218、#1223、#1224、#1232）。サイト管理で語彙の束を選ぶと有効になります。最初の束は日本の束で、デジタル庁「市区町村マスター」と総務省「統計に用いる標準地域コード」から作り、地域の名前を日本語と英語で持ちます。サイトが有効にするまでは何も変わりません。
+- **データセットの編集画面を、公開ページと対になる形に作り直しました。** 管理画面でデータセットを開くと、サイドバーがそのリソースの一覧に替わり、リソースは「基本」「プレビュー」「表の設定」「バージョン履歴」「処理状況」のタブで編集します（#1204）。主キーと列の役割は「表の設定」タブの 1 つの表にまとまり、主キーの変更は確認してから適用します（#1208）。データセットを編集できる人には、公開ページに鉛筆のアイコンが出て、同じものの編集画面へ直接移れます（#1240）。
+- **セキュリティレビューを受けた修正をまとめて入れました。** 細工した小さなファイルで、worker が古い Office 形式・一太郎・XLSX・JSON・ZIP・長い行の HTML に何分も CPU を使ったり、何 GB もメモリを使ったりしないようにしました。繰り返し続けていた失敗は決着するようにし、権限に関わる操作は監査ログに残し、外部からの取得とキャッシュのすき間をいくつか塞ぎました（#1182〜#1184、#1190、#1193、#1194、#1197、#1198、#1200、#1201、#1206、#1207）。
+
+**機能**
+
+- 列の語彙（試験的）：管理画面「サイト管理」の「列の語彙」で束を選びます（ランタイム設定 `vocabulary-packs`、既定は空）（#1215、#1217）。決まった語彙は、公開ページのフィールド一覧、`/schema` API、MCP の `get_resource_schema` に出ます。「表の設定」タブには、値の一致率・当たった区域の階層・コード表の時点も出て、決まらなかった列には候補が並びます（#1217）。データセットの検索に「地域」「列の意味」の絞り込みが加わり、REST API は `area`・`area_place`・`meaning`・`lang` を受け取ります（#1224、#1232）。短いコードは、値が十分に広がっていれば値から、そうでなければ列名や隣の名称の列を手がかりに決めます。統計表の中に区部・市部などの集計の行が混ざっていても、列を読めるようにしました（#1216、#1218）。
+- 管理画面のデータセット編集の URL が `/dashboard/datasets/<ID>` と `/dashboard/datasets/<ID>/resources/<リソースの ID>` になりました。以前の `…/edit` は新しい URL へ転送されます（#1204）。保存していない変更はタブを移っても残り、ページを離れる前に確認が出ます。データセット一覧は表示の種類・絞り込み・ページを URL に持つので、「戻る」で同じ場所に戻れます。
+- 公開中のデータセットを保存しても、一覧に戻らずその場で編集を続けられるようになりました。下書きとリソースは、これまでもそうでした（#1238）。
+- 「再処理」を 1 つのボタンにまとめました。押すと、今のファイルからプレビュー・表の解釈・検索の索引を必ず作り直します。URL のリソースでは「URL からファイルを取得し直す」を選べます。ふだんは外れていて、直前の取得が失敗したか、まだ済んでいないときだけ最初から選ばれています（#1240）。
+- リソースを保存したときに処理を走らせるのは、ソースかフォーマットが変わったときだけになりました。名前・説明・カスタムフィールドだけの保存では、URL を取得し直しません（#1203）。
+- 権限に関わる操作を監査ログに残すようにしました。利用者の作成（`pnpm db:create-user` を含む）・役割の変更・削除・復元、組織とカテゴリーのメンバーの変更、API トークンの発行と失効、全データの削除で、ログインして行ったかトークンで行ったかも記録します（#1200）。
+- 非公開のデータセットにも AI による説明（抄録）を作るようにしました。表示されるのは、そのデータセットを閲覧できる人だけです（#1206）。OpenAI 互換のプロバイダーを使っているサイトは、アップグレード時の注意を読んでください。
+- Office 文書の原本の表示を ibisOffice 0.8.7 にしました。DOCX の半角のゴシック体・等幅の文字が正しい書体で描かれ、DOC と古い DOCX に互換モードのバーが出なくなりました（#1209）。
+
+**バグ修正**
+
+- CSV の末尾にある値の少ない行が、表のほかの行と同じ形なら、注記として落とさずに残すようにしました。全行の値が少ない小さな表が空になることもなくなりました（#1211）。
+- 先頭が 0 の数字の列（団体コード・都道府県コードなど）を、「文字列表記数値」ではなく「識別子」と判定するようにしました（#1212）。
+- リソースをリンクからアップロードに切り替えたとき、ファイルが届くまでリンクが生きているようにしました。リンクに戻したときは、アップロードの名残りを消します（#1203）。
+- 編集の入口を、保存できる人にだけ出すようにしました。組織の「メンバー」の役割の人に、処理状況のダイアログや、保存がすべて断られる編集画面が出ていました（#1189）。
+- 削除したカテゴリーが、所属データセットの公開ページ・API・検索に出なくなりました。削除したカテゴリーに入っていたデータセットを、また保存できるようになりました（#1192）。
+- 同じ配信元への高優先の処理が重なっても、ほかの処理が何分も待たされないようにしました（#1196）。
+- worker のメモリを使い切る処理が、毎時の再投入で繰り返し続けず、数回で決着するようにしました。重い処理の子プロセスにヒープの上限をはっきり付けました（#1193）。
+- AI のプロバイダーが答えたものの使えない説明を返したときは、3 回やり直して課金せず、1 回で理由を記録するようにしました。管理画面の再生成で作り直せます（#1194）。
+- DuckDB の一時ファイルの上限が実際に効くようにしました（設定が表示されるだけで効いていませんでした）。worker の CSV・JSON の解釈にも 4 GiB の上限を付け、メモリが足りずに解釈できなかった CSV は、やり直さずに 1 回で「メモリ不足」になります（#1201）。
+
+**セキュリティ**
+
+- AWS のサイトで、API トークンを付けた要求をエッジのキャッシュから返さないようにし、キャッシュを迂回するキーを要求ごとに分けました（#1182）。
+- worker が、ファイルの範囲外を指す ZIP で落ちずに読み取りを断り、1 行が非常に長い HTML のタグを線形時間で除くようにしました（#1183）。
+- 細工した小さな XLS・XLSX・PPT・DOC・一太郎・JSON のファイルで、worker のパーサーが何分も CPU を使ったり、何 GB もメモリを使ったりしないようにしました（#1190、#1197、#1198）。
+- AI による説明は 2,000 字を超えると使えない応答として断り、アドレスを除く処理を線形時間にして、全角や見慣れない書き方のアドレスも除くようにしました（#1184）。
+- 外部 URL の取得で、クラウドのメタデータのアドレス `100.100.100.200` と、ローカル用 NAT64 の範囲 `64:ff9b:1::/48` を、`FETCH_DENY_PRIVATE_NETWORKS` によらず断るようにしました（#1201、#1206）。MIME タイプに制御文字を入れられないようにしました（#1206）。
+- CKAN 互換 API の `offset`・`limit` に上限を付け、DuckDB のエラー文に SQL の中の URL が残らないようにし、`/constructor` のようなブランドの固定ページのパスを 500 ではなく 404 にしました（#1192）。
+- ログに出すエラーの大きさを抑え、AI のプロバイダーの応答の本文が丸ごと残らないようにしました（#1194）。
+- AWS のマルチサイト構成で、サイトの DB ロールがクラスターの既定の DB（`postgres`・`template1`）に接続できないようにしました（#1207）。
+
+**依存関係**
+
+- Next.js 16.4.6、Better Auth 1.7.25、Hono、AWS SDK・CDK ほか、minor・patch の更新（#1241）。PostgreSQL（pgvector）と Caddy のイメージを最新のダイジェストにしました（#1233〜#1236）。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **データベース:** マイグレーションはありません。
+- **検索の索引:** リソースの索引に、列の語彙のための項目が 3 つ加わります。新しい版の起動時に既存の索引へ足されるので、作り直しは要りません。
+- **削除済みのカテゴリー:** デプロイ後に「インデックス管理」の「検索インデックスの再構築」を一度実行してください。この版より前に削除したカテゴリーが、検索でデータセットに表示されなくなります。この版からは、削除したときに反映されます（#1192）。
+- **列の語彙:** 束を選ぶまでは何も変わりません。選ぶと、表のリソースが低い優先度で読み直されます。束はデプロイが終わってから選んでください。前の版の worker は、読み直しを始めるジョブを捨ててしまいます。
+- **既存のリソース:** 末尾の行が欠けていた CSV（#1211）と、コードの列が「文字列表記数値」と判定されていたもの（#1212）は、そのリソースの「再処理」で直ります。
+- **非公開のデータセットの AI による説明:** 説明に OpenAI 互換のプロバイダーを使っているサイトでは、非公開のデータセットの中身もそのプロバイダーへ送られるようになります。それが許されない場合は `AI_SUMMARY_MODEL` を外してください。既存の非公開のデータセットに説明を付けるには、「生成AI管理」の「AI による説明の一括生成」で「不足分を生成」を実行します（#1206）。#1184 より前に書かれた説明は、再生成したときに掃除し直されます。
+- **閉域網:** 先に置いておく ibisOffice のファイルを `ibisOffice-0.8.7-Web.zip` に差し替えてください（#1209）。
+- **AWS のマルチサイト構成:** 次のデプロイで、全サイトのデータベースのカスタムリソースが更新されます。置き換えは起きません。`postgres` と `template1` への `CONNECT` を `PUBLIC` から外すので、マスターユーザー以外で `postgres` に接続するロールがあれば、明示的に権限を与えてください（#1207）。
+- **管理画面のブックマーク:** 以前の編集画面の URL は、新しい URL へ転送されます（#1204）。
+
 ## [0.42.1] - 2026-11-10
 
 **Security**
