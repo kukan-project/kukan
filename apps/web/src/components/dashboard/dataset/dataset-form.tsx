@@ -33,7 +33,7 @@ import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { SwitchField } from '@/components/switch-field'
 import { clientFetch, readProblem } from '@/lib/client-api'
-import { draftEditPath, recallDatasetList } from '@/lib/paths'
+import { draftEditPath } from '@/lib/paths'
 import { updateResource } from '@/lib/update-resource'
 import { parseTags } from '@/lib/parse-tags'
 import {
@@ -83,7 +83,7 @@ interface DatasetFormProps {
   organizations: Organization[]
   /** Edit target is a draft package (ADR-039): partial PUT, relaxed validation */
   isDraft?: boolean
-  /** Called after a successful update instead of navigating to the list */
+  /** Called after a successful update, the page staying where it is */
   onSaved?: () => void
   /** Called after "Save & Publish" successfully published the draft */
   onPublished?: () => void
@@ -463,15 +463,11 @@ export function DatasetForm({
       refreshBaseline()
     }
 
-    if (onSaved) {
-      setJustSaved(!adopt)
-      onSaved()
-    } else if (!adopt) {
-      // An adopt-save keeps the user editing; only an explicit save navigates
-      setNavigating(true)
-      // Back to the list as it was left (its view, filters and page)
-      router.push(recallDatasetList())
-    }
+    // The page stays: the editor is where the work goes on (ADR-072). Leaving
+    // for the list here would race the leave guard standing down, whose step
+    // back off its history entry undoes a navigation not yet committed
+    setJustSaved(!adopt)
+    onSaved?.()
   }
 
   return (

@@ -681,6 +681,36 @@ describe('DatasetForm (draft flows)', () => {
     })
   })
 
+  describe('edit mode (active) — staying on the page', () => {
+    it('stays on the page after a save, and saves again after the next change', async () => {
+      setupMocks(jsonResponse({ id: 'pkg-1', name: 'active-pkg' }))
+      render(
+        <DatasetForm
+          mode="edit"
+          nameOrId="pkg-1"
+          defaultValues={{
+            name: 'active-pkg',
+            ownerOrg: organizations[0].id,
+            licenseId: 'cc-by',
+          }}
+          organizations={organizations}
+        />
+      )
+
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'First' } })
+      const saveButton = screen.getByRole('button', { name: 'Save' })
+      fireEvent.click(saveButton)
+      await waitFor(() => expect(findSubmitCall()).toBeDefined())
+      await waitFor(() => expect(saveButton).toBeDisabled())
+      // Leaving for the list raced the leave guard, which undid it and left
+      // the form waiting for a navigation that never came
+      expect(push).not.toHaveBeenCalled()
+
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Second' } })
+      await waitFor(() => expect(saveButton).toBeEnabled())
+    })
+  })
+
   describe('AI metadata suggestions (ADR-040)', () => {
     const editProps = {
       mode: 'edit' as const,

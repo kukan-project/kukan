@@ -497,9 +497,11 @@ export default function EditDatasetPage() {
                 defaultValues={toFormDefaults(pkg)}
                 organizations={organizations}
                 isDraft={isDraft}
-                // Full refetch (not the PUT response) keeps tags/groups fresh
-                // so the publish-time remount doesn't restore stale defaults
-                onSaved={isDraft ? fetchData : undefined}
+                // A save stays on the page, published or draft: the editor is
+                // where the work goes on (ADR-072). Full refetch (not the PUT
+                // response) keeps tags/groups fresh so the publish-time remount
+                // doesn't restore stale defaults, and the list shows the new title
+                onSaved={fetchData}
                 onDirtyChange={editor?.setPageUnsaved}
                 onPublished={isDraft ? handlePublished : undefined}
                 suggest={{
