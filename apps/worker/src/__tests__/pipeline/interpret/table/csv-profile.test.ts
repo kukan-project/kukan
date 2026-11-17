@@ -439,7 +439,7 @@ describe('interpretCsv — vocabulary', () => {
       vocabulary: {
         concept: 'admin-area',
         pack: 'JP',
-        scheme: 'jp-lg-code',
+        scheme: 'jp-area-code',
         representation: 'code6',
         share: 1,
         levels: [{ level: 'ADM1', matched: 4, total: 47 }],
@@ -516,11 +516,12 @@ describe('interpretCsv — vocabulary', () => {
   })
 
   it('takes a statistics table’s codes, its groups said by the names beside them', async () => {
-    // Tokyo's population table: wards and cities, with 区部 and 市部 between
+    // Tokyo's population table: wards and cities, with 市部 and 町村部 among them,
+    // Tokyo's own codes and in no code table
     const { columns } = await profile(
       [
         ['地域コード', '地域', '人口'],
-        ['13100', '区部', '9700000'],
+        ['13550', '町村部', '57000'],
         ['13101', '千代田区', '68000'],
         ['13104', '新宿区', '350000'],
         ['13105', '文京区', '240000'],

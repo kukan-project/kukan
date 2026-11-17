@@ -110,6 +110,11 @@ packagesRouter.get(
       area: repeatedParam,
       area_place: repeatedParam,
       meaning: repeatedParam,
+      // The language to name places in, where a pack has their names in it
+      lang: z
+        .string()
+        .regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/)
+        .optional(),
       creator_user_id: z.string().optional(),
       state: stateParam,
       my_org: z
@@ -317,6 +322,7 @@ packagesRouter.get(
           areas,
           places: areaPlaces,
           meanings: rest.meaning,
+          lang: rest.lang,
         }),
       }
       // The area filters as they were read (`13` is `130001`), so the screen

@@ -41,6 +41,12 @@ describe('nameVocabularyFacets', () => {
     })
   })
 
+  it('names places in the language asked for, as the GSI’s rules write them in English', () => {
+    const named = nameVocabularyFacets(facets, registry, { areas: ['130001'], lang: 'en' })
+    expect(named.areas[0]).toMatchObject({ name: '130001', title: 'Tokyo Metropolis' })
+    expect(named.areaPlaces).toMatchObject([{ name: '131016', title: 'Chiyoda City' }])
+  })
+
   it('keeps an area and a meaning asked for on the screen though nothing holds them now', () => {
     const named = nameVocabularyFacets({ areas: [], areaPlaces: [], meanings: [] }, registry, {
       areas: ['130001'],

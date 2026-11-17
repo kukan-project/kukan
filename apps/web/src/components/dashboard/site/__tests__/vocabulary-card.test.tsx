@@ -31,13 +31,13 @@ describe('VocabularyCard', () => {
 
   it('lists the packs the product ships, none checked by default', async () => {
     await renderLoaded([])
-    expect(screen.getByLabelText('Japan (local government codes)')).not.toBeChecked()
+    expect(screen.getByLabelText('Japan (standard area codes for statistics)')).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('saves the packs checked', async () => {
     await renderLoaded([])
-    fireEvent.click(screen.getByLabelText('Japan (local government codes)'))
+    fireEvent.click(screen.getByLabelText('Japan (standard area codes for statistics)'))
     mockClientFetch.mockResolvedValueOnce(respond({ value: ['JP'] }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -49,7 +49,7 @@ describe('VocabularyCard', () => {
 
   it('keeps a pack a newer release wrote when one listed is unchecked', async () => {
     await renderLoaded(['JP', 'TW'])
-    fireEvent.click(screen.getByLabelText('Japan (local government codes)'))
+    fireEvent.click(screen.getByLabelText('Japan (standard area codes for statistics)'))
     mockClientFetch.mockResolvedValueOnce(respond({ value: ['TW'] }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))

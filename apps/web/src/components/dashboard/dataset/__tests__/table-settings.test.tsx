@@ -809,7 +809,7 @@ describe('TableSettings', () => {
       const vocabulary = {
         concept: 'admin-area',
         pack: 'JP',
-        scheme: 'jp-lg-code',
+        scheme: 'jp-area-code',
         representation: 'code6',
         share: 0.95,
         ambiguous: 0,
@@ -848,7 +848,7 @@ describe('TableSettings', () => {
 
       await waitFor(() =>
         expect(rowOf('order')).toHaveTextContent(
-          'Administrative area: Local government code (Japan) (6 digits)'
+          'Administrative area: Standard area code for statistics (Japan) (6 digits)'
         )
       )
       expect(screen.getByRole('columnheader', { name: 'Vocabulary' })).toBeInTheDocument()
@@ -858,7 +858,7 @@ describe('TableSettings', () => {
       // A badge for each candidate, and what they are said beneath
       expect(
         within(rowOf('line')).getByText(
-          'Administrative area: Local government code (Japan) (names)'
+          'Administrative area: Standard area code for statistics (Japan) (names)'
         )
       ).toBeInTheDocument()
       expect(within(rowOf('line')).getByText('xa-area: xa (c)')).toBeInTheDocument()

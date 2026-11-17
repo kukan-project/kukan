@@ -495,7 +495,7 @@
       "vocabularyTitle": "Column vocabulary",
       "vocabularyDescription": "Works out what the columns of table resources stand for (such as codes or names of administrative areas) against the code tables of the regions chosen. Changing it reads table resources again at low priority.",
       "vocabularyPacks": {
-        "JP": "Japan (local government codes)"
+        "JP": "Japan (standard area codes for statistics)"
       },
       "exampleQueriesTitle": "Example Search Queries",
       "exampleQueriesDescription": "Example queries shown under the search box, one per row (up to {max}, {length} characters each; for example evacuation shelters). Remove them all and save to hide the chips. Changes take effect within a minute.",
@@ -860,10 +860,10 @@
         "admin-area": "Administrative area"
       },
       "schemes": {
-        "jp-lg-code": "Local government code (Japan)"
+        "jp-area-code": "Standard area code for statistics (Japan)"
       },
       "representations": {
-        "jp-lg-code": {
+        "jp-area-code": {
           "code6": "6 digits",
           "code5": "5 digits",
           "pref2": "prefecture, 2 digits",

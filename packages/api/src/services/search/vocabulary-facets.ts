@@ -45,9 +45,9 @@ type VocabularyFacets = Pick<FacetCounts, 'areas' | 'areaPlaces' | 'meanings'>
 export function nameVocabularyFacets(
   facets: VocabularyFacets,
   registry: Registry,
-  asked: { areas?: string[]; places?: string[]; meanings?: string[] }
+  asked: { areas?: string[]; places?: string[]; meanings?: string[]; lang?: string }
 ): VocabularyFacets {
-  const name = (code: string) => placeName(registry, code) ?? null
+  const name = (code: string) => placeName(registry, code, asked.lang) ?? null
   const under = new Set(asked.areas ?? [])
   const parentOf = (code: string) => {
     const roots = placeRoots(registry, code)

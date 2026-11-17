@@ -6,7 +6,7 @@ describe('registryFor', () => {
   it('builds a set of packs once, whatever order they are named in', async () => {
     const a = await registryFor(['JP'], '2026-11-15')
     expect(await registryFor(['JP', 'JP'], '2026-11-15')).toBe(a)
-    expect(a.schemes.map((s) => s.def.id)).toEqual(['jp-lg-code'])
+    expect(a.schemes.map((s) => s.def.id)).toEqual(['jp-area-code'])
   })
 
   it('leaves out a pack this release does not ship', async () => {

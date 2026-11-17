@@ -160,6 +160,9 @@ areas themselves. The index needs them.
 - The API labels the buckets ("Tokyo", "Chiyoda", "Administrative area code"). Area names come
   from the enabled packs' registry (`registryFor` in `@kukan/vocabulary`); a code no pack knows is
   returned as is
+- Places are named in the language of `lang` (`lang=en` and so on); where the pack has no name in it,
+  or none is given, in Japanese. The screen passes the language it shows (the Japan pack's English
+  names take the form of the GSI's rules for English place names, ADR-073 §9)
 - Hybrid search's `mergeFacets` and `PackageService.enrichFacets` are hard-coded to the five
   existing filters; add the two new ones. `enrichFacets`' "list zero-count values too" does not
   apply to areas (47 prefectures at zero are not listed)
@@ -186,7 +189,7 @@ areas themselves. The index needs them.
 
 - Add two `FilterSection`s to `dataset-filters.tsx`. A filter with no counts is not shown (on a
   site with no pack enabled, neither is)
-- The heading carries a small "Experimental" mark (`Badge variant="outline"`), explained in a title
+- The heading carries a small "Experimental" mark (a flask icon), explained on hover and tap (a popover)
 - Add `area` / `area_place` / `meaning` to `dataset-list.tsx`'s `filterParams` (what filter links
   carry) and to the SSR `filterKeys`
 - "Area" shows the municipalities' counts under a prefecture once it is chosen (§5.2)

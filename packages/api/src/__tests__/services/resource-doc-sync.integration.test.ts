@@ -191,7 +191,7 @@ describe('syncDueSearchDocs', () => {
             vocabulary: {
               concept: 'admin-area',
               pack: 'JP',
-              scheme: 'jp-lg-code',
+              scheme: 'jp-area-code',
               representation: 'code6',
               share: 1,
               ambiguous: 0,

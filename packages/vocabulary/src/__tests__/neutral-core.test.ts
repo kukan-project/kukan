@@ -20,9 +20,15 @@ const XA: Pack = {
       id: 'xa-region',
       concept: 'admin-area',
       label: { en: 'Region code (XA)' },
-      publisher: 'Statistics Office of XA',
-      license: { name: 'Open', url: 'https://example.org/licence', derivatives: true },
-      source: { url: 'https://example.org/codes', retrieved: '2026-11-14' },
+      sources: [
+        {
+          publisher: 'Statistics Office of XA',
+          title: 'Region codes',
+          url: 'https://example.org/codes',
+          retrieved: '2026-11-14',
+          license: { name: 'Open', url: 'https://example.org/licence', derivatives: true },
+        },
+      ],
       codeFolding: ['nfkc', 'uppercase'],
       nameFolding: ['nfkc', 'lowercase'],
       representations: [
@@ -121,6 +127,16 @@ describe('the registry state', () => {
       ],
     }
     expect(() => createRegistry([twice])).toThrow(/twice/)
+  })
+
+  it('refuses a second name representation, which the first’s names would match', () => {
+    const [scheme] = XA.schemes
+    const english = { id: 'name-en', kind: 'name' as const, lang: 'en' }
+    const two = {
+      ...XA,
+      schemes: [{ ...scheme, representations: [...scheme.representations, english] }],
+    }
+    expect(() => createRegistry([two])).toThrow(/one index serves them all/)
   })
 })
 

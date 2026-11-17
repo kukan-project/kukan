@@ -892,7 +892,7 @@ describe('GET /api/v1/resources/:id/schema', () => {
     const vocabulary = {
       concept: 'admin-area',
       pack: 'JP',
-      scheme: 'jp-lg-code',
+      scheme: 'jp-area-code',
       representation: 'code6',
       share: 1,
       ambiguous: 0,
@@ -916,7 +916,7 @@ describe('GET /api/v1/resources/:id/schema', () => {
     expect(body.columnRoles).toEqual([
       {
         role: 'identifier',
-        vocabulary: { concept: 'admin-area', scheme: 'jp-lg-code', representation: 'code6' },
+        vocabulary: { concept: 'admin-area', scheme: 'jp-area-code', representation: 'code6' },
       },
       { role: 'category' },
       { role: 'measure' },

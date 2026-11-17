@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   EMPTY_FACETS,
   SEARCH_QUERY_MAX_CHARS,
@@ -41,6 +41,7 @@ interface Props {
 
 export function DatasetList({ initialData }: Props) {
   const t = useTranslations()
+  const locale = useLocale()
   const { semanticSearchEnabled, searchExampleQueries } = useSiteSettings()
   const searchParams = useSearchParams()
   const paramsKey = searchParams.toString()
@@ -113,6 +114,8 @@ export function DatasetList({ initialData }: Props) {
     const query = new URLSearchParams(searchParams.toString())
     if (q) query.set('q', q)
     query.set('include_facets', 'true')
+    // Places are named in the screen's language
+    query.set('lang', locale)
     if (!query.has('limit')) query.set('limit', '20')
     const asked = paramsKey
 
@@ -142,7 +145,7 @@ export function DatasetList({ initialData }: Props) {
       })
 
     return () => controller.abort()
-  }, [paramsKey, isInitialSsr, searchParams, q, reloadKey])
+  }, [paramsKey, isInitialSsr, searchParams, q, reloadKey, locale])
 
   /** Fetch content snippets for matched resources and merge into state */
   function fetchSnippets(result: DatasetData, queryText: string, signal: AbortSignal) {

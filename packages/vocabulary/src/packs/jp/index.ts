@@ -1,28 +1,30 @@
 /**
- * The Japan pack: the local government codes (JIS X 0402) the Ministry of
- * Internal Affairs and Communications keeps, with the changes since 2005.
- * `codes.json` is made by `scripts/build-jp-pack.ts`; see there to refresh it.
+ * The Japan pack: the Standard Area Code for Statistics, which holds the local
+ * government codes (JIS X 0402) and the groups of areas statistics tables put
+ * among them, with the changes to the local governments since 2005
+ * (ADR-073 §決定 9). `codes.json` is made by `scripts/build-jp-pack.ts`; see
+ * there for its sources and to refresh it.
  */
 
 import { packVersion } from '../../fingerprint'
-import type { CodeEntry, Pack, SchemeDefinition } from '../../types'
+import type { CodeEntry, Pack, SchemeDefinition, Source } from '../../types'
 import data from './codes.json' with { type: 'json' }
 
 const schemes: SchemeDefinition[] = [
   {
-    id: 'jp-lg-code',
+    id: 'jp-area-code',
     concept: 'admin-area',
-    label: { ja: '全国地方公共団体コード', en: 'Local government code (Japan)' },
-    publisher: '総務省',
-    license: {
-      name: '公共データ利用規約（第1.0版）',
-      url: 'https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html',
-      derivatives: true,
+    label: {
+      ja: '統計に用いる標準地域コード（全国地方公共団体コードを含む）',
+      en: 'Standard area code for statistics (Japan; includes the local government code)',
     },
-    source: { url: 'https://www.soumu.go.jp/denshijiti/code.html', retrieved: data.retrieved },
+    sources: data.sources as Source[],
     checkDigit: 'mod11-weights-6-2',
     codeFolding: ['nfkc'],
-    nameFolding: ['nfkc', 'strip-spaces', 'small-kana-ke'],
+    nameFolding: ['nfkc', 'strip-spaces', 'small-kana-ke', 'variant-chars'],
+    // Characters names are also written with, as the code table writes them.
+    // A pair is added only where folding it joins no two places' names
+    variantChars: { 梼: '檮', 桧: '檜', 鯵: '鰺' },
     representations: [
       { id: 'code6', kind: 'code', pattern: '\\d{6}' },
       {
@@ -41,7 +43,12 @@ const schemes: SchemeDefinition[] = [
         toCanonical: 'append-check-digit',
         headings: ['都道府県コード', '県コード', '都道府県番号'],
       },
-      { id: 'name', kind: 'name', qualified: { separator: '', order: 'parent-first' } },
+      {
+        id: 'name',
+        kind: 'name',
+        lang: 'ja',
+        qualified: { separator: '', order: 'parent-first' },
+      },
     ],
     codeHeadings: ['コード', '番号', 'code'],
     // The totals and catch-alls statistics tables put among the places
@@ -64,10 +71,13 @@ const schemes: SchemeDefinition[] = [
       '郡部',
       '町村部',
       '島部',
+      // The ward area under Tokyo's short name, which no group's names are indexed under
+      '東京特別区部',
     ],
     // The other groups statistics tables put among the places, by how their
     // names end: a total (県計, 市計), a county, a region (大阪市地域, 北九州市圏域),
-    // a prefecture's branch office (大島支庁, 石狩振興局). No municipality's name
+    // a prefecture's branch office (大島支庁, 石狩振興局) — those the code table
+    // no longer holds, its groups being no area already. No municipality's name
     // ends so
     notAreaPatterns: ['.*計', '.+郡', '.+地域', '.+圏域', '.+支庁', '.+振興局'],
     codes: data.codes as CodeEntry[],

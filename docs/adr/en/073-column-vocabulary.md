@@ -394,7 +394,9 @@ divides Hokkaido by regional promotion bureau) (2026-11-16).
   prefecture; a town's parent stays its prefecture, and the group it belongs to is held separately.
   Hokkaido's towns are placed under regional promotion bureaus, not counties, so putting groups in the
   tree would give towns of the same level parents of different kinds: a bureau in Hokkaido, a county
-  elsewhere. Levels and coverage ("45 of the 47 prefectures") are counted over local governments only
+  elsewhere. Levels and coverage ("45 of the 47 prefectures") are counted over local governments only.
+  Nor are groups places to filter a search by (1c's `area_places`); they count only toward the
+  prefectures a table spans (`area_roots`)
 - **Aggregate numbers a prefecture assigns on its own go in an extension layer on top of the
   master.** Each entry has its source (publisher, dataset), its kind (aggregate), its name, and its
   hierarchy level where there is one. Tokyo has `13200` 市部, `13350` 島部 and `13550` 町村部 (the
@@ -446,7 +448,9 @@ divides Hokkaido by regional promotion bureau) (2026-11-16).
   of groups (27 counties deleted, and 14 subprefectures renamed to regional promotion bureaus on
   2010-04-01). The 113 local governments retired since 2007-04-02 agreed in both code and date between
   the two lists. The generator checks the overlap and stops on a disagreement. Groups gone by
-  2007-04-01 are not held
+  2007-04-01 are not held. The first implementation holds groups as they stand now, and takes in
+  this list of changes, with the overlap check, later (the list is an `.xls`, which the DuckDB
+  `excel` extension the generator uses does not read). Until then a retired county's code misses
 - **The terms of use are the same as now.** The standard area code's page and CSV carry no rights
   notice, so they fall under the Ministry site's copyright terms: 「当ホームページで公開している情報
   （以下「コンテンツ」といいます。）の著作権は、特記されていない限り総務省に帰属し、権利表記の記載がない

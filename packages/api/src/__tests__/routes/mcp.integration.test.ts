@@ -664,7 +664,7 @@ describe('MCP Server', () => {
             vocabulary: {
               concept: 'admin-area',
               pack: 'JP',
-              scheme: 'jp-lg-code',
+              scheme: 'jp-area-code',
               representation: 'name',
               share: 1,
               ambiguous: 0,
@@ -688,7 +688,7 @@ describe('MCP Server', () => {
       const text = result.result.content[0].text as string
 
       // What the column stands for, decided: what a join would go by (ADR-073)
-      expect(text).toContain('市区町村名: string — name; admin-area: jp-lg-code (name)')
+      expect(text).toContain('市区町村名: string — name; admin-area: jp-area-code (name)')
       // The values kept, and how many more the column has
       expect(text).toContain('values: "青森市", "弘前市", … and 38 more')
       expect(text).toContain('定員: string — numeric-text (not numbers: "-", "1,000")')

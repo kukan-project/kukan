@@ -166,7 +166,11 @@ describe('ResourceFields', () => {
           columnRoles={[
             {
               role: 'identifier',
-              vocabulary: { concept: 'admin-area', scheme: 'jp-lg-code', representation: 'code6' },
+              vocabulary: {
+                concept: 'admin-area',
+                scheme: 'jp-area-code',
+                representation: 'code6',
+              },
             },
             // A scheme newer than the screen is named by its id
             {
@@ -177,7 +181,9 @@ describe('ResourceFields', () => {
         />
       )
       expect(
-        screen.getByText('Administrative area: Local government code (Japan) (6 digits)')
+        screen.getByText(
+          'Administrative area: Standard area code for statistics (Japan) (6 digits)'
+        )
       ).toBeInTheDocument()
       expect(screen.getByText('Administrative area: zz (n)')).toBeInTheDocument()
       expect(screen.getByRole('columnheader', { name: 'Vocabulary' })).toBeInTheDocument()

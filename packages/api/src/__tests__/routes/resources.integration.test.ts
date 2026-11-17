@@ -3493,7 +3493,7 @@ describe('GET /api/v1/resources/:id/column-roles', () => {
   const VOCABULARY = {
     concept: 'admin-area',
     pack: 'JP',
-    scheme: 'jp-lg-code',
+    scheme: 'jp-area-code',
     representation: 'code5',
     share: 0.95,
     ambiguous: 0,

@@ -4,7 +4,7 @@ import { NATIONWIDE, NATIONWIDE_ROOTS, vocabularySearchFields } from '../vocabul
 const vocabulary = (extra: Record<string, unknown>) => ({
   concept: 'admin-area',
   pack: 'JP',
-  scheme: 'jp-lg-code',
+  scheme: 'jp-area-code',
   representation: 'code6',
   share: 1,
   ambiguous: 0,

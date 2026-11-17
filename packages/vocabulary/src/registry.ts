@@ -3,7 +3,7 @@
  * (ADR-073 §決定 7, §決定 8)
  */
 
-import { fold, TRANSFORMS } from './fold'
+import { fold, foldName, TRANSFORMS } from './fold'
 import { intersect, isValidOn, overlap, union } from './period'
 import type {
   CodeEntry,
@@ -22,17 +22,21 @@ import type {
  * folding. Part of the registry state, so that a release changing only these
  * still rebuilds the inferences made under the old ones (ADR-073 §決定 4).
  */
-export const RULES_VERSION = '5'
+export const RULES_VERSION = '6'
 
 /**
  * A code, its level, and the spans in which a value named it: a set, so a code
- * retired and later given out again is not taken for valid in between.
+ * retired and later given out again is not taken for valid in between. A group
+ * of areas has no level.
  */
 export interface Hit {
   code: string
-  level: Level
+  level?: Level
   spans: Period[]
 }
+
+/** Whether an entry or a hit is a group of areas, which has no level. */
+export const isGroup = (e: { level?: Level }) => e.level === undefined
 
 /**
  * What a folded name stands for: one place — with every code it went by, when
@@ -52,7 +56,7 @@ export interface IndexedScheme {
   notAreaPattern: RegExp | null
   codeReps: { rep: CodeRepresentation; whole: RegExp }[]
   nameReps: NameRepresentation[]
-  /** Entries valid on the registry's date, per level: what coverage is counted against. */
+  /** Areas valid on the registry's date, per level: what coverage is counted against. */
   validNow: Map<Level, number>
   /** Code → the place's official name, as of the registry's date or its last use. */
   nameOf: Map<string, Name[]>
@@ -134,13 +138,29 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
   }
 
   const nameReps = def.representations.filter((r): r is NameRepresentation => r.kind === 'name')
+  // One index of names serves the scheme, and a match is the same for each of
+  // its name representations: a second, in another language, would be matched
+  // by the first's names. Until each has an index of its own, a scheme has one
+  if (nameReps.length > 1) {
+    throw new Error(`More than one name representation in ${def.id}: one index serves them all`)
+  }
+  // Only names in the language it reads: a table's English or kana names are
+  // not what a column of names is matched against until a representation does
+  const lang = nameReps[0]?.lang
+  const langs = lang === undefined ? null : new Set([lang])
   const named = new Map<string, Hit[]>()
+  // A group's names stand for no area in a column of names: matched only in a
+  // pair with the group's code, as a total is
+  const groupNames = new Set<string>()
+  const index = (entry: CodeEntry, key: string, hit: Hit) =>
+    isGroup(entry) ? groupNames.add(key) : push(named, key, hit)
   for (const entry of def.codes) {
     const chains = ancestorChains(entry, entries)
     for (const name of entry.names) {
+      if (langs && !langs.has(name.lang)) continue
       const spans = intersect([entry], [name])
       if (spans.length === 0) continue
-      push(named, fold(def.nameFolding, name.text), { code: entry.code, level: entry.level, spans })
+      index(entry, foldName(def, name.text), { code: entry.code, level: entry.level, spans })
       for (const { qualified } of nameReps) {
         if (!qualified) continue
         for (const { chain, spans: pathSpans } of chains) {
@@ -157,7 +177,7 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
               qualified.order === 'parent-first'
                 ? [...texts, name.text]
                 : [name.text, ...texts.reverse()]
-            push(named, fold(def.nameFolding, parts.join(qualified.separator)), {
+            index(entry, foldName(def, parts.join(qualified.separator)), {
               code: entry.code,
               level: entry.level,
               spans: both,
@@ -179,7 +199,10 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
 
   const validNow = new Map<Level, number>()
   for (const entry of def.codes) {
-    if (isValidOn(entry, today)) validNow.set(entry.level, (validNow.get(entry.level) ?? 0) + 1)
+    const { level } = entry
+    if (!isGroup(entry) && isValidOn(entry, today)) {
+      validNow.set(level!, (validNow.get(level!) ?? 0) + 1)
+    }
   }
 
   // Each code's official names as of today, or as of its last use for one retired
@@ -200,7 +223,7 @@ function indexScheme(pack: string, def: SchemeDefinition, today: IsoDate): Index
       .filter((r): r is CodeRepresentation => r.kind === 'code')
       .map((rep) => ({ rep, whole: new RegExp(`^(?:${rep.pattern})$`) })),
     nameReps,
-    notAreas: new Set((def.notAreas ?? []).map((v) => fold(def.nameFolding, v))),
+    notAreas: new Set([...(def.notAreas ?? []).map((v) => foldName(def, v)), ...groupNames]),
     notAreaPattern: def.notAreaPatterns?.length
       ? new RegExp(`^(?:${def.notAreaPatterns.join('|')})$`)
       : null,

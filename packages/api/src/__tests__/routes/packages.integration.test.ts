@@ -157,6 +157,17 @@ describe('Packages API Routes', () => {
       expect(body.facets.meanings).toEqual([{ name: 'admin-area:code', count: 1 }])
       // The filter as it was read, for the screen to mark and undo it by
       expect(body.vocabularyFilters).toEqual({ area: ['130001'], area_place: [] })
+
+      // Named in the language the screen asks for
+      const en = await (
+        await app.request('/api/v1/packages?include_facets=true&area=13&lang=en')
+      ).json()
+      expect(en.facets.areas).toEqual(
+        expect.arrayContaining([{ name: '130001', count: 1, title: 'Tokyo Metropolis' }])
+      )
+      expect(en.facets.areaPlaces).toEqual([
+        { name: '131016', count: 1, title: 'Chiyoda City', parent: '130001' },
+      ])
     })
 
     it('refuses the vocabulary filters on the draft listing', async () => {

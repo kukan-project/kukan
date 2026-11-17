@@ -26,7 +26,7 @@ export interface Period {
 
 export interface Name extends Period {
   text: string
-  /** BCP 47: `ja`, `en`, `zh-Hant`. */
+  /** BCP 47: `ja`, `en`, `zh-Hant`; a reading in kana is `ja-Hrkt`. */
   lang: string
   kind: 'official' | 'alias' | 'romanized'
   /** The romanization system, for `romanized`: `hepburn`, `pinyin`. */
@@ -37,12 +37,22 @@ export interface Name extends Period {
  * One row of a code table. Its parent is given, not worked out from the code:
  * a pack's generator knows how its country writes parents, and the core
  * carries no rule for it. A code retired and later reused is two entries.
+ *
+ * An entry is an area at a level, or a group of areas that statistics tables
+ * put among them (a county, a prefecture's branch office): a group has no
+ * level, so it is not counted in coverage, and it is no area's parent — the
+ * areas it groups name it in `groups` and keep their own parents (ADR-073 §決定 9).
  */
 export interface CodeEntry extends Period {
   code: string
-  level: Level
+  /** Absent for a group of areas. */
+  level?: Level
+  /** For a group of areas: the pack's word for its kind (`郡`, `振興局`). */
+  group?: string
   /** The parent's code in the same scheme; absent at the top. */
   parent?: string
+  /** For an area: the codes of the groups it belongs to. */
+  groups?: string[]
   /** Names of the area alone (`中央区`, `Camden`), not qualified by its parents. */
   names: Name[]
 }
@@ -50,8 +60,12 @@ export interface CodeEntry extends Period {
 /** Check digit rules a scheme can name. Closed: a new one is a change to the product. */
 export type CheckDigitRule = 'mod11-weights-6-2'
 
-/** How a value is folded before it is compared, for codes and names alike. Closed. */
-export type Folding = 'nfkc' | 'strip-spaces' | 'lowercase' | 'uppercase' | 'small-kana-ke'
+/**
+ * How a value is folded before it is compared, for codes and names alike.
+ * Closed. `variant-chars` replaces characters by the scheme's `variantChars`.
+ */
+export type Folding =
+  'nfkc' | 'strip-spaces' | 'lowercase' | 'uppercase' | 'small-kana-ke' | 'variant-chars'
 
 /** How a value written one way becomes the code a table holds. Closed. */
 export type Transform = 'append-check-digit'
@@ -80,6 +94,8 @@ export interface CodeRepresentation {
 export interface NameRepresentation {
   id: string
   kind: 'name'
+  /** The language of the names it matches (BCP 47); absent, every name the table holds. */
+  lang?: string
   /**
    * How a name is written with its parents': `北海道札幌市` puts them first
    * with nothing between, `Camden, London` after with a comma. Absent where the
@@ -90,18 +106,32 @@ export interface NameRepresentation {
 
 export type Representation = CodeRepresentation | NameRepresentation
 
+/** A list a code table is made from, and the terms it is published under. */
+export interface Source {
+  publisher: string
+  title: string
+  url: string
+  retrieved: IsoDate
+  license: { name: string; url: string; derivatives: boolean }
+  /** What the pack changed in it, which the terms may ask to be stated. */
+  processed?: string
+}
+
 export interface SchemeDefinition {
-  /** Unique across packs: `jp-lg-code`. */
+  /** Unique across packs: `jp-area-code`. */
   id: string
   concept: Concept
   label: Record<string, string>
-  publisher: string
-  /** The terms the code table is published under, and whether it may be changed. */
-  license: { name: string; url: string; derivatives: boolean }
-  source: { url: string; retrieved: IsoDate }
+  /** The lists the code table is made from. */
+  sources: Source[]
   checkDigit?: CheckDigitRule
   codeFolding: Folding[]
   nameFolding: Folding[]
+  /**
+   * For `variant-chars`: each character a name may be written with, and the
+   * one the code table writes it with (`梼` → `檮`).
+   */
+  variantChars?: Record<string, string>
   representations: Representation[]
   /**
    * Values a column of names holds that stand for no area — `全国`, `合計` —

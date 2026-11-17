@@ -3,11 +3,12 @@
  * can be said to be (ADR-073 §決定 4, §決定 5)
  */
 
-import { fold } from './fold'
+import { fold, foldName } from './fold'
 import { intersect } from './period'
 import {
   canonicalCode,
   codesOf,
+  isGroup,
   isNotArea,
   liesIn,
   carriesCheckDigit,
@@ -35,20 +36,15 @@ export interface RepresentationMatch {
  * file never had is no evidence (ADR-073 §試行).
  */
 export function matchValues(registry: Registry, values: string[]): RepresentationMatch[] {
-  const folded = new Map<string, string[]>()
-  const distinct = (foldings: Parameters<typeof fold>[0]) => {
-    const key = foldings.join()
-    let out = folded.get(key)
-    if (!out) {
-      out = [...new Set(values.map((v) => fold(foldings, v)).filter((v) => v !== ''))]
-      folded.set(key, out)
-    }
-    return out
-  }
+  // Folded once per value as written: a column repeats its places down the rows
+  const raw = [...new Set(values)]
+  const distinct = (foldOne: (v: string) => string) => [
+    ...new Set(raw.map(foldOne).filter((v) => v !== '')),
+  ]
 
   const out: RepresentationMatch[] = []
   for (const scheme of registry.schemes) {
-    const codes = distinct(scheme.def.codeFolding)
+    const codes = distinct((v) => fold(scheme.def.codeFolding, v))
     for (const cr of scheme.codeReps) {
       const hits: Hit[] = []
       for (const v of codes) {
@@ -61,7 +57,7 @@ export function matchValues(registry: Registry, values: string[]): Representatio
 
     if (scheme.nameReps.length === 0) continue
     // A total or `全国` is no name of a place, so not a name that failed to match
-    const names = distinct(scheme.def.nameFolding).filter((v) => !isNotArea(scheme, v))
+    const names = distinct((v) => foldName(scheme.def, v)).filter((v) => !isNotArea(scheme, v))
     const hits: Hit[] = []
     let ambiguous = 0
     for (const v of names) {
@@ -78,7 +74,7 @@ export function matchValues(registry: Registry, values: string[]): Representatio
 
 /** What the matched codes say about the column, beyond which scheme they are in. */
 export interface CodeSummary {
-  /** Per level present: places matched, and the level's entries valid on the registry's date. */
+  /** Per level present: areas matched, and the level's areas valid on the registry's date. Groups are not counted. */
   levels: { level: Level; matched: number; total: number }[]
   /**
    * The spans the values all point to, as a set: `[{}]` is consistent with the
@@ -93,7 +89,7 @@ export interface CodeSummary {
 export function summarizeCodes(scheme: IndexedScheme, hits: Hit[]): CodeSummary {
   const perLevel = new Map<Level, Set<string>>()
   for (const { code, level } of hits) {
-    perLevel.set(level, (perLevel.get(level) ?? new Set()).add(code))
+    if (level) perLevel.set(level, (perLevel.get(level) ?? new Set()).add(code))
   }
   const levels = [...perLevel].map(([level, codes]) => ({
     level,
@@ -211,13 +207,18 @@ export interface ColumnInference {
 const topsOf = (scheme: IndexedScheme, code: string) =>
   (scheme.ancestorsOf.get(code) ?? []).flatMap((up) => up.slice(-1))
 
-/** The places of the hits, and the top-level places they lie in, each sorted once. */
+/**
+ * The places of the hits, and the top-level places they lie in, each sorted
+ * once. A group of areas is no place to search by, being in no tree, but says
+ * which top-level place the table covers.
+ */
 function placesOf(scheme: IndexedScheme, hits: Hit[]): { places: string[]; roots: string[] } {
-  const places = [...new Set(hits.map((h) => h.code))].sort()
-  const roots = places.flatMap((code) => {
+  const codes = [...new Set(hits.map((h) => h.code))]
+  const roots = codes.flatMap((code) => {
     const tops = topsOf(scheme, code)
     return tops.length > 0 ? tops : [code]
   })
+  const places = [...new Set(hits.filter((h) => !isGroup(h)).map((h) => h.code))].sort()
   return { places, roots: [...new Set(roots)].sort() }
 }
 
@@ -345,7 +346,7 @@ export function corroborate(
   const codes = new Set<string>()
   for (const [code, name] of pairs) {
     const byCode = placeOfCode(scheme, candidate, code)
-    const byName = scheme.byName.get(fold(scheme.def.nameFolding, name))
+    const byName = scheme.byName.get(foldName(scheme.def, name))
     if (!byCode || !byName) continue
     both++
     if (!codesOf(byName).some((c) => liesIn(scheme, c, byCode.code))) continue
@@ -376,7 +377,7 @@ export function judgeNamesByCodes(
   // Each name, and the places its rows' codes name
   const rows = new Map<string, Hit[]>()
   for (const [code, name] of pairs) {
-    const folded = fold(scheme.def.nameFolding, name)
+    const folded = foldName(scheme.def, name)
     if (folded === '' || isNotArea(scheme, folded)) continue
     const coded = rows.get(folded) ?? rows.set(folded, []).get(folded)!
     const byCode = placeOfCode(scheme, codes, code)
@@ -434,7 +435,7 @@ export function sharedNames(registry: Registry, scheme: string, values: string[]
   const indexed = registry.schemeById.get(scheme)
   if (!indexed) return []
   return values.filter((v) => {
-    const entry = indexed.byName.get(fold(indexed.def.nameFolding, v))
+    const entry = indexed.byName.get(foldName(indexed.def, v))
     return entry !== undefined && 'ambiguous' in entry
   })
 }

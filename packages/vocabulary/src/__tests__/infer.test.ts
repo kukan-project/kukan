@@ -13,7 +13,7 @@ describe('inferColumn over the Japan pack', () => {
     expect(best(prefectures)).toMatchObject({
       concept: 'admin-area',
       pack: 'JP',
-      scheme: 'jp-lg-code',
+      scheme: 'jp-area-code',
       representation: 'code6',
       share: 1,
       summary: { levels: [{ level: 'ADM1', matched: 5, total: 47 }], periods: [{}] },
@@ -75,6 +75,26 @@ describe('inferColumn over the Japan pack', () => {
       representation: 'name',
       summary: { levels: [{ level: 'ADM2', matched: 3 }] },
     })
+  })
+
+  it('reads a name written with a variant of the code table’s character', () => {
+    // The code table writes 檮原町, 檜原村 and 鰺ヶ沢町
+    expect(best(['梼原町', '桧原村', '鯵ヶ沢町'])).toMatchObject({
+      representation: 'name',
+      share: 1,
+      places: ['023213', '133078', '394050'],
+    })
+  })
+
+  it('leaves the ward area out of a column of names, written after Tokyo too', () => {
+    const [found] = inferColumn(registry, ['東京都特別区部', '千代田区', '新宿区', '文京区'])
+    expect(found).toMatchObject({ representation: 'name', share: 1 })
+    expect(found.places).not.toContain('131008')
+  })
+
+  it('does not read English or kana names as a column of names', () => {
+    expect(best(['Tokyo Metropolis', 'Osaka Prefecture', 'Hokkaido Prefecture'])).toBeUndefined()
+    expect(best(['トウキョウト', 'オオサカフ', 'ホッカイドウ'])).toBeUndefined()
   })
 
   it('leaves names that are several places out of the share and the coverage', () => {
@@ -212,7 +232,7 @@ describe('judgeColumn over the Japan pack', () => {
 
   it('decides a column of codes', () => {
     expect(judge(['010006', '020001'], '団体コード')).toMatchObject({
-      decided: { scheme: 'jp-lg-code', representation: 'code6', kind: 'code' },
+      decided: { scheme: 'jp-area-code', representation: 'code6', kind: 'code' },
     })
   })
 
@@ -241,9 +261,9 @@ describe('judgeColumn over the Japan pack', () => {
   })
 
   it('leaves codes short of their share by a statistics table’s groups for names to bear out', () => {
-    // 13100 区部 and 13200 市部 are codes of no code table
+    // 13200 市部 and 13550 町村部 are Tokyo's own, in no code table
     const codes = [
-      '13100',
+      '13550',
       '13101',
       '13104',
       '13105',
@@ -263,6 +283,17 @@ describe('judgeColumn over the Japan pack', () => {
     expect(judge(codes, '市区町村コード')).toHaveProperty('unconfirmed')
     // Below that, nothing
     expect(judge([...codes, '13300', '13350'], '地域コード')).toBeNull()
+  })
+
+  it('counts the standard area code’s groups as places, but not toward a level', () => {
+    // 13100 特別区部 is a group of the standard area code's, as a county is
+    const codes = ['13100', '13101', '13102', '13103', '02300', '02301']
+    const [found] = inferColumn(registry, codes)
+    expect(found).toMatchObject({ representation: 'code5', share: 1, shortOfShare: false })
+    // Groups are in no tree, so no place to search by, but say the prefecture
+    expect(found.places).toEqual(['023019', '131016', '131024', '131032'])
+    expect(found.roots).toEqual(['020001', '130001'])
+    expect(found.summary.levels).toEqual([{ level: 'ADM2', matched: 4, total: expect.any(Number) }])
   })
 
   it('reads no column past the most distinct values a column may have', () => {
@@ -330,7 +361,7 @@ describe('corroborate over the Japan pack', () => {
 
   it('bears out codes short of their share, the names beside the groups being no place', () => {
     const rows: [string, string][] = [
-      ['13100', '区部'],
+      ['13550', '町村部'],
       ['13101', '千代田区'],
       ['13104', '新宿区'],
       ['13105', '文京区'],

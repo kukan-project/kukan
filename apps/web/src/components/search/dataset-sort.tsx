@@ -54,7 +54,8 @@ export function DatasetSort() {
 
   return (
     <Select value={currentValue} onValueChange={handleChange}>
-      <SelectTrigger className="w-48">
+      {/* As wide as its label, which runs longer in English than the old fixed width */}
+      <SelectTrigger className="w-auto min-w-48 whitespace-nowrap">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

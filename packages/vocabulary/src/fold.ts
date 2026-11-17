@@ -2,7 +2,7 @@
  * KUKAN column vocabulary — the closed lists a scheme picks from (ADR-073 §決定 2)
  */
 
-import type { CheckDigitRule, Folding, Transform } from './types'
+import type { CheckDigitRule, Folding, SchemeDefinition, Transform } from './types'
 
 /**
  * The digit a code ends with, from the digits before it, by each rule.
@@ -28,7 +28,10 @@ export function hasValidCheckDigit(rule: CheckDigitRule, code: string): boolean 
   return code.length > 1 && checkDigit(rule, code.slice(0, -1)) === code.slice(-1)
 }
 
-const FOLDINGS: Record<Folding, (s: string) => string> = {
+type Replace = (s: string) => string
+const unchanged: Replace = (s) => s
+
+const FOLDINGS: Record<Folding, (s: string, variants: Replace) => string> = {
   nfkc: (s) => s.normalize('NFKC'),
   // `\s` takes the ideographic space too
   'strip-spaces': (s) => s.replace(/\s+/g, ''),
@@ -36,11 +39,43 @@ const FOLDINGS: Record<Folding, (s: string) => string> = {
   uppercase: (s) => s.toUpperCase(),
   // 竜ケ崎 and 竜ヶ崎 are one name: the small ケ is written either way
   'small-kana-ke': (s) => s.replace(/[ヶヵ]/g, (c) => (c === 'ヶ' ? 'ケ' : 'カ')),
+  'variant-chars': (s, variants) => variants(s),
 }
 
-/** A value as a scheme compares it: trimmed, then each of its foldings in order. */
-export function fold(foldings: Folding[], value: string): string {
-  return foldings.reduce((s, f) => FOLDINGS[f](s), value.trim())
+/**
+ * A value as a scheme compares it: trimmed, then each of its foldings in order.
+ *
+ * @param variants - replaces the scheme's `variantChars`, for `variant-chars`.
+ */
+export function fold(foldings: Folding[], value: string, variants: Replace = unchanged): string {
+  return foldings.reduce((s, f) => FOLDINGS[f](s, variants), value.trim())
+}
+
+/** Each scheme's `variantChars` as one replacement, built once. */
+const replacers = new WeakMap<SchemeDefinition, Replace>()
+
+function variantsOf(def: SchemeDefinition): Replace {
+  let replace = replacers.get(def)
+  if (!replace) {
+    const chars = def.variantChars ?? {}
+    const keys = Object.keys(chars)
+    // One character each, as the class below matches them
+    const long = keys.find((k) => [...k].length !== 1)
+    if (long !== undefined) throw new Error(`A variant is one character, not ${long}`)
+    // A string with none of them comes back as it is, unallocated
+    const any =
+      keys.length > 0
+        ? new RegExp(`[${keys.map((k) => k.replace(/[\\\]^-]/g, '\\$&')).join('')}]`, 'gu')
+        : null
+    replace = any ? (s) => s.replace(any, (c) => chars[c]) : unchanged
+    replacers.set(def, replace)
+  }
+  return replace
+}
+
+/** A name as a scheme compares it. */
+export function foldName(def: SchemeDefinition, value: string): string {
+  return fold(def.nameFolding, value, variantsOf(def))
 }
 
 /**

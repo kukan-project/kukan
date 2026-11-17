@@ -1,34 +1,44 @@
 /**
- * Build the Japan pack's code table from the lists the Ministry of Internal
- * Affairs and Communications publishes (https://www.soumu.go.jp/denshijiti/code.html):
- * the current codes, with the designated cities' wards on a second sheet, and
- * the list of changes since 2005.
+ * Build the Japan pack's code table (ADR-073 §決定 9) from three lists:
+ *
+ * - the Digital Agency's City Master (市区町村マスター, Address Base Registry):
+ *   each local government's code, name, kana and romanization, and the county
+ *   each town is in;
+ * - the Ministry of Internal Affairs and Communications' Standard Area Code for
+ *   Statistics (統計に用いる標準地域コード): the groups of areas the City Master
+ *   lacks (counties, branch offices, the ward area), and which areas each groups;
+ * - the same Ministry's list of changes to the local government codes since
+ *   2005 (https://www.soumu.go.jp/denshijiti/code.html), for the codes retired.
  *
  *   pnpm --filter @kukan/vocabulary build:jp-pack \
- *     --current <URL> --changes <URL> \
- *     [--sheet-current <name>] [--sheet-designated <name>]
+ *     --cities <URL> --areas <URL> --changes <URL>
  *
  * Run by hand when the lists change, and the result committed: a closed network
- * builds without reaching the ministry. The lists are taken by URL, which the
- * pack records as its source — a local path would put a maintainer's disk in
- * it. The sheet names carry the list's date (`R6.1.1現在の団体`), so they are
- * found from it unless given. The pack's version is the list's date and a hash
- * of what was made of it: any change in the table changes the version, which
- * is what rebuilds the inferences made under the old one (ADR-073 §決定 4).
+ * builds without reaching the publishers. The lists are taken by URL, which the
+ * pack records as its sources — a local path would put a maintainer's disk in
+ * it. The pack's version is the latest date the City Master's areas took
+ * effect, and a hash of what was made of the lists: any change in the table
+ * changes the version, which is what rebuilds the inferences made under the old
+ * one (ADR-073 §決定 4).
  *
- * Needs DuckDB's `excel` extension, which it installs on first run.
+ * The two current lists are held to each other: the run stops when their local
+ * government codes differ, or a county of the standard area code is not one the
+ * City Master names. Names and kana that differ are listed, and the City
+ * Master's are kept.
+ *
+ * Needs DuckDB's `excel` extension, which it installs on first run, and `unzip`.
  */
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { writeFileSync, mkdtempSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
 import { checkDigit, hasValidCheckDigit } from '../src/fold'
-import type { CheckDigitRule, CodeEntry, Name } from '../src/types'
+import type { CheckDigitRule, CodeEntry, Name, Source } from '../src/types'
 
 /** The rule the codes are built on, which the pack names as its own. */
 const RULE: CheckDigitRule = 'mod11-weights-6-2'
@@ -45,21 +55,99 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), '../src/packs/jp/codes
 // command takes no bare `--`: pnpm passes it on, and parseArgs refuses it
 const { values: args } = parseArgs({
   options: {
-    current: { type: 'string' },
+    cities: { type: 'string' },
+    areas: { type: 'string' },
     changes: { type: 'string' },
-    'sheet-current': { type: 'string' },
-    'sheet-designated': { type: 'string' },
   },
   strict: true,
 })
+
+/** The terms each list falls under: the Public Data License, by the publisher's own page. */
+const publicDataLicense = (url: string) => ({
+  name: '公共データ利用規約（第1.0版）',
+  url,
+  derivatives: true,
+})
+
+/**
+ * Readings the City Master gets wrong, checked against the place's own: a
+ * correction is made only once the place's reading is confirmed.
+ */
+const KANA_CORRECTIONS: Record<string, string> = {
+  // 真鶴町 calls itself まなづる
+  '143839': 'マナヅルマチ',
+}
+
+/** Romanized names the City Master writes cut short, as the rest of its rows write them. */
+const ROMANIZED_CORRECTIONS: Record<string, string> = {
+  // The suffix is missing: `Ichikawamisato-`
+  '193461': 'Ichikawamisato-cho',
+}
+
+/**
+ * The romanized names where an n ends a syllable before a vowel or y, which the
+ * GSI's rules part with a hyphen and the City Master does not (`Kanonji`).
+ * Listed by hand: kana and romanization do not line up letter by letter, and
+ * the run stops on any such name missing here.
+ */
+const N_HYPHENS: Record<string, string> = {
+  '062138': 'Nan-yo',
+  '073440': 'Ten-ei',
+  '285862': 'Shin-onsen',
+  '352161': 'San-yoonoda',
+  '372056': 'Kan-onji',
+}
+
+/** Tokyo's ward area (特別区部), a group of the standard area code's. */
+const WARD_AREA = '131008'
+
+/** Whether a code is one of Tokyo's special wards, whose codes run from 131. */
+const isSpecialWard = (code: string) => code.startsWith('131') && code !== WARD_AREA
+
+/**
+ * The groups the GSI's rules do not cover — a prefecture's branch offices and
+ * Tokyo's ward area — named in English by the pack.
+ */
+const GROUP_ENGLISH: Record<string, string> = {
+  '013005': 'Ishikari Subprefecture',
+  '013307': 'Oshima General Subprefecture',
+  '013609': 'Hiyama Subprefecture',
+  '013901': 'Shiribeshi General Subprefecture',
+  '014206': 'Sorachi General Subprefecture',
+  '014508': 'Kamikawa General Subprefecture',
+  '014800': 'Rumoi Subprefecture',
+  '015105': 'Soya General Subprefecture',
+  '015407': 'Okhotsk General Subprefecture',
+  '015709': 'Iburi General Subprefecture',
+  '016004': 'Hidaka Subprefecture',
+  '016306': 'Tokachi General Subprefecture',
+  '016608': 'Kushiro General Subprefecture',
+  '016900': 'Nemuro Subprefecture',
+  [WARD_AREA]: 'Tokyo Special Wards',
+  '133604': 'Oshima Subprefecture',
+  '133809': 'Miyake Subprefecture',
+  '134007': 'Hachijo Subprefecture',
+  '134201': 'Ogasawara Subprefecture',
+}
+
+/** The standard area code's ward area has no reading of its own. */
+const GROUP_KANA: Record<string, string> = { [WARD_AREA]: 'トクベツクブ' }
+
+/** The kinds of group the standard area code holds, by how their names end (総合振興局 too). */
+const GROUP_KINDS = ['振興局', '支庁', '特別区部', '郡'] as const
+
+/** A new file of the run's own, for a list as fetched or as converted. */
+function tempFile(name: string, data: Buffer | string): string {
+  const path = join(mkdtempSync(join(tmpdir(), 'jp-pack-')), name)
+  writeFileSync(path, data)
+  return path
+}
 
 async function download(url: string): Promise<string> {
   if (!/^https:\/\//.test(url)) throw new Error(`Give the list's URL, not a path: ${url}`)
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${url}: ${res.status}`)
-  const path = join(mkdtempSync(join(tmpdir(), 'jp-pack-')), 'list.xlsx')
-  writeFileSync(path, Buffer.from(await res.arrayBuffer()))
-  return path
+  return tempFile(basename(new URL(url).pathname), Buffer.from(await res.arrayBuffer()))
 }
 
 const ERAS: Record<string, number> = { R: 2018, H: 1988, S: 1925 }
@@ -83,86 +171,227 @@ const code6 = (code5: string) => `${code5}${checkDigit(RULE, code5)}`
 /** The code of the prefecture a code is in. */
 const prefCode = (code: string) => code6(`${code.slice(0, 2)}000`)
 
-const official = (text: string): Name => ({ text, lang: 'ja', kind: 'official' })
+const official = (text: string, lang = 'ja'): Name => ({ text, lang, kind: 'official' })
+
+/** Hiragana as katakana, the City Master's way of writing a reading. */
+const katakana = (s: string) =>
+  s.replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+
+/**
+ * An area's English name by the GSI's rules for English place names (地名等の
+ * 英語表記規程, articles 13–15): the romanized name with its Japanese suffix
+ * replaced by the English word, and 「ん」 always n.
+ *
+ * @param romanized - as the City Master writes it: `Sapporo-shi`, `Gumma`.
+ * @param name - the Japanese name, which says what a prefecture is.
+ */
+function englishName(code: string, romanized: string, name: string, kana: string): string {
+  const prefecture = /[都道府県]$/.exec(name)?.[0]
+  const [base, suffix] = prefecture ? [romanized, ''] : splitSuffix(romanized)
+  // The City Master writes Hepburn's m before b, m and p (Gumma); the rules write n
+  let part = base.replace(/m(?=[bmp])/g, 'n')
+  if (/ン[アイウエオヤユヨ]/.test(kana)) {
+    const hyphened = N_HYPHENS[code]
+    if (!hyphened || hyphened.replace('-', '').toLowerCase() !== part.toLowerCase()) {
+      throw new Error(`${code} ${name} (${kana}): add its hyphened name to N_HYPHENS`)
+    }
+    part = hyphened
+  }
+  if (prefecture === '都') return `${part} Metropolis`
+  if (prefecture) return `${part} Prefecture`
+  return `${part} ${englishWord(code, suffix)}`
+}
+
+function splitSuffix(romanized: string): [string, string] {
+  const at = romanized.lastIndexOf('-')
+  if (at < 0) throw new Error(`No suffix to replace: ${romanized}`)
+  return [romanized.slice(0, at), romanized.slice(at + 1)]
+}
+
+function englishWord(code: string, suffix: string): string {
+  switch (suffix) {
+    case 'shi':
+      return 'City'
+    // Tokyo's 23 wards are cities in the rules; a designated city's are wards
+    case 'ku':
+      return isSpecialWard(code) ? 'City' : 'Ward'
+    case 'cho':
+    case 'machi':
+      return 'Town'
+    case 'mura':
+    case 'son':
+      return 'Village'
+    case 'gun':
+      return 'County'
+    default:
+      throw new Error(`Unknown suffix -${suffix} on ${code}`)
+  }
+}
 
 type Row = Record<string, string | null>
 
 const sqlString = (s: string) => `'${s.replaceAll("'", "''")}'`
 
-async function rows(conn: DuckDBConnection, path: string, opts: string): Promise<Row[]> {
-  const reader = await conn.runAndReadAll(
-    `SELECT * FROM read_xlsx(${sqlString(path)}, all_varchar = true, ${opts})`
+/** The rows a DuckDB reader gives, every cell as text. */
+async function rows(conn: DuckDBConnection, reader: string, path: string, opts: string) {
+  const result = await conn.runAndReadAll(
+    `SELECT * FROM ${reader}(${sqlString(path)}, all_varchar = true, ${opts})`
   )
-  return reader.getRowObjectsJson() as Row[]
+  return result.getRowObjectsJson() as Row[]
+}
+
+/**
+ * A CSV's rows, with each cell trimmed and an empty one null: the two CSVs
+ * leave a column blank where it has nothing to say, which the change list's
+ * reading handles cell by cell instead.
+ */
+async function csvRows(conn: DuckDBConnection, path: string): Promise<Row[]> {
+  return (await rows(conn, 'read_csv', path, 'header = true')).map((r) =>
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v?.trim() || null]))
+  )
 }
 
 async function main() {
-  const currentArg = args.current
-  const changesArg = args.changes
-  if (!currentArg || !changesArg) {
-    throw new Error('Give --current and --changes: the URLs of the two lists')
+  const { cities: citiesArg, areas: areasArg, changes: changesArg } = args
+  if (!citiesArg || !areasArg || !changesArg) {
+    throw new Error('Give --cities, --areas and --changes: the URLs of the three lists')
   }
   const conn = await (await DuckDBInstance.create(':memory:')).connect()
   await conn.run('INSTALL excel; LOAD excel;')
-  const currentPath = await download(currentArg)
-  const changesPath = await download(changesArg)
-
-  // The first sheet's name carries the list's date
-  const firstSheet = args['sheet-current']
-  const firstRows = await rows(
+  // The City Master is one CSV in a zip; the standard area code's is Shift_JIS
+  const citiesZip = await download(citiesArg)
+  const cities = await csvRows(
     conn,
-    currentPath,
-    firstSheet ? `sheet = ${sqlString(firstSheet)}` : 'header = true'
+    tempFile('cities.csv', execFileSync('unzip', ['-p', citiesZip], { maxBuffer: 64 << 20 }))
   )
-  const header = Object.keys(firstRows[0] ?? {})
-  if (!header.includes('団体コード'))
-    throw new Error(`No 団体コード column in the current list: ${header.join(', ')}`)
-  const sheetCurrent = firstSheet ?? sheetNames(currentPath)[0]
-  const dated = /^([RHS](?:\d+|元)\.\d+\.\d+)/.exec(sheetCurrent)
-  if (!dated) throw new Error(`Cannot read the list's date from the sheet name: ${sheetCurrent}`)
-  const dataDate = eraDate(dated[1])
-  const sheetDesignated = args['sheet-designated'] ?? `${dated[1]}政令指定都市`
+  const areasSjis = await download(areasArg)
+  const areas = await csvRows(
+    conn,
+    tempFile('areas.csv', new TextDecoder('shift_jis').decode(readFileSync(areasSjis)))
+  )
+  const changesPath = await download(changesArg)
+  if (!cities[0] || !('lg_code' in cities[0]))
+    throw new Error('No lg_code column in the City Master')
+  if (!areas[0] || !('tiiki-code' in areas[0])) throw new Error('No tiiki-code column in the areas')
 
   const entries = new Map<string, CodeEntry>()
-
-  for (const r of firstRows) {
-    const code = r['団体コード']?.trim()
-    if (!code) continue
-    const pref = r[header[1]]?.trim() ?? ''
-    const muni = r[header[2]]?.trim()
-    entries.set(
-      code,
-      muni
-        ? { code, level: 'ADM2', parent: prefCode(code), names: [official(muni)] }
-        : { code, level: 'ADM1', names: [official(pref)] }
-    )
+  const differences: string[] = []
+  const names = (code: string, ja: string, kana: string, romanized: string): Name[] => {
+    const reading = KANA_CORRECTIONS[code] ?? kana
+    return [
+      official(ja),
+      official(reading, 'ja-Hrkt'),
+      official(englishName(code, ROMANIZED_CORRECTIONS[code] ?? romanized, ja, reading), 'en'),
+    ]
   }
 
+  // Each row is a municipality or a designated city's ward; the prefecture is in its columns
+  const cityOf = new Map<string, string>()
+  for (const r of cities) {
+    const code = r.lg_code!
+    const pref = prefCode(code)
+    if (!entries.has(pref)) {
+      entries.set(pref, {
+        code: pref,
+        level: 'ADM1',
+        names: names(pref, r.pref!, r.pref_kana!, r.pref_roma!),
+      })
+    }
+    if (!r.ward) {
+      entries.set(code, {
+        code,
+        level: 'ADM2',
+        parent: pref,
+        names: names(code, r.city!, r.city_kana!, r.city_roma!),
+      })
+      cityOf.set(`${r.pref}${r.city}`, code)
+    }
+  }
+  // A ward's city is the row naming the city alone, not its code's first
+  // digits, which Osaka's 24 wards run past
   const designated = new Set<string>()
-  const designatedRows = await rows(conn, currentPath, `sheet = ${sqlString(sheetDesignated)}`)
-  const dHeader = Object.keys(designatedRows[0] ?? {})
-  // Each city is followed by its wards: a ward's city is the row above them, not
-  // its code's first digits, which Osaka's 24 wards run past. The list writes a
-  // ward with its city (`札幌市中央区`); the table holds the ward's own name, and
-  // the registry writes it behind its city as the scheme says
-  let city: string | undefined
-  for (const r of designatedRows) {
-    const code = r['団体コード']?.trim()
-    const name = r[dHeader[2]]?.trim()
-    if (!code || !name) continue
-    if (entries.get(code)?.level === 'ADM2') {
-      designated.add(code)
-      city = code
+  for (const r of cities) {
+    if (!r.ward) continue
+    const city = cityOf.get(`${r.pref}${r.city}`)
+    if (!city) throw new Error(`No row for the city of ward ${r.lg_code}`)
+    designated.add(city)
+    entries.set(r.lg_code!, {
+      code: r.lg_code!,
+      level: 'ADM3',
+      parent: city,
+      names: names(r.lg_code!, r.ward, r.ward_kana!, r.ward_roma!),
+    })
+  }
+
+  // The standard area code: the same local governments, and the groups among them
+  const groupByName = new Map<string, string>()
+  const listed = new Set<string>()
+  for (const r of areas) {
+    const code = code6(r['tiiki-code']!)
+    const name =
+      r['sityouson-name3'] ?? r['sityouson-name2'] ?? r['sityouson-name1'] ?? r['ken-name']!
+    const kana = katakana(r.yomigana ?? '')
+    const known = entries.get(code)
+    if (known) {
+      listed.add(code)
+      const [ja, reading] = known.names
+      if (ja.text !== name) differences.push(`${code} name: ${ja.text} / ${name}`)
+      if (reading.text !== kana) differences.push(`${code} kana: ${reading.text} / ${kana}`)
       continue
     }
-    if (!city) throw new Error(`A ward before any city: ${code}`)
-    const cityName = entries.get(city)!.names[0].text
-    const own = name.startsWith(cityName) ? name.slice(cityName.length) : name
-    entries.set(code, { code, level: 'ADM3', parent: city, names: [official(own)] })
+    const kind = GROUP_KINDS.find((k) => name.endsWith(k))
+    if (!kind) throw new Error(`${code} ${name}: a local government the City Master lacks`)
+    groupByName.set(`${r['ken-name']}${name}`, code)
+    entries.set(code, {
+      code,
+      group: kind,
+      parent: prefCode(code),
+      names: [official(name), official(GROUP_KANA[code] ?? kana, 'ja-Hrkt')],
+    })
+  }
+  const unlisted = [...entries.keys()].filter((c) => !listed.has(c) && !entries.get(c)!.group)
+  if (unlisted.length > 0) {
+    throw new Error(`Local governments the standard area code lacks: ${unlisted.join(', ')}`)
+  }
+
+  // Which groups each area is in: the group a row of the standard area code
+  // names before it, and the county the City Master gives
+  for (const r of areas) {
+    const code = code6(r['tiiki-code']!)
+    const group = groupByName.get(`${r['ken-name']}${r['sityouson-name1'] ?? ''}`)
+    if (group && group !== code) joinGroup(entries.get(code)!, group)
+    // Tokyo's special wards are the ward area's, which their rows do not name
+    if (isSpecialWard(code)) joinGroup(entries.get(code)!, WARD_AREA)
+  }
+  const counties = new Map<string, { kana: string; romanized: string }>()
+  for (const r of cities) {
+    if (!r.county) continue
+    const key = `${r.pref}${r.county}`
+    counties.set(key, { kana: r.county_kana!, romanized: r.county_roma! })
+    const group = groupByName.get(key)
+    if (group) joinGroup(entries.get(r.lg_code!)!, group)
+  }
+  for (const [key, code] of groupByName) {
+    const entry = entries.get(code)!
+    const english = GROUP_ENGLISH[code]
+    if (english) {
+      entry.names.push(official(english, 'en'))
+      continue
+    }
+    const county = counties.get(key)
+    if (entry.group !== '郡' || !county) {
+      throw new Error(`${code} ${key}: no English name, and not a county the City Master names`)
+    }
+    const [ja, reading] = entry.names
+    if (county.kana !== reading.text) {
+      differences.push(`${code} kana: ${county.kana} / ${reading.text}`)
+    }
+    entry.names = names(code, ja.text, county.kana, county.romanized)
   }
 
   const changeRows = await rows(
     conn,
+    'read_xlsx',
     changesPath,
     `header = false, range = 'A1:N${CHANGE_ROWS}', stop_at_empty = false`
   )
@@ -181,20 +410,54 @@ async function main() {
     }
   }
 
+  const retrieved = new Date().toISOString().slice(0, 10)
+  const dataDate = cities.map((r) => r.efct_date!).reduce((a, b) => (a > b ? a : b))
+  const sources: Source[] = [
+    {
+      publisher: 'デジタル庁',
+      title: 'アドレス・ベース・レジストリ 市区町村マスター',
+      url: citiesArg,
+      retrieved,
+      license: publicDataLicense('https://www.digital.go.jp/policies/base_registry_address_tos'),
+      processed:
+        '都道府県のコードを検査数字の式で6桁にし、英語名を国土地理院「地名等の英語表記規程」の形に置き換え、読みとローマ字の誤りを補正した',
+    },
+    {
+      publisher: '総務省',
+      title: '統計に用いる標準地域コード',
+      url: areasArg,
+      retrieved,
+      license: publicDataLicense('https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html'),
+      processed: '区域のまとまりを取り出し、検査数字を足して6桁のコードにした',
+    },
+    {
+      publisher: '総務省',
+      title: '全国地方公共団体コード 改正一覧',
+      url: changesArg,
+      retrieved,
+      license: publicDataLicense('https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html'),
+      processed: '廃止・名称変更を、コードと名称の有効期間として読んだ',
+    },
+  ]
   writeFileSync(
     OUT,
     JSON.stringify(
       {
         version: `${dataDate}+${createHash('sha256').update(JSON.stringify(sorted)).digest('hex').slice(0, 12)}`,
-        retrieved: new Date().toISOString().slice(0, 10),
-        sources: { current: currentArg, changes: changesArg },
+        sources,
         codes: sorted,
       },
       null,
       1
     ) + '\n'
   )
-  console.log(`${sorted.length} entries, list of ${dataDate}, written to ${OUT}`)
+  for (const d of differences) console.log(`differs (City Master / standard area code): ${d}`)
+  console.log(`${sorted.length} entries, areas in effect by ${dataDate}, written to ${OUT}`)
+}
+
+/** An area joining a group, once. */
+function joinGroup(entry: CodeEntry, group: string) {
+  if (!entry.groups?.includes(group)) entry.groups = [...(entry.groups ?? []), group]
 }
 
 /**
@@ -260,8 +523,18 @@ function applyChanges(raw: Row[], entries: Map<string, CodeEntry>, designated: S
           entry = formerEntry(oldCode, newName, designated)
           entries.set(oldCode, entry)
         }
+        // The name it took starts here. A name it took later ended it already,
+        // the list running newest first; only the current one carries its
+        // reading and English name along
+        const took = entry.names.find(
+          (n) => n.kind === 'official' && n.lang === 'ja' && n.text === newName && !n.validFrom
+        )
+        if (!took) {
+          throw new Error(`${oldCode} renamed to ${newName}, which the City Master names otherwise`)
+        }
+        const current = !took.validTo
         entry.names = entry.names.map((n) =>
-          n.kind === 'official' && n.text === newName && !n.validFrom
+          n === took || (current && n.kind === 'official' && !n.validFrom && !n.validTo)
             ? { ...n, validFrom: date }
             : n
         )
@@ -313,15 +586,9 @@ function wardCity(code: string, designated: Set<string>): string | undefined {
 function addAliases(entry: CodeEntry) {
   if (entry.level !== 'ADM1') return
   const aliases = entry.names
-    .filter((n) => n.kind === 'official' && /[都府県]$/.test(n.text))
+    .filter((n) => n.kind === 'official' && n.lang === 'ja' && /[都府県]$/.test(n.text))
     .map((n): Name => ({ ...n, text: n.text.slice(0, -1), kind: 'alias' }))
   entry.names.push(...aliases)
-}
-
-/** The sheets of a workbook, in order, read off its manifest. */
-function sheetNames(path: string): string[] {
-  const xml = execFileSync('unzip', ['-p', path, 'xl/workbook.xml']).toString('utf8')
-  return [...xml.matchAll(/<sheet [^>]*name="([^"]+)"/g)].map((m) => m[1])
 }
 
 await main()

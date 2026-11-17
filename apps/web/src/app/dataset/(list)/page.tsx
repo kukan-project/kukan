@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
-import { getTranslations } from 'next-intl/server'
+import { getLocale, getTranslations } from 'next-intl/server'
 import { serverFetch } from '@/lib/server-api'
 import { queryRobots } from '@/lib/page-metadata'
 import { toArray } from '@/lib/query'
@@ -56,6 +56,7 @@ export default async function DatasetsPage({ searchParams }: Props) {
         for (const v of toArray(params[key])) query.append(key, v)
       }
       query.set('include_facets', 'true')
+      query.set('lang', await getLocale())
       if (params.sort_by) query.set('sort_by', params.sort_by)
       if (params.sort_order) query.set('sort_order', params.sort_order)
 
