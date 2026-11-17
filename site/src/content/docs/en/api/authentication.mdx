@@ -76,12 +76,21 @@ When both are sent, `Authorization: Bearer` takes precedence.
 ```bash
 # List
 curl https://your-kukan-site/api/v1/api-tokens \
-  -H "Authorization: Bearer <token>"
+  -H "Cookie: <session-cookie>"
 
 # Revoke
 curl -X DELETE https://your-kukan-site/api/v1/api-tokens/<id> \
-  -H "Authorization: Bearer <token>"
+  -H "Cookie: <session-cookie>"
 ```
+
+### What a token cannot do
+
+So that a leaked token cannot leave behind powers that outlast its revocation, the following work only from a signed-in session. Called with an API token, they return `403`.
+
+- Issuing, listing and revoking tokens (`/api-tokens`)
+- Among sysadmin operations: creating, updating, deleting, restoring and purging users, deleting all data, and turning user self-registration on or off
+
+Everything else (creating and updating datasets, managing organization members, rebuilding the index and so on) works with the token holder's permissions. Changes to who can do what are recorded in the audit log, token or not.
 
 ## Permission model
 

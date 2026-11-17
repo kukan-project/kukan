@@ -44,27 +44,31 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 
 ### 主なクエリパラメータ（GET /packages）
 
-| パラメータ         | 説明                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `q`                | 検索クエリ（キーワードまたは自然文。ハイブリッド検索。最大 500 文字）                                                          |
-| `name`             | データセット名の前方一致                                                                                                       |
-| `semantic`         | `false` でキーワード一致のみ（デフォルト: `true`）                                                                             |
-| `match`            | `relaxed` で、`q` のすべての語を持つデータセットが無いとき、語の少ない一致に緩める（デフォルト: `all`。後述）                  |
-| `offset` / `limit` | ページネーション（`limit` は最大 100。`offset + limit` は最大 10,000、`my_org=true` と `state=draft` を除く）                  |
-| `organization[]`   | 組織で絞り込み                                                                                                                 |
-| `groups[]`         | カテゴリーで絞り込み                                                                                                           |
-| `tags[]`           | タグで絞り込み                                                                                                                 |
-| `res_format[]`     | リソース形式で絞り込み（例: `CSV`）                                                                                            |
-| `license_id[]`     | ライセンスで絞り込み                                                                                                           |
-| `extras_<key>`     | データセットの extras で、キー `<key>` の値が一致するもの（後述）                                                              |
-| `res_extras_<key>` | いずれかのリソースの extras で、キー `<key>` の値が一致するもの（後述）                                                        |
-| `creator_user_id`  | 作成者のユーザー ID で絞り込み                                                                                                 |
-| `state`            | `active` / `deleted` / `draft`（`draft` は要認証・後述。`deleted` は `my_org=true` かつ認証時のみ有効で、それ以外は `active`） |
-| `my_org`           | 自分が `editor` 以上の組織に限定                                                                                               |
-| `private`          | `true` で非公開のみ、`false` で公開のみに絞り込み（省略時は閲覧可能なすべて）                                                  |
-| `sort_by`          | `updated` / `created` / `name`                                                                                                 |
-| `sort_order`       | `asc` / `desc`                                                                                                                 |
-| `include_facets`   | ファセット情報を含める                                                                                                         |
+| パラメータ         | 説明                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `q`                | 検索クエリ（キーワードまたは自然文。ハイブリッド検索。最大 500 文字）                                                             |
+| `name`             | データセット名の前方一致                                                                                                          |
+| `semantic`         | `false` でキーワード一致のみ（デフォルト: `true`）                                                                                |
+| `match`            | `relaxed` で、`q` のすべての語を持つデータセットが無いとき、語の少ない一致に緩める（デフォルト: `all`。後述）                     |
+| `offset` / `limit` | ページネーション（`limit` は最大 100。`offset + limit` は最大 10,000、`my_org=true` と `state=draft` を除く）                     |
+| `organization[]`   | 組織で絞り込み                                                                                                                    |
+| `groups[]`         | カテゴリーで絞り込み                                                                                                              |
+| `tags[]`           | タグで絞り込み                                                                                                                    |
+| `res_format[]`     | リソース形式で絞り込み（例: `CSV`）                                                                                               |
+| `license_id[]`     | ライセンスで絞り込み                                                                                                              |
+| `area[]`           | 表の列が指す地域の都道府県で絞り込み（`13` でも `130001` でも可、`*` は全国の表）。列の語彙を有効にしたサイトだけ（試験的、後述） |
+| `area_place[]`     | 表の列が指す市区町村で絞り込み（例: `131016`。試験的）                                                                            |
+| `meaning[]`        | 表の列の意味で絞り込み（例: `admin-area:code`・`admin-area:name`。試験的）                                                        |
+| `lang`             | ファセットの地域の名前の言語（例: `en`。その言語の名前が無ければ日本語）                                                          |
+| `extras_<key>`     | データセットの extras で、キー `<key>` の値が一致するもの（後述）                                                                 |
+| `res_extras_<key>` | いずれかのリソースの extras で、キー `<key>` の値が一致するもの（後述）                                                           |
+| `creator_user_id`  | 作成者のユーザー ID で絞り込み                                                                                                    |
+| `state`            | `active` / `deleted` / `draft`（`draft` は要認証・後述。`deleted` は `my_org=true` かつ認証時のみ有効で、それ以外は `active`）    |
+| `my_org`           | 自分が `editor` 以上の組織に限定                                                                                                  |
+| `private`          | `true` で非公開のみ、`false` で公開のみに絞り込み（省略時は閲覧可能なすべて）                                                     |
+| `sort_by`          | `updated` / `created` / `name`                                                                                                    |
+| `sort_order`       | `asc` / `desc`                                                                                                                    |
+| `include_facets`   | ファセット情報を含める                                                                                                            |
 
 ### extras で絞り込む
 
@@ -89,6 +93,15 @@ curl -G "https://your-kukan-site/api/v1/packages" \
 - `res_extras_*` は、条件ごとに「どれか 1 つのリソースが満たす」ものです。複数の条件を同じリソースが
   満たす必要はありません（`res_format[]` と同じ）
 - キーが空（`extras_=`）のものと、1 リクエストで 20 を超える条件は `400` です
+
+### 列の語彙で絞り込む（試験的）
+
+サイトで列の語彙を有効にしていると（[システム管理者ガイド](/ja/system-admin-guide/#列の語彙試験的)）、表のリソースの列が指す地域と、列の意味で絞り込めます。どれかのリソースが条件に当たるデータセットが返ります。同じパラメータを繰り返すと「または」、別のパラメータどうしは「かつ」です。
+
+- `area` と `area_place` は、サイトの束の正規のコードにそろえてから照らします（`area=13` と `area=130001` は同じ）。どう読んだかは応答の `vocabularyFilters` に入ります
+- `include_facets=true` のとき、ファセットに `areas`（都道府県と全国）・`meanings` が入ります。`areaPlaces`（市区町村）は `area` を指定したときだけ、選んだ都道府県の下の区域で数えます
+- 束を有効にしていないサイトでは、これらのファセットは空です
+- 判定の規則やパラメータは今後変わることがあります
 
 ### 語の一致を緩める（match=relaxed）
 
@@ -139,8 +152,8 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 自分が作成した下書きと、所属組織（editor 以上）の下書きのみが返ります。
 対応フィルタは `q` / `name` / `organization[]` / `private` / `sort_by` / `sort_order` /
 `offset` / `limit`。`tags[]` / `groups[]` / `res_format[]` / `license_id[]` /
-`extras_<key>` / `res_extras_<key>` / `creator_user_id` / `my_org` / `include_facets` を
-指定すると `400` になります。
+`extras_<key>` / `res_extras_<key>` / `area[]` / `area_place[]` / `meaning[]` / `creator_user_id` /
+`my_org` / `include_facets` を指定すると `400` になります。
 削除が途中で失敗した行（削除未完了）も一覧に含まれます。
 
 **取得・更新・削除**:
@@ -738,6 +751,8 @@ MCP の `search_passages` と同じ検索です。パラメータは `q`（必�
 | GET    | `/api-tokens`      | 自分のトークン一覧 | 認証 |
 | DELETE | `/api-tokens/{id}` | トークン失効       | 認証 |
 
+トークンの発行・一覧・失効は、ログインしたセッションでだけ行えます。API トークンで呼ぶと `403` です。
+
 ## お知らせ (announcements)
 
 | Method | Path                  | 説明                                                                           | 認証     |
@@ -751,6 +766,8 @@ MCP の `search_passages` と同じ検索です。パラメータは `q`（必�
 ## 管理 (admin)
 
 すべて sysadmin 限定。
+
+次の操作は、sysadmin の API トークンでは `403` になり、ログインしたセッションでだけ行えます（[システム管理者ガイド](/ja/system-admin-guide/#api-トークンでできない操作)）: ユーザーの作成・更新・削除・復元・完全削除、`DELETE /admin/data`、`PUT /admin/settings/registration-enabled`。
 
 | Method | Path                                | 説明                                                                                                                                                                                                                                       |
 | ------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

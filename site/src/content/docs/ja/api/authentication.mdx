@@ -75,12 +75,21 @@ curl https://your-kukan-site/api/v1/users/me \
 ```bash
 # 一覧
 curl https://your-kukan-site/api/v1/api-tokens \
-  -H "Authorization: Bearer <token>"
+  -H "Cookie: <session-cookie>"
 
 # 失効
 curl -X DELETE https://your-kukan-site/api/v1/api-tokens/<id> \
-  -H "Authorization: Bearer <token>"
+  -H "Cookie: <session-cookie>"
 ```
+
+### トークンでできないこと
+
+トークンが漏れても、トークンを失効させた後まで残る権限を作られないように、次の操作はログインしたセッションでだけ行えます。API トークンで呼ぶと `403` です。
+
+- トークンの発行・一覧・失効（`/api-tokens`）
+- sysadmin の操作のうち、ユーザーの作成・更新・削除・復元・完全削除、全データの削除、ユーザー自己登録の切り替え
+
+ほかの操作（データセットの作成・更新、組織のメンバーの管理、索引の再構築など）は、トークンの持ち主の権限で行えます。トークンでの操作も、権限に関わるものは監査ログに残ります。
 
 ## 権限モデル
 

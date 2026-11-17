@@ -53,6 +53,24 @@ Deleting a draft skips the trash and **permanently deletes** it together with it
 (it cannot be restored). If the deletion fails partway, the draft stays in the list marked
 "Deletion incomplete", and "Retry Delete" completes the permanent deletion.
 
+## The editor
+
+Opening a dataset in the dashboard swaps the left sidebar for that dataset's list of resources, and shows the dataset — or the resource picked in the list — on the right. It is laid out as a pair to the public page.
+
+- **You can go in from the public page too.** The pencil icon beside the dataset's name and the resource's name ("Manage this dataset", "Manage this resource") opens the editor for the same thing. Only those who can edit the dataset see the icon (editors and admins of its organization, site admins, and the creator of a draft)
+- **Saving does not send you back to the list.** You can carry on editing where you are. If you have changes you have not saved, you are asked before leaving the page
+- The editor's addresses are `/dashboard/datasets/<dataset ID>` and `/dashboard/datasets/<dataset ID>/resources/<resource ID>`. The old `/dashboard/datasets/<name>/edit` forwards to them
+
+A resource is edited in tabs.
+
+| Tab             | What it holds                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Basic           | Name, format, description, source and custom fields. The file's details (MIME type, size, hash, current version, rows, columns), its [AI-written description](#ai-written-descriptions), and deleting the resource |
+| Preview         | The same preview as the public page, also for draft and private datasets                                                                                                                                           |
+| Table settings  | The [primary key](#declaring-a-primary-key) and [column roles](#column-roles). Only for resources that read as a table                                                                                             |
+| Version history | [Versions, their downloads and diffs](#version-history)                                                                                                                                                            |
+| Processing      | How far the pipeline has got, and [reprocessing](#reprocessing)                                                                                                                                                    |
+
 ## Managing resources
 
 Resources are files or URLs associated with a dataset.
@@ -63,6 +81,16 @@ Resources are files or URLs associated with a dataset.
 - **External URL** — Specify a URL to an external file
 
 Adding, editing, replacing or deleting a resource is saved right away. Only a new order needs "Save order".
+
+Saving an external-URL resource fetches the file from its URL again only when you change the source or the format. A save that changes only the name or the description does not. To take in an update at the source, use [Reprocess](#reprocessing) with "Fetch the file from its URL again".
+
+### Reprocessing
+
+"**Reprocess**" on the Processing tab (on the public page, in the processing dialog) rebuilds the preview, the reading of the table and the search index from the current file. Use it as well to bring an existing resource up to how a new KUKAN version reads files.
+
+- For an external-URL resource you can tick "**Fetch the file from its URL again**". It then fetches from the source, and a new version is made if the content changed
+- The box is normally clear. It starts ticked when the last fetch failed or has not happened yet
+- Fetching again replaces the content a [revert](#stopping-and-reverting) restored with what the source serves now
 
 ### Grouping resources into sections
 
@@ -128,15 +156,24 @@ number or date, or number written as text — decided automatically from its val
 name. The role decides how search uses the column: name and category columns are searched by
 their values, free-text columns as sentences, and the rest are not used for search.
 
-The field list on the public page shows the role alone. The resource editing screen in the
-dashboard shows it with the reason it was decided ("92% of values are number-shaped" and the like).
+The field list on the public page shows the role alone. The Table settings tab in the editor
+shows it with the reason it was decided ("92% of values are number-shaped" and the like).
 For a column of numbers written as text, it also lists the values that do not read as numbers —
-what to fix in the data.
+what to fix in the data. A column of digits that start with a zero (local government codes such as
+`010006`) is taken for an identifier, not a number.
 
 :::note
 **Roles cannot be edited in this version.** Overriding a role the automatic decision got wrong,
 from the dashboard, is planned for a future version.
 :::
+
+### Column vocabulary (experimental)
+
+When the site has column vocabulary turned on ([System Admin Guide](/en/system-admin-guide/#column-vocabulary-experimental)), KUKAN works out what a table's columns stand for — "a 6-digit local government code for an administrative area", "the name of an administrative area" and the like — by checking their values against code lists.
+
+- A column settled this way shows its vocabulary in the field list on the public page, and dataset search can filter by area and by column meaning ([User Guide](/en/user-guide/#filtering))
+- The Table settings tab shows how many values matched, which level of area they hit, and the date of the code list. A column left unsettled lists its candidates
+- This version has no way for a person to correct the result
 
 ## Version history
 
@@ -150,7 +187,7 @@ that still serves the same bytes adds no version, and the resource's processing 
 
 ### Viewing the version history
 
-The resource edit page has a **Version history** section. Versions are listed newest first,
+The resource editor has a **Version history** tab. Versions are listed newest first,
 each row showing the version number, creation time, size, origin (**Upload**, **Fetched**, or
 **Re-published v○**), and the **primary key** the version was loaded under.
 
@@ -158,9 +195,11 @@ Every version can be downloaded exactly as it was. The version number is added t
 
 ### Declaring a primary key
 
-The **Primary key** control on the resource edit page names the columns used to match a row to
+The **Table settings** tab of the resource editor names the columns used to match a row to
 the same row in another version (a combination of columns works too). With a key, a diff can
 count the **rows that changed**.
+
+The tab shows a table with a row per column. Ticking the columns for the key marks the rows you changed, and a bar below shows "Changes not applied: n" with "Apply" and "Discard". "Apply" asks you to confirm, showing the key before and after.
 
 - The columns you choose — the combination, if more than one — have to be **present in the
   content, hold no empty values, and not repeat across rows**. Where they are not met, the
@@ -229,7 +268,7 @@ no file (its metadata remains).
 The preview and the search index are **discarded as part of the revert and rebuilt automatically
 from the restored content** (the rebuild runs in the background, so it takes a moment to appear).
 A warning appears only when discarding them, or starting the rebuild, did not succeed — then
-"Rebuild preview & index" finishes the job.
+"[Reprocess](#reprocessing)", without "Fetch the file from its URL again", finishes the job.
 
 ### Deleting a version
 

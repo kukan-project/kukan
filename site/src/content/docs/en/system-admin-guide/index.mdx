@@ -400,6 +400,30 @@ system administrators create users from the admin dashboard. While no
 users exist, self-registration is enabled regardless of the setting so the
 instance can be bootstrapped.
 
+### What an API token cannot do
+
+Even a sysadmin's API token cannot do the following (403). This keeps a leaked token from creating an account that outlives the token's revocation. Sign in to the dashboard to do them; the first sysadmin can also be created with `pnpm db:create-user`.
+
+- Create, change, delete, restore or purge users
+- Data reset (deleting all data)
+- Turn user self-registration on or off
+- Issue, list or revoke API tokens
+
+Listing users and their statistics, rebuilding the index, the other settings, job operations and the rest still take a token as before.
+
+### Audit log
+
+Changes to who can do what are recorded in the audit log (the `audit_log` table), with who made them and whether they were signed in or used a token.
+
+- Creating a user (including with `pnpm db:create-user`), changing a role, deleting, restoring and purging a user
+- Adding, re-roling and removing members of an organization or category
+- Issuing and revoking API tokens
+- Data reset
+- Changing a runtime setting
+- Deleting a version (with its reason)
+
+Token values and passwords are never recorded. A data reset leaves the audit log in place. There is no screen for the audit log yet; read it from the database.
+
 ## Runtime settings
 
 Some settings can be **changed from the admin dashboard without redeploying** (Site Management `/dashboard/admin/site` and AI Management `/dashboard/admin/ai`, system administrators only). Changes are stored in the database, recorded in the audit log, and take 30 seconds to a minute to take effect.
@@ -409,11 +433,21 @@ Some settings can be **changed from the admin dashboard without redeploying** (S
 | Site Management | Example search queries                      | Example queries shown under the search box                                                                                                                                                                                                                                                     |
 | Site Management | Site metadata                               | Values that brand components read by key, such as a population and its as-of date (number, text, text per language, date). Every value is readable through the public API. See "[Brand customization](/en/system-admin-guide/brand-customization/#reading-site-metadata)" for how to read them |
 | Site Management | User self-registration                      | See "[Self-registration control](#self-registration-control)" above                                                                                                                                                                                                                            |
+| Site Management | Column vocabulary                           | The code lists (vocabulary packs) table columns are checked against. See "[Column vocabulary (experimental)](#column-vocabulary-experimental)" below                                                                                                                                           |
 | AI Management   | Generate AI descriptions in bulk → Language | The language AI descriptions are written in (Japanese / English, Japanese by default). See "[AI-written descriptions](#ai-written-descriptions)" below                                                                                                                                         |
 | AI Management   | AI metadata suggestions                     | Feature toggle (kill switch), generation model ID (blank = provider default), and a connection test                                                                                                                                                                                            |
 | AI Management   | Semantic search → Search settings           | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available)                                                    |
 
 **Data Reset** on Site Management permanently deletes every dataset, resource, organization, group, tag, pipeline job, and associated file (user accounts are kept). It asks you to type `RESET` to confirm. It cannot be undone, so do not use it in production.
+
+### Column vocabulary (experimental)
+
+KUKAN works out what a table resource's columns stand for — a code or a name of an administrative area, and which code list written how — by checking them against the code lists of the regions you pick (vocabulary packs). A settled column shows in the field list on the public page, and dataset search can then filter by "Area" and "Column meaning".
+
+- Under "Column vocabulary" in Site Management, tick the packs to use and save. None is ticked by default, and nothing is worked out
+- The one pack so far is "Japan (standard area codes for statistics)". It is built from the Digital Agency's City Master and the Ministry of Internal Affairs and Communications' Standard Area Code for Statistics, and reads prefectures, municipalities and the wards of designated cities as well as the codes of districts (gun), subprefectures and the special wards area. Places are named in Japanese and English, and the area filter shows the English names on the English screens
+- Changing the packs reads the table resources again at low priority (Background Job Status shows it as "Vocabulary read again (tables)"). When a KUKAN update changes the rules, the worker runs the same re-read when it starts. A site with no pack ticked sees none of this
+- This is an experimental feature: its rules and how it shows may change
 
 ### Announcements
 
@@ -531,6 +565,10 @@ sites: [
 
 On Docker Compose the same split is per-site env files: `AI_SUMMARY_MODEL` in
 `docker/multi-site/sites/<site>.env`.
+:::
+
+:::caution[Private datasets are covered too]
+Abstracts are written for any published dataset, **private ones included** (a draft gets them when it is published). A private dataset's abstracts are shown only to those who can see the dataset. The file's content goes to the provider you configured — inside AWS with Bedrock, but **on a site configured with an OpenAI-compatible provider, the content of private data goes outside too**. A site that does not want that should leave `AI_SUMMARY_MODEL` unset. To give abstracts to private datasets that predate this, run the bulk generation.
 :::
 
 :::caution[Turning this on costs inference money]

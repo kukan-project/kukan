@@ -15,7 +15,8 @@ keeping every logical resource that holds data or a namespace per site
 services).
 
 - Site isolation: a dedicated DB role per site (no access to other sites'
-  databases), per-site search index prefixes and buckets (the job queue lives in
+  databases; on AWS, nor to the cluster's default databases `postgres` and
+  `template1`), per-site search index prefixes and buckets (the job queue lives in
   the site database, so it is isolated with it)
 - Each site can have its own domain, brand (`brand`, see
   [Appearance Customization](/en/system-admin-guide/brand-customization/#multiple-brands-multiple-sites-in-one-fork)),
