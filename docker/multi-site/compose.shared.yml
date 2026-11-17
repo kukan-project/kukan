@@ -125,7 +125,7 @@ services:
     # Single edge for every site — per-site virtual hosts in ./Caddyfile.
     # No depends_on: the site web containers live in their own compose
     # projects; caddy just 502s until they are up.
-    image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
+    image: caddy:2-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     container_name: kukan-shared-caddy
     restart: unless-stopped
     ports:
