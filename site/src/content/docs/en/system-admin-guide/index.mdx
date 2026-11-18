@@ -113,6 +113,8 @@ On-premises deployments use the following alternative services:
 ### AWS Deployment
 
 KUKAN deploys on AWS as **CloudFront (WAF + cache) → internal ALB → ECS Fargate**.
+An environment setting can run the web on Lambda Web Functions instead (experimental; a future
+release is to make it the default — [Running on Lambda Web Functions](/en/system-admin-guide/web-functions/)).
 Deployment is **automated with CDK Pipelines (AWS CodePipeline)**: using a CodeConnections
 (GitHub App) source, a push to the target branch deploys each environment (dev / prd, etc.)
 as a CDK Stage.
@@ -132,6 +134,7 @@ Key AWS resources:
 - **CloudFront** — CDN, WAF, TLS termination (the front layer)
 - **ALB (internal)** — load balancer (reachable only via the CloudFront VPC origin)
 - **ECS Fargate** — Web application + Pipeline Worker
+- **Lambda Web Functions** — Web application (in a `webCompute: 'web-function'` environment, which uses no ALB)
 - **Aurora Serverless v2 / RDS** — PostgreSQL database (the job queue lives here too)
 - **S3** — File storage
 - **Cloud Map** — how the web finds the worker to wake it (one private DNS namespace per environment)

@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案（Proposed）— 段階 2 は合格（web 全体まで）。課金の基準も請求で確かめた。CDK の L2 は `aws-cdk-lib` 2.276.0 でリリースされたので、L2 で組む前提に改めた** — 2026-11-18
+**承認（Accepted、試験的）— 実装済み。demo の 1 サイトでカナリアを確かめた（§カナリア）。既定は `fargate` のままで、将来のリリースで `web-function` を既定にする予定** — 2026-11-18
 
 AWS 環境の web を、ECS Fargate + ALB に加えて **Lambda Web Functions** でも動かせるようにする。
 Web Functions は、ポートで待ち受ける普通の Node の HTTP サーバーをそのまま動かすので、ADR-020 が
@@ -24,7 +24,7 @@ ECS Fargate のまま（§範囲外）。Docker Compose（開発・オンプレ�
 > 2026-10-17 時点の公式文書から、単価は AWS Price List API から、web の接触面は develop
 > （`2de25638`）のソースから出した。段階 1 の実測は §コンテキスト 4 にある。2026-11-18 に、CDK の
 > L2 の公開（§コンテキスト 6）と develop（`b1522f90`）のソースに合わせて §コンテキスト 3・6 と
-> §決定 2・7・9 を改めた。
+> §決定 2・7・9 を改めた。同日、実装とカナリアに合わせて §決定 1・2・3・8 と §カナリアを改め、承認とした。
 
 ## コンテキスト
 
@@ -206,14 +206,28 @@ VPC に入れることになり、Fetch のために NAT が要る（NAT の場�
   オリジン（`cdn.ts` は `cloudfront.IOrigin` を受けるので差し替えるだけ）。worker・DB・
   OpenSearch・Cloud Map は共通で、セキュリティグループの許可先が web か connector かだけが変わる。
 - 切り替えると web の資源は作り直されるが、CloudFront とドメインは残るので DNS は変わらない。
-  戻すときは設定を `fargate` に戻してデプロイする。
+- 共有インフラの web 向けの部分は、2 つの設定で決める。`sharedAlb`（共有 ALB と VPC オリジン）と
+  `webFunctionNetwork`（IPv6・connector のセキュリティグループ・Bedrock のエンドポイント）で、
+  既定値は `webCompute` から導く（fargate なら ALB だけ、web-function ならネットワークだけ）。
+  `webCompute` が必要とする方を `false` にはできない。
+- デプロイ済みの環境を切り替えるのは、**どちらの方向も 2 回のデプロイ**にする。パイプラインは
+  共有スタックをサイトより先にデプロイするので、共有のものを足すのは 1 回で済むが、サイトがまだ
+  使っているものを消すのはサイトが移った後でないとできない。1 回目は古い方を残す設定
+  （web-function へは `sharedAlb: true`、fargate へは `webFunctionNetwork: true`）を書いてサイトを移し、
+  2 回目でその設定を消す。切り替えはまれなので、手順を文書（システム管理者ガイドの Web Functions の
+  ページ）に明記し、設定の仕組みは足さない。
+- 将来のリリースで、`webCompute` の既定を `web-function` に変える予定とする。Web Functions は
+  マルチサイト形状でしか使えないので、シングルサイト形状の環境にはそれまでの移行を予告する。
+  既定が変わった後も Fargate を使う環境は `webCompute: 'fargate'` を明示する。
 - `web-function` は試験的とする。使う環境が無いと経路が古びるので、東京の検証用の環境で使い続け、
   zip のビルドは CI で確かめる。synth のスナップショットは両方式で取る。
 
 ### 2. ネットワーク
 
 - VPC と public サブネットに IPv6 の CIDR を割り当て、`::/0 → インターネットゲートウェイ` を足す。
-  RDS・OpenSearch・ECS（worker）は IPv4 のまま。
+  RDS・OpenSearch・ECS（worker）は IPv4 のまま。サブネットの /64 は `AWS::EC2::SubnetCidrBlock` の
+  関連付けで足す。サブネットの `Ipv6CidrBlock` に書くと、CloudFormation は既存のサブネットを
+  置き換える（demo への change set で確認）。public サブネットには全サイトのタスクと共有 ALB がある。
 - connector は `DualStack`、public サブネット（2 AZ 以上）に置く。**connector はサイトのスタックに
   1 つずつ置き、セキュリティグループは共有インフラに 1 つ置く。** セキュリティグループは送信のみで、
   RDS・OpenSearch・worker のセキュリティグループはこれを許可する。サイトのスタックは、今の
@@ -238,7 +252,8 @@ VPC に入れることになり、Fetch のために NAT が要る（NAT の場�
 
 CloudFront → Web Function（`IamAuth` + OAC）。オリジンへのヘッダーは既に
 `AllViewerExceptHostHeader`（Host を渡すと 404）。IP 制限は既に CloudFront Function で行っている
-ので、ALB のセキュリティグループに代わるものは要らない。全サイトが移れば共有 ALB を外す。
+ので、ALB のセキュリティグループに代わるものは要らない。共有 ALB は、web-function の環境では
+既定で作らない（`sharedAlb`、§決定 1）。
 
 `X-Forwarded-For` の最後の値は CloudFront のアドレスになる。クライアントの IP を使うところは、
 viewer-request 関数が毎回 viewer のアドレスで上書きする `x-kukan-client-ip` から取る
@@ -279,6 +294,11 @@ Better Auth の回数制限は既定でプロセスのメモリに記録する�
   Web Functions の実行環境と同じ Amazon Linux 2023（glibc）なので、QEMU も別の OS 向けの
   取り寄せも要らない。Docker の `deps` ステージが `supportedArchitectures` で musl だけを
   入れているのに対し、zip は glibc のバインディングを入れる。
+- zip は CDK のアセットのバンドルで作るので、synth の中でビルドする。arm64 の環境のパイプラインは、
+  `webCompute` によらず synth を ARM・Docker 有効にしておく。CDK Pipelines は、push されたコミットを
+  その時点の synth の設定で synth し、パイプライン自身の設定は synth が通った後の self-mutation で
+  更新される。切り替えのコミットで初めて Docker を有効にすると、その synth が失敗して先に進めない。
+  x86_64 の環境は、切り替えの push の前にパイプラインのスタックを手でデプロイする。
 - CDK は L2（`aws-cdk-lib` 2.276.0 以上）で組む。コードは
   `WebFunctionCode.fromAssetToManagedBucket()` で渡し、コピーと版の ID の固定は L2 に任せる
   （§コンテキスト 6）。bootstrap には手を入れない。L2 の梱包が `*.pem` を外すかは、組んでから確かめる。
@@ -315,8 +335,13 @@ Better Auth の回数制限は既定でプロセスのメモリに記録する�
 件数の取得でリクエストをまとめて送るので、上限 2 では画面の読み込みが時々失敗した。上限 10 では
 同じことは起きなかった（並行 60 本で環境が 5 つ立ち上がり、すべて 200）。
 
-そのため、`maxEnvironments` は余裕を持たせて決め（small でも 10 前後）、DB の接続の上限は
-環境あたりのプールを小さくして守る（`WEB_DB_POOL_MAX`、検証では 5）。
+そのため、`maxEnvironments` は小さく絞りすぎず、DB の接続の上限は環境あたりのプールを小さくして
+守る。設定は `webFunction` の節に置き、名前は KUKAN の「環境」（dev・demo）と紛れないよう
+`maxInstances`（AWS の `MaxEnvironments`）と `dbPoolMax`（`WEB_DB_POOL_MAX`）とする。既定は
+small 4 × 2、medium 10 × 5、large 20 × 10 で、積は Fargate の web の最大（small 2 × 5 など）と
+同じ程度にした。small の 4 サイト（db.t4g.micro、約 112 本）でも、接続数のバジェットは 86 に収まる
+（Fargate では 100）。インスタンス 1 つが同時に多くの要求を受けるが、要求はインスタンスに散らばり、
+クエリは短いので、プールが小さくても待ちは短いと見ている。値は実際のサイトの様子を見て調整する。
 
 ### 9. Node のメジャーバージョン
 
@@ -428,6 +453,16 @@ Web Functions の利用料は「常に生きている環境の数 × 月 $3.3（
 - 生きている環境の数は、同時のリクエストと、起動直後の環境が 2 本しか受けないこと（§決定 8）で
   決まる。段階 2c の連続の操作では、1 分に 120 リクエストで 8 環境まで増えた。
 
+## カナリア（2026-11-18、demo の main サイト）
+
+demo の 4 サイトのうち main だけを、手元から手動で Web Function に切り替えた（共有スタックと
+main のサイトスタックだけを `--exclusively` でデプロイ。他の 3 サイトは Fargate のまま、共有 ALB も残した）。
+
+- 最初の `cdk diff` で、public サブネット 2 つが置き換えになると分かった（§決定 2）。関連付けに直してから
+  デプロイした
+- トップ・一覧・API・`/api/health` が 200（0.1〜0.4 秒）、応答に `lambda-web-request-id` が付く
+- 本文付きの POST（ログイン）が OAC を通ってアプリに届く（アプリの 401 が返る）
+
 ## 範囲外
 
 - **worker。** ECS Fargate のまま。表が空になるまで処理を続ける作り（ADR-058）、重い処理の
@@ -445,6 +480,9 @@ Web Functions の利用料は「常に生きている環境の数 × 月 $3.3（
    AAAA が返るようになったかで判断する（§コンテキスト 3）。
 5. 1 つの connector が作るネットワークインターフェースの数（サブネットごとか、セキュリティグループ
    ごとか）は文書に無い。サイトの数だけ connector を置くので（§決定 2）、組んでから数を確かめる。
+6. `Authorization: Bearer` のトークンがアプリに届くか、正しいトークンで確かめる（AWS の文書では、
+   OAC の署名の後も元の `Authorization` は保たれて関数に渡る）。
+7. `webFunction.maxInstances`・`dbPoolMax` の既定を、実際のサイトの DB の接続数と 429 を見て調整する。
 
 ## 関連
 

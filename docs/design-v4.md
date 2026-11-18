@@ -511,6 +511,8 @@ Redis不要。将来Redisが必要になった時点でCacheAdapter抽象化に�
 ### 4.2 AWS 構成（標準推奨）
 
 Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリクエストを受ける。
+環境の設定（`webCompute: 'web-function'`）で、Web だけを Lambda Web Functions で動かすこともできる
+（試験的、ADR-068）。そのとき CloudFront は OAC で Web Function を呼び、ALB は使わない。
 
 ```
 ┌───────────────────────────────────────────────────────────┐

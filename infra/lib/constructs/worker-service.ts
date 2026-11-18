@@ -116,15 +116,15 @@ export class WorkerServiceConstruct extends Construct {
       // Only where there is a policy to read it: a custom metric is billed
       ...(scales && { WORKER_METRIC_SITE: metricSite }),
     }
-    configureBedrockEmbedding(config, props.bedrockProfiles, taskDef, environment)
+    configureBedrockEmbedding(config, props.bedrockProfiles, taskDef.taskRole, environment)
     // Resource abstracts are written here, at the end of the pipeline (ADR-053).
     // Without a model to write them the worker generates no text at all, so it
     // is granted no generation models either.
     if (config.bedrock?.summaryModel) {
-      configureBedrockCompletion(config, props.bedrockProfiles, taskDef, environment)
+      configureBedrockCompletion(config, props.bedrockProfiles, taskDef.taskRole, environment)
     }
     if (searchDomain) {
-      connectSearch(config, searchDomain, taskDef, environment, props.searchIndexPrefix)
+      connectSearch(config, searchDomain, taskDef.taskRole, environment, props.searchIndexPrefix)
     }
 
     // Container

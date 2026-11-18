@@ -3,7 +3,7 @@
  * database sizing the multi-site connection budget reads.
  */
 
-import type { DbEngine, DeepPartial, Scale, ScaleComputed } from './types.js'
+import type { DbEngine, DeepPartial, Scale, ScaleComputed, WebCompute } from './types.js'
 
 /** RDS instance class shape, `db.<family>.<size>` — the DatabaseConstruct strips
  *  the prefix and hands the rest to EC2 InstanceType, so anything else would
@@ -130,6 +130,7 @@ export function estimateMaxConnections(db: ScaleComputed['db']): {
 const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   small: {
     web: { cpu: 256, memory: 512, minSize: 1, maxSize: 2 },
+    webFunction: { maxInstances: 4, dbPoolMax: 2 },
     worker: { cpu: 256, memory: 1024, minTasks: 1, maxTasks: 2, healthPort: 8080 },
     db: {
       engine: 'rds',
@@ -155,6 +156,7 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   },
   medium: {
     web: { cpu: 512, memory: 1024, minSize: 1, maxSize: 5 },
+    webFunction: { maxInstances: 10, dbPoolMax: 5 },
     worker: { cpu: 512, memory: 1024, minTasks: 1, maxTasks: 2, healthPort: 8080 },
     db: { engine: 'aurora', minAcu: 0.5, maxAcu: 2, multiAz: false, deletionProtection: true },
     opensearch: {
@@ -174,6 +176,7 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   },
   large: {
     web: { cpu: 1024, memory: 2048, minSize: 2, maxSize: 10 },
+    webFunction: { maxInstances: 20, dbPoolMax: 10 },
     worker: { cpu: 1024, memory: 2048, minTasks: 2, maxTasks: 5, healthPort: 8080 },
     db: { engine: 'aurora', minAcu: 2, maxAcu: 8, multiAz: true, deletionProtection: true },
     opensearch: {
@@ -238,4 +241,21 @@ export function computeScaled(
     rdsInstanceMemoryGib(db.instanceClass) // a shape the connection budget can size
   }
   return { ...computed, db }
+}
+
+/**
+ * The web's sizing under each webCompute (ADR-068): the DB pool of one task or
+ * Web Function instance, the most instances, and how many a deploy starts (a
+ * new revision starts from one). What the other one's settings say goes unread.
+ */
+export function webSizing(c: ScaleComputed, webCompute: WebCompute) {
+  return webCompute === 'web-function'
+    ? { pool: c.webFunction.dbPoolMax, maxInstances: c.webFunction.maxInstances, newInstances: 1 }
+    : { pool: c.dbPool.webMax, maxInstances: c.web.maxSize, newInstances: c.web.minSize }
+}
+
+/** The override settings (dotted paths) each webCompute leaves unread, and what it reads. */
+export const WEB_SIZING_SETTINGS: Record<WebCompute, { unread: string[]; read: string }> = {
+  fargate: { unread: ['webFunction'], read: 'web, dbPool.webMax' },
+  'web-function': { unread: ['web', 'dbPool.webMax'], read: 'webFunction' },
 }

@@ -153,6 +153,12 @@ Aurora's 5,000 ceiling, so the sites need more than one shared cluster (environm
 
 ## Migrating from the single-site shape
 
+:::caution[A future release changes the default]
+A future release will make `web-function` (Lambda Web Functions) the default `webCompute`.
+Web Functions work with the multi-site shape only. Move any single-site environment to the
+multi-site shape with the steps below before then ([Running on Lambda Web Functions](/en/system-admin-guide/web-functions/)).
+:::
+
 `sites` cannot be added to an already-deployed single-site-shape environment:
 the stack split and physical renames make it a full CloudFormation replacement
 (= data loss). Migrate blue/green instead — build a new environment alongside

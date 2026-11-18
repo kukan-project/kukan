@@ -16,7 +16,7 @@ import {
   type CspMode,
   type OfficePreviewViewer,
 } from '@kukan/shared/env'
-import { RDS_CA_CERTIFICATES } from './types.js'
+import { RDS_CA_CERTIFICATES, WEB_COMPUTES } from './types.js'
 import type {
   BedrockConfig,
   CpuArchitecture,
@@ -26,6 +26,7 @@ import type {
   RdsCaCertificate,
   Scale,
   WafRateLimitMode,
+  WebCompute,
 } from './types.js'
 import { computeScaled } from './scale.js'
 import { isEdgeGated } from './edge.js'
@@ -305,6 +306,45 @@ export function resolveCpuArchitecture(
   return arch
 }
 
+/** Validated `webCompute`, checked at runtime for the same reason. */
+export function resolveWebCompute(env: Pick<EnvironmentConfig, 'webCompute'>): WebCompute {
+  const compute = env.webCompute ?? 'fargate'
+  if (!WEB_COMPUTES.includes(compute)) {
+    throw new Error(
+      `webCompute must be one of ${WEB_COMPUTES.join(', ')} (got ${JSON.stringify(compute)})`
+    )
+  }
+  return compute
+}
+
+/** The shared part each webCompute's sites need: the ALB, or the connectors' network. */
+const SHARED_WEB_PART = {
+  fargate: 'sharedAlb',
+  'web-function': 'webFunctionNetwork',
+} as const satisfies Record<WebCompute, keyof EnvironmentConfig>
+
+/**
+ * What the shared stack keeps for the web: the part its webCompute needs, on
+ * unless set and never off, and the other off unless set. The other one on
+ * (`kept`) is the first deploy of a switch, kept while the sites move.
+ */
+export function resolveSharedWebInfra(
+  env: Pick<EnvironmentConfig, 'sharedAlb' | 'webFunctionNetwork'>,
+  webCompute: WebCompute
+): { sharedAlb: boolean; webFunctionNetwork: boolean; kept?: string } {
+  const needed = SHARED_WEB_PART[webCompute]
+  if (env[needed] === false) {
+    throw new Error(`${needed} cannot be false with webCompute "${webCompute}": its sites need it`)
+  }
+  const resolved = {
+    sharedAlb: env.sharedAlb ?? false,
+    webFunctionNetwork: env.webFunctionNetwork ?? false,
+  }
+  resolved[needed] = true
+  const other = needed === 'sharedAlb' ? 'webFunctionNetwork' : 'sharedAlb'
+  return { ...resolved, kept: resolved[other] ? other : undefined }
+}
+
 /** Validated `rdsCaCertificate`, checked at runtime for the same reason. */
 export function resolveRdsCaCertificate(
   env: Pick<EnvironmentConfig, 'rdsCaCertificate'>
@@ -331,7 +371,12 @@ export function resolveEnv(env: EnvironmentConfig): { account: string; region: s
         'config/environments.ts to prevent accidental deploys to the wrong account.'
     )
   }
-  return { account: env.account, region: env.region ?? DEFAULT_REGION }
+  return { account: env.account, region: resolveRegion(env) }
+}
+
+/** The environment's region, `region` or the default. */
+export function resolveRegion(env: Pick<EnvironmentConfig, 'region'>): string {
+  return env.region ?? DEFAULT_REGION
 }
 
 /**
@@ -372,6 +417,13 @@ export function loadConfig(
   // env-only (no ctx): the pipeline picks its asset-publishing CodeBuild from
   // the entry, which a -c on a standalone deploy cannot reach
   const cpuArchitecture = resolveCpuArchitecture(env)
+  // env-only (no ctx): the shared stack and the pipeline's synth step are
+  // built for it too, and neither sees a -c
+  const webCompute = resolveWebCompute(env)
+  // The all-in-one shape has its own ALB and neither shared part
+  const { sharedAlb, webFunctionNetwork } = env.sites?.length
+    ? resolveSharedWebInfra(env, webCompute)
+    : { sharedAlb: false, webFunctionNetwork: false }
   // env-only (no ctx): the database is shared by every site in the environment
   const rdsCaCertificate = resolveRdsCaCertificate(env)
   const allowedIpRanges = ctx<string[]>('allowedIpRanges') ?? env.allowedIpRanges
@@ -431,6 +483,15 @@ export function loadConfig(
   // env-only (no ctx): structured value, awkward to pass via -c. Default ON —
   // hybrid search is the flagship behaviour and Titan v2 costs are usage-based.
   const bedrock = resolveBedrock(env.bedrock ?? {})
+  // The connectors reach Bedrock through an interface endpoint in the VPC,
+  // which serves its own Region only (ADR-068 §決定 2)
+  const region = resolveRegion(env)
+  if (webCompute === 'web-function' && bedrock?.region && bedrock.region !== region) {
+    throw new Error(
+      `bedrock.region "${bedrock.region}" is not the environment's region (${region}) — ` +
+        'a Web Function reaches Bedrock only in its own region; omit bedrock.region'
+    )
+  }
 
   const computed = computeScaled(scale, ctx<DbEngine>('dbEngine') ?? env.dbEngine, env.overrides)
   const { db } = computed
@@ -470,6 +531,9 @@ export function loadConfig(
     dbEngine: db.engine,
     enableOpenSearch,
     cpuArchitecture,
+    webCompute,
+    sharedAlb,
+    webFunctionNetwork,
     rdsCaCertificate,
     enableWaf,
     allowedIpRanges,

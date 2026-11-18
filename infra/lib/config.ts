@@ -9,7 +9,7 @@
  */
 
 export type * from './config/types.js'
-export { RDS_DEFAULT_INSTANCE_CLASS, rdsInstanceClass } from './config/scale.js'
+export { RDS_DEFAULT_INSTANCE_CLASS, rdsInstanceClass, webSizing } from './config/scale.js'
 export {
   DEFAULT_DEPLOY_CONCURRENCY,
   DERIVED_ALB_PRIORITY_MAX,
@@ -46,6 +46,7 @@ export {
   resolveEcrImageRetention,
   resolveEnv,
   resolveWafConfig,
+  resolveWebCompute,
   validateEcrImageRetention,
   validateEnvironmentNames,
   type ResolvedWafConfig,

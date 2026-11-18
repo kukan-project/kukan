@@ -47,7 +47,7 @@
  *     default, and a site entry's value wins.
  *   - BOTH: `overrides` — the environment level tunes every section (including
  *     the shared db/opensearch and the backup schedule); a site may only tune
- *     its own sections (web / worker / dbPool / backup S3 settings), deep-merged
+ *     its own sections (web / webFunction / worker / dbPool / backup S3 settings), deep-merged
  *     on top of the environment's.
  *
  * Custom domain / WAF in PIPELINE mode (ADR-030):
@@ -95,6 +95,13 @@ export const environments = {
     // dbEngine: 'rds', // omit → scale default (small=rds, medium/large=aurora)
     // enableOpenSearch: true, // false → PostgreSQL full-text fallback
     // cpuArchitecture: 'arm64', // 'arm64' | 'x86_64' — web/worker tasks; omit → arm64 (Graviton)
+    // webCompute: 'fargate', // 'fargate' | 'web-function' (experimental, ADR-068; a future release
+    //                           makes it the default): the web on Lambda Web Functions — needs `sites`,
+    //                           a domainName per site and a region Web Functions run in; the pipeline's
+    //                           synth then builds the zip (Docker)
+    // sharedAlb: true, // keep the shared ALB; omit → on for fargate, off for web-function. Set it only for
+    //                  // the first of the two deploys that move an environment to web-function
+    // webFunctionNetwork: true, // likewise the Web Function network, for the first deploy back to fargate
     // rdsCaCertificate: 'rds-ca-rsa2048-g1', // CA of the DB's server certificate; omit → rds-ca-rsa2048-g1
     // deployConcurrency: 1, // sites deployed at once after the canary; omit → 2, 1 = serial (ADR-041)
     // ecrImageRetention: 100, // images kept in the bootstrap ECR repository; omit → 100
@@ -124,6 +131,9 @@ export const environments = {
     // overrides: {
     //   // Scaling
     //   web: { maxSize: 5 },
+    //   // webCompute 'web-function' only: instances at once, and each one's DB pool
+    //   // (small 4 × 2 / medium 10 × 5 / large 20 × 10)
+    //   webFunction: { maxInstances: 4, dbPoolMax: 2 },
     //   opensearch: { instanceCount: 2, indexReplicas: 1 },
     //   // The database refuses deletion unless this is false (deployed first): an
     //   // environment made to be torn down with `cdk destroy` turns it off

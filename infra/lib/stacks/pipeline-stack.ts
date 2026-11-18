@@ -12,6 +12,7 @@ import { Construct } from 'constructs'
 import {
   needsGlobalStack,
   resolveCpuArchitecture,
+  resolveWebCompute,
   resolveEnv,
   type EnvironmentConfig,
 } from '../config.js'
@@ -71,11 +72,20 @@ export class KukanPipelineStack extends cdk.Stack {
       }
 
       const branch = config.deployBranch ?? 'main'
+      // The Web Function zip is built during synth, by Docker, its DuckDB
+      // extensions installed on arm64 natively (ADR-068 §決定 7). On before
+      // any switch: the commit that sets web-function is synthesized by the
+      // synth project as it was, and only a passing synth updates it
+      // (self-mutation). An x86_64 environment (no ARM CodeBuild) gets it with
+      // web-function, deploying the pipeline stack by hand before that push.
+      const dockerSynth =
+        resolveCpuArchitecture(config) === 'arm64' || resolveWebCompute(config) === 'web-function'
       const { account: targetAccount, region } = resolveEnv(config)
 
       const pipeline = new CodePipeline(this, `Pipeline${pascal(name)}`, {
         pipelineName: `kukan-${name}`,
         crossAccountKeys: targetAccount !== pipelineAccount,
+        dockerEnabledForSynth: dockerSynth,
         synth: new ShellStep('Synth', {
           input: CodePipelineSource.connection(config.githubRepo, branch, {
             connectionArn: props.connectionArn,
@@ -83,7 +93,10 @@ export class KukanPipelineStack extends cdk.Stack {
           commands: [
             'sh scripts/install-pnpm.sh',
             'pnpm install --frozen-lockfile',
-            'cd infra && npx cdk synth',
+            // The whole app is synthesized either way; this names whose assets
+            // are bundled — this environment's, not every pipeline's (the Web
+            // Function zip is built in the bundling, ADR-068)
+            `cd infra && npx cdk synth --exclusively ${this.node.id} '${this.node.id}/${pascal(name)}/**'`,
           ],
           primaryOutputDirectory: 'infra/cdk.out',
         }),
@@ -98,6 +111,14 @@ export class KukanPipelineStack extends cdk.Stack {
           },
         },
         synthCodeBuildDefaults: {
+          // ARM for the zip's arm64 stage (above), and the memory asset
+          // publishing has for the Next.js build in it
+          ...(dockerSynth && {
+            buildEnvironment: {
+              computeType: codebuild.ComputeType.MEDIUM,
+              buildImage: ARCHITECTURES.arm64.assetBuildImage,
+            },
+          }),
           // Name the Node major instead of taking the image's default, which
           // CodeBuild moves as versions reach end of life.
           partialBuildSpec: codebuild.BuildSpec.fromObject({

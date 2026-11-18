@@ -31,7 +31,8 @@ import { DatabaseConstruct, type DbAccess } from '../constructs/database.js'
 import { StorageConstruct } from '../constructs/storage.js'
 import { SearchConstruct, type SearchDomainRef, type SearchTenant } from '../constructs/search.js'
 import { BedrockProfilesConstruct } from '../constructs/ai.js'
-import { WebServiceConstruct } from '../constructs/web-service.js'
+import { WebServiceConstruct, type WebAppProps } from '../constructs/web-service.js'
+import { WebFunctionConstruct } from '../constructs/web-function.js'
 import { WorkerServiceConstruct } from '../constructs/worker-service.js'
 import { CdnConstruct } from '../constructs/cdn.js'
 import { createLogWorkGroup, supportsLegacyCdnLogging } from '../constructs/access-log.js'
@@ -66,6 +67,8 @@ export interface SiteSurface {
   /** SG for the site's own ALB — not needed on the shared ALB. */
   albSecurityGroup?: ec2.ISecurityGroup
   webSecurityGroup: ec2.ISecurityGroup
+  /** SG for the site's Web Function connector; set where `webCompute` is web-function. */
+  webConnectorSecurityGroup?: ec2.ISecurityGroup
   workerSecurityGroup: ec2.ISecurityGroup
   db: DbAccess
   searchDomain?: SearchDomainRef
@@ -79,7 +82,8 @@ export interface SiteSurface {
 
 /** Handles the composing stack needs after composition (ordering, backup). */
 export interface SiteResources {
-  webService: WebServiceConstruct
+  /** The web, on Fargate or on a Web Function (ADR-068). */
+  web: WebServiceConstruct | WebFunctionConstruct
   workerService: WorkerServiceConstruct
   bucket: s3.IBucket
 }
@@ -191,11 +195,8 @@ export function composeSite(
   const siteKey = envPrefix(scope)
   const { sharedAlb } = surface
   const bedrockProfiles = new BedrockProfilesConstruct(scope, 'BedrockProfiles', config).arns
-  const webService = new WebServiceConstruct(scope, 'WebService', {
+  const webApp: WebAppProps = {
     config,
-    cluster: surface.cluster,
-    albSecurityGroup: surface.albSecurityGroup,
-    webSecurityGroup: surface.webSecurityGroup,
     database: surface.db,
     authSecret,
     bucket: storage.bucket,
@@ -203,15 +204,69 @@ export function composeSite(
     searchIndexPrefix: surface.searchIndexPrefix,
     bedrockProfiles,
     imageBuildArgs: surface.webImageBuildArgs,
-    sharedListener: sharedAlb && {
-      listener: sharedAlb.listener,
-      priority: sharedAlb.priority,
-      siteKey,
-    },
     ga4PropertyIdSecret,
     ga4ClientEmailSecret,
     ga4PrivateKeySecret,
-  })
+  }
+  // The web and CloudFront's way to it, decided together.
+  // Web Function: its endpoint over HTTPS, signed by OAC. Signed always: with a
+  // viewer's own Authorization (Basic auth) CloudFront would otherwise send the
+  // request unsigned, and the endpoint refuses it.
+  // Own ALB: the VpcOrigin resource is created at bind time under the
+  // distribution, so building the origin here keeps the single-site logical ids.
+  // Shared ALB: the imported VPC origin carries no domain name — pass the ALB's.
+  let web: WebServiceConstruct | WebFunctionConstruct
+  let origin: cloudfront.IOrigin
+  let webFunction: WebFunctionConstruct | undefined
+  let loadBalancer: elbv2.IApplicationLoadBalancer | undefined
+  if (config.webCompute === 'web-function') {
+    if (!surface.webConnectorSecurityGroup) {
+      throw new Error('A Web Function site needs the shared connector security group (ADR-068)')
+    }
+    // Without one, BETTER_AUTH_URL would be the distribution's domain, and the
+    // distribution's origin is this function's endpoint: a cycle
+    if (!config.domainName) {
+      throw new Error(
+        'A Web Function site needs a domainName: the CloudFront domain cannot be its ' +
+          'BETTER_AUTH_URL, since CloudFront itself points at the function (ADR-068)'
+      )
+    }
+    web = webFunction = new WebFunctionConstruct(scope, 'WebFunction', {
+      ...webApp,
+      vpc: surface.cluster.vpc,
+      connectorSecurityGroup: surface.webConnectorSecurityGroup,
+    })
+    const oac = new cloudfront.FunctionUrlOriginAccessControl(scope, 'WebFunctionOac', {
+      signing: cloudfront.Signing.SIGV4_ALWAYS_AMZ_AUTH,
+    })
+    origin = new origins.HttpOrigin(webFunction.domainName, {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      originAccessControlId: oac.originAccessControlId,
+    })
+  } else {
+    const service = new WebServiceConstruct(scope, 'WebService', {
+      ...webApp,
+      cluster: surface.cluster,
+      albSecurityGroup: surface.albSecurityGroup,
+      webSecurityGroup: surface.webSecurityGroup,
+      sharedListener: sharedAlb && {
+        listener: sharedAlb.listener,
+        priority: sharedAlb.priority,
+        siteKey,
+      },
+    })
+    web = service
+    loadBalancer = service.loadBalancer
+    origin = sharedAlb
+      ? origins.VpcOrigin.withVpcOrigin(sharedAlb.vpcOrigin, {
+          domainName: sharedAlb.dnsName,
+          customHeaders: { [SITE_ROUTING_HEADER]: siteKey },
+        })
+      : origins.VpcOrigin.withApplicationLoadBalancer(service.loadBalancer!, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          httpPort: 80,
+        })
+  }
 
   // --- Worker Service (ECS Fargate) ---
   const workerService = new WorkerServiceConstruct(scope, 'WorkerService', {
@@ -226,21 +281,9 @@ export function composeSite(
     searchIndexPrefix: surface.searchIndexPrefix,
     bedrockProfiles,
   })
-  webService.addEnvironment('WORKER_WAKE_URL', workerService.wakeUrl)
+  web.addEnvironment('WORKER_WAKE_URL', workerService.wakeUrl)
 
-  // --- CDN (CloudFront with VPC origin) ---
-  // Own ALB: the VpcOrigin resource is created at bind time under the
-  // distribution, so building the origin here keeps the single-site logical ids.
-  // Shared ALB: the imported VPC origin carries no domain name — pass the ALB's.
-  const origin = sharedAlb
-    ? origins.VpcOrigin.withVpcOrigin(sharedAlb.vpcOrigin, {
-        domainName: sharedAlb.dnsName,
-        customHeaders: { [SITE_ROUTING_HEADER]: siteKey },
-      })
-    : origins.VpcOrigin.withApplicationLoadBalancer(webService.loadBalancer!, {
-        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-        httpPort: 80,
-      })
+  // --- CDN (CloudFront) ---
   const cdn = new CdnConstruct(scope, 'CDN', {
     config,
     origin,
@@ -248,18 +291,20 @@ export function composeSite(
     webAclArn: edge.webAclArn,
   })
 
+  webFunction?.allowDistribution(cdn.distribution)
+
   // Set BETTER_AUTH_URL to CloudFront domain when no custom domain
   if (!config.domainName) {
-    webService.addEnvironment('BETTER_AUTH_URL', `https://${cdn.distributionDomainName}`)
+    web.addEnvironment('BETTER_AUTH_URL', `https://${cdn.distributionDomainName}`)
   }
 
   // Set only to turn it off, so a site left on keeps the task definition it had
-  if (!config.generatorMeta) webService.addEnvironment('GENERATOR_META_ENABLED', 'false')
+  if (!config.generatorMeta) web.addEnvironment('GENERATOR_META_ENABLED', 'false')
   // Likewise set only away from the default
   if (config.officePreviewViewer !== 'ibis-office') {
-    webService.addEnvironment('OFFICE_PREVIEW_VIEWER', config.officePreviewViewer)
+    web.addEnvironment('OFFICE_PREVIEW_VIEWER', config.officePreviewViewer)
   }
-  if (config.cspMode !== DEFAULT_CSP_MODE) webService.addEnvironment('CSP_MODE', config.cspMode)
+  if (config.cspMode !== DEFAULT_CSP_MODE) web.addEnvironment('CSP_MODE', config.cspMode)
 
   if (config.nameSiteInUserAgent) {
     workerService.addEnvironment(
@@ -291,9 +336,9 @@ export function composeSite(
     description: 'CloudFront Distribution Domain Name',
   })
   // The shared ALB's name is published once, as the SharedStack's SSM parameter
-  if (webService.loadBalancer) {
+  if (loadBalancer) {
     new cdk.CfnOutput(scope, 'AlbDnsName', {
-      value: webService.loadBalancer.loadBalancerDnsName,
+      value: loadBalancer.loadBalancerDnsName,
       description: 'ALB DNS Name (internal, behind CloudFront)',
     })
   }
@@ -316,5 +361,5 @@ export function composeSite(
     })
   }
 
-  return { webService, workerService, bucket: storage.bucket }
+  return { web, workerService, bucket: storage.bucket }
 }

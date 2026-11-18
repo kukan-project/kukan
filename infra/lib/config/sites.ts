@@ -18,9 +18,17 @@ import {
   deepMerge,
   estimateMaxConnections,
   rdsInstanceClass,
+  WEB_SIZING_SETTINGS,
+  webSizing,
 } from './scale.js'
 import { rejectBlankEdgeArns } from './edge.js'
-import { contextFlag, loadConfig, positiveInt } from './load.js'
+import {
+  contextFlag,
+  loadConfig,
+  positiveInt,
+  resolveSharedWebInfra,
+  resolveWebCompute,
+} from './load.js'
 
 const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
 
@@ -29,6 +37,7 @@ const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
  *  the list here is updated, same pattern as SITE_SCOPED_FIELDS below. */
 const SITE_OVERRIDE_SECTIONS = Object.keys({
   web: true,
+  webFunction: true,
   worker: true,
   dbPool: true,
   backup: true,
@@ -291,6 +300,40 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     contextFlag('enableOpenSearch', ctx<unknown>('enableOpenSearch')) ??
     env.enableOpenSearch ??
     true
+  // The section the other webCompute reads is kept, not refused: an
+  // environment switched back and forth keeps its settings for either
+  const webCompute = resolveWebCompute(env)
+  const { unread, read } = WEB_SIZING_SETTINGS[webCompute]
+  const unreadIn = (overrides: object | undefined) =>
+    unread.filter(
+      (setting) =>
+        setting.split('.').reduce<unknown>((o, key) => (o as never)?.[key], overrides) !== undefined
+    )
+  const settingUnread = [
+    ['overrides', unreadIn(env.overrides)] as const,
+    ...sites.map((site) => [`sites[${site.name}].overrides`, unreadIn(site.overrides)] as const),
+  ].filter(([, settings]) => settings.length)
+  // The first of the two deploys of a switch keeps the old shape's shared
+  // part; left set, it keeps costing (the ALB) or holding what nothing uses
+  const { kept } = resolveSharedWebInfra(env, webCompute)
+  if (kept) {
+    warnings.push({
+      key: 'kukan:web-compute-switch-kept',
+      message:
+        `${kept}: true keeps what webCompute "${webCompute}" does not use — remove it once ` +
+        'every site has moved (the second deploy of the switch, ADR-068)',
+    })
+  }
+  if (settingUnread.length) {
+    warnings.push({
+      key: 'kukan:web-compute-unused-overrides',
+      message:
+        `webCompute "${webCompute}" does not read ` +
+        settingUnread.map(([where, settings]) => `${where}: ${settings.join(', ')}`).join('; ') +
+        ` (it sizes the web by ${read}, ADR-068)`,
+    })
+  }
+
   if (
     sites.length >= 2 &&
     enableOpenSearch &&
@@ -321,16 +364,19 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     envComputed.db
   )
   const siteComputed = sites.map((site) => deepMerge(envComputed, site.overrides ?? {}))
-  const perWeb = (c: ScaleComputed) => c.dbPool.webMax
+  // Every task or Web Function instance holds a pool of its own (webSizing)
   const perWorker = (c: ScaleComputed) => c.dbPool.workerMax
-  const steady = siteComputed.reduce(
-    (sum, c) => sum + perWeb(c) * c.web.maxSize + perWorker(c) * c.worker.maxTasks,
-    0
-  )
+  const steady = siteComputed.reduce((sum, c) => {
+    const web = webSizing(c, webCompute)
+    return sum + web.pool * web.maxInstances + perWorker(c) * c.worker.maxTasks
+  }, 0)
   // As many sites as the largest wave can roll at once (the canary is a wave of one)
   const rollingSites = Math.max(...deployWaves(sites, concurrency).map((wave) => wave.length))
   const rollingCosts = siteComputed
-    .map((c) => perWeb(c) * c.web.minSize + perWorker(c) * c.worker.minTasks)
+    .map((c) => {
+      const web = webSizing(c, webCompute)
+      return web.pool * web.newInstances + perWorker(c) * c.worker.minTasks
+    })
     .sort((a, b) => b - a)
   const rollingFor = (count: number) =>
     rollingCosts.slice(0, count).reduce((sum, value) => sum + value, 0)
@@ -359,7 +405,10 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     return (
       (fitting > 0 && fitting < rollingSites
         ? `set deployConcurrency: ${fitting} (${rollingSites} sites roll at once now), `
-        : '') + 'lower sites[].overrides.dbPool / web.maxSize'
+        : '') +
+      (webCompute === 'web-function'
+        ? 'lower sites[].overrides.webFunction (maxInstances / dbPoolMax) / dbPool.workerMax'
+        : 'lower sites[].overrides.dbPool / web.maxSize')
     )
   }
   const separateDeploy =

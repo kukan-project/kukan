@@ -139,6 +139,12 @@ K の上限は「(推定 max_connections × 0.7 − 平常時の最大) ÷ 同�
 
 ## シングルサイト形状からの移行
 
+:::caution[将来のリリースで既定が変わります]
+将来のリリースで、`webCompute` の既定を `web-function`（Lambda Web Functions）に変える予定です。
+Web Functions はマルチサイト形状でしか使えません。シングルサイト形状の環境は、それまでにこの手順で
+マルチサイト形状へ移行してください（[Lambda Web Functions で動かす](/ja/system-admin-guide/web-functions/)）。
+:::
+
 稼働中のシングルサイト形状の環境に `sites` を後付けすることはできません。
 スタックの分割とリソースの物理名変更を伴うため、CloudFormation 上は全リソースの
 置き換え(=データ喪失)になります。移行は、新しい環境を並行構築して切り替える

@@ -292,16 +292,17 @@ export const environments = {
 
 #### Defaults per scale
 
-| Parameter               | small               | medium                               | large                                                     |
-| ----------------------- | ------------------- | ------------------------------------ | --------------------------------------------------------- |
-| Web vCPU / Memory       | 0.25 / 512 MB       | 0.5 / 1 GB                           | 1 / 2 GB                                                  |
-| Web min / max instances | 1 / 2               | 1 / 5                                | 2 / 10                                                    |
-| Worker vCPU / Memory    | 0.25 / 1 GB         | 0.5 / 1 GB                           | 1 / 2 GB                                                  |
-| Worker min / max tasks  | 1 / 2               | 1 / 2                                | 2 / 5                                                     |
-| DB                      | RDS db.t4g.micro    | Aurora 0.5-2 ACU                     | Aurora 2-8 ACU, multi-AZ                                  |
-| OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB                 | m6g.xlarge × 2, 100 GB, multi-AZ                          |
-| DB pool (web / worker)  | 5 / 5               | 10 / 5                               | 20 / 10                                                   |
-| Backups (ADR-037)       | DB retained 7 days  | + S3 versioning, DB retained 14 days | DB retained 35 days + AWS Backup (daily 35d, monthly 12m) |
+| Parameter                                                                                           | small               | medium                               | large                                                     |
+| --------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------ | --------------------------------------------------------- |
+| Web vCPU / Memory                                                                                   | 0.25 / 512 MB       | 0.5 / 1 GB                           | 1 / 2 GB                                                  |
+| Web min / max instances                                                                             | 1 / 2               | 1 / 5                                | 2 / 10                                                    |
+| Worker vCPU / Memory                                                                                | 0.25 / 1 GB         | 0.5 / 1 GB                           | 1 / 2 GB                                                  |
+| Worker min / max tasks                                                                              | 1 / 2               | 1 / 2                                | 2 / 5                                                     |
+| DB                                                                                                  | RDS db.t4g.micro    | Aurora 0.5-2 ACU                     | Aurora 2-8 ACU, multi-AZ                                  |
+| OpenSearch                                                                                          | t3.small × 1, 10 GB | m6g.large × 1, 50 GB                 | m6g.xlarge × 2, 100 GB, multi-AZ                          |
+| DB pool (web / worker)                                                                              | 5 / 5               | 10 / 5                               | 20 / 10                                                   |
+| Web Function (instances at once / DB pool per instance; with `webCompute: 'web-function'`, ADR-068) | 4 / 2               | 10 / 5                               | 20 / 10                                                   |
+| Backups (ADR-037)                                                                                   | DB retained 7 days  | + S3 versioning, DB retained 14 days | DB retained 35 days + AWS Backup (daily 35d, monthly 12m) |
 
 #### overrides (adjusting individual preset values)
 

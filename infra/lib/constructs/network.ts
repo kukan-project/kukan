@@ -14,6 +14,11 @@ export interface NetworkProps {
 
 export class NetworkConstruct extends Construct {
   readonly vpc: ec2.IVpc
+  /**
+   * The sites' Web Function network connectors (ADR-068). Shared like the web
+   * SG so the DB, OpenSearch and worker rules stay here. Undefined on Fargate.
+   */
+  readonly webConnectorSecurityGroup?: ec2.ISecurityGroup
   readonly dbSecurityGroup: ec2.ISecurityGroup
   readonly searchSecurityGroup: ec2.ISecurityGroup
   readonly albSecurityGroup: ec2.ISecurityGroup
@@ -25,7 +30,7 @@ export class NetworkConstruct extends Construct {
 
     // ECS tasks run in public subnets (assignPublicIp: true) — no NAT needed.
     // Private isolated subnets are for RDS / OpenSearch only (no internet access).
-    this.vpc = new ec2.Vpc(this, 'Vpc', {
+    const vpc = new ec2.Vpc(this, 'Vpc', {
       maxAzs: 2,
       natGateways: 0,
       subnetConfiguration: [
@@ -33,6 +38,7 @@ export class NetworkConstruct extends Construct {
         { name: 'Private', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
     })
+    this.vpc = vpc
 
     // S3 Gateway VPC Endpoint (free — avoids NAT for S3 traffic)
     this.vpc.addGatewayEndpoint('S3Endpoint', {
@@ -110,6 +116,25 @@ export class NetworkConstruct extends Construct {
       ec2.Port.tcp(props.config.worker.healthPort),
       'Web wake'
     )
+    // Web Function connectors: outbound only, IPv6 to the internet (no NAT)
+    // and IPv4 within the VPC (ADR-068 §決定 2)
+    if (props.config.webFunctionNetwork) {
+      addPublicIpv6(this, vpc)
+      const connector = new ec2.SecurityGroup(this, 'WebConnectorSg', {
+        vpc: this.vpc,
+        description: 'Web Function network connectors',
+        allowAllOutbound: true,
+        allowAllIpv6Outbound: true,
+      })
+      this.webConnectorSecurityGroup = connector
+      this.dbSecurityGroup.connections.allowFrom(connector, ec2.Port.tcp(5432), 'Web Function')
+      this.searchSecurityGroup.connections.allowFrom(connector, ec2.Port.tcp(443), 'Web Function')
+      this.workerSecurityGroup.connections.allowFrom(
+        connector,
+        ec2.Port.tcp(props.config.worker.healthPort),
+        'Web Function wake'
+      )
+    }
     // And worker to worker, for the jobs a worker's jobs write
     this.workerSecurityGroup.connections.allowFrom(
       this.workerSecurityGroup,
@@ -119,4 +144,37 @@ export class NetworkConstruct extends Construct {
 
     cdk.Tags.of(this).add('kukan:component', 'network')
   }
+}
+
+/**
+ * An Amazon IPv6 block on the VPC, a /64 of it on each public subnet and a
+ * `::/0` route to the internet gateway: how the Web Function connectors reach
+ * the internet without a NAT (ADR-068 §決定 2). The /64s are associations of
+ * their own, not the subnets' Ipv6CidrBlock, which CloudFormation would meet
+ * by replacing the subnets — and every site's tasks and the shared ALB are in
+ * them. Nothing else takes an IPv6 address (the subnets do not assign one on
+ * creation), and the isolated subnets stay IPv4 only. The internet gateway
+ * rather than an egress-only one: the connector's security group admits
+ * nothing inbound.
+ */
+function addPublicIpv6(scope: Construct, vpc: ec2.Vpc) {
+  const block = new ec2.CfnVPCCidrBlock(scope, 'Ipv6Block', {
+    vpcId: vpc.vpcId,
+    amazonProvidedIpv6CidrBlock: true,
+  })
+  const subnetBlocks = cdk.Fn.cidr(cdk.Fn.select(0, vpc.vpcIpv6CidrBlocks), 256, '64')
+  vpc.publicSubnets.forEach((subnet, index) => {
+    new ec2.CfnSubnetCidrBlock(subnet, 'Ipv6Block', {
+      subnetId: subnet.subnetId,
+      ipv6CidrBlock: cdk.Fn.select(index, subnetBlocks),
+    }).node.addDependency(block)
+    const route = new ec2.CfnRoute(subnet, 'Ipv6DefaultRoute', {
+      routeTableId: subnet.routeTable.routeTableId,
+      destinationIpv6CidrBlock: '::/0',
+      gatewayId: vpc.internetGatewayId,
+    })
+    route.node.addDependency(block)
+    // The gateway's attachment, as the IPv4 default routes wait for it
+    route.node.addDependency(vpc.internetConnectivityEstablished)
+  })
 }

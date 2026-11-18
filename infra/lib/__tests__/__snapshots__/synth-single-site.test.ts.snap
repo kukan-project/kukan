@@ -2852,6 +2852,18 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::Partition",
                     },
+                    ":iam::123456789012:role/kukan-dev-web-fn-exec",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
                     ":iam::123456789012:role/kukan-dev-worker-task",
                   ],
                 ],
@@ -8036,6 +8048,18 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":iam::123456789012:role/kukan-dev-web-task",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-web-fn-exec",
                   ],
                 ],
               },
@@ -17702,6 +17726,18 @@ function expandV6(addr) {
                     {
                       "Ref": "AWS::Partition",
                     },
+                    ":iam::123456789012:role/kukan-dev-web-fn-exec",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
                     ":iam::123456789012:role/kukan-dev-worker-task",
                   ],
                 ],
@@ -22629,6 +22665,18 @@ function expandV6(addr) {
                       "Ref": "AWS::Partition",
                     },
                     ":iam::123456789012:role/kukan-dev-web-task",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-web-fn-exec",
                   ],
                 ],
               },

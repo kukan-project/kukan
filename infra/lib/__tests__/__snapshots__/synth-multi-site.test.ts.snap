@@ -2195,6 +2195,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                     {
                       "Ref": "AWS::Partition",
                     },
+                    ":iam::123456789012:role/kukan-dev-citya-web-fn-exec",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
                     ":iam::123456789012:role/kukan-dev-citya-worker-task",
                   ],
                 ],
@@ -2230,6 +2242,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
                       "Ref": "AWS::Partition",
                     },
                     ":iam::123456789012:role/kukan-dev-cityb-web-task",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-cityb-web-fn-exec",
                   ],
                 ],
               },
@@ -10390,6 +10414,6431 @@ exports[`multi-site global stack (auto-created cert/WAF, standalone mode) > matc
         },
       },
       "Type": "AWS::WAFv2::WebACL",
+      "UpdateReplacePolicy": "Retain",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 1`] = `
+{
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "AWS679f53fac002430cb0da5b7982bd22872D164C4C": {
+      "DependsOn": [
+        "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "Timeout": 120,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "AthenaWorkGroup": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
+    "BedrockRuntimeEndpointD9440E01": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "BedrockRuntimeEndpointSecurityGroup3B399BDF",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.ap-northeast-1.bedrock-runtime",
+        "SubnetIds": [
+          {
+            "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "BedrockRuntimeEndpointSecurityGroup3B399BDF": {
+      "Properties": {
+        "GroupDescription": "Dev/KukanSharedStack/BedrockRuntimeEndpoint/SecurityGroup",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "NetworkVpc7FB7348F",
+                "CidrBlock",
+              ],
+            },
+            "Description": {
+              "Fn::Join": [
+                "",
+                [
+                  "from ",
+                  {
+                    "Fn::GetAtt": [
+                      "NetworkVpc7FB7348F",
+                      "CidrBlock",
+                    ],
+                  },
+                  ":443",
+                ],
+              ],
+            },
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "ClusterEB0386A7": {
+      "Properties": {
+        "ClusterName": "kukan-dev",
+        "Configuration": {
+          "ExecuteCommandConfiguration": {
+            "Logging": "NONE",
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::Cluster",
+    },
+    "DatabaseRdsInstance4AE635B8": {
+      "DeletionPolicy": "Snapshot",
+      "Properties": {
+        "AllocatedStorage": "20",
+        "BackupRetentionPeriod": 7,
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
+        "CopyTagsToSnapshot": true,
+        "DBInstanceClass": "db.t4g.micro",
+        "DBInstanceIdentifier": "kukan-dev",
+        "DBName": "kukan",
+        "DBSubnetGroupName": {
+          "Ref": "DatabaseRdsInstanceSubnetGroup9978A35C",
+        },
+        "DeletionProtection": true,
+        "Engine": "postgres",
+        "EngineVersion": "16",
+        "MasterUserPassword": {
+          "Fn::Join": [
+            "",
+            [
+              "{{resolve:secretsmanager:",
+              {
+                "Ref": "DatabaseRdsInstanceSecret5E72461B",
+              },
+              ":SecretString:password::}}",
+            ],
+          ],
+        },
+        "MasterUsername": {
+          "Fn::Join": [
+            "",
+            [
+              "{{resolve:secretsmanager:",
+              {
+                "Ref": "DatabaseRdsInstanceSecret5E72461B",
+              },
+              ":SecretString:username::}}",
+            ],
+          ],
+        },
+        "MaxAllocatedStorage": 100,
+        "MultiAZ": false,
+        "PubliclyAccessible": false,
+        "StorageEncrypted": true,
+        "StorageType": "gp2",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VPCSecurityGroups": [
+          {
+            "Fn::GetAtt": [
+              "NetworkDbSg39FD14A5",
+              "GroupId",
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::RDS::DBInstance",
+      "UpdateReplacePolicy": "Snapshot",
+    },
+    "DatabaseRdsInstanceSecret5E72461B": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Description": {
+          "Fn::Join": [
+            "",
+            [
+              "Generated by the CDK for stack: ",
+              {
+                "Ref": "AWS::StackName",
+              },
+            ],
+          ],
+        },
+        "GenerateSecretString": {
+          "ExcludeCharacters": " %+~\`#$&*()|[]{}:;<>?!'/@"\\",
+          "GenerateStringKey": "password",
+          "PasswordLength": 30,
+          "SecretStringTemplate": "{"username":"postgres"}",
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "DatabaseRdsInstanceSecretAttachment48B18769": {
+      "Properties": {
+        "SecretId": {
+          "Ref": "DatabaseRdsInstanceSecret5E72461B",
+        },
+        "TargetId": {
+          "Ref": "DatabaseRdsInstance4AE635B8",
+        },
+        "TargetType": "AWS::RDS::DBInstance",
+      },
+      "Type": "AWS::SecretsManager::SecretTargetAttachment",
+    },
+    "DatabaseRdsInstanceSubnetGroup9978A35C": {
+      "Properties": {
+        "DBSubnetGroupDescription": "Subnet group for RdsInstance database",
+        "SubnetIds": [
+          {
+            "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+          },
+          {
+            "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "database",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::RDS::DBSubnetGroup",
+    },
+    "EcrAssetRetentionPolicyC14B6DF7": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "EcrAssetRetentionPolicyCustomResourcePolicy19FACB35",
+      ],
+      "Properties": {
+        "Create": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"ECR","action":"putLifecyclePolicy","parameters":{"repositoryName":"",
+              {
+                "Fn::Sub": [
+                  "cdk-\${Qualifier}-container-assets-\${AWS::AccountId}-\${AWS::Region}",
+                  {
+                    "Qualifier": "hnb659fds",
+                  },
+                ],
+              },
+              "","lifecyclePolicyText":"{\\"rules\\":[{\\"rulePriority\\":1,\\"description\\":\\"Untagged images should not exist, but expire any older than one year\\",\\"selection\\":{\\"tagStatus\\":\\"untagged\\",\\"countType\\":\\"sinceImagePushed\\",\\"countUnit\\":\\"days\\",\\"countNumber\\":365},\\"action\\":{\\"type\\":\\"expire\\"}},{\\"rulePriority\\":2,\\"description\\":\\"Keep the most recent 100 asset images\\",\\"selection\\":{\\"tagStatus\\":\\"any\\",\\"countType\\":\\"imageCountMoreThan\\",\\"countNumber\\":100},\\"action\\":{\\"type\\":\\"expire\\"}}]}"},"physicalResourceId":{"id":"ecr-asset-retention:100:bootstrap-",
+              {
+                "Ref": "BootstrapVersion",
+              },
+              ""}}",
+            ],
+          ],
+        },
+        "InstallLatestAwsSdk": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd22872D164C4C",
+            "Arn",
+          ],
+        },
+        "Update": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"ECR","action":"putLifecyclePolicy","parameters":{"repositoryName":"",
+              {
+                "Fn::Sub": [
+                  "cdk-\${Qualifier}-container-assets-\${AWS::AccountId}-\${AWS::Region}",
+                  {
+                    "Qualifier": "hnb659fds",
+                  },
+                ],
+              },
+              "","lifecyclePolicyText":"{\\"rules\\":[{\\"rulePriority\\":1,\\"description\\":\\"Untagged images should not exist, but expire any older than one year\\",\\"selection\\":{\\"tagStatus\\":\\"untagged\\",\\"countType\\":\\"sinceImagePushed\\",\\"countUnit\\":\\"days\\",\\"countNumber\\":365},\\"action\\":{\\"type\\":\\"expire\\"}},{\\"rulePriority\\":2,\\"description\\":\\"Keep the most recent 100 asset images\\",\\"selection\\":{\\"tagStatus\\":\\"any\\",\\"countType\\":\\"imageCountMoreThan\\",\\"countNumber\\":100},\\"action\\":{\\"type\\":\\"expire\\"}}]}"},"physicalResourceId":{"id":"ecr-asset-retention:100:bootstrap-",
+              {
+                "Ref": "BootstrapVersion",
+              },
+              ""}}",
+            ],
+          ],
+        },
+      },
+      "Type": "Custom::KukanEcrAssetRetention",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EcrAssetRetentionPolicyCustomResourcePolicy19FACB35": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "ecr:PutLifecyclePolicy",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ecr:ap-northeast-1:123456789012:repository/",
+                    {
+                      "Fn::Sub": [
+                        "cdk-\${Qualifier}-container-assets-\${AWS::AccountId}-\${AWS::Region}",
+                        {
+                          "Qualifier": "hnb659fds",
+                        },
+                      ],
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "EcrAssetRetentionPolicyCustomResourcePolicy19FACB35",
+        "Roles": [
+          {
+            "Ref": "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "NetworkAlbSg193DDF6A": {
+      "Properties": {
+        "GroupDescription": "Internal ALB for web service (CloudFront VPC origin)",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "NetworkAlbSgfrompl0000000000000000080026229DF": {
+      "Properties": {
+        "Description": "CloudFront VPC origin (managed prefix list)",
+        "FromPort": 80,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkAlbSg193DDF6A",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourcePrefixListId": "pl-00000000000000000",
+        "ToPort": 80,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkDbSg39FD14A5": {
+      "Properties": {
+        "GroupDescription": "Database (RDS/Aurora)",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "255.255.255.255/32",
+            "Description": "Disallow all traffic",
+            "FromPort": 252,
+            "IpProtocol": "icmp",
+            "ToPort": 86,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "NetworkDbSgfromDevKukanSharedStackNetworkWebConnectorSg7D036F6854322F419B98": {
+      "Properties": {
+        "Description": "Web Function",
+        "FromPort": 5432,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkDbSg39FD14A5",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebConnectorSg7790ABF0",
+            "GroupId",
+          ],
+        },
+        "ToPort": 5432,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkDbSgfromDevKukanSharedStackNetworkWebSgCC2C00855432876E5976": {
+      "Properties": {
+        "Description": "Web",
+        "FromPort": 5432,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkDbSg39FD14A5",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 5432,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkDbSgfromDevKukanSharedStackNetworkWorkerSg4853BDB95432328C6584": {
+      "Properties": {
+        "Description": "Worker",
+        "FromPort": 5432,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkDbSg39FD14A5",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 5432,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkDbSgfromDevKukanSharedStackSiteDbAccessSg4CD4D80F5432CC8572A0": {
+      "Properties": {
+        "Description": "Site DB bootstrap",
+        "FromPort": 5432,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkDbSg39FD14A5",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "SiteDbAccessSg4E188B82",
+            "GroupId",
+          ],
+        },
+        "ToPort": 5432,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkIpv6Block77E60873": {
+      "Properties": {
+        "AmazonProvidedIpv6CidrBlock": true,
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::VPCCidrBlock",
+    },
+    "NetworkSearchSgAE1243D2": {
+      "Properties": {
+        "GroupDescription": "OpenSearch domain",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "255.255.255.255/32",
+            "Description": "Disallow all traffic",
+            "FromPort": 252,
+            "IpProtocol": "icmp",
+            "ToPort": 86,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "NetworkSearchSgfromDevKukanSharedStackNetworkWebConnectorSg7D036F6844303F2F9ED": {
+      "Properties": {
+        "Description": "Web Function",
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebConnectorSg7790ABF0",
+            "GroupId",
+          ],
+        },
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkSearchSgfromDevKukanSharedStackNetworkWebSgCC2C0085443F2BDF686": {
+      "Properties": {
+        "Description": "Web",
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkSearchSgfromDevKukanSharedStackNetworkWorkerSg4853BDB9443EB5200A1": {
+      "Properties": {
+        "Description": "Worker",
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkSearchSgfromDevKukanSharedStackSearchSecurityHandlerSgECB870FE4430CD7E01B": {
+      "Properties": {
+        "Description": "Security role handler",
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "SearchSecurityHandlerSg15AADC3F",
+            "GroupId",
+          ],
+        },
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkVpc7FB7348F": {
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "InstanceTenancy": "default",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc",
+          },
+        ],
+      },
+      "Type": "AWS::EC2::VPC",
+    },
+    "NetworkVpcIGW6BEA7B02": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc",
+          },
+        ],
+      },
+      "Type": "AWS::EC2::InternetGateway",
+    },
+    "NetworkVpcPrivateSubnet1RouteTable7D7AA3CD": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PrivateSubnet1",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "NetworkVpcPrivateSubnet1RouteTableAssociation327CA62F": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "NetworkVpcPrivateSubnet1RouteTable7D7AA3CD",
+        },
+        "SubnetId": {
+          "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "NetworkVpcPrivateSubnet1Subnet6DD86AE6": {
+      "Properties": {
+        "AvailabilityZone": "ap-northeast-1a",
+        "CidrBlock": "10.0.2.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "Private",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PrivateSubnet1",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "NetworkVpcPrivateSubnet2RouteTableC48862D1",
+        },
+        "SubnetId": {
+          "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "NetworkVpcPrivateSubnet2RouteTableC48862D1": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PrivateSubnet2",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "NetworkVpcPrivateSubnet2Subnet1BDBE877": {
+      "Properties": {
+        "AvailabilityZone": "ap-northeast-1c",
+        "CidrBlock": "10.0.3.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "Private",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PrivateSubnet2",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "NetworkVpcPublicSubnet1DefaultRoute31EC04EC": {
+      "DependsOn": [
+        "NetworkVpcVPCGW8F3799B5",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "NetworkVpcIGW6BEA7B02",
+        },
+        "RouteTableId": {
+          "Ref": "NetworkVpcPublicSubnet1RouteTable30235CE2",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "NetworkVpcPublicSubnet1Ipv6BlockF43FEABB": {
+      "DependsOn": [
+        "NetworkIpv6Block77E60873",
+      ],
+      "Properties": {
+        "Ipv6CidrBlock": {
+          "Fn::Select": [
+            0,
+            {
+              "Fn::Cidr": [
+                {
+                  "Fn::Select": [
+                    0,
+                    {
+                      "Fn::GetAtt": [
+                        "NetworkVpc7FB7348F",
+                        "Ipv6CidrBlocks",
+                      ],
+                    },
+                  ],
+                },
+                256,
+                "64",
+              ],
+            },
+          ],
+        },
+        "SubnetId": {
+          "Ref": "NetworkVpcPublicSubnet1Subnet36933139",
+        },
+      },
+      "Type": "AWS::EC2::SubnetCidrBlock",
+    },
+    "NetworkVpcPublicSubnet1Ipv6DefaultRouteE12B9EFB": {
+      "DependsOn": [
+        "NetworkIpv6Block77E60873",
+        "NetworkVpcIGW6BEA7B02",
+      ],
+      "Properties": {
+        "DestinationIpv6CidrBlock": "::/0",
+        "GatewayId": {
+          "Ref": "NetworkVpcIGW6BEA7B02",
+        },
+        "RouteTableId": {
+          "Ref": "NetworkVpcPublicSubnet1RouteTable30235CE2",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "NetworkVpcPublicSubnet1RouteTable30235CE2": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PublicSubnet1",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "NetworkVpcPublicSubnet1RouteTableAssociation643926C7": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "NetworkVpcPublicSubnet1RouteTable30235CE2",
+        },
+        "SubnetId": {
+          "Ref": "NetworkVpcPublicSubnet1Subnet36933139",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "NetworkVpcPublicSubnet1Subnet36933139": {
+      "Properties": {
+        "AvailabilityZone": "ap-northeast-1a",
+        "CidrBlock": "10.0.0.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "Public",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PublicSubnet1",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "NetworkVpcPublicSubnet2DefaultRoute0CF082AB": {
+      "DependsOn": [
+        "NetworkVpcVPCGW8F3799B5",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "NetworkVpcIGW6BEA7B02",
+        },
+        "RouteTableId": {
+          "Ref": "NetworkVpcPublicSubnet2RouteTable0FACEBB2",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "NetworkVpcPublicSubnet2Ipv6BlockF1E5D5CD": {
+      "DependsOn": [
+        "NetworkIpv6Block77E60873",
+      ],
+      "Properties": {
+        "Ipv6CidrBlock": {
+          "Fn::Select": [
+            1,
+            {
+              "Fn::Cidr": [
+                {
+                  "Fn::Select": [
+                    0,
+                    {
+                      "Fn::GetAtt": [
+                        "NetworkVpc7FB7348F",
+                        "Ipv6CidrBlocks",
+                      ],
+                    },
+                  ],
+                },
+                256,
+                "64",
+              ],
+            },
+          ],
+        },
+        "SubnetId": {
+          "Ref": "NetworkVpcPublicSubnet2SubnetC427CCE0",
+        },
+      },
+      "Type": "AWS::EC2::SubnetCidrBlock",
+    },
+    "NetworkVpcPublicSubnet2Ipv6DefaultRouteB2B3BDD9": {
+      "DependsOn": [
+        "NetworkIpv6Block77E60873",
+        "NetworkVpcIGW6BEA7B02",
+      ],
+      "Properties": {
+        "DestinationIpv6CidrBlock": "::/0",
+        "GatewayId": {
+          "Ref": "NetworkVpcIGW6BEA7B02",
+        },
+        "RouteTableId": {
+          "Ref": "NetworkVpcPublicSubnet2RouteTable0FACEBB2",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "NetworkVpcPublicSubnet2RouteTable0FACEBB2": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PublicSubnet2",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "NetworkVpcPublicSubnet2RouteTableAssociationC662643B": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "NetworkVpcPublicSubnet2RouteTable0FACEBB2",
+        },
+        "SubnetId": {
+          "Ref": "NetworkVpcPublicSubnet2SubnetC427CCE0",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "NetworkVpcPublicSubnet2SubnetC427CCE0": {
+      "Properties": {
+        "AvailabilityZone": "ap-northeast-1c",
+        "CidrBlock": "10.0.1.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "Public",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc/PublicSubnet2",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "NetworkVpcS3Endpoint87783328": {
+      "Properties": {
+        "RouteTableIds": [
+          {
+            "Ref": "NetworkVpcPublicSubnet1RouteTable30235CE2",
+          },
+          {
+            "Ref": "NetworkVpcPublicSubnet2RouteTable0FACEBB2",
+          },
+          {
+            "Ref": "NetworkVpcPrivateSubnet1RouteTable7D7AA3CD",
+          },
+          {
+            "Ref": "NetworkVpcPrivateSubnet2RouteTableC48862D1",
+          },
+        ],
+        "ServiceName": {
+          "Fn::Join": [
+            "",
+            [
+              "com.amazonaws.",
+              {
+                "Ref": "AWS::Region",
+              },
+              ".s3",
+            ],
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+          {
+            "Key": "Name",
+            "Value": "Dev/KukanSharedStack/Network/Vpc",
+          },
+        ],
+        "VpcEndpointType": "Gateway",
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "NetworkVpcVPCGW8F3799B5": {
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "NetworkVpcIGW6BEA7B02",
+        },
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+    },
+    "NetworkWebConnectorSg7790ABF0": {
+      "Properties": {
+        "GroupDescription": "Web Function network connectors",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+          {
+            "CidrIpv6": "::/0",
+            "Description": "Allow all outbound ipv6 traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "NetworkWebSg5C5D77A1": {
+      "Properties": {
+        "GroupDescription": "Web ECS Fargate tasks",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "NetworkWebSgfromDevKukanSharedStackNetworkAlbSg7C340F823000F1C77375": {
+      "Properties": {
+        "Description": "ALB",
+        "FromPort": 3000,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkAlbSg193DDF6A",
+            "GroupId",
+          ],
+        },
+        "ToPort": 3000,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgED2F0A41": {
+      "Properties": {
+        "GroupDescription": "Worker ECS Fargate tasks",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "network",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "NetworkWorkerSgfromDevKukanSharedStackNetworkWebConnectorSg7D036F688080FE5C934F": {
+      "Properties": {
+        "Description": "Web Function wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebConnectorSg7790ABF0",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanSharedStackNetworkWebSgCC2C00858080EDC3581B": {
+      "Properties": {
+        "Description": "Web wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "NetworkWorkerSgfromDevKukanSharedStackNetworkWorkerSg4853BDB9808020086C90": {
+      "Properties": {
+        "Description": "Worker wake",
+        "FromPort": 8080,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+        "ToPort": 8080,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "ParamcloudmapnamespaceidB56B4BFF": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/cloudmap/namespace-id",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "ServiceNamespaceB29FC01B",
+            "Id",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamcloudmapnamespacenameCEF1423F": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/cloudmap/namespace-name",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": "kukan-dev.internal",
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamdbendpointBF29FC77": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/db/endpoint",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "DatabaseRdsInstance4AE635B8",
+            "Endpoint.Address",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramdbmastersecretarn46BF1296": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/db/master-secret-arn",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "DatabaseRdsInstanceSecretAttachment48B18769",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamdbportAC891B60": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/db/port",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "DatabaseRdsInstance4AE635B8",
+            "Endpoint.Port",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamecsclusternameAEF2A7A8": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/ecs/cluster-name",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "ClusterEB0386A7",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramsearcharn3677C8C4": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/search/arn",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SearchDomain62FD613E",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramsearchendpoint3E344AB8": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/search/endpoint",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SearchDomain62FD613E",
+            "DomainEndpoint",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramsgalb55FCBDC1": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/sg/alb",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "NetworkAlbSg193DDF6A",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramsgdbaccess212148E7": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/sg/db-access",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SiteDbAccessSg4E188B82",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamsgwebA2748016": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/sg/web",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "NetworkWebSg5C5D77A1",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramsgwebconnector46B48589": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/sg/web-connector",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "NetworkWebConnectorSg7790ABF0",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramsgworker04C26951": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/sg/worker",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "NetworkWorkerSgED2F0A41",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramvpcazs2FF5B1A6": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/vpc/azs",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": "ap-northeast-1a,ap-northeast-1c",
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramvpcid2A833A8E": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/vpc/id",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamvpcisolatedsubnetidsC5FAE4D9": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/vpc/isolated-subnet-ids",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::Join": [
+            ",",
+            [
+              {
+                "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+              },
+              {
+                "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramvpcpublicsubnetids67994846": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/vpc/public-subnet-ids",
+        "Tags": {
+          "kukan:env": "dev",
+          "kukan:site": "_shared",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::Join": [
+            ",",
+            [
+              {
+                "Ref": "NetworkVpcPublicSubnet1Subnet36933139",
+              },
+              {
+                "Ref": "NetworkVpcPublicSubnet2SubnetC427CCE0",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "SearchAdminRole39B48159": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":iam::123456789012:root",
+                    ],
+                  ],
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "RoleName": "kukan-dev-search-admin",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SearchAdminRoleDefaultPolicy42366AFD": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "es:ESHttpGet",
+                "es:ESHttpPut",
+                "es:ESHttpDelete",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "SearchDomain62FD613E",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SearchAdminRoleDefaultPolicy42366AFD",
+        "Roles": [
+          {
+            "Ref": "SearchAdminRole39B48159",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SearchDomain62FD613E": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SearchOpensearchSlrCustomResourcePolicy39ED011B",
+        "SearchOpensearchSlr62FA2C88",
+      ],
+      "Properties": {
+        "AdvancedSecurityOptions": {
+          "Enabled": true,
+          "InternalUserDatabaseEnabled": false,
+          "MasterUserOptions": {
+            "MasterUserARN": {
+              "Fn::GetAtt": [
+                "SearchAdminRole39B48159",
+                "Arn",
+              ],
+            },
+          },
+        },
+        "ClusterConfig": {
+          "DedicatedMasterEnabled": false,
+          "InstanceCount": 1,
+          "InstanceType": "t3.small.search",
+          "MultiAZWithStandbyEnabled": false,
+          "ZoneAwarenessEnabled": false,
+        },
+        "DomainEndpointOptions": {
+          "EnforceHTTPS": true,
+          "TLSSecurityPolicy": "Policy-Min-TLS-1-2-2019-07",
+        },
+        "DomainName": "kukan-dev-search",
+        "EBSOptions": {
+          "EBSEnabled": true,
+          "VolumeSize": 10,
+          "VolumeType": "gp3",
+        },
+        "EncryptionAtRestOptions": {
+          "Enabled": true,
+        },
+        "EngineVersion": "OpenSearch_3.7",
+        "LogPublishingOptions": {},
+        "NodeToNodeEncryptionOptions": {
+          "Enabled": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VPCOptions": {
+          "SecurityGroupIds": [
+            {
+              "Fn::GetAtt": [
+                "NetworkSearchSgAE1243D2",
+                "GroupId",
+              ],
+            },
+          ],
+          "SubnetIds": [
+            {
+              "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+            },
+          ],
+        },
+      },
+      "Type": "AWS::OpenSearchService::Domain",
+      "UpdatePolicy": {
+        "EnableVersionUpgrade": true,
+      },
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SearchDomainAccessPolicyAF72FFEB": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SearchDomainAccessPolicyCustomResourcePolicy703A4D4A",
+        "SearchOpensearchSlrCustomResourcePolicy39ED011B",
+        "SearchOpensearchSlr62FA2C88",
+      ],
+      "Properties": {
+        "Create": {
+          "Fn::Join": [
+            "",
+            [
+              "{"action":"updateDomainConfig","service":"OpenSearch","parameters":{"DomainName":"",
+              {
+                "Ref": "SearchDomain62FD613E",
+              },
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":domain/kukan-dev-search/*\\"}],\\"Version\\":\\"2012-10-17\\"}"},"outputPaths":["DomainConfig.AccessPolicies"],"physicalResourceId":{"id":"",
+              {
+                "Ref": "SearchDomain62FD613E",
+              },
+              "AccessPolicy"}}",
+            ],
+          ],
+        },
+        "InstallLatestAwsSdk": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd22872D164C4C",
+            "Arn",
+          ],
+        },
+        "Update": {
+          "Fn::Join": [
+            "",
+            [
+              "{"action":"updateDomainConfig","service":"OpenSearch","parameters":{"DomainName":"",
+              {
+                "Ref": "SearchDomain62FD613E",
+              },
+              "","AccessPolicies":"{\\"Statement\\":[{\\"Action\\":\\"es:ESHttp*\\",\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:root\\"},\\"Resource\\":\\"arn:aws:es:",
+              {
+                "Ref": "AWS::Region",
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId",
+              },
+              ":domain/kukan-dev-search/*\\"}],\\"Version\\":\\"2012-10-17\\"}"},"outputPaths":["DomainConfig.AccessPolicies"],"physicalResourceId":{"id":"",
+              {
+                "Ref": "SearchDomain62FD613E",
+              },
+              "AccessPolicy"}}",
+            ],
+          ],
+        },
+      },
+      "Type": "Custom::OpenSearchAccessPolicy",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SearchDomainAccessPolicyCustomResourcePolicy703A4D4A": {
+      "DependsOn": [
+        "SearchOpensearchSlrCustomResourcePolicy39ED011B",
+        "SearchOpensearchSlr62FA2C88",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "es:UpdateDomainConfig",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SearchDomain62FD613E",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SearchDomainAccessPolicyCustomResourcePolicy703A4D4A",
+        "Roles": [
+          {
+            "Ref": "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SearchOpensearchSlr62FA2C88": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SearchOpensearchSlrCustomResourcePolicy39ED011B",
+      ],
+      "Properties": {
+        "Create": "{"service":"IAM","action":"createServiceLinkedRole","parameters":{"AWSServiceName":"opensearchservice.amazonaws.com"},"physicalResourceId":{"id":"opensearch-slr"},"ignoreErrorCodesMatching":"InvalidInput"}",
+        "InstallLatestAwsSdk": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd22872D164C4C",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::AWS",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SearchOpensearchSlrCustomResourcePolicy39ED011B": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "iam:CreateServiceLinkedRole",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SearchOpensearchSlrCustomResourcePolicy39ED011B",
+        "Roles": [
+          {
+            "Ref": "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SearchSecurityHandler7847E95E": {
+      "DependsOn": [
+        "NetworkVpcPrivateSubnet1RouteTableAssociation327CA62F",
+        "NetworkVpcPrivateSubnet2RouteTableAssociation89A2F1E8",
+        "SearchAdminRoleDefaultPolicy42366AFD",
+        "SearchAdminRole39B48159",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SearchSecurityHandlerLogs84C4F416",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "SearchAdminRole39B48159",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "Timeout": 900,
+        "VpcConfig": {
+          "SecurityGroupIds": [
+            {
+              "Fn::GetAtt": [
+                "SearchSecurityHandlerSg15AADC3F",
+                "GroupId",
+              ],
+            },
+          ],
+          "SubnetIds": [
+            {
+              "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+            },
+            {
+              "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+            },
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SearchSecurityHandlerLogs84C4F416": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SearchSecurityHandlerSg15AADC3F": {
+      "Properties": {
+        "GroupDescription": "OpenSearch security role handler (ADR-069)",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "SearchSecurityHandlerSgtoDevKukanSharedStackNetworkSearchSg9A53F68A4437CBA4883": {
+      "Properties": {
+        "Description": "Security role handler",
+        "DestinationSecurityGroupId": {
+          "Fn::GetAtt": [
+            "NetworkSearchSgAE1243D2",
+            "GroupId",
+          ],
+        },
+        "FromPort": 443,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "SearchSecurityHandlerSg15AADC3F",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "ToPort": 443,
+      },
+      "Type": "AWS::EC2::SecurityGroupEgress",
+    },
+    "SearchSecurityProviderLogsAB135955": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SearchSecurityProviderframeworkonEvent194CDACF": {
+      "DependsOn": [
+        "SearchSecurityProviderframeworkonEventServiceRoleDefaultPolicy31EAD69A",
+        "SearchSecurityProviderframeworkonEventServiceRoleC436D92D",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": "AWS CDK resource provider framework - onEvent (Dev/KukanSharedStack/Search/SecurityProvider)",
+        "Environment": {
+          "Variables": {
+            "USER_ON_EVENT_FUNCTION_ARN": {
+              "Fn::GetAtt": [
+                "SearchSecurityHandler7847E95E",
+                "Arn",
+              ],
+            },
+          },
+        },
+        "Handler": "framework.onEvent",
+        "LoggingConfig": {
+          "ApplicationLogLevel": "FATAL",
+          "LogFormat": "JSON",
+          "LogGroup": {
+            "Ref": "SearchSecurityProviderLogsAB135955",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "SearchSecurityProviderframeworkonEventServiceRoleC436D92D",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SearchSecurityProviderframeworkonEventServiceRoleC436D92D": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "search",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SearchSecurityProviderframeworkonEventServiceRoleDefaultPolicy31EAD69A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SearchSecurityHandler7847E95E",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "SearchSecurityHandler7847E95E",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:GetFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SearchSecurityHandler7847E95E",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SearchSecurityProviderframeworkonEventServiceRoleDefaultPolicy31EAD69A",
+        "Roles": [
+          {
+            "Ref": "SearchSecurityProviderframeworkonEventServiceRoleC436D92D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SearchSiteRoles1FDCEB1A": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SearchDomainAccessPolicyCustomResourcePolicy703A4D4A",
+        "SearchDomainAccessPolicyAF72FFEB",
+        "SearchDomain62FD613E",
+      ],
+      "Properties": {
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "SearchDomain62FD613E",
+            "DomainEndpoint",
+          ],
+        },
+        "Roles": [
+          {
+            "BackendRoles": [
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-citya-web-task",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-citya-web-fn-exec",
+                  ],
+                ],
+              },
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":iam::123456789012:role/kukan-dev-citya-worker-task",
+                  ],
+                ],
+              },
+            ],
+            "Name": "kukan-dev-citya",
+            "Permissions": {
+              "cluster_permissions": [
+                "cluster_composite_ops",
+                "cluster_monitor",
+                "cluster:admin/tasks/cancel",
+              ],
+              "index_permissions": [
+                {
+                  "allowed_actions": [
+                    "indices_all",
+                  ],
+                  "index_patterns": [
+                    "kukan-dev-citya-search*",
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "SearchSecurityProviderframeworkonEvent194CDACF",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::KukanSearchSiteRoles",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SecretsManagerEndpoint5E83C66B": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "SecretsManagerEndpointSecurityGroupEA7D8B27",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.ap-northeast-1.secretsmanager",
+        "SubnetIds": [
+          {
+            "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+          },
+          {
+            "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "SecretsManagerEndpointSecurityGroupEA7D8B27": {
+      "Properties": {
+        "GroupDescription": "Dev/KukanSharedStack/SecretsManagerEndpoint/SecurityGroup",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "NetworkVpc7FB7348F",
+                "CidrBlock",
+              ],
+            },
+            "Description": {
+              "Fn::Join": [
+                "",
+                [
+                  "from ",
+                  {
+                    "Fn::GetAtt": [
+                      "NetworkVpc7FB7348F",
+                      "CidrBlock",
+                    ],
+                  },
+                  ":443",
+                ],
+              ],
+            },
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "ServiceNamespaceB29FC01B": {
+      "Properties": {
+        "Name": "kukan-dev.internal",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "Vpc": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
+    },
+    "SiteDbAccessSg4E188B82": {
+      "Properties": {
+        "GroupDescription": "Site DB bootstrap handlers (ADR-041)",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "_shared",
+          },
+        ],
+        "VpcId": {
+          "Ref": "NetworkVpc7FB7348F",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`] = `
+{
+  "Outputs": {
+    "BucketName": {
+      "Description": "S3 Bucket Name",
+      "Value": {
+        "Ref": "StorageResourceBucketD8B2FEFB",
+      },
+    },
+    "CdnLogBucketName": {
+      "Description": "CloudFront access log bucket",
+      "Value": {
+        "Ref": "CDNAccessLogBucketD072627D",
+      },
+    },
+    "CdnLogTable": {
+      "Description": "CloudFront access log table (Athena)",
+      "Value": "kukan_dev_citya_logs.cloudfront",
+    },
+    "CdnLogWorkGroup": {
+      "Description": "Athena workgroup for the access log table",
+      "Value": "kukan-dev-logs",
+    },
+    "CloudFrontDomainName": {
+      "Description": "CloudFront Distribution Domain Name",
+      "Value": {
+        "Fn::GetAtt": [
+          "CDNDistributionD4FAE585",
+          "DomainName",
+        ],
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedcloudmapnamespaceidC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/cloudmap/namespace-id",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedcloudmapnamespacenameC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/cloudmap/namespace-name",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/db/endpoint",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevshareddbmastersecretarnC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/db/master-secret-arn",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevshareddbportC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/db/port",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedecsclusternameC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/ecs/cluster-name",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/search/arn",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsearchendpointC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/search/endpoint",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsgdbaccessC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/sg/db-access",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsgwebC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/sg/web",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsgwebconnectorC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/sg/web-connector",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedsgworkerC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/sg/worker",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedvpcazsC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/vpc/azs",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedvpcidC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/vpc/id",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/vpc/isolated-subnet-ids",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedvpcpublicsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/vpc/public-subnet-ids",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "AWSCDKWebFunctionAssetBucket5B596593": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:auto-delete-objects",
+            "Value": "true",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled",
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "AWSCDKWebFunctionAssetBucketAutoDeleteObjectsCustomResource7C95046A": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
+      ],
+      "Properties": {
+        "BucketName": {
+          "Ref": "AWSCDKWebFunctionAssetBucket5B596593",
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::S3AutoDeleteObjects",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "AWSCDKWebFunctionAssetBucketPolicy406CF5E7": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "AWSCDKWebFunctionAssetBucket5B596593",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AWSCDKWebFunctionAssetBucket5B596593",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AWSCDKWebFunctionAssetBucket5B596593",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:PutBucketPolicy",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AWSCDKWebFunctionAssetBucket5B596593",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AWSCDKWebFunctionAssetBucket5B596593",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+              ],
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":lambda:ap-northeast-1:123456789012:web-function/*/revision/*",
+                      ],
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "AWSCDKWebFunctionAssetBucket5B596593",
+                        "Arn",
+                      ],
+                    },
+                    "/web-function/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "AuthSecretC13F30CE": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "GenerateSecretString": {
+          "ExcludePunctuation": true,
+          "PasswordLength": 64,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockProfiles395676235E0393CD": {
+      "Properties": {
+        "Description": "amazon.titan-embed-text-v2:0",
+        "InferenceProfileName": "kukan-dev-citya-ai-39567623",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                "::foundation-model/amazon.titan-embed-text-v2:0",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "BedrockProfilesf9f8757952C133B1": {
+      "Properties": {
+        "Description": "jp.anthropic.claude-haiku-5-5",
+        "InferenceProfileName": "kukan-dev-citya-ai-f9f87579",
+        "ModelSource": {
+          "CopyFrom": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":bedrock:",
+                {
+                  "Ref": "AWS::Region",
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":inference-profile/jp.anthropic.claude-haiku-5-5",
+              ],
+            ],
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "ai",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Bedrock::ApplicationInferenceProfile",
+    },
+    "CDNAccessLogBucketD072627D": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "CDNAccessLogBucketPolicy2D0066B8": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "CDNAccessLogBucketD072627D",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CDNAccessLogBucketD072627D",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CDNAccessLogBucketD072627D",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "CDNAccessLogDatabase63DF0BA5": {
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseInput": {
+          "Name": "kukan_dev_citya_logs",
+        },
+      },
+      "Type": "AWS::Glue::Database",
+    },
+    "CDNAccessLogTable6F38BC4D": {
+      "DependsOn": [
+        "CDNAccessLogDatabase63DF0BA5",
+      ],
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseName": "kukan_dev_citya_logs",
+        "TableInput": {
+          "Name": "cloudfront",
+          "Parameters": {
+            "skip.header.line.count": "2",
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "date",
+                "Type": "date",
+              },
+              {
+                "Name": "time",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_location",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "c_ip",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_method",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_host",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_stem",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_status",
+                "Type": "int",
+              },
+              {
+                "Name": "cs_referrer",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_user_agent",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_query",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_cookie",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_request_id",
+                "Type": "string",
+              },
+              {
+                "Name": "x_host_header",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "time_taken",
+                "Type": "float",
+              },
+              {
+                "Name": "x_forwarded_for",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_cipher",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_response_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol_version",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_status",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_encrypted_fields",
+                "Type": "int",
+              },
+              {
+                "Name": "c_port",
+                "Type": "int",
+              },
+              {
+                "Name": "time_to_first_byte",
+                "Type": "float",
+              },
+              {
+                "Name": "x_edge_detailed_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_len",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_start",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_end",
+                "Type": "bigint",
+              },
+            ],
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Ref": "CDNAccessLogBucketD072627D",
+                  },
+                  "/",
+                ],
+              ],
+            },
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "Parameters": {
+                "field.delim": "	",
+                "serialization.format": "	",
+              },
+              "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+            },
+          },
+          "TableType": "EXTERNAL_TABLE",
+        },
+      },
+      "Type": "AWS::Glue::Table",
+    },
+    "CDNCrawlFilesCachePolicy1489E247": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 3600,
+          "MaxTTL": 3600,
+          "MinTTL": 3600,
+          "Name": "kukan-dev-citya-crawl",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNDistributionD4FAE585": {
+      "Properties": {
+        "DistributionConfig": {
+          "Aliases": [
+            "catalog.city-a.example.jp",
+          ],
+          "CacheBehaviors": [
+            {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/_next/static/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/vendor/ibis-office/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+                "PUT",
+                "PATCH",
+                "POST",
+                "DELETE",
+              ],
+              "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+              "PathPattern": "/auth/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+                "PUT",
+                "PATCH",
+                "POST",
+                "DELETE",
+              ],
+              "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+              "PathPattern": "/api/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNOdataCachePolicy8D77BE21",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+              "PathPattern": "/odata/*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/robots.txt",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNCrawlFilesCachePolicy1489E247",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "PathPattern": "/sitemap*",
+              "ResponseHeadersPolicyId": {
+                "Ref": "CDNSecurityHeadersEC36F6F3",
+              },
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
+          ],
+          "Comment": "KUKAN CDN",
+          "DefaultCacheBehavior": {
+            "AllowedMethods": [
+              "GET",
+              "HEAD",
+              "OPTIONS",
+              "PUT",
+              "PATCH",
+              "POST",
+              "DELETE",
+            ],
+            "CachePolicyId": {
+              "Ref": "CDNHtmlCachePolicyD4EF5254",
+            },
+            "Compress": true,
+            "FunctionAssociations": [
+              {
+                "EventType": "viewer-request",
+                "FunctionARN": {
+                  "Fn::GetAtt": [
+                    "CDNViewerRequestFn5A9BA497",
+                    "FunctionARN",
+                  ],
+                },
+              },
+            ],
+            "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+            "ResponseHeadersPolicyId": {
+              "Ref": "CDNSecurityHeadersEC36F6F3",
+            },
+            "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+            "ViewerProtocolPolicy": "redirect-to-https",
+          },
+          "Enabled": true,
+          "HttpVersion": "http2",
+          "IPV6Enabled": true,
+          "Logging": {
+            "Bucket": {
+              "Fn::GetAtt": [
+                "CDNAccessLogBucketD072627D",
+                "RegionalDomainName",
+              ],
+            },
+            "IncludeCookies": false,
+          },
+          "Origins": [
+            {
+              "CustomOriginConfig": {
+                "OriginProtocolPolicy": "https-only",
+                "OriginSSLProtocols": [
+                  "TLSv1.2",
+                ],
+              },
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "WebFunctionEndpoint8D88063D",
+                  "DomainName",
+                ],
+              },
+              "Id": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "OriginAccessControlId": {
+                "Fn::GetAtt": [
+                  "WebFunctionOac8E81645D",
+                  "Id",
+                ],
+              },
+            },
+          ],
+          "ViewerCertificate": {
+            "AcmCertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000",
+            "MinimumProtocolVersion": "TLSv1.2_2021",
+            "SslSupportMethod": "sni-only",
+          },
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::CloudFront::Distribution",
+    },
+    "CDNHtmlCachePolicyD4EF5254": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 60,
+          "MaxTTL": 300,
+          "MinTTL": 60,
+          "Name": "kukan-dev-citya-html",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "whitelist",
+              "Headers": [
+                "x-cache-bypass",
+                "x-kukan-locale",
+              ],
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "all",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNOdataCachePolicy8D77BE21": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 60,
+          "MaxTTL": 600,
+          "MinTTL": 0,
+          "Name": "kukan-dev-citya-odata",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "all",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNSecurityHeadersEC36F6F3": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": "kukan-dev-citya-security-headers",
+          "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+    },
+    "CDNViewerRequestFn5A9BA497": {
+      "Properties": {
+        "AutoPublish": true,
+        "FunctionCode": "/* eslint-disable */
+// CloudFront Function — Viewer Request
+// 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
+// 2. Cache bypass: inject a unique header when the request carries credentials.
+// 3. Locale: resolve the UI locale into one header the HTML cache key varies on.
+// 4. Client IP: state the viewer's address for the origin's sign-in rate limits.
+//
+// ALLOWED (IP ranges) and BASIC_AUTH (the full expected \`Basic <base64>\` header) are
+// injected by CDK at synth time (see constructs/cdn.ts). Both empty → access control skipped.
+// LOCALES / DEFAULT_LOCALE / LOCALE_HEADER / CLIENT_IP_HEADER are always injected
+// from @kukan/shared.
+var ALLOWED = []
+var BASIC_AUTH = ''
+var LOCALES = ["ja","en"]
+var DEFAULT_LOCALE = "en"
+var LOCALE_HEADER = "x-kukan-locale"
+var CLIENT_IP_HEADER = "x-kukan-client-ip"
+
+function handler(event) {
+  // The cache key's bypass is this function's to set (below), never the viewer's
+  delete event.request.headers['x-cache-bypass']
+
+  // --- Access control: IP allowlist OR Basic auth ---
+  if ((ALLOWED.length || BASIC_AUTH) && !isIbisOffice(event.request.uri)) {
+    var passIp = false
+    if (ALLOWED.length) {
+      var ip = event.viewer.ip
+      for (var i = 0; i < ALLOWED.length; i++) {
+        if (cidr(ip, ALLOWED[i])) {
+          passIp = true
+          break
+        }
+      }
+    }
+    var passAuth = false
+    if (BASIC_AUTH) {
+      var h = event.request.headers.authorization
+      if (h && h.value === BASIC_AUTH) passAuth = true
+    }
+    if (!passIp && !passAuth) {
+      // 401 (not 403) when Basic auth is configured so the browser prompts for credentials.
+      if (BASIC_AUTH) {
+        return {
+          statusCode: 401,
+          statusDescription: 'Unauthorized',
+          headers: { 'www-authenticate': { value: 'Basic realm="KUKAN"' } },
+        }
+      }
+      return { statusCode: 403, statusDescription: 'Forbidden' }
+    }
+  }
+
+  // --- Cache bypass for credentialed requests ---
+  // Any authenticated request must bypass the edge cache so personalized or
+  // access-controlled responses are never stored and served to other users.
+  // The value is CloudFront's per-request ID, not a timestamp: requests in the
+  // same millisecond would get the same key and share one cache entry.
+  var req = event.request
+  if (hasSessionCookie(req) || hasApiToken(req)) {
+    req.headers['x-cache-bypass'] = { value: event.context.requestId }
+  }
+
+  // --- Locale ---
+  // Set unconditionally so a viewer-sent value never reaches the origin unchecked.
+  // Keying on the resolved locale rather than the raw cookie and Accept-Language
+  // keeps the key to one entry per locale instead of one per browser's header.
+  req.headers[LOCALE_HEADER] = { value: resolveLocale(req) }
+
+  // --- Client IP ---
+  // Also unconditional: X-Forwarded-For ends in CloudFront's own address, and a
+  // viewer-sent value here would let a client pick its own rate-limit bucket.
+  req.headers[CLIENT_IP_HEADER] = { value: event.viewer.ip }
+  return req
+}
+
+// Match the Better Auth session cookie by the \`.session_token\` suffix (covers
+// \`better-auth.session_token\`, \`__Secure-better-auth.session_token\`, and any
+// configured \`<prefix>.session_token\`) rather than a substring — a substring
+// match would let any client inject the bypass with a cookie like
+// \`xsession_tokenx\` and force cache misses.
+// \`slice\` (not \`endsWith\`) for CloudFront Functions runtime compatibility.
+function hasSessionCookie(req) {
+  var SUFFIX = '.session_token'
+  for (var name in req.cookies) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) return true
+  }
+  return false
+}
+
+// The API accepts tokens too, and a page outside \`/api/*\` (the download
+// permalink) hands the request's headers on to it. The site's Basic auth value
+// is the same for every viewer, so it alone does not count.
+function hasApiToken(req) {
+  var h = req.headers
+  if (h['x-kukan-api-key'] || h['x-ckan-api-key']) return true
+  return !!(h.authorization && h.authorization.value !== BASIC_AUTH)
+}
+
+// Same order as the web app's request config: NEXT_LOCALE cookie, then
+// Accept-Language by q, then the default.
+function resolveLocale(req) {
+  var c = req.cookies.NEXT_LOCALE
+  if (c && LOCALES.indexOf(c.value) >= 0) return c.value
+  var h = req.headers['accept-language']
+  if (h) {
+    var tags = h.value.split(',').map(function (part, i) {
+      var p = part.trim().split(';q=')
+      return { lang: p[0].trim().toLowerCase(), q: p[1] ? parseFloat(p[1]) : 1, i: i }
+    })
+    tags.sort(function (a, b) {
+      return b.q - a.q || a.i - b.i
+    })
+    for (var j = 0; j < tags.length; j++) {
+      var lang = tags[j].lang
+      if (LOCALES.indexOf(lang) >= 0) return lang
+      var prefix = lang.split('-')[0]
+      if (LOCALES.indexOf(prefix) >= 0) return prefix
+    }
+  }
+  return DEFAULT_LOCALE
+}
+
+// The ibisOffice app (ADR-065): a sandboxed frame, whose origin is opaque,
+// loads it without the Basic auth credentials, and the files are upstream's
+// published build and a static page, the same for every site. No dot segment
+// or escape, which the origin could resolve to a path outside it.
+function isIbisOffice(uri) {
+  return uri.indexOf('/vendor/ibis-office/') === 0 && !/\\.\\.|%|\\\\/.test(uri)
+}
+
+// --- CIDR matching (IPv4 + IPv6) ---
+
+function cidr(ip, range) {
+  var s = range.indexOf('/')
+  var base = s < 0 ? range : range.substring(0, s)
+  var isV6 = ip.indexOf(':') >= 0
+  if (isV6 !== base.indexOf(':') >= 0) return false
+  if (!isV6) {
+    var bits = s < 0 ? 32 : parseInt(range.substring(s + 1), 10)
+    var a = ip.split('.'),
+      b = base.split('.')
+    var ipN = ((+a[0] << 24) | (+a[1] << 16) | (+a[2] << 8) | +a[3]) >>> 0
+    var bN = ((+b[0] << 24) | (+b[1] << 16) | (+b[2] << 8) | +b[3]) >>> 0
+    var m = bits ? (~0 << (32 - bits)) >>> 0 : 0
+    return (ipN & m) === (bN & m)
+  }
+  var bits6 = s < 0 ? 128 : parseInt(range.substring(s + 1), 10)
+  var ab = expandV6(ip),
+    bb = expandV6(base)
+  var full = bits6 >> 3
+  for (var j = 0; j < full; j++) if (ab[j] !== bb[j]) return false
+  var rem = bits6 & 7
+  if (rem) {
+    var mk = (0xff << (8 - rem)) & 0xff
+    if ((ab[full] & mk) !== (bb[full] & mk)) return false
+  }
+  return true
+}
+
+function expandV6(addr) {
+  var halves = addr.split('::')
+  var groups
+  if (halves.length === 2) {
+    var left = halves[0] ? halves[0].split(':') : []
+    var right = halves[1] ? halves[1].split(':') : []
+    groups = left.slice()
+    for (var i = 0; i < 8 - left.length - right.length; i++) groups.push('0')
+    groups = groups.concat(right)
+  } else {
+    groups = addr.split(':')
+  }
+  var bytes = []
+  for (var k = 0; k < groups.length; k++) {
+    var n = parseInt(groups[k], 16) || 0
+    bytes.push((n >> 8) & 0xff, n & 0xff)
+  }
+  return bytes
+}
+",
+        "FunctionConfig": {
+          "Comment": "kukan-dev-citya-viewer-request",
+          "Runtime": "cloudfront-js-2.0",
+        },
+        "Name": "kukan-dev-citya-viewer-request",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::CloudFront::Function",
+    },
+    "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F": {
+      "DependsOn": [
+        "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": {
+          "Fn::Join": [
+            "",
+            [
+              "Lambda function for auto-deleting objects in ",
+              {
+                "Ref": "AWSCDKWebFunctionAssetBucket5B596593",
+              },
+              " S3 bucket.",
+            ],
+          ],
+        },
+        "Handler": "index.handler",
+        "MemorySize": 128,
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:\${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312E813A085": {
+      "DependsOn": [
+        "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleDefaultPolicy05646207",
+        "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleFA1CFFCE",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "S3ObjectCopyLogGroupe2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312A8C41E5C",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleFA1CFFCE",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleDefaultPolicy05646207": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":s3:::cdk-hnb659fds-assets-123456789012-ap-northeast-1/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "AWSCDKWebFunctionAssetBucket5B596593",
+                        "Arn",
+                      ],
+                    },
+                    "/web-function/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "s3:DeleteObject*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "AWSCDKWebFunctionAssetBucket5B596593",
+                        "Arn",
+                      ],
+                    },
+                    "/web-function/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleDefaultPolicy05646207",
+        "Roles": [
+          {
+            "Ref": "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleFA1CFFCE",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312ServiceRoleFA1CFFCE": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "S3ObjectCopyLogGroupe2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312A8C41E5C": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 731,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SiteDatabase0F0CACF6": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "DbHost": {
+          "Ref": "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "DbName": "kukan_citya",
+        "DbPort": {
+          "Ref": "SsmParameterValuekukandevshareddbportC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "MasterSecretArn": {
+          "Ref": "SsmParameterValuekukandevshareddbmastersecretarnC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "Revision": "2",
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "SiteDatabaseProviderframeworkonEventE21C9080",
+            "Arn",
+          ],
+        },
+        "SiteSecretArn": {
+          "Ref": "SiteDatabaseSecret922A631F",
+        },
+      },
+      "Type": "Custom::KukanSiteDatabase",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SiteDatabaseHandler209F75A6": {
+      "DependsOn": [
+        "SiteDatabaseHandlerServiceRoleDefaultPolicy9315DAD2",
+        "SiteDatabaseHandlerServiceRoleE874BB7A",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "NODE_EXTRA_CA_CERTS": "/var/runtime/ca-cert.pem",
+          },
+        },
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SiteDatabaseHandlerLogs4F6AE19B",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "SiteDatabaseHandlerServiceRoleE874BB7A",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "Timeout": 120,
+        "VpcConfig": {
+          "SecurityGroupIds": [
+            {
+              "Ref": "SsmParameterValuekukandevsharedsgdbaccessC96584B6F00A464EAD1953AFF4B05118Parameter",
+            },
+          ],
+          "SubnetIds": [
+            {
+              "Fn::Select": [
+                0,
+                {
+                  "Fn::Split": [
+                    ",",
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              "Fn::Select": [
+                1,
+                {
+                  "Fn::Split": [
+                    ",",
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SiteDatabaseHandlerLogs4F6AE19B": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SiteDatabaseHandlerServiceRoleDefaultPolicy9315DAD2": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "secretsmanager:GetSecretValue",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Ref": "SsmParameterValuekukandevshareddbmastersecretarnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                },
+                {
+                  "Ref": "SiteDatabaseSecret922A631F",
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SiteDatabaseHandlerServiceRoleDefaultPolicy9315DAD2",
+        "Roles": [
+          {
+            "Ref": "SiteDatabaseHandlerServiceRoleE874BB7A",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SiteDatabaseHandlerServiceRoleE874BB7A": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SiteDatabaseProviderLogsA05AB325": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "SiteDatabaseProviderframeworkonEventE21C9080": {
+      "DependsOn": [
+        "SiteDatabaseProviderframeworkonEventServiceRoleDefaultPolicy656B6960",
+        "SiteDatabaseProviderframeworkonEventServiceRoleA37B031C",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": "AWS CDK resource provider framework - onEvent (Dev/KukanSiteStackCitya/SiteDatabase/Provider)",
+        "Environment": {
+          "Variables": {
+            "USER_ON_EVENT_FUNCTION_ARN": {
+              "Fn::GetAtt": [
+                "SiteDatabaseHandler209F75A6",
+                "Arn",
+              ],
+            },
+          },
+        },
+        "Handler": "framework.onEvent",
+        "LoggingConfig": {
+          "ApplicationLogLevel": "FATAL",
+          "LogFormat": "JSON",
+          "LogGroup": {
+            "Ref": "SiteDatabaseProviderLogsA05AB325",
+          },
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "SiteDatabaseProviderframeworkonEventServiceRoleA37B031C",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs24.x",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SiteDatabaseProviderframeworkonEventServiceRoleA37B031C": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SiteDatabaseProviderframeworkonEventServiceRoleDefaultPolicy656B6960": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SiteDatabaseHandler209F75A6",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "SiteDatabaseHandler209F75A6",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:GetFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SiteDatabaseHandler209F75A6",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SiteDatabaseProviderframeworkonEventServiceRoleDefaultPolicy656B6960",
+        "Roles": [
+          {
+            "Ref": "SiteDatabaseProviderframeworkonEventServiceRoleA37B031C",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SiteDatabaseSecret922A631F": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Description": "KUKAN site DB credentials (citya)",
+        "GenerateSecretString": {
+          "ExcludeCharacters": " '"\\/@%&+:;?#[]()<>{}|",
+          "GenerateStringKey": "password",
+          "PasswordLength": 48,
+          "SecretStringTemplate": "{"username":"kukan_citya","dbname":"kukan_citya"}",
+        },
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "StorageResourceBucketD8B2FEFB": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*",
+              ],
+              "AllowedMethods": [
+                "PUT",
+              ],
+              "AllowedOrigins": [
+                "https://catalog.city-a.example.jp",
+              ],
+              "MaxAge": 3600,
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 7,
+              },
+              "Id": "AbortIncompleteMultipartUpload",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "storage",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "StorageResourceBucketPolicyD82FEAA9": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageResourceBucketD8B2FEFB",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "WebFunction035F31A7": {
+      "DependsOn": [
+        "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "FunctionName": "DevKukanSiteStacCityaWebFunctionB8F38504",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-function",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Lambda::WebFunction",
+    },
+    "WebFunctionCodeCopyd61909105CC6AC68": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "Configuration": {
+          "BuildConfig": {
+            "RuntimeConfig": {
+              "Runtime": "nodejs24.x",
+            },
+          },
+          "FunctionName": {
+            "Ref": "WebFunction035F31A7",
+          },
+          "ServiceConfig": {
+            "EgressNetworkConnectorArn": {
+              "Fn::GetAtt": [
+                "WebFunctionConnectorD55E57B5",
+                "LatestVersionArn",
+              ],
+            },
+            "EnvironmentVariables": {
+              "AI_COMPLETION_MODELS": "jp.anthropic.claude-haiku-5-5",
+              "AI_EMBEDDING_MODEL": "amazon.titan-embed-text-v2:0",
+              "AI_TYPE": "bedrock",
+              "AWS_LAMBDA_NODEJS_ENTRYPOINT": "apps/web/start.mjs",
+              "BEDROCK_INFERENCE_PROFILES": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "{"amazon.titan-embed-text-v2:0":"",
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfiles395676235E0393CD",
+                        "InferenceProfileArn",
+                      ],
+                    },
+                    "","jp.anthropic.claude-haiku-5-5":"",
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
+                      ],
+                    },
+                    ""}",
+                  ],
+                ],
+              },
+              "BEDROCK_REGION": {
+                "Ref": "AWS::Region",
+              },
+              "BETTER_AUTH_URL": "https://catalog.city-a.example.jp",
+              "CLIENT_IP_HEADER": "x-kukan-client-ip",
+              "DUCKDB_EXTENSION_DIRECTORY": "/var/task/duckdb-extensions",
+              "NODE_ENV": "production",
+              "OPENSEARCH_AWS_REGION": {
+                "Ref": "AWS::Region",
+              },
+              "OPENSEARCH_INDEX_PREFIX": "kukan-dev-citya",
+              "OPENSEARCH_REPLICAS": "0",
+              "OPENSEARCH_URL": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "https://",
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearchendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                  ],
+                ],
+              },
+              "POSTGRES_DB": "kukan_citya",
+              "POSTGRES_HOST": {
+                "Ref": "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+              },
+              "POSTGRES_PORT": {
+                "Ref": "SsmParameterValuekukandevshareddbportC96584B6F00A464EAD1953AFF4B05118Parameter",
+              },
+              "POSTGRES_SSLMODE": "verify-full",
+              "POSTGRES_SSLROOTCERT": "/var/task/rds-ca.crt",
+              "QUERY_CHILD_ENTRY": "/var/task/node_modules/.pnpm/kukan-query-child.mjs",
+              "S3_BUCKET": {
+                "Ref": "StorageResourceBucketD8B2FEFB",
+              },
+              "S3_REGION": {
+                "Ref": "AWS::Region",
+              },
+              "SEARCH_TYPE": "opensearch",
+              "SECRET_ARNS": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "{"POSTGRES_USER":"",
+                    {
+                      "Ref": "SiteDatabaseSecret922A631F",
+                    },
+                    ":username::","POSTGRES_PASSWORD":"",
+                    {
+                      "Ref": "SiteDatabaseSecret922A631F",
+                    },
+                    ":password::","BETTER_AUTH_SECRET":"",
+                    {
+                      "Ref": "AuthSecretC13F30CE",
+                    },
+                    ""}",
+                  ],
+                ],
+              },
+              "WEB_DB_POOL_MAX": "2",
+              "WORKER_WAKE_URL": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "http://kukan-dev-citya-worker.",
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedcloudmapnamespacenameC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    ":8080/wake",
+                  ],
+                ],
+              },
+            },
+            "ExecutionRoleArn": {
+              "Fn::GetAtt": [
+                "WebFunctionExecutionRole95A706C9",
+                "Arn",
+              ],
+            },
+            "TelemetryConfig": {
+              "LoggingConfig": {
+                "LogGroup": {
+                  "Ref": "WebFunctionLogsF2E8E13E",
+                },
+              },
+            },
+            "TimeoutSeconds": 900,
+          },
+        },
+        "ContentHash": "ASSET_HASH",
+        "DestinationBucketName": {
+          "Ref": "AWSCDKWebFunctionAssetBucket5B596593",
+        },
+        "DestinationKeyPrefix": "web-function/DevKukanSiteStackCityaWebFunction8B550361/",
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomS3ObjectCopye2f8cf6b1b0f4b3f9a2c6f1f5b6d4a71dest438c09a9673f2abad1d402b3095f4312E813A085",
+            "Arn",
+          ],
+        },
+        "SourceBucketName": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+        "SourceObjectKey": "ASSET_HASH.zip",
+      },
+      "Type": "Custom::S3ObjectCopy",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "WebFunctionConnectorD55E57B5": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "Configuration": {
+          "VpcEgressConfiguration": {
+            "AssociatedComputeResourceTypes": [
+              "WebFunction",
+            ],
+            "NetworkProtocol": "DualStack",
+            "SecurityGroupIds": [
+              {
+                "Ref": "SsmParameterValuekukandevsharedsgwebconnectorC96584B6F00A464EAD1953AFF4B05118Parameter",
+              },
+            ],
+            "SubnetIds": [
+              {
+                "Fn::Select": [
+                  0,
+                  {
+                    "Fn::Split": [
+                      ",",
+                      {
+                        "Ref": "SsmParameterValuekukandevsharedvpcpublicsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                "Fn::Select": [
+                  1,
+                  {
+                    "Fn::Split": [
+                      ",",
+                      {
+                        "Ref": "SsmParameterValuekukandevsharedvpcpublicsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        "OperatorRole": {
+          "Fn::GetAtt": [
+            "WebFunctionConnectorOperatorRole65BEEE34",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-function",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Lambda::NetworkConnector",
+    },
+    "WebFunctionConnectorOperatorRole65BEEE34": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/AWSLambdaNetworkConnectorOperatorPolicy",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-function",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WebFunctionEndpoint8D88063D": {
+      "DependsOn": [
+        "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
+        "SiteDatabase0F0CACF6",
+        "WebFunction035F31A7",
+        "WebFunctionRevision66232117",
+      ],
+      "Properties": {
+        "AuthType": "IamAuth",
+        "EndpointName": "prod",
+        "EndpointType": "HomeRegion",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "WebFunction035F31A7",
+            "FunctionArn",
+          ],
+        },
+        "RevisionWeights": [
+          {
+            "RevisionId": {
+              "Fn::GetAtt": [
+                "WebFunctionRevision66232117",
+                "RevisionId",
+              ],
+            },
+            "Weight": 100,
+          },
+        ],
+        "ScalingConfig": {
+          "MaxEnvironments": 4,
+        },
+      },
+      "Type": "AWS::Lambda::WebFunctionEndpoint",
+    },
+    "WebFunctionExecutionRole95A706C9": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "RoleName": "kukan-dev-citya-web-fn-exec",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-function",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WebFunctionExecutionRoleDefaultPolicy7EE6784D": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfilesf9f8757952C133B1",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Condition": {
+                "StringEquals": {
+                  "bedrock:InferenceProfileArn": [
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition",
+                          },
+                          ":bedrock:",
+                          {
+                            "Ref": "AWS::Region",
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId",
+                          },
+                          ":inference-profile/jp.anthropic.claude-haiku-5-5",
+                        ],
+                      ],
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "BedrockProfilesf9f8757952C133B1",
+                        "InferenceProfileArn",
+                      ],
+                    },
+                  ],
+                },
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "SiteDatabaseSecret922A631F",
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "AuthSecretC13F30CE",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "WebFunctionExecutionRoleDefaultPolicy7EE6784D",
+        "Roles": [
+          {
+            "Ref": "WebFunctionExecutionRole95A706C9",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "WebFunctionLogsF2E8E13E": {
+      "DeletionPolicy": "Retain",
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-function",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "WebFunctionOac8E81645D": {
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": "DevKukanSiteStackCityaWebFunctionOac555F9F61",
+          "OriginAccessControlOriginType": "lambda",
+          "SigningBehavior": "always-amz-auth",
+          "SigningProtocol": "sigv4",
+        },
+      },
+      "Type": "AWS::CloudFront::OriginAccessControl",
+    },
+    "WebFunctionResourcePolicy9A3F8E50": {
+      "DependsOn": [
+        "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeWebFunctionEndpoint",
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":cloudfront::123456789012:distribution/",
+                        {
+                          "Ref": "CDNDistributionD4FAE585",
+                        },
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudfront.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WebFunctionEndpoint8D88063D",
+                  "EndpointArn",
+                ],
+              },
+              "Sid": "0",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ResourceArn": {
+          "Fn::GetAtt": [
+            "WebFunction035F31A7",
+            "FunctionArn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::ResourcePolicy",
+    },
+    "WebFunctionRevision66232117": {
+      "DependsOn": [
+        "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
+        "SiteDatabase0F0CACF6",
+        "WebFunction035F31A7",
+      ],
+      "Properties": {
+        "BuildConfig": {
+          "CodeConfig": {
+            "S3Object": {
+              "Bucket": {
+                "Fn::GetAtt": [
+                  "WebFunctionCodeCopyd61909105CC6AC68",
+                  "Bucket",
+                ],
+              },
+              "Key": {
+                "Fn::GetAtt": [
+                  "WebFunctionCodeCopyd61909105CC6AC68",
+                  "Key",
+                ],
+              },
+              "VersionId": {
+                "Fn::GetAtt": [
+                  "WebFunctionCodeCopyd61909105CC6AC68",
+                  "VersionId",
+                ],
+              },
+            },
+          },
+          "RuntimeConfig": {
+            "Runtime": "nodejs24.x",
+          },
+        },
+        "FunctionName": {
+          "Ref": "WebFunction035F31A7",
+        },
+        "ServiceConfig": {
+          "EgressNetworkConnectorArn": {
+            "Fn::GetAtt": [
+              "WebFunctionConnectorD55E57B5",
+              "LatestVersionArn",
+            ],
+          },
+          "EnvironmentVariables": {
+            "AI_COMPLETION_MODELS": "jp.anthropic.claude-haiku-5-5",
+            "AI_EMBEDDING_MODEL": "amazon.titan-embed-text-v2:0",
+            "AI_TYPE": "bedrock",
+            "AWS_LAMBDA_NODEJS_ENTRYPOINT": "apps/web/start.mjs",
+            "BEDROCK_INFERENCE_PROFILES": {
+              "Fn::Join": [
+                "",
+                [
+                  "{"amazon.titan-embed-text-v2:0":"",
+                  {
+                    "Fn::GetAtt": [
+                      "BedrockProfiles395676235E0393CD",
+                      "InferenceProfileArn",
+                    ],
+                  },
+                  "","jp.anthropic.claude-haiku-5-5":"",
+                  {
+                    "Fn::GetAtt": [
+                      "BedrockProfilesf9f8757952C133B1",
+                      "InferenceProfileArn",
+                    ],
+                  },
+                  ""}",
+                ],
+              ],
+            },
+            "BEDROCK_REGION": {
+              "Ref": "AWS::Region",
+            },
+            "BETTER_AUTH_URL": "https://catalog.city-a.example.jp",
+            "CLIENT_IP_HEADER": "x-kukan-client-ip",
+            "DUCKDB_EXTENSION_DIRECTORY": "/var/task/duckdb-extensions",
+            "NODE_ENV": "production",
+            "OPENSEARCH_AWS_REGION": {
+              "Ref": "AWS::Region",
+            },
+            "OPENSEARCH_INDEX_PREFIX": "kukan-dev-citya",
+            "OPENSEARCH_REPLICAS": "0",
+            "OPENSEARCH_URL": {
+              "Fn::Join": [
+                "",
+                [
+                  "https://",
+                  {
+                    "Ref": "SsmParameterValuekukandevsharedsearchendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+                  },
+                ],
+              ],
+            },
+            "POSTGRES_DB": "kukan_citya",
+            "POSTGRES_HOST": {
+              "Ref": "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+            },
+            "POSTGRES_PORT": {
+              "Ref": "SsmParameterValuekukandevshareddbportC96584B6F00A464EAD1953AFF4B05118Parameter",
+            },
+            "POSTGRES_SSLMODE": "verify-full",
+            "POSTGRES_SSLROOTCERT": "/var/task/rds-ca.crt",
+            "QUERY_CHILD_ENTRY": "/var/task/node_modules/.pnpm/kukan-query-child.mjs",
+            "S3_BUCKET": {
+              "Ref": "StorageResourceBucketD8B2FEFB",
+            },
+            "S3_REGION": {
+              "Ref": "AWS::Region",
+            },
+            "SEARCH_TYPE": "opensearch",
+            "SECRET_ARNS": {
+              "Fn::Join": [
+                "",
+                [
+                  "{"POSTGRES_USER":"",
+                  {
+                    "Ref": "SiteDatabaseSecret922A631F",
+                  },
+                  ":username::","POSTGRES_PASSWORD":"",
+                  {
+                    "Ref": "SiteDatabaseSecret922A631F",
+                  },
+                  ":password::","BETTER_AUTH_SECRET":"",
+                  {
+                    "Ref": "AuthSecretC13F30CE",
+                  },
+                  ""}",
+                ],
+              ],
+            },
+            "WEB_DB_POOL_MAX": "2",
+            "WORKER_WAKE_URL": {
+              "Fn::Join": [
+                "",
+                [
+                  "http://kukan-dev-citya-worker.",
+                  {
+                    "Ref": "SsmParameterValuekukandevsharedcloudmapnamespacenameC96584B6F00A464EAD1953AFF4B05118Parameter",
+                  },
+                  ":8080/wake",
+                ],
+              ],
+            },
+          },
+          "ExecutionRoleArn": {
+            "Fn::GetAtt": [
+              "WebFunctionExecutionRole95A706C9",
+              "Arn",
+            ],
+          },
+          "TelemetryConfig": {
+            "LoggingConfig": {
+              "LogGroup": {
+                "Ref": "WebFunctionLogsF2E8E13E",
+              },
+            },
+          },
+          "TimeoutSeconds": 900,
+        },
+      },
+      "Type": "AWS::Lambda::WebFunctionRevision",
+    },
+    "WorkerService2180CF14": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "Cluster": {
+          "Ref": "SsmParameterValuekukandevsharedecsclusternameC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [],
+            "Enable": false,
+            "Rollback": false,
+          },
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true,
+          },
+          "MaximumPercent": 200,
+          "MinimumHealthyPercent": 100,
+        },
+        "DeploymentController": {
+          "Type": "ECS",
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "EnableExecuteCommand": false,
+        "LaunchType": "FARGATE",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "SecurityGroups": [
+              {
+                "Ref": "SsmParameterValuekukandevsharedsgworkerC96584B6F00A464EAD1953AFF4B05118Parameter",
+              },
+            ],
+            "Subnets": [
+              {
+                "Fn::Select": [
+                  0,
+                  {
+                    "Fn::Split": [
+                      ",",
+                      {
+                        "Ref": "SsmParameterValuekukandevsharedvpcpublicsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                "Fn::Select": [
+                  1,
+                  {
+                    "Fn::Split": [
+                      ",",
+                      {
+                        "Ref": "SsmParameterValuekukandevsharedvpcpublicsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        "PropagateTags": "SERVICE",
+        "ServiceName": "kukan-dev-citya-worker",
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "WorkerServiceCloudmapService7AE9756B",
+                "Arn",
+              ],
+            },
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "TaskDefinition": {
+          "Ref": "WorkerServiceTaskDefB906A1F5",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "WorkerServiceCloudmapService7AE9756B": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "DnsConfig": {
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A",
+            },
+          ],
+          "NamespaceId": {
+            "Ref": "SsmParameterValuekukandevsharedcloudmapnamespaceidC96584B6F00A464EAD1953AFF4B05118Parameter",
+          },
+          "RoutingPolicy": "MULTIVALUE",
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1,
+        },
+        "Name": "kukan-dev-citya-worker",
+        "NamespaceId": {
+          "Ref": "SsmParameterValuekukandevsharedcloudmapnamespaceidC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::ServiceDiscovery::Service",
+    },
+    "WorkerServiceTaskCountTarget88861093": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "MaxCapacity": 2,
+        "MinCapacity": 1,
+        "ResourceId": {
+          "Fn::Join": [
+            "",
+            [
+              "service/",
+              {
+                "Ref": "SsmParameterValuekukandevsharedecsclusternameC96584B6F00A464EAD1953AFF4B05118Parameter",
+              },
+              "/",
+              {
+                "Fn::GetAtt": [
+                  "WorkerService2180CF14",
+                  "Name",
+                ],
+              },
+            ],
+          ],
+        },
+        "RoleARN": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService",
+            ],
+          ],
+        },
+        "ScalableDimension": "ecs:service:DesiredCount",
+        "ServiceNamespace": "ecs",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    },
+    "WorkerServiceTaskCountTargetJobsWaitingLowerAlarm8254B5A9": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C",
+          },
+        ],
+        "AlarmDescription": "Lower threshold scaling alarm",
+        "ComparisonOperator": "LessThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "Site",
+            "Value": "kukan-dev-citya",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "Threshold": 0,
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "WorkerServiceTaskCountTargetJobsWaitingLowerPolicy220F981C": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "PolicyName": "DevKukanSiteStackCityaWorkerServiceTaskCountTargetJobsWaitingLowerPolicyC7FE2601",
+        "PolicyType": "StepScaling",
+        "ScalingTargetId": {
+          "Ref": "WorkerServiceTaskCountTarget88861093",
+        },
+        "StepScalingPolicyConfiguration": {
+          "AdjustmentType": "ChangeInCapacity",
+          "Cooldown": 300,
+          "MetricAggregationType": "Maximum",
+          "StepAdjustments": [
+            {
+              "MetricIntervalUpperBound": 0,
+              "ScalingAdjustment": -1,
+            },
+          ],
+        },
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+    },
+    "WorkerServiceTaskCountTargetJobsWaitingUpperAlarm1FE0C796": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49",
+          },
+        ],
+        "AlarmDescription": "Upper threshold scaling alarm",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "Site",
+            "Value": "kukan-dev-citya",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "JobsWaiting",
+        "Namespace": "KUKAN/Worker",
+        "Period": 60,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "Threshold": 5,
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "WorkerServiceTaskCountTargetJobsWaitingUpperPolicyF8F31E49": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "WorkerServiceTaskRole09450576",
+      ],
+      "Properties": {
+        "PolicyName": "DevKukanSiteStackCityaWorkerServiceTaskCountTargetJobsWaitingUpperPolicy3F3762F7",
+        "PolicyType": "StepScaling",
+        "ScalingTargetId": {
+          "Ref": "WorkerServiceTaskCountTarget88861093",
+        },
+        "StepScalingPolicyConfiguration": {
+          "AdjustmentType": "ChangeInCapacity",
+          "Cooldown": 300,
+          "MetricAggregationType": "Maximum",
+          "StepAdjustments": [
+            {
+              "MetricIntervalLowerBound": 0,
+              "MetricIntervalUpperBound": 20,
+              "ScalingAdjustment": 1,
+            },
+            {
+              "MetricIntervalLowerBound": 20,
+              "ScalingAdjustment": 2,
+            },
+          ],
+        },
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+    },
+    "WorkerServiceTaskDefB906A1F5": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Environment": [
+              {
+                "Name": "NODE_ENV",
+                "Value": "production",
+              },
+              {
+                "Name": "POSTGRES_HOST",
+                "Value": {
+                  "Ref": "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+                },
+              },
+              {
+                "Name": "POSTGRES_PORT",
+                "Value": {
+                  "Ref": "SsmParameterValuekukandevshareddbportC96584B6F00A464EAD1953AFF4B05118Parameter",
+                },
+              },
+              {
+                "Name": "POSTGRES_DB",
+                "Value": "kukan_citya",
+              },
+              {
+                "Name": "POSTGRES_SSLMODE",
+                "Value": "verify-full",
+              },
+              {
+                "Name": "POSTGRES_SSLROOTCERT",
+                "Value": "/etc/ssl/rds-ca.crt",
+              },
+              {
+                "Name": "S3_BUCKET",
+                "Value": {
+                  "Ref": "StorageResourceBucketD8B2FEFB",
+                },
+              },
+              {
+                "Name": "S3_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
+                "Name": "SEARCH_TYPE",
+                "Value": "opensearch",
+              },
+              {
+                "Name": "WORKER_DB_POOL_MAX",
+                "Value": "5",
+              },
+              {
+                "Name": "HEALTH_PORT",
+                "Value": "8080",
+              },
+              {
+                "Name": "FETCH_DENY_PRIVATE_NETWORKS",
+                "Value": "true",
+              },
+              {
+                "Name": "WORKER_METRIC_SITE",
+                "Value": "kukan-dev-citya",
+              },
+              {
+                "Name": "AI_TYPE",
+                "Value": "bedrock",
+              },
+              {
+                "Name": "BEDROCK_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
+                "Name": "AI_EMBEDDING_MODEL",
+                "Value": "amazon.titan-embed-text-v2:0",
+              },
+              {
+                "Name": "BEDROCK_INFERENCE_PROFILES",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "{"amazon.titan-embed-text-v2:0":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfiles395676235E0393CD",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      "","jp.anthropic.claude-haiku-5-5":"",
+                      {
+                        "Fn::GetAtt": [
+                          "BedrockProfilesf9f8757952C133B1",
+                          "InferenceProfileArn",
+                        ],
+                      },
+                      ""}",
+                    ],
+                  ],
+                },
+              },
+              {
+                "Name": "OPENSEARCH_URL",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "https://",
+                      {
+                        "Ref": "SsmParameterValuekukandevsharedsearchendpointC96584B6F00A464EAD1953AFF4B05118Parameter",
+                      },
+                    ],
+                  ],
+                },
+              },
+              {
+                "Name": "OPENSEARCH_AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region",
+                },
+              },
+              {
+                "Name": "OPENSEARCH_REPLICAS",
+                "Value": "0",
+              },
+              {
+                "Name": "OPENSEARCH_INDEX_PREFIX",
+                "Value": "kukan-dev-citya",
+              },
+              {
+                "Name": "WORKER_WAKE_URL",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "http://kukan-dev-citya-worker.",
+                      {
+                        "Ref": "SsmParameterValuekukandevsharedcloudmapnamespacenameC96584B6F00A464EAD1953AFF4B05118Parameter",
+                      },
+                      ":8080/wake",
+                    ],
+                  ],
+                },
+              },
+            ],
+            "Essential": true,
+            "HealthCheck": {
+              "Command": [
+                "CMD-SHELL",
+                "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1",
+              ],
+              "Interval": 30,
+              "Retries": 3,
+              "StartPeriod": 60,
+              "Timeout": 5,
+            },
+            "Image": {
+              "Fn::Sub": "123456789012.dkr.ecr.ap-northeast-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-ap-northeast-1:ASSET_HASH",
+            },
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "WorkerServiceWorkerLogs78273405",
+                },
+                "awslogs-region": "ap-northeast-1",
+                "awslogs-stream-prefix": "worker",
+              },
+            },
+            "Memory": 1024,
+            "Name": "Worker",
+            "PortMappings": [
+              {
+                "ContainerPort": 8080,
+                "Protocol": "tcp",
+              },
+            ],
+            "Secrets": [
+              {
+                "Name": "POSTGRES_USER",
+                "ValueFrom": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "SiteDatabaseSecret922A631F",
+                      },
+                      ":username::",
+                    ],
+                  ],
+                },
+              },
+              {
+                "Name": "POSTGRES_PASSWORD",
+                "ValueFrom": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "SiteDatabaseSecret922A631F",
+                      },
+                      ":password::",
+                    ],
+                  ],
+                },
+              },
+              {
+                "Name": "BETTER_AUTH_SECRET",
+                "ValueFrom": {
+                  "Ref": "AuthSecretC13F30CE",
+                },
+              },
+            ],
+            "StopTimeout": 120,
+          },
+        ],
+        "Cpu": "256",
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "WorkerServiceTaskDefExecutionRoleF35FA187",
+            "Arn",
+          ],
+        },
+        "Family": "DevKukanSiteStackCityaWorkerServiceTaskDefED932210",
+        "Memory": "1024",
+        "NetworkMode": "awsvpc",
+        "RequiresCompatibilities": [
+          "FARGATE",
+        ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "WorkerServiceTaskRole09450576",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "WorkerServiceTaskDefExecutionRoleDefaultPolicyAC0857DE": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ecr:ap-northeast-1:123456789012:repository/cdk-hnb659fds-container-assets-123456789012-ap-northeast-1",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "ecr:GetAuthorizationToken",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WorkerServiceWorkerLogs78273405",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "SiteDatabaseSecret922A631F",
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "AuthSecretC13F30CE",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "WorkerServiceTaskDefExecutionRoleDefaultPolicyAC0857DE",
+        "Roles": [
+          {
+            "Ref": "WorkerServiceTaskDefExecutionRoleF35FA187",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "WorkerServiceTaskDefExecutionRoleF35FA187": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WorkerServiceTaskRole09450576": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "RoleName": "kukan-dev-citya-worker-task",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WorkerServiceTaskRoleDefaultPolicyACF3EF5D": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:*ObjectVersion*",
+                "s3:ListBucketVersions",
+              ],
+              "Effect": "Deny",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageResourceBucketD8B2FEFB",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageResourceBucketD8B2FEFB",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:",
+                      {
+                        "Ref": "AWS::Region",
+                      },
+                      "::foundation-model/amazon.titan-embed-text-v2:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::GetAtt": [
+                    "BedrockProfiles395676235E0393CD",
+                    "InferenceProfileArn",
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "es:ESHttp*",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Ref": "SsmParameterValuekukandevsharedsearcharnC96584B6F00A464EAD1953AFF4B05118Parameter",
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "WorkerServiceTaskRoleDefaultPolicyACF3EF5D",
+        "Roles": [
+          {
+            "Ref": "WorkerServiceTaskRole09450576",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "WorkerServiceWorkerLogs78273405": {
+      "DeletionPolicy": "Retain",
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "worker-service",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Retain",
     },
   },

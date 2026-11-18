@@ -299,13 +299,14 @@ describe('typical (medium / aurora / OpenSearch / bedrock defaults)', () => {
       expect(policy).toContain(':root')
     })
 
-    it('gives the one site a role on the default index prefix, mapped to both task roles', () => {
+    it('gives the one site a role on the default index prefix, mapped to its web and worker roles', () => {
       expect(searchSiteRoles(template)).toEqual([
         {
           name: 'kukan-dev',
           indexPatterns: ['kukan-search*'],
           backendRoles: [
             `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-web-task`,
+            `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-web-fn-exec`,
             `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-worker-task`,
           ],
         },

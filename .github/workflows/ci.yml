@@ -735,17 +735,25 @@ jobs:
             name=${ref#public.ecr.aws/docker/library/}
             contexts+=(--build-context "$ref=docker-image://mirror.gcr.io/library/${name%%[:@]*}@${ref#*@}")
           done
+          build() {
+            local name=$1; shift
+            for attempt in 1 2 3; do
+              docker buildx build "${contexts[@]}" "$@" . && return
+              [ "$attempt" = 3 ] && exit 1
+              echo "::warning::build of $name failed, retrying"
+              sleep 10
+            done
+          }
           for arch in amd64 arm64; do
             for target in worker web; do
-              for attempt in 1 2 3; do
-                docker buildx build --platform "linux/$arch" --target "$target" \
-                  "${contexts[@]}" --tag "kukan-$target:$arch" --load . && break
-                [ "$attempt" = 3 ] && exit 1
-                echo "::warning::build of $target ($arch) failed, retrying"
-                sleep 10
-              done
+              build "$target ($arch)" --platform "linux/$arch" --target "$target" \
+                --tag "kukan-$target:$arch" --load
             done
           done
+          # The web as Lambda Web Functions take it (ADR-068): a zip, arm64 glibc
+          build web-function --target web-function --output type=local,dest=/tmp/web-function
+          mkdir /tmp/web-function/task
+          unzip -q /tmp/web-function/web-function.zip -d /tmp/web-function/task
 
       # No env is given on purpose. The entrypoint validates its environment
       # right after its imports resolve, so stopping there proves every module —
@@ -764,6 +772,31 @@ jobs:
             fi
             echo "boot smoke ($arch): imports resolved, stopped at env validation"
           done
+
+      # The zip runs on another libc than the images and loads DuckDB from its
+      # own paths, so it gets the same two proofs: its DuckDB loads every
+      # extension from the zip, and the server starts as Web Functions start
+      # it and answers its health check. On Debian for its glibc, as
+      # /var/task, read-only like the code directory of a Web Function.
+      - name: Smoke-test the Web Function zip
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          digest=$(sed -nE 's/^FROM --platform=linux\/arm64 [^ ]+@(sha256:[0-9a-f]+).*/\1/p' Dockerfile)
+          image="mirror.gcr.io/library/node@$digest"
+          run() { docker run --rm --platform linux/arm64 -v /tmp/web-function/task:/var/task:ro "$@"; }
+          run -w /var/task/node_modules/.pnpm/node_modules "$image" node --input-type=module -e "
+            const { DuckDBInstance } = await import('@duckdb/node-api');
+            const i = await DuckDBInstance.create(':memory:', { extension_directory: '/var/task/duckdb-extensions', autoinstall_known_extensions: 'false' });
+            const c = await i.connect();
+            for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await c.run('LOAD ' + e);
+            console.log('web-function: DuckDB loaded its extensions')"
+          run -w /var/task -e AWS_LAMBDA_HTTP_ENDPOINT=127.0.0.1:3000 -e NODE_ENV=production "$image" sh -c '
+            node apps/web/start.mjs & server=$!
+            for i in $(seq 60); do
+              node -e "fetch(\"http://127.0.0.1:3000/api/health\").then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && { echo "web-function: health 200"; kill $server; exit 0; }
+              sleep 1
+            done
+            echo "web-function: the server did not answer its health check" >&2; exit 1'
 
       # The worker reads a table's sample rows for its summaries through the
       # query process (ADR-053), and a failure there is only a warning — the

@@ -20,6 +20,7 @@ import {
   rejectBlankEdgeArns,
   resolveEnv,
   resolveWafConfig,
+  resolveWebCompute,
   validateSites,
   type EnvironmentConfig,
   type ResolvedWafConfig,
@@ -108,6 +109,20 @@ export class KukanStage extends cdk.Stage {
       return
     }
 
+    // New environments take the multi-site shape; the all-in-one stack stays
+    // as it was for the ones already deployed in it
+    if (resolveWebCompute(config) === 'web-function') {
+      throw new Error(
+        `Environment "${id}": webCompute "web-function" needs the multi-site shape — ` +
+          'declare the site under `sites` (ADR-041, ADR-068)'
+      )
+    }
+    // The all-in-one stack has its own ALB and no shared one to keep or drop
+    for (const key of ['sharedAlb', 'webFunctionNetwork'] as const) {
+      if (config[key] !== undefined) {
+        throw new Error(`Environment "${id}": ${key} applies to the multi-site shape only`)
+      }
+    }
     rejectBlankEdgeArns(config, `Environment "${id}"`)
     const globalStack = this.createGlobalStack(config, waf, account)
 

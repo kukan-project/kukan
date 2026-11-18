@@ -15,7 +15,7 @@ import * as logs from 'aws-cdk-lib/aws-logs'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
-import type { KukanConfig } from '../config.js'
+import { webSizing, type KukanConfig } from '../config.js'
 import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName, taskRoleName } from '../naming.js'
 import { grantCurrentObjects } from './storage.js'
@@ -38,12 +38,9 @@ export interface SharedListenerAttachment {
   siteKey: string
 }
 
-export interface WebServiceProps {
+/** What the web needs to run, whether on Fargate or on a Web Function. */
+export interface WebAppProps {
   config: KukanConfig
-  cluster: ecs.ICluster
-  /** SG of the site's own ALB. Required unless `sharedListener` is set. */
-  albSecurityGroup?: ec2.ISecurityGroup
-  webSecurityGroup: ec2.ISecurityGroup
   database: DbAccess
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
@@ -54,14 +51,84 @@ export interface WebServiceProps {
   searchIndexPrefix?: string
   /** Docker build args for the web image (KUKAN_BRAND, ADR-042). */
   imageBuildArgs?: Record<string, string>
-  /** Attach to the shared ALB instead of creating one (ADR-049). */
-  sharedListener?: SharedListenerAttachment
   /** Secrets Manager secret containing GA4 property ID (numeric) */
   ga4PropertyIdSecret?: secretsmanager.ISecret
   /** Secrets Manager secret containing GA4 service account email */
   ga4ClientEmailSecret?: secretsmanager.ISecret
   /** Secrets Manager secret containing GA4 service account private key */
   ga4PrivateKeySecret?: secretsmanager.ISecret
+}
+
+export interface WebServiceProps extends WebAppProps {
+  cluster: ecs.ICluster
+  /** SG of the site's own ALB. Required unless `sharedListener` is set. */
+  albSecurityGroup?: ec2.ISecurityGroup
+  webSecurityGroup: ec2.ISecurityGroup
+  /** Attach to the shared ALB instead of creating one (ADR-049). */
+  sharedListener?: SharedListenerAttachment
+}
+
+/** The web's environment and secrets, with `role` granted what they name. */
+export interface WebAppSettings {
+  environment: Record<string, string>
+  secrets: Record<string, ecs.Secret>
+}
+
+/**
+ * The web's settings, the same on Fargate and on a Web Function (ADR-068):
+ * `role` is the task role or the execution role. Secrets are returned for
+ * the caller to deliver — ECS injects them, a Web Function reads them at
+ * startup — and to grant.
+ */
+export function configureWebApp(props: WebAppProps, role: iam.IRole): WebAppSettings {
+  const {
+    config,
+    database,
+    authSecret,
+    bucket,
+    searchDomain,
+    ga4PropertyIdSecret,
+    ga4ClientEmailSecret,
+    ga4PrivateKeySecret,
+  } = props
+
+  grantCurrentObjects(bucket, role)
+
+  const environment: Record<string, string> = {
+    NODE_ENV: 'production',
+    ...database.buildPostgresEnvironment(),
+    S3_BUCKET: bucket.bucketName,
+    S3_REGION: cdk.Aws.REGION,
+    SEARCH_TYPE: searchDomain ? 'opensearch' : 'postgres',
+    WEB_DB_POOL_MAX: String(webSizing(config, config.webCompute).pool),
+    // The viewer-request function sets it on every request (cdn.ts)
+    CLIENT_IP_HEADER: EDGE_CLIENT_IP_HEADER,
+  }
+  configureBedrockEmbedding(config, props.bedrockProfiles, role, environment)
+  configureBedrockCompletion(config, props.bedrockProfiles, role, environment)
+  if (searchDomain) {
+    connectSearch(config, searchDomain, role, environment, props.searchIndexPrefix)
+  }
+  if (config.domainName) {
+    environment.BETTER_AUTH_URL = `https://${config.domainName}`
+  }
+  if (config.timeZone) {
+    environment.TIME_ZONE = config.timeZone
+  }
+  const secrets: Record<string, ecs.Secret> = {
+    ...database.buildPostgresSecrets(),
+    BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
+  }
+  if (ga4PropertyIdSecret) {
+    secrets.GA4_PROPERTY_ID = ecs.Secret.fromSecretsManager(ga4PropertyIdSecret)
+  }
+  if (ga4ClientEmailSecret) {
+    secrets.GA4_CLIENT_EMAIL = ecs.Secret.fromSecretsManager(ga4ClientEmailSecret)
+  }
+  if (ga4PrivateKeySecret) {
+    secrets.GA4_PRIVATE_KEY = ecs.Secret.fromSecretsManager(ga4PrivateKeySecret)
+  }
+  return { environment, secrets }
 }
 
 export class WebServiceConstruct extends Construct {
@@ -77,19 +144,7 @@ export class WebServiceConstruct extends Construct {
   constructor(scope: Construct, id: string, props: WebServiceProps) {
     super(scope, id)
 
-    const {
-      config,
-      cluster,
-      albSecurityGroup,
-      webSecurityGroup,
-      database,
-      authSecret,
-      bucket,
-      searchDomain,
-      ga4PropertyIdSecret,
-      ga4ClientEmailSecret,
-      ga4PrivateKeySecret,
-    } = props
+    const { config, cluster, albSecurityGroup, webSecurityGroup } = props
 
     // Docker image (built and pushed automatically by CDK).
     // CDK auto-loads the build context's .dockerignore into the asset-hash
@@ -118,45 +173,8 @@ export class WebServiceConstruct extends Construct {
       }),
     })
 
-    // Grant permissions to task role
-    grantCurrentObjects(bucket, taskDef.taskRole)
-
-    // Environment variables
-    const environment: Record<string, string> = {
-      NODE_ENV: 'production',
-      ...database.buildPostgresEnvironment(),
-      S3_BUCKET: bucket.bucketName,
-      S3_REGION: cdk.Aws.REGION,
-      SEARCH_TYPE: searchDomain ? 'opensearch' : 'postgres',
-      WEB_DB_POOL_MAX: String(config.dbPool.webMax),
-      // The viewer-request function sets it on every request (cdn.ts)
-      CLIENT_IP_HEADER: EDGE_CLIENT_IP_HEADER,
-    }
-    configureBedrockEmbedding(config, props.bedrockProfiles, taskDef, environment)
-    configureBedrockCompletion(config, props.bedrockProfiles, taskDef, environment)
-    if (searchDomain) {
-      connectSearch(config, searchDomain, taskDef, environment, props.searchIndexPrefix)
-    }
-    if (config.domainName) {
-      environment.BETTER_AUTH_URL = `https://${config.domainName}`
-    }
-    if (config.timeZone) {
-      environment.TIME_ZONE = config.timeZone
-    }
-    // Secrets injected into the container
-    const containerSecrets: Record<string, ecs.Secret> = {
-      ...database.buildPostgresSecrets(),
-      BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
-    }
-    if (ga4PropertyIdSecret) {
-      containerSecrets.GA4_PROPERTY_ID = ecs.Secret.fromSecretsManager(ga4PropertyIdSecret)
-    }
-    if (ga4ClientEmailSecret) {
-      containerSecrets.GA4_CLIENT_EMAIL = ecs.Secret.fromSecretsManager(ga4ClientEmailSecret)
-    }
-    if (ga4PrivateKeySecret) {
-      containerSecrets.GA4_PRIVATE_KEY = ecs.Secret.fromSecretsManager(ga4PrivateKeySecret)
-    }
+    // Secrets are injected into the container
+    const { environment, secrets: containerSecrets } = configureWebApp(props, taskDef.taskRole)
 
     // Container
     this.webContainer = taskDef.addContainer('Web', {

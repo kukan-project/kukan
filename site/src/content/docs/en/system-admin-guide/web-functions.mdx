@@ -1,0 +1,114 @@
+---
+title: Running on Lambda Web Functions (experimental)
+description: Running the web on Lambda Web Functions instead of ECS Fargate, and the two deploys that move an existing environment
+sidebar:
+  order: 5
+---
+
+In an AWS environment the web runs on ECS Fargate behind the shared ALB by default. Set
+`webCompute: 'web-function'` in the environment entry and the web runs on **Lambda Web Functions**
+instead (the worker stays on Fargate). The design is in the repository's
+`docs/adr/en/068-lambda-web-functions.md` (ADR-068).
+
+:::caution[Experimental]
+The default is `fargate` for now. **A future release will make `web-function` the default.**
+Web Functions work with the multi-site shape only, so move any single-site environment (one
+that declares no `sites`) to the [multi-site shape](/en/system-admin-guide/multi-site/#migrating-from-the-single-site-shape)
+before then. An environment that should stay on Fargate after the default changes sets
+`webCompute: 'fargate'` explicitly.
+:::
+
+## What changes
+
+- The web runs as a Web Function behind CloudFront. CloudFront signs its calls with OAC, and the
+  Web Function takes calls from that distribution only
+- The web reaches the DB, OpenSearch and the worker inside the VPC through a network connector of
+  each site's own. It reaches the internet over IPv6, so there is no NAT Gateway. Bedrock Runtime,
+  which has no IPv6, is reached through an interface endpoint in the VPC (one AZ, about $10 a month in Tokyo)
+- The shared ALB is no longer used. Once every site has moved, its hourly charge (about $25 a month) goes
+- You pay for the CPU time used and for the memory used while an instance is alive. Estimated from
+  a small deployment's figures, that is about $24 a month less for one site and about $42 for three
+  (ADR-068, "Cost")
+
+## Requirements
+
+An environment can use it when all of the following hold. A setting that breaks one stops at
+synth (the region alone fails at deploy).
+
+| Requirement                                                                    | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The multi-site shape (`sites` declared)                                        | The site stacks use a shared network                                                                                                                                                                                                                                                                                                                                                                                                                |
+| A `domainName` on every site                                                   | With the CloudFront domain as the auth URL (`BETTER_AUTH_URL`), CloudFront would point at the function that names it: a cycle                                                                                                                                                                                                                                                                                                                       |
+| A region with Web Functions (Tokyo, for example; not Osaka)                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| No `bedrock.region`, or the environment's own                                  | Bedrock is reached through an endpoint in the VPC, which serves its own region only                                                                                                                                                                                                                                                                                                                                                                 |
+| AI hosts outside the VPC (`OPENAI_BASE_URL`, `OLLAMA_URL`) reachable over IPv6 | With no NAT, an IPv4-only host on the internet cannot be reached. Hosts inside the VPC can                                                                                                                                                                                                                                                                                                                                                          |
+| Docker where you deploy from                                                   | The web's zip is built with Docker. A pipeline synthesizes on an ARM CodeBuild with Docker on (with `cpuArchitecture` `arm64`, already before the switch; an `x86_64` environment updates its pipeline first, by setting `webCompute` locally and running `npx cdk deploy --exclusively KukanPipeline` before pushing the switch). A manual deploy needs Docker locally (on an x86 machine it runs arm64 under QEMU, which Docker Desktop includes) |
+
+The zip may be at most 512 MB unzipped (a Web Functions limit that cannot be raised); the build fails above it.
+
+## Sizing
+
+Set it with `webFunction` in `overrides` (environment or site).
+
+| Field          | small | medium | large | Meaning                                                                                                                                    |
+| -------------- | ----- | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `maxInstances` | 4     | 10     | 20    | The most instances running at once. One instance takes many requests at once; with all of them busy, further requests are refused with 429 |
+| `dbPoolMax`    | 2     | 5      | 10    | DB connections one instance may hold (in place of `dbPool.webMax`)                                                                         |
+
+The DB connection budget counts `maxInstances × dbPoolMax`. A web-function environment does not
+read `web` or `dbPool.webMax`, and setting them warns at synth (as `webFunction` does in a fargate one).
+
+## A new environment
+
+Set `webCompute: 'web-function'` and deploy. No shared ALB is created.
+
+```ts
+demo: {
+  account: '123456789012',
+  scale: 'small',
+  webCompute: 'web-function',
+  sites: [{ name: 'main', domainName: 'catalog.example.jp', /* ... */ }],
+},
+```
+
+## Moving an existing Fargate environment (two deploys)
+
+A pipeline deploys the shared stack before the site stacks. So adding something shared takes one
+deploy, but removing something a site still uses can only happen in a deploy after the sites have
+moved. The move is therefore two deploys.
+
+1. **First:** add `webCompute: 'web-function'` and **`sharedAlb: true`**, and deploy. The shared stack
+   adds the network Web Functions use and every site moves to a Web Function. The shared ALB stays.
+   ```ts
+   webCompute: 'web-function',
+   sharedAlb: true, // remove in the second deploy
+   ```
+2. Check each site's pages, sign-in and API.
+3. **Second:** remove the `sharedAlb: true` line and deploy. The shared ALB and CloudFront VPC origin go.
+
+Leaving `sharedAlb: true` out of the first deploy has the shared stack remove an ALB still in use:
+the sites can then be unreachable until their stacks move, and resources it could not remove can be left behind.
+
+## Moving back to Fargate (two deploys)
+
+Moving back takes two deploys for the same reason.
+
+1. **First:** set `webCompute: 'fargate'` and **`webFunctionNetwork: true`**, and deploy. The shared ALB
+   is created and every site moves back to Fargate. The network Web Functions use stays.
+   ```ts
+   webCompute: 'fargate',
+   webFunctionNetwork: true, // remove in the second deploy
+   ```
+2. Check that the network interfaces of the connectors the first deploy removed are all gone.
+   Lambda-managed interfaces can outlive their connector for a while, and the second deploy fails
+   while any remain. Filter by the connector security group (the value of the SSM parameter
+   `/kukan/<environment>/shared/sg/web-connector`), and go on once nothing comes back.
+   ```bash
+   aws ec2 describe-network-interfaces --filters Name=group-id,Values=<security group ID> \
+     --query 'NetworkInterfaces[].NetworkInterfaceId'
+   ```
+3. **Second:** remove the `webFunctionNetwork: true` line and deploy. The network Web Functions use
+   (IPv6 on the public subnets, the connector security group, the Bedrock Runtime endpoint) goes.
+
+Neither `sharedAlb` nor `webFunctionNetwork` can be `false` where its `webCompute` needs it (synth stops).
+Both apply to the multi-site shape only.

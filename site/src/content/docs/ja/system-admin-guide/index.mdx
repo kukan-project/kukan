@@ -107,6 +107,8 @@ node apps/worker/dist/drop-shared-lake-catalog.js --commit   # 削除
 ### AWS デプロイ
 
 KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate** 構成で AWS にデプロイします。
+環境の設定で、web を Lambda Web Functions で動かすこともできます（試験的。将来のリリースで既定にする予定。
+[Lambda Web Functions で動かす](/ja/system-admin-guide/web-functions/)）。
 デプロイは **CDK Pipelines（AWS CodePipeline）で自動化**され、CodeConnections（GitHub App）をソースに、
 対象ブランチへの push を起点に各環境（dev / prd 等）を CDK Stage としてデプロイします。
 
@@ -122,6 +124,7 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
 - **CloudFront** — CDN・WAF・TLS 終端（最前面）
 - **ALB（internal）** — ロードバランサー（CloudFront VPC Origin 経由でのみ到達）
 - **ECS Fargate** — Web アプリケーション + Pipeline Worker
+- **Lambda Web Functions** — Web アプリケーション（`webCompute: 'web-function'` の環境。このとき ALB は使わない）
 - **Aurora Serverless v2 / RDS** — PostgreSQL データベース（ジョブキューもここに置く）
 - **S3** — ファイルストレージ
 - **Cloud Map** — Web が Worker に通知するための名前解決（環境に 1 つのプライベート DNS 名前空間）

@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url'
 import * as cdk from 'aws-cdk-lib'
 import * as cr from 'aws-cdk-lib/custom-resources'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
-import type * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs'
@@ -19,7 +18,7 @@ import type {
   SearchSecurityProperties,
   SiteSearchRole,
 } from '../lambda/search-security-handler/index.js'
-import { resourceName, taskRoleName } from '../naming.js'
+import { resourceName, taskRoleName, webFunctionRoleName } from '../naming.js'
 
 /** One site on the domain (ADR-069). */
 export interface SearchTenant {
@@ -62,11 +61,11 @@ export interface SearchDomainRef {
 export function connectSearch(
   config: KukanConfig,
   domain: SearchDomainRef,
-  taskDef: ecs.TaskDefinition,
+  role: iam.IRole,
   environment: Record<string, string>,
   indexPrefix: string | undefined
 ) {
-  taskDef.taskRole.addToPrincipalPolicy(
+  role.addToPrincipalPolicy(
     new iam.PolicyStatement({
       actions: ['es:ESHttp*'],
       resources: [`${domain.arn}/*`],
@@ -232,13 +231,8 @@ export class SearchConstruct extends Construct {
       }),
     })
 
-    const taskRoleArn = (prefix: string, service: 'web' | 'worker') =>
-      stack.formatArn({
-        service: 'iam',
-        region: '',
-        resource: 'role',
-        resourceName: taskRoleName(prefix, service),
-      })
+    const roleArn = (name: string) =>
+      stack.formatArn({ service: 'iam', region: '', resource: 'role', resourceName: name })
     const roles: SiteSearchRole[] = tenants.map((tenant) => ({
       Name: tenant.sitePrefix,
       Permissions: {
@@ -250,9 +244,12 @@ export class SearchConstruct extends Construct {
           },
         ],
       },
+      // The Web Function role whatever webCompute says, so a switch either way
+      // never leaves the web unmapped between the shared and the site deploy
       BackendRoles: [
-        taskRoleArn(tenant.sitePrefix, 'web'),
-        taskRoleArn(tenant.sitePrefix, 'worker'),
+        roleArn(taskRoleName(tenant.sitePrefix, 'web')),
+        roleArn(webFunctionRoleName(tenant.sitePrefix)),
+        roleArn(taskRoleName(tenant.sitePrefix, 'worker')),
       ],
     }))
 

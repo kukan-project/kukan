@@ -6,7 +6,6 @@ import { createHash } from 'node:crypto'
 import * as cdk from 'aws-cdk-lib'
 import * as bedrock from 'aws-cdk-lib/aws-bedrock'
 import * as iam from 'aws-cdk-lib/aws-iam'
-import type * as ecs from 'aws-cdk-lib/aws-ecs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
@@ -63,7 +62,7 @@ export class BedrockProfilesConstruct extends Construct {
 export function configureBedrockEmbedding(
   config: KukanConfig,
   profiles: BedrockProfiles,
-  taskDef: ecs.FargateTaskDefinition,
+  role: iam.IRole,
   environment: Record<string, string>
 ): void {
   if (!config.bedrock) {
@@ -86,12 +85,12 @@ export function configureBedrockEmbedding(
 
   // The app swaps in a profile where it has one (BEDROCK_INFERENCE_PROFILES)
   if (profiles.size) {
-    environment.BEDROCK_INFERENCE_PROFILES = cdk.Stack.of(taskDef).toJsonString(
+    environment.BEDROCK_INFERENCE_PROFILES = cdk.Stack.of(role).toJsonString(
       Object.fromEntries(profiles)
     )
   }
   const profile = profiles.get(embeddingModel)
-  taskDef.taskRole.addToPrincipalPolicy(
+  role.addToPrincipalPolicy(
     new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       // Foundation-model ARNs have no account segment
@@ -120,7 +119,7 @@ export function configureBedrockEmbedding(
 export function configureBedrockCompletion(
   config: KukanConfig,
   profiles: BedrockProfiles,
-  taskDef: ecs.FargateTaskDefinition,
+  role: iam.IRole,
   environment: Record<string, string>
 ): void {
   if (!config.bedrock) return
@@ -150,11 +149,11 @@ export function configureBedrockCompletion(
     }
   }
 
-  taskDef.taskRole.addToPrincipalPolicy(
+  role.addToPrincipalPolicy(
     new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: invoked })
   )
   if (profiledModels.length) {
-    taskDef.taskRole.addToPrincipalPolicy(
+    role.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel'],
         resources: profiledModels,

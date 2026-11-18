@@ -3,6 +3,18 @@
 #   docker build --target web -t kukan-web .
 #   docker build --target worker -t kukan-worker .
 
+# ---- RDS CA bundle ----
+# CA bundle the AWS deployment verifies RDS and Aurora against (CDK points
+# POSTGRES_SSLROOTCERT at it). The checksum fails the build when AWS changes the
+# bundle, rather than letting it change unseen: fetch the new one, check what
+# it adds, and bump the digest. Not *.pem: Lambda Web Functions' deploy drops
+# those from its zip (ADR-068). ADD --checksum needs the Dockerfile frontend
+# 1.6 or later. Its own stage so the images and the Web Function zip take the
+# same file.
+FROM scratch AS rds-ca
+ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b \
+  https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /rds-ca.crt
+
 # ---- Base (what the images run on: upgraded OS) ----
 # Pinned by digest for a reproducible, tamper-evident base (Scorecard
 # Pinned-Dependencies). The digest below is node 24.22.2 on alpine 3.24.
@@ -13,16 +25,7 @@
 # The other places that name the Node version are listed in docs/node-version.md.
 FROM public.ecr.aws/docker/library/node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS base
 RUN apk upgrade --no-cache
-# CA bundle the AWS deployment verifies RDS and Aurora against (CDK points
-# POSTGRES_SSLROOTCERT here). The checksum fails the build when AWS changes the
-# bundle, rather than letting it change unseen: fetch the new one, check what
-# it adds, and bump the digest. A remote ADD lands as 600, which the images'
-# non-root user could not read, and --chmod would give a directory it creates
-# the file's mode too, so the bundle goes into one that exists. Not *.pem:
-# Lambda Web Functions' deploy drops those from its zip (ADR-068). ADD
-# --checksum needs the Dockerfile frontend 1.6 or later.
-ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b \
-  https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/rds-ca.crt
+COPY --from=rds-ca /rds-ca.crt /etc/ssl/rds-ca.crt
 WORKDIR /app
 
 # ---- Build base (the machine's own platform) ----
@@ -187,3 +190,79 @@ RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/
 ENV NODE_ENV=production HEALTH_PORT=8080
 EXPOSE 8080
 CMD ["node", "apps/worker/dist/index.js"]
+
+# ---- Web Function (Lambda Web Functions, ADR-068) ----
+# The web as a zip for Web Functions, which run Amazon Linux 2023 on arm64:
+# glibc, where the images are musl. Built only when asked for
+# (`--target web-function`, from the CDK asset of a `webCompute: 'web-function'`
+# site); the image targets above never reach these stages.
+#
+# The install again with the glibc arm64 binaries beside the musl ones, so the
+# standalone trace carries them. On the build platform, like `deps`.
+FROM deps AS web-function-deps
+RUN sed -i 's/^  libc: \[musl\]$/  libc: [musl, glibc]/' pnpm-workspace.yaml \
+  && grep -q 'libc: \[musl, glibc\]' pnpm-workspace.yaml \
+  && pnpm install --frozen-lockfile
+
+FROM web-function-deps AS web-function-build
+ARG KUKAN_BRAND
+ENV KUKAN_BRAND=${KUKAN_BRAND}
+COPY . .
+RUN pnpm build --filter='@kukan/web...'
+
+# Laid out as the image's /app, under what will be /var/task, keeping only
+# the glibc arm64 binaries. Next.js traces the DuckDB addon but not
+# libduckdb.so, which goes beside it: duckdb.node looks there ($ORIGIN), so no
+# LD_LIBRARY_PATH. File work only, on the build platform.
+FROM build-base AS web-function-files
+WORKDIR /out
+COPY --from=web-function-build /app/apps/web/.next/standalone ./
+COPY --from=web-function-build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=web-function-build /app/apps/web/public ./apps/web/public
+COPY --from=web-function-build /app/apps/web/start.mjs ./apps/web/start.mjs
+COPY --from=web-function-build /app/packages/api/dist/services/query/query-child.mjs ./node_modules/.pnpm/kukan-query-child.mjs
+COPY --from=rds-ca /rds-ca.crt ./rds-ca.crt
+RUN --mount=type=bind,from=web-function-build,source=/app/node_modules/.pnpm,target=/pnpm \
+  cd node_modules/.pnpm \
+  && for d in @duckdb+node-bindings-linux-* @img+sharp-* \
+      node_modules/@duckdb/node-bindings-linux-* node_modules/@img/sharp-*; do \
+      case "$d" in *linux-arm64|*linux-arm64@*) ;; *) rm -rf "$d" ;; esac; \
+    done \
+  && find /out -type l | while read -r link; do [ -e "$link" ] || rm "$link"; done \
+  && cp /pnpm/@duckdb+node-bindings-linux-arm64@*/node_modules/@duckdb/node-bindings-linux-arm64/libduckdb.so \
+    @duckdb+node-bindings-linux-arm64@*/node_modules/@duckdb/node-bindings-linux-arm64/
+
+# Just the DuckDB packages, so the install below is cached while they stay
+# the same, whatever else in the app or its brand changes
+FROM build-base AS web-function-duckdb
+RUN --mount=type=bind,from=web-function-files,source=/out/node_modules/.pnpm,target=/pnpm \
+  mkdir -p /duckdb/.pnpm/node_modules \
+  && cp -a /pnpm/@duckdb+* /duckdb/.pnpm/ \
+  && cp -a /pnpm/node_modules/@duckdb /duckdb/.pnpm/node_modules/
+
+# DuckDB fetches extensions on first use, and a Web Function has neither the
+# IPv4 egress nor a writable code directory for that (as the images, above).
+# Installed by the binding that loads them, so on arm64 glibc: a Debian image
+# for its glibc and Node (Web Functions bring their own Node). The slim image
+# has no CA bundle for the download; Alpine's sits at the path Debian's would.
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS web-function-extensions
+COPY --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=web-function-duckdb /duckdb /app/node_modules
+ENV DUCKDB_EXTENSION_DIRECTORY=/duckdb-extensions
+WORKDIR /app/node_modules/.pnpm/node_modules
+RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
+
+# Zipped on the build platform, keeping pnpm's symlinks (-y). Web Functions
+# take at most 512 MB unzipped, not adjustable: fail here rather than at the
+# deploy (448 MB when this was written, 111 MB of it public/vendor).
+FROM build-base AS web-function-zip
+RUN apk add --no-cache zip
+COPY --from=web-function-files /out /out
+COPY --from=web-function-extensions /duckdb-extensions /out/duckdb-extensions
+RUN size=$(du -sm /out | cut -f1) \
+  && echo "web-function: ${size} MB unzipped" \
+  && if [ "$size" -gt 512 ]; then echo 'over the 512 MB Web Functions take' >&2; exit 1; fi \
+  && cd /out && zip -qry -X /web-function.zip .
+
+FROM scratch AS web-function
+COPY --from=web-function-zip /web-function.zip /

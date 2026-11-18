@@ -105,28 +105,39 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
       dbAccessSecurityGroup: importSg('DbAccessSg', 'sg/db-access'),
     })
 
-    const albSecurityGroup = importSg('AlbSg', 'sg/alb')
+    // Only the shape in use reads the ALB or the connector SG, so that the
+    // second deploy of a switch can drop the other from the shared stack
+    // (config sharedAlb / webFunctionNetwork)
+    const onWebFunction = config.webCompute === 'web-function'
     const site = composeSite(
       this,
       config,
       {
         cluster,
         serviceNamespace: importNamespace(),
-        sharedAlb: {
-          listener: elbv2.ApplicationListener.fromApplicationListenerAttributes(
-            this,
-            'SharedAlbListener',
-            { listenerArn: read('alb/listener-arn'), securityGroup: albSecurityGroup }
-          ),
-          dnsName: read('alb/dns-name'),
-          vpcOrigin: cloudfront.VpcOrigin.fromVpcOriginId(
-            this,
-            'SharedVpcOrigin',
-            read('cloudfront/vpc-origin-id')
-          ),
-          priority: resolveAlbPriority(props.site),
-        },
+        sharedAlb: onWebFunction
+          ? undefined
+          : {
+              listener: elbv2.ApplicationListener.fromApplicationListenerAttributes(
+                this,
+                'SharedAlbListener',
+                {
+                  listenerArn: read('alb/listener-arn'),
+                  securityGroup: importSg('AlbSg', 'sg/alb'),
+                }
+              ),
+              dnsName: read('alb/dns-name'),
+              vpcOrigin: cloudfront.VpcOrigin.fromVpcOriginId(
+                this,
+                'SharedVpcOrigin',
+                read('cloudfront/vpc-origin-id')
+              ),
+              priority: resolveAlbPriority(props.site),
+            },
         webSecurityGroup: importSg('WebSg', 'sg/web'),
+        webConnectorSecurityGroup: onWebFunction
+          ? importSg('WebConnectorSg', 'sg/web-connector')
+          : undefined,
         workerSecurityGroup: importSg('WorkerSg', 'sg/worker'),
         db: siteDatabase,
         searchDomain: config.enableOpenSearch
@@ -147,7 +158,7 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
     )
 
     // Tasks run drizzle migrations at startup — the database must exist first
-    site.webService.node.addDependency(siteDatabase.customResource)
+    site.web.node.addDependency(siteDatabase.customResource)
     site.workerService.node.addDependency(siteDatabase.customResource)
 
     // Bucket half of AWS Backup (ADR-037) — own vault kukan-<env>-<site>-backup;

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed — stage 2 passed, the whole web included, and the billing basis checked against the bill. The CDK L2 shipped in `aws-cdk-lib` 2.276.0, so the plan now builds on it** — 2026-11-18
+**Accepted (experimental) — implemented, and tried as a canary on one demo site (§Canary). The default stays `fargate`; a future release is to make `web-function` the default** — 2026-11-18
 
 Let the web in AWS environments run on **Lambda Web Functions** as well as on ECS Fargate + ALB.
 Web Functions run an ordinary Node HTTP server that listens on a port, so the main reasons ADR-020
@@ -26,7 +26,8 @@ is unaffected.
 > specification comes from the official documentation as of 2026-10-17, prices from the AWS Price
 > List API, and the web's touch points from the source on develop (`2de25638`). Stage 1
 > measurements are in §Context 4. On 2026-11-18, §Context 3 and 6 and §Decision 2, 7 and 9 were
-> revised for the CDK L2's release (§Context 6) and the source on develop (`b1522f90`).
+> revised for the CDK L2's release (§Context 6) and the source on develop (`b1522f90`). The same day,
+> §Decision 1, 2, 3 and 8 and §Canary were revised for the implementation and the canary, and the ADR accepted.
 
 ## Context
 
@@ -213,14 +214,29 @@ itself sit in the VPC and need a NAT for Fetch — the NAT only moves.
   OpenSearch and Cloud Map are common; only what their security groups allow changes, the web or
   the connector.
 - Switching recreates the web's resources, but CloudFront and the domain stay, so DNS does not
-  change. Going back is setting `fargate` again and deploying.
+  change.
+- The web's part of the shared infrastructure is set by two settings: `sharedAlb` (the shared ALB
+  and VPC origin) and `webFunctionNetwork` (IPv6, the connector security group, the Bedrock
+  endpoint), defaulting from `webCompute` (the ALB alone for fargate, the network alone for
+  web-function). The one a `webCompute` needs cannot be `false`.
+- Switching a deployed environment takes **two deploys, either way**. A pipeline deploys the shared
+  stack before the sites, so adding something shared takes one deploy, but removing what a site
+  still uses can only follow the sites' move. The first deploy sets the one that keeps the old
+  (`sharedAlb: true` towards web-function, `webFunctionNetwork: true` towards fargate) while the
+  sites move; the second removes it. Switching is rare, so the steps are written down (the system
+  admin guide's Web Functions page) rather than automated.
+- A future release is to make `web-function` the default `webCompute`. Web Functions need the
+  multi-site shape, so single-site environments are given notice to move before then. An
+  environment that stays on Fargate after the change sets `webCompute: 'fargate'` explicitly.
 - `web-function` is experimental. A path nobody uses goes stale, so a test environment in Tokyo
   keeps using it, CI builds the zip, and the synth snapshots cover both.
 
 ### 2. Network
 
 - Give the VPC and public subnets IPv6 CIDRs and add `::/0 → internet gateway`. RDS, OpenSearch
-  and ECS (the worker) stay on IPv4.
+  and ECS (the worker) stay on IPv4. The subnets' /64s are `AWS::EC2::SubnetCidrBlock`
+  associations: as a subnet's `Ipv6CidrBlock`, CloudFormation replaces the existing subnet (seen in
+  a change set against demo), and every site's tasks and the shared ALB are in the public subnets.
 - The connector is `DualStack`, in public subnets (two or more AZs). **Each site stack has its own
   connector; the shared infrastructure has one security group for them.** The security group is
   outbound-only, and RDS, OpenSearch and the worker allow it. Site stacks receive it through an SSM
@@ -245,8 +261,8 @@ itself sit in the VPC and need a NAT for Fetch — the NAT only moves.
 
 CloudFront → Web Function (`IamAuth` + OAC). The origin request policy is already
 `AllViewerExceptHostHeader` (forwarding Host gives 404). IP restriction already happens in the
-CloudFront Function, so nothing replaces the ALB's security group. Once every site has moved, the
-shared ALB goes.
+CloudFront Function, so nothing replaces the ALB's security group. A web-function environment has
+no shared ALB by default (`sharedAlb`, §Decision 1).
 
 The last `X-Forwarded-For` value becomes a CloudFront address. Whatever uses the client's IP takes
 it from `x-kukan-client-ip`, which the viewer-request function overwrites with the viewer's address
@@ -288,6 +304,11 @@ split the record, so store it in the DB.
   same Amazon Linux 2023 (glibc) as the Web Functions environment, so no QEMU and no fetching for
   another OS. Where the Docker `deps` stage installs musl only through `supportedArchitectures`,
   the zip takes the glibc binding.
+- The zip is built by the CDK asset bundling, so inside synth. An arm64 environment's pipeline
+  synthesizes on ARM with Docker on, whatever `webCompute` says. CDK Pipelines synthesizes a pushed
+  commit with the synth settings it has, and updates its own settings only by self-mutation after a
+  synth passes: turning Docker on in the switching commit would fail that synth and go no further.
+  An x86_64 environment deploys the pipeline stack by hand before pushing the switch.
 - Build with the L2 (`aws-cdk-lib` 2.276.0 or later). Pass the code with
   `WebFunctionCode.fromAssetToManagedBucket()` and leave the copy and version-ID pinning to the L2
   (§Context 6). The bootstrap is left alone. Whether the L2's packaging drops `*.pem` is to be
@@ -325,8 +346,14 @@ its first burst meets that low starting limit. The dashboard sends bursts (Next.
 count requests), and with a limit of 2 its loading failed now and then; with 10 it did not (a burst of
 60 parallel requests started five environments and all returned 200).
 
-So set `maxEnvironments` with room (around 10 even for small), and keep the DB's connection limit
-by a small pool per environment (`WEB_DB_POOL_MAX`, 5 in the probe).
+So keep `maxEnvironments` from being too tight, and keep the DB's connection limit by a small pool
+per environment. The settings sit in a `webFunction` section, named apart from KUKAN's own
+"environments" (dev, demo): `maxInstances` (AWS's `MaxEnvironments`) and `dbPoolMax`
+(`WEB_DB_POOL_MAX`). The defaults are small 4 × 2, medium 10 × 5, large 20 × 10, the product about
+the Fargate web's maximum (small 2 × 5 and so on). Four small sites (db.t4g.micro, about 112
+connections) come to 86 in the connection budget (100 on Fargate). One instance takes many requests
+at once, but they spread over instances and queries are short, so a small pool should mean short
+waits. The values are to be tuned against real sites.
 
 ### 9. Node major version
 
@@ -443,6 +470,16 @@ minimum task count.
   two at once (§Decision 8). In stage 2c's steady clicking, 120 requests a minute reached 8
   environments.
 
+## Canary (2026-11-18, the demo main site)
+
+Of demo's four sites, main alone was switched to a Web Function by hand (only the shared stack and
+main's site stack, with `--exclusively`; the other three stayed on Fargate, and so did the shared ALB).
+
+- The first `cdk diff` showed both public subnets replaced (§Decision 2); they were made
+  associations before the deploy
+- The top page, lists, the API and `/api/health` returned 200 (0.1–0.4 s), with `lambda-web-request-id` on the response
+- A POST with a body (sign-in) reaches the app through OAC (the app's own 401 comes back)
+
 ## Out of scope
 
 - **The worker.** Stays on ECS Fargate. Draining until the table is empty (ADR-058), reusing the
@@ -464,6 +501,9 @@ minimum task count.
    AAAA records appear (§Context 3).
 5. The documentation does not say how many network interfaces one connector creates (per subnet,
    per security group). With a connector per site (§Decision 2), count them once built.
+6. Check with a valid token that `Authorization: Bearer` reaches the app (the documentation says the
+   original `Authorization` is kept and passed to the function after OAC signs).
+7. Tune the `webFunction.maxInstances` and `dbPoolMax` defaults against real sites' DB connections and 429s.
 
 ## Related
 

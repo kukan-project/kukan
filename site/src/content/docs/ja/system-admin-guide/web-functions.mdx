@@ -1,0 +1,112 @@
+---
+title: Lambda Web Functions で動かす（試験的）
+description: web を ECS Fargate ではなく Lambda Web Functions で動かす設定と、既存の環境を移す 2 段階の手順
+sidebar:
+  order: 5
+---
+
+AWS 環境の web は、既定で ECS Fargate と共有 ALB で動きます。環境エントリに
+`webCompute: 'web-function'` を指定すると、web を **Lambda Web Functions** で動かします
+（worker は Fargate のまま）。設計の詳細はリポジトリの `docs/adr/jp/068-lambda-web-functions.md`
+（ADR-068）にあります。
+
+:::caution[試験的な機能です]
+既定は今のところ `fargate` です。**将来のリリースで、既定を `web-function` に変える予定です。**
+Web Functions はマルチサイト形状でしか使えないため、シングルサイト形状（`sites` を宣言しない環境）は、
+それまでに[マルチサイト形状へ移行](/ja/system-admin-guide/multi-site/#シングルサイト形状からの移行)
+してください。既定が変わった後も Fargate のまま動かしたい環境は、`webCompute: 'fargate'` を明示します。
+:::
+
+## 何が変わるか
+
+- web は、CloudFront の後ろの Web Function で動きます。CloudFront は OAC で署名して呼び出し、
+  Web Function はその配信からの呼び出しだけを受け付けます
+- web は VPC の中の DB・OpenSearch・worker へ、サイトごとのネットワークコネクター（connector）を通して届きます。
+  インターネットへは IPv6 で出るので、NAT Gateway を置きません。IPv6 に対応しない Bedrock Runtime だけは、
+  VPC の中のインターフェースエンドポイント（1 AZ、東京で月 $10 前後）で届けます
+- 共有 ALB は使わなくなります。全サイトが移った環境では、ALB の時間料金（月 $25 前後）がかからなくなります
+- 費用は、使った CPU 時間と、使ったメモリ × 生きている時間で決まります。small 規模の実績からの見積もりでは、
+  1 サイトで月 $24 前後、3 サイトで月 $42 前後下がります（ADR-068「費用」）
+
+## 使う条件
+
+次をすべて満たす環境で使えます。満たさない設定は、synth で止まります（リージョンだけはデプロイで失敗します）。
+
+| 条件                                                                        | 理由                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| マルチサイト形状（`sites` を宣言している）                                  | 共有のネットワークをサイトのスタックが使うため                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 各サイトに `domainName` がある                                              | CloudFront のドメインを認証の URL（`BETTER_AUTH_URL`）にすると、CloudFront 自身が Web Function を指すので循環参照になるため                                                                                                                                                                                                                                                                                                                                        |
+| Web Functions のあるリージョン（東京など。大阪には無い）                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `bedrock.region` を指定しないか、環境と同じリージョン                       | Bedrock へは VPC の中のエンドポイントで届け、それは自分のリージョンにしか届かないため                                                                                                                                                                                                                                                                                                                                                                              |
+| VPC の外の AI の接続先（`OPENAI_BASE_URL`・`OLLAMA_URL`）は IPv6 で届くこと | NAT が無いので、インターネット上の IPv4 だけのホストには届かないため。VPC の中のホストは届く                                                                                                                                                                                                                                                                                                                                                                       |
+| デプロイする場所に Docker がある                                            | web の zip を Docker でビルドするため。パイプラインでは synth を ARM の CodeBuild で Docker を有効にして行う（`cpuArchitecture` が `arm64` なら、切り替える前から自動でそうなっている。`x86_64` の環境は、切り替えを push する前に手元で `webCompute` を書いて `npx cdk deploy --exclusively KukanPipeline` を流し、パイプラインを先に更新する）。手動のデプロイでは、手元に Docker が要る（x86 の機械では QEMU で arm64 を動かす。Docker Desktop には入っている） |
+
+zip は展開後 512 MB が上限です（Web Functions の制限で、引き上げできません）。超えるとビルドが失敗します。
+
+## 大きさ
+
+`overrides` の `webFunction` で決めます（環境・サイトのどちらでも書けます）。
+
+| フィールド     | small | medium | large | 意味                                                                                                                            |
+| -------------- | ----- | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `maxInstances` | 4     | 10     | 20    | 同時に動くインスタンスの上限。1 つのインスタンスが同時に多くの要求を受ける。上限まで使い切ると、それ以上の要求は 429 で断られる |
+| `dbPoolMax`    | 2     | 5      | 10    | 1 インスタンスの DB 接続の上限（`dbPool.webMax` の代わり）                                                                      |
+
+DB の接続数のバジェットは、`maxInstances × dbPoolMax` で数えます。web-function の環境では
+`web` と `dbPool.webMax` は読まれず、書くと synth で警告が出ます（fargate の環境の `webFunction` も同じ）。
+
+## 新しく作る環境
+
+`webCompute: 'web-function'` を書いてデプロイするだけです。共有 ALB は作られません。
+
+```ts
+demo: {
+  account: '123456789012',
+  scale: 'small',
+  webCompute: 'web-function',
+  sites: [{ name: 'main', domainName: 'catalog.example.jp', /* ... */ }],
+},
+```
+
+## 既存の Fargate の環境を移す（2 段階）
+
+パイプラインは、共有スタックをサイトのスタックより先にデプロイします。そのため、
+共有のものを「足す」のは 1 回のデプロイで済みますが、サイトがまだ使っているものを「消す」のは、
+サイトが移った後のデプロイでないとできません。移行は 2 回のデプロイに分けます。
+
+1. **1 回目:** `webCompute: 'web-function'` と、**`sharedAlb: true`** を足してデプロイします。
+   共有スタックが Web Functions 用のネットワークを足し、各サイトが Web Function に移ります。
+   共有 ALB は残ります。
+   ```ts
+   webCompute: 'web-function',
+   sharedAlb: true, // 2 回目で消す
+   ```
+2. 各サイトの表示・ログイン・API を確かめます。
+3. **2 回目:** `sharedAlb: true` の行を消してデプロイします。共有 ALB と CloudFront の VPC オリジンが消えます。
+
+1 回目で `sharedAlb: true` を書き忘れると、共有スタックがまだ使われている ALB を消そうとします。
+その場合、サイトのスタックが移るまで各サイトに届かなくなったり、消せなかったリソースが残ったりします。
+
+## Fargate に戻す（2 段階）
+
+戻すときも、同じ理由で 2 回に分けます。
+
+1. **1 回目:** `webCompute: 'fargate'` と、**`webFunctionNetwork: true`** を書いてデプロイします。
+   共有 ALB が作られ、各サイトが Fargate に戻ります。Web Functions 用のネットワークは残ります。
+   ```ts
+   webCompute: 'fargate',
+   webFunctionNetwork: true, // 2 回目で消す
+   ```
+2. 1 回目で消えたコネクターのネットワークインターフェースが、すべて消えたことを確かめます。
+   Lambda が管理するインターフェースは、コネクターより少し遅れて消えることがあり、残っている間は
+   2 回目が失敗します。コネクターのセキュリティグループ（SSM の `/kukan/<環境>/shared/sg/web-connector`
+   の値）で絞り込んで、何も返らなければ進めます。
+   ```bash
+   aws ec2 describe-network-interfaces --filters Name=group-id,Values=<セキュリティグループ ID> \
+     --query 'NetworkInterfaces[].NetworkInterfaceId'
+   ```
+3. **2 回目:** `webFunctionNetwork: true` の行を消してデプロイします。Web Functions 用のネットワーク
+   （public サブネットの IPv6、コネクターのセキュリティグループ、Bedrock Runtime のエンドポイント）が消えます。
+
+`sharedAlb` と `webFunctionNetwork` は、その `webCompute` が必要とする方を `false` にはできません
+（synth で止まります）。どちらもマルチサイト形状でだけ書けます。

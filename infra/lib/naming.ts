@@ -58,10 +58,23 @@ const MAX_ROLE_NAME_LENGTH = 64
  * OpenSearch from the site list alone, before the role exists (ADR-069).
  */
 export function taskRoleName(prefix: string, service: 'web' | 'worker'): string {
-  const name = `${prefix}-${service}-task`
+  return checkedRoleName(`${prefix}-${service}-task`)
+}
+
+/**
+ * The fixed name of a site's Web Function execution role (ADR-068), e.g.
+ * `kukan-dev-citya-web-fn-exec`. Its own name, not the web task role's: on a
+ * switch CloudFormation creates the new role before deleting the old one. No
+ * longer than the worker's, since the SharedStack maps it for every site.
+ */
+export function webFunctionRoleName(prefix: string): string {
+  return checkedRoleName(`${prefix}-web-fn-exec`)
+}
+
+function checkedRoleName(name: string): string {
   if (name.length > MAX_ROLE_NAME_LENGTH) {
     throw new Error(
-      `Task role name "${name}" is longer than IAM allows (${MAX_ROLE_NAME_LENGTH}): ` +
+      `Role name "${name}" is longer than IAM allows (${MAX_ROLE_NAME_LENGTH}): ` +
         'shorten the environment or site name'
     )
   }
@@ -85,6 +98,7 @@ export type SharedParam =
   | 'vpc/isolated-subnet-ids'
   | 'sg/alb'
   | 'sg/web'
+  | 'sg/web-connector'
   | 'sg/worker'
   | 'sg/db-access'
   | 'ecs/cluster-name'

@@ -41,11 +41,14 @@ export class KukanSharedStack extends cdk.Stack {
     const vpc = shared.network.vpc
 
     // One ALB + CloudFront VPC origin for every site (ADR-049). Sites add their
-    // target group and listener rule from their own stack.
-    const alb = new SharedAlbConstruct(this, 'SharedAlb', {
-      vpc,
-      albSecurityGroup: shared.network.albSecurityGroup,
-    })
+    // target group and listener rule from their own stack. Kept while any site
+    // is on Fargate (config sharedAlb).
+    const alb = config.sharedAlb
+      ? new SharedAlbConstruct(this, 'SharedAlb', {
+          vpc,
+          albSecurityGroup: shared.network.albSecurityGroup,
+        })
+      : undefined
 
     // DB half of AWS Backup (ADR-037): one plan here — a per-site plan would
     // snapshot the shared cluster once per site. Buckets back up per site.
@@ -74,6 +77,18 @@ export class KukanSharedStack extends cdk.Stack {
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     })
 
+    // Bedrock Runtime has no IPv6, so the Web Function connectors reach it
+    // here. One AZ: while it is down, AI suggestions and query embedding stop
+    // and the rest works (ADR-068 §決定 2). Private DNS makes the worker take
+    // it too.
+    if (config.webFunctionNetwork && config.bedrock) {
+      new ec2.InterfaceVpcEndpoint(this, 'BedrockRuntimeEndpoint', {
+        vpc,
+        service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
+        subnets: { subnets: vpc.isolatedSubnets.slice(0, 1) },
+      })
+    }
+
     const param = (suffix: SharedParam, value: string) =>
       new ssm.StringParameter(this, `Param${suffix.replaceAll(/[/-]/g, '')}`, {
         parameterName: sharedParamName(this, suffix),
@@ -98,14 +113,19 @@ export class KukanSharedStack extends cdk.Stack {
     )
     param('sg/alb', shared.network.albSecurityGroup.securityGroupId)
     param('sg/web', shared.network.webSecurityGroup.securityGroupId)
+    if (shared.network.webConnectorSecurityGroup) {
+      param('sg/web-connector', shared.network.webConnectorSecurityGroup.securityGroupId)
+    }
     param('sg/worker', shared.network.workerSecurityGroup.securityGroupId)
     param('sg/db-access', dbAccessSg.securityGroupId)
     param('ecs/cluster-name', shared.cluster.clusterName)
     param('cloudmap/namespace-id', shared.serviceNamespace.namespaceId)
     param('cloudmap/namespace-name', shared.serviceNamespace.namespaceName)
-    param('alb/listener-arn', alb.listener.listenerArn)
-    param('alb/dns-name', alb.loadBalancer.loadBalancerDnsName)
-    param('cloudfront/vpc-origin-id', alb.vpcOrigin.vpcOriginId)
+    if (alb) {
+      param('alb/listener-arn', alb.listener.listenerArn)
+      param('alb/dns-name', alb.loadBalancer.loadBalancerDnsName)
+      param('cloudfront/vpc-origin-id', alb.vpcOrigin.vpcOriginId)
+    }
     param('db/endpoint', shared.database.endpoint)
     param('db/port', cdk.Tokenization.stringifyNumber(shared.database.port))
     param('db/master-secret-arn', shared.database.secret.secretArn)

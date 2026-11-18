@@ -8,19 +8,21 @@ Docker イメージに合わせて手で上げる（Dependabot はこのレジ�
 
 ## 一覧
 
-| 場所                                                              | 書き方                            | 上げるとき                      |
-| ----------------------------------------------------------------- | --------------------------------- | ------------------------------- |
-| `Dockerfile` の `FROM`（`base` と `build-base` の 2 か所）        | タグ + ダイジェスト、コメントに版 | 毎回                            |
-| `.node-version`                                                   | 完全な版（Dockerfile と同じ）     | 毎回                            |
-| `.github/workflows/ci.yml`、`deploy-site.yml` の `setup-node`     | メジャー                          | メジャー                        |
-| `infra/lib/stacks/pipeline-stack.ts` の `NODE_MAJOR`              | メジャー（CodeBuild の runtime）  | メジャー                        |
-| `infra/lib/constructs/site-database.ts`、`deploy-notification.ts` | `lambda.Runtime.NODEJS_XX_X`      | メジャー（Lambda の対応を待つ） |
-| 全 `package.json` の `@types/node`                                | `^XX.y.z`（lock は 1 つの版）     | メジャー                        |
-| `.github/dependabot.yml` の `@types/node` のメジャー除外          | —                                 | メジャー（除外はそのまま残す）  |
-| `apps/worker/tsup.config.ts` の `target`                          | `nodeXX`                          | メジャー                        |
-| `packages/api/package.json` の `build`（esbuild の `--target`）   | `nodeXX`                          | メジャー                        |
-| ルート `package.json` の `engines.node`                           | `>=XX.0.0`                        | メジャー                        |
-| `CLAUDE.md`、`README.md`、`site/` の getting-started（日英）      | 文中の版                          | メジャー                        |
+| 場所                                                              | 書き方                            | 上げるとき                                              |
+| ----------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------- |
+| `Dockerfile` の `FROM`（`base` と `build-base` の 2 か所）        | タグ + ダイジェスト、コメントに版 | 毎回                                                    |
+| `Dockerfile` の `web-function-files`（`node:XX-bookworm-slim`）   | タグ + ダイジェスト               | メジャー（Web Functions の対応を待つ、ADR-068 §決定 9） |
+| `infra/lib/constructs/web-function.ts` の `WebFunctionRuntime`    | `NODEJS_XX_X`                     | メジャー（同上）                                        |
+| `.node-version`                                                   | 完全な版（Dockerfile と同じ）     | 毎回                                                    |
+| `.github/workflows/ci.yml`、`deploy-site.yml` の `setup-node`     | メジャー                          | メジャー                                                |
+| `infra/lib/stacks/pipeline-stack.ts` の `NODE_MAJOR`              | メジャー（CodeBuild の runtime）  | メジャー                                                |
+| `infra/lib/constructs/site-database.ts`、`deploy-notification.ts` | `lambda.Runtime.NODEJS_XX_X`      | メジャー（Lambda の対応を待つ）                         |
+| 全 `package.json` の `@types/node`                                | `^XX.y.z`（lock は 1 つの版）     | メジャー                                                |
+| `.github/dependabot.yml` の `@types/node` のメジャー除外          | —                                 | メジャー（除外はそのまま残す）                          |
+| `apps/worker/tsup.config.ts` の `target`                          | `nodeXX`                          | メジャー                                                |
+| `packages/api/package.json` の `build`（esbuild の `--target`）   | `nodeXX`                          | メジャー                                                |
+| ルート `package.json` の `engines.node`                           | `>=XX.0.0`                        | メジャー                                                |
+| `CLAUDE.md`、`README.md`、`site/` の getting-started（日英）      | 文中の版                          | メジャー                                                |
 
 Lambda の版を上げると `infra/lib/__tests__/__snapshots__/` のスナップショットが変わる
 （`pnpm vitest run --project infra -u`）。

@@ -291,6 +291,8 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
         indexPatterns: [`kukan-dev-${site}-search*`],
         backendRoles: [
           `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-${site}-web-task`,
+          // Mapped on Fargate too, for a switch to Web Functions (ADR-068)
+          `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-${site}-web-fn-exec`,
           `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-${site}-worker-task`,
         ],
       }))
@@ -622,6 +624,54 @@ describe('pipeline mode', () => {
       ComputeType: 'BUILD_GENERAL1_MEDIUM',
     }
     expect(dockerAssetBuilds({ cpuArchitecture: 'x86_64' })).toEqual([x86, x86])
+  })
+
+  /** The synth step's CodeBuild project: its environment and its commands. */
+  const synthBuild = (extra: Partial<EnvironmentConfig> = {}) => {
+    const [project] = Object.values(notifications(extra).findResources('AWS::CodeBuild::Project'))
+      .map(
+        (p) =>
+          p.Properties as { Environment: Record<string, unknown>; Source: { BuildSpec: string } }
+      )
+      .filter((p) => p.Source.BuildSpec.includes('cdk synth'))
+    const { Image, Type, ComputeType, PrivilegedMode } = project.Environment
+    return {
+      environment: { Image, Type, ComputeType, PrivilegedMode },
+      spec: project.Source.BuildSpec,
+    }
+  }
+
+  it("bundles only its own environment's assets on synth", () => {
+    expect(synthBuild().spec).toContain(
+      "npx cdk synth --exclusively KukanPipeline 'KukanPipeline/Dev/**'"
+    )
+  })
+
+  it('synthesizes on ARM with Docker before any switch to Web Functions (ADR-068)', () => {
+    const arm = {
+      Image: 'aws/codebuild/amazonlinux-aarch64-standard:3.0',
+      Type: 'ARM_CONTAINER',
+      ComputeType: 'BUILD_GENERAL1_MEDIUM',
+      PrivilegedMode: true,
+    }
+    // The commit that switches is synthesized by the project as it was, so a
+    // Fargate environment's synth is ready for the zip already
+    expect(synthBuild().environment).toEqual(arm)
+    expect(
+      synthBuild({
+        webCompute: 'web-function',
+        sites: [
+          {
+            name: 'main',
+            enableWaf: false,
+            domainName: 'catalog.example.jp',
+            certificateArn: `arn:aws:acm:us-east-1:${TEST_ACCOUNT}:certificate/x`,
+          },
+        ],
+      }).environment
+    ).toEqual(arm)
+    // x86_64 (no ARM CodeBuild) keeps the default synth until it switches
+    expect(synthBuild({ cpuArchitecture: 'x86_64' }).environment.PrivilegedMode).toBeFalsy()
   })
 
   it('creates no notification resources unless the environment asks for them', () => {
@@ -1268,5 +1318,279 @@ describe('RDS instance class', () => {
         sites,
       })
     ).toThrow(/max_connections \(1802\)/)
+  })
+})
+
+describe('web on Lambda Web Functions (ADR-068)', () => {
+  const WEB_FUNCTION: Omit<EnvironmentConfig, 'account'> = {
+    scale: 'small',
+    webCompute: 'web-function',
+    sites: [
+      {
+        name: 'citya',
+        enableWaf: false,
+        domainName: 'catalog.city-a.example.jp',
+        certificateArn: `arn:aws:acm:us-east-1:${TEST_ACCOUNT}:certificate/00000000-0000-0000-0000-000000000000`,
+      },
+    ],
+  }
+  // Nothing here builds the zip: that is Docker, in the pipeline's synth
+  const stage = synthStage(WEB_FUNCTION, { 'aws:cdk:bundling-stacks': [] })
+  const shared = stackTemplate(stage, 'KukanSharedStack')
+  const site = stackTemplate(stage, 'KukanSiteStackCitya')
+
+  /** The shared stack and one site of a variant of the environment. */
+  const variant = (config: Partial<EnvironmentConfig>) => {
+    const s = synthStage({ ...WEB_FUNCTION, ...config }, { 'aws:cdk:bundling-stacks': [] })
+    return {
+      shared: stackTemplate(s, 'KukanSharedStack'),
+      site: stackTemplate(s, 'KukanSiteStackCitya'),
+    }
+  }
+
+  it('matches the golden templates', () => {
+    expect(normalize(shared)).toMatchSnapshot()
+    expect(normalize(site)).toMatchSnapshot()
+  })
+
+  it('gives the public subnets an IPv6 /64 each and a ::/0 route, and nothing else', () => {
+    shared.resourceCountIs('AWS::EC2::VPCCidrBlock', 1)
+    // As associations: on the subnet itself the block would replace a subnet
+    // that every site's tasks and the shared ALB are in
+    const subnets = Object.values(shared.findResources('AWS::EC2::Subnet'))
+    expect(subnets.filter((s) => s.Properties.Ipv6CidrBlock)).toHaveLength(0)
+    expect(subnets.filter((s) => s.Properties.AssignIpv6AddressOnCreation)).toHaveLength(0)
+    shared.resourcePropertiesCountIs(
+      'AWS::EC2::SubnetCidrBlock',
+      { SubnetId: Match.anyValue(), Ipv6CidrBlock: Match.anyValue() },
+      2
+    )
+    shared.resourcePropertiesCountIs(
+      'AWS::EC2::Route',
+      { DestinationIpv6CidrBlock: '::/0', GatewayId: Match.anyValue() },
+      2
+    )
+  })
+
+  it('admits the shared connector SG to the DB, OpenSearch and the worker wake port', () => {
+    const ingress = Object.values(shared.findResources('AWS::EC2::SecurityGroupIngress'))
+      .map((rule) => rule.Properties)
+      .filter((props) => JSON.stringify(props.SourceSecurityGroupId ?? '').includes('WebConnector'))
+      .map((props) => props.FromPort)
+      .sort()
+    expect(ingress).toEqual([443, 5432, 8080])
+    shared.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/kukan/dev/shared/sg/web-connector',
+    })
+  })
+
+  it('reaches Bedrock Runtime through one interface endpoint in one AZ', () => {
+    const endpoints = Object.values(shared.findResources('AWS::EC2::VPCEndpoint')).filter((e) =>
+      JSON.stringify(e.Properties.ServiceName).includes('bedrock-runtime')
+    )
+    expect(endpoints).toHaveLength(1)
+    expect(endpoints[0].Properties).toMatchObject({
+      VpcEndpointType: 'Interface',
+      PrivateDnsEnabled: true,
+    })
+    expect(endpoints[0].Properties.SubnetIds).toHaveLength(1)
+  })
+
+  it('runs the web as a Web Function with no ECS web service, ALB rule or target group', () => {
+    site.resourceCountIs('AWS::Lambda::WebFunction', 1)
+    site.resourceCountIs('AWS::ECS::Service', 1) // the worker
+    site.resourceCountIs('AWS::ElasticLoadBalancingV2::ListenerRule', 0)
+    site.resourceCountIs('AWS::ElasticLoadBalancingV2::TargetGroup', 0)
+    site.hasResourceProperties('AWS::Lambda::WebFunctionEndpoint', {
+      AuthType: 'IamAuth',
+      EndpointType: 'HomeRegion',
+      ScalingConfig: { MaxEnvironments: 4 },
+    })
+  })
+
+  it('takes a site override of the instance cap', () => {
+    const [citya] = WEB_FUNCTION.sites!
+    variant({
+      sites: [{ ...citya, overrides: { webFunction: { maxInstances: 6 } } }],
+    }).site.hasResourceProperties('AWS::Lambda::WebFunctionEndpoint', {
+      ScalingConfig: { MaxEnvironments: 6 },
+    })
+  })
+
+  it('reaches the VPC through a dual-stack connector of its own, in the public subnets', () => {
+    site.hasResourceProperties('AWS::Lambda::NetworkConnector', {
+      Configuration: {
+        VpcEgressConfiguration: Match.objectLike({
+          NetworkProtocol: 'DualStack',
+          AssociatedComputeResourceTypes: ['WebFunction'],
+        }),
+      },
+    })
+    site.hasResourceProperties('AWS::Lambda::WebFunctionRevision', {
+      ServiceConfig: Match.objectLike({ EgressNetworkConnectorArn: Match.anyValue() }),
+    })
+  })
+
+  it('names the execution role apart from the task role, as the search mapping expects', () => {
+    site.hasResourceProperties('AWS::IAM::Role', { RoleName: 'kukan-dev-citya-web-fn-exec' })
+    expect(taskRoleNames(site)).toEqual(['kukan-dev-citya-worker-task'])
+    expect(searchSiteRoles(shared)[0].backendRoles).toEqual([
+      `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-citya-web-task`,
+      `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-citya-web-fn-exec`,
+      `arn:aws:iam::${TEST_ACCOUNT}:role/kukan-dev-citya-worker-task`,
+    ])
+  })
+
+  it('hands the secrets over as ARNs to read at startup, and the zip paths', () => {
+    const revision = Object.values(site.findResources('AWS::Lambda::WebFunctionRevision'))[0]
+    const variables = JSON.stringify(revision.Properties)
+    for (const name of ['SECRET_ARNS', 'POSTGRES_PASSWORD', 'BETTER_AUTH_SECRET']) {
+      expect(variables).toContain(name)
+    }
+    // The instance's own pool, not dbPool.webMax
+    expect(revision.Properties.ServiceConfig.EnvironmentVariables.WEB_DB_POOL_MAX).toBe('2')
+    expect(variables).toContain('/var/task/rds-ca.crt')
+    expect(variables).toContain('/var/task/duckdb-extensions')
+    expect(variables).toContain('apps/web/start.mjs')
+  })
+
+  it('puts CloudFront in front with OAC, and lets that distribution alone invoke', () => {
+    site.hasResourceProperties('AWS::CloudFront::OriginAccessControl', {
+      OriginAccessControlConfig: Match.objectLike({
+        OriginAccessControlOriginType: 'lambda',
+        SigningBehavior: 'always-amz-auth',
+      }),
+    })
+    const policy = JSON.stringify(
+      Object.values(site.findResources('AWS::Lambda::ResourcePolicy'))[0]
+    )
+    expect(policy).toContain('cloudfront.amazonaws.com')
+    expect(policy).toContain('aws:SourceArn')
+  })
+
+  it('drops the shared ALB, which no site uses, and the sites read nothing of it', () => {
+    shared.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 0)
+    shared.resourceCountIs('AWS::CloudFront::VpcOrigin', 0)
+    const params = JSON.stringify(shared.findResources('AWS::SSM::Parameter'))
+    expect(params).not.toContain('/alb/')
+    expect(params).not.toContain('vpc-origin-id')
+    expect(JSON.stringify(site.toJSON().Parameters)).not.toMatch(/alb|vpcorigin/i)
+  })
+
+  it('keeps the ALB through the first deploy of a switch to Web Functions', () => {
+    const first = variant({ sharedAlb: true })
+    first.shared.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1)
+    first.shared.resourceCountIs('AWS::EC2::VPCCidrBlock', 1)
+    first.site.resourceCountIs('AWS::Lambda::WebFunction', 1)
+  })
+
+  it('keeps the Web Function network through the first deploy of a switch back', () => {
+    const first = variant({ webCompute: 'fargate', webFunctionNetwork: true })
+    first.shared.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1)
+    first.shared.resourceCountIs('AWS::EC2::VPCCidrBlock', 1)
+    first.shared.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/kukan/dev/shared/sg/web-connector',
+    })
+    first.site.resourceCountIs('AWS::Lambda::WebFunction', 0)
+    first.site.resourceCountIs('AWS::ECS::Service', 2)
+  })
+
+  it('reminds that the first deploy of a switch kept the old shape', () => {
+    const kept = (config: Partial<EnvironmentConfig>) =>
+      validateSites({ ...WEB_FUNCTION, account: TEST_ACCOUNT, ...config })
+        .filter((w) => w.key === 'kukan:web-compute-switch-kept')
+        .map((w) => w.message)
+    expect(kept({ sharedAlb: true })).toEqual([expect.stringMatching(/^sharedAlb: true/)])
+    expect(kept({ webCompute: 'fargate', webFunctionNetwork: true })).toEqual([
+      expect.stringMatching(/^webFunctionNetwork: true/),
+    ])
+    expect(kept({})).toEqual([])
+  })
+
+  it('refuses to drop what the sites of its webCompute need, or to set either single-site', () => {
+    expect(() => variant({ webCompute: 'fargate', sharedAlb: false })).toThrow(
+      /sharedAlb cannot be false/
+    )
+    expect(() => variant({ webFunctionNetwork: false })).toThrow(
+      /webFunctionNetwork cannot be false/
+    )
+    expect(() => synthStage({ sharedAlb: true }, { 'aws:cdk:bundling-stacks': [] })).toThrow(
+      /sharedAlb applies to the multi-site shape only/
+    )
+  })
+
+  it('needs a domain of its own, which BETTER_AUTH_URL can name', () => {
+    expect(() =>
+      synthStage(
+        { ...WEB_FUNCTION, sites: [{ name: 'citya', enableWaf: false }] },
+        { 'aws:cdk:bundling-stacks': [] }
+      )
+    ).toThrow(/needs a domainName/)
+  })
+
+  it('needs the multi-site shape', () => {
+    expect(() =>
+      synthStage({ webCompute: 'web-function' }, { 'aws:cdk:bundling-stacks': [] })
+    ).toThrow(/needs the multi-site shape/)
+  })
+
+  it('refuses a Bedrock region other than its own', () => {
+    expect(() =>
+      synthStage(
+        { ...WEB_FUNCTION, bedrock: { region: 'us-east-1' } },
+        { 'aws:cdk:bundling-stacks': [] }
+      )
+    ).toThrow(/reaches Bedrock only in its own region/)
+  })
+
+  it('warns of sizing that the chosen webCompute does not read', () => {
+    const warnings = (config: Partial<EnvironmentConfig>) =>
+      validateSites({ account: TEST_ACCOUNT, scale: 'medium', ...config })
+        .filter((w) => w.key === 'kukan:web-compute-unused-overrides')
+        .map((w) => w.message)
+    expect(
+      warnings({
+        webCompute: 'web-function',
+        sites: [{ name: 'citya', overrides: { web: { maxSize: 4 } } }],
+      })
+    ).toEqual([
+      'webCompute "web-function" does not read sites[citya].overrides: web (it sizes the web by webFunction, ADR-068)',
+    ])
+    expect(
+      warnings({
+        webCompute: 'web-function',
+        overrides: { dbPool: { webMax: 8, workerMax: 8 } },
+        sites: [{ name: 'citya' }],
+      })
+    ).toEqual([
+      'webCompute "web-function" does not read overrides: dbPool.webMax (it sizes the web by webFunction, ADR-068)',
+    ])
+    expect(
+      warnings({
+        overrides: { webFunction: { maxInstances: 4 } },
+        sites: [{ name: 'citya' }],
+      })
+    ).toEqual([
+      'webCompute "fargate" does not read overrides: webFunction (it sizes the web by web, dbPool.webMax, ADR-068)',
+    ])
+    expect(
+      warnings({
+        webCompute: 'web-function',
+        sites: [{ name: 'citya', overrides: { webFunction: { maxInstances: 4 } } }],
+      })
+    ).toEqual([])
+  })
+
+  it('counts every instance and its own pool against the connection budget', () => {
+    // small, four sites: per site 4 instances × 2 + the worker's 2 × 5 steady,
+    // and 1 × 2 + 1 × 5 for each of the two sites a wave rolls
+    const sites = Array.from({ length: 4 }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
+    const budget = (webCompute: EnvironmentConfig['webCompute']) =>
+      validateSites({ account: TEST_ACCOUNT, scale: 'small', webCompute, sites })
+        .filter((w) => w.key === 'kukan:site-connection-budget')
+        .map((w) => w.message)
+        .join('\n')
+    expect(budget('web-function')).toMatch(/\(86 — steady 72 \+ 2 sites' rolling update 14\)/)
+    expect(budget('fargate')).toMatch(/\(100 — steady 80 \+ 2 sites' rolling update 20\)/)
   })
 })

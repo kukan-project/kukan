@@ -12,6 +12,10 @@ export type DbEngine = 'rds' | 'aurora'
 /** CPU architecture the web and worker run on (Fargate) and their images are built for. */
 export type CpuArchitecture = 'x86_64' | 'arm64'
 
+/** What the web runs on (ADR-068). The worker is on ECS Fargate either way. */
+export const WEB_COMPUTES = ['fargate', 'web-function'] as const
+export type WebCompute = (typeof WEB_COMPUTES)[number]
+
 /** RDS certificate authorities that can sign the database's server certificate. */
 export const RDS_CA_CERTIFICATES = [
   'rds-ca-rsa2048-g1',
@@ -83,6 +87,24 @@ export interface ScaleComputed {
     memory: number // MB
     minSize: number
     maxSize: number
+  }
+  /** The web on Lambda Web Functions (`webCompute: 'web-function'`, ADR-068). */
+  webFunction: {
+    /**
+     * The most instances of the web running at once — what AWS calls the
+     * endpoint's execution environments (`MaxEnvironments`). Each takes many
+     * requests at once and holds its own DB pool of `dbPoolMax` (below). Not
+     * small: a fresh instance takes two requests at once and climbs from
+     * there, so a tight cap refuses ordinary bursts with 429 (ADR-068 §決定 8).
+     */
+    maxInstances: number
+    /**
+     * DB connections each instance may hold: the web's WEB_DB_POOL_MAX here,
+     * in place of `dbPool.webMax`. Smaller than on Fargate, because requests
+     * spread over instances where a task would queue them on its pool — and
+     * `maxInstances` times it is what the shared database must allow.
+     */
+    dbPoolMax: number
   }
   worker: {
     cpu: number
@@ -159,6 +181,33 @@ export interface EnvironmentConfig {
    * Omit → arm64 (Graviton, about 20% less per vCPU and GB than x86_64).
    */
   cpuArchitecture?: CpuArchitecture
+  /**
+   * What the web runs on, for every site of the environment (ADR-068).
+   * `web-function` runs it on Lambda Web Functions behind CloudFront, reaching
+   * the VPC through a network connector over IPv6 with no NAT: multi-site
+   * (`sites`) only, and only where Web Functions exist (not Osaka). Hosts
+   * outside the VPC that a site names — OPENAI_BASE_URL, OLLAMA_URL — must
+   * then have an IPv6 address. Experimental. Omit → fargate.
+   *
+   * Switching a deployed environment takes two deploys either way (see
+   * `sharedAlb` / `webFunctionNetwork`).
+   */
+  webCompute?: WebCompute
+  /**
+   * The shared ALB and its CloudFront VPC origin, which Fargate sites are
+   * reached through (ADR-049). Omit → on for fargate, off for web-function.
+   * Set it true for the first deploy of a switch to web-function, while the
+   * sites still use it; it cannot be off for fargate. Multi-site only.
+   */
+  sharedAlb?: boolean
+  /**
+   * The shared network the Web Function connectors use (ADR-068): IPv6 on
+   * the public subnets, the connector security group, the Bedrock Runtime
+   * endpoint. Omit → on for web-function, off for fargate. Set it true for
+   * the first deploy of a switch back to fargate, while the sites' connectors
+   * still use it; it cannot be off for web-function. Multi-site only.
+   */
+  webFunctionNetwork?: boolean
   /**
    * Certificate authority of the database's server certificate, which the web
    * and worker verify against the RDS CA bundle in their images. Named rather
@@ -427,7 +476,7 @@ export interface SiteConfig {
    * schedule — ADR-041). Of `worker`, not the health port: the shared
    * security groups open the environment's to the web (ADR-058).
    */
-  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'dbPool'>> & {
+  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'webFunction' | 'dbPool'>> & {
     worker?: DeepPartial<Omit<ScaleComputed['worker'], 'healthPort'>>
     backup?: Partial<
       Pick<ScaleComputed['backup'], 's3Versioning' | 's3NoncurrentVersionExpirationDays'>
@@ -441,6 +490,11 @@ export interface KukanConfig extends ScaleComputed {
   dbEngine: DbEngine
   enableOpenSearch: boolean
   cpuArchitecture: CpuArchitecture
+  webCompute: WebCompute
+  /** Whether the shared stack keeps the ALB (resolved from `webCompute`). */
+  sharedAlb: boolean
+  /** Whether the shared stack keeps the Web Function network (likewise). */
+  webFunctionNetwork: boolean
   rdsCaCertificate: RdsCaCertificate
   enableWaf: boolean
   allowedIpRanges?: string[]

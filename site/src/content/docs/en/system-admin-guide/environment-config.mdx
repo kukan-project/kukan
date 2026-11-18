@@ -72,6 +72,9 @@ CI/CD.
 | `dbEngine`             | `rds` \| `aurora`                                                | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                                                         |
 | `enableOpenSearch`     | boolean                                                          | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                                                          |
 | `cpuArchitecture`      | `arm64` \| `x86_64`                                              | `arm64`                                          | CPU of the web and worker tasks (Graviton by default). The images are built for it (see "CPU architecture" below)                                                                       |
+| `webCompute`           | `fargate` \| `web-function`                                      | `fargate`                                        | What the web runs on. `web-function` is Lambda Web Functions (experimental, the future default; [Running on Lambda Web Functions](/en/system-admin-guide/web-functions/))               |
+| `sharedAlb`            | boolean                                                          | `true` for fargate, `false` for web-function     | Whether the shared ALB stays. Set `true` only for the first deploy of a move to web-function                                                                                            |
+| `webFunctionNetwork`   | boolean                                                          | `true` for web-function, `false` for fargate     | Whether the shared network for Web Functions stays. Set `true` only for the first deploy of a move back to fargate                                                                      |
 | `rdsCaCertificate`     | `rds-ca-rsa2048-g1` \| `rds-ca-rsa4096-g1` \| `rds-ca-ecc384-g1` | `rds-ca-rsa2048-g1`                              | CA that issues the database's server certificate, which the web and worker verify when they connect (see "Database certificate" below)                                                  |
 | `bedrock`              | object \| `false`                                                | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                                         |
 | `githubRepo`           | string                                                           | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                                       |
@@ -105,6 +108,9 @@ override it.
 
 - The pipeline builds the images on a CodeBuild of the tasks' architecture (Tokyo and Osaka
   have ARM). Set `x86_64` for a pipeline in a Region without ARM CodeBuild (`ARM_CONTAINER`)
+- An `arm64` environment's pipeline also synthesizes on an ARM CodeBuild with Docker on. A switch
+  to Lambda Web Functions builds the web's zip inside synth, so it is ready before any switch
+  ([Running on Lambda Web Functions](/en/system-admin-guide/web-functions/))
 - A standalone deploy can build images for an architecture other than the local machine's.
   Docker Desktop (Windows / Mac) needs nothing more. On Linux with Docker Engine alone, run
   `docker run --privileged --rm tonistiigi/binfmt --install arm64` once
@@ -248,10 +254,10 @@ Fine-grained overrides of the scale preset. They apply as a deep merge — scale
 defaults ← env `overrides` ← site `overrides` — and the allowed range differs
 per level:
 
-- **Environment entry**: every section (`web` / `worker` / `db` / `opensearch` /
+- **Environment entry**: every section (`web` / `webFunction` / `worker` / `db` / `opensearch` /
   `dbPool` / `backup`). Shared-resource sizing, DB retention, and the AWS
   Backup schedule are environment-level only
-- **Site entry**: site-owned sections only (`web` / `worker` (except `healthPort`) / `dbPool`, plus
+- **Site entry**: site-owned sections only (`web` / `webFunction` / `worker` (except `healthPort`) / `dbPool`, plus
   the S3 versioning settings of `backup`). Overriding `db` / `opensearch` /
   `backup.awsBackup` / `backup.dbBackupRetentionDays` is rejected at synth
 
