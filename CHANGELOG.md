@@ -6,6 +6,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.44.0] - 2026-11-18
+
+**Highlights**
+
+- **The web can run on Lambda Web Functions (experimental).** On AWS, set `webCompute: 'web-function'` on a multi-site environment and its sites' web runs on Lambda Web Functions behind CloudFront, instead of on ECS Fargate behind the shared ALB (#1247, ADR-068). The web reaches the database, OpenSearch and the worker through a network connector over IPv6, so no NAT Gateway is needed; Bedrock is reached through an endpoint in the VPC. You pay for the CPU used and for the memory used while an instance is alive, and an environment whose sites have all moved no longer pays for the ALB — about $24 a month less for one small site, by our estimate. The worker stays on Fargate, and Docker Compose is unchanged.
+- **Notice: a future release will make `web-function` the default.** Web Functions work with the multi-site shape only, so move any single-site environment (one that declares no `sites`) to the multi-site shape before then. An environment that should stay on Fargate after that sets `webCompute: 'fargate'` explicitly.
+
+**Features**
+
+- `webCompute: 'fargate' | 'web-function'` in the environment entry, `fargate` by default (#1247). A web-function site needs a `domainName` and a region where Web Functions run (Tokyo, for example; not Osaka); hosts outside the VPC that a site's AI settings name must be reachable over IPv6. Requirements, sizing and the switching steps are on the system admin guide's new page, "Running on Lambda Web Functions".
+- The `webFunction` section of `overrides` sizes it: `maxInstances` (instances running at once) and `dbPoolMax` (database connections per instance), small 4 × 2, medium 10 × 5, large 20 × 10. The database connection budget counts their product (#1247).
+- `sharedAlb` and `webFunctionNetwork` say what the shared stack keeps for the web while an environment is switched; each defaults from `webCompute` (#1247). Synth warns when sizing for the other `webCompute` is set, or when a part kept for a switch is left on.
+
+**Upgrade Notes** (for system administrators)
+
+- **Database:** no migrations.
+- **AWS, every environment:** the next deployment updates the shared stack's OpenSearch role mapping once, to map each site's Web Function role beside its task roles; nothing is replaced. An environment with `cpuArchitecture` `arm64` (the default) also updates its pipeline once: synth then runs on an ARM CodeBuild of the medium size with Docker on, so that a later switch to Web Functions can build the web's package during synth. Each synth costs slightly more.
+- **Switching an existing environment to Web Functions** takes two deploys: the first with `webCompute: 'web-function'` and `sharedAlb: true` (the sites move, the shared ALB stays), the second without `sharedAlb` (the ALB goes). Moving back is two deploys as well, with `webFunctionNetwork: true` in the first. An `x86_64` environment deploys its pipeline stack by hand before pushing the switch. Push the switch only after this version has been deployed, so the pipeline is ready for it.
+- **Docker Compose (on-premises, closed networks):** nothing changes.
+
+---
+
+**ハイライト**
+
+- **web を Lambda Web Functions で動かせるようになりました（試験的）。** AWS のマルチサイトの環境で `webCompute: 'web-function'` を指定すると、各サイトの web が、共有 ALB の後ろの ECS Fargate ではなく、CloudFront の後ろの Lambda Web Functions で動きます（#1247、ADR-068）。web は DB・OpenSearch・worker へ IPv6 のネットワークコネクターで届くので、NAT Gateway は要りません。Bedrock へは VPC の中のエンドポイントで届きます。費用は使った CPU と、インスタンスが生きている間に使ったメモリで決まり、全サイトが移った環境では ALB の費用もかからなくなります。small の 1 サイトで月 $24 前後下がる見込みです。worker は Fargate のままで、Docker Compose は変わりません。
+- **予告：将来のリリースで `web-function` を既定にします。** Web Functions はマルチサイトの形でしか使えないので、シングルサイトの形（`sites` を書いていない環境）は、それまでにマルチサイトの形へ移してください。既定が変わった後も Fargate を使う環境は、`webCompute: 'fargate'` を明示してください。
+
+**機能**
+
+- 環境のエントリに `webCompute: 'fargate' | 'web-function'` を追加しました。既定は `fargate` です（#1247）。web-function のサイトには `domainName` と、Web Functions のあるリージョン（東京など。大阪には無い）が要ります。サイトの AI の設定が VPC の外のホストを指すときは、そのホストに IPv6 で届く必要があります。条件・大きさ・切り替えの手順は、システム管理者ガイドの新しいページ「Lambda Web Functions で動かす」にあります。
+- 大きさは `overrides` の `webFunction` で決めます。`maxInstances`（同時に動くインスタンスの上限）と `dbPoolMax`（1 インスタンスの DB 接続の上限）で、既定は small 4 × 2、medium 10 × 5、large 20 × 10 です。DB の接続数のバジェットは、この積で数えます（#1247）。
+- `sharedAlb` と `webFunctionNetwork` で、切り替えの間に共有スタックが web のために残すものを決めます。どちらも既定は `webCompute` から決まります（#1247）。もう一方の `webCompute` 用の大きさを書いたときや、切り替えのために残したものが残ったままのときは、synth で警告します。
+
+**更新時の注意**（システム管理者向け）
+
+- **データベース：** マイグレーションはありません。
+- **AWS（全環境）：** 次のデプロイで、共有スタックの OpenSearch のロールの割り当てが一度だけ更新され、各サイトのタスクのロールに並べて Web Function のロールも割り当てます。置き換えられるものはありません。`cpuArchitecture` が `arm64`（既定）の環境では、パイプラインも一度だけ自分自身を更新し、synth が ARM の CodeBuild（medium）で Docker を有効にして動くようになります。後で Web Functions に切り替えるとき、web のパッケージを synth の中でビルドできるようにするためです。synth 1 回あたりの費用が少し上がります。
+- **既存の環境を Web Functions に切り替えるとき** は、2 回デプロイします。1 回目は `webCompute: 'web-function'` と `sharedAlb: true` で（サイトが移り、共有 ALB は残る）、2 回目は `sharedAlb` を消して（ALB が消える）デプロイします。Fargate に戻すときも 2 回で、1 回目に `webFunctionNetwork: true` を書きます。`x86_64` の環境は、切り替えを push する前にパイプラインのスタックを手でデプロイしてください。切り替えの push は、この版のデプロイが終わってから行ってください（パイプラインの準備が済んでいる必要があります）。
+- **Docker Compose（オンプレミス・閉域網）：** 変更はありません。
+
 ## [0.43.0] - 2026-11-17
 
 **Breaking Changes**
