@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed — stage 2 passed, the whole web included, and the billing basis checked against the bill; decide once the CDK L2 is released** — 2026-10-18
+**Proposed — stage 2 passed, the whole web included, and the billing basis checked against the bill. The CDK L2 shipped in `aws-cdk-lib` 2.276.0, so the plan now builds on it** — 2026-11-18
 
 Let the web in AWS environments run on **Lambda Web Functions** as well as on ECS Fargate + ALB.
 Web Functions run an ordinary Node HTTP server that listens on a port, so the main reasons ADR-020
@@ -17,7 +17,7 @@ only, but the web and worker already run on arm64 Fargate (the default), and an 
 environment exists.
 
 **ECS Fargate stays the default, and each environment can choose Web Functions instead**
-(§Decision 1), since Web Functions are new and the CDK has no L2 for them yet. Where an environment
+(§Decision 1), since Web Functions are new and not yet run on a real site. Where an environment
 chooses them, they replace the web part of ADR-020, and ADR-049 (shared ALB) remains only for
 Fargate environments. The worker stays on ECS Fargate (§Out of scope). Docker Compose (development, on-premises, closed networks)
 is unaffected.
@@ -25,7 +25,8 @@ is unaffected.
 > **This ADR is a draft written with Claude Code from a design conversation.** The Web Functions
 > specification comes from the official documentation as of 2026-10-17, prices from the AWS Price
 > List API, and the web's touch points from the source on develop (`2de25638`). Stage 1
-> measurements are in §Context 4.
+> measurements are in §Context 4. On 2026-11-18, §Context 3 and 6 and §Decision 2, 7 and 9 were
+> revised for the CDK L2's release (§Context 6) and the source on develop (`b1522f90`).
 
 ## Context
 
@@ -66,24 +67,39 @@ by route; a security group refusing it makes that unnecessary).
 
 Taken from the source on develop.
 
-| Destination                                  | Use                              | Path (this ADR)                       |
-| -------------------------------------------- | -------------------------------- | ------------------------------------- |
-| PostgreSQL (RDS / Aurora, isolated)          | Everything                       | Connector                             |
-| OpenSearch (isolated)                        | Search                           | Connector                             |
-| The worker's `/wake` (Cloud Map, ADR-058 §3) | Job notification                 | Connector                             |
-| S3                                           | Storage adapter, DuckDB          | Gateway endpoint (existing)           |
-| Bedrock Runtime (Converse, InvokeModel)      | Query embedding, AI suggestions  | **Interface endpoint**                |
-| GA4 Data API (`*.googleapis.com`)            | Access statistics (ADR-024)      | IPv6                                  |
-| OpenAI-compatible APIs (`baseUrl`)           | AI adapter                       | IPv6 (the official API has AAAA)      |
-| Secrets Manager                              | Secrets at startup (§Decision 5) | IPv6 (the standard endpoint has AAAA) |
+| Destination                                  | Use                              | Path (this ADR)                  |
+| -------------------------------------------- | -------------------------------- | -------------------------------- |
+| PostgreSQL (RDS / Aurora, isolated)          | Everything                       | Connector                        |
+| OpenSearch (isolated)                        | Search                           | Connector                        |
+| The worker's `/wake` (Cloud Map, ADR-058 §3) | Job notification                 | Connector                        |
+| S3                                           | Storage adapter, DuckDB          | Gateway endpoint (existing)      |
+| Bedrock Runtime (Converse, InvokeModel)      | Query embedding, AI suggestions  | **Interface endpoint**           |
+| GA4 Data API (`*.googleapis.com`)            | Access statistics (ADR-024)      | IPv6                             |
+| OpenAI-compatible APIs (`baseUrl`)           | AI adapter                       | IPv6 (the official API has AAAA) |
+| Secrets Manager                              | Secrets at startup (§Decision 5) | Interface endpoint (existing)    |
 
 Not going out: authentication (no social login, no mail), DuckDB extensions (autoinstall is off),
-fetching external URLs (the worker's Fetch only).
+fetching external URLs (the worker's Fetch only), STS (credentials arrive in environment variables,
+and DuckDB's `credential_chain` reads them there), and the `/api`, `/odata` and download routes (an
+in-process `app.fetch`). Rechecked on develop (`b1522f90`) on 2026-11-18: no new destinations.
+
+Secrets Manager already has an interface endpoint, which the shared infrastructure places in the
+isolated subnets for the site DB bootstrap. Its private DNS is on, so the connector resolves it to
+addresses inside the VPC and does not use the IPv6 path (the dedicated VPC in stage 2 had no such
+endpoint, and reached it over IPv6).
+
+`OPENAI_BASE_URL` and `OLLAMA_URL` can name any host in a site's settings. In an environment that
+chooses Web Functions, a host outside the VPC must be reachable over IPv6 (have an AAAA record):
+with no NAT, an IPv4-only host on the internet is unreachable. A host inside the VPC (a private IPv4
+address) is reached through the connector, like the DB (its security group allows the connector).
 
 Bedrock Runtime in Tokyo has no IPv6. The official endpoint list has only
 `bedrock-runtime.ap-northeast-1.amazonaws.com`, which has no AAAA, and the dual-stack names
 (`*.api.aws`, `*.dualstack.*`) do not resolve. `bedrock-mantle.ap-northeast-1.api.aws` has an A
-record only.
+record only. The VPC documentation's table of services that support IPv6 lists Amazon Bedrock with
+"Public endpoints support IPv6: Yes", but looked up again on 2026-11-18, none of the Bedrock
+endpoints in Tokyo, us-east-1 or us-west-2 (`bedrock`, `bedrock-runtime`, `bedrock-agent-runtime`,
+`bedrock-mantle`) had AAAA. Go by DNS, not by the table.
 
 ### 4. Stage 1 measurements (2026-10-17, Tokyo, without DuckDB)
 
@@ -116,22 +132,32 @@ backstop, and the deciding reason weighs more (2 GB shared by up to 64 requests)
 budget with `SIGKILL`, stopping at a timeout, isolating a native crash, and keeping credentials out
 of the child's environment (last row of §Context 4) all still work.
 
-### 6. CDK support (as of 2026-10-17)
+### 6. CDK support (as of 2026-11-18)
 
-| Layer          | State                                                                                                                                                                                                                        |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CloudFormation | `AWS::Lambda::WebFunction`, `WebFunctionRevision`, `WebFunctionEndpoint`, `NetworkConnector`, `ResourcePolicy`                                                                                                               |
-| CDK L1         | `aws-cdk-lib` 2.273.0 has `CfnWebFunction`, `CfnWebFunctionRevision`, `CfnWebFunctionEndpoint`, `CfnNetworkConnector`. The revision's `EgressNetworkConnectorArn` is in the next release (aws-cdk#39139, merged, unreleased) |
-| CDK L2         | Unreleased. The service team's PR (aws-cdk#39210: `WebFunction`, `WebFunctionCode`, `NetworkConnector` in the stable `aws-lambda`) is in review                                                                              |
-| CloudFront     | OAC origin type `lambda` (`OriginAccessControlOriginTypes.LAMBDA`), signing `always-amz-auth`. The existing L2 takes an origin's `originAccessControlId`                                                                     |
+| Layer          | State                                                                                                                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CloudFormation | `AWS::Lambda::WebFunction`, `WebFunctionRevision`, `WebFunctionEndpoint`, `NetworkConnector`, `ResourcePolicy`                                                                                  |
+| CDK L1         | `CfnWebFunction`, `CfnWebFunctionRevision`, `CfnWebFunctionEndpoint`, `CfnNetworkConnector`. 2.277.0 removed `ElasticIpConfiguration` from `VpcEgressConfiguration`                             |
+| CDK L2         | **Released in 2.276.0** (aws-cdk#39210): `WebFunction`, `WebFunctionCode`, `WebFunctionEndpoint`, `NetworkConnector` in the stable `aws-lambda`. The same release added `authType` to endpoints |
+| CloudFront     | OAC origin type `lambda` (`OriginAccessControlOriginTypes.LAMBDA`), signing `always-amz-auth`. The existing L2 takes an origin's `originAccessControlId`                                        |
 
-Two points the L2 PR deals with bear on KUKAN:
+What the L2 does that bears on KUKAN:
 
-- **The code cannot sit in the CDK bootstrap bucket.** It needs versioning, SSE-S3 and read access
-  for the Lambda service. A custom resource copies it server-side into a dedicated bucket and pins
-  the written version ID on the revision (`BucketDeployment` does not return it).
-- **A connector cannot cross stacks through an Export.** Its version ARN changes on every update,
-  so it is referenced by a pinned version ARN.
+- **Where the code sits.** The code cannot sit in the CDK bootstrap bucket (it needs versioning,
+  read access for the Lambda service, and no AWS-managed KMS key). The L2's
+  `WebFunctionCode.fromAssetToManagedBucket()` creates one bucket per stack, copies the asset into
+  it and pins the written version ID on the revision. The custom resource of our own that this ADR
+  expected is no longer needed.
+- **Referencing a connector.** A connector in the same stack pins the revision to its latest
+  version at deploy time, and the deployment that updates the connector replaces the revision too.
+  A connector defined in another stack is rejected at synthesis; the only way across is a pinned
+  version ARN (`NetworkConnector.fromNetworkConnectorVersionArn()`), and then the function stays on
+  the old version after a connector update until the ARN is changed.
+- **Resource policy.** One per function. Grants from an endpoint's `grants.invoke()` and from
+  `addToResourcePolicy()` go into a single `AWS::Lambda::ResourcePolicy`. CloudFront's OAC is
+  allowed by passing `cloudfront.amazonaws.com` with `aws:SourceArn` to `grants.invoke()`.
+- **Execution role.** Passed as `role`. The connector's `operatorRole` is a separate role (reusing
+  the execution role would let the function's code manage network interfaces).
 
 ## Options considered
 
@@ -195,9 +221,22 @@ itself sit in the VPC and need a NAT for Fetch — the NAT only moves.
 
 - Give the VPC and public subnets IPv6 CIDRs and add `::/0 → internet gateway`. RDS, OpenSearch
   and ECS (the worker) stay on IPv4.
-- The connector is `DualStack`, in public subnets (two or more AZs), with an outbound-only
-  security group. RDS, OpenSearch and the worker allow the connector's security group.
-- One interface endpoint for Bedrock Runtime in the shared infrastructure (ADR-041), in one AZ.
+- The connector is `DualStack`, in public subnets (two or more AZs). **Each site stack has its own
+  connector; the shared infrastructure has one security group for them.** The security group is
+  outbound-only, and RDS, OpenSearch and the worker allow it. Site stacks receive it through an SSM
+  parameter, as they receive `sg/web` today, and never modify the shared security groups.
+  - The connector sits in the function's stack because the L2 references a connector in another
+    stack only by a pinned version ARN (§Context 6). A shared connector would mean rewriting every
+    site's version ARN on each connector update; a per-site one updates the connector and replaces
+    the revision in one deployment.
+  - A connector per site adds no cost. Network interfaces have no hourly charge, the connector's
+    interfaces get no public IPv4, and the price list has no item for connectors. The only thing
+    that grows is address use in the public subnets.
+  - The security group is shared, as `sg/web` is today, so that the DB, OpenSearch and worker
+    rules stay inside the shared infrastructure. Per-site groups would have sites add rules to the
+    shared security groups.
+- One interface endpoint for Bedrock Runtime in the shared infrastructure (ADR-041), in one AZ:
+  $0.014/hour in Tokyo ($10.22/month) plus $0.01/GB processed.
   While that AZ is down, AI suggestions and query embedding stop and everything else works; they
   come back with the AZ.
 - A connector works only with `HomeRegion` endpoints (no multi-Region).
@@ -249,11 +288,22 @@ split the record, so store it in the DB.
   same Amazon Linux 2023 (glibc) as the Web Functions environment, so no QEMU and no fetching for
   another OS. Where the Docker `deps` stage installs musl only through `supportedArchitectures`,
   the zip takes the glibc binding.
-- Use the L2 (aws-cdk#39210) once released; until then, the L1 with a custom resource of our own
-  (the code copy and its version ID) (§Context 6). The bootstrap is left alone.
-- The connector lives in the shared infrastructure; its pinned version ARN reaches the site stacks
-  through an SSM parameter, like the other shared values. Updating the connector is a two-step
-  deploy, shared infrastructure then each site.
+- Build with the L2 (`aws-cdk-lib` 2.276.0 or later). Pass the code with
+  `WebFunctionCode.fromAssetToManagedBucket()` and leave the copy and version-ID pinning to the L2
+  (§Context 6). The bootstrap is left alone. Whether the L2's packaging drops `*.pem` is to be
+  checked once built.
+- The connector is created in the site stack, with the function (§Decision 2).
+- **The execution role gets a fixed name, different from the Fargate task role's.** The shared
+  OpenSearch's FGAC (ADR-069) has the shared stack map roles by fixed names, from the site list
+  alone. The Web Function's execution role gets a fixed name too (e.g. `<prefix>-web-function`),
+  and the shared stack maps, per site, both the Fargate task role and the Web Function execution
+  role, whatever `webCompute` says.
+  - Not the task role's name: on the switching deployment CloudFormation creates the new role
+    before deleting the old one, so a shared name fails with "already exists".
+  - Both are always mapped so that search keeps working through the switch. Choosing the mapping
+    by `webCompute` would have the shared stack's deployment drop the old role first, and the web
+    could not search until the site deployed. A mapped role that does not exist yet only benefits
+    someone who can create a role of that name in the account.
 - Check automatic revision cleanup (old revisions no endpoint routes to go at the limit) and what
   happens to the old revision on replacement.
 - Runtime patches cannot be pinned; the web alone leaves the digest pinning (of the base image).
@@ -277,6 +327,17 @@ count requests), and with a limit of 2 its loading failed now and then; with 10 
 
 So set `maxEnvironments` with room (around 10 even for small), and keep the DB's connection limit
 by a small pool per environment (`WEB_DB_POOL_MAX`, 5 in the probe).
+
+### 9. Node major version
+
+The Web Functions runtime is `nodejs24.x` only (as of 2026-11-18), and the documentation does not
+say whether it follows the Event Functions' `nodejs26.x`. Running the web on different Node majors
+in Web Functions and Fargate environments would run the same web on two versions, with CI likely
+covering one, and the packages shared by the web and worker would have to target the lower one.
+
+So **raising the Node major is conditional on the Web Functions runtime supporting that version.**
+Until it does, every environment stays on the current version. Raising it is delayed; the versions
+never stay split.
 
 ## Stage 2 (pass or fail)
 
@@ -399,12 +460,15 @@ minimum task count.
    break-even's assumptions).
 3. The effect of starting from zero on SSR (SEO), and of lru-cache leaving with an environment. In
    stage 2c the first request on a new environment took 2.5–2.6 s.
-4. Should Bedrock Runtime get a dual-stack endpoint, the interface endpoint can go.
-5. The release of the CDK L2 (aws-cdk#39210).
+4. Should Bedrock Runtime get a dual-stack endpoint, the interface endpoint can go. Judge by whether
+   AAAA records appear (§Context 3).
+5. The documentation does not say how many network interfaces one connector creates (per subnet,
+   per security group). With a connector per site (§Decision 2), count them once built.
 
 ## Related
 
 - ADR-012 (single origin), ADR-017 (server-proxied downloads), ADR-020 (web = Fargate + ALB; the web
   part is replaced if adopted), ADR-027 (CloudFront), ADR-032 (query child process), ADR-041
   (shared infrastructure), ADR-049 (shared ALB; rewritten if adopted), ADR-055 (OData), ADR-058
-  (`/wake`), ADR-059 (the worker's child process), ADR-061 (retiring OpenSearch)
+  (`/wake`), ADR-059 (the worker's child process), ADR-061 (retiring OpenSearch), ADR-069
+  (OpenSearch FGAC; why the execution role's name is fixed)

@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案（Proposed）— 段階 2 は合格（web 全体まで）。課金の基準も請求で確かめた。CDK の L2 のリリースを待って判断する** — 2026-10-18
+**提案（Proposed）— 段階 2 は合格（web 全体まで）。課金の基準も請求で確かめた。CDK の L2 は `aws-cdk-lib` 2.276.0 でリリースされたので、L2 で組む前提に改めた** — 2026-11-18
 
 AWS 環境の web を、ECS Fargate + ALB に加えて **Lambda Web Functions** でも動かせるようにする。
 Web Functions は、ポートで待ち受ける普通の Node の HTTP サーバーをそのまま動かすので、ADR-020 が
@@ -16,13 +16,15 @@ Bedrock Runtime だけで、これはインターフェースエンドポイン�
 のみだが、web と worker は既に arm64 の Fargate で動いており（既定）、arm64 のビルド環境もある。
 
 **既定は ECS Fargate のままにし、環境ごとに Web Functions を選べる切り替え式にする**（§決定 1）。
-Web Functions は発表されたばかりで、CDK の L2 もまだ無いため。Web Functions を選んだ環境では
+Web Functions は発表されたばかりで、まだ実際のサイトで動かしていないため。Web Functions を選んだ環境では
 ADR-020 の web の部分を置き換え、ADR-049（共有 ALB）は Fargate の環境にだけ残る。worker は
 ECS Fargate のまま（§範囲外）。Docker Compose（開発・オンプレ・閉域網）には影響しない。
 
 > **この ADR は Claude Code で設計会話をもとに起こした草案である。** Web Functions の仕様は
 > 2026-10-17 時点の公式文書から、単価は AWS Price List API から、web の接触面は develop
-> （`2de25638`）のソースから出した。段階 1 の実測は §コンテキスト 4 にある。
+> （`2de25638`）のソースから出した。段階 1 の実測は §コンテキスト 4 にある。2026-11-18 に、CDK の
+> L2 の公開（§コンテキスト 6）と develop（`b1522f90`）のソースに合わせて §コンテキスト 3・6 と
+> §決定 2・7・9 を改めた。
 
 ## コンテキスト
 
@@ -63,23 +65,39 @@ public サブネットの `::/0 → インターネットゲートウェイ` で
 
 develop のソースから洗い出した。
 
-| 宛先                                       | 用途                        | 経路（本 ADR）                           |
-| ------------------------------------------ | --------------------------- | ---------------------------------------- |
-| PostgreSQL（RDS / Aurora、isolated）       | 全般                        | connector                                |
-| OpenSearch（isolated）                     | 検索                        | connector                                |
-| worker の `/wake`（Cloud Map、ADR-058 §3） | ジョブの通知                | connector                                |
-| S3                                         | storage アダプター、DuckDB  | ゲートウェイエンドポイント（既存）       |
-| Bedrock Runtime（Converse、InvokeModel）   | 検索語の埋め込み、AI 提案   | **インターフェースエンドポイント**       |
-| GA4 Data API（`*.googleapis.com`）         | アクセス統計（ADR-024）     | IPv6                                     |
-| OpenAI 互換の API（`baseUrl`）             | AI アダプター               | IPv6（公式 API は AAAA あり）            |
-| Secrets Manager                            | 起動時の秘密情報（§決定 5） | IPv6（通常のエンドポイントに AAAA あり） |
+| 宛先                                       | 用途                        | 経路（本 ADR）                         |
+| ------------------------------------------ | --------------------------- | -------------------------------------- |
+| PostgreSQL（RDS / Aurora、isolated）       | 全般                        | connector                              |
+| OpenSearch（isolated）                     | 検索                        | connector                              |
+| worker の `/wake`（Cloud Map、ADR-058 §3） | ジョブの通知                | connector                              |
+| S3                                         | storage アダプター、DuckDB  | ゲートウェイエンドポイント（既存）     |
+| Bedrock Runtime（Converse、InvokeModel）   | 検索語の埋め込み、AI 提案   | **インターフェースエンドポイント**     |
+| GA4 Data API（`*.googleapis.com`）         | アクセス統計（ADR-024）     | IPv6                                   |
+| OpenAI 互換の API（`baseUrl`）             | AI アダプター               | IPv6（公式 API は AAAA あり）          |
+| Secrets Manager                            | 起動時の秘密情報（§決定 5） | インターフェースエンドポイント（既存） |
 
 外に出ないもの: 認証（ソーシャルログイン・メール送信なし）、DuckDB の拡張機能（自動取得を
-止めている）、外部 URL の取得（worker の Fetch のみ）。
+止めている）、外部 URL の取得（worker の Fetch のみ）、STS（資格情報は環境変数で渡り、DuckDB の
+`credential_chain` もそれを読む）、`/api`・`/odata`・ダウンロードのルート（同じプロセスの
+`app.fetch`）。2026-11-18 に develop（`b1522f90`）で洗い直し、増えた宛先は無かった。
+
+Secrets Manager には、共有インフラがサイトの DB の初期化のために isolated サブネットへ置いた
+インターフェースエンドポイントがある。プライベート DNS が有効なので、connector からも
+VPC の中のアドレスに引け、IPv6 の経路は使わない（段階 2 の専用の VPC にはこのエンドポイントが
+無く、IPv6 で届いた）。
+
+`OPENAI_BASE_URL` と `OLLAMA_URL` はサイトの設定で任意のホストを指せる。Web Functions を選んだ
+環境では、VPC の外のホストは IPv6 で届くもの（AAAA のあるもの）に限る。NAT が無いので、インターネット
+上の IPv4 だけのホストには届かない。VPC の中（プライベートな IPv4）のホストは、DB と同じく
+connector で届く（セキュリティグループで connector を許可する）。
 
 東京の Bedrock Runtime は IPv6 に対応していない。公式のエンドポイント一覧にあるのは
 `bedrock-runtime.ap-northeast-1.amazonaws.com` だけで AAAA が無く、dual-stack の命名
 （`*.api.aws`、`*.dualstack.*`）は引けない。`bedrock-mantle.ap-northeast-1.api.aws` も A のみ。
+VPC の文書の「IPv6 に対応するサービス」の表は、Amazon Bedrock を「Public endpoints support IPv6:
+Yes」としているが、2026-11-18 に引き直しても、東京・us-east-1・us-west-2 の Bedrock の
+エンドポイント（`bedrock`、`bedrock-runtime`、`bedrock-agent-runtime`、`bedrock-mantle`）に
+AAAA は無かった。表ではなく DNS で判断する。
 
 ### 4. 段階 1 の実測（2026-10-17、東京、DuckDB なし）
 
@@ -111,22 +129,31 @@ ADR-032（残課題 2）で子プロセスにした決め手は「クエリ後�
 最大 64 件で分け合う）。親が RSS を見て `SIGKILL` する予算、時間切れの停止、ネイティブコードの
 異常終了の隔離、子の環境変数から資格情報を外すこと（§コンテキスト 4 の最終行）も効く。
 
-### 6. CDK のサポート（2026-10-17 時点）
+### 6. CDK のサポート（2026-11-18 時点）
 
-| 層             | 状況                                                                                                                                                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CloudFormation | `AWS::Lambda::WebFunction`、`WebFunctionRevision`、`WebFunctionEndpoint`、`NetworkConnector`、`ResourcePolicy`                                                                                                  |
-| CDK の L1      | `aws-cdk-lib` 2.273.0 に `CfnWebFunction`、`CfnWebFunctionRevision`、`CfnWebFunctionEndpoint`、`CfnNetworkConnector`。revision の `EgressNetworkConnectorArn` は次の版（aws-cdk#39139、マージ済み・未リリース） |
-| CDK の L2      | 未リリース。サービスチームの PR（aws-cdk#39210。安定版の `aws-lambda` に `WebFunction`、`WebFunctionCode`、`NetworkConnector`）が審査中                                                                         |
-| CloudFront     | OAC の種類は `lambda`（`OriginAccessControlOriginTypes.LAMBDA`）、署名は `always-amz-auth`。オリジンの `originAccessControlId` は既存の L2 で指定できる                                                         |
+| 層             | 状況                                                                                                                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CloudFormation | `AWS::Lambda::WebFunction`、`WebFunctionRevision`、`WebFunctionEndpoint`、`NetworkConnector`、`ResourcePolicy`                                                                                |
+| CDK の L1      | `CfnWebFunction`、`CfnWebFunctionRevision`、`CfnWebFunctionEndpoint`、`CfnNetworkConnector`。2.277.0 で `VpcEgressConfiguration` から `ElasticIpConfiguration` が消えた                       |
+| CDK の L2      | **2.276.0 でリリース**（aws-cdk#39210）。安定版の `aws-lambda` に `WebFunction`、`WebFunctionCode`、`WebFunctionEndpoint`、`NetworkConnector`。同じ版でエンドポイントの `authType` も足された |
+| CloudFront     | OAC の種類は `lambda`（`OriginAccessControlOriginTypes.LAMBDA`）、署名は `always-amz-auth`。オリジンの `originAccessControlId` は既存の L2 で指定できる                                       |
 
-L2 の PR が扱っている点のうち、KUKAN の作りに効くものが 2 つある。
+KUKAN の作りに効く L2 の振る舞いは次のとおり。
 
-- **コードは CDK の bootstrap のバケットに置けない。** バージョニング、SSE-S3、Lambda のサービス
-  への読み取りの許可が要る。専用のバケットへサーバー側でコピーし、書いた版の ID を revision に
-  固定するカスタムリソースが要る（`BucketDeployment` は書いた版の ID を返さない）。
-- **connector はスタックをまたいで Export で渡せない。** 更新のたびに版の ARN が変わるので、
-  版を固定した ARN で参照する。
+- **コードの置き場所。** コードは CDK の bootstrap のバケットに置けない（バージョニング、Lambda の
+  サービスへの読み取りの許可、AWS 管理の KMS キーでないことが要る）。L2 の
+  `WebFunctionCode.fromAssetToManagedBucket()` は、スタックごとに 1 つのバケットを作り、
+  アセットをそこへコピーして、書いた版の ID を revision に固定する。以前は自前のカスタムリソースが
+  要ると見ていたが、要らなくなった。
+- **connector の参照。** 同じスタックの connector を渡すと、revision はデプロイの時点の最新の版に
+  固定され、connector を更新したデプロイで revision も置き換わる。別のスタックで定義した connector は
+  synth で拒まれ、使えるのは版を固定した ARN（`NetworkConnector.fromNetworkConnectorVersionArn()`）
+  だけになる。その場合、connector を更新しても、ARN を書き換えるまで関数は古い版のまま。
+- **リソースポリシー。** 1 つの関数に 1 つだけ。エンドポイントの `grants.invoke()` と
+  `addToResourcePolicy()` の許可は 1 つの `AWS::Lambda::ResourcePolicy` にまとめられる。CloudFront の
+  OAC は `grants.invoke()` に `cloudfront.amazonaws.com` と `aws:SourceArn` を渡して許可する。
+- **実行ロール。** `role` で渡せる。connector の運用ロール（`operatorRole`）は別のロールにする
+  （実行ロールを使い回すと、関数のコードがネットワークインターフェースを操作できてしまう）。
 
 ## 検討した選択肢
 
@@ -187,9 +214,23 @@ VPC に入れることになり、Fetch のために NAT が要る（NAT の場�
 
 - VPC と public サブネットに IPv6 の CIDR を割り当て、`::/0 → インターネットゲートウェイ` を足す。
   RDS・OpenSearch・ECS（worker）は IPv4 のまま。
-- connector は `DualStack`、public サブネット（2 AZ 以上）に置く。セキュリティグループは送信のみ。
-  RDS・OpenSearch・worker のセキュリティグループで connector のセキュリティグループを許可する。
+- connector は `DualStack`、public サブネット（2 AZ 以上）に置く。**connector はサイトのスタックに
+  1 つずつ置き、セキュリティグループは共有インフラに 1 つ置く。** セキュリティグループは送信のみで、
+  RDS・OpenSearch・worker のセキュリティグループはこれを許可する。サイトのスタックは、今の
+  `sg/web` と同じく SSM のパラメータでこのセキュリティグループを受け取り、共有のセキュリティ
+  グループを書き換えない。
+  - connector を関数と同じスタックに置くのは、L2 が別のスタックの connector を版の ARN でしか
+    参照できないため（§コンテキスト 6）。共有に置くと、connector を更新するたびに各サイトの
+    版の ARN を書き換えることになる。サイトに置けば、connector の更新と revision の置き換えが
+    1 回のデプロイで済む。
+  - サイトごとに connector を置いても費用は増えない。ネットワークインターフェースに時間の料金は
+    無く、connector のインターフェースにはパブリック IPv4 が付かない。料金の表にも connector の
+    項目は無い。増えるのは public サブネットのアドレスの消費だけ。
+  - セキュリティグループを共有にするのは、今の web（`sg/web`）と同じく、DB・OpenSearch・worker の
+    許可を共有インフラの中で閉じるため。サイトごとに作ると、共有のセキュリティグループに
+    サイトから許可を足すことになる。
 - Bedrock Runtime のインターフェースエンドポイントを共有インフラ（ADR-041）に 1 AZ で置く。
+  東京で $0.014/時（月 $10.22）+ 処理したデータ $0.01/GB。
   その AZ が止まっている間は AI 提案と検索語の埋め込みが止まり、他は動く。AZ が戻れば戻る。
 - connector は `HomeRegion` のエンドポイントでしか使えない（マルチリージョンにはしない）。
 
@@ -238,11 +279,21 @@ Better Auth の回数制限は既定でプロセスのメモリに記録する�
   Web Functions の実行環境と同じ Amazon Linux 2023（glibc）なので、QEMU も別の OS 向けの
   取り寄せも要らない。Docker の `deps` ステージが `supportedArchitectures` で musl だけを
   入れているのに対し、zip は glibc のバインディングを入れる。
-- CDK は、L2（aws-cdk#39210）がリリースされていればそれを使い、無ければ L1 と自前の
-  カスタムリソース（コードのコピーと版の ID）で組む（§コンテキスト 6）。bootstrap には手を入れない。
-- connector は共有インフラに置き、版を固定した ARN を SSM のパラメータでサイトのスタックへ渡す
-  （既存の共有値と同じ渡し方）。connector を更新するときは、共有インフラ → 各サイトの 2 段で
-  デプロイする。
+- CDK は L2（`aws-cdk-lib` 2.276.0 以上）で組む。コードは
+  `WebFunctionCode.fromAssetToManagedBucket()` で渡し、コピーと版の ID の固定は L2 に任せる
+  （§コンテキスト 6）。bootstrap には手を入れない。L2 の梱包が `*.pem` を外すかは、組んでから確かめる。
+- connector はサイトのスタックで関数と一緒に作る（§決定 2）。
+- **実行ロールの名前は固定し、Fargate の task ロールとは別の名前にする。** 共有の OpenSearch の
+  FGAC（ADR-069）は、共有スタックがサイトの一覧だけから固定の名前のロールを割り当てる。Web
+  Function の実行ロールも同じく固定の名前にし（例: `<prefix>-web-function`）、共有スタックは
+  サイトごとに、Fargate の task ロールと Web Function の実行ロールの両方を割り当てる。
+  `webCompute` によらず両方を割り当てる。
+  - Fargate の task ロールと同じ名前にしない。切り替えのデプロイで CloudFormation は新しいロールを
+    作ってから古いロールを消すので、同じ名前は「既にある」で失敗する。
+  - 両方を常に割り当てるのは、切り替えの途中を検索が止まらずに過ぎるため。`webCompute` の値で
+    割り当てを選ぶと、共有スタックのデプロイが先に古いロールを外し、サイトのデプロイまで web から
+    検索できない。まだ作っていない名前のロールを割り当てておいても、そのアカウントでその名前の
+    ロールを作れる者にしか効かない。
 - revision の自動削除（どのエンドポイントも参照しない古い revision は上限で消える）と、置き換え
   のときの古い revision の扱いを確かめる。
 - ランタイムのパッチは固定できない。web だけは digest による固定（ベースイメージ）の対象から外れる。
@@ -266,6 +317,17 @@ Better Auth の回数制限は既定でプロセスのメモリに記録する�
 
 そのため、`maxEnvironments` は余裕を持たせて決め（small でも 10 前後）、DB の接続の上限は
 環境あたりのプールを小さくして守る（`WEB_DB_POOL_MAX`、検証では 5）。
+
+### 9. Node のメジャーバージョン
+
+Web Functions のランタイムは `nodejs24.x` だけで（2026-11-18 時点）、Event Functions の
+`nodejs26.x` に連動するかは文書に無い。web を Web Functions で動かす環境と Fargate で動かす
+環境で Node のメジャーを分けると、同じ web を 2 つの版で動かすことになり、CI で確かめるのは
+片方だけになりやすい。web と worker が共有するパッケージも、低い方の版に合わせることになる。
+
+このため、**Node のメジャーを上げるときは、Web Functions のランタイムがその版に対応していることを
+条件に加える。** 対応するまでは、すべての環境で今の版に留める。上げるのが遅れるだけで、版が
+分かれたまま残ることはない。
 
 ## 段階 2（合否）
 
@@ -380,11 +442,14 @@ Web Functions の利用料は「常に生きている環境の数 × 月 $3.3（
 3. 0 からの起動の SSR（SEO）と、lru-cache が環境とともに消えることの影響。段階 2c では、新しい環境の
    最初のリクエストが 2.5〜2.6 秒だった。
 4. Bedrock Runtime が dual-stack のエンドポイントを持てば、インターフェースエンドポイントは外せる。
-5. CDK の L2（aws-cdk#39210）のリリース。
+   AAAA が返るようになったかで判断する（§コンテキスト 3）。
+5. 1 つの connector が作るネットワークインターフェースの数（サブネットごとか、セキュリティグループ
+   ごとか）は文書に無い。サイトの数だけ connector を置くので（§決定 2）、組んでから数を確かめる。
 
 ## 関連
 
 - ADR-012（単一オリジン）、ADR-017（サーバー経由のダウンロード）、ADR-020（web = Fargate +
   ALB。採用すれば web の部分を置き換える）、ADR-027（CloudFront）、ADR-032（クエリの子プロセス）、
   ADR-041（共有インフラ）、ADR-049（共有 ALB。採用すれば書き換える）、ADR-055（OData）、
-  ADR-058（`/wake`）、ADR-059（worker の子プロセス）、ADR-061（OpenSearch の退役）
+  ADR-058（`/wake`）、ADR-059（worker の子プロセス）、ADR-061（OpenSearch の退役）、
+  ADR-069（OpenSearch の FGAC。実行ロールの名前を固定する理由）
