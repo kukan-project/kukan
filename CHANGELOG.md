@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.44.1] - 2026-11-19
+
+**Bug Fixes**
+
+- **Switching a pipeline-deployed environment to Web Functions no longer stops at deployment.** On v0.44.0, a pipeline whose environment has two or more brands failed at the first CloudFormation action with "Artifact [Synth_Output] exceeds max artifact size": the web's package is built per brand during synth (about 140 MB each), and CDK Pipelines handed the whole synth output to CloudFormation, which takes at most 256 MB (#1250). The pipeline now gives CloudFormation the templates only; the packages and images are published to S3 as before. Nothing was changed by the failed deployment, and an environment that stayed on Fargate was not affected.
+
+**Upgrade Notes** (for system administrators)
+
+- **AWS, every pipeline:** the next deployment updates each pipeline once (self-mutation). The Assets stage gains one small CodeBuild action, `StripAssets`, running beside the asset publishers, so a deployment takes about as long as before; each pipeline gains a CodeBuild project and its role. This applies whatever `webCompute` says, so the pipeline keeps its shape when an environment switches.
+- **Switching to Web Functions with a pipeline:** deploy this version first, then push the switch as described in the System Admin Guide ("Lambda Web Functions"). If a switch failed on v0.44.0, revert the switch, deploy this version, and push it again.
+- **Database:** no migrations. **Docker Compose:** nothing changes.
+
+---
+
+**バグ修正**
+
+- **パイプラインでデプロイしている環境を Web Functions に切り替えたとき、デプロイが止まらなくなりました。** v0.44.0 では、ブランドが 2 つ以上ある環境のパイプラインが、最初の CloudFormation のアクションで「Artifact [Synth_Output] exceeds max artifact size」となって止まっていました。web のパッケージは synth の中でブランドごとに作られ（1 つ約 140 MB）、CDK Pipelines が synth の出力を丸ごと CloudFormation に渡していたためで、CloudFormation が受け取れるのは 256 MB までです（#1250）。パイプラインは CloudFormation にテンプレートだけを渡すようになりました。パッケージとイメージは、これまでどおり S3 などへ公開されます。止まったデプロイでは何も変更されておらず、Fargate のままの環境には影響はありませんでした。
+
+**アップグレード時の注意**（システム管理者向け）
+
+- **AWS（すべてのパイプライン）：** 次のデプロイで、各パイプラインが一度だけ自分自身を更新します。Assets の段に、アセットの公開と並んで動く小さな CodeBuild のアクション `StripAssets` が加わるので、デプロイにかかる時間はほぼ変わりません。パイプラインごとに CodeBuild のプロジェクトとロールが 1 つずつ増えます。`webCompute` によらず行うので、環境を切り替えてもパイプラインの形は変わりません。
+- **パイプラインで Web Functions に切り替えるとき：** 先にこの版をデプロイしてから、システム管理者ガイド「Lambda Web Functions で動かす」の手順で切り替えを push してください。v0.44.0 で切り替えに失敗した環境は、切り替えを戻してこの版をデプロイし、もう一度 push してください。
+- **データベース：** マイグレーションはありません。**Docker Compose：** 変更はありません。
+
 ## [0.44.0] - 2026-11-18
 
 **Highlights**

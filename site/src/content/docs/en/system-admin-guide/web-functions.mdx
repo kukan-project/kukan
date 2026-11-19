@@ -46,6 +46,8 @@ synth (the region alone fails at deploy).
 
 The zip may be at most 512 MB unzipped (a Web Functions limit that cannot be raised); the build fails above it.
 
+An environment deployed by a pipeline should switch on v0.44.1 or later. One zip is built per brand (about 140 MB each), and on v0.44.0 two or more brands pass CloudFormation's limit (256 MB) and stop the deployment. From v0.44.1 the pipeline hands CloudFormation the templates only.
+
 ## Sizing
 
 Set it with `webFunction` in `overrides` (environment or site).
