@@ -309,6 +309,17 @@ split the record, so store it in the DB.
   commit with the synth settings it has, and updates its own settings only by self-mutation after a
   synth passes: turning Docker on in the switching commit would fail that synth and go no further.
   An x86_64 environment deploys the pipeline stack by hand before pushing the switch.
+- **CloudFormation gets the synth output without the zips.** CDK Pipelines hands the synth output
+  (the whole `cdk.out`, `Synth_Output`) to every CloudFormation action as well, and that input may
+  be at most 256 MB. There is one zip per brand (about 140 MB each), so two brands pass the limit
+  (demo's four stopped there). CloudFormation reads only the templates, and the Assets stage has
+  put the zips in S3 by then. The pipeline therefore adds an action to the Assets stage
+  (`StripAssets`) that copies the output without the `asset.*` entries, and points the
+  CloudFormation actions at the copy. Every pipeline does this whatever `webCompute` says, so the
+  pipeline keeps its shape across a switch and the code has no fork. A Fargate environment's
+  output (Docker build contexts of source only, a few MB each compressed in CI) is far from the
+  limit, but CloudFormation does not read it either. CDK Pipelines has no setting for this, so the
+  built pipeline is rewritten at the L1.
 - Build with the L2 (`aws-cdk-lib` 2.276.0 or later). Pass the code with
   `WebFunctionCode.fromAssetToManagedBucket()` and leave the copy and version-ID pinning to the L2
   (§Context 6). The bootstrap is left alone. Whether the L2's packaging drops `*.pem` is to be

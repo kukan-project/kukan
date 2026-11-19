@@ -299,6 +299,16 @@ Better Auth の回数制限は既定でプロセスのメモリに記録する�
   その時点の synth の設定で synth し、パイプライン自身の設定は synth が通った後の self-mutation で
   更新される。切り替えのコミットで初めて Docker を有効にすると、その synth が失敗して先に進めない。
   x86_64 の環境は、切り替えの push の前にパイプラインのスタックを手でデプロイする。
+- **CloudFormation には zip を除いた synth の出力を渡す。** CDK Pipelines は synth の出力
+  （`cdk.out` 全体、`Synth_Output`）を CloudFormation の各アクションにもそのまま渡し、その入力は
+  256 MB までしか受け付けない。zip はブランドごとに 1 つ（1 つ約 140 MB）なので、ブランドが 2 つで
+  上限を超える（demo の 4 ブランドで実際に止まった）。CloudFormation が読むのはテンプレート
+  だけで、zip はアセットの公開の段で S3 に上がっている。そこでパイプラインは、アセットの公開の段に
+  `asset.*` を除いた出力を作るアクション（`StripAssets`）を並べ、CloudFormation のアクションの入力を
+  それに差し替える。`webCompute` によらずすべてのパイプラインで行う。切り替えのときにパイプラインの
+  形が変わらず、コードの分かれ目も増えないため。Fargate の環境の出力（Docker のビルドコンテキストは
+  ソースだけで、CI では圧縮して 1 つ数 MB）は上限に遠いが、CloudFormation が読まないことは同じ。
+  CDK Pipelines の組み込みの設定には無いので、組み上がったパイプラインを L1 で書き換える。
 - CDK は L2（`aws-cdk-lib` 2.276.0 以上）で組む。コードは
   `WebFunctionCode.fromAssetToManagedBucket()` で渡し、コピーと版の ID の固定は L2 に任せる
   （§コンテキスト 6）。bootstrap には手を入れない。L2 の梱包が `*.pem` を外すかは、組んでから確かめる。

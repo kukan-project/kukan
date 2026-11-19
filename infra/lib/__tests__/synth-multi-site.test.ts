@@ -590,6 +590,14 @@ describe('pipeline mode', () => {
     keys(TEST_ACCOUNT).resourceCountIs('AWS::KMS::Key', 0)
   })
 
+  /** A site Web Functions can serve in pipeline mode: its own domain and certificate. */
+  const WEB_FUNCTION_SITE: SiteConfig = {
+    name: 'main',
+    enableWaf: false,
+    domainName: 'catalog.example.jp',
+    certificateArn: `arn:aws:acm:us-east-1:${TEST_ACCOUNT}:certificate/x`,
+  }
+
   const notifications = (extra: Partial<EnvironmentConfig> = {}) =>
     Template.fromStack(
       pipelineStack(
@@ -658,20 +666,55 @@ describe('pipeline mode', () => {
     // Fargate environment's synth is ready for the zip already
     expect(synthBuild().environment).toEqual(arm)
     expect(
-      synthBuild({
-        webCompute: 'web-function',
-        sites: [
-          {
-            name: 'main',
-            enableWaf: false,
-            domainName: 'catalog.example.jp',
-            certificateArn: `arn:aws:acm:us-east-1:${TEST_ACCOUNT}:certificate/x`,
-          },
-        ],
-      }).environment
+      synthBuild({ webCompute: 'web-function', sites: [WEB_FUNCTION_SITE] }).environment
     ).toEqual(arm)
     // x86_64 (no ARM CodeBuild) keeps the default synth until it switches
     expect(synthBuild({ cpuArchitecture: 'x86_64' }).environment.PrivilegedMode).toBeFalsy()
+  })
+
+  /** The rendered pipeline's stages, by name, and its CloudFormation actions that read an artifact. */
+  const pipelineStages = (extra: Partial<EnvironmentConfig> = {}) => {
+    type Action = {
+      Name: string
+      ActionTypeId: { Provider: string }
+      InputArtifacts?: { Name: string }[]
+      OutputArtifacts?: { Name: string }[]
+      Configuration?: Record<string, unknown>
+    }
+    const [pipeline] = Object.values(
+      notifications(extra).findResources('AWS::CodePipeline::Pipeline')
+    ).map((p) => p.Properties as { Stages: { Name: string; Actions: Action[] }[] })
+    const actions = pipeline.Stages.flatMap((s) => s.Actions)
+    const deploys = actions.filter(
+      (a) => a.ActionTypeId.Provider === 'CloudFormation' && a.InputArtifacts
+    )
+    expect(deploys.length).toBeGreaterThan(0)
+    return { stages: pipeline.Stages, actions, deploys }
+  }
+
+  it('hands CloudFormation the synth output without the assets', () => {
+    for (const extra of [{}, { webCompute: 'web-function' as const, sites: [WEB_FUNCTION_SITE] }]) {
+      const { stages, actions, deploys } = pipelineStages(extra)
+      // Beside the asset publishers, so it adds no stage; every deploy comes after
+      expect(stages.map((s) => s.Name)).toEqual([
+        'Source',
+        'Build',
+        'UpdatePipeline',
+        'Assets',
+        'Dev',
+      ])
+      const strip = actions.find((a) => a.Name === 'StripAssets')
+      expect(stages[3].Actions).toContain(strip)
+      expect(strip?.InputArtifacts).toEqual([{ Name: 'Synth_Output' }])
+      expect(strip?.OutputArtifacts).toEqual([{ Name: 'Synth_Output_Templates' }])
+      for (const action of deploys) {
+        expect(action.InputArtifacts).toEqual([{ Name: 'Synth_Output_Templates' }])
+        expect(action.Configuration?.TemplatePath).toMatch(/^Synth_Output_Templates::assembly-/)
+        expect(action.Configuration?.TemplateConfiguration).toMatch(
+          /^Synth_Output_Templates::assembly-/
+        )
+      }
+    }
   })
 
   it('creates no notification resources unless the environment asks for them', () => {
