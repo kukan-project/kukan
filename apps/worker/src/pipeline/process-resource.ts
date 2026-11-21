@@ -248,7 +248,11 @@ async function runPipeline(
         interpretResult = await executeInterpret(
           resourceId,
           fetchResult.packageId,
-          { storageKey: version.storageKey, size: version.size },
+          {
+            storageKey: version.storageKey,
+            size: version.size,
+            reading: version.reading,
+          },
           version.format,
           ctx,
           {

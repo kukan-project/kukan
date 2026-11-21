@@ -20,6 +20,7 @@ import {
   ResourceVersionService,
 } from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
+import { versionReading } from './interpret/table/settled-types'
 import { HeavyShortOfMemoryError, WorkerStoppingError } from '../heavy/process'
 import { claimKeeper } from './run/held-context'
 import type { PipelineContext } from './run/types'
@@ -92,7 +93,9 @@ export async function retryLakeIngest(
           version,
           sourcePath: t.parquetPath,
           claim: claims[0] ?? null,
-        })
+        }),
+      undefined,
+      { reading: versionReading(source.settledTypes, source.schema, source.previousSchema) }
     )
     // Written whether or not there was a table. An empty schema is how this
     // version stops being outstanding: without it, an empty CSV is handed back

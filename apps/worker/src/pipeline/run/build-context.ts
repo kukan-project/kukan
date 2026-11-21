@@ -4,7 +4,7 @@
 
 import { SystemSettingService, VOCABULARY_PACKS_KEY } from '@kukan/api/services/system-setting'
 import { randomUUID } from 'node:crypto'
-import { eq, and, ne, sql, desc } from 'drizzle-orm'
+import { eq, and, ne, sql, desc, lt, isNotNull, isNull } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -31,15 +31,17 @@ import {
   publishLiveContent,
   reserveObject,
 } from '@kukan/api/services/pipeline/storage-pointer'
-import type { PackageDbState } from '@kukan/shared'
+import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 import {
   getStorageKey,
   isDocumentFormat,
   primaryKeyOf,
+  settledTypesOf,
   roleOverridesOf,
   versionOrigin,
 } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
+import { versionReading } from '../interpret/table/settled-types'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import type { SummaryDeps } from '../steps/summarize'
@@ -222,6 +224,7 @@ export function buildPipelineContext(
           hash: resourceVersion.hash,
           format: resourceVersion.format,
           keyColumns: resourceVersion.lakeKeyColumns,
+          settledTypes: resourceVersion.settledTypes,
         })
         .from(resourceVersion)
         .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
@@ -247,12 +250,14 @@ export function buildPipelineContext(
           // skipped it.
           format: res?.format ?? null,
           keyColumns: primaryKeyOf(res?.columnSettings),
+          settledTypes: settledTypesOf(res?.columnSettings?.types),
         },
         latestActive: activeRow
           ? {
               hash: activeRow.hash,
               format: activeRow.format,
               keyColumns: activeRow.keyColumns,
+              settledTypes: settledTypesOf(activeRow.settledTypes),
             }
           : null,
         publishedKey: currentStorageKey,
@@ -360,6 +365,8 @@ export function buildPipelineContext(
           storageKey: resourceVersion.storageKey,
           size: resourceVersion.size,
           format: resourceVersion.format,
+          settledTypes: resourceVersion.settledTypes,
+          schema: resourceVersion.schema,
         })
         .from(resourceVersion)
         .where(
@@ -371,9 +378,21 @@ export function buildPipelineContext(
         )
         .orderBy(desc(resourceVersion.version))
         .limit(1)
+      if (!row) return null
+      const { settledTypes, schema, ...version } = row
+      const types = settledTypesOf(settledTypes)
+      // A version read once is read again as it was — a reprocess, or one a
+      // revert issued with the schema of the version it went back to — so its
+      // dates and digits stay what its preview and layer 2 already show. One
+      // read for the first time decides them, from the version before it.
+      const reading = versionReading(
+        settledTypes,
+        schema,
+        types && !schema ? await schemaBefore(db, resourceId, version.version) : null
+      )
       // Size is nullable on the table (pre-ADR-043 rows), but a version this
       // run can interpret was created with the measurement Fetch took.
-      return row ? { ...row, size: row.size ?? 0 } : null
+      return { ...version, size: version.size ?? 0, reading }
     },
 
     async derivativesDescribe(resourceId: string, contentHash: string, version: number) {
@@ -492,6 +511,33 @@ export function buildPipelineContext(
       return result
     },
   }
+}
+
+/**
+ * The schema of the newest active version below `version` that was read to a
+ * table, whose formats and digits a first reading of `version` falls back on
+ * (Versioning ii-c §8.3). One read to none decided nothing.
+ */
+async function schemaBefore(
+  db: Database,
+  resourceId: string,
+  version: number
+): Promise<ResourceSchema | null> {
+  const [before] = await db
+    .select({ schema: resourceVersion.schema })
+    .from(resourceVersion)
+    .where(
+      and(
+        eq(resourceVersion.resourceId, resourceId),
+        eq(resourceVersion.state, 'active'),
+        lt(resourceVersion.version, version),
+        isNotNull(resourceVersion.schema),
+        isNull(resourceVersion.noTableReason)
+      )
+    )
+    .orderBy(desc(resourceVersion.version))
+    .limit(1)
+  return before?.schema ?? null
 }
 
 /**

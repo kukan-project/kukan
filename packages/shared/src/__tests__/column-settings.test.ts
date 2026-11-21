@@ -9,6 +9,13 @@ describe('columnSettingsSchema', () => {
     expect(columnSettingsSchema.safeParse({ primaryKey: [] }).success).toBe(false)
     expect(columnSettingsSchema.safeParse({}).success).toBe(true)
   })
+
+  it('takes settled types it can read, a date with its format, and refuses others', () => {
+    const types = { rate: 'decimal', day: 'date:%d/%m/%Y' }
+    expect(columnSettingsSchema.safeParse({ types }).success).toBe(true)
+    expect(columnSettingsSchema.safeParse({ types: { rate: 'money' } }).success).toBe(false)
+    expect(columnSettingsSchema.safeParse({ types: { day: 'date:%Q' } }).success).toBe(false)
+  })
 })
 
 describe('primaryKeyOf', () => {
@@ -37,7 +44,7 @@ describe('sameKeyColumns', () => {
 })
 
 describe('sameVersionIdentity with a key', () => {
-  const base = { hash: 'sha256:a', format: 'CSV', keyColumns: null }
+  const base = { hash: 'sha256:a', format: 'CSV', keyColumns: null, settledTypes: null }
 
   it('separates two readings that differ only in the key', () => {
     // What the version gate creates a version for, and what stops a resend
@@ -48,6 +55,29 @@ describe('sameVersionIdentity with a key', () => {
   it('compares the key by value, not by reference', () => {
     expect(
       sameVersionIdentity({ ...base, keyColumns: ['id'] }, { ...base, keyColumns: ['id'] })
+    ).toBe(true)
+  })
+})
+
+describe('sameVersionIdentity with settled types', () => {
+  const base = { hash: 'sha256:a', format: 'CSV', keyColumns: null, settledTypes: null }
+
+  it('separates two readings that differ only in a settled type (spec §6.5)', () => {
+    expect(sameVersionIdentity(base, { ...base, settledTypes: { rate: 'decimal' } })).toBe(false)
+    expect(
+      sameVersionIdentity(
+        { ...base, settledTypes: { rate: 'decimal' } },
+        { ...base, settledTypes: { rate: 'float' } }
+      )
+    ).toBe(false)
+  })
+
+  it('compares them as a record, in no order', () => {
+    expect(
+      sameVersionIdentity(
+        { ...base, settledTypes: { a: 'string', b: 'decimal' } },
+        { ...base, settledTypes: { b: 'decimal', a: 'string' } }
+      )
     ).toBe(true)
   })
 })

@@ -191,6 +191,31 @@ describe('interpretCsv — settled types', () => {
     expect(await preview('at')).toEqual(['2026-12-31 12:34:56.123', '2026-12-31 12:34:57'])
   })
 
+  it('reads again as a version was read, with its format and digits, not deciding them anew', async () => {
+    // The values alone would leave the date undecided and choose DECIMAL(3, 2)
+    const { schema } = await interpret('d,r\n01/02/2026,1.25\n', {
+      types: { d: 'date', r: 'decimal' },
+      previous: {
+        d: { dateFormat: '%d/%m/%Y' },
+        r: { decimalPrecision: 10, decimalScale: 3 },
+      },
+      fixed: true,
+    })
+    expect(column(schema.columns, 'd').dateFormat).toBe('%d/%m/%Y')
+    expect(column(schema.columns, 'r')).toMatchObject({ decimalPrecision: 10, decimalScale: 3 })
+    expect(await preview('d')).toEqual(['2026-02-01'])
+
+    const undecided = await interpret('d\n01/02/2026\n', {
+      types: { d: 'date' },
+      previous: { d: { dateFormatUndecided: true } },
+      fixed: true,
+    })
+    expect(column(undecided.schema.columns, 'd')).toMatchObject({
+      type: 'string',
+      dateFormatUndecided: true,
+    })
+  })
+
   it('names a settled column the file does not have, and reads the rest', async () => {
     const { schema } = await interpret('a\n1\n', { types: { a: 'string', gone: 'integer' } })
     expect(schema.missingSettled).toEqual(['gone'])

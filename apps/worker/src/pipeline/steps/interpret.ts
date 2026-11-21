@@ -33,6 +33,7 @@ import {
 } from '@kukan/shared'
 import type { NoTableReason, ResourceSchema, TableProfile } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
+import type { SettledReading } from '../interpret/table/settled-types'
 import { runHeavy } from '@/heavy'
 // A type only: the parsers stay in the heavy process
 import type { ExtractedText } from '../interpret/document/document-text'
@@ -85,6 +86,8 @@ export interface InterpretSource {
    * too large to interpret costs a sample rather than a full transfer.
    */
   size: number
+  /** The settled types the version froze, read onto the table (Versioning ii-c §8.3). */
+  reading?: SettledReading
 }
 
 export interface InterpretHooks {
@@ -223,7 +226,10 @@ export async function executeInterpret(
       }
     },
     hooks.onEncoding,
-    { profile: { vocabularyPacks, ...(roleOverrides && { roleOverrides }) } }
+    {
+      profile: { vocabularyPacks, ...(roleOverrides && { roleOverrides }) },
+      reading: source.reading,
+    }
   )
 
   // The schema goes back whether or not there was a table. An empty one is not

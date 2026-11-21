@@ -19,6 +19,7 @@
 import { z } from 'zod'
 import {
   OVERRIDABLE_COLUMN_ROLES,
+  parseSettledType,
   type OverridableColumnRole,
   type ResourceColumnType,
 } from './pipeline-types'
@@ -45,6 +46,18 @@ export const columnSettingsSchema = z.object({
    * like the key.
    */
   roles: z.record(z.string(), z.enum(OVERRIDABLE_COLUMN_ROLES)).optional(),
+  /**
+   * The types a person settled columns on, by column name (Versioning ii-c
+   * §8.2): `"decimal"`, or a date type with its format (`"date:%d/%m/%Y"`).
+   * Part of a version's identity, like the key: a type changes how the bytes
+   * are read. **Absent, never empty**, like the key.
+   */
+  types: z
+    .record(
+      z.string(),
+      z.string().refine((value) => parseSettledType(value) !== null, 'not a settled type')
+    )
+    .optional(),
 })
 export type ColumnSettings = z.infer<typeof columnSettingsSchema>
 
@@ -65,8 +78,11 @@ export function roleOverridesOf(
   return roles && Object.keys(roles).length > 0 ? roles : null
 }
 
-/** Whether two sets of overrides give every column the same role; order carries no meaning. */
-export function sameRoleOverrides(
+/**
+ * Whether two per-column settings — role overrides, settled types — give every
+ * column the same value; order carries no meaning.
+ */
+export function sameColumnValues(
   a: Record<string, string> | null,
   b: Record<string, string> | null
 ): boolean {
@@ -75,6 +91,16 @@ export function sameRoleOverrides(
     left.length === Object.keys(b ?? {}).length &&
     left.every(([k, v]) => !!b && Object.hasOwn(b, k) && b[k] === v)
   )
+}
+
+/**
+ * Stored settled types, in the one spelling readers may assume: a record with
+ * entries, or null — as {@link keyColumnsOf} collapses a stored key.
+ */
+export function settledTypesOf(
+  types: Record<string, string> | null | undefined
+): Record<string, string> | null {
+  return types && Object.keys(types).length > 0 ? types : null
 }
 
 /**

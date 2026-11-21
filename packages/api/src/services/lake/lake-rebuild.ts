@@ -32,7 +32,7 @@ import {
   MAX_PARQUET_SOURCE_SIZE,
   TABLE_SOURCE_FORMATS,
 } from '@kukan/shared'
-import type { NoTableReason } from '@kukan/shared'
+import type { NoTableReason, ResourceSchema } from '@kukan/shared'
 import { reserveObject } from '../pipeline/storage-pointer'
 import { touchResourceClaim, type ResourceClaim } from '../pipeline/pipeline-claim'
 import {
@@ -52,6 +52,19 @@ export interface LakeVersionFile {
   storageKey: string
   size: number | null
   format: string | null
+  /** The settled types the version froze, which it is read again with (Versioning ii-c §8.3). */
+  settledTypes: Record<string, string> | null
+  /**
+   * The schema the version was interpreted to: the date formats and digits its
+   * settled columns came to, which reading it again has to reproduce.
+   */
+  schema: ResourceSchema | null
+  /**
+   * For a version no interpretation has recorded a schema for yet: the schema
+   * of the newest version below it that was read to a table, whose formats and
+   * digits a first reading falls back on, as the pipeline's does.
+   */
+  previousSchema: ResourceSchema | null
 }
 
 /**
@@ -60,7 +73,7 @@ export interface LakeVersionFile {
  * nor one from `use`, which are thrown.
  */
 export type LakeVersionRead<T> =
-  | { table: true; value: T }
+  | { table: true; value: T; schema: ResourceSchema }
   | { table: false; reason: NoTableReason }
   | { table: false; failed: unknown }
 
@@ -143,6 +156,8 @@ async function versionsToLoad(db: Database, resourceId: string) {
       size: resourceVersion.size,
       format: resourceVersion.format,
       keyColumns: resourceVersion.lakeKeyColumns,
+      settledTypes: resourceVersion.settledTypes,
+      schema: resourceVersion.schema,
     })
     .from(resourceVersion)
     .where(and(eq(resourceVersion.resourceId, resourceId), rebuildLoads()))
@@ -262,29 +277,36 @@ export async function rebuildResourceLake(
         // The key the table's current contents were loaded under, as an ingest
         // reads it off the head: the version loaded last.
         let headKey: string[] | null | undefined
+        // Every version here was read to a table, or not read yet: none is one
+        // that recorded why it has none
+        let previousSchema: ResourceSchema | null = null
         for (const v of versions) {
           if (opts.claim) await touchResourceClaim(db, opts.claim)
           // Not attached while the version is interpreted, so the heavy process
           // can have back what the last load kept (ADR-059)
           await draft.suspend()
           const keyColumns = keyColumnsOf(v.keyColumns)
-          const read = await deps.readVersion(
-            {
-              resourceId,
-              version: v.version,
-              storageKey: v.storageKey,
-              size: v.size,
-              format: v.format,
-            },
-            (parquetPath) =>
-              loadLakeVersion(draft.session, {
+          const read: LakeVersionRead<Awaited<ReturnType<typeof loadLakeVersion>>> =
+            await deps.readVersion(
+              {
                 resourceId,
-                parquetPath,
-                keyColumns,
-                headKey,
-              }),
-            opts.claim
-          )
+                version: v.version,
+                storageKey: v.storageKey,
+                size: v.size,
+                format: v.format,
+                settledTypes: v.settledTypes,
+                schema: v.schema,
+                previousSchema,
+              },
+              (parquetPath) =>
+                loadLakeVersion(draft.session, {
+                  resourceId,
+                  parquetPath,
+                  keyColumns,
+                  headKey,
+                }),
+              opts.claim
+            )
           if (!read.table && 'failed' in read) {
             // Left out rather than holding up every version after it, and with
             // them a purge (ADR-067 §4): one that fails each time would stop
@@ -302,6 +324,10 @@ export async function rebuildResourceLake(
             loaded.push({ version: v.version, snapshotId: read.value.snapshotId })
             headKey = keyColumns
           }
+          // What this reading came to, where no earlier one recorded it: the next
+          // version read for the first time falls back on it
+          const schema: ResourceSchema | null = v.schema ?? (read.table ? read.schema : null)
+          if (schema) previousSchema = schema
         }
         if (loaded.length === 0) return null
         const to = lakeCatalogKey(resourceId, draft.generation)

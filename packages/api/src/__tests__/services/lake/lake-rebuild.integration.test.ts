@@ -131,7 +131,7 @@ function reader(tables: Map<number, string | NoTableReason | 'fails'>): LakeVers
     if (table === undefined) throw new Error(`no file for v${file.version}`)
     if (table === 'fails') return { table: false, failed: new Error(`v${file.version} unreadable`) }
     if (!table.endsWith('.parquet')) return { table: false, reason: table as NoTableReason }
-    return { table: true, value: await use(table) }
+    return { table: true, value: await use(table), schema: { rowCount: 1, columns: [] } }
   }
 }
 
@@ -295,6 +295,36 @@ describe('rebuildResourceLake', () => {
 
     expect(released[1]).toBe(1)
     expect((await versions()).every((r) => r.lake !== null)).toBe(true)
+  })
+
+  it('hands a version read for the first time the schema the one before it was read to', async () => {
+    const { store, storage } = bucket()
+    const files = new Map([
+      [1, await parquet('v1', `(1, 'a')`)],
+      [2, await parquet('v2', `(1, 'b')`)],
+      [3, await parquet('v3', `(1, 'c')`)],
+    ])
+    const recorded = {
+      rowCount: 1,
+      columns: [{ name: 'id', type: 'integer' as const, nullable: false, nullCount: 0 }],
+    }
+    await addVersion(1, { schema: recorded })
+    // Neither of these has a recorded schema: v3 falls back on what v2's reading came to
+    await addVersion(2)
+    await addVersion(3)
+    const handed = new Map<number, unknown>()
+    const interpret = reader(files)
+    const readVersion: LakeVersionReader = async (file, use) => {
+      handed.set(file.version, file.previousSchema)
+      const read = await interpret(file, use)
+      return read.table ? { ...read, schema: { rowCount: file.version, columns: [] } } : read
+    }
+
+    await rebuildResourceLake(db, { lake, store, storage, readVersion }, resourceId)
+
+    expect(handed.get(1)).toBeNull()
+    expect(handed.get(2)).toEqual(recorded)
+    expect(handed.get(3)).toEqual({ rowCount: 2, columns: [] })
   })
 
   it('records a version that no longer loads, and goes on without it', async () => {

@@ -1,0 +1,1 @@
+ALTER TABLE "resource_version" ADD COLUMN "settled_types" jsonb;

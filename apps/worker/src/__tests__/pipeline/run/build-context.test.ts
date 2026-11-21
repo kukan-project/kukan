@@ -36,6 +36,9 @@ vi.mock('@kukan/db', () => ({
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col, val) => ({ col, val, type: 'eq' })),
   ne: vi.fn((col, val) => ({ col, val, type: 'ne' })),
+  lt: vi.fn((col, val) => ({ col, val, type: 'lt' })),
+  isNotNull: vi.fn((col) => ({ col, type: 'isNotNull' })),
+  isNull: vi.fn((col) => ({ col, type: 'isNull' })),
   and: vi.fn((...conditions) => ({ conditions, type: 'and' })),
   desc: vi.fn((col) => ({ col, type: 'desc' })),
   sql: Object.assign((strings: TemplateStringsArray) => strings.join(''), { raw: vi.fn() }),
@@ -248,6 +251,47 @@ describe('buildPipelineContext — reads', () => {
     expect(await ctx.versionForContent('r', 'other')).toBeNull()
   })
 
+  it('versionForContent reads a version read once again as its own schema says', async () => {
+    const { db, addResult } = createMockDb()
+    const schema = {
+      rowCount: 1,
+      columns: [{ name: 'd', type: 'date', nullable: false, nullCount: 0, dateFormat: '%m/%d/%Y' }],
+    }
+    addResult([
+      { version: 3, storageKey: 'k', size: 1, format: 'CSV', settledTypes: { d: 'date' }, schema },
+    ])
+
+    expect(
+      (await buildPipelineContext(db, mockStorage).versionForContent('r', 'h'))?.reading
+    ).toEqual({ types: { d: 'date' }, previous: { d: { dateFormat: '%m/%d/%Y' } }, fixed: true })
+  })
+
+  it('versionForContent reads the settled types the version froze, and the version before it', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([
+      { version: 3, storageKey: 'k', size: 1, format: 'CSV', settledTypes: { d: 'date' } },
+    ])
+    addResult([
+      {
+        schema: {
+          rowCount: 1,
+          columns: [
+            { name: 'd', type: 'date', nullable: false, nullCount: 0, dateFormat: '%d/%m/%Y' },
+          ],
+        },
+      },
+    ])
+    const ctx = buildPipelineContext(db, mockStorage)
+
+    expect(await ctx.versionForContent('r', 'h')).toEqual({
+      version: 3,
+      storageKey: 'k',
+      size: 1,
+      format: 'CSV',
+      reading: { types: { d: 'date' }, previous: { d: { dateFormat: '%d/%m/%Y' } } },
+    })
+  })
+
   it('pendingLakeVersion answers the version, or null where none waits', async () => {
     const { db, addResult } = createMockDb()
     addResult([{ version: 3 }])
@@ -325,6 +369,9 @@ describe('buildPipelineContext — derivativesDescribe', () => {
       storageKey: 'k',
       format: 'CSV',
       size: 1,
+      settledTypes: null,
+      schema: null,
+      previousSchema: null,
     })
     expect(await describes({ previewKey: 'p', metadata: indexed }, true)).toBe(false)
 
@@ -458,6 +505,21 @@ describe('buildPipelineContext — createVersion', () => {
       storageKey: request.currentStorageKey,
     })
     expect(copyObject).not.toHaveBeenCalled()
+  })
+
+  it('creates a version for a settled type the newest one was not read with', async () => {
+    const db = versionDb(
+      { ...live, columnSettings: { types: { rate: 'decimal' } } },
+      { version: 1 },
+      { hash: 'sha256:new', format: 'CSV', keyColumns: null, settledTypes: null }
+    )
+    // The same bytes over again: only the type differs (Versioning ii-c §6.5)
+    vi.mocked(objectAlreadyVersioned).mockResolvedValue(true)
+
+    expect(await buildPipelineContext(db, mockStorage).createVersion(request)).toMatchObject({
+      created: true,
+      version: 2,
+    })
   })
 
   it('creates nothing where the run lost its claim at the insert', async () => {

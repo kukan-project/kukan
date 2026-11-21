@@ -29,6 +29,7 @@ import { jsonNestsDeeperThan, jsonStartsWithObject } from './table/json'
 import type { PipelineContext } from '../run/types'
 import type { InterpretedProfile } from './table/table-profile'
 import type { InterpretedTableFile, ProfileRequest } from './table/write-table'
+import type { SettledReading } from './table/settled-types'
 import { MAX_JSON_DEPTH, MAX_JSON_OBJECT_SIZE, MAX_TABLE_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
@@ -87,6 +88,8 @@ const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
  *   both callers give one answer.
  * @param opts.profile - write the profile artifact too (ADR-063), reading
  *   columns against the packs given (ADR-073), for a caller that publishes one.
+ * @param opts.reading - the settled types to read onto the table, where the
+ *   version froze any (Versioning ii-c §8.3).
  */
 export async function withInterpretedVersion<T>(
   source: { storageKey: string; size: number },
@@ -94,7 +97,7 @@ export async function withInterpretedVersion<T>(
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>,
-  opts: { profile?: Omit<ProfileRequest, 'path'> } = {}
+  opts: InterpretOptions = {}
 ): Promise<InterpretOutcome<T>> {
   // Too large to interpret. Answered here rather than by each caller, so the
   // pipeline and the lake retry give the same answer — and answered as an
@@ -183,7 +186,7 @@ async function interpretJsonVersion<T>(
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>,
-  opts: { profile?: Omit<ProfileRequest, 'path'> } = {}
+  opts: InterpretOptions = {}
 ): Promise<InterpretOutcome<T>> {
   const encoding = JSON_ENCODING
   await onEncoding?.(encoding)
@@ -225,6 +228,12 @@ async function interpretJsonVersion<T>(
   }
 }
 
+/** What a caller asks of an interpretation beyond the table itself. */
+interface InterpretOptions {
+  profile?: Omit<ProfileRequest, 'path'>
+  reading?: SettledReading
+}
+
 /**
  * What every table file ends with once it is on disk and read as far as its
  * format alone can take it: the heavy process reads it, the source goes, and
@@ -241,7 +250,7 @@ async function interpretOnDisk<T>(
   ) => Extract<HeavyRequest, { kind: 'interpret-csv' | 'interpret-json' }>,
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
-  opts: { profile?: Omit<ProfileRequest, 'path'> }
+  opts: InterpretOptions
 ): Promise<InterpretOutcome<T>> {
   const parquetPath = `${sourcePath}.parquet`
   const profileRequest = opts.profile && {
@@ -255,7 +264,7 @@ async function interpretOnDisk<T>(
   let interpreted: InterpretedTableFile
   try {
     interpreted = (await runHeavy(
-      request(parquetPath, profileRequest),
+      { ...request(parquetPath, profileRequest), reading: opts.reading },
       ctx.keepHeld
     )) as InterpretedTableFile
   } catch (err) {

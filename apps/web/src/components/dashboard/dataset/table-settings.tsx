@@ -48,7 +48,7 @@ import {
   canOverrideRole,
   OVERRIDABLE_COLUMN_ROLES,
   sameKeyColumns,
-  sameRoleOverrides,
+  sameColumnValues,
 } from '@kukan/shared'
 import { clientFetch, readProblem } from '@/lib/client-api'
 import { useProblemMessage } from '@/hooks/use-problem-message'
@@ -136,7 +136,7 @@ export function TableSettings({
   /** The selection as the settings spell it: no columns is no key */
   const selectedKey = selected.length > 0 ? selected : null
   const keyDraft = !!view && !sameKeyColumns(view.primaryKey, selectedKey)
-  const rolesDraft = !!view && !sameRoleOverrides(view.roles, roleDraft)
+  const rolesDraft = !!view && !sameColumnValues(view.roles, roleDraft)
   const draft = keyDraft || rolesDraft
   useEffect(() => {
     onDraftChange?.(draft)
@@ -173,8 +173,8 @@ export function TableSettings({
         loadedRoles.current = data.roles
         setRoleDraft((current) =>
           roleBase !== undefined &&
-          !sameRoleOverrides(roleBase, current) &&
-          sameRoleOverrides(roleBase, data.roles)
+          !sameColumnValues(roleBase, current) &&
+          sameColumnValues(roleBase, data.roles)
             ? current
             : { ...data.roles }
         )

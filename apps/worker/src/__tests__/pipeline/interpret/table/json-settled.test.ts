@@ -23,7 +23,7 @@ describe('interpretJson — settled types', () => {
   function interpret(value: unknown, reading: SettledReading) {
     const jsonPath = join(dir, 'in.json')
     writeFileSync(jsonPath, typeof value === 'string' ? value : JSON.stringify(value))
-    return interpretJson(jsonPath, join(dir, 'out.parquet'), undefined, undefined, reading)
+    return interpretJson(jsonPath, join(dir, 'out.parquet'), undefined, reading)
   }
 
   const column = (columns: ResourceColumn[], name: string) => columns.find((c) => c.name === name)!

@@ -26,12 +26,21 @@ import { withInterpretedVersion } from '../../pipeline/interpret/version'
 import { touchResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 
 const db = { execute: vi.fn() }
-const file = { resourceId: 'r', version: 2, storageKey: 'k', size: 1, format: 'CSV' }
+const file = {
+  resourceId: 'r',
+  version: 2,
+  storageKey: 'k',
+  size: 1,
+  format: 'CSV',
+  settledTypes: null,
+  schema: null,
+  previousSchema: null,
+}
 const read = () => lakeVersionReader(createPipelineContextMock(), db)(file, async () => 'loaded')
 
 describe('lakeVersionReader', () => {
   it('hands the table to the load', async () => {
-    expect(await read()).toEqual({ table: true, value: 'loaded' })
+    expect(await read()).toMatchObject({ table: true, value: 'loaded' })
   })
 
   it("answers with the error when the reading fails, as the version's", async () => {
@@ -70,5 +79,43 @@ describe('lakeVersionReader', () => {
     const ctx = vi.mocked(withInterpretedVersion).mock.lastCall![2] as PipelineContext
     await ctx.keepHeld!()
     expect(touchResourceClaim).toHaveBeenCalledWith(db, claim)
+  })
+
+  it('reads a version no reading recorded a schema for with the formats of the one before', async () => {
+    interpretation.run = async (use) => ({ used: await use({ parquetPath: '/tmp/v.parquet' }) })
+    const previousSchema = {
+      rowCount: 1,
+      columns: [
+        { name: 'd', type: 'date' as const, nullable: false, nullCount: 0, dateFormat: '%d/%m/%Y' },
+      ],
+    }
+
+    await lakeVersionReader(createPipelineContextMock(), db)(
+      { ...file, settledTypes: { d: 'date' }, previousSchema },
+      async () => 'loaded'
+    )
+
+    expect(vi.mocked(withInterpretedVersion).mock.lastCall![5]).toEqual({
+      reading: { types: { d: 'date' }, previous: { d: { dateFormat: '%d/%m/%Y' } } },
+    })
+  })
+
+  it('reads a version again with its settled types, as its schema says it was read', async () => {
+    interpretation.run = async (use) => ({ used: await use({ parquetPath: '/tmp/v.parquet' }) })
+    const schema = {
+      rowCount: 1,
+      columns: [
+        { name: 'd', type: 'date' as const, nullable: false, nullCount: 0, dateFormat: '%d/%m/%Y' },
+      ],
+    }
+
+    await lakeVersionReader(createPipelineContextMock(), db)(
+      { ...file, settledTypes: { d: 'date' }, schema },
+      async () => 'loaded'
+    )
+
+    expect(vi.mocked(withInterpretedVersion).mock.lastCall![5]).toEqual({
+      reading: { types: { d: 'date' }, previous: { d: { dateFormat: '%d/%m/%Y' } }, fixed: true },
+    })
   })
 })

@@ -162,19 +162,19 @@ const JSON_WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d])
  *
  * @param profileRequest - the profile to write too (ADR-063), when the caller
  *   publishes one.
+ * @param reading - the settled column types to read with (Versioning ii-c
+ *   §8.3), by the flattened names.
  * @param maxObjectBytes - the largest JSON value the reader takes: a record of
  *   an array, or the whole file when it is one object. The caller refused
  *   files past it already (`version.ts`); here it bounds what the reader
  *   buffers.
- * @param reading - the settled column types to read with (Versioning ii-c
- *   §8.3), by the flattened names.
  */
 export async function interpretJson(
   jsonPath: string,
   parquetPath: string,
   profileRequest?: ProfileRequest,
-  maxObjectBytes: number = MAX_JSON_OBJECT_SIZE,
-  reading?: SettledReading
+  reading?: SettledReading,
+  maxObjectBytes: number = MAX_JSON_OBJECT_SIZE
 ): Promise<InterpretedTableFile> {
   const { conn, close } = await openDuckdb({
     memoryLimitBytes: INTERPRET_MEMORY_LIMIT_MB * 1_000_000,

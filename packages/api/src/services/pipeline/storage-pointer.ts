@@ -65,6 +65,12 @@ export interface PublishedContent {
    */
   keyColumns?: string[] | null
   /**
+   * Settled types to put back on the resource, for the same writers and the
+   * same reason as {@link PublishedContent.keyColumns} (Versioning ii-c §8.2).
+   * Null takes them off.
+   */
+  settledTypes?: Record<string, string> | null
+  /**
    * The claim the writer holds, when it has one (ADR-044 §4).
    *
    * The live pointer is the second thing a run writes that outlives it — the
@@ -80,18 +86,29 @@ export interface PublishedContent {
 }
 
 /**
- * The settled key as `column_settings` holds it — set, or taken off.
+ * `column_settings` with the settled key and types the content names put back
+ * — each set, or taken off — or null where it names neither.
  *
- * A partial write on purpose: the pointer move restores one field of a reading
+ * A partial write on purpose: the pointer move restores the fields of a reading
  * and must leave whatever else the settled layer holds alone. Settling the layer
  * from the API writes the whole object instead, which is what its `PUT` says.
- * Empty normalizes to absent, because "no key" has one spelling (spec §6.2) and
+ * Empty normalizes to absent, because "none" has one spelling (spec §6.2) and
  * a second one would reach every reader.
  */
-function keySetting(keyColumns: string[] | null | undefined) {
-  return keyColumns?.length
-    ? sql`jsonb_set(column_settings, '{primaryKey}', ${JSON.stringify(keyColumns)}::jsonb, true)`
-    : sql`column_settings - 'primaryKey'`
+function settingsRestored(content: PublishedContent) {
+  // `field` is one of the two names below, never input
+  const put = (settings: SQL, field: 'primaryKey' | 'types', value: object | null | undefined) =>
+    value && Object.keys(value).length > 0
+      ? sql`jsonb_set(${settings}, ${sql.raw(`'{${field}}'`)}, ${JSON.stringify(value)}::jsonb, true)`
+      : sql`${settings} - ${sql.raw(`'${field}'`)}`
+  let settings: SQL | null = null
+  if ('keyColumns' in content) {
+    settings = put(sql`column_settings`, 'primaryKey', content.keyColumns)
+  }
+  if ('settledTypes' in content) {
+    settings = put(settings ?? sql`column_settings`, 'types', content.settledTypes)
+  }
+  return settings
 }
 
 /**
@@ -130,6 +147,7 @@ export async function publishLiveContent(
 ): Promise<boolean> {
   const { key, previousKey, hash, size, claim } = content
   const changed = content.previousHash !== hash
+  const settings = settingsRestored(content)
 
   const result = await db.execute(sql`
     WITH published AS (
@@ -145,7 +163,7 @@ export async function publishLiveContent(
                 sql`, format = ${content.format}::varchar, doc_sync_due_at = NOW()`
               : sql``
           }
-          ${'keyColumns' in content ? sql`, column_settings = ${keySetting(content.keyColumns)}` : sql``}
+          ${settings ? sql`, column_settings = ${settings}` : sql``}
           ${changed ? sql`, last_modified = NOW()` : sql``}
       WHERE id = ${resourceId}::uuid
         AND storage_key IS NOT DISTINCT FROM ${previousKey}::text

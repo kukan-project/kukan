@@ -112,7 +112,10 @@ describe('retryLakeIngest', () => {
       { storageKey: VERSION_KEY },
       'csv',
       expect.objectContaining({ ingestLakeVersion: deps.ctx.ingestLakeVersion }),
-      expect.any(Function)
+      expect.any(Function),
+      undefined,
+      // No settled types frozen on this version
+      { reading: undefined }
     )
     expect(deps.ctx.ingestLakeVersion).toHaveBeenCalledWith({
       ...job,

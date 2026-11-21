@@ -18,6 +18,7 @@ import type { LakeIngestRow } from '@kukan/api/services/lake/lake-catalog'
 import type { ResourceClaim } from '@kukan/api/services/pipeline/pipeline-claim'
 import type { VersionResult } from './version-gate'
 import type { SummaryDeps } from '../steps/summarize'
+import type { SettledReading } from '../interpret/table/settled-types'
 import type { InterpretResult } from '../steps/interpret'
 
 /** Minimal resource data needed by pipeline steps */
@@ -155,7 +156,8 @@ export interface PipelineContext {
    * does create these bytes will interpret them.
    *
    * The format comes back with it, and it is the one Interpret reads by
-   * (ADR-046 §6).
+   * (ADR-046 §6) — and so do the settled types the version froze, where it
+   * froze any, as the reading Interpret applies (Versioning ii-c §8.3).
    */
   versionForContent(
     resourceId: string,
@@ -165,6 +167,7 @@ export interface PipelineContext {
     storageKey: string
     size: number
     format: string | null
+    reading?: SettledReading
   } | null>
   /**
    * Whether the derivatives already on the row were made from these bytes.

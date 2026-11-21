@@ -9,6 +9,7 @@
 import type { Database } from '@kukan/db'
 import type { LakeVersionReader } from '@kukan/api/services/lake/lake-rebuild'
 import { withInterpretedVersion } from './interpret/version'
+import { versionReading } from './interpret/table/settled-types'
 import { interruptsRun } from '../heavy/process'
 import { claimKeeper } from './run/held-context'
 import type { PipelineContext } from './run/types'
@@ -31,7 +32,9 @@ export function lakeVersionReader(
         (table) => {
           loading = true
           return heavySection(() => use(table.parquetPath))
-        }
+        },
+        undefined,
+        { reading: versionReading(file.settledTypes, file.schema, file.previousSchema) }
       )
     } catch (err) {
       if (loading || interruptsRun(err)) throw err
@@ -42,6 +45,6 @@ export function lakeVersionReader(
     if (outcome.used === undefined) {
       return { table: false, reason: outcome.reason ?? 'no-columns' }
     }
-    return { table: true, value: outcome.used }
+    return { table: true, value: outcome.used, schema: outcome.schema! }
   }
 }

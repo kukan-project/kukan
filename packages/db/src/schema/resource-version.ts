@@ -85,6 +85,10 @@ export const resourceVersion = pgTable(
     // never gets a key. A diff can match rows only where both ends carry the
     // same list, so "how was this version read" has to live on the version.
     lakeKeyColumns: jsonb('lake_key_columns').$type<string[] | null>(),
+    // The types columns were settled on when this version was created, frozen
+    // as the key is (Versioning ii-c §8.2): the resource's setting at that
+    // moment, by column name. Null is "none settled".
+    settledTypes: jsonb('settled_types').$type<Record<string, string> | null>(),
     // Why the key stopped this version reaching layer 2 (spec §6.6). Written
     // once by the Lake step and never cleared — re-reading the same bytes under
     // the same key reaches the same answer — and it is what takes the version

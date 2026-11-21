@@ -40,7 +40,8 @@ import {
   canOverrideRole,
   roleOverridesOf,
   sameKeyColumns,
-  sameRoleOverrides,
+  sameColumnValues,
+  settledTypesOf,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
   PIPELINE_JOB_TYPE,
@@ -172,7 +173,7 @@ export async function insertVersionIfHeld(
   const result = await db.execute(sql`
     WITH inserted AS (
       INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, format,
-                                    schema, restored_from, lake_key_columns)
+                                    schema, restored_from, lake_key_columns, settled_types)
       SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
              ${v.hash}::text, ${v.origin}, r.format,
              ${
@@ -182,7 +183,8 @@ export async function insertVersionIfHeld(
                  : sql`${v.schema ? JSON.stringify(v.schema) : null}::jsonb`
              },
              ${v.restoredFrom ?? null}::integer,
-             r.column_settings -> 'primaryKey'
+             r.column_settings -> 'primaryKey',
+             r.column_settings -> 'types'
       FROM resource r
       WHERE r.id = ${v.resourceId}::uuid AND ${stillHeld(claim)}
       RETURNING id, storage_key
@@ -500,14 +502,42 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
 export async function pendingLakeVersionSource(
   db: Pick<Database, 'execute'>,
   row: { resourceId: string; version: number }
-): Promise<{ storageKey: string; format: string; size: number } | null> {
+): Promise<{
+  storageKey: string
+  format: string
+  size: number
+  settledTypes: Record<string, string> | null
+  schema: ResourceSchema | null
+  previousSchema: ResourceSchema | null
+} | null> {
   const result = await db.execute(pendingLakeIngestQuery(row))
-  const [found] = result.rows as unknown as {
-    storageKey: string
-    format: string
-    size: number
+  const [found] = result.rows as unknown as { storageKey: string; format: string; size: number }[]
+  if (!found) return null
+  // Apart from the sweep's query, which lists every outstanding version and has
+  // no use for a schema apiece: what the version is read again with (ii-c §8.3)
+  const reading = await db.execute(sql`
+    SELECT settled_types AS "settledTypes", schema FROM ${resourceVersion}
+    WHERE resource_id = ${row.resourceId}::uuid AND version = ${row.version}
+  `)
+  const [read] = reading.rows as unknown as {
+    settledTypes: Record<string, string> | null
+    schema: ResourceSchema | null
   }[]
-  return found ?? null
+  const settledTypes = read?.settledTypes ?? null
+  const schema = read?.schema ?? null
+  // Read for the first time: what the newest version below that was read to a
+  // table decided, as the pipeline's first reading falls back on
+  let previousSchema: ResourceSchema | null = null
+  if (settledTypes && !schema) {
+    const before = await db.execute(sql`
+      SELECT schema FROM ${resourceVersion}
+      WHERE resource_id = ${row.resourceId}::uuid AND version < ${row.version}
+        AND state = 'active' AND schema IS NOT NULL AND no_table_reason IS NULL
+      ORDER BY version DESC LIMIT 1
+    `)
+    previousSchema = (before.rows[0] as { schema: ResourceSchema } | undefined)?.schema ?? null
+  }
+  return { ...found, settledTypes, schema, previousSchema }
 }
 
 /**
@@ -2151,7 +2181,11 @@ export class ResourceVersionService {
       .where(eq(resource.id, resourceId))
       .limit(1)
     if (!current) return null
-    const live = { ...current, keyColumns: primaryKeyOf(current.columnSettings) }
+    const live = {
+      ...current,
+      keyColumns: primaryKeyOf(current.columnSettings),
+      settledTypes: settledTypesOf(current.columnSettings.types),
+    }
 
     const settled =
       target.restoreTo === null
@@ -2314,7 +2348,7 @@ export class ResourceVersionService {
     // Through the check even when sent back as it stood: an override the content
     // has outgrown goes, or a column of its name coming back would take it again
     const roles = await this.usableRoles(resourceId, asked, storedRoles)
-    const rolesSettled = sameRoleOverrides(storedRoles, roles)
+    const rolesSettled = sameColumnValues(storedRoles, roles)
 
     if (!settled || !rolesSettled) {
       await this.db
@@ -2855,13 +2889,14 @@ export class ResourceVersionService {
         hash: resourceVersion.hash,
         format: resourceVersion.format,
         keyColumns: resourceVersion.lakeKeyColumns,
+        settledTypes: resourceVersion.settledTypes,
         state: resourceVersion.state,
       })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))
       .limit(1)
     if (!row || row.state === 'purged') return false
-    return sameVersionIdentity(row, live)
+    return sameVersionIdentity({ ...row, settledTypes: settledTypesOf(row.settledTypes) }, live)
   }
 
   /**
@@ -3099,7 +3134,9 @@ export class ResourceVersionService {
         // Omitted entirely when not retracting, which leaves the columns alone —
         // passing the resource's own values back would still mint a generation
         // for a label nobody changed.
-        ...(retracting ? { format: row.format, keyColumns: row.lakeKeyColumns } : {}),
+        ...(retracting
+          ? { format: row.format, keyColumns: row.lakeKeyColumns, settledTypes: row.settledTypes }
+          : {}),
         claim,
       })
       if (!published) {
@@ -3201,9 +3238,11 @@ export class ResourceVersionService {
       // those bytes read under that format (ADR-046 §6), so putting the content
       // back and leaving the label is putting back half of it. It is also what
       // stops the version gate seeing a difference and filing these bytes again
-      // under a new number. The key is the same argument (spec §6.4).
+      // under a new number. The key and the types are the same argument (spec
+      // §6.4, §8.2).
       format: prev.format,
       keyColumns: prev.lakeKeyColumns,
+      settledTypes: prev.settledTypes,
     })
     // The mover parked this operation's own object on the way out, so nothing
     // is stranded by leaving.

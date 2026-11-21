@@ -1,4 +1,4 @@
-import { sameKeyColumns } from './column-settings'
+import { sameColumnValues, sameKeyColumns } from './column-settings'
 
 /**
  * What settles a version, in one place (ADR-046 §3).
@@ -17,7 +17,8 @@ import { sameKeyColumns } from './column-settings'
  * makes a version (spec §6.4) — and a settled rule still comparing hash and
  * format would answer "already there" for a destination that differs only in its
  * key, leaving the interpretation unrestored with nothing failing. The field is
- * here so both answers change at once.
+ * here so both answers change at once. Settled types are the fourth input
+ * (Versioning ii-c §6.5), for the same reason.
  */
 export interface VersionIdentity {
   hash: string | null
@@ -36,6 +37,13 @@ export interface VersionIdentity {
    * part of it, for the reason {@link sameKeyColumns} gives.
    */
   keyColumns: string[] | null
+  /**
+   * The types columns are settled on, by column name, or null for none
+   * (§8.2): a version's frozen record on one side, the resource's current
+   * setting on the other, as with the key. Compared as a record — unlike a
+   * key's columns, settled types have no order.
+   */
+  settledTypes: Record<string, string> | null
 }
 
 /**
@@ -56,6 +64,7 @@ const COMPARE: {
   hash: (a, b) => a === b,
   format: (a, b) => a === b,
   keyColumns: sameKeyColumns,
+  settledTypes: sameColumnValues,
 }
 
 /** Whether two readings of content describe the same version's worth of it. */

@@ -11,15 +11,19 @@ const KEY = 'resources/pkg-1/res-1.run-a'
  * constant noise in most of them.
  */
 function decide(
-  overrides: Partial<Parameters<typeof decideVersionCreate>[0]> = {},
+  {
+    identity,
+    ...overrides
+  }: Partial<Omit<Parameters<typeof decideVersionCreate>[0], 'identity'>> & {
+    identity?: Partial<VersionIdentity>
+  } = {},
   /** The reading the highest active version froze, when a case has one. */
   latestActive?: Partial<VersionIdentity>
 ) {
+  const none = { hash: null, format: null, keyColumns: null, settledTypes: null }
   return decideVersionCreate({
-    identity: { hash: 'sha256:aaa', format: 'CSV', keyColumns: null },
-    latestActive: latestActive
-      ? { hash: null, format: null, keyColumns: null, ...latestActive }
-      : null,
+    identity: { ...none, hash: 'sha256:aaa', format: 'CSV', ...identity },
+    latestActive: latestActive ? { ...none, ...latestActive } : null,
     publishedKey: KEY,
     currentKey: KEY,
     maxVersion: null,
@@ -83,6 +87,17 @@ describe('decideVersionCreate', () => {
         { hash: 'sha256:aaa', format: 'CSV', keyColumns: ['order', 'line'] }
       )
     ).toEqual({ created: false })
+  })
+
+  it('creates when only the settled types changed', () => {
+    // As with the key: the bytes never move, and the type is part of the reading
+    // (Versioning ii-c §6.5)
+    expect(
+      decide(
+        { identity: { settledTypes: { rate: 'decimal' } }, maxVersion: 1 },
+        { hash: 'sha256:aaa', format: 'CSV' }
+      )
+    ).toEqual({ created: true, version: 2 })
   })
 
   it('creates when the latest active version records no format at all', () => {

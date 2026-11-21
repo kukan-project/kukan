@@ -428,6 +428,13 @@
       "when": 1794261639870,
       "tag": "0060_zippy_ted_forrester",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795273496771,
+      "tag": "0061_organic_cloak",
+      "breakpoints": true
     }
   ]
 }

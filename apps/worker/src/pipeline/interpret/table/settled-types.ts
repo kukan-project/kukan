@@ -15,17 +15,22 @@ import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import {
   ISO_8601_TIMESTAMP,
   parseSettledType,
+  settledTypesOf,
   SETTLED_DATE_FORMATS,
   SETTLED_TIMESTAMP_FORMATS,
   type ResourceColumn,
   type ResourceColumnType,
+  type ResourceSchema,
   type SettledTypeSpec,
 } from '@kukan/shared'
 import { freeRowid } from './table-profile'
 import { describe, type Column } from './write-table'
 
 /** What the previous version decided about a settled column. */
-export type PreviousRead = Pick<ResourceColumn, 'dateFormat' | 'decimalPrecision' | 'decimalScale'>
+export type PreviousRead = Pick<
+  ResourceColumn,
+  'dateFormat' | 'dateFormatUndecided' | 'decimalPrecision' | 'decimalScale'
+>
 
 /** What a version is read with: the settled types, and what the previous version decided. */
 export interface SettledReading {
@@ -36,6 +41,61 @@ export interface SettledReading {
    * that breaks a tie, and digits to fall back on where no value is readable.
    */
   previous?: Record<string, PreviousRead>
+  /**
+   * Read with what `previous` decided rather than falling back on it: the
+   * version is being read again as it was read once — by the lake, which has
+   * to load the table its preview shows — or as the version a revert goes
+   * back to was read (§8.2). A column `previous` has nothing for is decided
+   * from its values.
+   */
+  fixed?: true
+}
+
+/** What a schema's columns decided that a later reading falls back on, by name. */
+export function previousReads(schema: ResourceSchema): Record<string, PreviousRead> {
+  const reads: Record<string, PreviousRead> = {}
+  for (const c of schema.columns) {
+    if (c.dateFormat === undefined && !c.dateFormatUndecided && c.decimalPrecision === undefined) {
+      continue
+    }
+    reads[c.name] = {
+      ...(c.dateFormat !== undefined && { dateFormat: c.dateFormat }),
+      ...(c.dateFormatUndecided && { dateFormatUndecided: true as const }),
+      ...(c.decimalPrecision !== undefined && {
+        decimalPrecision: c.decimalPrecision,
+        decimalScale: c.decimalScale,
+      }),
+    }
+  }
+  return reads
+}
+
+/**
+ * The reading for `types`, falling back on what `schema` decided — or, where
+ * `fixed`, reading with it (§8.3).
+ */
+export function readingOf(
+  types: Record<string, string>,
+  schema: ResourceSchema | null,
+  fixed?: true
+): SettledReading {
+  return { types, ...(schema && { previous: previousReads(schema), ...(fixed && { fixed }) }) }
+}
+
+/**
+ * How to read a version with its frozen settled types: again as it was read,
+ * with the formats and digits its schema records — or, where no reading has
+ * recorded one, for the first time, falling back on the schema of the version
+ * before it. Undefined where it froze none.
+ */
+export function versionReading(
+  settledTypes: Record<string, string> | null,
+  schema: ResourceSchema | null,
+  previousSchema: ResourceSchema | null
+): SettledReading | undefined {
+  const types = settledTypesOf(settledTypes)
+  if (!types) return undefined
+  return schema ? readingOf(types, schema, true) : readingOf(types, previousSchema)
 }
 
 /** What a settled column adds to its schema entry. */
@@ -122,7 +182,17 @@ export async function settleColumns(
       reading?.previous && Object.hasOwn(reading.previous, name)
         ? reading.previous[name]
         : undefined
-    const read = await readExpression(conn, col, spec, previous)
+    const fixed = reading?.fixed === true
+    // Read with the format the version was read with, as if the setting named it
+    const read = await readExpression(
+      conn,
+      col,
+      fixed && previous?.dateFormat && !spec.format
+        ? { ...spec, format: previous.dateFormat }
+        : spec,
+      previous,
+      fixed
+    )
     if (read.expr !== null) exprs.set(name, read.expr)
     notes.set(name, {
       settled: true,
@@ -166,7 +236,8 @@ async function readExpression(
   conn: DuckDBConnection,
   col: string,
   spec: SettledTypeSpec,
-  previous: PreviousRead | undefined
+  previous: PreviousRead | undefined,
+  fixed: boolean
 ): Promise<{ expr: string | null; note: SettledNote }> {
   switch (spec.type) {
     case 'string':
@@ -185,10 +256,10 @@ async function readExpression(
     case 'boolean':
       return { expr: `TRY_CAST(${trimmed(col)} AS BOOLEAN)`, note: {} }
     case 'decimal':
-      return decimalExpression(conn, col, previous)
+      return decimalExpression(conn, col, previous, fixed)
     case 'date':
     case 'timestamp':
-      return dateExpression(conn, col, spec, previous)
+      return dateExpression(conn, col, spec, previous, fixed)
   }
 }
 
@@ -202,27 +273,33 @@ async function readExpression(
 async function decimalExpression(
   conn: DuckDBConnection,
   col: string,
-  previous: PreviousRead | undefined
+  previous: PreviousRead | undefined,
+  fixed: boolean
 ): Promise<{ expr: string; note: SettledNote }> {
   const value = numeric(col)
   // Leading zeros take no digit, as in DuckDB: `007` is one digit, `0.5` none
   const intDigits = `length(ltrim(regexp_extract(${value}, '^[+-]?(\\d*)', 1), '0'))`
   const fracDigits = `length(regexp_extract(${value}, '\\.(\\d+)$', 1))`
   const plain = `regexp_full_match(${value}, ${sqlLiteral(PLAIN_DECIMAL)})`
-  const row = await firstRow<{ i: number | bigint | null; f: number | bigint | null }>(
-    conn,
-    `SELECT max(i) AS i, max(f) AS f FROM (SELECT ${intDigits} AS i, ${fracDigits} AS f FROM t WHERE ${plain}) WHERE i + f <= ${MAX_DIGITS}`
-  )
   let precision: number
   let scale: number
-  if (row.i == null || row.f == null) {
-    // Nothing readable decides the digits: the previous version's, or DuckDB's default
-    precision = previous?.decimalPrecision ?? DEFAULT_DECIMAL.precision
-    scale = previous?.decimalScale ?? DEFAULT_DECIMAL.scale
+  if (fixed && previous?.decimalPrecision !== undefined && previous.decimalScale !== undefined) {
+    precision = previous.decimalPrecision
+    scale = previous.decimalScale
   } else {
-    const ints = Number(row.i)
-    scale = Math.min(Number(row.f), MAX_DIGITS - ints)
-    precision = Math.max(1, ints + scale)
+    const row = await firstRow<{ i: number | bigint | null; f: number | bigint | null }>(
+      conn,
+      `SELECT max(i) AS i, max(f) AS f FROM (SELECT ${intDigits} AS i, ${fracDigits} AS f FROM t WHERE ${plain}) WHERE i + f <= ${MAX_DIGITS}`
+    )
+    if (row.i == null || row.f == null) {
+      // Nothing readable decides the digits: the previous version's, or DuckDB's default
+      precision = previous?.decimalPrecision ?? DEFAULT_DECIMAL.precision
+      scale = previous?.decimalScale ?? DEFAULT_DECIMAL.scale
+    } else {
+      const ints = Number(row.i)
+      scale = Math.min(Number(row.f), MAX_DIGITS - ints)
+      precision = Math.max(1, ints + scale)
+    }
   }
   const fits = `${plain} AND ${intDigits} <= ${precision - scale} AND ${fracDigits} <= ${scale}`
   return {
@@ -243,7 +320,8 @@ async function dateExpression(
   conn: DuckDBConnection,
   col: string,
   spec: SettledTypeSpec,
-  previous: PreviousRead | undefined
+  previous: PreviousRead | undefined,
+  fixed: boolean
 ): Promise<{ expr: string | null; note: SettledNote }> {
   const cast = spec.type === 'date' ? 'DATE' : 'TIMESTAMP'
   // `%Y` takes two digits too, and would read `26-11-21` as the year 26
@@ -260,6 +338,8 @@ async function dateExpression(
         ? `CASE WHEN regexp_matches(${trimmed(col)}, '\\d{4}') THEN ${parse(format)}::${cast} END`
         : `${parse(format)}::${cast}`
   if (spec.format) return { expr: read(spec.format), note: { dateFormat: spec.format } }
+  if (fixed && previous?.dateFormatUndecided)
+    return { expr: null, note: { dateFormatUndecided: true } }
 
   const candidates: readonly string[] =
     spec.type === 'date' ? SETTLED_DATE_FORMATS : SETTLED_TIMESTAMP_FORMATS
@@ -271,7 +351,12 @@ async function dateExpression(
   const best = Math.max(...reads)
   const tied = candidates.filter((_, i) => reads[i] === best)
   if (best === 0 || tied.length === 1) {
-    const format = best === 0 && previous?.dateFormat ? previous.dateFormat : tied[0]
+    // The previous format only where it is one of this type's: a column settled
+    // from `timestamp` to `date` cannot read a time of day's format
+    const format =
+      best === 0 && previous?.dateFormat && candidates.includes(previous.dateFormat)
+        ? previous.dateFormat
+        : tied[0]
     return { expr: read(format), note: { dateFormat: format } }
   }
   if (previous?.dateFormat && tied.includes(previous.dateFormat)) {

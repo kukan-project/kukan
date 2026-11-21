@@ -5,6 +5,7 @@
  */
 
 import type { InterpretedTableFile, ProfileRequest } from '../pipeline/interpret/table/write-table'
+import type { SettledReading } from '../pipeline/interpret/table/settled-types'
 import type { ExtractedText } from '../pipeline/interpret/document/document-text'
 import type { ReadPdf } from '../summary/material-files'
 
@@ -17,8 +18,16 @@ export type HeavyRequest =
       skipRows: number
       /** The packs it reads columns against travel here: the child has no DB to ask. */
       profile?: ProfileRequest
+      /** And the settled types, for the same reason. */
+      reading?: SettledReading
     }
-  | { kind: 'interpret-json'; jsonPath: string; parquetPath: string; profile?: ProfileRequest }
+  | {
+      kind: 'interpret-json'
+      jsonPath: string
+      parquetPath: string
+      profile?: ProfileRequest
+      reading?: SettledReading
+    }
   | { kind: 'extract-text'; documentPath: string; format: string; artifactPath: string }
   | { kind: 'read-pdf'; pdfPath: string; cutTo: number; cutPast: number; outPath: string }
   | { kind: 'downscale-image'; imagePath: string; outPath: string }

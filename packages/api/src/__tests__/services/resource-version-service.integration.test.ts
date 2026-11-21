@@ -23,6 +23,7 @@ import {
   ResourceVersionService,
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
+  pendingLakeVersionSource,
 } from '../../services/resource-version-service'
 import { UserService } from '../../services/user-service'
 import {
@@ -2261,6 +2262,28 @@ describe('the key a version is read under (spec §6.4)', () => {
     expect(await keyOf(1)).toBeNull()
   })
 
+  it('freezes the settled types beside the key (Versioning ii-c §8.2)', async () => {
+    await db
+      .update(resource)
+      .set({ columnSettings: { primaryKey: ['id'], types: { rate: 'decimal' } } })
+      .where(eq(resource.id, resourceId))
+    await create(1)
+    await setKey(['id']) // and no types: the setting is written whole
+    await create(2)
+
+    const typesOf = async (version: number) =>
+      (
+        await db
+          .select({ types: resourceVersion.settledTypes })
+          .from(resourceVersion)
+          .where(
+            and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version))
+          )
+      )[0]?.types ?? null
+    expect(await typesOf(1)).toEqual({ rate: 'decimal' })
+    expect(await typesOf(2)).toBeNull()
+  })
+
   it('reads the setting at the insert, not from a value the caller carried', async () => {
     // Read inside the statement like the format is, because nothing stops a
     // change landing between a caller's read and here.
@@ -2291,6 +2314,62 @@ describe('the key a version is read under (spec §6.4)', () => {
     expect(await resourceKey()).toEqual(['order', 'line'])
     // v1 keeps its own record: nothing rewrites what a version was read under.
     expect(await keyOf(1)).toEqual(['order', 'line'])
+  })
+
+  it("hands the lake retry a version's types, and the schema of the one before where it has none", async () => {
+    await addVersion(1, 'sha256:v1', 'active', 'csv', columns('a'))
+    await addVersion(2, 'sha256:v2', 'active', 'csv', columns('b'))
+    await addVersion(3, 'sha256:v3', 'active', 'csv')
+    await db
+      .update(resourceVersion)
+      .set({ noTableReason: 'out-of-memory', schema: { rowCount: 0, columns: [] } })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    await db
+      .update(resourceVersion)
+      .set({ settledTypes: { a: 'string' } })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 3)))
+
+    // v2 was read to no table, so it decided nothing: v1 is the one before
+    expect(await pendingLakeVersionSource(db, { resourceId, version: 3 })).toMatchObject({
+      settledTypes: { a: 'string' },
+      schema: null,
+      previousSchema: columns('a'),
+    })
+    // Read once already: its own schema, and no need of the one before
+    expect(await pendingLakeVersionSource(db, { resourceId, version: 1 })).toMatchObject({
+      settledTypes: null,
+      schema: columns('a'),
+      previousSchema: null,
+    })
+  })
+
+  it('issues a revert under the destination types, keeping the key beside them (ii-c §8.2)', async () => {
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['id'], settledTypes: { code: 'string' } })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db
+      .update(resource)
+      .set({
+        hash: 'sha256:v2',
+        columnSettings: { primaryKey: ['id'], types: { code: 'integer' } },
+      })
+      .where(eq(resource.id, resourceId))
+
+    expect(await revertFromLive()).toMatchObject({ restored: 1, published: 3 })
+
+    const [v3] = await db
+      .select({ types: resourceVersion.settledTypes })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 3)))
+    expect(v3.types).toEqual({ code: 'string' })
+    const [res] = await db
+      .select({ s: resource.columnSettings })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+    expect(res.s).toEqual({ primaryKey: ['id'], types: { code: 'string' } })
   })
 
   it('brings the key back when a purge moves live onto another version', async () => {

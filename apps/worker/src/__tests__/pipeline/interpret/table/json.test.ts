@@ -38,6 +38,7 @@ describe('interpretJson', () => {
       jsonPath,
       parquetPath,
       profilePath === undefined ? undefined : { path: profilePath, vocabularyPacks: [] },
+      undefined,
       MAX_OBJECT
     )
     return { ...result, parquetPath, profilePath }
@@ -233,6 +234,7 @@ describe('interpretJson', () => {
     const { reason } = await interpretJson(
       jsonPath,
       join(dir, 'big.parquet'),
+      undefined,
       undefined,
       16 * 1024 * 1024
     )
