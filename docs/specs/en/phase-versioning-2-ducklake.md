@@ -1361,27 +1361,16 @@ reviewed version's number, and the server compares it with the current version u
 before writing the setting. If they differ it refuses without writing (409), and the screen points to the
 newer version's review. On an older version only "accept as is" is offered.
 
-**That run reads the reviewed version's bytes, and makes a version only while that version is still
-the current one.** A check at write time is not enough: a fetch already queued can run first and put
-the settled type on newer content. Today a re-enqueue rides along with a run that is queued or
-processing, and the setting is read when the run reaches Version (`docs/pipeline.md` §7), so nothing
-guarantees a `rebuildOnly` run reads the reviewed version. Therefore:
-
-- a choice that creates a version is queued as a dedicated run, not ridden along, carrying the reviewed
-  version's number
-- that run does not fetch; it reads the reviewed version's object kept in layer 1. **Before reading, it
-  checks under the claim that the current version is still that number and not being purged.** Purge's
-  claim does not take the run claim, so without the check the object may already be gone, and the read
-  fails before the branch below is reached
-- Version checks again under the claim that the current version is still that number before making
-  one. If either check fails (including a purge under way or a missing object), it ends without a
-  version, **and once it has released its claim, queues an ordinary rebuild (`rebuildOnly`) of the
-  current version.** Queued while it is still running, the `complete` the run writes at its end would
-  overwrite the `queued`, and the rebuild could not claim the resource. That version may have been read under the old settled types, frozen before the setting was
-  written (a fetch already running passed Version first). Waiting for the next fetch would leave the
-  setting and the published reading apart for good on a resource that is not fetched again. The rebuild
-  reads the current setting at Version, so if it differs it makes a version under the new settled type,
-  and values that do not fit surface as `castFailures` for review
+**The run after it is an ordinary rebuild (`rebuildOnly`) (made lighter on 2026-11-21).** Even with the
+check at write time, a fetch queued earlier can still run afterwards and put the settled type on newer
+content. That is rare, and when it happens a version reading the new content with the settled type is
+made, and the values that did not convert show as `castFailures`, a "values that did not convert"
+review. A person accepts them or removes the settled type, so there is a way back. The setting is read
+when the run reaches Version (`docs/pipeline.md` §7), so the setting and the published reading do not
+stay apart either. So no dedicated run that reads only the reviewed version's bytes (a run that does
+not ride along, a double check under the claim, re-queuing a rebuild when it fails) is built, by the
+rule of not complicating the implementation for a case that is rare, not fatal and recoverable
+(`CLAUDE.md` Review guidelines).
 
 **The default for a promotion (string → integer etc.) can also be "accept".** The original said "the
 default is not to change, so existing data is not broken". With review after ingest, ingest has already
