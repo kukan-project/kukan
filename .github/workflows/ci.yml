@@ -696,7 +696,7 @@ jobs:
         with:
           # The job's own definition is in the list: a change to how the images
           # are built or checked runs the check.
-          only: '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|patches/.*|(.*/)?package\.json|apps/worker/tsup\.config\.ts|\.github/(workflows/ci\.yml|actions/detect-changes/action\.yml))$'
+          only: '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|patches/.*|(.*/)?package\.json|apps/worker/tsup\.config\.ts|\.github/(workflows/ci\.yml|actions/(detect-changes|build-image)/action\.yml))$'
 
       # Both, whichever the runner is (CI_LARGE_RUNNER may name an arm64 one)
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -715,45 +715,33 @@ jobs:
           driver: docker
 
       # One builder for all four, so the second architecture reuses `deps` and
-      # `build` from the first.
-      #
-      # The base image is on ECR Public so that CodeBuild escapes Docker Hub's
-      # pull limit, but ECR Public meters anonymous pulls by source IP, and a
-      # hosted runner shares its IP with other people's jobs: the pull fails
-      # with `429 Data limit exceeded` whatever this repository pulled. Here the
-      # same digest comes from Google's Docker Hub mirror instead. The digest
-      # pins the content, so the image is still the one the Dockerfile names.
-      #
-      # The mirror answers `not found` for a layer it has not cached yet, and
-      # serves it moments later, so a build is tried three times. The stages
-      # that finished stay in the builder's cache, so a retry redoes little.
-      - name: Build the images
+      # `build` from the first. The Web Function zip is built beside this job
+      # (web-function-zip): its Next.js build of its own, on emulated arm64,
+      # took as long as the four images.
+      - name: Build the worker image (amd64)
         if: steps.changes.outputs.code == 'true'
-        run: |
-          contexts=()
-          for ref in $(sed -nE 's/^FROM (--platform=[^ ]+ )?(public\.ecr\.aws\/docker\/library\/[^ ]+@sha256:[0-9a-f]+).*/\2/p' Dockerfile | sort -u); do
-            name=${ref#public.ecr.aws/docker/library/}
-            contexts+=(--build-context "$ref=docker-image://mirror.gcr.io/library/${name%%[:@]*}@${ref#*@}")
-          done
-          build() {
-            local name=$1; shift
-            for attempt in 1 2 3; do
-              docker buildx build "${contexts[@]}" "$@" . && return
-              [ "$attempt" = 3 ] && exit 1
-              echo "::warning::build of $name failed, retrying"
-              sleep 10
-            done
-          }
-          for arch in amd64 arm64; do
-            for target in worker web; do
-              build "$target ($arch)" --platform "linux/$arch" --target "$target" \
-                --tag "kukan-$target:$arch" --load
-            done
-          done
-          # The web as Lambda Web Functions take it (ADR-068): a zip, arm64 glibc
-          build web-function --target web-function --output type=local,dest=/tmp/web-function
-          mkdir /tmp/web-function/task
-          unzip -q /tmp/web-function/web-function.zip -d /tmp/web-function/task
+        uses: ./.github/actions/build-image
+        with:
+          name: worker (amd64)
+          options: --platform linux/amd64 --target worker --tag kukan-worker:amd64 --load
+      - name: Build the web image (amd64)
+        if: steps.changes.outputs.code == 'true'
+        uses: ./.github/actions/build-image
+        with:
+          name: web (amd64)
+          options: --platform linux/amd64 --target web --tag kukan-web:amd64 --load
+      - name: Build the worker image (arm64)
+        if: steps.changes.outputs.code == 'true'
+        uses: ./.github/actions/build-image
+        with:
+          name: worker (arm64)
+          options: --platform linux/arm64 --target worker --tag kukan-worker:arm64 --load
+      - name: Build the web image (arm64)
+        if: steps.changes.outputs.code == 'true'
+        uses: ./.github/actions/build-image
+        with:
+          name: web (arm64)
+          options: --platform linux/arm64 --target web --tag kukan-web:arm64 --load
 
       # No env is given on purpose. The entrypoint validates its environment
       # right after its imports resolve, so stopping there proves every module —
@@ -772,31 +760,6 @@ jobs:
             fi
             echo "boot smoke ($arch): imports resolved, stopped at env validation"
           done
-
-      # The zip runs on another libc than the images and loads DuckDB from its
-      # own paths, so it gets the same two proofs: its DuckDB loads every
-      # extension from the zip, and the server starts as Web Functions start
-      # it and answers its health check. On Debian for its glibc, as
-      # /var/task, read-only like the code directory of a Web Function.
-      - name: Smoke-test the Web Function zip
-        if: steps.changes.outputs.code == 'true'
-        run: |
-          digest=$(sed -nE 's/^FROM --platform=linux\/arm64 [^ ]+@(sha256:[0-9a-f]+).*/\1/p' Dockerfile)
-          image="mirror.gcr.io/library/node@$digest"
-          run() { docker run --rm --platform linux/arm64 -v /tmp/web-function/task:/var/task:ro "$@"; }
-          run -w /var/task/node_modules/.pnpm/node_modules "$image" node --input-type=module -e "
-            const { DuckDBInstance } = await import('@duckdb/node-api');
-            const i = await DuckDBInstance.create(':memory:', { extension_directory: '/var/task/duckdb-extensions', autoinstall_known_extensions: 'false' });
-            const c = await i.connect();
-            for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await c.run('LOAD ' + e);
-            console.log('web-function: DuckDB loaded its extensions')"
-          run -w /var/task -e AWS_LAMBDA_HTTP_ENDPOINT=127.0.0.1:3000 -e NODE_ENV=production "$image" sh -c '
-            node apps/web/start.mjs & server=$!
-            for i in $(seq 60); do
-              node -e "fetch(\"http://127.0.0.1:3000/api/health\").then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && { echo "web-function: health 200"; kill $server; exit 0; }
-              sleep 1
-            done
-            echo "web-function: the server did not answer its health check" >&2; exit 1'
 
       # The worker reads a table's sample rows for its summaries through the
       # query process (ADR-053), and a failure there is only a warning — the
@@ -858,3 +821,68 @@ jobs:
             echo "boot smoke ($arch): HTTP $code"
             docker rm -f kukan-web-ci >/dev/null
           done
+
+  # The web as Lambda Web Functions take it (ADR-068): a zip, arm64 glibc. A
+  # job of its own beside docker-images, which it shares no stage with.
+  web-function-zip:
+    runs-on: ${{ vars.CI_LARGE_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need history to diff against the PR base
+
+      - name: Detect changes this job runs against
+        id: changes
+        uses: ./.github/actions/detect-changes
+        with:
+          # As docker-images', and the zip's own entry point
+          only: '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|patches/.*|(.*/)?package\.json|apps/web/start\.mjs|\.github/(workflows/ci\.yml|actions/(detect-changes|build-image)/action\.yml))$'
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: steps.changes.outputs.code == 'true'
+        with:
+          platforms: arm64
+
+      # The daemon's own image store, as docker-images says why
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.changes.outputs.code == 'true'
+        with:
+          driver: docker
+
+      - name: Build the Web Function zip
+        if: steps.changes.outputs.code == 'true'
+        uses: ./.github/actions/build-image
+        with:
+          name: web-function
+          options: --target web-function --output type=local,dest=/tmp/web-function
+
+      - name: Unpack the zip
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          mkdir /tmp/web-function/task
+          unzip -q /tmp/web-function/web-function.zip -d /tmp/web-function/task
+
+      # The zip runs on another libc than the images and loads DuckDB from its
+      # own paths, so it gets the same two proofs: its DuckDB loads every
+      # extension from the zip, and the server starts as Web Functions start
+      # it and answers its health check. On Debian for its glibc, as
+      # /var/task, read-only like the code directory of a Web Function.
+      - name: Smoke-test the Web Function zip
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          digest=$(sed -nE 's/^FROM --platform=linux\/arm64 [^ ]+@(sha256:[0-9a-f]+).*/\1/p' Dockerfile)
+          image="mirror.gcr.io/library/node@$digest"
+          run() { docker run --rm --platform linux/arm64 -v /tmp/web-function/task:/var/task:ro "$@"; }
+          run -w /var/task/node_modules/.pnpm/node_modules "$image" node --input-type=module -e "
+            const { DuckDBInstance } = await import('@duckdb/node-api');
+            const i = await DuckDBInstance.create(':memory:', { extension_directory: '/var/task/duckdb-extensions', autoinstall_known_extensions: 'false' });
+            const c = await i.connect();
+            for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await c.run('LOAD ' + e);
+            console.log('web-function: DuckDB loaded its extensions')"
+          run -w /var/task -e AWS_LAMBDA_HTTP_ENDPOINT=127.0.0.1:3000 -e NODE_ENV=production "$image" sh -c '
+            node apps/web/start.mjs & server=$!
+            for i in $(seq 60); do
+              node -e "fetch(\"http://127.0.0.1:3000/api/health\").then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && { echo "web-function: health 200"; kill $server; exit 0; }
+              sleep 1
+            done
+            echo "web-function: the server did not answer its health check" >&2; exit 1'
