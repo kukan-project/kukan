@@ -6,6 +6,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.45.2] - 2026-11-21
+
+**Highlights**
+
+- **AWS: a site can answer on more than one domain name.** List the extra names in the site entry's new `additionalDomainNames` (#1260, ADR-041). The site opens on any of them as it is, without redirecting; `domainName` stays the name of record, which absolute URLs, the canonical link and sign-in keep using. This lets a site move to a new domain and stay reachable under both the old and the new name, without lining up the day another organization switches its DNS with the day you deploy.
+
+**Features**
+
+- `additionalDomainNames` on a site entry (or on the environment entry of a single-site environment) (#1260). CloudFront answers on every name, and the certificate must hold them all: the one the global stack creates puts the names under `hostedZoneName` in its SANs, and refuses a name outside that zone, asking for a pasted `certificateArn`. A/AAAA records are made for the names under the zone only; point the others from their own DNS. Sign-in, the preview frames and uploads work on every name.
+- Pages now carry a canonical link (an HTTP `Link` header) naming the page under the name of record, path and query included, whichever name it was opened under (#1260).
+
+**Upgrade Notes** (for system administrators)
+
+- **Nothing changes for an environment that does not set `additionalDomainNames`;** its templates stay the same. Every site's pages gain the canonical `Link` header; nothing on the page changes.
+- **Before adding names**, prepare a certificate holding all of them when you paste `certificateArn` (for a name in another organization's DNS, request one certificate in us-east-1 with every name and put each name's validation CNAME in its own DNS). Where the global stack already created the certificate, adding names replaces it, and CDK's cross-region references cannot pass the new ARN in one deploy: request the certificate in ACM, paste its ARN, deploy the site stack first, then the rest. The steps, including how to delete the old certificate safely, are in the deployment spec's section on additional domain names.
+- **The additional names are trusted like the name of record** (they are passed to the web as `TRUSTED_ORIGINS`, which also allows credentialed API requests from them). Remove a name from `additionalDomainNames` once you give it up.
+- **Database:** no migrations. **Docker Compose:** nothing changes.
+
+---
+
+**ハイライト**
+
+- **AWS：1 つのサイトを複数のドメイン名で開けるようになりました。** サイトのエントリの新しい項目 `additionalDomainNames` に、ほかの名前を書きます（#1260、ADR-041）。どの名前で開いても、リダイレクトせずにそのまま表示します。`domainName` は正のドメイン名のままで、絶対 URL・canonical・サインインはこれを使います。サイトを新しいドメインへ移すとき、移行の前後どちらの名前でも開けるので、ほかの組織が DNS を切り替える日とデプロイの日をそろえずに済みます。
+
+**機能**
+
+- サイトのエントリ（シングルサイトの環境では環境のエントリ）に `additionalDomainNames` を追加しました（#1260）。CloudFront は全部の名前で応答し、証明書は全部の名前を含む必要があります。global スタックが作る証明書は、`hostedZoneName` の下にある名前を SAN に載せます。ゾーンの外の名前があると、`certificateArn` を貼るよう求めて止まります。A / AAAA レコードはゾーンの下にある名前にだけ作るので、ほかの名前はその DNS から向けてください。サインイン・プレビューの枠・アップロードは、どの名前の上でも動きます。
+- ページに canonical（HTTP の `Link` ヘッダー）が付くようになりました。どの名前で開いても、正のドメイン名とパスとクエリを指します（#1260）。
+
+**更新時の注意**（システム管理者向け）
+
+- **`additionalDomainNames` を書かない環境は何も変わりません**（テンプレートは同じです）。全サイトのページに canonical の `Link` ヘッダーが付きますが、ページの見た目は変わりません。
+- **名前を足す前に：** `certificateArn` を貼っている場合は、全部の名前を含む証明書を用意してください（ほかの組織の DNS にある名前を含むときは、us-east-1 で全部の名前を 1 枚に載せて申請し、名前ごとの検証用の CNAME をそれぞれの DNS に書きます）。global スタックがすでに証明書を作っている場合、名前を足すと証明書が作り直しになります。CDK のリージョンをまたぐ参照では、新しい ARN を 1 回のデプロイで渡せないので、ACM に申請して ARN を貼り、サイトのスタックを先にデプロイしてから残りをデプロイしてください。古い証明書を安全に消す手順も含めて、デプロイの仕様書の追加のドメイン名の節にあります。
+- **追加の名前は、正のドメイン名と同じだけ信頼されます**（web に `TRUSTED_ORIGINS` として渡り、その名前からの資格情報付きの API の呼び出しも通ります）。手放した名前は `additionalDomainNames` から外してください。
+- **データベース：** マイグレーションはありません。**Docker Compose：** 変更はありません。
+
 ## [0.45.1] - 2026-11-21
 
 **Highlights**
