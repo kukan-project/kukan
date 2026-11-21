@@ -80,16 +80,37 @@ async function deployedStacks(pipelineName: string, executionId: string) {
   return lastAttempts(details)
 }
 
+/** The commit message out of a revision summary.
+ *
+ *  A CodeConnections source records the summary as JSON —
+ *  `{"ProviderType":"GitHub","CommitMessage":"…"}` — so the newlines of the
+ *  message sit escaped inside one line, and the first line is the whole JSON.
+ *  A summary that does not parse as JSON is taken as the message itself, as
+ *  other source kinds record it. */
+export function commitMessage(revisionSummary: string | undefined): string | undefined {
+  if (!revisionSummary?.startsWith('{')) return revisionSummary
+  let parsed: { CommitMessage?: unknown }
+  try {
+    parsed = JSON.parse(revisionSummary)
+  } catch {
+    return revisionSummary
+  }
+  // JSON without a message names no commit, and the JSON itself is no subject
+  return typeof parsed.CommitMessage === 'string' ? parsed.CommitMessage : undefined
+}
+
 /** The commit the execution built, which is the closest thing to a version:
- *  a release lands as `chore(release): vX.Y.Z (#nnn)` and says so in its summary. */
+ *  a release lands as `chore(release): vX.Y.Z (#nnn)` and says so in its message. */
 async function source(pipelineName: string, executionId: string) {
   const { pipelineExecution } = await pipelineClient.send(
     new GetPipelineExecutionCommand({ pipelineName, pipelineExecutionId: executionId })
   )
   const revision = pipelineExecution?.artifactRevisions?.[0]
+  const text = commitMessage(revision?.revisionSummary)
   return {
     id: revision?.revisionId?.slice(0, 8),
-    summary: revision?.revisionSummary?.split('\n')[0],
+    summary: text?.split('\n')[0] || undefined,
+    message: text,
   }
 }
 
@@ -97,15 +118,19 @@ async function source(pipelineName: string, executionId: string) {
  *
  *  Releases land as `chore(release): vX.Y.Z` (ADR-035). Anything else — a
  *  configuration-only change, a revert — deploys without a version, and then
- *  there are no notes to point at. */
-export function releaseTag(summary: string | undefined): string | null {
-  return summary?.match(/^chore\(release\): (v\d+\.\d+\.\d+)/)?.[1] ?? null
+ *  there are no notes to point at.
+ *
+ *  Every line of the message is read, not only the subject: a fork deploys the
+ *  merge of its own pull request, whose subject is `Merge pull request #…` and
+ *  whose next lines carry the pull request's title. */
+export function releaseTag(message: string | undefined): string | null {
+  return message?.match(/^chore\(release\): (v\d+\.\d+\.\d+)/m)?.[1] ?? null
 }
 
 /** Slack reads `&`, `<` and `>` as markup, so a commit subject carrying them
  *  has to arrive as entities — `<!channel>` in a subject would otherwise page
  *  the channel, and `<url|text>` would render as someone else's link. Applied
- *  at display only: `releaseTag` still reads the subject as written. */
+ *  at display only: `releaseTag` still reads the message as written. */
 function escape(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -115,12 +140,12 @@ export function message(execution: {
   state?: string
   pipeline: string
   executionId: string
-  revision: { id?: string; summary?: string }
+  revision: { id?: string; summary?: string; message?: string }
   stacks: { name: string; status: string }[]
 }): string {
   const { state, pipeline, executionId, revision, stacks } = execution
   const succeeded = state === 'SUCCEEDED'
-  const tag = releaseTag(revision.summary)
+  const tag = releaseTag(revision.message ?? revision.summary)
   const sites = stacks
     .flatMap((s) => {
       const site = SITE_STACKS[s.name]

@@ -41,7 +41,7 @@ process.env.SITE_STACKS = JSON.stringify({
   KukanSiteStackAomori: { label: 'aomori' },
   KukanStack: { label: 'demo', url: 'https://demo.kukan.dev' },
 })
-const { lastAttempts, releaseTag, message, handler } =
+const { commitMessage, lastAttempts, releaseTag, message, handler } =
   await import('../lambda/deploy-notification/index.js')
 
 // `aomori` carries no url: a site without a custom domain is named, not linked.
@@ -69,6 +69,32 @@ describe('releaseTag', () => {
     expect(releaseTag('feat(infra): notify Slack when a deploy finishes')).toBeNull()
     expect(releaseTag('Merge pull request #1 from x/y')).toBeNull()
     expect(releaseTag(undefined)).toBeNull()
+  })
+
+  it('reads the version off a later line, where a merge carries its pull request title', () => {
+    expect(releaseTag('Merge pull request #1 from x/y\n\nchore(release): v1.2.3')).toBe('v1.2.3')
+    expect(releaseTag('Merge pull request #1 from x/y\n\nsync chore(release): v1.2.3')).toBeNull()
+  })
+})
+
+describe('commitMessage', () => {
+  it('reads the message out of the JSON a CodeConnections source records', () => {
+    expect(
+      commitMessage(
+        JSON.stringify({ ProviderType: 'GitHub', CommitMessage: 'Merge pull request\n\nchore: x' })
+      )
+    ).toBe('Merge pull request\n\nchore: x')
+  })
+
+  it('takes a summary that is not JSON as the message itself', () => {
+    expect(commitMessage('chore(release): v0.30.3\n\nbody')).toBe('chore(release): v0.30.3\n\nbody')
+    expect(commitMessage('{not json')).toBe('{not json')
+    expect(commitMessage(undefined)).toBeUndefined()
+  })
+
+  it('names no commit for JSON that carries no message', () => {
+    expect(commitMessage(JSON.stringify({ ProviderType: 'GitHub' }))).toBeUndefined()
+    expect(commitMessage(JSON.stringify({ CommitMessage: 42 }))).toBeUndefined()
   })
 })
 
@@ -255,6 +281,71 @@ describe('handler', () => {
       '✅ *demo* deploy succeeded',
       '• <https://ap-northeast-1.console.aws.amazon.com/codesuite/codepipeline/pipelines/KukanPipeline/executions/e1|pipeline execution>',
     ])
+  })
+
+  describe('a CodeConnections source', () => {
+    const recorded = (CommitMessage?: unknown) =>
+      aws.execution.mockResolvedValue({
+        pipelineExecution: {
+          artifactRevisions: [
+            {
+              revisionId: '1012b9bf00c0ffee',
+              revisionSummary: JSON.stringify({ ProviderType: 'GitHub', CommitMessage }),
+            },
+          ],
+        },
+      })
+    const run = () =>
+      handler(notification({ pipeline: 'KukanPipeline', 'execution-id': 'e1', state: 'SUCCEEDED' }))
+
+    it('shows the subject of the message, not the JSON around it', async () => {
+      recorded('Merge pull request #7 from acme/demo\n\nchore: promote demo to main (add prd)')
+      await run()
+      expect(posted().split('\n')[1]).toBe('• Merge pull request #7 from acme/demo (`1012b9bf`)')
+      expect(posted()).not.toContain('release notes')
+    })
+
+    it('links the release notes of a release commit', async () => {
+      // the PR number is spelled with a placeholder, as check-private-refs requires
+      recorded('chore(release): v1.2.3 (squashed)\n\n## What changed')
+      await run()
+      expect(posted()).toContain('• chore(release): v1.2.3 (squashed) (`1012b9bf`)')
+      expect(posted()).toContain('releases/tag/v1.2.3|release notes v1.2.3>')
+    })
+
+    it('links the release notes of a merge whose pull request is the release', async () => {
+      recorded('Merge pull request #2 from x/release\n\nchore(release): v1.2.3')
+      await run()
+      expect(posted()).toContain('• Merge pull request #2 from x/release (`1012b9bf`)')
+      expect(posted()).toContain('releases/tag/v1.2.3|release notes v1.2.3>')
+    })
+
+    it('escapes markup carried inside the message', async () => {
+      recorded('<!channel> fix <https://evil.example|payroll> A&B')
+      await run()
+      expect(posted()).toContain(
+        '• &lt;!channel&gt; fix &lt;https://evil.example|payroll&gt; A&amp;B (`1012b9bf`)'
+      )
+    })
+
+    it('still posts, without a commit line, when the JSON names no message', async () => {
+      for (const summary of [undefined, '']) {
+        fetchMock.mockClear()
+        recorded(summary)
+        await run()
+        expect(posted().split('\n')[1]).toMatch(/^• <https:\/\/ap-northeast-1\.console/)
+      }
+    })
+
+    it('posts the summary as written when it is broken JSON', async () => {
+      aws.execution.mockResolvedValue({
+        pipelineExecution: {
+          artifactRevisions: [{ revisionId: '1012b9bf00c0ffee', revisionSummary: '{"Commit' }],
+        },
+      })
+      await run()
+      expect(posted()).toContain('• {"Commit (`1012b9bf`)')
+    })
   })
 
   it('fails the invocation when Slack refuses the message', async () => {

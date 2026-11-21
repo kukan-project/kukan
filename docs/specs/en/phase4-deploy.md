@@ -1330,6 +1330,18 @@ next deploy.
 the sites that were updated, a link to the release notes (only when the commit is
 `chore(release): vX.Y.Z` — ADR-035), and a console link to the pipeline execution.
 
+The commit message is read from CodePipeline's `revisionSummary`. With a CodeConnections source this is
+not the message itself but a JSON string, `{"ProviderType":"GitHub","CommitMessage":"…"}`, so the
+`CommitMessage` is taken out first and its first line becomes the subject. A value that does not parse
+as JSON is taken as the message itself.
+
+The release-notes link is added when any line of the message, not only the subject, starts with
+`chore(release): vX.Y.Z`. A fork usually deploys the merge commit of its own pull request, whose subject
+is `Merge pull request #…` and whose third line is the pull request's title. Starting the title of the
+pull request that brings in an upstream version with `chore(release): vX.Y.Z` gets the link to that
+version's notes; other merges get none. Reading the merged version from the repository instead would
+mean giving the notification function read access to a private repository, so it is not done.
+
 A site name links to the site itself when that site sets `domainName`; a site without one
 is named but not linked, because its CloudFront domain is decided inside the stage's own
 stack, which the pipeline stack cannot reference (CDK Pipelines deploys stages separately).

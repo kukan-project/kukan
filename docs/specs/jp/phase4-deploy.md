@@ -1246,6 +1246,16 @@ aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 
 **通知の内容**: 成否、デプロイしたコミットの件名と短縮 SHA、更新したサイト、リリースノートへの
 リンク（コミットが `chore(release): vX.Y.Z` のときのみ。ADR-035）、パイプライン実行のコンソールリンク。
 
+コミットのメッセージは CodePipeline の `revisionSummary` から読む。CodeConnections のソースでは、これは
+メッセージそのものではなく `{"ProviderType":"GitHub","CommitMessage":"…"}` という JSON の文字列なので、
+`CommitMessage` を取り出してから 1 行目を件名にする。JSON として読めない値は、メッセージそのものとして扱う。
+
+リリースノートへのリンクは、件名だけでなく、メッセージのどの行でも行頭に `chore(release): vX.Y.Z` が
+あれば付ける。フォークがデプロイするのは多くの場合自分の PR のマージコミットで、件名は
+`Merge pull request #…`、3 行目に PR のタイトルが入る。upstream の版を取り込む PR のタイトルを
+`chore(release): vX.Y.Z` で始めれば、その版のリリースノートへのリンクが付く。そうでないマージには付かない —
+取り込んだ版をリポジトリから読む方法は、通知の関数に非公開のリポジトリを読む権限を足すことになるので採らない。
+
 サイト名は `domainName` を設定したサイトだけそのサイトへのリンクになる。設定していないサイトは
 名前だけ出る — CloudFront のドメインはステージ側のスタックが決めるため、パイプラインスタックからは
 参照できない（CDK Pipelines はステージを別のデプロイとして流す）。
