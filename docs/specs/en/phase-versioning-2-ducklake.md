@@ -1138,8 +1138,8 @@ change and the handling of versions whose snapshots have already been rewritten 
 
 ### 8.0 ii-c decisions
 
-**This table is the conclusion.** Rows marked "needs a decision" keep their options with a
-recommendation (§8.8).
+**This table is the conclusion.** The last two decisions left open were made in §8.8
+(2026-11-21).
 
 | Decision                                                                                                                                                                                                      | Where |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
@@ -1156,8 +1156,8 @@ recommendation (§8.8).
 | Type changes are reviewed **after ingest**. Ingest proceeds as inferred and the Version history tab shows "needs review"                                                                                      | §8.4  |
 | Two choices: **accept as is** (no version) / **settle on the previous type** (a version is created)                                                                                                           | §8.4  |
 | The choices that create a version are offered **only on the current version**: sent with the reviewed version's number, refused (409) if the current version differs                                          | §8.4  |
-| Where the acceptance is recorded — **needs a decision** (recommended: on the version row, written once)                                                                                                       | §8.8  |
-| Whether to add a `decimal` settled type — **needs a decision** (recommended: add it; inference never produces it, the interpretation picks the digits from the data)                                          | §8.8  |
+| The acceptance is **recorded on the version row, written once** (`resource_version.type_review`). No version                                                                                                  | §8.8  |
+| **Add a `decimal` settled type.** Inference never produces it; the interpretation picks the digits from the data                                                                                              | §8.8  |
 | Key and type candidates come from **rules** (no LLM). Candidates only fill the draft                                                                                                                          | §8.6  |
 | The screens are ADR-072's Table settings tab (setting types) and Version history tab (reviewing changes). ADR-072 Step 1 comes first                                                                          | §8.7  |
 
@@ -1165,7 +1165,7 @@ recommendation (§8.8).
 
 Inference produces `integer` / `float` / `boolean` / `string` / `date` / `timestamp`
 (`RESOURCE_COLUMN_TYPES`; since ADR-046 DuckDB's sniffer infers them). The types that can be settled are
-these six plus `decimal`, seven in all (`decimal` depends on the decision in §8.8; without it, six).
+these six plus `decimal`, seven in all (§8.8).
 
 **Inference and settling have different type sets.** `decimal` appears only as a settled type;
 inference never produces it. That inference has no decimal is a property since ADR-029, and changing it
@@ -1291,7 +1291,7 @@ XLSX goes through CSV (ADR-057), so it follows the CSV steps.
 `string` keeps leading zeros (`"007"`). This is the typical case settled types exist to fix (ADR-057
 decision 4's note; an XLSX cell's `00123` is the same).
 
-**`decimal` digits** (if added by §8.8): the interpretation takes the largest number of fractional digits
+**`decimal` digits**: the interpretation takes the largest number of fractional digits
 in the column's values as `s` and the largest number of integer digits as `p - s`, giving `DECIMAL(p, s)`
 (`p` up to 38). Leading zeros of the integer part are not counted (`007` is one digit, and `0.5` has
 no integer digits): DuckDB spends no precision on them either, so a zero-padded value is not turned into a
@@ -1336,7 +1336,7 @@ schema diff.
 **Choices** (type change):
 
 1. **Accept as is** (default): keep following inference rather than settling on the new type. No version
-   is created. The acceptance is recorded and the review cleared (where it is recorded: §8.8)
+   is created. The acceptance is recorded on the version row (`type_review`) and the review cleared (§8.8)
 2. **Settle on the previous type**: write the column's previous type into the settled-type setting. Version
    identity changes, so one version is created and the same bytes are read again under the previous type.
    Values that do not fit are counted in `castFailures` and shown on the Version history tab as "values that did
@@ -1429,18 +1429,23 @@ key-matched tier and degrades.
   which columns changed and how, samples of values that did not convert, and §8.4's choices. The list's
   dot is "needs review" (ADR-072 decision 3)
 - **ADR-072 Step 1 comes first.** Nothing is put on today's row-expansion screen
+- **The settled-type choices are "Auto (inferred type)" and each type.** Following the inference is
+  named as the role choices in the same table name it (ADR-063 §Decision 5). Lifting a settled type
+  (back to "Auto") changes the reading too, so it creates a version (§8.4)
 
-### 8.8 Needs a decision
+### 8.8 Decisions made (2026-11-21)
+
+Both took the recommended option A. The options weighed are kept for the record.
 
 **1. Whether to add a `decimal` settled type**
 
 | Option                       | Contents                                                                                                       |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **A. Add it (recommended)**  | Add `decimal` as a settled type only. The interpretation picks the digits from the data (§8.3). Can be a key   |
+| **A. Add it (adopted)**      | Add `decimal` as a settled type only. The interpretation picks the digits from the data (§8.3). Can be a key   |
 | B. Add it; people set digits | The Table settings tab asks for `DECIMAL(p, s)`. Digit wobble causes no replacement, at the cost of more input |
 | C. Do not add it             | Amounts and rates stay `float` and cannot be keys                                                              |
 
-Why A: only decimal handles amounts and rates exactly, and OData has `Edm.Decimal` (ADR-055). Taking the
+Why A: only decimal handles amounts and rates exactly (DuckDB's `DECIMAL(p, s)`, up to 38 digits wide; Parquet and DuckLake have a decimal type too), and OData has `Edm.Decimal` (ADR-055). Taking the
 digits from the data leaves people with just "read as decimal". Replacements from digit wobble happen
 only when the digits of the same column change between versions, which is rare.
 
@@ -1448,7 +1453,7 @@ only when the digits of the same column change between versions, which is rare.
 
 | Option                                  | Contents                                                                                                                                                |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A. On the version row (recommended)** | `resource_version.type_review` (jsonb, written once) keeps who reviewed, when, and the choice per column. No version                                    |
+| **A. On the version row (adopted)**     | `resource_version.type_review` (jsonb, written once) keeps who reviewed, when, and the choice per column. No version                                    |
 | B. Accepting = settling on the new type | Write the new type into the settled-type setting. No new place needed, but the setting changes, so each acceptance creates a version and they pile up   |
 | C. Do not record                        | Recompute "needs review" each time as "differs from the previous version"; it vanishes when the next version arrives. Whether anyone looked is not kept |
 
