@@ -6,6 +6,84 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.45.0] - 2026-11-21
+
+**Breaking Changes**
+
+- **AWS deployments that use the pipeline: each environment's pipeline now has a stack of its own, and moving to it takes one manual step.** The single `KukanPipeline` stack is replaced by `KukanPipeline-<Env>` (for example `KukanPipeline-Prd`) (#1256, ADR-074). The pipeline name `kukan-<env>` stays the same, so the old and the new stack cannot exist at once. Once this version reaches an environment's branch, the old pipeline stops before deploying anything, and that environment is not deployed automatically until you have moved. Your site keeps running throughout: the app's stacks are separate and are not touched. To move, with credentials for the account the pipelines are in:
+  1. Delete the old stack: `aws cloudformation delete-stack --stack-name KukanPipeline`. If an environment is in a region other than the pipeline's, also delete `KukanPipeline-support-<region>` in that region.
+  2. For each environment, from its branch with this version: `cd infra && npx cdk deploy KukanPipeline-<Env>`. The new pipeline runs once right away; the app's stacks keep their names and templates, so nothing besides this version's own changes is replaced.
+  3. If you use `deployNotification`, the Slack webhook secret was deleted with the old stack: paste the webhook URL into the secret in the new stack's output `NotifySlackWebhookSecretArn`.
+  4. The old stack's artifact bucket (and a support stack's replication bucket) and the notification function's log group are kept on deletion; empty and delete them by hand.
+- The steps are also in the deployment spec, under "Migrating to per-environment pipeline stacks (ADR-074)". To deploy urgently before moving, use the qualified path as before (`npx cdk deploy 'KukanPipeline/<Env>/<Stack>'`, without `-c env`).
+
+**Highlights**
+
+- **A push to one environment's branch now updates only that environment's pipeline.** Before, every pipeline lived in one stack and updated all of them from its own branch, so with branches at different points (develop → demo → main), running the production pipeline turned the other pipelines back to older code, and an environment just added on one branch could be removed by another (#1256). Each pipeline now updates only its own stack.
+- **Editors can choose a text column's role.** On a table's **Table settings** tab in the dashboard, a text column's role (identifier, numeric text, name, category or free text) can now be chosen instead of the one inferred (#1253, ADR-063). The role decides how the column is treated in full-text search. Changing it creates no new version; applying it reprocesses the resource to take effect.
+- **A table's preview moved onto its Table settings tab.** For people who can edit a table, the preview — the same one as on the public page, with paging, filtering, text view and the GeoJSON map — now sits at the top of **Table settings**, with the primary key being chosen marked in it (#1253). The **Preview** tab remains for resources that are not tables and for people who can only read. Column types now show under the preview's headers, on the public page too.
+
+**Features**
+
+- `connectionArn` on an environment entry: that environment's pipeline is built in the account of that connection, so pipelines can be kept in separate accounts (#1256). A synth builds only the pipelines in its credentials' account and warns about the others. The top-level `pipelineAccount` is no longer needed; one still set is checked against the top-level connection's account. Note that separate stacks prevent only unintended overwrites: pipelines in one account share the CDK bootstrap roles, so to keep someone who can push to a development branch from changing the production pipeline, put the production pipeline in an account the development pipeline does not share.
+- Column role overrides are stored in `column_settings.roles` and accepted by `PUT /resources/:id/column-settings`; the profile keeps the inferred role beside an overridden one (`inferred`, rule `override`) (#1253).
+
+**Improvements**
+
+- A pipeline for an environment in another region has its cross-region support stack to itself (#1256).
+- The `deploy` and `destroy` scripts in `infra/package.json` (`cdk deploy --all` / `cdk destroy --all`) were removed: in pipeline mode they would overwrite or delete every environment's pipeline from the current branch (#1256).
+
+**Documentation**
+
+- Versioning ii-c's last two decisions are settled in the spec: accepting a type change is recorded on the version row, and `decimal` is added as a settled type (#1254).
+- Review guidelines ask reviewers to weigh findings by how often they happen and whether they can be recovered from (#1255).
+
+**Upgrade Notes** (for system administrators)
+
+- **Database:** no migrations.
+- **AWS, pipeline-managed environments:** move to the per-environment pipeline stacks as described under Breaking Changes. Environments deployed standalone (`-c env`) are not affected.
+- **Changing a column's role while a deployment is in progress** may not take effect; reprocess that resource afterwards.
+- **Docker Compose (on-premises, closed networks):** nothing changes.
+
+---
+
+**破壊的変更**
+
+- **パイプラインでデプロイしている AWS の環境：パイプラインのスタックが環境ごとに分かれ、移るのに一度だけ手作業が要ります。** 1 つの `KukanPipeline` スタックを、環境ごとの `KukanPipeline-<Env>`（例 `KukanPipeline-Prd`）に置き換えました（#1256、ADR-074）。パイプライン名 `kukan-<env>` は変わらないので、古いスタックと新しいスタックは同時に存在できません。この版が環境のブランチに届くと、古いパイプラインはデプロイの前に止まり、移るまでその環境は自動でデプロイされません。サイトはその間も動き続けます（アプリのスタックは別のスタックで、触られません）。移るには、パイプラインのあるアカウントの認証情報で次を行います。
+  1. 古いスタックを削除する：`aws cloudformation delete-stack --stack-name KukanPipeline`。パイプラインと違うリージョンの環境があれば、そのリージョンの `KukanPipeline-support-<region>` も削除する。
+  2. 環境ごとに、この版を含むその環境のブランチで `cd infra && npx cdk deploy KukanPipeline-<Env>` を実行する。新しいパイプラインはすぐに一度走ります。アプリのスタックの名前とテンプレートは変わらないので、この版そのものの変更のほかに置き換わるものはありません。
+  3. `deployNotification` を使っている場合、Slack の webhook のシークレットは古いスタックと一緒に削除されます。新しいスタックの出力 `NotifySlackWebhookSecretArn` のシークレットに URL を貼り直してください。
+  4. 古いスタックの成果物のバケット（サポートスタックのレプリケーションのバケットも）と、通知の関数のロググループは削除のときに残ります。中身を空にして手で削除してください。
+- 手順はデプロイの仕様書の「環境ごとのパイプラインのスタックへの移行（ADR-074）」にもあります。移る前に急いでデプロイしたいときは、これまでどおり修飾パスで手動デプロイしてください（`npx cdk deploy 'KukanPipeline/<Env>/<Stack>'`、`-c env` なし）。
+
+**ハイライト**
+
+- **ある環境のブランチへの push が、その環境のパイプラインだけを更新するようになりました。** これまでは全パイプラインが 1 つのスタックにあり、それぞれが自分のブランチのコードで全部を更新していました。そのため、ブランチの進み具合がずれる運用（develop → demo → main など）では、本番のパイプラインが走るたびにほかのパイプラインが古いコードに戻り、あるブランチで足したばかりの環境が別のブランチの実行で消されることがありました（#1256）。いまは各パイプラインが自分のスタックだけを更新します。
+- **文字列の列の役割を選び直せるようになりました。** 管理画面の表の「表の設定」タブで、文字列の列の役割（識別子・文字列表記の数値・名称・カテゴリ・自由記述）を、推定されたものの代わりに選べます（#1253、ADR-063）。役割は全文検索での扱いを決めます。変えても版は増えず、適用するとリソースが再処理されて反映されます。
+- **表のプレビューが「表の設定」タブに移りました。** 表を編集できる人には、公開ページと同じプレビュー（ページ送り・絞り込み・テキスト表示・GeoJSON の地図）が「表の設定」の上部に出て、選んでいる途中の主キーに印が付きます（#1253）。「プレビュー」タブは、表でないリソースと、読むだけの人に残ります。プレビューの見出しの下に列の型が出るようになりました（公開ページも）。
+
+**機能**
+
+- 環境のエントリに `connectionArn` を書けるようになりました。その環境のパイプラインは、その接続のアカウントに作られるので、パイプラインをアカウントごとに分けられます（#1256）。synth は認証情報のアカウントにあるパイプラインだけを作り、ほかは警告を出して外します。トップレベルの `pipelineAccount` は不要になりました（書いてあれば、トップレベルの接続のアカウントと突き合わせます）。なお、スタックを分けて防げるのは意図しない上書きまでです。同じアカウントのパイプラインは CDK の bootstrap のロールを共有するので、開発のブランチに push できる人が本番のパイプラインを変えられないようにするには、本番のパイプラインを開発のパイプラインと共有しないアカウントに置いてください。
+- 列の役割の上書きは `column_settings.roles` に保存され、`PUT /resources/:id/column-settings` で受け付けます。上書きした列のプロファイルには、推定した役割も残ります（`inferred`、規則は `override`）（#1253）。
+
+**改善**
+
+- パイプラインと違うリージョンの環境のパイプラインは、リージョン間のサポートスタックを自分専用に持つようになりました（#1256）。
+- `infra/package.json` の `deploy`・`destroy` スクリプト（`cdk deploy --all` / `cdk destroy --all`）を外しました。pipeline モードでは、今のブランチで全環境のパイプラインを上書き・削除してしまうためです（#1256）。
+
+**ドキュメント**
+
+- Versioning ii-c の残りの 2 点を仕様書で決めました。型の変化の受け入れは版の行に記録し、確定型に `decimal` を足します（#1254）。
+- レビューの指針に、指摘を「どれだけ起きるか」と「回復できるか」で重み付けすることを足しました（#1255）。
+
+**更新時の注意**（システム管理者向け）
+
+- **データベース：** マイグレーションはありません。
+- **AWS（パイプラインで管理している環境）：** 破壊的変更の手順で、環境ごとのパイプラインのスタックへ移ってください。standalone（`-c env`）でデプロイしている環境には影響しません。
+- **デプロイの途中で列の役割を変えた場合** は反映されないことがあるので、後でそのリソースを再処理してください。
+- **Docker Compose（オンプレミス・閉域網）：** 変更はありません。
+
 ## [0.44.1] - 2026-11-19
 
 **Bug Fixes**
