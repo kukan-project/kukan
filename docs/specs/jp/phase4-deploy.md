@@ -619,9 +619,36 @@ waf: {
 },
 ```
 
-`waf` は WebACL をこの環境の global スタックが作るときに効く。変更は global スタックの
-standalone デプロイで反映する（pipeline は us-east-1 を持たない）。`webAclArn` を貼った環境では、
-一時的に外して `npx cdk deploy -c env=<env> <Env>/KukanGlobalStack` を流し、戻す（ARN は変わらない）。
+`waf` は WebACL をこの環境の global スタックが管理しているときに効く。変更は global スタックの
+standalone デプロイ（`npx cdk deploy -c env=<env> '<Env>/KukanGlobalStack'`）で反映する
+（pipeline は us-east-1 を持たない）。
+
+**ARN を貼った後も、global スタックは自分の WebACL を管理し続ける**（ADR-030 補足）。貼った
+`webAclArn` が global スタックの作った WebACL なら、WebACL・IP セット・ログのバケットとポリシー・
+ログ設定はそのままスタックに残る。見分けは名前で行う。WebACL には名前を付けていないので、
+CloudFormation が論理 ID から名前を作り、ARN は `arn:aws:wafv2:us-east-1:<account>:global/webacl/WafWebAclBE24253C-`
+で始まる。standalone の合成では、ほかに作るものが無くても global スタックが現れるので、`webAclArn` を
+外さずにデプロイできる。外部で作った WebACL の ARN は今までどおり扱わず、使われない WebACL も作らない。名前は環境によらず同じなので、同じアカウントの別の環境の global スタックが作った WebACL も自分のものと見なす。WebACL は環境の中のサイトで共有し、環境をまたいで共有しない（共有すると、その環境の global スタックが使われない WebACL を作り、課金される。`cdk diff` に作成が出る）。
+pipeline の合成には global スタックは入らない。
+
+貼った ARN を読むサイトのスタックは、リージョンをまたぐ参照を持たない。以前の standalone デプロイで
+作られた export（SSM の `/cdk/exports/<サイトのスタック>/…`）は、次の global スタックのデプロイで
+書き込み側の仕組みごと消える。読む側が無いので失敗しない。
+
+> [!WARNING]
+> **古い版では**、`webAclArn` を貼ったまま global スタックを standalone でデプロイすると、WebACL と
+> IP セットは Retain で切り離され、ログ設定とバケットのポリシーは削除される（ログが止まり、以後の
+> ルールの変更も届かない）。古い版で standalone のデプロイが要るとき（新しいサイトの証明書など）は、
+> その間だけ手元で `webAclArn` をコメントアウトし、`cdk diff` で WAF に削除が出ないことを確かめてから
+> デプロイする。新しいサイトの証明書は、ACM に直接申請して `certificateArn` に貼ってもよい。
+
+**古い版で切り離された WebACL を取り込み直す**：この版で global スタックをデプロイすると、
+CloudFormation は WebACL を新しく作ろうとし、残っているログのバケットと名前がぶつかって失敗する
+（ロールバックするので壊れない）。`npx cdk import -c env=<env> '<Env>/KukanGlobalStack'` で、残っている
+WebACL（`Waf/WebAcl`。識別子は名前・ID・スコープ `CLOUDFRONT`）、IP セット（`waf.rateLimit.exemptIpRanges`
+を書いた場合）、ログのバケット（`Waf/LogBucket`）を取り込み、続けて通常のデプロイでログ設定と
+バケットのポリシーを作り直す。`cdk import` は取り込み以外の変更を同時に扱えないので、ほかの差分は
+その後のデプロイに回す。手順は検証用の環境で先に試すこと。
 
 ### OpenSearch のアクセス制御（FGAC、ADR-069）
 

@@ -69,6 +69,33 @@ new CodePipeline(this, 'Pipeline', {
 - **Cross-account bootstrap is somewhat more complex**
 - Compared with the GitHub Actions option: gains self-mutation and native multi-account / approval gates, but loses the generality of GitHub runners
 
+### Note (2026-11): the GlobalStack keeps managing its own WebACL after the ARN is pasted
+
+Pipeline-mode environments paste the WebACL ARN, so the WebACL dropped out of the standalone
+GlobalStack. When it dropped out, the WebACL and IP set remained (Retain), but the WAF logging
+configuration and bucket policy added later were missing from the Retain set and were deleted, and
+logging stopped. Later rule changes (rate limits, redacting credential headers, etc.) did not reach
+the WebACL from anywhere either (they reached it only when someone followed the "remove the ARN
+locally and deploy the GlobalStack" procedure).
+
+Rather than only adding to the Retain set (logs remain but rules do not reach), **the GlobalStack
+keeps managing the WebACL it created even after the ARN is pasted**.
+
+- It is recognized by the ARN's name. The WebACL is not given a name; CloudFormation names it from
+  the logical ID (`WafWebAclBE24253C`, which CDK builds from the construct path `Waf/WebAcl`) plus a
+  random suffix. An ARN in us-east-1, in the same account, with a name starting with
+  `WafWebAclBE24253C-` is treated as its own WebACL. No new setting is needed. If the logical ID
+  changed, recognition would break and the WebACL would be recreated, so every synth checks it
+  against the logical ID CDK assigned
+- The ARN of a WebACL created elsewhere is not handled. The purpose of "create only what is missing"
+  (not paying for an unused WebACL) is kept
+- In a standalone synth, if its own WebACL's ARN is pasted, the GlobalStack is built even when there
+  is nothing else to create. Rule changes reach the WebACL through a standalone deploy of the
+  GlobalStack without removing `webAclArn`. A pipeline synth does not build the GlobalStack
+- Sites read the pasted ARN as a string and hold no cross-region reference. So the GlobalStack could
+  likely be put into the pipeline's Stage (without cross-region references, the incompatibility
+  above does not apply). This is not done now and is left as a future option
+
 ## Consequences (changes at implementation time)
 
 - New: `infra/lib/stacks/pipeline-stack.ts` (`CodePipeline` definition), `infra/lib/stacks/kukan-stage.ts` (Stage, ADR-031)

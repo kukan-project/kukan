@@ -9,7 +9,7 @@
 Decisions fixed at implementation time (deltas from the body):
 
 - The shared boxes gained a **Secrets Manager interface VPC endpoint** (the VPC has no NAT, so it is the only path for the site-DB bootstrap Lambda; one per environment regardless of site count)
-- Site-domain ACM certificates / WAF WebACLs are **auto-created by the GlobalStack in standalone mode** (one certificate per site plus one WebACL shared across sites; pipeline mode still requires pasted ARNs, same as single-site — cross-region references are incompatible with CDK Pipelines, ADR-030. Initially both modes required ARNs; relaxed 2026-07-20)
+- Site-domain ACM certificates / WAF WebACLs are **auto-created by the GlobalStack in standalone mode** (one certificate per site plus one WebACL shared across sites; pipeline mode still requires pasted ARNs, same as single-site — cross-region references are incompatible with CDK Pipelines, ADR-030. Initially both modes required ARNs; relaxed 2026-07-20). The GlobalStack keeps managing the shared WebACL after the sites paste its ARN (ADR-030 note, 2026-11)
 - `OPENSEARCH_INDEX_PREFIX` is `kukan-<env>-<site>` (index `kukan-<env>-<site>-search`)
 - **AWS Backup works for multi-site environments too**: the DB plan lives in the SharedStack (the shared cluster is snapshotted exactly once) and the bucket plans in each SiteStack (vault `kukan-<env>-<site>-backup`). Initially rejected because the shared cluster would have been snapshotted once per site; resolved 2026-07-20 by this split
 - The site database/role are **retained** on SiteStack deletion (the Custom Resource's Delete is a no-op, protecting data from rollback-deletes of a failed create)

@@ -166,6 +166,7 @@ export class KukanPipelineStack extends cdk.Stack {
     const stage = new KukanStage(stageScope, pascal(name), {
       env: { account: targetAccount, region },
       config,
+      inPipeline: true,
     })
 
     const pipeline = new CodePipeline(this, 'Pipeline', {

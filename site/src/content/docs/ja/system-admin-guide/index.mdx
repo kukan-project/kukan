@@ -275,8 +275,8 @@ us-east-1 の WebACL を standalone で作り、ARN を貼ります）には、�
    `ipAddress`（その IP からサインインしている利用者がいるか）で照らします。庁内の出口など共有の IP なら
    `waf.rateLimit.exemptIpRanges` に足し、そうでなければ `waf.rateLimit.mode: 'block'` にします
 5. `waf` の変更は global スタックの standalone デプロイで反映します
-   （`npx cdk deploy -c env=prd Prd/KukanGlobalStack`。`webAclArn` を貼った環境では、
-   一時的に外して流し、戻します。ARN は変わりません）
+   （`npx cdk deploy -c env=prd Prd/KukanGlobalStack`。global スタックが作った WebACL なら、
+   `webAclArn` を貼ったままで届きます）
 
 設定の書き方は[環境設定リファレンスの「WAF のレート制限」](/ja/system-admin-guide/environment-config/#waf-のレート制限)を参照してください。
 

@@ -13,11 +13,46 @@ import {
   loadConfig,
   needsManagedCert,
   needsManagedWaf,
+  resolveEnableWaf,
   type EnvironmentConfig,
   type ResolvedWafConfig,
+  type SiteConfig,
 } from '../config.js'
 import { pascal } from '../naming.js'
 import { WafConstruct } from '../constructs/waf.js'
+
+/**
+ * The logical ID of the WebACL this stack creates: CDK's for the construct path
+ * `Waf/WebAcl`, the path joined plus the first 8 hex digits of its hash.
+ * CloudFormation names the WebACL after it (`WafWebAclBE24253C-<suffix>`),
+ * which is how a pasted ARN is told to be this stack's own. createWebAcl checks
+ * it against the ID CDK gives; a moved construct would also replace the WebACL.
+ */
+export const WEB_ACL_LOGICAL_ID = 'WafWebAclBE24253C'
+
+/** Whether `arn` names the WebACL a global stack created in `account`. */
+export function isGlobalStackWebAcl(arn: string | undefined, account: string): boolean {
+  return !!arn?.startsWith(
+    `arn:aws:wafv2:us-east-1:${account}:global/webacl/${WEB_ACL_LOGICAL_ID}-`
+  )
+}
+
+/**
+ * Whether the global stack manages the WebACL for `entry`: it creates one where
+ * no ARN is pasted, and keeps managing its own once its ARN is pasted (as a
+ * pipeline-managed environment must, ADR-030) — otherwise the WebACL would drop
+ * out of the template, its logging deleted and later rule changes reaching
+ * nothing. An ARN of a WebACL made elsewhere gets none: it would be billed unused.
+ */
+export function managesWebAcl(
+  entry: Pick<SiteConfig, 'enableWaf' | 'allowedIpRanges' | 'basicAuth' | 'webAclArn'>,
+  account: string
+): boolean {
+  return (
+    needsManagedWaf(entry) ||
+    (resolveEnableWaf(entry) && isGlobalStackWebAcl(entry.webAclArn, account))
+  )
+}
 
 export interface KukanGlobalStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */
@@ -59,7 +94,7 @@ export class KukanGlobalStack extends cdk.Stack {
           `ACM certificate ARN for site "${site.name}" (sites[].certificateArn)`
         )
       }
-      if (props.envConfig.sites.some(needsManagedWaf)) {
+      if (props.envConfig.sites.some((site) => managesWebAcl(site, this.account))) {
         this.webAclArn = this.createWebAcl(props.waf, 'Shared WAF WebACL ARN (sites[].webAclArn)')
       }
       cdk.Tags.of(this).add('kukan:stack', 'global')
@@ -70,7 +105,8 @@ export class KukanGlobalStack extends cdk.Stack {
 
     // Create only the missing half: with one ARN supplied and the other not,
     // this stack still synthesizes — recreating the supplied side would leave
-    // an unused duplicate (and a billed WebACL). KukanConfig strips the ARNs,
+    // an unused duplicate (and a billed WebACL). The WebACL stays when the ARN
+    // supplied is this stack's own (managesWebAcl). KukanConfig strips the ARNs,
     // so read them from the raw env entry. The '' id suffix keeps the
     // pre-existing single-site logical IDs (Zone / Certificate).
     if (
@@ -88,7 +124,8 @@ export class KukanGlobalStack extends cdk.Stack {
       )
     }
 
-    if (config.enableWaf && !props.envConfig?.webAclArn) {
+    const webAclArn = props.envConfig?.webAclArn
+    if (config.enableWaf && (!webAclArn || isGlobalStackWebAcl(webAclArn, this.account))) {
       this.webAclArn = this.createWebAcl(props.waf, 'WAF WebACL ARN (webAclArn)')
     }
 
@@ -127,6 +164,14 @@ export class KukanGlobalStack extends cdk.Stack {
    *  operator decides to switch them from count to block. */
   private createWebAcl(config: ResolvedWafConfig, outputDescription: string): string {
     const waf = new WafConstruct(this, 'Waf', config)
+    const logicalId = this.resolve(this.getLogicalId(waf.webAcl)) as string
+    if (logicalId !== WEB_ACL_LOGICAL_ID) {
+      throw new Error(
+        `The WebACL's logical ID is ${logicalId}, not ${WEB_ACL_LOGICAL_ID}: moving the ` +
+          'construct replaces a deployed WebACL and breaks telling a pasted ARN for this ' +
+          "stack's own. Keep it at Waf/WebAcl."
+      )
+    }
     this.retainEdgeResource(waf.webAcl)
     waf.exemptIpSets.forEach((ipSet) => this.retainEdgeResource(ipSet))
     new cdk.CfnOutput(this, 'WebAclArn', {

@@ -638,10 +638,42 @@ waf: {
 },
 ```
 
-`waf` applies where this environment's global stack creates the WebACL. A change lands through a
-standalone deploy of that stack (the pipeline has no us-east-1). Where `webAclArn` is pasted in,
-drop it for the moment, run `npx cdk deploy -c env=<env> <Env>/KukanGlobalStack`, and put it
-back (the ARN does not change).
+`waf` applies where this environment's global stack manages the WebACL. A change lands through a
+standalone deploy of that stack (`npx cdk deploy -c env=<env> '<Env>/KukanGlobalStack'`; the
+pipeline has no us-east-1).
+
+**The global stack keeps managing its own WebACL after its ARN is pasted** (ADR-030 note). When the
+pasted `webAclArn` is the WebACL the global stack created, the WebACL, IP set, log bucket and its
+policy, and logging configuration all stay in the stack. It is recognized by name: the WebACL is not
+given a name, so CloudFormation builds one from the logical ID, and the ARN starts with
+`arn:aws:wafv2:us-east-1:<account>:global/webacl/WafWebAclBE24253C-`. A standalone synth includes
+the global stack even when there is nothing else to create, so you can deploy it without removing
+`webAclArn`. The ARN of a WebACL created elsewhere is left alone as before, and no unused WebACL is
+created. The name is the same in every environment, so a WebACL another environment's global stack
+created in the same account is taken as the stack's own too. Share a WebACL among an environment's
+sites, not across environments (shared across them, that environment's global stack creates an
+unused, billed WebACL; `cdk diff` shows the creation). A pipeline synth never includes the global stack.
+
+The site stacks that read the pasted ARN hold no cross-region reference. Exports created by earlier
+standalone deploys (SSM `/cdk/exports/<site stack>/…`) are removed, together with the mechanism that
+writes them, by the next global stack deploy. Nothing reads them, so this does not fail.
+
+> [!WARNING]
+> **In older versions**, deploying the global stack standalone with `webAclArn` pasted detaches the
+> WebACL and IP set (Retain) and deletes the logging configuration and the bucket policy (logging
+> stops, and later rule changes no longer reach the WebACL). If you need a standalone deploy on an
+> older version (for a new site's certificate, say), comment out `webAclArn` locally for that time
+> only, and check with `cdk diff` that nothing in the WAF is deleted before deploying. A new site's
+> certificate can also be requested from ACM directly and pasted as `certificateArn`.
+
+**Re-importing a WebACL detached by an older version**: deploying the global stack with this version
+makes CloudFormation try to create a new WebACL, which fails on a name clash with the remaining log
+bucket (it rolls back, so nothing breaks). Use `npx cdk import -c env=<env> '<Env>/KukanGlobalStack'`
+to import the remaining WebACL (`Waf/WebAcl`; identified by name, ID and scope `CLOUDFRONT`), the IP
+set (if you wrote `waf.rateLimit.exemptIpRanges`) and the log bucket (`Waf/LogBucket`), then run a
+normal deploy to recreate the logging configuration and the bucket policy. `cdk import` cannot
+handle changes other than the import at the same time, so leave any other differences to the
+following deploy. Try the procedure in a test environment first.
 
 ### OpenSearch access control (FGAC, ADR-069)
 

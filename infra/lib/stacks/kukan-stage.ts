@@ -27,7 +27,7 @@ import {
   resolveDeployConcurrency,
 } from '../config.js'
 import { envName, pascal } from '../naming.js'
-import { KukanGlobalStack } from './global-stack.js'
+import { KukanGlobalStack, managesWebAcl } from './global-stack.js'
 import { KukanStack } from './kukan-stack.js'
 import { KukanSharedStack } from './shared-stack.js'
 import { KukanSiteStack } from './site-stack.js'
@@ -46,6 +46,11 @@ export function siteStackId(siteName: string): string {
 export interface KukanStageProps extends cdk.StageProps {
   /** Environment definition for this stage. */
   config: EnvironmentConfig
+  /**
+   * Built for a pipeline, which cannot deploy the us-east-1 global stack: it is
+   * left out (KukanPipelineStack already refuses an environment that needs it).
+   */
+  inPipeline?: boolean
 }
 
 export class KukanStage extends cdk.Stage {
@@ -75,7 +80,7 @@ export class KukanStage extends cdk.Stage {
       for (const warning of warnings) {
         cdk.Annotations.of(this).addWarningV2(warning.key, warning.message)
       }
-      const globalStack = this.createGlobalStack(config, waf, account)
+      const globalStack = this.createGlobalStack(config, waf, account, props.inPipeline)
       const shared = new KukanSharedStack(this, 'KukanSharedStack', {
         env: { account, region },
         envConfig: config,
@@ -124,7 +129,7 @@ export class KukanStage extends cdk.Stage {
       }
     }
     rejectBlankEdgeArns(config, `Environment "${id}"`)
-    const globalStack = this.createGlobalStack(config, waf, account)
+    const globalStack = this.createGlobalStack(config, waf, account, props.inPipeline)
 
     const mainStack = new KukanStack(this, MAIN_STACK_ID, {
       env: { account, region },
@@ -142,7 +147,9 @@ export class KukanStage extends cdk.Stage {
   }
 
   /**
-   * Create the us-east-1 global stack only when we must CREATE the cert/WAF.
+   * Create the us-east-1 global stack only when we must CREATE the cert/WAF,
+   * or, outside a pipeline, when a pasted ARN is its own WebACL — so a
+   * standalone deploy of it reaches that WebACL's rules (managesWebAcl).
    * When the ARNs are supplied, the consuming stacks take them as plain strings
    * — no cross-region reference, which keeps this compatible with CDK Pipelines
    * (whose Lambda-backed cross-region support stack cannot carry the Docker
@@ -151,9 +158,14 @@ export class KukanStage extends cdk.Stage {
   private createGlobalStack(
     config: EnvironmentConfig,
     waf: ResolvedWafConfig,
-    account: string
+    account: string,
+    inPipeline = false
   ): KukanGlobalStack | undefined {
-    if (!needsGlobalStack(config)) return undefined
+    if (inPipeline) return undefined
+    const entries = config.sites?.length ? config.sites : [config]
+    if (!needsGlobalStack(config) && !entries.some((entry) => managesWebAcl(entry, account))) {
+      return undefined
+    }
     return new KukanGlobalStack(this, 'KukanGlobalStack', {
       env: { account, region: 'us-east-1' },
       crossRegionReferences: true,

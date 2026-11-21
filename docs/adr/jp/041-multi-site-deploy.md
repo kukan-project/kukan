@@ -11,7 +11,8 @@
 - サイトドメインの ACM 証明書 / WAF WebACL は **standalone モードでは GlobalStack が
   自動作成**する（サイトごとの証明書 + サイト間共有の WebACL。pipeline モードは
   シングルサイトと同じく ARN 貼り付け必須 — cross-region 参照が CDK Pipelines と
-  非互換のため、ADR-030。当初は両モードとも ARN 必須だったが 2026-07-20 に緩和）
+  非互換のため、ADR-030。当初は両モードとも ARN 必須だったが 2026-07-20 に緩和）。
+  共有の WebACL は、サイトがその ARN を貼った後も GlobalStack が管理し続ける（ADR-030 補足、2026-11）
 - `OPENSEARCH_INDEX_PREFIX` の値は `kukan-<env>-<site>`（インデックスは
   `kukan-<env>-<site>-search`）
 - **AWS Backup はマルチサイトでも使用可能**。DB プランは SharedStack（共有クラスタを

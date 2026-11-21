@@ -67,6 +67,30 @@ new CodePipeline(this, 'Pipeline', {
 - **bootstrap がクロスアカウントでやや複雑**
 - GitHub Actions 案との比較: 自己変異・ネイティブなマルチアカウント / 承認ゲートを得る一方、GitHub ランナーの汎用性は失う
 
+### 補足（2026-11）：ARN を貼った後も GlobalStack が自分の WebACL を管理する
+
+pipeline モードの環境は WebACL の ARN を貼るので、standalone の GlobalStack から WebACL が外れていた。
+外れると WebACL と IP セットは Retain で残るが、後から加わった WAF のログ設定とバケットのポリシーは
+Retain の対象から漏れていて削除され、ログが止まった。以後のルールの変更（レート制限・認証情報の
+ヘッダーを伏せる設定など）も、どこからも WebACL に届かなかった（「手元で ARN を外して GlobalStack を
+デプロイする」手順を踏んだときだけ届いた）。
+
+Retain の対象を足すだけ（ログは残るがルールは届かない）ではなく、**GlobalStack が作った WebACL は、
+ARN を貼った後も GlobalStack が管理し続ける**ことにした。
+
+- 見分けは ARN の名前で行う。WebACL には名前を付けておらず、CloudFormation が論理 ID
+  （`WafWebAclBE24253C`、構築パス `Waf/WebAcl` から CDK が作る）に乱数を足して名前を付ける。
+  ARN が us-east-1・同じアカウント・`WafWebAclBE24253C-` で始まる名前なら、自分の WebACL とみなす。
+  新しい設定は要らない。論理 ID が変わると見分けが壊れ WebACL も作り直しになるので、合成のたびに
+  CDK の付けた論理 ID と照合する
+- 外部で作った WebACL の ARN は扱わない。「足りない方だけ作る」目的（使われない WebACL に課金しない）は保つ
+- standalone の合成では、自分の WebACL の ARN が貼ってあれば、ほかに作るものが無くても GlobalStack を
+  組む。ルールの変更は `webAclArn` を外さずに GlobalStack の standalone デプロイで届く。pipeline の
+  合成では GlobalStack を組まない
+- サイトは貼った ARN の文字列を読み、リージョンをまたぐ参照を持たない。そのため GlobalStack を
+  パイプラインの Stage に入れられる見込みがある（cross-region 参照が無ければ上の非互換は当たらない）。
+  今回は行わず、今後の案として残す
+
 ## 影響（実装時の変更点）
 
 - 新規: `infra/lib/stacks/pipeline-stack.ts`（`CodePipeline` 定義）、`infra/lib/stacks/kukan-stage.ts`（Stage、ADR-031）

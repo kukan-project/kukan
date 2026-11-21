@@ -286,8 +286,8 @@ To read the counts and switch to blocking (`block`):
    A shared address such as an office
    exit goes into `waf.rateLimit.exemptIpRanges`; otherwise set `waf.rateLimit.mode: 'block'`
 5. A change to `waf` lands through a standalone deploy of the global stack
-   (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`; where `webAclArn` is pasted in, drop it
-   for the moment, deploy, and put it back — the ARN does not change)
+   (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`; if the WebACL was created by the global
+   stack, the change reaches it with `webAclArn` still pasted)
 
 How to write the setting: [environment config reference, "WAF rate limits"](/en/system-admin-guide/environment-config/#waf-rate-limits).
 
