@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { VALIDATION_MESSAGES } from './messages'
 import type { ColumnSettings } from '../column-settings'
+import { OVERRIDABLE_COLUMN_ROLES } from '../pipeline-types'
 import { checkUrlSafety } from '../url'
 
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
@@ -261,10 +262,14 @@ export const columnSettingsBodySchema = z
         // the person meant by naming it twice is not recoverable (spec §6.2).
         message: VALIDATION_MESSAGES.keyColumnRepeated,
       }),
+    // Optional where the key is not, so a client that predates roles can still
+    // set a key; a PUT replaces the whole setting, so leaving it out clears them
+    roles: z.record(z.string().min(1), z.enum(OVERRIDABLE_COLUMN_ROLES)).nullable().optional(),
   })
-  .transform(({ primaryKey }): ColumnSettings =>
-    primaryKey?.length ? { primaryKey: primaryKey as [string, ...string[]] } : {}
-  )
+  .transform(({ primaryKey, roles }): ColumnSettings => ({
+    ...(primaryKey?.length && { primaryKey: primaryKey as [string, ...string[]] }),
+    ...(roles && Object.keys(roles).length > 0 && { roles }),
+  }))
 
 export type ColumnSettingsInput = z.infer<typeof columnSettingsBodySchema>
 

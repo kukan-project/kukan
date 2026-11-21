@@ -57,7 +57,7 @@ export function JsonPreview({ resourceId }: JsonPreviewProps) {
 
   return (
     <div className="overflow-hidden rounded-lg border">
-      <div className="max-h-[600px] overflow-auto bg-muted/20 p-4">
+      <div data-slot="preview-scroll" className="max-h-[600px] overflow-auto bg-muted/20 p-4">
         <pre className="whitespace-pre text-xs leading-relaxed">{nodes}</pre>
       </div>
     </div>

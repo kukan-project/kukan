@@ -1,6 +1,15 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Alert,
   AlertDescription,
@@ -13,6 +22,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Table,
   TableBody,
   TableCell,
@@ -26,36 +40,48 @@ import type {
   ColumnRolesView,
   ColumnSettingsView,
   KeyCheck,
+  OverridableColumnRole,
   ResourceColumn,
 } from '@kukan/shared'
-import { canIdentifyRows, sameKeyColumns } from '@kukan/shared'
+import {
+  canIdentifyRows,
+  canOverrideRole,
+  OVERRIDABLE_COLUMN_ROLES,
+  sameKeyColumns,
+  sameRoleOverrides,
+} from '@kukan/shared'
 import { clientFetch, readProblem } from '@/lib/client-api'
 import { useProblemMessage } from '@/hooks/use-problem-message'
 import { useFetch } from '@/hooks/use-fetch'
-import { columnTypeKey, formatCell } from '@/lib/format-utils'
-import { KEY_CELL_CLASS, KEY_HEADER_CLASS } from '@/lib/table-cells'
-import { useParquetPreview } from '@/hooks/use-parquet-preview'
+import { columnTypeKey } from '@/lib/format-utils'
 import { ColumnVocabularyDetails } from '@/components/resource/column-vocabulary'
-
-/** Rows to read. Enough to see how a column's values run; few enough that the
- *  read is one row group. About five show at once, the rest scroll. */
-const SAMPLE_ROWS = 20
 
 /** How long a selection has to hold still before it is checked. Each check can
  *  scan the content, and a key is built one column at a time. */
 const CHECK_DEBOUNCE_MS = 400
 
+/** The select's value for "Auto": no override. */
+const INFERRED = 'inferred'
+
+/** The draft's overrides by column; none is an empty object, which the API stores as none. */
+type RoleOverrides = Record<string, OverridableColumnRole>
+/** A column's override, by own key only: a column named `constructor` is not the prototype's */
+const overrideOf = (roles: RoleOverrides | null | undefined, name: string) =>
+  roles && Object.hasOwn(roles, name) ? roles[name] : null
+
 /**
  * The Table settings tab (ADR-072 decision 5): every column in one table, with
- * what a person decides about it — the primary key today, the settled type in
- * ii-c — held as a draft and applied once. The role beside each column is read
- * only, until roles can be overridden (ADR-063, ADR-072 Step 4).
+ * what a person decides about it — the primary key, a text column's role
+ * (ADR-063 §決定 5), the settled type in ii-c — held as a draft and applied
+ * once. A key change makes a version and is confirmed; a role change alone
+ * makes none, and the rebuild it queues rewrites the profile and the index.
  */
 export function TableSettings({
   resourceId,
   reloadKey,
   onRunQueued,
   onDraftChange,
+  preview,
 }: {
   resourceId: string
   /** Any change re-reads the settings. The owner passes whatever tells it a run
@@ -74,6 +100,13 @@ export function TableSettings({
   onRunQueued?: () => void
   /** Whether a key is picked that is not yet applied — the page's guard on leaving */
   onDraftChange?: (draft: boolean) => void
+  /**
+   * The resource's preview, marking the key given — the one being picked. The
+   * owner draws it, holding what a preview needs that this screen does not
+   * (the format, the file's address, the viewer); it stands in for a separate
+   * Preview tab, and for a table that was not made it says why.
+   */
+  preview?: (primaryKey: string[] | null) => ReactNode
 }) {
   const t = useTranslations('resource.columnSettings')
   const tc = useTranslations('common')
@@ -83,6 +116,9 @@ export function TableSettings({
   const describeProblem = useProblemMessage()
   const [view, setView] = useState<ColumnSettingsView | null>(null)
   const [selected, setSelected] = useState<string[]>([])
+  const [roleDraft, setRoleDraft] = useState<RoleOverrides>({})
+  /** Whether the apply behind `queued` changed roles alone, which says so differently */
+  const [queuedRolesOnly, setQueuedRolesOnly] = useState(false)
   const [check, setCheck] = useState<KeyCheck | null>(null)
   const [checking, setChecking] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -99,7 +135,9 @@ export function TableSettings({
   )
   /** The selection as the settings spell it: no columns is no key */
   const selectedKey = selected.length > 0 ? selected : null
-  const draft = !!view && !sameKeyColumns(view.primaryKey, selectedKey)
+  const keyDraft = !!view && !sameKeyColumns(view.primaryKey, selectedKey)
+  const rolesDraft = !!view && !sameRoleOverrides(view.roles, roleDraft)
+  const draft = keyDraft || rolesDraft
   useEffect(() => {
     onDraftChange?.(draft)
   }, [draft, onDraftChange])
@@ -109,6 +147,8 @@ export function TableSettings({
 
   /** The key the selection was last reset to, which a draft is built on */
   const loadedKey = useRef<string[] | null | undefined>(undefined)
+  /** The overrides the role draft was last reset to, likewise */
+  const loadedRoles = useRef<RoleOverrides | null | undefined>(undefined)
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
@@ -127,6 +167,16 @@ export function TableSettings({
           sameKeyColumns(base, data.primaryKey)
             ? current
             : (data.primaryKey ?? [])
+        )
+        // The same for the roles: a draft on overrides that still stand is kept
+        const roleBase = loadedRoles.current
+        loadedRoles.current = data.roles
+        setRoleDraft((current) =>
+          roleBase !== undefined &&
+          !sameRoleOverrides(roleBase, current) &&
+          sameRoleOverrides(roleBase, data.roles)
+            ? current
+            : { ...data.roles }
         )
       } catch {
         if (!signal?.aborted) setLoadError(true)
@@ -242,21 +292,34 @@ export function TableSettings({
   const answered = check && sameKeyColumns(check.primaryKey ?? null, selectedKey) ? check : null
   const fault = answered?.checked ? answered.fault : null
 
+  /** A text column's role, or back to the rules' with null. */
+  function setRole(name: string, role: OverridableColumnRole | null) {
+    setQueued(null)
+    setError(null)
+    setRoleDraft((current) => {
+      const { [name]: _, ...rest } = current
+      return role ? { ...rest, [name]: role } : rest
+    })
+  }
+
   async function apply() {
     setConfirming(false)
     setSaving(true)
     setError(null)
+    const rolesOnly = !keyDraft && rolesDraft
     try {
       const res = await clientFetch(`/api/v1/resources/${resourceId}/column-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ primaryKey: selectedKey }),
+        // Both, always: a PUT replaces the setting, and roles left out are cleared
+        body: JSON.stringify({ primaryKey: selectedKey, roles: roleDraft }),
       })
       if (!res.ok) {
         setError(describeProblem(await readProblem(res)) ?? t('applyFailed'))
         return
       }
       const data: { queued: boolean | null } = await res.json()
+      setQueuedRolesOnly(rolesOnly)
       setQueued(data.queued)
       await load()
       // Only where a run was actually queued: `null` is "nothing to rebuild, or
@@ -270,20 +333,37 @@ export function TableSettings({
     }
   }
 
+  // The preview stands without the settings: it is this tab's, with no other
+  // tab to see it on
   if (loadError) {
     return (
-      <Alert variant="destructive">
-        <AlertDescription>{t('loadError')}</AlertDescription>
-      </Alert>
+      <div className="flex w-0 min-w-full flex-col gap-4">
+        {preview?.(null)}
+        <Alert variant="destructive">
+          <AlertDescription>{t('loadError')}</AlertDescription>
+        </Alert>
+      </div>
     )
   }
-  if (!view) return <p className="text-muted-foreground text-sm">{t('loading')}</p>
+  if (!view) {
+    return (
+      <div className="flex w-0 min-w-full flex-col gap-4">
+        {preview?.(null)}
+        <p className="text-muted-foreground text-sm">{t('loading')}</p>
+      </div>
+    )
+  }
   // Length checked too: `[].every(…)` is true, so a version that interpreted to
   // no columns at all — an empty CSV, or one wider than the cap — would fall
   // through to the note about counts and be offered a rebuild that reaches the
   // same answer every time (`interpret/version.ts`).
   if (!view.schema || view.schema.columns.length === 0) {
-    return <p className="text-muted-foreground text-sm">{t('noColumns')}</p>
+    return (
+      <div className="flex w-0 min-w-full flex-col gap-4">
+        <p className="text-muted-foreground text-sm">{t('noColumns')}</p>
+        {preview?.(null)}
+      </div>
+    )
   }
 
   const settled = !draft
@@ -297,8 +377,11 @@ export function TableSettings({
   /** Key columns this version does not have (the content dropped or renamed
    *  them): drawn as rows too, or such a key could never be taken apart here */
   const absent = [...new Set([...storedKey, ...selected])].filter((name) => !schemaNames.has(name))
+  const storedRoles = view.roles ?? {}
+  const roleChanged = (name: string) =>
+    overrideOf(storedRoles, name) !== overrideOf(roleDraft, name)
   const changed = [...schemaNames, ...absent].filter(
-    (name) => storedKey.indexOf(name) !== selected.indexOf(name)
+    (name) => storedKey.indexOf(name) !== selected.indexOf(name) || roleChanged(name)
   ).length
 
   return (
@@ -308,10 +391,27 @@ export function TableSettings({
     // keeps the section out of that measurement, and the minimum puts it back
     // to the width it is given.
     <div className="flex w-0 min-w-full flex-col gap-4">
+      {/* What the columns actually hold, before the choice — the preview
+          readers see, with the key being picked marked: a name does not say
+          whether a column identifies a row, and the counts do not say what a
+          value looks like. */}
+      {/* Not a preview of other bytes: a run whose Interpret failed leaves the
+          previous content's, and a key chosen over it is chosen over content
+          the resource does not serve (the check says `preview-stale` too) */}
+      {view.preview === 'preview-stale' ? (
+        <p className="text-muted-foreground text-xs">{t('previewStale')}</p>
+      ) : (
+        preview?.(selectedKey)
+      )}
+
+      {/* What a person decides about the columns, under the preview of what
+          they hold — headed as the preview is */}
+      <h4 className="mt-2 text-xl font-semibold">{t('sectionColumns')}</h4>
       {/* The advice to set a key where a column can carry one — the guide's
           caution about unstable columns is the other half — and what applying
           does (ADR-072 decision 4). The same on every resource. */}
       <p className="text-sm">{t('recommendKey')}</p>
+      <p className="text-sm">{t('rolesIntro')}</p>
 
       {/* The explanations, folded and in short lists: they are read once, and
           the table is what the tab is for. The conditional warnings stay
@@ -343,29 +443,17 @@ export function TableSettings({
         </span>
       </div>
 
-      {/* What the columns actually hold, before the choice: a name does not
-          say whether a column identifies a row, and the counts do not say what
-          a value looks like. */}
-      {view.preview === 'ready' ? (
-        <ColumnSample
-          // Read again when a run lands: the hook reads once per resource
-          key={reloadKey}
-          resourceId={resourceId}
-          columns={view.schema.columns}
-          selected={selected}
-        />
-      ) : (
-        <p className="text-muted-foreground text-xs">{t(`noSample.${view.preview}`)}</p>
-      )}
-
       <ColumnTable
         columns={view.schema.columns}
         absent={absent}
         roles={roles?.columns ?? null}
         selected={selected}
         storedKey={storedKey}
+        roleDraft={roleDraft}
+        roleChanged={roleChanged}
         unkeyable={unkeyable}
         onToggle={toggle}
+        onRole={setRole}
       />
       {rolesFailed && (
         <p className="text-muted-foreground text-xs">{tr('columnRoles.loadError')}</p>
@@ -404,21 +492,33 @@ export function TableSettings({
               {t('changes', { count: changed })}
             </span>
           )}
-          <KeyStatus
-            selected={selected}
-            refused={refused}
-            settled={settled}
-            carried={view.carried}
-            check={answered}
-            checking={checking}
-            queued={queued}
-          />
+          {/* What a role change does, beside what the key's state is: the two
+              are applied together but cost different things */}
+          {rolesDraft && queued === null && <p className="text-sm">{t('rolesWillApply')}</p>}
+          {/* A role makes no version, so whether it is read is the profile's to say */}
+          {!rolesDraft && queued === null && !view.rolesCarried && (
+            <p className="text-sm">{t('rolesPending')}</p>
+          )}
+          {queued && queuedRolesOnly ? (
+            <p className="text-sm">{t('rolesQueued')}</p>
+          ) : (
+            <KeyStatus
+              selected={selected}
+              refused={refused}
+              settled={!keyDraft}
+              carried={view.carried}
+              check={answered}
+              checking={checking}
+              queued={queued}
+            />
+          )}
         </div>
         <Button
           size="sm"
           variant="outline"
           onClick={() => {
             setSelected(storedKey)
+            setRoleDraft({ ...storedRoles })
             setError(null)
           }}
           disabled={saving || settled}
@@ -428,8 +528,9 @@ export function TableSettings({
         <Button
           size="sm"
           // A change of key is always confirmed with what it changes: it makes
-          // a version (ADR-072 decision 5). The repair resend changes nothing.
-          onClick={() => (settled ? apply() : setConfirming(true))}
+          // a version (ADR-072 decision 5). Roles alone make none, and the
+          // repair resend changes nothing, so both apply straight away.
+          onClick={() => (keyDraft ? setConfirming(true) : apply())}
           // While a check is out, this key has no verdict — and applying
           // without one skips a confirmation that cannot be shown afterwards:
           // the version is made, layer 2 refuses it, and nothing puts it back
@@ -439,13 +540,13 @@ export function TableSettings({
           // version does not carry is owed a run, and the server is built to
           // let a resend queue it: the write and the enqueue are decided
           // separately there precisely so a queue that was down is repairable.
-          disabled={saving || checking || refused || (settled && view.carried)}
+          disabled={saving || checking || refused || (settled && view.carried && view.rolesCarried)}
         >
           {saving
             ? t('applying')
-            : settled && !view.carried
+            : settled && !(view.carried && view.rolesCarried)
               ? t('requeue')
-              : view.primaryKey && selected.length === 0
+              : keyDraft && view.primaryKey && selected.length === 0
                 ? t('clear')
                 : t('apply')}
         </Button>
@@ -457,7 +558,7 @@ export function TableSettings({
           never cleared (spec §6.6), and correcting the key afterwards does not
           put it in. */}
       {/* Closed once there is nothing to apply: a run landing can settle it */}
-      <Dialog open={confirming && !settled} onOpenChange={(open) => !open && setConfirming(false)}>
+      <Dialog open={confirming && keyDraft} onOpenChange={(open) => !open && setConfirming(false)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{fault ? t('confirmTitle') : t('confirmChangeTitle')}</DialogTitle>
@@ -557,106 +658,6 @@ function RebuildButton({ resourceId, onRebuilt }: { resourceId: string; onRebuil
 }
 
 /**
- * A few rows of what the resource is serving, with the chosen columns marked in
- * the order they were picked.
- *
- * Read straight off the interpretation's Parquet over Range requests — the
- * footer and one row group — rather than through a query: this is a peek beside
- * a form, and the one server-side DuckDB slot is already being spent on the key
- * check that runs as the selection changes.
- *
- * **A sample proves nothing about uniqueness**, and is not offered as evidence:
- * five distinct values say nothing about the sixth. The check answers that, over
- * every row. This answers what the values *are*.
- */
-function ColumnSample({
-  resourceId,
-  columns,
-  selected,
-}: {
-  resourceId: string
-  columns: ResourceColumn[]
-  selected: string[]
-}) {
-  const t = useTranslations('resource.columnSettings')
-  const { rows, metadata, loading, error } = useParquetPreview({
-    resourceId,
-    pageSize: SAMPLE_ROWS,
-  })
-
-  if (loading) return <p className="text-muted-foreground text-xs">{t('sampleLoading')}</p>
-  if (error) return <p className="text-muted-foreground text-xs">{t('sampleUnavailable')}</p>
-  // Its own sentence: a header with no data rows reads fine and is a key the
-  // check deliberately accepts — nothing repeats in an empty table — so calling
-  // it a failed read has the two halves of this screen disagreeing.
-  if (rows.length === 0) {
-    return <p className="text-muted-foreground text-xs">{t('sampleEmpty')}</p>
-  }
-
-  // The version's columns, not the file's: the table offers these, and a
-  // preview that has drifted must not quietly add one that cannot be chosen.
-  const names = columns.map((column) => column.name)
-
-  return (
-    // The scrollbars belong to the sample: one box scrolls both ways (a raw
-    // <table>, as the explorer's, since the ui Table scrolls sideways in its
-    // own box), and stops at the header, five rows and the sideways bar.
-    <div className="flex flex-col gap-1">
-      <p className="text-muted-foreground text-xs">
-        {/* Counted from the file the rows came from, so the two cannot disagree */}
-        {metadata && rows.length >= metadata.numRows
-          ? t('sampleCaptionAll', { count: rows.length })
-          : t('sampleCaption', { count: rows.length })}
-      </p>
-      <div className="max-h-56 overflow-auto rounded border">
-        <table className="w-full text-sm">
-          <TableHeader className="bg-background sticky top-0 z-10 shadow-[inset_0_-1px_0_var(--color-border)]">
-            <TableRow>
-              {names.map((name) => {
-                const chosen = selected.includes(name)
-                return (
-                  <TableHead
-                    key={name}
-                    // `whitespace-nowrap`: a Japanese column name has no spaces,
-                    // so a narrow cell wraps it one character per line and the
-                    // header becomes taller than the sample it labels.
-                    className={`whitespace-nowrap${chosen ? ` ${KEY_HEADER_CLASS}` : ''}`}
-                    scope="col"
-                  >
-                    {name}
-                  </TableHead>
-                )
-              })}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row, i) => (
-              // No hover: these rows are a sample, not a list of things to pick,
-              // and the only reason to tell them apart is the key marking.
-              <TableRow key={i} className="hover:bg-transparent">
-                {/* Over the columns rather than their names: the type is what
-                  decides whether a value shows its time of day, and a
-                  timestamp at midnight reads as a bare date without it. */}
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.name}
-                    className={`whitespace-nowrap text-xs${
-                      selected.includes(column.name) ? ` ${KEY_CELL_CLASS}` : ''
-                    }`}
-                  >
-                    {formatCell(row[column.name], column.type)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-/**
  * What the current selection means, in one line.
  *
  * Four things can be true at once — the selection differs from what is stored,
@@ -729,8 +730,11 @@ function ColumnTable({
   roles,
   selected,
   storedKey,
+  roleDraft,
+  roleChanged,
   unkeyable,
   onToggle,
+  onRole,
 }: {
   columns: ResourceColumn[]
   /** Key columns this version does not have */
@@ -742,7 +746,11 @@ function ColumnTable({
    *  dropped: a column that is not offered reads as one the resource does not
    *  have, and the reason is what the publisher needs to pick another. */
   unkeyable: Set<string>
+  /** The roles the draft gives text columns, by name */
+  roleDraft: RoleOverrides
+  roleChanged: (name: string) => boolean
   onToggle: (name: string) => void
+  onRole: (name: string, role: OverridableColumnRole | null) => void
 }) {
   const t = useTranslations('resource.columnSettings')
   const tr = useTranslations('resource')
@@ -778,7 +786,7 @@ function ColumnTable({
           ].map(({ name, column, role }, i) => {
             const place = selected.indexOf(name)
             const placeId = `${idPrefix}-place-${i}`
-            const draft = storedKey.indexOf(name) !== place
+            const draft = storedKey.indexOf(name) !== place || roleChanged(name)
             // Not for a column the stored key already rests on: that key stands
             // (spec §6.4), so the box has to press both ways, or taking the
             // column out is a one-way door
@@ -843,7 +851,16 @@ function ColumnTable({
                   )}
                 </TableCell>
                 <TableCell className="align-top whitespace-normal">
-                  {role ? (
+                  {/* Offered with no profile too: an override stored before it
+                      failed must stay changeable */}
+                  {column && canOverrideRole(column.type) ? (
+                    <RoleChoice
+                      name={name}
+                      role={role}
+                      chosen={overrideOf(roleDraft, name)}
+                      onChoose={(next) => onRole(name, next)}
+                    />
+                  ) : role ? (
                     <span className="flex flex-col gap-0.5">
                       <span>
                         <Badge variant="outline">{tr(`fieldRoles.${role.role}`)}</Badge>
@@ -869,6 +886,60 @@ function ColumnTable({
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+/**
+ * A text column's role: the rules' or a person's (ADR-063 §決定 5). The rules'
+ * reason stays underneath, for whoever decides whether they got it wrong — so
+ * an overridden column shows what it would go back to.
+ */
+function RoleChoice({
+  name,
+  role,
+  chosen,
+  onChoose,
+}: {
+  name: string
+  /** The profile's row, where there is one: what the rules decided, and why */
+  role: NonNullable<ColumnRolesView['columns']>[number] | null
+  chosen: OverridableColumnRole | null
+  onChoose: (role: OverridableColumnRole | null) => void
+}) {
+  const t = useTranslations('resource.columnSettings')
+  const tr = useTranslations('resource')
+  /** What the rules decided, where a person's override replaced it in the profile */
+  const inferred = role ? (role.inferred ?? role) : null
+  return (
+    <span className="flex flex-col gap-1">
+      <Select
+        value={chosen ?? INFERRED}
+        onValueChange={(value) =>
+          onChoose(value === INFERRED ? null : (value as OverridableColumnRole))
+        }
+      >
+        <SelectTrigger
+          className="h-8 w-fit gap-1 py-1 whitespace-nowrap"
+          aria-label={t('roleFor', { name })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {/* Each with what it does in search, which is what choosing one changes */}
+          <SelectItem value={INFERRED} description={t('roleSearch.auto')}>
+            {inferred
+              ? t('roleFollow', { role: tr(`fieldRoles.${inferred.role}`) })
+              : t('roleFollowUnknown')}
+          </SelectItem>
+          {OVERRIDABLE_COLUMN_ROLES.map((option) => (
+            <SelectItem key={option} value={option} description={t(`roleSearch.${option}`)}>
+              {tr(`fieldRoles.${option}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {inferred && <RoleBasis basis={inferred.roleBasis} />}
+    </span>
   )
 }
 

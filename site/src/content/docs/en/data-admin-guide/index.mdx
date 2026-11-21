@@ -66,8 +66,8 @@ A resource is edited in tabs.
 | Tab             | What it holds                                                                                                                                                                                                      |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Basic           | Name, format, description, source and custom fields. The file's details (MIME type, size, hash, current version, rows, columns), its [AI-written description](#ai-written-descriptions), and deleting the resource |
-| Preview         | The same preview as the public page, also for draft and private datasets                                                                                                                                           |
-| Table settings  | The [primary key](#declaring-a-primary-key) and [column roles](#column-roles). Only for resources that read as a table                                                                                             |
+| Preview         | The same preview as the public page, also for draft and private datasets. For a resource that reads as a table, it is at the top of Table settings                                                                 |
+| Table settings  | The preview on top (with the key being picked marked), then the [primary key](#declaring-a-primary-key) and [column roles](#column-roles) under "Columns". Only for resources that read as a table                 |
 | Version history | [Versions, their downloads and diffs](#version-history)                                                                                                                                                            |
 | Processing      | How far the pipeline has got, and [reprocessing](#reprocessing)                                                                                                                                                    |
 
@@ -162,10 +162,12 @@ For a column of numbers written as text, it also lists the values that do not re
 what to fix in the data. A column of digits that start with a zero (local government codes such as
 `010006`) is taken for an identifier, not a number.
 
-:::note
-**Roles cannot be edited in this version.** Overriding a role the automatic decision got wrong,
-from the dashboard, is planned for a future version.
-:::
+Where the automatic decision got a column wrong, choose its role again on the Table settings tab.
+
+- **Only text columns** can be changed. A column read as a number or date has its role from its type
+- The roles to choose from are identifier, numeric (as text), name, category and free text; "Auto" returns to the automatic decision. An overridden column still shows the automatic decision and its reason
+- As with the primary key, choose and then press "Apply". A change of roles alone **makes no version** and asks for no confirmation. Applying runs a reprocess, which rebuilds the profile and the search index with the new roles
+- A chosen role carries on to later versions. Where a later version no longer has the column, or reads it as a number or date, the automatic decision applies
 
 ### Column vocabulary (experimental)
 

@@ -106,6 +106,25 @@ describe('columnSettingsBodySchema', () => {
     expect(columnSettingsBodySchema.parse({ primaryKey: ['id'] })).toEqual({ primaryKey: ['id'] })
   })
 
+  it('takes role overrides beside the key, with no overrides spelled as none', () => {
+    expect(
+      columnSettingsBodySchema.parse({ primaryKey: null, roles: { 区分: 'category' } })
+    ).toEqual({ roles: { 区分: 'category' } })
+    for (const roles of [{}, null, undefined]) {
+      expect(columnSettingsBodySchema.parse({ primaryKey: ['id'], roles })).toEqual({
+        primaryKey: ['id'],
+      })
+    }
+  })
+
+  it('refuses a role a person cannot give a column', () => {
+    for (const role of ['measure', 'empty', 'whatever']) {
+      expect(
+        columnSettingsBodySchema.safeParse({ primaryKey: null, roles: { a: role } }).success
+      ).toBe(false)
+    }
+  })
+
   it('refuses a repeated column', () => {
     // Not deduplicated: `ON t.a = s.a AND t.a = s.a` compares a column with
     // itself, and what was meant by naming it twice is not recoverable.

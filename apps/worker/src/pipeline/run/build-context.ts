@@ -32,7 +32,13 @@ import {
   reserveObject,
 } from '@kukan/api/services/pipeline/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
-import { getStorageKey, isDocumentFormat, primaryKeyOf, versionOrigin } from '@kukan/shared'
+import {
+  getStorageKey,
+  isDocumentFormat,
+  primaryKeyOf,
+  roleOverridesOf,
+  versionOrigin,
+} from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import { heavySection } from '@/heavy-section'
 import type { PipelineContext, ResourceForPipeline } from './types'
@@ -69,6 +75,21 @@ export function buildPipelineContext(
     // refresh at the next start reads it again
     vocabularyPacks: () =>
       new SystemSettingService(db).getSetting(VOCABULARY_PACKS_KEY).catch(() => []),
+    // Read fresh like the packs, for the rebuild an override queues. A failed
+    // read profiles by the rules alone rather than failing the interpretation:
+    // the override refines the profile, and a reprocess reads it again
+    async roleOverrides(resourceId: string) {
+      try {
+        const [res] = await db
+          .select({ columnSettings: resource.columnSettings })
+          .from(resource)
+          .where(eq(resource.id, resourceId))
+          .limit(1)
+        return roleOverridesOf(res?.columnSettings)
+      } catch {
+        return null
+      }
+    },
 
     async getResource(id: string): Promise<ResourceForPipeline | null> {
       const [res] = await db

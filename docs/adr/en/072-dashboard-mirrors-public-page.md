@@ -237,10 +237,12 @@ read-only list.
 | Tab             | Contents                                                                                                                                                        | Saving                                                           |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Basic           | Name, format, description, source (URL / replace), extras. Below them, what the catalogue holds about the resource (read-only, with the AI abstract) and delete | Save, no version (except source and format, decision 6)          |
-| Preview         | The public page's preview (for a draft or private dataset too)                                                                                                  | None                                                             |
-| Table settings  | Every per-column decision in one table (decision 5). Only for formats read as tables                                                                            | Apply the columns (a version if the reading changes, decision 5) |
+| Preview         | The public page's preview (for a draft or private dataset too). For formats read as tables it is on the Table settings tab                                      | None                                                             |
+| Table settings  | The preview on top (the key being picked marked), then every per-column decision in one table under "Columns" (decision 5). Only for formats read as tables     | Apply the columns (a version if the reading changes, decision 5) |
 | Version history | History, diffs, revert, purge, type-change review                                                                                                               | Press and confirm                                                |
 | Processing      | Per-step state, reprocess (re-fetches a URL only when chosen, decision 7)                                                                                       | Press and confirm                                                |
+
+**For formats read as tables, the preview sits at the top of the Table settings tab, and there is no separate Preview tab (2026-11-21).** Deciding about columns takes seeing their values, and the original Table settings held a sample of values for choosing the key, which made it nearly the same screen as the preview. In place of the sample it now has the public page's preview (paging, filtering and the text view included), with the key being picked marked. The field list under the preview is left out, as the "Columns" table covers it. A preview of a previous version's content is not shown (as with the sample). A reader (of a deleted dataset, for example) has no Table settings tab, so keeps the Preview tab. Column types are also shown under the preview's headings (on the public page too)
 
 **The two tables above show where things go; they are not an inventory of operations.** Every operation
 today's editor offers stays somewhere on the new screens, including ones not listed here. The Step 1
@@ -424,12 +426,12 @@ Applying settled types on the Table settings tab adds them to the same write tha
 
 ## Steps
 
-| Step   | Contents                                                                                                                                                                                                                 | Depends on |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
-| Step 1 | Move to the new URLs and two-column skeleton. Merge key and role into the Table settings tab's single table (roles still read-only), with draft → apply for the key. Narrow when saving queues the pipeline (decision 6) | none       |
-| Step 2 | "Manage" icon on the public page; drop the ⚙ link; one reprocess                                                                                                                                                         | Step 1     |
-| Step 3 | Put ii-c (settled types, type-change review, AI suggestions) on the Table settings and Version history tabs                                                                                                              | Step 1     |
-| Step 4 | Role overrides (ADR-063, next step): a write that adds roles to `column_settings`, and rebuilding the profile and index. Make the Table settings tab's role column editable                                              | Step 1     |
+| Step   | Contents                                                                                                                                                                                                                                                | Depends on |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Step 1 | Move to the new URLs and two-column skeleton. Merge key and role into the Table settings tab's single table (roles still read-only), with draft → apply for the key. Narrow when saving queues the pipeline (decision 6)                                | none       |
+| Step 2 | "Manage" icon on the public page; drop the ⚙ link; one reprocess                                                                                                                                                                                        | Step 1     |
+| Step 3 | Put ii-c (settled types, type-change review, AI suggestions) on the Table settings and Version history tabs                                                                                                                                             | Step 1     |
+| Step 4 | Role overrides (ADR-063, next step): a write that adds roles to `column_settings`, and rebuilding the profile and index. Make the Table settings tab's role column editable (implemented 2026-11-21: text columns only, applied the way a reprocess is) | Step 1     |
 
 Step 1 changes appearance and placement but adds no capability. Applying a key is already
 "choose, then apply", so draft → apply does not change its meaning. Roles are listed read-only

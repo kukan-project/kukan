@@ -3108,6 +3108,198 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     expect((await setKey(resource.id, ['id'])).status).toBe(400)
   })
 
+  const setSettings = (id: string, body: object, via = app) =>
+    via.request(`/api/v1/resources/${id}/column-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  it('settles role overrides beside the key, and rebuilds for them without a version', async () => {
+    // A role is not part of a version's identity (ADR-063 §決定 5): the run it
+    // queues is a rebuild, which rewrites the profile and the index only
+    const resource = await withColumns('roles-set-pkg', ['id', '区分'])
+    await setKey(resource.id, ['id'])
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['id'] })
+      .where(eq(resourceVersion.resourceId, resource.id))
+    vi.mocked(mockQueue.enqueue).mockClear()
+
+    const res = await setSettings(resource.id, { primaryKey: ['id'], roles: { 区分: 'category' } })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ roles: { 区分: 'category' }, queued: true })
+    expect(await storedSettings(resource.id)).toEqual({
+      primaryKey: ['id'],
+      roles: { 区分: 'category' },
+    })
+    expect(mockQueue.enqueue).toHaveBeenCalledWith(
+      PIPELINE_JOB_TYPE,
+      expect.objectContaining({ resourceId: resource.id, rebuildOnly: true }),
+      expect.anything()
+    )
+    expect(await db.$count(resourceVersion, eq(resourceVersion.resourceId, resource.id))).toBe(1)
+  })
+
+  it('queues roles once when the same apply is sent twice before the run lands', async () => {
+    // The job already on its way reads them: a second one would read the same
+    const resource = await withColumns('roles-double-send-pkg', ['id', '区分'])
+    const body = { primaryKey: null, roles: { 区分: 'category' } }
+
+    expect(await (await setSettings(resource.id, body, appWithJobs)).json()).toMatchObject({
+      queued: true,
+    })
+    expect(await (await setSettings(resource.id, body, appWithJobs)).json()).toMatchObject({
+      queued: null,
+    })
+    expect(await pipelineJobs()).toBe(1)
+  })
+
+  it('clears the overrides a PUT leaves out, keeping the key', async () => {
+    const resource = await withColumns('roles-clear-pkg', ['id', '区分'])
+    await setSettings(resource.id, { primaryKey: ['id'], roles: { 区分: 'name' } })
+
+    expect((await setKey(resource.id, ['id'])).status).toBe(200)
+    expect(await storedSettings(resource.id)).toEqual({ primaryKey: ['id'] })
+    const view = await (
+      await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+    ).json()
+    expect(view.roles).toBeNull()
+  })
+
+  it('refuses a role for a column the version lacks or reads as other than text', async () => {
+    const resource = await withColumns('roles-refuse-pkg', ['id', '面積'], {
+      types: { 面積: 'float' },
+    })
+
+    const missing = await setSettings(resource.id, { primaryKey: null, roles: { 無い: 'name' } })
+    expect(missing.status).toBe(400)
+    const typed = await setSettings(resource.id, { primaryKey: null, roles: { 面積: 'category' } })
+    expect(typed.status).toBe(400)
+    expect(await storedSettings(resource.id)).toEqual({})
+  })
+
+  it('queues roles again on a resend while the profile has not read them', async () => {
+    // A role makes no version, so a failed enqueue leaves the setting saved and
+    // nothing in it to change: the profile is what says the rebuild is owed
+    const resource = await withColumns('roles-requeue-pkg', ['id', '区分'])
+    await db.insert(resourcePipeline).values({
+      resourceId: resource.id,
+      status: 'complete',
+      metadata: {
+        schema: {
+          rowCount: 2,
+          columns: [
+            { name: 'id', type: 'string', nullable: false, nullCount: 0 },
+            { name: '区分', type: 'string', nullable: false, nullCount: 0 },
+          ],
+        },
+      },
+      profile: {
+        columns: [
+          { role: 'identifier', roleBasis: { rule: 'distinct-code' } },
+          { role: 'category', roleBasis: { rule: 'other' } },
+        ],
+      },
+    })
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { roles: { 区分: 'name' } } })
+      .where(eq(resourceTable.id, resource.id))
+    vi.mocked(mockQueue.enqueue).mockClear()
+
+    const view = await (
+      await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+    ).json()
+    expect(view).toMatchObject({ roles: { 区分: 'name' }, rolesCarried: false })
+    const res = await setSettings(resource.id, { primaryKey: null, roles: { 区分: 'name' } })
+    expect(await res.json()).toMatchObject({ queued: true })
+  })
+
+  it('queues roles again on a resend where no profile has read anything yet', async () => {
+    // A table interpreted before profiles: the rebuild is what makes one
+    const resource = await withColumns('roles-no-profile-pkg', ['id', '区分'])
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { roles: { 区分: 'name' } } })
+      .where(eq(resourceTable.id, resource.id))
+
+    const view = await (
+      await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+    ).json()
+    expect(view.rolesCarried).toBe(false)
+    const res = await setSettings(resource.id, { primaryKey: null, roles: { 区分: 'name' } })
+    expect(await res.json()).toMatchObject({ queued: true })
+  })
+
+  it('reads an override whose column the profile has not as owed, so an apply can drop it', async () => {
+    const resource = await withColumns('roles-gone-owed-pkg', ['id', '区分'])
+    await db.insert(resourcePipeline).values({
+      resourceId: resource.id,
+      status: 'complete',
+      metadata: {
+        schema: {
+          rowCount: 2,
+          columns: [
+            { name: 'id', type: 'string', nullable: false, nullCount: 0 },
+            { name: '区分', type: 'string', nullable: false, nullCount: 0 },
+          ],
+        },
+      },
+      profile: {
+        columns: [
+          { role: 'identifier', roleBasis: { rule: 'distinct-code' } },
+          { role: 'category', roleBasis: { rule: 'other' } },
+        ],
+      },
+    })
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { roles: { 消えた列: 'name' } } })
+      .where(eq(resourceTable.id, resource.id))
+
+    const view = await (
+      await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+    ).json()
+    expect(view.rolesCarried).toBe(false)
+  })
+
+  it('drops an outgrown override even when the setting is sent back as it stood', async () => {
+    // Left in place, a column of its name coming back as text would take it again
+    const resource = await withColumns('roles-stale-same-pkg', ['id', '面積', '区分'], {
+      types: { 面積: 'float' },
+    })
+    const roles = { 面積: 'name', 区分: 'category' } as const
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { roles } })
+      .where(eq(resourceTable.id, resource.id))
+
+    expect((await setSettings(resource.id, { primaryKey: null, roles })).status).toBe(200)
+    expect(await storedSettings(resource.id)).toEqual({ roles: { 区分: 'category' } })
+  })
+
+  it('drops an override the content has outgrown, rather than refusing every later apply', async () => {
+    // The column was text when the override was set; the content now types it,
+    // and the screen has no row to take the override off
+    const resource = await withColumns('roles-stale-pkg', ['id', '面積', '区分'], {
+      types: { 面積: 'float' },
+    })
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { roles: { 面積: 'name', 区分: 'category' } } })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await setSettings(resource.id, {
+      primaryKey: null,
+      roles: { 面積: 'name', 区分: 'name' },
+    })
+
+    expect(res.status).toBe(200)
+    expect(await storedSettings(resource.id)).toEqual({ roles: { 区分: 'name' } })
+  })
+
   it('answers before the key is applied, without reading content for a missing column', async () => {
     // The half the picker gets wrong most easily, and the one that needs no
     // scan: a column the live version does not have. Answered here rather than

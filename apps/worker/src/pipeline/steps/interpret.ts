@@ -189,6 +189,7 @@ export async function executeInterpret(
   // interpretation itself is shared with the lake retry, which wants the table
   // and nothing else (ADR-046).
   const vocabularyPacks = (await ctx.vocabularyPacks?.()) ?? []
+  const roleOverrides = (await ctx.roleOverrides?.(resourceId)) ?? undefined
   const { encoding, schema, used, reason, rowGroupRows } = await withInterpretedVersion(
     source,
     fmt,
@@ -222,7 +223,7 @@ export async function executeInterpret(
       }
     },
     hooks.onEncoding,
-    { profile: { vocabularyPacks } }
+    { profile: { vocabularyPacks, ...(roleOverrides && { roleOverrides }) } }
   )
 
   // The schema goes back whether or not there was a table. An empty one is not

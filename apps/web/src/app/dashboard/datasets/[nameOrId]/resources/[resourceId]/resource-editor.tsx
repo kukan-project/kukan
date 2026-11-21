@@ -142,13 +142,66 @@ export function ResourceEditor({
   // too: a Table settings tab is only for a table, a Processing tab only for a
   // writer. Settled then and kept: a save that turns this resource into a
   // table must not move the page off the form being used.
-  const offered = new Set(['basic', 'preview', 'versions'])
-  if (table && !readOnly) offered.add('columns')
+  // A writer's table has its preview on the Table settings tab, beside the
+  // columns it is for; a reader of a table, and every other format, keep the
+  // Preview tab
+  const settingsTab = table && !readOnly
+  const offered = new Set(['basic', 'versions', settingsTab ? 'columns' : 'preview'])
   if (!readOnly) offered.add('processing')
-  const wanted = pageTab ?? editor?.resourceTab ?? 'basic'
+  // The two tabs stand for each other across resources: a preview left open
+  // is the Table settings on a table, and the other way round
+  const asked = pageTab ?? editor?.resourceTab ?? 'basic'
+  const wanted =
+    settingsTab && asked === 'preview'
+      ? 'columns'
+      : !settingsTab && asked === 'columns'
+        ? 'preview'
+        : asked
   const tab = offered.has(wanted) ? wanted : 'basic'
   if (pageTab !== tab) setPageTab(tab)
   if (tab === 'columns' && !columnsOpened) setColumnsOpened(true)
+
+  /**
+   * The public page's own preview, so what is checked here is what readers
+   * see — for a draft or a private dataset too, which has no public page yet.
+   * On the Preview tab, or on the Table settings tab of a writer's table,
+   * marking the key being picked and leaving the fields to that tab's table.
+   * Mounted only while its tab is open: the table and Office viewers are
+   * heavy, and it remounts when a run settles.
+   */
+  const preview = (primaryKey: string[] | null | undefined, withFields = true) => (
+    <>
+      {/* Right after a save or a reprocess the preview is the previous
+          version's, or none; say which, rather than leave "no preview" to
+          read as final */}
+      {isRunActive(listed?.pipelineStatus) && (
+        <Alert role="status">
+          <AlertDescription>{t('previewWaitingForRun')}</AlertDescription>
+        </Alert>
+      )}
+      {(listed?.pipelineStatus === 'error' || listed?.pipelineStatus === 'cancelled') && (
+        <Alert role="status">
+          <AlertDescription>
+            {/* A reader has no Processing tab to be sent to */}
+            {t(readOnly ? 'previewAfterUnfinishedRunReader' : 'previewAfterUnfinishedRun')}
+          </AlertDescription>
+        </Alert>
+      )}
+      <ResourcePipelinePreview
+        key={reloadKey}
+        primaryKey={primaryKey}
+        withFields={withFields}
+        resourceId={resource.id}
+        format={resource.format}
+        url={externalUrl(resource)}
+        size={resource.size}
+        // Kept away from third-party viewers, as on the public page
+        notPublic={!pkg || keepsFilesPrivate(pkg)}
+        officePreviewViewer={officePreviewViewer}
+        latestVersion={listed?.latestVersion}
+      />
+    </>
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -167,10 +220,10 @@ export function ResourceEditor({
             (link or upload), and the page's sections must not read as those */}
         <TabsList>
           <TabsTrigger value="basic">{t('tabBasic')}</TabsTrigger>
-          <TabsTrigger value="preview">{t('tabPreview')}</TabsTrigger>
+          {!settingsTab && <TabsTrigger value="preview">{t('tabPreview')}</TabsTrigger>}
           {/* Not where nothing may be written: a deleted dataset's column
               settings and roles are not read at all (ADR-072 decision 4) */}
-          {table && !readOnly && <TabsTrigger value="columns">{t('tabColumns')}</TabsTrigger>}
+          {settingsTab && <TabsTrigger value="columns">{t('tabColumns')}</TabsTrigger>}
           <TabsTrigger value="versions">{t('tabVersions')}</TabsTrigger>
           {/* Reprocess, cancel and revert: nothing a reader may do */}
           {!readOnly && <TabsTrigger value="processing">{t('tabProcessing')}</TabsTrigger>}
@@ -223,39 +276,11 @@ export function ResourceEditor({
           )}
         </TabsContent>
 
-        {/* The public page's own preview, so what is checked here is what readers
-            see — for a draft or a private dataset too, which has no public
-            page yet. Mounted only while the tab is open: the table and Office
-            viewers are heavy, and it remounts when a run settles. */}
-        <TabsContent value="preview" className="flex flex-col gap-4 pt-4">
-          {/* Right after a save or a reprocess the preview is the previous
-              version's, or none; say which, rather than leave "no preview" to
-              read as final */}
-          {isRunActive(listed?.pipelineStatus) && (
-            <Alert role="status">
-              <AlertDescription>{t('previewWaitingForRun')}</AlertDescription>
-            </Alert>
-          )}
-          {(listed?.pipelineStatus === 'error' || listed?.pipelineStatus === 'cancelled') && (
-            <Alert role="status">
-              <AlertDescription>
-                {/* A reader has no Processing tab to be sent to */}
-                {t(readOnly ? 'previewAfterUnfinishedRunReader' : 'previewAfterUnfinishedRun')}
-              </AlertDescription>
-            </Alert>
-          )}
-          <ResourcePipelinePreview
-            key={reloadKey}
-            resourceId={resource.id}
-            format={resource.format}
-            url={externalUrl(resource)}
-            size={resource.size}
-            // Kept away from third-party viewers, as on the public page
-            notPublic={!pkg || keepsFilesPrivate(pkg)}
-            officePreviewViewer={officePreviewViewer}
-            latestVersion={listed?.latestVersion}
-          />
-        </TabsContent>
+        {!settingsTab && (
+          <TabsContent value="preview" className="flex flex-col gap-4 pt-4">
+            {preview(undefined)}
+          </TabsContent>
+        )}
 
         {table && !readOnly && (
           <TabsContent
@@ -266,6 +291,19 @@ export function ResourceEditor({
             <TableSettings
               resourceId={resource.id}
               reloadKey={reloadKey}
+              // Half the public page's height, table or text: the columns below are what the tab is for
+              // Only while the tab shows: the tab stays mounted to keep a
+              // draft, and the viewers behind a hidden one would go on
+              // reading and rebuilding
+              preview={
+                tab !== 'columns'
+                  ? undefined
+                  : (key) => (
+                      <div className="flex flex-col gap-4 [&_[data-slot=preview-scroll]]:max-h-[300px]">
+                        {preview(key, false)}
+                      </div>
+                    )
+              }
               // The list reads the run back as queued, and its dot follows it
               // until it settles
               onRunQueued={() => editor?.reload()}

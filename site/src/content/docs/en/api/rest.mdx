@@ -191,7 +191,7 @@ the listing.
 | POST   | `/resources/{id}/revert`                | Stop the job and put the content back on a given version                                                                                          | Org editor |
 | GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over                                                                         | Org editor |
 | POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                                                                                         | Org editor |
-| PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                                                                                            | Org editor |
+| PUT    | `/resources/{id}/column-settings`       | Settle the primary key and column roles                                                                                                           | Org editor |
 | GET    | `/resources/{id}/column-roles`          | The columns' roles, and why the rules decided them                                                                                                | Org editor |
 | PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                                                                                          | Org editor |
 | PUT    | `/resources/{id}`                       | Update resource (full replacement; only `section` is kept when omitted)                                                                           | Org editor |
@@ -648,11 +648,13 @@ data.
 - Answered from the frozen per-column counts for a single-column key, and by reading the
   interpretation's Parquet for a composite one
 
-**Settle** — `PUT /resources/{id}/column-settings`, body `{"primaryKey": [...] | null}`:
+**Settle** — `PUT /resources/{id}/column-settings`, body `{"primaryKey": [...] | null, "roles": {...} | null}`:
 
 ```json
-{ "id": "…", "primaryKey": ["order_no"], "queued": true }
+{ "id": "…", "primaryKey": ["order_no"], "roles": { "category": "category" }, "queued": true }
 ```
+
+- `roles` maps column names to roles (see [Column roles](#column-roles) below). A `PUT` replaces the whole setting, so **leaving `roles` out clears the overrides**. The current setting is `roles` in the `GET`
 
 - `[]` and `null` both mean "no key"; the body normalizes to one spelling
 - Columns are kept **in the order given**, and rows are matched regardless of it: every use of a
@@ -695,7 +697,12 @@ why it was decided:
 - The `examples` of a `numeric-text` column are values that do not read as numbers — what the
   publisher has to fix
 - `columns` is `null` for a table whose roles have not been worked out yet
-- Read-only in this version; overriding a role is planned for a future version
+- A column a person overrode has `roleBasis.rule` `override`, with the rules' decision in `inferred` (`role` and `roleBasis`)
+
+Roles are overridden with `roles` in `PUT /resources/{id}/column-settings`, mapping column names to roles (`{"capacity": "numeric-text"}`).
+
+- Only columns the live version read as text can be overridden, with one of `identifier`, `numeric-text`, `name`, `category` and `free-text`. A column that is missing or typed is refused with `400`
+- A role is not part of a version's identity, so **changing roles alone makes no version**. A reprocess (`rebuildOnly`) is queued, which rebuilds the profile and the index (`queued` means what it means for the key)
 
 ### Hiding an AI-written description
 

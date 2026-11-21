@@ -13,6 +13,7 @@ import { PARQUET_PREVIEW_ROW_GROUP_ROWS } from '@kukan/shared'
 import type {
   ColumnStats,
   NoTableReason,
+  OverridableColumnRole,
   ResourceColumn,
   ResourceColumnType,
   ResourceSchema,
@@ -94,6 +95,8 @@ export interface ProfileRequest {
   path: string
   /** The packs the profile reads columns against; none reads no vocabulary. */
   vocabularyPacks: string[]
+  /** Roles a person gave columns, which replace the inferred ones (ADR-063 §決定 5). */
+  roleOverrides?: Record<string, OverridableColumnRole>
 }
 
 /**

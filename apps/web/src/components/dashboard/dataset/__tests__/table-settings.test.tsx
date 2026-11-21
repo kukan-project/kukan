@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
-import { useParquetPreview } from '@/hooks/use-parquet-preview'
 import { TableSettings } from '../table-settings'
 
 vi.mock('@/lib/client-api', async (importOriginal) => ({
@@ -9,20 +8,7 @@ vi.mock('@/lib/client-api', async (importOriginal) => ({
   clientFetch: vi.fn(),
 }))
 
-vi.mock('@/hooks/use-parquet-preview', () => ({ useParquetPreview: vi.fn() }))
-
 const mockClientFetch = vi.mocked(clientFetch)
-
-/** The sample is read straight off the Parquet, so it is stubbed at the hook.
- *  `numRows` is the file's own count, which the caption is read against. */
-function sampleRows(rows: Record<string, unknown>[] = [], numRows = rows.length) {
-  vi.mocked(useParquetPreview).mockReturnValue({
-    rows,
-    metadata: { numRows },
-    loading: false,
-    error: null,
-  } as unknown as ReturnType<typeof useParquetPreview>)
-}
 
 /** The box that puts a column in the key, or takes it out */
 const keyBox = (name: string) =>
@@ -48,6 +34,7 @@ function settings(overrides: Partial<Record<string, unknown>> = {}) {
     id: 'r1',
     primaryKey: null,
     carried: true,
+    rolesCarried: true,
     preview: 'ready',
     schema: {
       rowCount: 2,
@@ -100,8 +87,11 @@ function route(handlers: {
     }
     if (path.endsWith('/run-pipeline')) return json({ queued: true })
     if (init?.method === 'PUT') {
-      const body = JSON.parse(init.body as string) as { primaryKey: string[] | null }
-      stored = { ...stored, primaryKey: body.primaryKey, carried: false }
+      const body = JSON.parse(init.body as string) as {
+        primaryKey: string[] | null
+        roles?: Record<string, string> | null
+      }
+      stored = { ...stored, primaryKey: body.primaryKey, roles: body.roles ?? null, carried: false }
       return handlers.put ?? json({ primaryKey: body.primaryKey, queued: true })
     }
     return settings(stored)
@@ -111,7 +101,6 @@ function route(handlers: {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   mockClientFetch.mockReset()
-  sampleRows()
 })
 
 afterEach(() => {
@@ -602,33 +591,17 @@ describe('TableSettings', () => {
     expect(screen.getByRole('button', { name: 'Queue the rebuild' })).toBeEnabled()
   })
 
-  it('shows what the columns hold, marking the ones the key is built from', async () => {
-    // A column name does not say whether it identifies a row, and the counts
-    // beside it do not say what a value looks like. Seeing the values is what
-    // tells someone that two columns together are the key.
-    sampleRows([
-      { order: 'A-1', line: '1' },
-      { order: 'A-1', line: '2' },
-    ])
+  it('previews the content with the key being picked marked', async () => {
+    // The preview readers see, in place of a separate tab: seeing the values
+    // is what tells someone that two columns together are the key
     route({})
-    render(<TableSettings resourceId="r1" />)
+    const preview = vi.fn((key: string[] | null) => <p>preview of {key?.join('+') ?? 'no key'}</p>)
+    render(<TableSettings resourceId="r1" preview={preview} />)
 
-    await waitFor(() =>
-      expect(screen.getByRole('columnheader', { name: /order/ })).toBeInTheDocument()
-    )
-    const sample = screen.getAllByRole('table')[0]
-    expect(within(sample).getAllByRole('row')).toHaveLength(3) // header + two samples
-    expect(screen.getAllByText('A-1')).toHaveLength(2)
-
+    expect(await screen.findByText('preview of no key')).toBeInTheDocument()
     fireEvent.click(keyBox('line'))
-    // Not a tint of `muted`: the row's own hover is `bg-muted/50`, so a muted
-    // mark disappears exactly while a row is being read.
-    expect(screen.getByRole('columnheader', { name: 'line' })).toHaveClass('bg-primary/15')
-    expect(screen.getByRole('columnheader', { name: 'order' })).not.toHaveClass('bg-primary/15')
-    // Two rows of a two-row file: the whole of it
-    expect(screen.getByText('Sample values (all 2)')).toBeInTheDocument()
+    expect(screen.getByText('preview of line')).toBeInTheDocument()
   })
-
   it('keeps a repeated heading as two rows, each with its own role', async () => {
     route({
       get: {
@@ -648,7 +621,7 @@ describe('TableSettings', () => {
       }),
     })
     render(<TableSettings resourceId="r1" />)
-    await waitFor(() => expect(screen.getByText('Category')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Number / date')).toBeInTheDocument())
     const rows = screen
       .getAllByTitle('x')
       .filter((el) => el.tagName === 'TD')
@@ -656,17 +629,6 @@ describe('TableSettings', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('Category')
     expect(rows[1]).toHaveTextContent('Number / date')
-  })
-
-  it('says the sample is the first rows when the file holds more', async () => {
-    // Twenty read of a hundred: counted from the file the rows came from
-    sampleRows(
-      Array.from({ length: 20 }, (_, i) => ({ order: `A-${i}`, line: '1' })),
-      100
-    )
-    route({})
-    render(<TableSettings resourceId="r1" />)
-    expect(await screen.findByText('Sample values (the first 20)')).toBeInTheDocument()
   })
 
   it('will not apply from an open confirmation while the key is checked again', async () => {
@@ -727,43 +689,27 @@ describe('TableSettings', () => {
   it('does not offer a rebuild where there is nothing to rebuild from', async () => {
     // A resource with no interpretation at all may simply not be tabular, and
     // naming a remedy there names one for something that is not a fault.
+    // The preview says what state the resource is in: running, or read as text
     route({ get: { preview: 'no-preview' } })
-    render(<TableSettings resourceId="r1" />)
+    render(<TableSettings resourceId="r1" preview={() => <p>the preview</p>} />)
 
-    await waitFor(() =>
-      expect(screen.getByText(/no interpretation to show a sample from/)).toBeInTheDocument()
-    )
+    expect(await screen.findByText('the preview')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Rebuild the interpretation' })
     ).not.toBeInTheDocument()
   })
 
-  it('says why there is no sample rather than showing one from other bytes', async () => {
+  it('says why there is no preview rather than showing one of other bytes', async () => {
     // A run whose Interpret failed leaves the previous content's preview in
     // place. Showing it would be choosing a key over content the resource does
     // not serve — the same reason the check reports `preview-stale`.
     route({ get: { preview: 'preview-stale' } })
-    render(<TableSettings resourceId="r1" />)
+    render(<TableSettings resourceId="r1" preview={() => <p>the preview</p>} />)
 
     await waitFor(() =>
       expect(screen.getByText(/would be of the previous content/)).toBeInTheDocument()
     )
-    // Only the column table: no sample of other bytes
-    expect(screen.getAllByRole('table')).toHaveLength(1)
-  })
-
-  it('shows only the columns a key can be chosen from', async () => {
-    // The preview can carry a column the live version's frozen schema does not,
-    // and offering it in the sample would advertise a choice the toggles above
-    // do not have.
-    sampleRows([{ order: 'A-1', line: '1', dropped: 'x' }])
-    route({})
-    render(<TableSettings resourceId="r1" />)
-
-    await waitFor(() =>
-      expect(screen.getByRole('columnheader', { name: /order/ })).toBeInTheDocument()
-    )
-    expect(screen.queryByRole('columnheader', { name: /dropped/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('the preview')).not.toBeInTheDocument()
   })
 
   it('has nothing to offer before anything has been interpreted', async () => {
@@ -797,12 +743,95 @@ describe('TableSettings', () => {
       })
       render(<TableSettings resourceId="r1" />)
 
-      await waitFor(() =>
-        expect(within(rowOf('order')).getByText('Identifier')).toBeInTheDocument()
-      )
+      // A text column's role is a choice, set to follow the rules
+      await waitFor(() => expect(rowOf('order')).toHaveTextContent('Auto (Identifier)'))
       expect(rowOf('line')).toHaveTextContent('50%')
       // No pack read either column: no column for a vocabulary
       expect(screen.queryByRole('columnheader', { name: 'Vocabulary' })).not.toBeInTheDocument()
+    })
+
+    it(`applies a text column's role straight away, as it makes no version`, async () => {
+      route({
+        get: { carried: true },
+        roles: roles([
+          {
+            name: 'order',
+            type: 'string',
+            role: 'identifier',
+            roleBasis: { rule: 'fixed-width-code' },
+          },
+          { name: 'line', type: 'string', role: 'category', roleBasis: { rule: 'other' } },
+        ]),
+      })
+      render(<TableSettings resourceId="r1" />)
+      const trigger = await waitFor(() => within(rowOf('line')).getByRole('combobox'))
+      fireEvent.click(trigger)
+      // Each role says what it does in search, in the list and not in the trigger
+      expect(await screen.findByText(/Searchable by value \(facility/)).toBeInTheDocument()
+      expect(trigger).not.toHaveTextContent(/Searchable/)
+      fireEvent.click(await screen.findByRole('option', { name: 'Name' }))
+
+      expect(rowOf('line')).toHaveAttribute('data-draft')
+      expect(screen.getByText(/Changing a role makes no version/)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+      await waitFor(() =>
+        expect(screen.getByText(/A reprocess to take in the roles is queued/)).toBeInTheDocument()
+      )
+      // No confirmation: nothing about the key changed
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      const put = mockClientFetch.mock.calls.find(([, init]) => init?.method === 'PUT')!
+      expect(JSON.parse(put[1]!.body as string)).toEqual({
+        primaryKey: null,
+        roles: { line: 'name' },
+      })
+    })
+
+    it(`offers to queue again roles the profile has not read`, async () => {
+      // A role makes no version: an enqueue that failed leaves nothing to
+      // apply, and only the profile says the roles are not in yet
+      route({ get: { roles: { line: 'name' }, rolesCarried: false } })
+      render(<TableSettings resourceId="r1" />)
+      expect(await screen.findByText(/role changes are not in the profile/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Queue the rebuild' })).toBeEnabled()
+    })
+
+    it(`keeps a stored override changeable where there is no profile`, async () => {
+      // A profile that failed must not leave the override stuck
+      route({ get: { roles: { line: 'name' }, rolesCarried: false } })
+      render(<TableSettings resourceId="r1" />)
+      const trigger = await waitFor(() => within(rowOf('line')).getByRole('combobox'))
+      expect(trigger).toHaveTextContent('Name')
+      fireEvent.click(trigger)
+      expect(await screen.findByRole('option', { name: 'Auto' })).toBeInTheDocument()
+    })
+
+    it(`shows what an overridden column would go back to`, async () => {
+      route({
+        get: { roles: { line: 'name' } },
+        roles: roles([
+          {
+            name: 'order',
+            type: 'string',
+            role: 'identifier',
+            roleBasis: { rule: 'fixed-width-code' },
+          },
+          {
+            name: 'line',
+            type: 'string',
+            role: 'name',
+            roleBasis: { rule: 'override' },
+            inferred: { role: 'category', roleBasis: { rule: 'distinct-values', share: 0.5 } },
+          },
+        ]),
+      })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() =>
+        expect(within(rowOf('line')).getByRole('combobox')).toHaveTextContent('Name')
+      )
+      // The rules' reason for what they decided, not the override's
+      expect(rowOf('line')).toHaveTextContent('50%')
+      expect(rowOf('line')).not.toHaveAttribute('data-draft')
     })
 
     it(`shows a column's vocabulary with what it rests on, and the candidates of an undecided one`, async () => {
@@ -878,7 +907,9 @@ describe('TableSettings', () => {
       render(<TableSettings resourceId="r1" />)
 
       await waitFor(() => expect(keyBox('order')).toBeEnabled())
-      expect(within(rowOf('order')).getByText('—')).toBeInTheDocument()
+      // Still a text column to give a role to, with no rules' decision to name
+      expect(within(rowOf('order')).getByRole('combobox')).toHaveTextContent(/^Auto$/)
+      expect(rowOf('order')).not.toHaveTextContent('Identifier')
     })
 
     it('keeps the key choosable when the roles cannot be read', async () => {

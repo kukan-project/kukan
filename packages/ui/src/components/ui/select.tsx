@@ -78,8 +78,12 @@ function SelectLabel({ className, ...props }: React.ComponentProps<typeof Select
 function SelectItem({
   className,
   children,
+  description,
   ...props
-}: React.ComponentProps<typeof SelectRoot.Item>) {
+}: React.ComponentProps<typeof SelectRoot.Item> & {
+  /** A line under the option, in the list only: the trigger shows the option's text alone */
+  description?: React.ReactNode
+}) {
   return (
     <SelectRoot.Item
       data-slot="select-item"
@@ -94,7 +98,14 @@ function SelectItem({
           <Check className="size-4" />
         </SelectRoot.ItemIndicator>
       </span>
-      <SelectRoot.ItemText>{children}</SelectRoot.ItemText>
+      {description ? (
+        <span className="flex flex-col gap-0.5">
+          <SelectRoot.ItemText>{children}</SelectRoot.ItemText>
+          <span className="text-xs text-muted-foreground">{description}</span>
+        </span>
+      ) : (
+        <SelectRoot.ItemText>{children}</SelectRoot.ItemText>
+      )}
     </SelectRoot.Item>
   )
 }

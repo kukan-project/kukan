@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import {
   DatasetEditorProvider,
@@ -18,7 +18,10 @@ vi.mock('next/navigation', () => ({
 
 // The panels are tested on their own; here they only have to be where the tabs put them
 vi.mock('@/components/dashboard/dataset/table-settings', () => ({
-  TableSettings: () => <div data-testid="table-settings" />,
+  // Draws the preview it is handed, with a key being picked, as the real one does
+  TableSettings: ({ preview }: { preview?: (key: string[] | null) => React.ReactNode }) => (
+    <div data-testid="table-settings">{preview?.(['id'])}</div>
+  ),
 }))
 vi.mock('@/components/dashboard/dataset/resource-version-history', () => ({
   ResourceVersionHistory: () => <div data-testid="version-history" />,
@@ -114,13 +117,21 @@ describe('ResourceEditorPage', () => {
         'true'
       )
     )
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
-    expect(setResourceTab).toHaveBeenCalledWith('preview')
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
+    expect(setResourceTab).toHaveBeenCalledWith('columns')
+  })
+
+  it('opens on the preview where Table settings is remembered and the resource is no table', async () => {
+    // A table's preview is on its Table settings tab, so each stands for the other
+    renderPage({ format: 'PDF' }, pkg, true, { resourceTab: 'columns', setResourceTab: vi.fn() })
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('aria-selected', 'true')
+    )
   })
 
   it('opens on Basic where the remembered tab is not offered, and stays there once it is', async () => {
-    // Table settings is only for a table. Saved as one, the resource then
-    // offers it — and the page must not leave the form being used.
+    // Processing is only for a writer's resource... and a format that becomes
+    // a table on save must not move the page off the form being used.
     const setResourceTab = vi.fn()
     let format = 'PDF'
     vi.mocked(clientFetch).mockImplementation(
@@ -140,7 +151,7 @@ describe('ResourceEditorPage', () => {
           setPageReloader: () => {},
           uploading: false,
           setPageUnsaved: () => {},
-          resourceTab: 'columns',
+          resourceTab: 'basic',
           setResourceTab,
         }}
       >
@@ -171,6 +182,20 @@ describe('ResourceEditorPage', () => {
     // Radix tabs select on mousedown
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
     expect(screen.getByTestId('table-settings')).toBeInTheDocument()
+  })
+
+  it('previews a table on its Table settings tab, with the key being picked and no field list', async () => {
+    renderPage({ format: 'CSV' })
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('tab', { name: 'Preview' })).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
+    expect(
+      within(screen.getByTestId('table-settings')).getByTestId('resource-preview')
+    ).toBeInTheDocument()
+    expect(preview.props).toMatchObject({ primaryKey: ['id'], withFields: false })
   })
 
   it('offers no columns for what is not read as a table', async () => {
@@ -276,7 +301,7 @@ describe('ResourceEditorPage', () => {
 
   it('previews the resource as the public page does, also for a draft', async () => {
     renderPage(
-      { format: 'CSV', url: 'https://example.com/a.csv', urlType: null, size: 10 },
+      { format: 'PDF', url: 'https://example.com/a.csv', urlType: null, size: 10 },
       { ...pkg, state: 'draft' }
     )
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
@@ -292,7 +317,7 @@ describe('ResourceEditorPage', () => {
   })
 
   it('gives an uploaded file no outside link to preview from', async () => {
-    renderPage({ format: 'CSV', url: 'data.csv', urlType: 'upload' })
+    renderPage({ format: 'PDF', url: 'data.csv', urlType: 'upload' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
     expect(preview.props).toMatchObject({ url: null, notPublic: false })
@@ -300,7 +325,7 @@ describe('ResourceEditorPage', () => {
 
   it('says the preview is waiting for a run rather than leave "no preview" to read as final', async () => {
     renderPage(
-      { format: 'CSV' },
+      { format: 'PDF' },
       { ...pkg, resources: [{ ...pkg.resources[0], pipelineStatus: 'processing' }] }
     )
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
@@ -311,7 +336,7 @@ describe('ResourceEditorPage', () => {
   it('keeps the Basic form, and what is typed in it, while another tab is open', async () => {
     renderPage({ format: 'CSV' })
     expect(await screen.findByTestId('resource-edit-form')).toBeInTheDocument()
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Version history' }))
     // Hidden, not unmounted: unmounting would drop the form's state and an upload
     expect(screen.getByTestId('resource-edit-form')).toBeInTheDocument()
   })

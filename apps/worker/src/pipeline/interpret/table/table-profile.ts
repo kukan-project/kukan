@@ -111,7 +111,7 @@ export async function profileTable(
   columns: { name: string; duckType: string }[],
   described: ResourceColumn[],
   rowCount: number,
-  { path, vocabularyPacks }: ProfileRequest
+  { path, vocabularyPacks, roleOverrides }: ProfileRequest
 ): Promise<InterpretedProfile> {
   // Every row number below is DuckDB's own rowid, and a heading must not hide it.
   const names = await freeRowid(
@@ -150,6 +150,28 @@ export async function profileTable(
       ? await readVocabulary(conn, names, described, profiled, vocabularyPacks)
       : undefined
   const search = registry ? vocabularySearchFields(profiled.map((c) => c.vocabulary)) : {}
+
+  // A person's role over the rules', vocabulary's included (ADR-063 §決定 5),
+  // and before the values are listed, which follow the role. Text columns
+  // only: a name the table no longer has, or now types, is left to its rules
+  for (const [i, column] of described.entries()) {
+    // Own keys only: a column named `constructor` is not the prototype's
+    const role =
+      roleOverrides && Object.hasOwn(roleOverrides, column.name)
+        ? roleOverrides[column.name]
+        : undefined
+    if (!role || !clues.has(i) || role === profiled[i].role) continue
+    const { role: was, roleBasis } = profiled[i]
+    profiled[i] = {
+      ...profiled[i],
+      role,
+      roleBasis: {
+        rule: 'override',
+        ...(role === 'numeric-text' && { examples: await notPlainNumbers(conn, names[i], stride) }),
+      },
+      inferred: { role: was, roleBasis },
+    }
+  }
   const done = {
     columns: profiled,
     ...(registry && { registry }),

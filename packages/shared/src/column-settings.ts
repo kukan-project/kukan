@@ -17,6 +17,11 @@
  * object (spec §6.2), which is why this is an object and not an array of columns.
  */
 import { z } from 'zod'
+import {
+  OVERRIDABLE_COLUMN_ROLES,
+  type OverridableColumnRole,
+  type ResourceColumnType,
+} from './pipeline-types'
 
 /**
  * A resource's settled column information. Empty is the ordinary state — most
@@ -32,8 +37,45 @@ export const columnSettingsSchema = z.object({
    * it has entries.
    */
   primaryKey: z.array(z.string()).nonempty().optional(),
+  /**
+   * Roles a person gave columns in place of the inferred ones, by column name
+   * (ADR-063 §決定 5). Unlike the key, not part of a version's identity: a role
+   * changes what is indexed and shown, not how the bytes are read, so setting
+   * one rebuilds the profile and creates no version. **Absent, never empty**,
+   * like the key.
+   */
+  roles: z.record(z.string(), z.enum(OVERRIDABLE_COLUMN_ROLES)).optional(),
 })
 export type ColumnSettings = z.infer<typeof columnSettingsSchema>
+
+/**
+ * Whether a column of this type takes a role from a person: text only. A typed
+ * column's role is its type, settled through the type (ADR-063 §決定 5). The
+ * one rule the API's check, the dashboard and the worker's profile agree on.
+ */
+export function canOverrideRole(type: ResourceColumnType): boolean {
+  return type === 'string'
+}
+
+/** The role overrides a setting names, or null when it names none. */
+export function roleOverridesOf(
+  settings: ColumnSettings | null | undefined
+): Record<string, OverridableColumnRole> | null {
+  const roles = settings?.roles
+  return roles && Object.keys(roles).length > 0 ? roles : null
+}
+
+/** Whether two sets of overrides give every column the same role; order carries no meaning. */
+export function sameRoleOverrides(
+  a: Record<string, string> | null,
+  b: Record<string, string> | null
+): boolean {
+  const left = Object.entries(a ?? {})
+  return (
+    left.length === Object.keys(b ?? {}).length &&
+    left.every(([k, v]) => !!b && Object.hasOwn(b, k) && b[k] === v)
+  )
+}
 
 /**
  * A stored key column list, in the one spelling readers may assume: a list with

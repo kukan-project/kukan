@@ -37,7 +37,10 @@ import {
   getStorageKey,
   keyColumnsOf,
   primaryKeyOf,
+  canOverrideRole,
+  roleOverridesOf,
   sameKeyColumns,
+  sameRoleOverrides,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
   PIPELINE_JOB_TYPE,
@@ -92,7 +95,11 @@ import {
   PARKED_UNTIL,
   ownedByVersion,
 } from './pipeline/storage-pointer'
-import { PipelineService, schemaDescribesLiveContent } from './pipeline/pipeline-service'
+import {
+  PipelineService,
+  profiledColumns,
+  schemaDescribesLiveContent,
+} from './pipeline/pipeline-service'
 import { scanBucket } from './query/lake-scan'
 import type { Caller } from './query/duckdb-slot'
 import { markContentIndexDue, markContentUnindexed } from './search/content-index-record'
@@ -2272,6 +2279,8 @@ export class ResourceVersionService {
     const preview = await this.livePreview(resourceId)
     return {
       primaryKey: key,
+      roles: roleOverridesOf(current.settings),
+      rolesCarried: await this.rolesCarried(resourceId, roleOverridesOf(current.settings)),
       carried: latest === null || sameKeyColumns(latest.lakeKeyColumns, key),
       schema: await this.liveSchemaOrNull(resourceId),
       preview: typeof preview === 'string' ? preview : 'ready',
@@ -2282,9 +2291,13 @@ export class ResourceVersionService {
     resourceId: string,
     settings: ColumnSettings,
     deps: { queue: JobQueue; logger?: Logger }
-  ): Promise<{ primaryKey: string[] | null; queued: boolean | null }> {
+  ): Promise<{
+    primaryKey: string[] | null
+    roles: ColumnSettings['roles'] | null
+    queued: boolean | null
+  }> {
     const log = deps.logger ?? createLogger({ name: 'api' })
-    // "No key" has one spelling from here on (spec §6.2).
+    // "No key" and "no overrides" have one spelling from here on (spec §6.2).
     const key = primaryKeyOf(settings)
 
     const [current] = await this.db
@@ -2296,12 +2309,21 @@ export class ResourceVersionService {
 
     const settled = sameKeyColumns(primaryKeyOf(current.settings), key)
     if (key) await this.assertKeyUsable(resourceId, key, { changed: !settled })
+    const storedRoles = roleOverridesOf(current.settings)
+    const asked = roleOverridesOf(settings)
+    // Through the check even when sent back as it stood: an override the content
+    // has outgrown goes, or a column of its name coming back would take it again
+    const roles = await this.usableRoles(resourceId, asked, storedRoles)
+    const rolesSettled = sameRoleOverrides(storedRoles, roles)
 
-    if (!settled) {
+    if (!settled || !rolesSettled) {
       await this.db
         .update(resource)
         .set({
-          columnSettings: key ? { primaryKey: key as [string, ...string[]] } : {},
+          columnSettings: {
+            ...(key && { primaryKey: key as [string, ...string[]] }),
+            ...(roles && { roles }),
+          },
           // A person's edit, so it moves the resource's own timestamp — that is
           // what the screens and the API mean by "updated".
           updated: sql`NOW()`,
@@ -2311,10 +2333,82 @@ export class ResourceVersionService {
 
     const latest = await this.newestActiveVersion(this.db, resourceId)
     const carried = latest === null || sameKeyColumns(latest.lakeKeyColumns, key)
-    if (carried || (settled && (await this.runPending(resourceId)))) {
-      return { primaryKey: key, queued: null }
+    // A role is not part of a version's identity (ADR-063 §決定 5): changed
+    // alone, the rebuild rewrites the profile and the index and the version
+    // gate lets the same bytes through as the version they already are
+    // Asked of the profile too: a resend after an enqueue that failed changes
+    // nothing in the setting, and is how that rebuild is queued again
+    const owed = !carried || !rolesSettled || !(await this.rolesCarried(resourceId, roles))
+    if (!owed || (settled && rolesSettled && (await this.runPending(resourceId)))) {
+      return { primaryKey: key, roles, queued: null }
     }
-    return { primaryKey: key, queued: await this.queueRebuild(resourceId, deps, log) }
+    return { primaryKey: key, roles, queued: await this.queueRebuild(resourceId, deps, log) }
+  }
+
+  /**
+   * Whether the live profile reads these overrides: each column with one has
+   * its role, and no other column still carries one. A column the rules gave
+   * the same role records no override, and counts as read.
+   *
+   * With overrides and no profile aligned with the live columns — a table
+   * interpreted before profiles, one whose profile failed, or one of the
+   * previous content — they are not read: the rebuild is what makes the profile. A profile that cannot be made
+   * then reads as owed for good, which costs a rebuild on each resend a person
+   * makes and nothing on its own.
+   */
+  private async rolesCarried(
+    resourceId: string,
+    roles: NonNullable<ColumnSettings['roles']> | null
+  ): Promise<boolean> {
+    const read = await new PipelineService(this.db).getProfiledTarget(resourceId)
+    // A profile of the previous content (its run's Interpret failed) says
+    // nothing about this one, however well its roles happen to match
+    const rows = read?.target.describesLiveContent
+      ? profiledColumns(read.target.schema, read.profile)
+      : null
+    if (!rows) return roles === null
+    // Every override needs a text column to be read on: one whose column the
+    // content dropped or typed is owed too, so the apply that drops it can run
+    const textColumns = new Set(rows.filter((row) => canOverrideRole(row.type)).map((r) => r.name))
+    if (roles && Object.keys(roles).some((name) => !textColumns.has(name))) return false
+    return rows.every((row) => {
+      const role = roles && Object.hasOwn(roles, row.name) ? roles[row.name] : undefined
+      return role && canOverrideRole(row.type)
+        ? row.role === role
+        : row.roleBasis.rule !== 'override'
+    })
+  }
+
+  /**
+   * The overrides to store: each one asked for anew is checked against the live
+   * version — a column it has and reads as text ({@link canOverrideRole}) —
+   * and refused otherwise. One left as it stood is not: the content can drop
+   * the column or type it after the override was set, and the screen has no
+   * row to take such an override off, so checking it would refuse every later
+   * apply. It is dropped instead, as the profile already ignores it.
+   */
+  private async usableRoles(
+    resourceId: string,
+    asked: NonNullable<ColumnSettings['roles']> | null,
+    stored: NonNullable<ColumnSettings['roles']> | null
+  ): Promise<NonNullable<ColumnSettings['roles']> | null> {
+    if (!asked) return null
+    const schema = await this.liveSchemaOrNull(resourceId)
+    const columns = schema ? columnsByName(schema) : new Map<string, ResourceColumn>()
+    const usable = (name: string) => {
+      const column = columns.get(name)
+      return !!column && canOverrideRole(column.type)
+    }
+    const refused = Object.entries(asked)
+      .filter(([name, role]) => stored?.[name] !== role && !usable(name))
+      .map(([name]) => name)
+    if (refused.length > 0) {
+      throw new ValidationError(
+        `Only text columns of the current version take a role: ${refused.join(', ')}`
+      )
+    }
+    const kept = Object.fromEntries(Object.entries(asked).filter(([name]) => usable(name)))
+    return Object.keys(kept).length > 0 ? kept : null
   }
 
   /**

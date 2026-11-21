@@ -1,9 +1,11 @@
 'use client'
 
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { TableHeader, TableBody, TableHead, TableRow, TableCell } from '@kukan/ui'
 import type { ResourceColumn } from '@kukan/shared'
 import { KEY_HEADER_CLASS, numericLayout, dataCellClass, decimalAligned } from '@/lib/table-cells'
+import { columnTypeKey } from '@/lib/format-utils'
 import { ColumnFilter } from './column-filter'
 import type { ColumnFilter as ColumnFilterType, SortState } from '@/hooks/use-duckdb'
 
@@ -31,6 +33,9 @@ export function ExplorerTable({
   onFilterApply,
   onFilterClear,
 }: ExplorerTableProps) {
+  const t = useTranslations('resource')
+  /** Each column's type by name, under its heading: what a value reads as */
+  const types = new Map((schemaColumns ?? []).map((c) => [c.name, c.type]))
   const { isNumeric, maxFractions } = numericLayout(
     columns,
     schemaColumns,
@@ -60,7 +65,9 @@ export function ExplorerTable({
   }
 
   return (
-    <div className="max-h-[600px] overflow-auto">
+    // Named, as the text views are, so a page can give the box another height
+    // (the dashboard halves it)
+    <div data-slot="preview-scroll" className="max-h-[600px] overflow-auto">
       {/* Raw <table> (not the @kukan/ui Table, which wraps in its own overflow-x-auto
           div) so a single container scrolls both axes. */}
       <table className="w-max text-sm">
@@ -78,7 +85,16 @@ export function ExplorerTable({
                     className="flex items-center gap-1 hover:text-foreground"
                     onClick={() => handleSort(col)}
                   >
-                    <span className="font-medium">{col}</span>
+                    <span
+                      className={`flex flex-col leading-tight ${isNumeric(col) ? 'items-end' : 'items-start'}`}
+                    >
+                      <span className="font-medium">{col}</span>
+                      {types.get(col) && (
+                        <span className="text-muted-foreground text-xs font-normal">
+                          {t(columnTypeKey(types.get(col)!))}
+                        </span>
+                      )}
+                    </span>
                     {getSortIcon(col)}
                   </button>
                   <ColumnFilter

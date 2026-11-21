@@ -21,6 +21,7 @@ import type {
   ColumnProfile,
   DiffUnavailableReason,
   KeyCheckFault,
+  OverridableColumnRole,
   NoTableReason,
   ResourceColumnType,
   ResourceSchema,
@@ -167,6 +168,14 @@ export interface VersionView {
 export interface ColumnSettingsView {
   /** What the resource is set to read versions under from here on (spec §6.2). */
   primaryKey: string[] | null
+  /** The roles a person gave columns in place of the inferred ones (ADR-063 §決定 5), or null. */
+  roles: Record<string, OverridableColumnRole> | null
+  /**
+   * Whether the live profile reads {@link roles}. A role makes no version, so
+   * `carried` cannot say it; false while the rebuild an apply queued has not
+   * landed, and after one that was never queued — which a resend repairs.
+   */
+  rolesCarried: boolean
   /**
    * Whether the newest standing version was already read under {@link primaryKey}.
    *
@@ -208,7 +217,7 @@ export type ColumnRolesView = { columns: ColumnRoleRow[] | null }
 /** One column, named by the interpretation the profile was built with. */
 export type ColumnRoleRow = { name: string; type: ResourceColumnType } & Pick<
   ColumnProfile,
-  'role' | 'roleBasis' | 'vocabulary'
+  'role' | 'roleBasis' | 'vocabulary' | 'inferred'
 >
 
 /** Why the interpretation's Parquet cannot be read for this resource. */

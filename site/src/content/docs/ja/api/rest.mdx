@@ -188,7 +188,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | POST   | `/resources/{id}/revert`                | 処理を中止し、内容を指定の版へ戻す                                                                                                                  | 組織 editor |
 | GET    | `/resources/{id}/column-settings`       | 確定済みの列情報と、確定に使える列                                                                                                                  | 組織 editor |
 | POST   | `/resources/{id}/column-settings/check` | この主キーで行を同定できるか                                                                                                                        | 組織 editor |
-| PUT    | `/resources/{id}/column-settings`       | 主キーを確定する                                                                                                                                    | 組織 editor |
+| PUT    | `/resources/{id}/column-settings`       | 主キーと列の役割を確定する                                                                                                                          | 組織 editor |
 | GET    | `/resources/{id}/column-roles`          | 列の役割と、規則がそう判定した根拠                                                                                                                  | 組織 editor |
 | PUT    | `/resources/{id}/summary`               | AI による説明を非表示にする / 戻す（`{ hidden }`）                                                                                                  | 組織 editor |
 | PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換。`section` だけは省略で保持）                                                                                        | 組織 editor |
@@ -616,11 +616,13 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
   この状態でも主キーは確定できます
 - 単一列キーは版が凍結した列ごとの数から、複合キーは解釈の Parquet を読んで答えます
 
-**確定** — `PUT /resources/{id}/column-settings`、ボディ `{"primaryKey": [...] | null}`:
+**確定** — `PUT /resources/{id}/column-settings`、ボディ `{"primaryKey": [...] | null, "roles": {...} | null}`:
 
 ```json
-{ "id": "…", "primaryKey": ["注文番号"], "queued": true }
+{ "id": "…", "primaryKey": ["注文番号"], "roles": { "区分": "category" }, "queued": true }
 ```
+
+- `roles` は列名から役割への対応です（後述の[列の役割](#列の役割)）。`PUT` は設定を丸ごと置き換えるので、**省くと役割の上書きは消えます**。今の設定は `GET` の `roles` で読めます
 
 - `[]` と `null` はどちらも「主キーなし」です。ボディの側で 1 つの綴りに正規化されます
 - 列は**指定した順序で保持されます**。ただし**行の照合は順序によりません** — キーを使う操作は
@@ -660,7 +662,12 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 - `roleBasis.rule` は判定した規則、`share` はその規則が数えた値の割合です
 - `numeric-text` の `examples` は、数値として読めない値（公開する人が直す対象）です
 - 役割がまだ判定されていない表では `columns` が `null` です
-- 今のバージョンでは読み取りのみです。役割の上書きは将来のバージョンで対応する予定です
+- 人が上書きした列は `roleBasis.rule` が `override` になり、規則の判定が `inferred`（`role` と `roleBasis`）に入ります
+
+役割は `PUT /resources/{id}/column-settings` の `roles` で上書きできます（`{"区分": "category"}` のように列名から役割へ）。
+
+- 上書きできるのは、live 版が文字列と読んだ列だけです。役割は `identifier`・`numeric-text`・`name`・`category`・`free-text` のどれかです。無い列や型の付いた列は `400` で断られます
+- 役割は版の同一性に入らないので、**役割だけの変更は版を作りません**。再処理（`rebuildOnly`）が投入され、プロファイルと索引が作り直されます（`queued` の意味は主キーと同じです）
 
 ### AI による説明の非表示
 

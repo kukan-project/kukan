@@ -7,6 +7,7 @@ import {
   COLUMN_VALUES_KEPT,
   TABLE_SENTENCES_MAX_BYTES,
   type ColumnProfile,
+  type OverridableColumnRole,
   type TableProfileLine,
 } from '@kukan/shared'
 import { interpretCsv } from '@/pipeline/interpret/table/csv'
@@ -29,13 +30,15 @@ describe('interpretCsv — column roles', () => {
   /** Each column's profile, by heading. */
   async function columns(
     header: string[],
-    rows: string[][]
+    rows: string[][],
+    roleOverrides?: Record<string, OverridableColumnRole>
   ): Promise<Record<string, ColumnProfile>> {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, [header, ...rows].map((r) => r.join(',')).join('\n') + '\n')
     const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
       path: join(dir, 'profile.ndjson.zst'),
       vocabularyPacks: [],
+      ...(roleOverrides && { roleOverrides }),
     })
     return Object.fromEntries(schema.columns.map((c, i) => [c.name, profile!.columns[i]]))
   }
@@ -83,6 +86,49 @@ describe('interpretCsv — column roles', () => {
     expect(cols['面積'].roleBasis).toEqual({ rule: 'typed' })
     expect(cols['電話番号'].roleBasis).toEqual({ rule: 'phone-shape', share: 1 })
     expect(cols['開設'].roleBasis).toEqual({ rule: 'date-shape', share: 1 })
+  })
+
+  it("takes a person's role over the rules', and lists values by the role it ends with", async () => {
+    const cols = await columns(header, rows, {
+      施設名: 'identifier',
+      施設コード: 'category',
+      // A column the table typed keeps its type's role, and a gone one is ignored
+      面積: 'category',
+      無い列: 'name',
+    })
+    expect(cols['施設名']).toMatchObject({
+      role: 'identifier',
+      roleBasis: { rule: 'override' },
+      inferred: { role: 'name', roleBasis: { rule: expect.any(String) } },
+    })
+    expect(cols['施設名'].values).toBeUndefined()
+    expect(cols['施設コード']).toMatchObject({ role: 'category', inferred: { role: 'identifier' } })
+    expect(cols['施設コード'].values).toContain('A000')
+    expect(cols['面積']).toEqual({ role: 'measure', roleBasis: { rule: 'typed' } })
+    // Untouched columns carry no trace of the override
+    expect(cols['市区町村名'].inferred).toBeUndefined()
+  })
+
+  it("reads only a setting's own keys, whatever a column is called", async () => {
+    const cols = await columns(
+      ['constructor', 'toString'],
+      [
+        ['a', 'b'],
+        ['c', 'd'],
+        ['e', 'f'],
+      ],
+      // A record, as the setting is: an object literal's `toString` is typed as the method
+      Object.fromEntries([['toString', 'free-text']]) as Record<string, OverridableColumnRole>
+    )
+    expect(cols['constructor'].roleBasis.rule).not.toBe('override')
+    expect(typeof cols['constructor'].role).toBe('string')
+    expect(cols['toString']).toMatchObject({ role: 'free-text', roleBasis: { rule: 'override' } })
+  })
+
+  it('records no override where it names the role the rules gave', async () => {
+    const cols = await columns(header, rows, { 市区町村名: 'category' })
+    expect(cols['市区町村名'].roleBasis.rule).not.toBe('override')
+    expect(cols['市区町村名'].inferred).toBeUndefined()
   })
 
   it('names what keeps a number written as text from being one', async () => {

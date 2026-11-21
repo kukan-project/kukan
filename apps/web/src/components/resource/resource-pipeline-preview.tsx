@@ -37,6 +37,13 @@ interface ResourcePipelinePreviewProps {
   notPublic?: boolean
   officePreviewViewer?: OfficePreviewViewer
   latestVersion?: number | null
+  /**
+   * The key to mark in place of the stored one: the dashboard's Table settings
+   * marks the key being picked, before it is applied.
+   */
+  primaryKey?: string[] | null
+  /** Whether to list the fields under the preview. The Table settings tab has its own table of them. */
+  withFields?: boolean
 }
 
 /**
@@ -53,6 +60,8 @@ export function ResourcePipelinePreview({
   notPublic,
   officePreviewViewer,
   latestVersion,
+  primaryKey: keyShown,
+  withFields = true,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
   const router = useRouter()
@@ -152,11 +161,11 @@ export function ResourcePipelinePreview({
         officePreviewViewer={officePreviewViewer}
         version={latestVersion}
         schema={schemaData?.schema}
-        primaryKey={schemaData?.primaryKey}
+        primaryKey={keyShown !== undefined ? keyShown : schemaData?.primaryKey}
       />
       {/* Field (column) list shares the preview's remount key so it refreshes
           in lockstep when the pipeline (re)generates the Parquet preview. */}
-      {isTableSourceFormat(format) && (
+      {withFields && isTableSourceFormat(format) && (
         <div className="mt-6">
           <ResourceFields
             key={`fields-${resourceId}-${previewKey}`}

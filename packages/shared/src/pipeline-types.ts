@@ -198,6 +198,21 @@ export const COLUMN_ROLES = [
 ] as const
 export type ColumnRole = (typeof COLUMN_ROLES)[number]
 
+/**
+ * The roles a person may give a column in place of the inferred one (ADR-063
+ * §決定 5): the text roles. A measure is a column the table typed, and its
+ * type is settled through the column's type, not its role; an empty column has
+ * nothing a role would change.
+ */
+export const OVERRIDABLE_COLUMN_ROLES = [
+  'identifier',
+  'numeric-text',
+  'name',
+  'category',
+  'free-text',
+] as const satisfies readonly ColumnRole[]
+export type OverridableColumnRole = (typeof OVERRIDABLE_COLUMN_ROLES)[number]
+
 /** Which rule decided a column's role — one per arm of the classifier. */
 export const COLUMN_ROLE_RULES = [
   'typed',
@@ -217,6 +232,8 @@ export const COLUMN_ROLE_RULES = [
   'fixed-width-code',
   'distinct-values',
   'other',
+  // A person's override (`column_settings.roles`), not a rule
+  'override',
 ] as const
 export type ColumnRoleRule = (typeof COLUMN_ROLE_RULES)[number]
 
@@ -329,6 +346,12 @@ export const columnProfileSchema = z.object({
    */
   values: z.array(z.string()).optional(),
   vocabulary: columnVocabularySchema.optional(),
+  /**
+   * What the rules decided, where a person's override replaced it (`roleBasis`
+   * is then `override`): what the override is set against, and what the
+   * column returns to when it is lifted.
+   */
+  inferred: z.object({ role: z.enum(COLUMN_ROLES), roleBasis: columnRoleBasisSchema }).optional(),
 })
 export type ColumnProfile = z.infer<typeof columnProfileSchema>
 

@@ -94,7 +94,7 @@ export async function withInterpretedVersion<T>(
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>,
-  opts: { profile?: { vocabularyPacks: string[] } } = {}
+  opts: { profile?: Omit<ProfileRequest, 'path'> } = {}
 ): Promise<InterpretOutcome<T>> {
   // Too large to interpret. Answered here rather than by each caller, so the
   // pipeline and the lake retry give the same answer — and answered as an
@@ -183,7 +183,7 @@ async function interpretJsonVersion<T>(
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>,
-  opts: { profile?: { vocabularyPacks: string[] } } = {}
+  opts: { profile?: Omit<ProfileRequest, 'path'> } = {}
 ): Promise<InterpretOutcome<T>> {
   const encoding = JSON_ENCODING
   await onEncoding?.(encoding)
@@ -241,7 +241,7 @@ async function interpretOnDisk<T>(
   ) => Extract<HeavyRequest, { kind: 'interpret-csv' | 'interpret-json' }>,
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
-  opts: { profile?: { vocabularyPacks: string[] } }
+  opts: { profile?: Omit<ProfileRequest, 'path'> }
 ): Promise<InterpretOutcome<T>> {
   const parquetPath = `${sourcePath}.parquet`
   const profileRequest = opts.profile && {

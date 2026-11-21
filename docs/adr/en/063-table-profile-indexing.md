@@ -11,6 +11,9 @@ column name" come later — 2026-10-06
 
 JSON and GeoJSON ride the same mechanism, as tables of records (§Decision 10) — 2026-10-11
 
+Overriding roles by hand (§Decision 5) is implemented, for text columns only, applied the way a reprocess
+is — 2026-11-21
+
 The text index for CSV/TSV moves from chunks of the file's contents to a **table profile**. The profile
 consists of the column names, the values of name and categorical columns, the ranges of numeric and date
 columns, the row and column counts, and the text of free-text columns (with context from the same row).
@@ -131,8 +134,8 @@ This is for natural-language text inside a table, such as a remarks column.
   and value frequencies per column. Types are inferred by then, and columns can be read one by one, which
   is lighter than parsing the CSV again
 - When the rules change, only the classification is rerun on the existing Parquet, without redoing
-  Interpret. When a person overrides a role, nothing is reclassified: the profile is rebuilt and the index
-  updated (Decision §5)
+  Interpret (not implemented). When a person overrides a role, a reprocess (`rebuildOnly`) rebuilds the
+  profile and updates the index (Decision §5)
 - The current version's profile goes into the `profile` column of `resource_pipeline`, apart from the
   column schema (`resource_pipeline.metadata.schema`), with each column's entry at the same position as in
   the schema. The database is the source of truth
@@ -173,6 +176,21 @@ This is for natural-language text inside a table, such as a remarks column.
 - Overriding a role does not create a version, though. A confirmed type changes how the bytes are read, so
   it is an input to the version gate (same spec §6.5); a role does not change the reading, only the index
   and the display. An override rebuilds the profile and updates the index right away
+- **Implementation (2026-11-21)**
+  - Stored as `column_settings.roles` (column name → role). Like the key, absent when there are none (never
+    an empty object)
+  - Only text columns can be overridden, with five roles to choose from: identifier, numeric (as text),
+    name, category and free text. A column read as a number or date has its role from its type, which is
+    settled by confirming the type (Versioning-ii-c); an empty column changes nothing whatever its role
+  - Applying queues the same run as today's "Reprocess" (`rebuildOnly`, high priority). When Interpret
+    builds the profile, an override takes precedence over the rules and the vocabulary, and the value lists
+    and the sentence artifact follow the overridden role. A role is not part of a version's identity, so
+    no version is made. There is no path that reruns the classification alone (to be considered with the
+    rerun for changed rules)
+  - A column's profile keeps the rules' decision (`inferred`) only where it was overridden; the screen uses
+    it for the "Auto" option and its reason. The reason's rule name is `override`
+  - An override for a column the current version lacks, or one it types, is refused when applied. Where a
+    later version drops the column or types it, the override is ignored and the rules decide
 - Flags editors set when judging personal data (Decision §6) live in the same confirmed layer
 
 ### 6. Share the clues with personal-data detection

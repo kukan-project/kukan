@@ -6,7 +6,12 @@
 import type { Readable } from 'node:stream'
 import type { ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { ObjectMeta } from '@kukan/storage-adapter'
-import type { NoTableReason, PackageDbState, ResourceSchema } from '@kukan/shared'
+import type {
+  NoTableReason,
+  OverridableColumnRole,
+  PackageDbState,
+  ResourceSchema,
+} from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/pipeline/storage-pointer'
 import type { IngestResult } from '@kukan/lake'
 import type { LakeIngestRow } from '@kukan/api/services/lake/lake-catalog'
@@ -45,6 +50,12 @@ export interface PipelineContext {
    * setting is runtime. Absent where a caller reads no vocabulary.
    */
   vocabularyPacks?: () => Promise<string[]>
+  /**
+   * The roles a person gave the resource's columns (ADR-063 §決定 5), read per
+   * call like the packs: the rebuild an override queues must read it. Absent
+   * where a caller reads none.
+   */
+  roleOverrides?: (resourceId: string) => Promise<Record<string, OverridableColumnRole> | null>
   /**
    * Reading only. Creating an object goes through {@link putObject}, and not
    * offering the raw write here is what keeps that from being bypassed — a step

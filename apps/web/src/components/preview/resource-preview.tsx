@@ -506,7 +506,7 @@ function RawTextView({
 
   return (
     <TextFrame encoding={encoding} truncated={truncated}>
-      <div className="max-h-[600px] overflow-auto bg-muted/20">
+      <div data-slot="preview-scroll" className="max-h-[600px] overflow-auto bg-muted/20">
         <div className="flex min-w-max">
           <pre
             aria-hidden="true"
