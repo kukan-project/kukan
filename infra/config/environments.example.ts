@@ -207,6 +207,7 @@ export const environments = {
         // --- Custom domain (standalone: cert auto-created from the hosted zone;
         //     pipeline: paste the us-east-1 ARNs — see the header) ---
         // domainName: 'dev.example.com',
+        // additionalDomainNames: ['www.example.com'], // more names it answers on; the cert must hold them
         // hostedZoneId: 'Z0123456789',
         // hostedZoneName: 'example.com',
         // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...',

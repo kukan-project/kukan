@@ -23,10 +23,14 @@ export {
   type SiteWarning,
 } from './config/sites.js'
 export {
+  isInZone,
   needsGlobalStack,
   needsManagedCert,
   needsManagedWaf,
   rejectBlankEdgeArns,
+  resolveAdditionalDomainNames,
+  siteDomainNames,
+  httpsOrigin,
   resolveEnableWaf,
 } from './config/edge.js'
 export {

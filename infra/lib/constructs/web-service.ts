@@ -15,7 +15,7 @@ import * as logs from 'aws-cdk-lib/aws-logs'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
-import { webSizing, type KukanConfig } from '../config.js'
+import { httpsOrigin, webSizing, type KukanConfig } from '../config.js'
 import { ARCHITECTURES } from '../cpu-architecture.js'
 import { envPrefix, resourceName, taskRoleName } from '../naming.js'
 import { grantCurrentObjects } from './storage.js'
@@ -111,6 +111,11 @@ export function configureWebApp(props: WebAppProps, role: iam.IRole): WebAppSett
   }
   if (config.domainName) {
     environment.BETTER_AUTH_URL = `https://${config.domainName}`
+  }
+  // The other names the site answers on: sign-in and the CSP's frames take
+  // them as its own, while BETTER_AUTH_URL stays the one its URLs name
+  if (config.additionalDomainNames.length > 0) {
+    environment.TRUSTED_ORIGINS = config.additionalDomainNames.map(httpsOrigin).join(',')
   }
   if (config.timeZone) {
     environment.TIME_ZONE = config.timeZone

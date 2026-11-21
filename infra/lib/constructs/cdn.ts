@@ -13,7 +13,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import { Construct } from 'constructs'
 import { LOCALE_HEADER, PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { loadViewerRequestCode } from '../cf-functions/inject.js'
-import type { KukanConfig } from '../config.js'
+import { siteDomainNames, type KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
 import { AccessLogConstruct, supportsLegacyCdnLogging } from './access-log.js'
 
@@ -221,7 +221,10 @@ export class CdnConstruct extends Construct {
         '/sitemap*': crawlFiles,
       },
       ...(viewerCertificate && config.domainName
-        ? { domainNames: [config.domainName], certificate: viewerCertificate }
+        ? {
+            domainNames: siteDomainNames(config),
+            certificate: viewerCertificate,
+          }
         : {}),
       ...(webAclArn ? { webAclId: webAclArn } : {}),
       ...(this.accessLog

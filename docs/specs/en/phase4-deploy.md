@@ -558,6 +558,95 @@ pg_dump / restore → S3 sync → reindex → DNS switch → destroy the old env
 - For non-AWS environments (Docker Compose), use the opt-in templates in `docker/multi-site/`
   (the procedure is in the README in that directory)
 
+### Additional domain names (`additionalDomainNames`, ADR-041 note)
+
+A site entry (the environment entry in an environment without `sites`) can list names it answers on
+besides `domainName`. `domainName` stays **the domain name of record**: absolute URLs, canonical,
+OGP, the sitemap and sign-in's `BETTER_AUTH_URL` use it. Whichever name a page is opened on, it is
+shown as is (no redirect).
+
+```ts
+{
+  name: 'main',
+  domainName: 'catalog.snow.example.org', // the name of record (in this zone)
+  additionalDomainNames: ['opendata.city.example.jp'], // the name the site moves to (in another organization's DNS)
+  hostedZoneId: 'Z0123456789',
+  hostedZoneName: 'snow.example.org',
+  certificateArn: 'arn:aws:acm:us-east-1:...',    // a certificate holding every name in its SANs
+}
+```
+
+What additional domain names change:
+
+- CloudFront's alternate domain names become `[domainName, ...additionalDomainNames]`
+- The web gets `TRUSTED_ORIGINS` (the origins of the additional names). Better Auth treats them as
+  its own origins, so sign-in works on a name other than the name of record (without them, the Origin
+  check returns 403). CSP's `frame-src` (the preview iframe) is built from the same value. The value
+  also grants the API's credentialed CORS and the exemption from rejecting cross-site writes, so an
+  additional name is trusted as much as the name of record. Always remove a name you give up (one
+  whose DNS now points elsewhere) from `additionalDomainNames`
+- The S3 CORS allows uploads from every name
+- A page's canonical (HTTP `Link: <…>; rel="canonical"`) points at the name of record plus the path
+  and the query, whichever name it was opened on (page 2 of a list names itself). Search engines
+  group the pages under the name of record
+- A / AAAA records are created only for names under `hostedZoneName`. For a name outside the zone,
+  the owner of that DNS points it with a CNAME (at the CloudFront domain, or at a name in the zone)
+
+**Certificate**: a CloudFront distribution takes one certificate, so every name goes into the SANs
+of one certificate.
+
+- When the global stack creates it (standalone, no `certificateArn`): it creates one certificate with
+  `domainName` as the primary name and the additional names as SANs, DNS-validated in the
+  `hostedZoneName` zone. If a name is outside the zone, synth stops and tells you to paste a
+  `certificateArn`
+- When you paste a `certificateArn`: prepare a us-east-1 certificate holding every name (its contents
+  cannot be checked at synth time). If it includes names outside the zone, request one certificate
+  with every name in ACM (us-east-1), and write each name's validation CNAME in its DNS. A validation
+  CNAME is determined by the "account and domain" pair, so if you request a certificate again in the
+  same account with the same domain, the records already written can be reused as they are
+
+**Replacing the certificate**: the names (SANs or primary name) of a certificate the global stack
+has already created cannot simply be changed. A change recreates the certificate and changes its ARN,
+but the site stack reads that ARN through a CDK cross-region reference, and CDK cannot change a value
+that is being read, so the global stack update fails (in standalone mode too). Do it in this order.
+
+1. Request a certificate with the new set of names directly in ACM in us-east-1. In the same account
+   with the same domains, the existing validation CNAMEs for those domains can be used as they are;
+   write validation CNAMEs only for the new names
+2. Paste the new ARN as `certificateArn`
+3. Standalone: first deploy only the site stack
+   (`npx cdk deploy -c env=<env> '<Env>/KukanSiteStack<Name>'`, or `'<Env>/KukanStack'` for a
+   single site) so it stops reading the old ARN, then deploy `'<Env>/**'` as usual. Pipeline mode:
+   commit and push, and let the pipeline switch CloudFront over
+4. Clean up the old certificate with the steps below
+
+A new site that lists `additionalDomainNames` from the start does not need this: the global stack
+creates its certificate with the SANs.
+
+After the ARN is pasted, the certificate the global stack created leaves the template and remains in
+ACM (Retain); it is not kept under management the way the WebACL is.
+
+**Cleaning up the old certificate** (us-east-1):
+
+1. Check that it is no longer used:
+   `aws acm describe-certificate --region us-east-1 --certificate-arn <old ARN> --query Certificate.InUseBy`
+   returns `[]`
+2. Delete it: `aws acm delete-certificate --region us-east-1 --certificate-arn <old ARN>`
+3. **Do not delete the validation CNAMEs** (when the new certificate includes the same domains). A
+   validation CNAME is determined by the "account and domain" pair, and the new certificate's
+   automatic renewal uses the same records. Deleting them stops automatic renewal
+
+**Swapping the name of record and an additional name** (e.g. once a move to a new domain is done, make the new name the name of record and move the old one to the additional names): swap the values of
+`domainName` and `additionalDomainNames` and deploy. The set of names is the same, so the pasted
+certificate keeps working. CloudFront, the records and the bucket are not recreated; only the order
+of the alternate domain names, the order of the CORS origins and the web's environment variables
+(`BETTER_AUTH_URL`, `TRUSTED_ORIGINS`) change. "The first name in the list that is under the zone"
+holds the record's original logical ID, so with a single name in the zone the records do not change
+on a swap. With two or more names in the zone whose order is swapped, the records move to other
+logical IDs, and the deploy fails trying to create a record with the same name first (it rolls back,
+so nothing breaks). In that case, keep the order of the names in the zone. A certificate the global
+stack created is recreated, because the primary name changes (the steps in "Replacing the certificate" above).
+
 ## Security
 
 ### IP restriction (CloudFront Function)

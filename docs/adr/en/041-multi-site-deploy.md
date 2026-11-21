@@ -109,6 +109,33 @@ Compose-side changes at implementation time:
 
 The application layer (index prefix, `POSTGRES_DB`, brand build) is fully shared between AWS and non-AWS; environment differences stay confined to infrastructure definitions (CDK / compose).
 
+### Note (2026-11): giving a site additional domain names
+
+A site can now have names other than `domainName` (`additionalDomainNames`), so that when a site
+moves to a new domain it can be opened on both the old and the new name. Even when the new name is
+in another organization's DNS, the day that DNS switches and the day of the deploy need not line up.
+
+- `domainName` stays **the domain name of record**; absolute URLs, canonical and sign-in's
+  `BETTER_AUTH_URL` use it. The additional names go into CloudFront's alternate domain names, the
+  web's `TRUSTED_ORIGINS` (Better Auth's Origin check and CSP's `frame-src`; it also applies to the
+  API's credentialed CORS, so they are trusted as much as the name of record) and the S3 CORS
+- A name other than the name of record is shown without a redirect. For search engines, pages carry a
+  canonical (an HTTP `Link` header: the name of record plus the path and the query). The value
+  does not depend on the request's Host, so the CDN cache can be shared across the names. If a
+  redirect becomes necessary, add it in `proxy.ts`, next to the canonical
+- One certificate holds every name in its SANs (CloudFront takes only one certificate). The global
+  stack can put only names inside the zone in the SANs; if there is a name outside the zone, synth
+  stops and asks for a pasted `certificateArn`
+- A certificate the global stack created is, as before, removed from the template and retained once
+  its ARN is pasted. Unlike the WebACL (ADR-030 note), renaming a certificate recreates it, and a
+  CDK cross-region reference cannot pass the new ARN (a value being read cannot be changed), so
+  keeping it under management gains nothing. To change the names, request a certificate in ACM and
+  paste its ARN
+- A / AAAA records are created only for names inside the zone, and the first such name in the list
+  holds the original logical ID. Swapping the name of record and an additional name leaves the records
+  unchanged as long as there is one name inside the zone
+- An environment that does not write additional names gets an unchanged template
+
 ## Trade-offs
 
 - **Cross-site OpenSearch isolation is enforced by FGAC on AWS and convention-based on compose**: on AWS the tasks sign with their task role (SigV4) and the domain policy admits signed requests only (the account's IAM principals); on top of that, FGAC (ADR-069) allows each site's task roles onto that site's own indexes (`<prefix>-search*`) only. Compose stays without auth and with the security plugin disabled, so isolation between sites there is only the index-prefix naming convention; for compose multi-site we accept the policy that **only sites run by the same operator share a cluster**

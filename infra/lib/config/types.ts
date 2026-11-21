@@ -237,6 +237,8 @@ export interface EnvironmentConfig {
    */
   enableIpv6Dns?: boolean
   domainName?: string
+  /** Single-site shape only: as SiteConfig.additionalDomainNames. */
+  additionalDomainNames?: string[]
   hostedZoneId?: string
   hostedZoneName?: string
   /** IANA zone the web prerenders times in (env `TIME_ZONE`). Omit → Asia/Tokyo. */
@@ -387,6 +389,15 @@ export interface SiteConfig {
    */
   brand?: string
   domainName?: string
+  /**
+   * More names the site answers on beside `domainName`, which stays the one
+   * its absolute URLs, canonical links and sign-in use. CloudFront takes them
+   * all, and so must the certificate: the one the global stack creates puts
+   * them in its SANs (each under `hostedZoneName`), a pasted `certificateArn`
+   * must hold them already. Records are made for the names under
+   * `hostedZoneName` alone; point the others from their own DNS.
+   */
+  additionalDomainNames?: string[]
   hostedZoneId?: string
   hostedZoneName?: string
   timeZone?: string
@@ -518,6 +529,8 @@ export interface KukanConfig extends ScaleComputed {
   /** Whether the HSTS header carries includeSubDomains. */
   hstsIncludeSubDomains: boolean
   domainName?: string
+  /** More names the site answers on (resolveAdditionalDomainNames); [] when none. */
+  additionalDomainNames: string[]
   hostedZoneId?: string
   hostedZoneName?: string
   timeZone?: string

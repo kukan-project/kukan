@@ -40,6 +40,73 @@ export function rejectBlankEdgeArns(
   }
 }
 
+/** Whether `name` is the zone `zone` itself or a name under it. */
+export function isInZone(name: string, zone: string): boolean {
+  const z = zone.replace(/\.$/, '').toLowerCase()
+  const n = name.toLowerCase()
+  return n === z || n.endsWith(`.${z}`)
+}
+
+/** A DNS name as CloudFront and ACM take it: labels of letters, digits and hyphens. */
+const DOMAIN_NAME =
+  /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i
+
+/**
+ * The entry's `additionalDomainNames`, checked: each a DNS name, none twice and
+ * none `domainName` itself, and only beside a `domainName` (the name of
+ * record). Where the global stack would create the certificate, each must be
+ * under `hostedZoneName`, the zone it is validated in. [] when none.
+ */
+export function resolveAdditionalDomainNames(
+  entry: Pick<
+    SiteConfig,
+    'domainName' | 'additionalDomainNames' | 'certificateArn' | 'hostedZoneName'
+  >,
+  label: string
+): string[] {
+  const names = entry.additionalDomainNames ?? []
+  if (names.length === 0) return []
+  if (!entry.domainName) {
+    throw new Error(`${label} sets additionalDomainNames without domainName, the name of record`)
+  }
+  const seen = new Set([entry.domainName.toLowerCase()])
+  for (const name of names) {
+    if (name.startsWith('*.')) {
+      throw new Error(`${label}: additionalDomainNames has "${name}" — wildcards are not supported`)
+    }
+    if (!DOMAIN_NAME.test(name)) {
+      throw new Error(`${label}: additionalDomainNames has "${name}", which is not a DNS name`)
+    }
+    if (seen.has(name.toLowerCase())) {
+      throw new Error(
+        `${label}: "${name}" is listed twice across domainName and additionalDomainNames`
+      )
+    }
+    seen.add(name.toLowerCase())
+  }
+  const zone = entry.hostedZoneName
+  const outside = zone && !entry.certificateArn ? names.filter((n) => !isInZone(n, zone)) : []
+  if (outside.length > 0) {
+    throw new Error(
+      `${label}: not under the hosted zone ${zone}, so the global stack cannot validate a ` +
+        `certificate for it: ${outside.join(', ')}. Request one us-east-1 certificate holding ` +
+        `${siteDomainNames(entry).join(', ')}, put each name's validation CNAME in its own DNS, ` +
+        'and paste its ARN as certificateArn'
+    )
+  }
+  return names
+}
+
+/** Every name the entry answers on, the name of record first; [] without a domainName. */
+export function siteDomainNames(
+  entry: Pick<SiteConfig, 'domainName' | 'additionalDomainNames'>
+): string[] {
+  return entry.domainName ? [entry.domainName, ...(entry.additionalDomainNames ?? [])] : []
+}
+
+/** The origin a browser sends from `name`. */
+export const httpsOrigin = (name: string) => `https://${name}`
+
 /** The entry (site or single-site env) needs the global stack to CREATE its
  *  ACM certificate — a domain is set but no pre-created ARN is supplied. */
 export function needsManagedCert(

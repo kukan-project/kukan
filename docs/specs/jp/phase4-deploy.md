@@ -540,6 +540,86 @@ pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧�
 - 非 AWS 環境（Docker Compose）は `docker/multi-site/` の opt-in テンプレートを
   使う（手順は同ディレクトリの README）
 
+### 追加のドメイン名（`additionalDomainNames`、ADR-041 補足）
+
+サイトのエントリ（`sites` の無い環境では環境のエントリ）に、`domainName` のほかに応答する名前を書ける。
+`domainName` は**正のドメイン名**のままで、絶対 URL・canonical・OGP・sitemap・サインインの
+`BETTER_AUTH_URL` はこれを使う。どの名前で開いても、ページはそのまま表示される（リダイレクトしない）。
+
+```ts
+{
+  name: 'main',
+  domainName: 'catalog.snow.example.org',        // 正のドメイン名（このゾーンの中）
+  additionalDomainNames: ['opendata.city.example.jp'], // 移行先の名前（ほかの組織の DNS）
+  hostedZoneId: 'Z0123456789',
+  hostedZoneName: 'snow.example.org',
+  certificateArn: 'arn:aws:acm:us-east-1:...',    // 全部の名前を SAN に載せた証明書
+}
+```
+
+追加のドメイン名で変わるもの:
+
+- CloudFront の代替ドメイン名が `[domainName, ...additionalDomainNames]` になる
+- web に `TRUSTED_ORIGINS`（追加の名前のオリジン）が入る。Better Auth はこれを自分のオリジンとして扱うので、
+  正でない名前の上でもサインインできる（入れないと Origin の検査で 403）。CSP の `frame-src`（プレビューの
+  iframe）も同じ値から作る。この値は API の資格情報付きの CORS と、cross-site の書き込みの拒否の例外にも
+  なるので、追加の名前は正のドメイン名と同じだけ信頼される。手放した名前（DNS を別の向け先に変えたもの）は
+  必ず `additionalDomainNames` から外す
+- S3 の CORS が、全部の名前からのアップロードを許可する
+- ページの canonical（HTTP の `Link: <…>; rel="canonical"`）は、どの名前で開いても正のドメイン名と
+  パスとクエリを指す（一覧の 2 ページ目は自分自身を指す）。検索エンジンは正のドメイン名の下にまとめる
+- A / AAAA レコードは、`hostedZoneName` の下にある名前にだけ作る。ゾーンの外の名前は、その DNS の
+  持ち主が CNAME で向ける（CloudFront のドメイン、またはゾーンの中の名前へ）
+
+**証明書**: CloudFront のディストリビューションに付けられる証明書は 1 枚なので、全部の名前を 1 枚の
+SAN に載せる。
+
+- global スタックが作る場合（standalone、`certificateArn` なし）: `domainName` を主の名前、追加の名前を
+  SAN にして 1 枚作り、`hostedZoneName` のゾーンで DNS 検証する。ゾーンの外の名前があると、synth が
+  「`certificateArn` を貼る」ように止まる
+- `certificateArn` を貼る場合: 全部の名前を載せた us-east-1 の証明書を用意する（合成の時点では中身を
+  確かめられない）。ゾーンの外の名前を含むときは、ACM（us-east-1）で全部の名前を 1 枚に載せて申請し、
+  名前ごとの検証用の CNAME をそれぞれの DNS に書く。検証用の CNAME は「アカウントとドメインの組」で
+  決まるので、同じアカウントで同じドメインを含む証明書を申請し直しても、すでに書いてもらったレコードを
+  そのまま使える
+
+**証明書を付け替えるとき**: global スタックがすでに作った証明書の名前（SAN や主の名前）は、そのままでは
+変えられない。変えると証明書は作り直しになって ARN が変わるが、サイトのスタックはその ARN を CDK の
+リージョンをまたぐ参照で読んでいて、CDK は読まれている値を変えられないので、global スタックの更新が
+失敗する（standalone でも同じ）。次の順に行う。
+
+1. 新しい名前の集合で、us-east-1 の ACM に証明書を直接申請する。同じアカウントで同じドメインを含むなら、
+   そのドメインの検証用の CNAME はすでにあるものがそのまま使える。新しい名前の分だけ検証用の CNAME を書く
+2. 新しい ARN を `certificateArn` に貼る
+3. standalone: 先にサイトのスタックだけをデプロイし（`npx cdk deploy -c env=<env> '<Env>/KukanSiteStack<Name>'`、
+   シングルサイトは `'<Env>/KukanStack'`）、古い ARN を読まないようにしてから、いつもどおり
+   `'<Env>/**'` をデプロイする。pipeline モード: コミットして push し、パイプラインで CloudFront を付け替える
+4. 古い証明書を下の手順で片付ける
+
+新しいサイトに最初から `additionalDomainNames` を書く場合は、global スタックが SAN 付きで作るので、この手順は要らない。
+
+ARN を貼った後、global スタックが作った証明書はテンプレートから外れ、Retain で ACM に残る（WebACL の
+ように管理し続けはしない）。
+
+**古い証明書の片付け**（us-east-1）:
+
+1. 使われていないことを確かめる:
+   `aws acm describe-certificate --region us-east-1 --certificate-arn <古い ARN> --query Certificate.InUseBy`
+   が `[]` になっていること
+2. 削除する: `aws acm delete-certificate --region us-east-1 --certificate-arn <古い ARN>`
+3. **検証用の CNAME は消さない**（新しい証明書が同じドメインを含むとき）。検証用の CNAME は
+   「アカウントとドメインの組」で決まり、新しい証明書の自動更新も同じレコードを使う。消すと自動更新が止まる
+
+**正と追加の入れ替え**（例: 新しいドメインへの移行が済んだときに、正のドメイン名を移行先の名前に替え、元の名前を追加に回す）:
+`domainName` と `additionalDomainNames` の値を入れ替えてデプロイする。名前の集合が同じなので、貼った
+証明書はそのまま使える。CloudFront・レコード・バケットは作り直されず、変わるのは代替ドメイン名の並び・
+CORS の並び・web の環境変数（`BETTER_AUTH_URL`、`TRUSTED_ORIGINS`）だけである。レコードは
+「並びの中でゾーンの下にある最初の名前」が元の論理 ID を持つので、ゾーンの中の名前が 1 つなら入れ替えても
+変わらない。ゾーンの中の名前が 2 つ以上あって、その並びが入れ替わると、レコードが別の論理 ID に移り、
+同じ名前のレコードを先に作ろうとしてデプロイが失敗する（ロールバックするので壊れない）。そのときは、
+ゾーンの中の名前の並びを保つ。global スタックが作った証明書は、主の名前が変わるので作り直しになる
+（上の「証明書を付け替えるとき」の手順）。
+
 ## セキュリティ
 
 ### IP 制限（CloudFront Function）

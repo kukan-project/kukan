@@ -23,7 +23,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
 import type { Construct } from 'constructs'
 import { DEFAULT_CSP_MODE } from '@kukan/shared/env'
-import type { KukanConfig } from '../config.js'
+import { isInZone, siteDomainNames, type KukanConfig } from '../config.js'
 import { athenaWorkGroupName, envPrefix } from '../naming.js'
 import { NetworkConstruct } from '../constructs/network.js'
 import { EcrAssetRetentionConstruct } from '../constructs/ecr-asset-retention.js'
@@ -319,15 +319,20 @@ export function composeSite(
       hostedZoneId: config.hostedZoneId,
       zoneName: config.hostedZoneName,
     })
-    const record = {
-      zone: hostedZone,
-      recordName: config.domainName,
-      target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(cdn.distribution)),
-    }
-
-    new route53.ARecord(scope, 'DnsRecord', record)
-    // An alias answers for its own type only: IPv6 viewers need the AAAA beside the A
-    if (config.enableIpv6Dns) new route53.AaaaRecord(scope, 'DnsRecordV6', record)
+    const target = route53.RecordTarget.fromAlias(
+      new route53Targets.CloudFrontTarget(cdn.distribution)
+    )
+    // Records for the names under the zone alone; the owner of any other points
+    // it from their own DNS. The first such name keeps the records' original
+    // IDs, so swapping domainName with a name outside the zone keeps them
+    const names = siteDomainNames(config).filter((name) => isInZone(name, config.hostedZoneName!))
+    names.forEach((recordName, i) => {
+      const suffix = i === 0 ? '' : ` ${recordName}`
+      const record = { zone: hostedZone, recordName, target }
+      new route53.ARecord(scope, `DnsRecord${suffix}`, record)
+      // An alias answers for its own type only: IPv6 viewers need the AAAA beside the A
+      if (config.enableIpv6Dns) new route53.AaaaRecord(scope, `DnsRecordV6${suffix}`, record)
+    })
   }
 
   // --- Outputs ---

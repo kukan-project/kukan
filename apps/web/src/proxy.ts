@@ -46,6 +46,12 @@ export function proxy(request: NextRequest) {
     }),
     brandExtra: brandConfig.csp,
   })
+  // The page's address under the name of record, whichever name it was opened
+  // under: a site answering on more names (additionalDomainNames) is filed by
+  // search engines under one. The origin is not the request's, so a cached page
+  // is right for every name; the query stays, a list's page 2 being its own page
+  const { pathname, search } = request.nextUrl
+  response.headers.set('Link', `<${siteOrigin()}${pathname}${search}>; rel="canonical"`)
   if (cspModeSchema.parse(process.env.CSP_MODE) === 'enforce') {
     response.headers.set('Content-Security-Policy', policy)
   } else {

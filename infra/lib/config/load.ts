@@ -29,7 +29,7 @@ import type {
   WebCompute,
 } from './types.js'
 import { computeScaled } from './scale.js'
-import { isEdgeGated } from './edge.js'
+import { isEdgeGated, resolveAdditionalDomainNames } from './edge.js'
 import { pascal } from '../naming.js'
 
 /** Default region when an environment does not specify one. */
@@ -517,6 +517,16 @@ export function loadConfig(
   const domainName = ctx<string>('domainName') ?? env.domainName
   const hostedZoneId = ctx<string>('hostedZoneId') ?? env.hostedZoneId
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
+  // No ctx: a list, and the certificate's SANs follow it
+  const additionalDomainNames = resolveAdditionalDomainNames(
+    {
+      domainName,
+      additionalDomainNames: env.additionalDomainNames,
+      certificateArn: env.certificateArn,
+      hostedZoneName,
+    },
+    'Environment'
+  )
   // undefined → CDK auto-naming (globally unique). ADR-031.
   const bucketName = ctx<string>('bucketName') ?? env.bucketName
   const enableGa4DataApi = flag('enableGa4DataApi') ?? env.enableGa4DataApi ?? false
@@ -593,6 +603,7 @@ export function loadConfig(
     cspMode,
     hstsIncludeSubDomains,
     domainName,
+    additionalDomainNames,
     timeZone,
     hostedZoneId,
     hostedZoneName,

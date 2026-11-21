@@ -8,7 +8,7 @@ import * as cdk from 'aws-cdk-lib'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import { Construct } from 'constructs'
-import type { KukanConfig } from '../config.js'
+import { httpsOrigin, siteDomainNames, type KukanConfig } from '../config.js'
 
 /**
  * Read and write the current objects. Every version operation is denied, so
@@ -48,7 +48,8 @@ export class StorageConstruct extends Construct {
       cors: [
         {
           allowedMethods: [s3.HttpMethods.PUT],
-          allowedOrigins: config.domainName ? [`https://${config.domainName}`] : ['*'],
+          // Every name the site answers on uploads from its own origin
+          allowedOrigins: config.domainName ? siteDomainNames(config).map(httpsOrigin) : ['*'],
           allowedHeaders: ['*'],
           maxAge: 3600,
         },

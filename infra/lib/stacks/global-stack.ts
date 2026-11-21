@@ -89,6 +89,7 @@ export class KukanGlobalStack extends cdk.Stack {
         this.siteCertificateArns[site.name] = this.createCertificate(
           pascal(site.name),
           site.domainName,
+          site.additionalDomainNames ?? [],
           site.hostedZoneId,
           site.hostedZoneName,
           `ACM certificate ARN for site "${site.name}" (sites[].certificateArn)`
@@ -118,6 +119,7 @@ export class KukanGlobalStack extends cdk.Stack {
       this.certificateArn = this.createCertificate(
         '',
         config.domainName,
+        config.additionalDomainNames,
         config.hostedZoneId,
         config.hostedZoneName,
         'ACM certificate ARN (certificateArn)'
@@ -132,11 +134,13 @@ export class KukanGlobalStack extends cdk.Stack {
     cdk.Tags.of(this).add('kukan:stack', 'global')
   }
 
-  /** DNS-validated viewer certificate + its paste-target output.
+  /** DNS-validated viewer certificate + its paste-target output, the
+   *  additional names in its SANs (each under the zone, resolveAdditionalDomainNames).
    *  RETAINed (see retainEdgeResource). */
   private createCertificate(
     idSuffix: string,
     domainName: string,
+    additionalDomainNames: string[],
     hostedZoneId: string,
     zoneName: string,
     outputDescription: string
@@ -147,6 +151,7 @@ export class KukanGlobalStack extends cdk.Stack {
     })
     const certificate = new acm.Certificate(this, `Certificate${idSuffix}`, {
       domainName,
+      ...(additionalDomainNames.length > 0 && { subjectAlternativeNames: additionalDomainNames }),
       validation: acm.CertificateValidation.fromDns(hostedZone),
     })
     this.retainEdgeResource(certificate.node.defaultChild as cdk.CfnResource)

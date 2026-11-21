@@ -149,6 +149,24 @@ describe('proxy (ADR-071)', () => {
   })
 })
 
+describe('proxy: canonical address', () => {
+  const canonicalFor = (url: string) => proxy(new NextRequest(url)).headers.get('link')
+
+  it('names the page under the name of record, opened under another name too', () => {
+    const page = '/dataset/some-dataset'
+    expect(canonicalFor(`https://opendata.city.example.jp${page}`)).toBe(
+      `<${ORIGIN}${page}>; rel="canonical"`
+    )
+    expect(canonicalFor(`${ORIGIN}${page}`)).toBe(`<${ORIGIN}${page}>; rel="canonical"`)
+  })
+
+  it('keeps the query, so a list’s later pages name themselves', () => {
+    expect(canonicalFor(`${ORIGIN}/dataset?organization=city&page=2`)).toBe(
+      `<${ORIGIN}/dataset?organization=city&page=2>; rel="canonical"`
+    )
+  })
+})
+
 describe('proxy: uploads', () => {
   it('lets the browser PUT an upload to the storage endpoint', () => {
     vi.stubEnv('CSP_MODE', 'enforce')

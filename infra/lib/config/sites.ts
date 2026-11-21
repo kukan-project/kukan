@@ -21,7 +21,7 @@ import {
   WEB_SIZING_SETTINGS,
   webSizing,
 } from './scale.js'
-import { rejectBlankEdgeArns } from './edge.js'
+import { rejectBlankEdgeArns, resolveAdditionalDomainNames } from './edge.js'
 import {
   contextFlag,
   loadConfig,
@@ -65,6 +65,7 @@ type SiteScopedKey = Exclude<
 
 const SITE_SCOPED_FIELDS = Object.keys({
   domainName: true,
+  additionalDomainNames: true,
   hostedZoneId: true,
   hostedZoneName: true,
   certificateArn: true,
@@ -241,6 +242,7 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       )
     }
     rejectBlankEdgeArns(site, `Site "${site.name}"`)
+    resolveAdditionalDomainNames(site, `Site "${site.name}"`)
     // The type leaves it out; this is the gate for what tsx does not check
     if ((site as { waf?: unknown }).waf !== undefined) {
       throw new Error(
