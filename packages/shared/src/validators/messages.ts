@@ -13,6 +13,7 @@ export const VALIDATION_MESSAGES = {
   controlCharacter: 'Must not contain control characters',
   keyColumnEmpty: 'A key column name cannot be empty',
   keyColumnRepeated: 'Key columns must not repeat',
+  settledTypeUnknown: 'Not a type a column can be settled on',
   reservedKey: 'This key is reserved',
   tagName: 'A tag name cannot be empty, "." or ".."',
   tagComma: 'A tag name cannot contain a comma ("," or "、")',

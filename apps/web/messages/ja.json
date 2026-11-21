@@ -1360,6 +1360,7 @@
     "controlCharacter": "制御文字は使えません",
     "keyColumnEmpty": "主キーの列名を空にすることはできません",
     "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません",
+    "settledTypeUnknown": "列の型として選べない値です",
     "reservedKey": "このキーは予約されているため使えません",
     "tagName": "タグ名を空、「.」、「..」にすることはできません",
     "tagComma": "タグ名にカンマ（「,」「、」）は使えません"

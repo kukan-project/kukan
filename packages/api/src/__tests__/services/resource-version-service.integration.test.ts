@@ -2424,6 +2424,50 @@ describe('the key a version is read under (spec §6.4)', () => {
     expect(resent).toMatchObject({ restored: 1, published: null })
   })
 
+  it('reports a resend as unsettled while live read the dates another way (ii-c §8.2)', async () => {
+    // Same bytes, same types: but a format decided from the values can differ,
+    // and live reading them otherwise is a revert left to do
+    const dated = (format: string): ResourceSchema => ({
+      rowCount: 1,
+      columns: [
+        {
+          name: 'd',
+          type: 'date',
+          nullable: false,
+          nullCount: 0,
+          settled: true,
+          dateFormat: format,
+        },
+      ],
+    })
+    await addVersion(1, 'sha256:v1', 'active', 'csv', dated('%d/%m/%Y'))
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db
+      .update(resourceVersion)
+      .set({ settledTypes: { d: 'date' } })
+      .where(eq(resourceVersion.resourceId, resourceId))
+    await db
+      .update(resource)
+      .set({ hash: 'sha256:v2', columnSettings: { types: { d: 'date' } } })
+      .where(eq(resource.id, resourceId))
+    await revertFromLive()
+    const resend = async () =>
+      service.revertLiveContent(
+        resourceId,
+        { restoreTo: 1, ifLiveRevision: (await service.revertContext(resourceId)).liveRevision },
+        { ...mockDeps(), logger: silentLogger }
+      )
+
+    // v3 carries v1's schema: read the same way
+    expect(await resend()).toMatchObject({ restored: 1, published: null })
+
+    await db
+      .update(resourceVersion)
+      .set({ schema: dated('%m/%d/%Y') })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 3)))
+    expect(await resend()).toMatchObject({ restored: 1, published: 4 })
+  })
+
   it('reports a resend as unsettled while the key still differs', async () => {
     // Same bytes, different reading: the content is v1's but the resource is
     // set to read it another way, so there is a revert left to do.

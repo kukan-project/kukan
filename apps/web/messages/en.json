@@ -1345,6 +1345,7 @@
     "controlCharacter": "Control characters are not allowed",
     "keyColumnEmpty": "A primary key column name cannot be empty",
     "keyColumnRepeated": "The same column cannot appear twice in the primary key",
+    "settledTypeUnknown": "Not a type a column can be settled on",
     "reservedKey": "This key is reserved",
     "tagName": "A tag name cannot be empty, \".\" or \"..\"",
     "tagComma": "A tag name cannot contain a comma (\",\" or \"、\")"

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { columnSettingsSchema, primaryKeyOf, sameKeyColumns } from '../column-settings'
 import { sameVersionIdentity } from '../version-identity'
+import { sameSettledReads, type ResourceSchema } from '../pipeline-types'
 
 describe('columnSettingsSchema', () => {
   it('refuses an empty key rather than storing a second spelling of "none"', () => {
@@ -79,5 +80,34 @@ describe('sameVersionIdentity with settled types', () => {
         { ...base, settledTypes: { b: 'decimal', a: 'string' } }
       )
     ).toBe(true)
+  })
+})
+
+describe('sameSettledReads', () => {
+  const read = (extra: object): ResourceSchema => ({
+    rowCount: 1,
+    columns: [{ name: 'd', type: 'date', nullable: false, nullCount: 0, ...extra }],
+  })
+
+  it('compares what each named column decided, an undecided date included', () => {
+    expect(
+      sameSettledReads(read({ dateFormat: '%d/%m/%Y' }), read({ dateFormat: '%d/%m/%Y' }), ['d'])
+    ).toBe(true)
+    expect(
+      sameSettledReads(read({ dateFormat: '%d/%m/%Y' }), read({ dateFormat: '%m/%d/%Y' }), ['d'])
+    ).toBe(false)
+    expect(sameSettledReads(read({ dateFormatUndecided: true }), read({}), ['d'])).toBe(false)
+    expect(
+      sameSettledReads(
+        read({ decimalPrecision: 5, decimalScale: 2 }),
+        read({ decimalPrecision: 5, decimalScale: 3 }),
+        ['d']
+      )
+    ).toBe(false)
+  })
+
+  it('takes a missing schema as one that decided nothing', () => {
+    expect(sameSettledReads(null, read({}), ['d'])).toBe(true)
+    expect(sameSettledReads(null, read({ dateFormat: '%d/%m/%Y' }), ['d'])).toBe(false)
   })
 })

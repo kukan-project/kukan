@@ -188,7 +188,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | POST   | `/resources/{id}/revert`                | 処理を中止し、内容を指定の版へ戻す                                                                                                                  | 組織 editor |
 | GET    | `/resources/{id}/column-settings`       | 確定済みの列情報と、確定に使える列                                                                                                                  | 組織 editor |
 | POST   | `/resources/{id}/column-settings/check` | この主キーで行を同定できるか                                                                                                                        | 組織 editor |
-| PUT    | `/resources/{id}/column-settings`       | 主キーと列の役割を確定する                                                                                                                          | 組織 editor |
+| PUT    | `/resources/{id}/column-settings`       | 主キー・列の役割・列の型を確定する                                                                                                                  | 組織 editor |
 | GET    | `/resources/{id}/column-roles`          | 列の役割と、規則がそう判定した根拠                                                                                                                  | 組織 editor |
 | PUT    | `/resources/{id}/summary`               | AI による説明を非表示にする / 戻す（`{ hidden }`）                                                                                                  | 組織 editor |
 | PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換。`section` だけは省略で保持）                                                                                        | 組織 editor |
@@ -589,6 +589,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 {
   "id": "…",
   "primaryKey": ["注文番号"],
+  "types": { "増減率": "decimal" },
   "carried": false,
   "schema": {
     "rowCount": 1688,
@@ -601,10 +602,10 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
   選んだ主キーが「その列は無い」で断られることはありません
 - `unique` は単独で行を同定できる列を示します。その列を選ぶなら確認は不要です。**組み合わせに
   ついては何も言いません** — 複合キーは実データを読まないと分かりません
-- `carried` は、最新の生きている版がまだ `primaryKey` で読まれていない間 `false` です。
-  主キーを確定してから再構築が着くまでの**通常の状態**であって、異常ではありません
+- `carried` は、最新の生きている版がまだ `primaryKey` と `types` で読まれていない間 `false` です。
+  確定してから再構築が着くまでの**通常の状態**であって、異常ではありません
 
-**確認** — `POST /resources/{id}/column-settings/check`、ボディ `{"primaryKey": [...]}`:
+**確認** — `POST /resources/{id}/column-settings/check`、ボディ `{"primaryKey": [...], "types": {...} | null}`:
 
 ```json
 { "id": "…", "checked": true, "primaryKey": ["注文番号"], "fault": "key-not-unique" }
@@ -615,20 +616,32 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
   意味です（読める解釈が無い）。**エラーではありません** — `PUT` は内容を一切読まないので、
   この状態でも主キーは確定できます
 - 単一列キーは版が凍結した列ごとの数から、複合キーは解釈の Parquet を読んで答えます
+- 主キーの列は `types` の型で判断します。`PUT` で送る予定の `types` を同じく送ってください（省くと推定した型で判断します）
 
-**確定** — `PUT /resources/{id}/column-settings`、ボディ `{"primaryKey": [...] | null, "roles": {...} | null}`:
+**確定** — `PUT /resources/{id}/column-settings`、ボディ `{"primaryKey": [...] | null, "roles": {...} | null, "types": {...} | null}`:
 
 ```json
-{ "id": "…", "primaryKey": ["注文番号"], "roles": { "区分": "category" }, "queued": true }
+{
+  "id": "…",
+  "primaryKey": ["注文番号"],
+  "roles": { "区分": "category" },
+  "types": { "増減率": "decimal" },
+  "queued": true
+}
 ```
 
 - `roles` は列名から役割への対応です（後述の[列の役割](#列の役割)）。`PUT` は設定を丸ごと置き換えるので、**省くと役割の上書きは消えます**。今の設定は `GET` の `roles` で読めます
+- `types` は列名から型への対応です。型は `string` / `integer` / `float` / `boolean` / `date` / `timestamp` /
+  `decimal` で、`date` と `timestamp` には `"date:%d/%m/%Y"` のように書式を添えられます。変換できない値は空になり、
+  版の `schema` の列に `castFailures` として数えられます。`roles` と同じく、**省くと型の確定は消えます**。新しく
+  確定できるのは live 版にある列だけです
 
 - `[]` と `null` はどちらも「主キーなし」です。ボディの側で 1 つの綴りに正規化されます
+- 主キーの列の型は、確定した型があればその型で判断します。`float` の列も `decimal` に確定すれば主キーにできます
 - 列は**指定した順序で保持されます**。ただし**行の照合は順序によりません** — キーを使う操作は
   いずれも列を AND で並べるためです。それでも順序は記録されるキーの一部なので、同じ列を別の順序で
   指定すると別のキーとして扱われ、版が 1 つ作られます
-- **主キーの確定は版を作ります。** 版とは「このバイト列を、この読み方で」であり、主キーは読み方の
+- **主キーと型の確定は版を作ります。** 版とは「このバイト列を、この読み方で」であり、主キーも型も読み方の
   一部だからです。バイト列は動かないので、新しい版は同じ内容の複製を所有します。`queued` はその版を
   発行する再構築が投入されたことを示し、`null` は再構築が不要だったことを示します。**`false` は
   設定は保存できたが再構築を投入できなかったことを示します** — 書き込みと投入は別々に判断されるので、

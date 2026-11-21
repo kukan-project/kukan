@@ -41,6 +41,8 @@ import {
   roleOverridesOf,
   sameKeyColumns,
   sameColumnValues,
+  sameSettledReads,
+  parseSettledType,
   settledTypesOf,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
@@ -763,8 +765,39 @@ function columnsByName(schema: ResourceSchema): Map<string, ResourceColumn> {
  *
  * The columns must be known to exist: both callers answer `key-missing` first.
  */
-function unusableKeyColumns(key: string[], columns: Map<string, ResourceColumn>): string[] {
-  return key.filter((column) => !canIdentifyRows(columns.get(column)!.type))
+function unusableKeyColumns(
+  key: string[],
+  columns: Map<string, ResourceColumn>,
+  types: Record<string, string> | null
+): string[] {
+  // What the column will read as (Versioning ii-c §8.2): its settled type — a
+  // float settled as decimal can be a key, an integer settled as float cannot —
+  // or, with none, what inference makes of it, which is what a column the live
+  // version read on a type that is now lifted goes back to
+  const typeOf = (column: string) => {
+    const settled =
+      types && Object.hasOwn(types, column) ? parseSettledType(types[column])?.type : undefined
+    const live = columns.get(column)!
+    return settled ?? live.inferredType ?? live.type
+  }
+  return key.filter((column) => !canIdentifyRows(typeOf(column)))
+}
+
+/**
+ * Whether the newest standing version was read under the setting: the key and
+ * the settled types it froze are the ones set. A setting reaches no version
+ * until the rebuild it queues lands.
+ */
+function readingCarried(
+  latest: { lakeKeyColumns: string[] | null; settledTypes: Record<string, string> | null } | null,
+  key: string[] | null,
+  types: Record<string, string> | null
+): boolean {
+  return (
+    latest === null ||
+    (sameKeyColumns(latest.lakeKeyColumns, key) &&
+      sameColumnValues(settledTypesOf(latest.settledTypes), types))
+  )
 }
 
 export class ResourceVersionService {
@@ -2309,13 +2342,15 @@ export class ResourceVersionService {
     if (!current) throw new NotFoundError('Resource', resourceId)
 
     const key = primaryKeyOf(current.settings)
+    const types = settledTypesOf(current.settings.types)
     const latest = await this.newestActiveVersion(this.db, resourceId)
     const preview = await this.livePreview(resourceId)
     return {
       primaryKey: key,
       roles: roleOverridesOf(current.settings),
+      types,
       rolesCarried: await this.rolesCarried(resourceId, roleOverridesOf(current.settings)),
-      carried: latest === null || sameKeyColumns(latest.lakeKeyColumns, key),
+      carried: readingCarried(latest, key, types),
       schema: await this.liveSchemaOrNull(resourceId),
       preview: typeof preview === 'string' ? preview : 'ready',
     }
@@ -2328,6 +2363,7 @@ export class ResourceVersionService {
   ): Promise<{
     primaryKey: string[] | null
     roles: ColumnSettings['roles'] | null
+    types: Record<string, string> | null
     queued: boolean | null
   }> {
     const log = deps.logger ?? createLogger({ name: 'api' })
@@ -2341,22 +2377,31 @@ export class ResourceVersionService {
       .limit(1)
     if (!current) throw new NotFoundError('Resource', resourceId)
 
+    const storedTypes = settledTypesOf(current.settings.types)
+    const types = await this.usableTypes(resourceId, settledTypesOf(settings.types), storedTypes)
+    const typesSettled = sameColumnValues(storedTypes, types)
     const settled = sameKeyColumns(primaryKeyOf(current.settings), key)
-    if (key) await this.assertKeyUsable(resourceId, key, { changed: !settled })
+    if (key) {
+      // Asked again when a key column's type changes: it is what the key reads as
+      const keyRetyped = key.some((column) => storedTypes?.[column] !== types?.[column])
+      await this.assertKeyUsable(resourceId, key, { changed: !settled || keyRetyped, types })
+    }
     const storedRoles = roleOverridesOf(current.settings)
     const asked = roleOverridesOf(settings)
     // Through the check even when sent back as it stood: an override the content
     // has outgrown goes, or a column of its name coming back would take it again
     const roles = await this.usableRoles(resourceId, asked, storedRoles)
     const rolesSettled = sameColumnValues(storedRoles, roles)
+    const unchanged = settled && rolesSettled && typesSettled
 
-    if (!settled || !rolesSettled) {
+    if (!unchanged) {
       await this.db
         .update(resource)
         .set({
           columnSettings: {
             ...(key && { primaryKey: key as [string, ...string[]] }),
             ...(roles && { roles }),
+            ...(types && { types }),
           },
           // A person's edit, so it moves the resource's own timestamp — that is
           // what the screens and the API mean by "updated".
@@ -2366,17 +2411,17 @@ export class ResourceVersionService {
     }
 
     const latest = await this.newestActiveVersion(this.db, resourceId)
-    const carried = latest === null || sameKeyColumns(latest.lakeKeyColumns, key)
+    const carried = readingCarried(latest, key, types)
     // A role is not part of a version's identity (ADR-063 §決定 5): changed
     // alone, the rebuild rewrites the profile and the index and the version
     // gate lets the same bytes through as the version they already are
     // Asked of the profile too: a resend after an enqueue that failed changes
     // nothing in the setting, and is how that rebuild is queued again
     const owed = !carried || !rolesSettled || !(await this.rolesCarried(resourceId, roles))
-    if (!owed || (settled && rolesSettled && (await this.runPending(resourceId)))) {
-      return { primaryKey: key, roles, queued: null }
+    if (!owed || (unchanged && (await this.runPending(resourceId)))) {
+      return { primaryKey: key, roles, types, queued: null }
     }
-    return { primaryKey: key, roles, queued: await this.queueRebuild(resourceId, deps, log) }
+    return { primaryKey: key, roles, types, queued: await this.queueRebuild(resourceId, deps, log) }
   }
 
   /**
@@ -2443,6 +2488,31 @@ export class ResourceVersionService {
     }
     const kept = Object.fromEntries(Object.entries(asked).filter(([name]) => usable(name)))
     return Object.keys(kept).length > 0 ? kept : null
+  }
+
+  /**
+   * The settled types to store: each one asked for anew names a column of the
+   * live version, and is refused otherwise (Versioning ii-c §8.2). One left as
+   * it stood is kept even where the content has dropped the column: unlike a
+   * role, a settled type the file no longer has is what the next version
+   * reports as missing (§8.3), and dropping it here would hide that.
+   */
+  private async usableTypes(
+    resourceId: string,
+    asked: Record<string, string> | null,
+    stored: Record<string, string> | null
+  ): Promise<Record<string, string> | null> {
+    if (!asked) return null
+    const anew = Object.entries(asked).filter(([name, type]) => stored?.[name] !== type)
+    if (anew.length === 0) return asked
+    const columns = new Set((await this.liveSchemaOrNull(resourceId))?.columns.map((c) => c.name))
+    const refused = anew.filter(([name]) => !columns.has(name)).map(([name]) => name)
+    if (refused.length > 0) {
+      throw new ValidationError(
+        `Only columns of the current version can be settled: ${refused.join(', ')}`
+      )
+    }
+    return asked
   }
 
   /**
@@ -2550,7 +2620,7 @@ export class ResourceVersionService {
     // the type rather than the values, so no number the interpretation recorded
     // can overturn it. Answered here as well as refused at the apply, through
     // the same function, so the two cannot come out differently.
-    if (unusableKeyColumns(key, columns).length > 0) {
+    if (unusableKeyColumns(key, columns, settledTypesOf(settings.types)).length > 0) {
       return { checked: true, primaryKey: key, fault: 'key-float' }
     }
 
@@ -2677,7 +2747,7 @@ export class ResourceVersionService {
   private async assertKeyUsable(
     resourceId: string,
     key: string[],
-    opts: { changed: boolean }
+    opts: { changed: boolean; types: Record<string, string> | null }
   ): Promise<void> {
     const columns = columnsByName(await this.liveSchema(resourceId))
     const missing = key.filter((column) => !columns.has(column))
@@ -2685,7 +2755,7 @@ export class ResourceVersionService {
       throw new ValidationError(`No such column in this resource: ${missing.join(', ')}`)
     }
     if (!opts.changed) return
-    const unusable = unusableKeyColumns(key, columns)
+    const unusable = unusableKeyColumns(key, columns, opts.types)
     if (unusable.length > 0) {
       throw new ValidationError(
         `A floating-point column cannot identify a row, so it cannot be part of a primary key: ${unusable.join(', ')}`
@@ -2890,13 +2960,26 @@ export class ResourceVersionService {
         format: resourceVersion.format,
         keyColumns: resourceVersion.lakeKeyColumns,
         settledTypes: resourceVersion.settledTypes,
+        schema: resourceVersion.schema,
         state: resourceVersion.state,
       })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))
       .limit(1)
     if (!row || row.state === 'purged') return false
-    return sameVersionIdentity({ ...row, settledTypes: settledTypesOf(row.settledTypes) }, live)
+    const settledTypes = settledTypesOf(row.settledTypes)
+    if (!sameVersionIdentity({ ...row, settledTypes }, live)) return false
+    // The same types can read the same bytes to other formats and digits — they
+    // come from the values and the version before (Versioning ii-c §8.2) — so a
+    // destination read otherwise than live is a revert with work to do
+    return (
+      !settledTypes ||
+      sameSettledReads(
+        row.schema,
+        await this.liveSchemaOrNull(resourceId),
+        Object.keys(settledTypes)
+      )
+    )
   }
 
   /**

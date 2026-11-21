@@ -5,7 +5,7 @@
 import { z } from 'zod'
 import { VALIDATION_MESSAGES } from './messages'
 import type { ColumnSettings } from '../column-settings'
-import { OVERRIDABLE_COLUMN_ROLES } from '../pipeline-types'
+import { OVERRIDABLE_COLUMN_ROLES, parseSettledType } from '../pipeline-types'
 import { checkUrlSafety } from '../url'
 
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
@@ -265,10 +265,22 @@ export const columnSettingsBodySchema = z
     // Optional where the key is not, so a client that predates roles can still
     // set a key; a PUT replaces the whole setting, so leaving it out clears them
     roles: z.record(z.string().min(1), z.enum(OVERRIDABLE_COLUMN_ROLES)).nullable().optional(),
+    // The same for settled types (Versioning ii-c §8.2): a type, or a date type
+    // with one of the formats it is read with
+    types: z
+      .record(
+        z.string().min(1),
+        z.string().refine((value) => parseSettledType(value) !== null, {
+          message: VALIDATION_MESSAGES.settledTypeUnknown,
+        })
+      )
+      .nullable()
+      .optional(),
   })
-  .transform(({ primaryKey, roles }): ColumnSettings => ({
+  .transform(({ primaryKey, roles, types }): ColumnSettings => ({
     ...(primaryKey?.length && { primaryKey: primaryKey as [string, ...string[]] }),
     ...(roles && Object.keys(roles).length > 0 && { roles }),
+    ...(types && Object.keys(types).length > 0 && { types }),
   }))
 
 export type ColumnSettingsInput = z.infer<typeof columnSettingsBodySchema>

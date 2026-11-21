@@ -3156,6 +3156,126 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     expect(await pipelineJobs()).toBe(1)
   })
 
+  it('settles types beside the key and queues the run that freezes them (ii-c §8.2)', async () => {
+    const resource = await withColumns('types-set-pkg', ['id', 'rate'])
+
+    const res = await setSettings(resource.id, {
+      primaryKey: ['id'],
+      types: { rate: 'decimal', id: 'string' },
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      types: { rate: 'decimal', id: 'string' },
+      queued: true,
+    })
+    expect(await storedSettings(resource.id)).toEqual({
+      primaryKey: ['id'],
+      types: { rate: 'decimal', id: 'string' },
+    })
+    // Not in a version until the run lands
+    const view = await (
+      await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+    ).json()
+    expect(view).toMatchObject({ types: { rate: 'decimal', id: 'string' }, carried: false })
+  })
+
+  it('refuses a type for a column the live version lacks, or one it cannot read', async () => {
+    const resource = await withColumns('types-refuse-pkg', ['id'])
+
+    expect(
+      (await setSettings(resource.id, { primaryKey: null, types: { gone: 'string' } })).status
+    ).toBe(400)
+    expect(
+      (await setSettings(resource.id, { primaryKey: null, types: { id: 'date:%Q' } })).status
+    ).toBe(400)
+    expect(await storedSettings(resource.id)).toEqual({})
+  })
+
+  it('keeps a settled type sent back as it stood, though its column has gone', async () => {
+    // What the next version reports as missing (§8.3); dropping it would hide that
+    const resource = await withColumns('types-kept-pkg', ['id'])
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { types: { gone: 'integer' } } })
+      .where(eq(resourceTable.id, resource.id))
+
+    const res = await setSettings(resource.id, { primaryKey: ['id'], types: { gone: 'integer' } })
+
+    expect(res.status).toBe(200)
+    expect(await storedSettings(resource.id)).toEqual({
+      primaryKey: ['id'],
+      types: { gone: 'integer' },
+    })
+  })
+
+  it('takes a float column as a key once it is settled as decimal, and not the other way', async () => {
+    const resource = await withColumns('types-key-pkg', ['ratio', 'n'], {
+      distinctCount: 2,
+      types: { ratio: 'float', n: 'integer' },
+    })
+
+    expect(
+      (await setSettings(resource.id, { primaryKey: ['ratio'], types: { ratio: 'decimal' } }))
+        .status
+    ).toBe(200)
+    expect(
+      (await setSettings(resource.id, { primaryKey: ['n'], types: { n: 'float' } })).status
+    ).toBe(400)
+  })
+
+  it('lets a standing float key stand while another column is settled', async () => {
+    // A key is asked again only when it, or the type of one of its columns, changes (spec §6.4)
+    const resource = await withColumns('types-standing-pkg', ['ratio', 'n'], {
+      distinctCount: 2,
+      types: { ratio: 'float' },
+    })
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { primaryKey: ['ratio'] } })
+      .where(eq(resourceTable.id, resource.id))
+
+    expect(
+      (await setSettings(resource.id, { primaryKey: ['ratio'], types: { n: 'string' } })).status
+    ).toBe(200)
+  })
+
+  it('refuses to lift a decimal type from a key column inference reads as float', async () => {
+    // The next version reads the column as inference does: a float key
+    const resource = await withColumns('types-lift-pkg', ['ratio'], { distinctCount: 2 })
+    await db
+      .update(resourceVersion)
+      .set({
+        schema: {
+          rowCount: 2,
+          columns: [
+            {
+              name: 'ratio',
+              type: 'decimal',
+              inferredType: 'float',
+              settled: true,
+              nullable: false,
+              nullCount: 0,
+              distinctCount: 2,
+            },
+          ],
+        },
+      })
+      .where(eq(resourceVersion.resourceId, resource.id))
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { primaryKey: ['ratio'], types: { ratio: 'decimal' } } })
+      .where(eq(resourceTable.id, resource.id))
+
+    expect((await setSettings(resource.id, { primaryKey: ['ratio'], types: null })).status).toBe(
+      400
+    )
+    expect(
+      (await setSettings(resource.id, { primaryKey: ['ratio'], types: { ratio: 'decimal' } }))
+        .status
+    ).toBe(200)
+  })
+
   it('clears the overrides a PUT leaves out, keeping the key', async () => {
     const resource = await withColumns('roles-clear-pkg', ['id', '区分'])
     await setSettings(resource.id, { primaryKey: ['id'], roles: { 区分: 'name' } })
@@ -3376,6 +3496,24 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     })
 
     expect(await res.json()).toMatchObject({ checked: true, fault: 'key-float' })
+  })
+
+  it('judges a key column by the type it is settled on, as the apply does', async () => {
+    const resource = await withColumns('key-check-settled-pkg', ['id', 'ratio'], {
+      distinctCount: 2,
+      types: { ratio: 'float' },
+    })
+    const check = async (types: object | null) =>
+      (
+        await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ primaryKey: ['ratio'], types }),
+        })
+      ).json()
+
+    expect(await check({ ratio: 'decimal' })).not.toMatchObject({ fault: 'key-float' })
+    expect(await check(null)).toMatchObject({ fault: 'key-float' })
   })
 
   it('offers the columns the apply will validate against, and where the key stands', async () => {

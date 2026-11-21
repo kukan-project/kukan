@@ -191,7 +191,7 @@ the listing.
 | POST   | `/resources/{id}/revert`                | Stop the job and put the content back on a given version                                                                                          | Org editor |
 | GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over                                                                         | Org editor |
 | POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                                                                                         | Org editor |
-| PUT    | `/resources/{id}/column-settings`       | Settle the primary key and column roles                                                                                                           | Org editor |
+| PUT    | `/resources/{id}/column-settings`       | Settle the primary key, column roles and column types                                                                                             | Org editor |
 | GET    | `/resources/{id}/column-roles`          | The columns' roles, and why the rules decided them                                                                                                | Org editor |
 | PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                                                                                          | Org editor |
 | PUT    | `/resources/{id}`                       | Update resource (full replacement; only `section` is kept when omitted)                                                                           | Org editor |
@@ -620,6 +620,7 @@ data.
 {
   "id": "…",
   "primaryKey": ["order_no"],
+  "types": { "rate": "decimal" },
   "carried": false,
   "schema": {
     "rowCount": 1688,
@@ -632,10 +633,10 @@ data.
   against, so a key chosen from this list cannot be refused for naming a column that is not there
 - `unique` marks the columns that identify a row on their own, so choosing one of those needs no
   check. It says nothing about a combination — a composite key has to be read out of the content
-- `carried` is `false` while the newest standing version has not been read under `primaryKey` yet.
-  That is the ordinary state between settling a key and the rebuild landing, not a fault
+- `carried` is `false` while the newest standing version has not been read under `primaryKey` and
+  `types` yet. That is the ordinary state between settling and the rebuild landing, not a fault
 
-**Check** — `POST /resources/{id}/column-settings/check`, body `{"primaryKey": [...]}`:
+**Check** — `POST /resources/{id}/column-settings/check`, body `{"primaryKey": [...], "types": {...} | null}`:
 
 ```json
 { "id": "…", "checked": true, "primaryKey": ["order_no"], "fault": "key-not-unique" }
@@ -647,21 +648,34 @@ data.
   of the content, so a key can still be settled
 - Answered from the frozen per-column counts for a single-column key, and by reading the
   interpretation's Parquet for a composite one
+- A key column is judged by its type in `types`: send the `types` the `PUT` will send (left out, the
+  inferred types are used)
 
-**Settle** — `PUT /resources/{id}/column-settings`, body `{"primaryKey": [...] | null, "roles": {...} | null}`:
+**Settle** — `PUT /resources/{id}/column-settings`, body `{"primaryKey": [...] | null, "roles": {...} | null, "types": {...} | null}`:
 
 ```json
-{ "id": "…", "primaryKey": ["order_no"], "roles": { "category": "category" }, "queued": true }
+{
+  "id": "…",
+  "primaryKey": ["order_no"],
+  "roles": { "category": "category" },
+  "types": { "rate": "decimal" },
+  "queued": true
+}
 ```
 
 - `roles` maps column names to roles (see [Column roles](#column-roles) below). A `PUT` replaces the whole setting, so **leaving `roles` out clears the overrides**. The current setting is `roles` in the `GET`
+- `types` maps column names to types: `string` / `integer` / `float` / `boolean` / `date` / `timestamp` /
+  `decimal`, a `date` or `timestamp` optionally with its format (`"date:%d/%m/%Y"`). A value that does not
+  convert is left empty and counted as `castFailures` on the column in the version's `schema`. Like
+  `roles`, **leaving `types` out clears them**. Only a column of the live version can be newly settled
 
 - `[]` and `null` both mean "no key"; the body normalizes to one spelling
+- A key column's type is its settled type where it has one: a `float` column settled as `decimal` can be a key
 - Columns are kept **in the order given**, and rows are matched regardless of it: every use of a
   key ands its columns together. The order is part of the recorded key all the same, so the same
   columns in another order count as a different key and issue a version
-- **Settling a key creates a version**, because a version is these bytes read this way and the key
-  is part of the reading. The bytes do not move, so the new version owns a copy of them. `queued`
+- **Settling a key or a type creates a version**, because a version is these bytes read this way and
+  both are part of the reading. The bytes do not move, so the new version owns a copy of them. `queued`
   says the rebuild that issues it is on its way; `null` means none was owed; **`false` means the
   setting was stored and the rebuild could not be queued** — the two are decided separately so that
   **re-sending the same body is the repair**. Nothing sweeps for a resource whose setting and newest

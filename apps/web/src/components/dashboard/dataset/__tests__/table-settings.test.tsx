@@ -474,7 +474,7 @@ describe('TableSettings', () => {
     const body = JSON.parse(
       (mockClientFetch.mock.calls.find(([p]) => p.endsWith('/check'))![1]!.body as string) ?? '{}'
     )
-    expect(body).toEqual({ primaryKey: ['order', 'line'] })
+    expect(body).toEqual({ primaryKey: ['order', 'line'], types: null })
   })
 
   it('says a rebuild is on its way once a key is applied', async () => {
@@ -752,7 +752,8 @@ describe('TableSettings', () => {
 
     it(`applies a text column's role straight away, as it makes no version`, async () => {
       route({
-        get: { carried: true },
+        // Settled types this screen does not edit yet go back as they stand
+        get: { carried: true, types: { order: 'string' } },
         roles: roles([
           {
             name: 'order',
@@ -784,6 +785,7 @@ describe('TableSettings', () => {
       expect(JSON.parse(put[1]!.body as string)).toEqual({
         primaryKey: null,
         roles: { line: 'name' },
+        types: { order: 'string' },
       })
     })
 

@@ -98,6 +98,16 @@ describe('createUserSchema', () => {
 })
 
 describe('columnSettingsBodySchema', () => {
+  it('takes settled types it can read, dropping an empty set, and refuses others', () => {
+    expect(
+      columnSettingsBodySchema.parse({ primaryKey: null, types: { d: 'date:%d/%m/%Y' } })
+    ).toEqual({ types: { d: 'date:%d/%m/%Y' } })
+    expect(columnSettingsBodySchema.parse({ primaryKey: null, types: {} })).toEqual({})
+    expect(
+      columnSettingsBodySchema.safeParse({ primaryKey: null, types: { d: 'money' } }).success
+    ).toBe(false)
+  })
+
   it('normalizes an empty key to no key at all', () => {
     // One spelling reaches storage (spec §6.2), so the transform is what every
     // reader past the boundary is entitled to assume.

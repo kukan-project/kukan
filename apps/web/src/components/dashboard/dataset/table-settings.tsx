@@ -223,6 +223,8 @@ export function TableSettings({
    * resend that repairs a failed enqueue has to go on working.
    */
   const refused = pending && selected.some((name) => unkeyable.has(name))
+  // Sent with the check as with the apply: a key column's settled type is what it is judged by
+  const settledTypes = view?.types ?? null
 
   // The endpoint is built to be re-fired as the selection changes — it takes the request's
   // own signal — so the selection is checked as it is built rather than behind
@@ -248,7 +250,7 @@ export function TableSettings({
         const res = await clientFetch(`/api/v1/resources/${resourceId}/column-settings/check`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ primaryKey: selected }),
+          body: JSON.stringify({ primaryKey: selected, types: settledTypes }),
           signal: controller.signal,
         })
         if (!res.ok) throw new Error(String(res.status))
@@ -268,7 +270,7 @@ export function TableSettings({
     }
     // `reloadKey` too: a draft kept across a run landing was checked against
     // the content before it, and the new content may break it
-  }, [resourceId, pending, refused, selected, reloadKey])
+  }, [resourceId, pending, refused, selected, reloadKey, settledTypes])
 
   /** Append or remove, keeping the order columns were picked in: a composite
    *  key is its columns *in that order* (spec §6.2). */
@@ -311,8 +313,13 @@ export function TableSettings({
       const res = await clientFetch(`/api/v1/resources/${resourceId}/column-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        // Both, always: a PUT replaces the setting, and roles left out are cleared
-        body: JSON.stringify({ primaryKey: selectedKey, roles: roleDraft }),
+        // All of it, always: a PUT replaces the setting, and what is left out is
+        // cleared. The types as they stand until this screen edits them
+        body: JSON.stringify({
+          primaryKey: selectedKey,
+          roles: roleDraft,
+          types: settledTypes,
+        }),
       })
       if (!res.ok) {
         setError(describeProblem(await readProblem(res)) ?? t('applyFailed'))

@@ -239,6 +239,28 @@ export const resourceSchemaSchema = z.object({
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 
+/**
+ * Whether two readings decided the same about the columns `names`: what a
+ * revert asks besides the identity, since the formats and digits come from the
+ * values and the version before, not from the setting (§8.2).
+ */
+export function sameSettledReads(
+  a: ResourceSchema | null,
+  b: ResourceSchema | null,
+  names: string[]
+): boolean {
+  return names.every((name) => {
+    const x = a?.columns.find((c) => c.name === name)
+    const y = b?.columns.find((c) => c.name === name)
+    return (
+      x?.dateFormat === y?.dateFormat &&
+      !!x?.dateFormatUndecided === !!y?.dateFormatUndecided &&
+      x?.decimalPrecision === y?.decimalPrecision &&
+      x?.decimalScale === y?.decimalScale
+    )
+  })
+}
+
 // ── Table profile (ADR-063) ──
 // What a column *is* for search and for a reader, decided by rules on top of
 // its type: a string column of `10,000` and `-` is a number in all but type,

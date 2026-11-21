@@ -170,6 +170,8 @@ export interface ColumnSettingsView {
   primaryKey: string[] | null
   /** The roles a person gave columns in place of the inferred ones (ADR-063 §決定 5), or null. */
   roles: Record<string, OverridableColumnRole> | null
+  /** The types a person settled columns on (Versioning ii-c §8.2), or null. */
+  types: Record<string, string> | null
   /**
    * Whether the live profile reads {@link roles}. A role makes no version, so
    * `carried` cannot say it; false while the rebuild an apply queued has not
@@ -177,7 +179,8 @@ export interface ColumnSettingsView {
    */
   rolesCarried: boolean
   /**
-   * Whether the newest standing version was already read under {@link primaryKey}.
+   * Whether the newest standing version was already read under {@link primaryKey}
+   * and {@link types}.
    *
    * False means a rebuild is owed and the setting has not reached a version
    * yet — which is a state the screen has to be able to name, because the
