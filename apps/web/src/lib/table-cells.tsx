@@ -14,7 +14,7 @@ export const KEY_CELL_CLASS = 'bg-primary/10'
 const PLAIN_DECIMAL = /^-?\d+(\.\d+)?$/
 
 function isNumericType(type: ResourceColumnType | undefined): boolean {
-  return type === 'integer' || type === 'float'
+  return type === 'integer' || type === 'float' || type === 'decimal'
 }
 
 function fractionDigits(text: string): number {
@@ -37,7 +37,8 @@ export function numericLayout<Row>(
   const types = new Map((schemaColumns ?? []).map((c) => [c.name, c.type]))
   const maxFractions = new Map<string, number>()
   for (const col of columns) {
-    if (types.get(col) !== 'float') continue
+    const type = types.get(col)
+    if (type !== 'float' && type !== 'decimal') continue
     let max = 0
     for (const row of rows) {
       const text = textOf(row, col)

@@ -86,6 +86,13 @@ describe('useParquetSchema', () => {
           repetition_type: 'OPTIONAL',
         }, // datetime
         { name: 'f', type: 'BYTE_ARRAY', repetition_type: 'OPTIONAL' }, // string (BYTE_ARRAY, no logical)
+        { name: 'g', type: 'INT64', converted_type: 'DECIMAL', repetition_type: 'OPTIONAL' }, // decimal
+        {
+          name: 'h',
+          type: 'FIXED_LEN_BYTE_ARRAY',
+          logical_type: { type: 'DECIMAL', precision: 38, scale: 2 },
+          repetition_type: 'OPTIONAL',
+        }, // decimal, past 18 digits
       ])
     )
 
@@ -99,6 +106,8 @@ describe('useParquetSchema', () => {
       'date',
       'datetime',
       'string',
+      'decimal',
+      'decimal',
     ])
   })
 

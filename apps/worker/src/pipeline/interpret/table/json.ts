@@ -27,7 +27,7 @@ import { createReadStream } from 'node:fs'
 import type { Readable } from 'node:stream'
 import type { DuckDBConnection } from '@duckdb/node-api'
 import { openDuckdb, sqlIdentifier, sqlLiteral } from '@kukan/lake'
-import type { NoTableReason } from '@kukan/shared'
+import type { NoTableReason, ResourceColumnType } from '@kukan/shared'
 import {
   INTERPRET_MAX_SPILL_BYTES,
   INTERPRET_MEMORY_LIMIT_MB,
@@ -39,11 +39,13 @@ import {
 import {
   describe,
   isOutOfMemory,
+  semanticType,
   writeTable,
   type Column,
   type InterpretedTableFile,
   type ProfileRequest,
 } from './write-table'
+import { settleColumns, withSettledNotes, type SettledReading } from './settled-types'
 
 /** What reading the file produced nothing from. */
 const refused = (reason: NoTableReason): InterpretedTableFile => ({
@@ -164,12 +166,15 @@ const JSON_WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d])
  *   an array, or the whole file when it is one object. The caller refused
  *   files past it already (`version.ts`); here it bounds what the reader
  *   buffers.
+ * @param reading - the settled column types to read with (Versioning ii-c
+ *   §8.3), by the flattened names.
  */
 export async function interpretJson(
   jsonPath: string,
   parquetPath: string,
   profileRequest?: ProfileRequest,
-  maxObjectBytes: number = MAX_JSON_OBJECT_SIZE
+  maxObjectBytes: number = MAX_JSON_OBJECT_SIZE,
+  reading?: SettledReading
 ): Promise<InterpretedTableFile> {
   const { conn, close } = await openDuckdb({
     memoryLimitBytes: INTERPRET_MEMORY_LIMIT_MB * 1_000_000,
@@ -184,12 +189,20 @@ export async function interpretJson(
     let found = await read()
     if ('reason' in found) return refused(found.reason)
 
+    // Settled fields are read as text and cast once the table is built (§8.3).
+    // The reader's text of a number is what a DOUBLE holds of it, all digits
+    // of an integer kept; a JSON number promises no more than that
+    const settledTypes = reading?.types ?? {}
+    const settledLeaves = found.leaves.filter((l) => Object.hasOwn(settledTypes, l.name))
+    const inferred = await inferredTypes(conn, settledLeaves)
+
     // Integers past what a DOUBLE holds, which the reader typed as one: read
     // again with those fields as text, as a CSV's are (ADR-029), or two IDs
     // that differ in the last digit read as one
     const oversized = await oversizeIntegerLeaves(conn, found.leaves)
-    if (oversized.length > 0) {
-      const columns = await retypedColumns(conn, oversized)
+    const asText = [...oversized, ...settledLeaves.filter((l) => l.source)]
+    if (asText.length > 0) {
+      const columns = await retypedColumns(conn, asText)
       await conn.run('DROP VIEW recs')
       await conn.run('DROP TABLE src')
       found = await read(columns)
@@ -199,13 +212,19 @@ export async function interpretJson(
 
     // The records as a flat table, and the reader's tables gone: a view costs
     // nothing to keep, the source would hold the file a second time.
-    await conn.run(
-      `CREATE TABLE t AS SELECT ${leaves.map((l) => `${l.sql} AS ${sqlIdentifier(l.name)}`).join(', ')} FROM recs`
-    )
+    // A settled column the reader cannot retype — a Point's coordinates — is
+    // made text here
+    const select = leaves.map((l) => {
+      const sql = inferred.has(l.name) ? `(${l.sql})::VARCHAR` : l.sql
+      return `${sql} AS ${sqlIdentifier(l.name)}`
+    })
+    await conn.run(`CREATE TABLE t AS SELECT ${select.join(', ')} FROM recs`)
     await conn.run('DROP VIEW recs')
     await conn.run('DROP TABLE src')
 
-    const columns = await describe(conn)
+    let columns = await describe(conn)
+    const typed = await settleColumns(conn, columns, reading, inferred)
+    columns = typed.columns
     const rowCount = await countRows(conn, 't')
     const { described, rowGroupRows, profile } = await writeTable(
       conn,
@@ -218,8 +237,9 @@ export async function interpretJson(
       rowGroupRows,
       ...(profile && { profile }),
       schema: {
-        columns: described,
+        columns: withSettledNotes(described, typed.notes),
         rowCount,
+        ...(typed.missing.length > 0 && { missingSettled: typed.missing }),
         ...(records.geometryTypes && { geometryTypes: records.geometryTypes }),
       },
     }
@@ -272,6 +292,19 @@ async function readRecords(
   if (leaves.length === 0) return { reason: 'no-columns' }
   if (leaves.length > MAX_TABLE_COLUMNS) return { reason: 'too-many-columns' }
   return { records, leaves }
+}
+
+/** What the reader made of each leaf, by name, before any is read again as text. */
+async function inferredTypes(
+  conn: DuckDBConnection,
+  leaves: Leaf[]
+): Promise<Map<string, ResourceColumnType>> {
+  if (leaves.length === 0) return new Map()
+  const reader = await conn.runAndReadAll(
+    `SELECT ${leaves.map((l, i) => `${l.sql} AS c${i}`).join(', ')} FROM recs LIMIT 0`
+  )
+  const types = reader.columnTypes()
+  return new Map(leaves.map((l, i) => [l.name, semanticType(String(types[i]))] as const))
 }
 
 /** Where a DOUBLE stops holding every digit of an integer (as `OVERSIZE_INTEGER` in csv.ts). */

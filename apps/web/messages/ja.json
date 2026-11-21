@@ -811,6 +811,7 @@
     "fieldTypeString": "文字列",
     "fieldTypeInteger": "整数",
     "fieldTypeNumber": "数値",
+    "fieldTypeDecimal": "十進数",
     "fieldTypeBoolean": "真偽値",
     "fieldTypeDate": "日付",
     "fieldTypeDatetime": "日時",

@@ -1279,12 +1279,16 @@ Steps:
    several megabytes kept whole would swell the version's `schema` and every response that returns it
 4. Recount `nullCount`, `distinctCount`, `unique` and `stats` on the converted column
 
-**JSON tables** (ADR-063 decision 10) read a settled column as the `JSON` type through `read_json`'s
-`columns`, turn it into text with `column ->> '$'`, and then apply step 2's `TRY_CAST`. The `JSON` type
-keeps a value as it was written, so a number keeps its digits. Left to inference, `read_json` reads a
-number with many digits as `DOUBLE`, rounding it before `TRY_CAST` (and making a value too large NULL),
-which defeats `decimal`'s purpose of exact values. `columns` has to name every column, so the others
-are listed with their inferred types (the names and types come from a first, inference-only read).
+**JSON tables** (ADR-063 decision 10) read a settled column as `VARCHAR` through `read_json`'s
+`columns`, then apply step 2's `TRY_CAST`. `columns` has to name every column, so the others are
+listed with their inferred types (the names and types come from a first, inference-only read). A
+string value stays as written. A number is parsed by the reader before it is handed over, as
+`VARCHAR` or as the `JSON` type alike, so an integer keeps every digit but a fraction comes back as
+the shortest form a `DOUBLE` holds (`1.50` as `1.5`, `0.00001` as `1e-05`, digits past 17 significant
+ones rounded). A JSON number promises no more precision than a `DOUBLE` for interoperability
+(RFC 8259 §6), so this is accepted. A `decimal`'s digits are decided from that form, and a value that
+came back in exponent form counts as one that did not convert (it is shown, so the column can be
+settled as `float` instead, or the publisher can write the values as strings).
 XLSX goes through CSV (ADR-057), so it follows the CSV steps.
 
 **Step 1 also matters when `string` is the settled type.** Settling an inferred `integer` column as

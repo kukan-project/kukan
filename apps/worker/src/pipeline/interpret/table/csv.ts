@@ -41,6 +41,7 @@ import {
   type InterpretedTableFile,
   type ProfileRequest,
 } from './write-table'
+import { settleColumns, withSettledNotes, type SettledReading } from './settled-types'
 
 /**
  * A DOUBLE column whose values are whole numbers this large came from integer
@@ -120,7 +121,8 @@ export async function interpretCsv(
   csvPath: string,
   parquetPath: string,
   skipRows: number,
-  profileRequest?: ProfileRequest
+  profileRequest?: ProfileRequest,
+  reading?: SettledReading
 ): Promise<InterpretedTableFile> {
   // Somewhere of its own to spill, because the load below is meant to: a
   // spill file shared with the lake instance this process also holds fails
@@ -143,11 +145,21 @@ export async function interpretCsv(
     const lenient = await load(conn, csvPath, skipRows)
     let columns = await describe(conn)
 
+    // Settled columns are read as text, and cast once the table is settled
+    // (§8.3); by the names the first read gave, as `types` wants them. Matched
+    // without the byte order mark, which is not part of the column's name.
+    const settledTypes = reading?.types ?? {}
+    const settledRead = columns.filter((c) => Object.hasOwn(settledTypes, withoutMark(c.name)))
+    const inferred = new Map(
+      settledRead.map((c) => [withoutMark(c.name), semanticType(c.duckType)] as const)
+    )
+
     // Columns the sniffed type does not hold, read again as text
     const asText = new Set([
       ...(await oversizeIntegerColumns(conn, columns)),
       ...(await castRefusedColumns(conn, columns)),
       ...(await signOnlyColumns(conn, csvPath, skipRows, lenient, columns)),
+      ...settledRead.map((c) => c.name),
     ])
     if (asText.size > 0) {
       // The first read's refusals are what this read is for; what counts from
@@ -186,6 +198,11 @@ export async function interpretCsv(
     if (settled.footer > 0) await cutFooter(conn, settled.total, settled.footer)
     const rowCount = settled.total - settled.footer
     const trimmed = settled.footer
+
+    // After the sign-offs and the footer, which read the raw text
+    const typed = await settleColumns(conn, columns, reading, inferred)
+    columns = typed.columns
+
     // Both paths, one number: which of them took a row is this file's business,
     // and a reader comparing the table against the download only wants to know
     // that something is not here. Only the reader's refusals can be located,
@@ -203,8 +220,9 @@ export async function interpretCsv(
       rowGroupRows,
       ...(profile && { profile }),
       schema: {
-        columns: described,
+        columns: withSettledNotes(described, typed.notes),
         rowCount,
+        ...(typed.missing.length > 0 && { missingSettled: typed.missing }),
         ...(droppedRows > 0 && { droppedRows }),
         ...(dropped.lines.length > 0 && {
           droppedLines: dropped.lines,
@@ -262,6 +280,9 @@ async function load(conn: DuckDBConnection, csvPath: string, skipRows: number): 
 
 const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())
 
+/** A column name without the byte order mark a first read can leave on it. */
+const withoutMark = (name: string) => name.replace(/^\uFEFF+/, '')
+
 /**
  * Take the byte-order marks off the first column's name.
  *
@@ -275,7 +296,7 @@ const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())
 async function stripByteOrderMark(conn: DuckDBConnection, columns: Column[]): Promise<Column[]> {
   const [first, ...rest] = columns
   if (!first) return columns
-  const name = first.name.replace(/^\uFEFF+/, '')
+  const name = withoutMark(first.name)
   if (name === first.name || name === '') return columns
   // Taken on DuckDB's terms: identifiers compare case-insensitively even when
   // quoted, and its folding covers ASCII only — `foo` and `FOO` are one name,

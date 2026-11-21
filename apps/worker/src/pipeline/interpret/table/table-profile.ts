@@ -396,10 +396,11 @@ const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())
  * The names to reach each column by, with any column named `rowid` renamed out
  * of the way of DuckDB's own row number, which it would otherwise hide.
  *
- * Renamed in `t` and left so: the profile is the last thing to read the table.
- * Its heading stays the column's name everywhere it is shown.
+ * Renamed in `t` and left so: the profile is the last thing to read the table,
+ * and the settled types rebuild it under the old names. Its heading stays the
+ * column's name everywhere it is shown.
  */
-async function freeRowid(conn: DuckDBConnection, names: string[]): Promise<string[]> {
+export async function freeRowid(conn: DuckDBConnection, names: string[]): Promise<string[]> {
   // DuckDB's terms: identifiers compare case-insensitively, folding ASCII only
   const taken = new Set(names.map(asciiLower))
   const reachable: string[] = []

@@ -70,6 +70,7 @@ const COLUMN_TYPE_KEY: Record<FieldType | ResourceColumnType, string> = {
   date: 'fieldTypeDate',
   datetime: 'fieldTypeDatetime',
   timestamp: 'fieldTypeDatetime',
+  decimal: 'fieldTypeDecimal',
 }
 
 /** @see COLUMN_TYPE_KEY */

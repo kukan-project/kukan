@@ -66,7 +66,8 @@ export function semanticType(duckType: string): ResourceColumnType {
   if (/^(BIGINT|INTEGER|SMALLINT|TINYINT|UBIGINT|UINTEGER|USMALLINT|UTINYINT|HUGEINT)$/.test(t)) {
     return 'integer'
   }
-  if (/^(DOUBLE|FLOAT|REAL|DECIMAL)/.test(t)) return 'float'
+  if (t.startsWith('DECIMAL')) return 'decimal'
+  if (/^(DOUBLE|FLOAT|REAL)/.test(t)) return 'float'
   if (t === 'BOOLEAN') return 'boolean'
   if (t === 'DATE') return 'date'
   if (t.startsWith('TIMESTAMP')) return 'timestamp'
@@ -162,7 +163,7 @@ async function describeColumns(
     (i) => {
       const c = columns[i]
       const col = sqlIdentifier(c.name)
-      const numeric = ['integer', 'float'].includes(semanticType(c.duckType))
+      const numeric = ['integer', 'float', 'decimal'].includes(semanticType(c.duckType))
       return [
         `count(*) FILTER (WHERE ${col} IS NULL) AS c${i}_null`,
         `count(DISTINCT ${col}) AS c${i}_distinct`,
@@ -179,12 +180,13 @@ async function describeColumns(
     const distinctCount = Number(row[`c${i}_distinct`])
     const min = row[`c${i}_min`]
     const max = row[`c${i}_max`]
-    // Integer bounds stay decimal strings: INT64 runs past what a JS number
-    // holds exactly, and the point of typing the column was to keep its digits.
+    // Integer and decimal bounds stay digit strings: INT64 and DECIMAL(38, s)
+    // run past what a JS number holds exactly, and the point of typing the
+    // column was to keep its digits.
     const stats: ColumnStats | undefined =
       min == null || max == null
         ? undefined
-        : type === 'integer'
+        : type === 'integer' || type === 'decimal'
           ? { min: String(min), max: String(max) }
           : { min: Number(min), max: Number(max) }
     return {

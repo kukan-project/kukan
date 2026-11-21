@@ -811,6 +811,7 @@
     "fieldTypeString": "String",
     "fieldTypeInteger": "Integer",
     "fieldTypeNumber": "Number",
+    "fieldTypeDecimal": "Decimal",
     "fieldTypeBoolean": "Boolean",
     "fieldTypeDate": "Date",
     "fieldTypeDatetime": "Datetime",

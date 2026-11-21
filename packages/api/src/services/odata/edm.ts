@@ -59,6 +59,7 @@ const EDM_TYPE: Record<ResourceColumnType, string> = {
   string: 'Edm.String',
   date: 'Edm.Date',
   timestamp: 'Edm.DateTimeOffset',
+  decimal: 'Edm.Decimal',
 }
 
 /** The model a resource's feed is served from — names resolved, types mapped. */
@@ -229,7 +230,14 @@ export function buildMetadataXml(model: EdmModel): string {
     // holds no missing value in this version: `designatedKey` refuses a column
     // whose `nullCount` is not zero.
     const nullable = model.keyNames.includes(col.name) ? false : col.nullable
-    return `        <Property Name="${escapeXmlAttr(col.name)}" Type="${type}" Nullable="${nullable}"/>`
+    // Without the facets a client reads Scale 0, a decimal with no fraction
+    const facets =
+      col.type === 'decimal'
+        ? col.decimalPrecision && col.decimalScale !== undefined
+          ? ` Precision="${col.decimalPrecision}" Scale="${col.decimalScale}"`
+          : ' Scale="variable"'
+        : ''
+    return `        <Property Name="${escapeXmlAttr(col.name)}" Type="${type}" Nullable="${nullable}"${facets}/>`
   })
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
@@ -311,6 +319,10 @@ export function toEdmValue(value: unknown, type: ResourceColumnType): unknown {
       return toEdmNumber(value)
     case 'float':
       return toEdmNumber(value)
+    case 'decimal':
+      // Its digits as they are: a decimal is settled to be exact, and a JS
+      // number would round it the way the column was settled to avoid
+      return rawJSON(String(value))
     case 'boolean':
       return typeof value === 'boolean' ? value : Boolean(value)
     case 'timestamp': {

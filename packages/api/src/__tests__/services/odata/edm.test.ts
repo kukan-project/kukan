@@ -171,6 +171,14 @@ describe('buildMetadataXml', () => {
         { name: 'flag', type: 'boolean', nullable: true, nullCount: 0 },
         { name: 'day', type: 'date', nullable: true, nullCount: 0 },
         { name: 'at', type: 'timestamp', nullable: true, nullCount: 0 },
+        {
+          name: 'rate',
+          type: 'decimal',
+          nullable: true,
+          nullCount: 0,
+          decimalPrecision: 5,
+          decimalScale: 3,
+        },
       ],
       rowCount: 10,
     }
@@ -182,6 +190,9 @@ describe('buildMetadataXml', () => {
     expect(xml).toContain('<Property Name="flag" Type="Edm.Boolean" Nullable="true"/>')
     expect(xml).toContain('<Property Name="day" Type="Edm.Date" Nullable="true"/>')
     expect(xml).toContain('<Property Name="at" Type="Edm.DateTimeOffset" Nullable="true"/>')
+    expect(xml).toContain(
+      '<Property Name="rate" Type="Edm.Decimal" Nullable="true" Precision="5" Scale="3"/>'
+    )
     expect(xml).toContain('<EntitySet Name="Rows" EntityType="KUKAN.Row"/>')
   })
 })
@@ -194,6 +205,11 @@ describe('toEdmValue', () => {
     // DECIMAL comes over as a value object, which would serialize as {}
     expect(toEdmValue({ toString: () => '1.500' }, 'float')).toBe(1.5)
     expect(toEdmValue(1.5, 'float')).toBe(1.5)
+  })
+
+  it('writes a settled decimal with its digits, not as a double', () => {
+    const value = toEdmValue({ toString: () => '12345678901234.500' }, 'decimal')
+    expect(JSON.stringify({ v: value })).toBe('{"v":12345678901234.500}')
   })
 
   it('writes a naive timestamp as UTC, and leaves one that has a zone', () => {

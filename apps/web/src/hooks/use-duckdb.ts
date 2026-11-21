@@ -86,6 +86,17 @@ async function getDB(): Promise<AsyncDuckDB> {
 /** Arrow type ids for the temporal columns (apache-arrow `Type.Date` / `Type.Timestamp`). */
 const ARROW_DATE = 8
 const ARROW_TIMESTAMP = 10
+/** And for DECIMAL, whose value prints as its unscaled integer (`1.5` as `15`). */
+const ARROW_DECIMAL = 7
+
+/** A DECIMAL's unscaled digits as the number they spell, trailing fraction zeros dropped as the hyparquet preview shows them. */
+export function decimalText(unscaled: string, scale: number): string {
+  if (scale === 0) return unscaled
+  const negative = unscaled.startsWith('-')
+  const digits = (negative ? unscaled.slice(1) : unscaled).padStart(scale + 1, '0')
+  const fraction = digits.slice(-scale).replace(/0+$/, '')
+  return `${negative ? '-' : ''}${digits.slice(0, -scale)}${fraction ? `.${fraction}` : ''}`
+}
 
 /**
  * Arrow rows as display strings. Shares `formatCell` with the hyparquet preview:
@@ -106,15 +117,23 @@ function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string
       .filter((f) => f.typeId === ARROW_DATE || f.typeId === ARROW_TIMESTAMP)
       .map((f) => [f.name, f.typeId === ARROW_DATE ? ('date' as const) : ('datetime' as const)])
   )
+  const scales = new Map(
+    result.schema.fields
+      .filter((f) => f.typeId === ARROW_DECIMAL)
+      .map((f) => [f.name, (f.type as unknown as { scale: number }).scale])
+  )
   return result.toArray().map((row: Record<string, unknown>) => {
     const obj: Record<string, string> = {}
     for (const col of columns) {
       const value = row[col]
       const type = temporal.get(col)
+      const scale = scales.get(col)
       obj[col] =
-        type && typeof value === 'number'
-          ? formatCell(new Date(value), type)
-          : formatCell(value, type)
+        scale !== undefined && value != null
+          ? decimalText(String(value), scale)
+          : type && typeof value === 'number'
+            ? formatCell(new Date(value), type)
+            : formatCell(value, type)
     }
     return obj
   })

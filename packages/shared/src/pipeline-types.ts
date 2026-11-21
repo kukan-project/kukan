@@ -43,10 +43,12 @@ export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
 // mirror the inferred types from the Interpret step.
 
 /**
- * Inferred column type. `date` and `timestamp` arrived with DuckDB's sniffer
+ * A column's type. `date` and `timestamp` arrived with DuckDB's sniffer
  * (ADR-046): the hand-written inference deliberately left dates as strings
  * because the format was ambiguous, which is a judgement the sniffer makes for
- * us. Appending to the set keeps schemas written before then valid.
+ * us. `decimal` arrived with settled types (Versioning ii-c §8.1): inference
+ * never produces it, only a person settling a column does. Appending to the set
+ * keeps schemas written before then valid.
  */
 export const RESOURCE_COLUMN_TYPES = [
   'integer',
@@ -55,8 +57,53 @@ export const RESOURCE_COLUMN_TYPES = [
   'string',
   'date',
   'timestamp',
+  'decimal',
 ] as const
 export type ResourceColumnType = (typeof RESOURCE_COLUMN_TYPES)[number]
+
+/**
+ * The date formats a settled `date` column is read with, tried in this order
+ * when the setting names none (§8.3): the ones DuckDB's own sniffer reads —
+ * year, day or month first, separated by `-`, `/`, `.` or a space, the year in
+ * four digits or two. A column the sniffer read as dates then reads as dates
+ * once settled. A setting may name one of these (`"date:%d/%m/%Y"`) to settle
+ * the format too.
+ */
+export const SETTLED_DATE_FORMATS: readonly string[] = ['%Y', '%y'].flatMap((year) =>
+  [`${year}-%m-%d`, `%d-%m-${year}`, `%m-%d-${year}`].flatMap((order) =>
+    ['-', '/', '.', ' '].map((separator) => order.replaceAll('-', separator))
+  )
+)
+
+/**
+ * ISO 8601 date and time, `T` or a space between, seconds and their fraction
+ * optional, with or without an offset (`Z`, `+09:00`) — no one `strptime`
+ * pattern reads all of these, so it is a format of its own.
+ */
+export const ISO_8601_TIMESTAMP = 'iso8601'
+
+/** The same for `timestamp`: ISO 8601, then each date format with a time of day after it. */
+export const SETTLED_TIMESTAMP_FORMATS: readonly string[] = [
+  ISO_8601_TIMESTAMP,
+  ...SETTLED_DATE_FORMATS.flatMap((date) => [`${date} %H:%M:%S`, `${date} %H:%M`]),
+]
+
+/** A settled type as stored: the type, and for a date or timestamp an optional format after `:`. */
+export interface SettledTypeSpec {
+  type: ResourceColumnType
+  format?: string
+}
+
+/** Read a stored settled type (`"decimal"`, `"date:%d/%m/%Y"`), or null where it is not one. */
+export function parseSettledType(value: string): SettledTypeSpec | null {
+  const [type, ...rest] = value.split(':')
+  const format = rest.length > 0 ? rest.join(':') : undefined
+  if (!(RESOURCE_COLUMN_TYPES as readonly string[]).includes(type)) return null
+  if (format === undefined) return { type: type as ResourceColumnType }
+  const formats: readonly string[] =
+    type === 'date' ? SETTLED_DATE_FORMATS : type === 'timestamp' ? SETTLED_TIMESTAMP_FORMATS : []
+  return formats.includes(format) ? { type: type as ResourceColumnType, format } : null
+}
 
 /**
  * Min/max bounds for a numeric column. Present iff the column `type` is
@@ -95,6 +142,27 @@ export const resourceColumnSchema = z.object({
   unique: z.boolean().optional(),
   /** Min/max bounds for numeric columns (omitted for boolean/string/all-null). */
   stats: columnStatsSchema.optional(),
+  /** Read on a type a person settled (Versioning ii-c §6.3), rather than the inferred one. */
+  settled: z.literal(true).optional(),
+  /** What inference made of the column, where a settled type replaced it. */
+  inferredType: z.enum(RESOURCE_COLUMN_TYPES).optional(),
+  /** Values that were not empty and did not convert to the settled type (§8.3); left empty. */
+  castFailures: z.number().int().positive().optional(),
+  /** The first of them: data row (1-based) and the value, cut at 100 characters. */
+  castFailureSamples: z
+    .array(z.object({ row: z.number().int().positive(), value: z.string() }))
+    .optional(),
+  /** The format a settled `date`/`timestamp` column was read with. */
+  dateFormat: z.string().optional(),
+  /**
+   * A settled `date`/`timestamp` column whose formats tie on different dates,
+   * with no previous format to break the tie: read as text until a person picks
+   * one (§8.3).
+   */
+  dateFormatUndecided: z.literal(true).optional(),
+  /** The digits of a settled `decimal` column, decided from its values (§8.3). */
+  decimalPrecision: z.number().int().min(1).max(38).optional(),
+  decimalScale: z.number().int().min(0).max(38).optional(),
 })
 export type ResourceColumn = z.infer<typeof resourceColumnSchema>
 
@@ -166,6 +234,8 @@ export const resourceSchemaSchema = z.object({
    * neither search nor a column has a use for. Absent on every other table.
    */
   geometryTypes: z.array(z.string()).optional(),
+  /** Settled columns this version's file does not have (Versioning ii-c §8.3). */
+  missingSettled: z.array(z.string()).optional(),
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 

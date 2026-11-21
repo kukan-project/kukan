@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { FileMetaData, SchemaElement } from 'hyparquet'
 
 /** Semantic field type, decoupled from the Parquet physical/logical type. */
-export type FieldType = 'string' | 'integer' | 'number' | 'boolean' | 'date' | 'datetime'
+export type FieldType =
+  'string' | 'integer' | 'number' | 'decimal' | 'boolean' | 'date' | 'datetime'
 
 export interface ParquetField {
   name: string
@@ -40,6 +41,8 @@ function logicalTypeLabel(el: SchemaElement): string | null {
  */
 function mapFieldType(el: SchemaElement): FieldType {
   const conv = el.converted_type
+  // Before the physical type: DuckDB writes a DECIMAL as integers or bytes
+  if (conv === 'DECIMAL' || el.logical_type?.type === 'DECIMAL') return 'decimal'
   if (conv === 'DATE') return 'date'
   if (conv === 'TIMESTAMP_MILLIS' || conv === 'TIMESTAMP_MICROS') return 'datetime'
   if (conv === 'UTF8' || conv === 'JSON' || conv === 'BSON' || conv === 'ENUM') return 'string'
