@@ -168,7 +168,7 @@ us-east-1 にデプロイ。
 | KukanSharedStack       | 環境の `region`（既定 ap-northeast-1） | マルチサイト（ADR-041）: 全サイト共有の箱（VPC・SG・DB クラスター・OpenSearch・ECS クラスター・ALB 等）      |
 | KukanSiteStack\<Name\> | 環境の `region`（既定 ap-northeast-1） | マルチサイト: サイトごとの DB・バケット・web / worker・ALB のリスナールール・CloudFront 等（サイトの数だけ） |
 | KukanGlobalStack       | us-east-1                              | ACM 証明書 + WAF WebACL（CloudFront 用）                                                                     |
-| KukanPipeline          | ap-northeast-1（固定）                 | CDK Pipelines（pipeline モード、Stage の外のトップレベル。ADR-030）                                          |
+| KukanPipeline-\<Env\>  | ap-northeast-1（固定）                 | CDK Pipelines（pipeline モード、環境ごとに 1 つ。Stage の外のトップレベル。ADR-030 / ADR-074）               |
 
 - KukanGlobalStack は証明書か WAF を CDK が作る必要があるとき（ドメイン名指定時または WAF 有効時で、
   ARN を渡していないとき）だけ作られる
@@ -223,10 +223,11 @@ infra/
 **各エントリ = 1 環境**。pipeline モードでは env ごとに 1 パイプラインが作られ、それぞれの `deployBranch` でデプロイされる。example は dev / prd の 2 つを定義しているため、**単一環境で運用する場合は不要なエントリ（例: `dev`）を削除する**（残すと 2 環境分デプロイされる）。なお `environments.ts` から env を削除しても、既にデプロイ済みのスタックは自動削除されない（手動で `cdk destroy` が必要）。
 デプロイ時は `-c env=<name>` でどの環境かを選ぶ。同一アカウント・別アカウントのどちらも
 このファイルの記述だけで切り替わる（`account` に全 env 同じ ID＝同一、env ごとに別 ID＝別アカウント）。
-パイプライン自身が建つアカウントはデプロイ先とは独立で、`cdk deploy KukanPipeline` を実行した
-ときの認証情報（`CDK_DEFAULT_ACCOUNT`）で決まる。トップレベルの `pipelineAccount`（省略可）は
-その配置先を*選ぶ*ものではなく、想定アカウントを宣言して認証情報との一致を synth 時に
-検証するガードである（ADR-031、後述「セットアップ手順」）。
+パイプライン自身が建つアカウントはデプロイ先とは独立に、環境ごとに選べる（ADR-074）。
+そのパイプラインが使う接続（`connectionArn`。トップレベル、または環境のエントリで上書き）の
+アカウントがパイプラインのアカウントになる。synth は認証情報（`CDK_DEFAULT_ACCOUNT`）のアカウントに
+あるパイプラインだけを作り、1 つも無ければ止まる。トップレベルの `pipelineAccount` は不要になった
+（書いてあれば、トップレベルの接続のアカウントと食い違ったときに synth が止まる。後述「セットアップ手順」）。
 
 ```bash
 cp infra/config/environments.example.ts infra/config/environments.ts
@@ -867,7 +868,7 @@ Worker 起動時にマイグレーションを自動実行:
 
 > [!IMPORTANT]
 > **2つのモードは同じ CloudFormation スタック名を対象にするが、合成パスが異なる**。standalone は
-> Stage を App 直下（`Dev/KukanStack/...`）に、pipeline は `KukanPipeline` 配下（`KukanPipeline/Dev/KukanStack/...`）に
+> Stage を App 直下（`Dev/KukanStack/...`）に、pipeline は App 直下の Construct `KukanPipeline` の配下（`KukanPipeline/Dev/KukanStack/...`）に
 > 置くため、**パスから生成される物理リソース名が変わる**。論理 ID はスタック内相対なので一致するが、
 > 物理名が replacement-required なリソース（例: Application Auto Scaling の ScalingPolicy）は
 > **置換**され、ECS サービス名が固定のため同一メトリクスに新旧2ポリシーが並び
@@ -945,7 +946,8 @@ GitHub App の認可はブラウザでの操作が必須のため、AWS コン�
    （`All repositories` は付与しすぎ。最小権限の原則）
 5. AWS に戻り **Connect** → 接続ステータスが **Available** になる
 6. 接続の詳細ページで **ARN をコピー**（`arn:aws:codeconnections:<region>:<account>:connection/...`）
-7. その ARN を `infra/config/environments.ts` の **トップレベル `connectionArn`**（env エントリ内ではなく、全 env 共通の export）に設定
+7. その ARN を `infra/config/environments.ts` の **トップレベル `connectionArn`**（全 env 共通の export）に設定。
+   パイプラインを別のアカウントに置く環境は、そのアカウントで作った接続を環境のエントリの `connectionArn` に書く（ADR-074）
 
 > [!NOTE]
 > 旧名称は「AWS CodeStar Connections」。コンソールやドキュメントで両表記が混在する場合がある（同じ機能）。
@@ -963,9 +965,9 @@ GitHub App の認可も接続単位（IAM ユーザー単位ではない）。�
 
 重要: 接続を使うのは**パイプライン（source アクション）**であり、**パイプラインが動くアカウントにだけ**
 接続があればよい。デプロイ先（Stage）が別アカウントでも、そこへは cross-account ロールで配るため
-デプロイ先アカウントに接続は不要。本構成（`KukanPipelineStack` を1アカウントに置き、env ごとに
-パイプラインを作る）では、**接続は1つ**作って `connectionArn` を全 env で共有すれば足りる
-（パイプライン自体を各アカウントに分割する場合のみ、アカウントごとに接続が必要）。
+デプロイ先アカウントに接続は不要。全環境のパイプラインを 1 アカウントに置くなら、**接続は1つ**作って
+`connectionArn` を全 env で共有すれば足りる。パイプラインをアカウントごとに分けるなら、そのアカウントごとに
+接続を作り、環境のエントリの `connectionArn` に書く。接続のアカウントがパイプラインのアカウントになる（ADR-074）。
 
 ### セットアップ手順（初回のみ手動）
 
@@ -974,8 +976,8 @@ GitHub App の認可も接続単位（IAM ユーザー単位ではない）。�
 cp infra/config/environments.example.ts infra/config/environments.ts
 #    environments.ts を編集（env ごとに githubRepo / deployBranch / scale / domain 等。
 #    connectionArn は手順2で取得した値を設定）
-#    パイプラインをデプロイ先と別アカウントに置くなら pipelineAccount にその ID を設定
-#    （配置先は手順6の認証情報で決まる。pipelineAccount はその一致を検証する誤デプロイ防止ガード）
+#    パイプラインは connectionArn の接続のアカウントに建つ。環境ごとに分けるなら、環境のエントリに
+#    そのアカウントの connectionArn を書く（ADR-074）
 
 # 2. CodeConnections 接続を作成（上記「コンソール操作」を参照）
 #    → Connection ARN を environments.ts の connectionArn に設定
@@ -1009,13 +1011,17 @@ npx cdk deploy -c env=prd Prd/KukanGlobalStack
 
 # 5. environments.ts と cdk.context.json をコミット（フォークがコミット。CodeBuild の synth が読む）
 #    手順4で認証情報を切り替えた場合は、ここでパイプラインアカウントに戻す（-c env なしの synth は
-#    pipeline モードで走るため、pipelineAccount ガードが認証情報と突き合わせて落ちる）
-#    cdk synth で context lookup（AZ・CloudFront プレフィックスリスト）を解決して cdk.context.json を生成
+#    pipeline モードで走り、認証情報のアカウントにパイプラインが 1 つも無ければ落ちる）
+#    cdk synth で context lookup（AZ・CloudFront プレフィックスリスト）を解決して cdk.context.json を生成。
+#    synth は認証情報のアカウントのパイプラインの Stage しか作らないので、パイプラインをアカウントごとに
+#    分けたら、パイプラインのアカウントごとに認証情報を切り替えて synth する
 npx cdk synth >/dev/null
 git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
 
-# 6. パイプラインスタックを初回手動デプロイ（パイプラインアカウントの認証情報で実行する）
-npx cdk deploy KukanPipeline
+# 6. パイプラインのスタックを環境ごとに初回手動デプロイ（そのパイプラインのアカウントの認証情報で、
+#    その環境のブランチをチェックアウトして実行する。スタックは環境ごとに 1 つ、ADR-074）
+npx cdk deploy KukanPipeline-Dev
+npx cdk deploy KukanPipeline-Prd
 
 # 7. 以降は対象ブランチへの push で自動デプロイ（パイプライン定義の変更も自己変異で反映）
 ```
@@ -1026,12 +1032,30 @@ npx cdk deploy KukanPipeline
 それ以上に止めたいときは、CodePipeline のステージ間の遷移を無効にする（コンソールの操作。通知は出ない）か、
 フォークでパイプラインに `ManualApprovalStep` を足す。
 
-**パイプラインを置くアカウント**: 全環境のパイプラインが 1 つのスタック（`KukanPipeline`）に入るので、置き場所は
-1 アカウントになる。dev と prd が同じアカウントなら、そこに置けばよい。アカウントを分けるなら
-**CI/CD 専用アカウントを推奨**する（必須ではない）。prd のアカウントに置くと、dev 用パイプラインの synth
-（未リリースの `develop` のコード）が本番アカウントの CodeBuild で走る。dev のアカウントに置くと、dev が prd への
-デプロイ権限の起点になる。専用アカウントではパイプラインごとに成果物の KMS 鍵（`crossAccountKeys`）が付く
-（1 本あたり月 1 ドル程度）。`pipelineAccount` を設定しておくと、別アカウントの認証情報での誤デプロイを synth で止められる。
+**パイプラインを置くアカウント**: パイプラインのスタックは環境ごとに 1 つ（`KukanPipeline-<Env>`）で、
+それぞれの self-mutation は自分のスタックだけを更新する（ADR-074）。dev と prd が同じアカウントなら、
+そこに置けばよい。アカウントを分けるなら、**各環境のパイプラインをその環境のアカウントに置く**か
+（環境のエントリに、そのアカウントで作った接続の `connectionArn`）、**CI/CD 専用アカウントにまとめる**
+（トップレベルの `connectionArn` を専用アカウントの接続に）。全環境を prd のアカウントにまとめると、dev 用パイプラインの synth
+（未リリースの `develop` のコード）が本番アカウントの CodeBuild で走り、dev のアカウントにまとめると、
+dev が prd へのデプロイ権限の起点になるので避ける。デプロイ先と違うアカウントのパイプラインには
+成果物の KMS 鍵（`crossAccountKeys`）が付く（1 本あたり月 1 ドル程度）。
+
+スタックを分けて防げるのは、ほかの環境のパイプラインの**意図しない**上書きまでである。同じアカウントの
+パイプラインは同じ bootstrap のデプロイ用ロールを使うので、develop に push できる人が self-mutation の
+コマンドを変えれば、prd のパイプラインのスタックも書き換えられる。CI/CD 専用アカウントに全環境を
+まとめた場合も同じである。これを断つには、**prd のパイプラインを dev のパイプラインと共有しないアカウント**
+（prd のアカウント、または prd 専用の CI/CD アカウント）に置く。
+
+**パイプラインを別のアカウントへ移す**（例：prd のパイプラインをアカウント A から B へ）:
+
+1. B でコンソールから CodeConnections の接続を作り（GitHub App を承認）、B を bootstrap する
+   （デプロイ先が B 以外なら、デプロイ先は B を `--trust` して bootstrap し直す）
+2. `environments.ts` の prd のエントリに B の接続の `connectionArn` を書いてコミットする
+3. A の認証情報で古いパイプラインのスタックを削除する（A の synth は prd を外すので自動では消えない）:
+   `aws cloudformation delete-stack --stack-name KukanPipeline-Prd`
+4. B の認証情報で、prd のブランチから `npx cdk deploy KukanPipeline-Prd`。`cdk.context.json` を作る
+   synth も B の認証情報で一度行う。以降の更新は、push を受けたパイプラインが B の中で self-mutation する
 
 > [!IMPORTANT]
 > **CDK Pipelines は cross-region 参照と非互換。** カスタムドメイン/WAF（us-east-1）を使う env は、
@@ -1056,6 +1080,37 @@ npx cdk deploy KukanPipeline
 > [!IMPORTANT]
 > CodeConnections の GitHub App 承認はコンソールでの一度きりの手動操作で、完全な IaC 化はできない（Connection ARN のみコードで参照）。
 
+### 環境ごとのパイプラインのスタックへの移行（ADR-074）
+
+パイプラインのスタックが 1 つ（`KukanPipeline`）だった版からデプロイしているフォーク向け。
+パイプライン名 `kukan-<env>` と CodeBuild のプロジェクト名 `kukan-<env>-selfupdate` は固定の物理名で、
+古いスタックと新しいスタックに同時には存在できないため、古いスタックを先に削除する。
+アプリのスタック（`<Env>-KukanStack`、`<Env>-KukanSharedStack` など）は別の CloudFormation スタックなので
+削除されず、名前もテンプレートも変わらない。
+
+新しいコードが届いたブランチに push すると、古いパイプラインは synth か self-mutation で失敗し、
+デプロイには進まない。移行が済むまでその環境は自動デプロイされない。急ぐときは修飾パスで手動デプロイする
+（`npx cdk deploy 'KukanPipeline/<Env>/<Stack>'`、`-c env` なし）。
+
+```bash
+# 1. 古いスタックを削除（パイプラインのアカウントの認証情報で。新しいコードの app には
+#    KukanPipeline スタックが無いので cdk destroy では選べない）
+aws cloudformation delete-stack --stack-name KukanPipeline
+aws cloudformation wait stack-delete-complete --stack-name KukanPipeline
+#    パイプラインと違うリージョンの環境があれば、そのリージョンのサポートスタックも削除
+aws cloudformation delete-stack --stack-name KukanPipeline-support-<region> --region <region>
+
+# 2. 環境ごとに、新しいコードを含むその環境のブランチで、パイプラインのスタックをデプロイ
+#    （作成直後にブランチの先頭で一度走る。新しいコードがまだ届いていないブランチは、届いてから）
+git switch develop && cd infra && npx cdk deploy KukanPipeline-Dev
+```
+
+3. `deployNotification` の環境：Slack の webhook を入れたシークレットは古いスタックと一緒に削除される。
+   新しいスタックの出力に出るシークレットに URL を貼り直す（後述「デプロイ通知（Slack）」）
+4. 片付け：古いスタックの成果物のバケットと、サポートスタックのレプリケーションのバケット、通知の Lambda の
+   ロググループは残る（DeletionPolicy が Retain）。中身を空にしてから手で削除する。別アカウントへ配る
+   パイプラインの KMS 鍵は、CloudFormation が削除を予約する
+
 ### デプロイ通知（Slack）
 
 環境に `deployNotification: true` を置くと、その環境のパイプライン実行の成否が Slack に流れる。
@@ -1071,7 +1126,7 @@ npx cdk deploy KukanPipeline
 3. 発行された `https://hooks.slack.com/services/...` をコピーする
 
 **格納先**: 箱はスタックが作る。`deployNotification: true` でデプロイすると、シークレットの ARN が
-パイプラインスタックの出力（`Notify<環境名>SlackWebhookSecretArn`）に出るので、そこへ一度貼る:
+パイプラインのスタック（`KukanPipeline-<Env>`）の出力（`NotifySlackWebhookSecretArn`）に出るので、そこへ一度貼る:
 
 ```bash
 aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 'https://hooks.slack.com/services/...'

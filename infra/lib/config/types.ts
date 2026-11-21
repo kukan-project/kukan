@@ -307,6 +307,12 @@ export interface EnvironmentConfig {
   githubRepo?: string
   /** Branch that deploys this environment (ADR-030). */
   deployBranch?: string
+  /**
+   * CodeConnections connection ARN for this environment's pipeline, over the
+   * top-level `connectionArn` (ADR-074). Its account is where the pipeline is
+   * built: a pipeline reads only its own account's connections. Omit → the top-level value.
+   */
+  connectionArn?: string
   /** Fine-grained overrides of the scale preset. */
   overrides?: DeepPartial<ScaleComputed>
   /**

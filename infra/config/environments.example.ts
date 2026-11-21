@@ -7,13 +7,16 @@
  *
  * Forks commit their `environments.ts`; upstream does not — this example is the
  * fallback. On a fresh upstream checkout: `pnpm typecheck` works unconditionally;
- * `cdk synth` additionally needs AWS credentials (to resolve context lookups) or a
- * committed `cdk.context.json`.
+ * a standalone `cdk synth -c env=<name>` additionally needs AWS credentials (to resolve
+ * context lookups) or a committed `cdk.context.json`. A pipeline-mode synth (no `-c env`)
+ * also needs your own `connectionArn`: the placeholder's account (000000000000) is where
+ * the pipelines would be, so it stops with a pipeline account mismatch (ADR-074).
  *
  * Same-account vs separate-account is chosen purely here:
  *   - the same `account` on every env → same-account operation
  *   - a different `account` per env    → separate-account operation
- *   - `pipelineAccount` (below)        → asserts which account the pipelines themselves land in
+ *   - `connectionArn` (below)          → its account is where the pipelines themselves are
+ *                                        built (per env too, ADR-074)
  * Separate accounts are RECOMMENDED for prd (isolation, blast radius, billing,
  * IAM boundary — ADR-031). Same-account is fully supported for evaluation / small
  * / cost-conscious setups, with one caveat: deploying the same commit to two envs
@@ -65,18 +68,17 @@ import type { EnvironmentConfig } from '../lib/config.js'
 /**
  * CodeConnections connection ARN (ADR-030).
  * Create the connection once in the AWS console (approve the GitHub App "AWS Connector")
- * and paste its ARN here.
+ * and paste its ARN here. An environment whose pipeline is in another account sets
+ * its own `connectionArn` (a connection belongs to one account, ADR-074).
  */
 export const connectionArn =
   'arn:aws:codeconnections:ap-northeast-1:000000000000:connection/REPLACE_ME'
 
-/**
- * The account the pipelines are expected to be built in (ADR-031). Which account they
- * actually land in is decided by the credentials running `cdk deploy KukanPipeline`;
- * declaring it here makes a mismatch fail at synth. Setup for pipelines in their own
- * account: docs/specs/en/phase4-deploy.md.
- */
-// export const pipelineAccount = '000000000000'
+// No `pipelineAccount` export any more (ADR-074): each environment has a pipeline stack
+// of its own (`KukanPipeline-<Env>`), built in the account of the connection it reads, and
+// a synth builds only the pipelines in the active credentials' account. One still exported
+// from before is checked against the top-level connection's account. Setup for pipelines
+// in their own account: docs/specs/en/phase4-deploy.md.
 
 // IMPORTANT: every entry here becomes its own environment — in pipeline mode each one
 // gets its own CodePipeline and is deployed (on its `deployBranch`). Keep only the
@@ -184,6 +186,8 @@ export const environments = {
     // --- CI/CD (pipeline mode) ---
     githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)
     deployBranch: 'develop', // branch that deploys this env
+    // connectionArn: 'arn:aws:codeconnections:...', // this env's pipeline in that connection's
+    //                                                  account, over the top level's (ADR-074)
     // Post deploy outcomes (success and failure) to Slack — the stack creates the
     // secret, the ARN is a stack output, paste the webhook URL into it once:
     // deployNotification: true,

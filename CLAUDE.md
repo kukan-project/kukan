@@ -257,6 +257,7 @@ pnpm format        # Prettier フォーマット
 - CSP を nonce なしで入れ、HSTS を TLS 終端で出す（`script-src 'unsafe-inline'`：App Router のインラインスクリプトはハッシュできず nonce は CDN の HTML キャッシュと両立しない。守るのは読み込み先と送信先。`CSP_MODE=report-only` で入れ後に enforce、`frame-src` は report-only 中も強制、違反報告先は置かない。HSTS は CloudFront のレスポンスヘッダーポリシーと Caddy の TLS ブロックだけ、`includeSubDomains` はサイト単位、preload なし） → `docs/adr/jp/071-csp-without-nonce-hsts-at-tls-edge.md`
 - 管理画面のデータセット編集を公開ページの鏡にする（URL を対にし、左にリソースの一覧・右にタブ、データセットを開いている間はサイドバーを一覧に入れ替える。編集側はデータセットを ID で指す。保存は「版が増えない保存」「列の適用」「並び順の保存」に分け、列の人の決定は 1 つの「表の設定」タブで下書き→1 回の適用（主キー・確定型を含めば 1 版、役割の上書きだけなら版なし）、公開側には `editor` 以上に「管理」ボタン、提案） → `docs/adr/jp/072-dashboard-mirrors-public-page.md`
 - 列に語彙を割り当てる（概念・体系・表現の 3 層。概念は国を問わず、体系は国・地域の束、表現は 6 桁・5 桁・名称などの書き方。最初は行政区域と日本の束、核に国固有のものを置かない。推定は解釈が規則で、確定は `column_settings.concepts` で版を増やさない。登録簿は最初プリセットだけ（コード表・対応表は束の中のファイル、サイトで更新できる段階 4 から有効期間付きのリソース）、提案） → `docs/adr/jp/073-column-vocabulary.md`
+- パイプラインのスタックを環境ごとに分ける（`KukanPipeline-<Env>`、self-mutation は自分のスタックだけ。Stage は App 直下の `KukanPipeline` の下に置きアプリのスタックのパスを変えない。パイプラインのアカウントと接続を環境ごとに選べる、ADR-030 / ADR-031 の一部を置換） → `docs/adr/jp/074-pipeline-stack-per-environment.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
@@ -337,5 +338,6 @@ npx cdk diff   -c env=dev 'Dev/KukanStack'    # 差分確認（diff は --all �
 # 同一メトリクスで再作成衝突し「Only one TargetTrackingScaling policy ...」400）。
 npx cdk deploy 'KukanPipeline/Dev/KukanStack' # 手動デプロイ（-c env なし）
 npx cdk diff   'KukanPipeline/Dev/KukanStack' # 差分確認（-c env なし）
-npx cdk deploy KukanPipeline                  # パイプラインスタック自体の初回デプロイ
+npx cdk deploy KukanPipeline-Dev              # その環境のパイプラインのスタックの初回デプロイ
+                                              # （環境ごとに 1 つ、その環境のブランチで。ADR-074）
 ```

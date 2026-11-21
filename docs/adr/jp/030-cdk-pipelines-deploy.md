@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/stacks/pipeline-stack.ts`。CodePipeline は V2）。ADR-031（Stage ベースのマルチ環境）と対で設計する。
+**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/stacks/pipeline-stack.ts`。CodePipeline は V2）。ADR-031（Stage ベースのマルチ環境）と対で設計する。パイプラインのスタックを 1 つ置く部分（「パイプライン構成」の 1 項目めとセットアップ手順 3）は ADR-074 が置換した（環境ごとに `KukanPipeline-<Env>`）。
 
 ## コンテキスト
 
@@ -45,7 +45,7 @@ new CodePipeline(this, 'Pipeline', {
 
 ### パイプライン構成
 
-- `KukanPipelineStack` に `CodePipeline` を定義
+- `KukanPipelineStack` に `CodePipeline` を定義（ADR-074 で置換：スタックは環境ごとに 1 つ）
 - 各環境を Stage（ADR-031 の `KukanStage`）として `addStage()`。`pre`/`post` に `ManualApprovalStep` を挟み、prd は手動承認・dev は自動、といったゲートを設定可能
 - ブランチ戦略: `develop` → dev、`main` → prd。「1 パイプラインに複数 Stage（wave + 承認）」または「ブランチ別パイプライン」のいずれかを選ぶ
   - （2026-10 補足）実装は**ブランチ別パイプライン**（環境ごとに 1 本、各環境の `deployBranch` で起動）を選んだ。本番に入る版を ADR-035 のリリース（`main` への ff とタグ）に揃えるためで、`ManualApprovalStep` は置いていない。1 本に Stage を並べると、`develop` への push のたびに本番の承認待ちが積まれ、本番の版とリリースが結びつかなくなる
@@ -54,7 +54,7 @@ new CodePipeline(this, 'Pipeline', {
 
 1. **CodeConnections 接続を作成**: AWS コンソールで GitHub App（AWS Connector）を承認し、Connection ARN を取得（この承認は IaC 化できない一度きりの手動操作）
 2. `cdk bootstrap`（各アカウント / リージョン。クロスアカウント時は信頼関係付きでブートストラップ）
-3. **パイプラインスタックを初回手動デプロイ**（`cd infra && npx cdk deploy KukanPipeline`）
+3. **パイプラインスタックを初回手動デプロイ**（ADR-074 以降は環境ごと：`cd infra && npx cdk deploy KukanPipeline-<Env>`）
 4. 以降は push で自動デプロイ。パイプライン定義の変更も自己変異で反映される
 
 ## トレードオフ
@@ -78,6 +78,7 @@ new CodePipeline(this, 'Pipeline', {
 ## 関連
 
 - ADR-031（Stage ベースのマルチ環境デプロイ）: `docs/adr/jp/031-multi-environment-deploy.md`
+- ADR-074（パイプラインのスタックを環境ごとに分ける）: `docs/adr/jp/074-pipeline-stack-per-environment.md`
 - ADR-020（ECS Fargate + ALB）: `docs/adr/jp/020-ecs-fargate-alb-migration.md`
 - ADR-027（CloudFront 再導入・2 スタック構成）: `docs/adr/jp/027-cloudfront-reintroduction.md`
 - AWS 公式: [CDK Pipelines](https://docs.aws.amazon.com/cdk/v2/guide/cdk_pipeline.html) / [CodeConnections](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections.html)

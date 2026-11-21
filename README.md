@@ -295,8 +295,12 @@ npx cdk deploy -c env=prd Prd/KukanGlobalStack
 npx cdk synth >/dev/null
 git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
 
-# 6. Deploy the pipeline stack once / 初回のみパイプラインスタックを手動デプロイ
-npx cdk deploy KukanPipeline
+# 6. Deploy each env's pipeline stack once, from that env's branch (one stack per env, ADR-074)
+#    環境ごとに、その環境のブランチで、パイプラインのスタックを初回のみ手動デプロイ
+#    Upgrading from a single KukanPipeline stack: delete it first — see the migration in
+#    docs/specs/en/phase4-deploy.md / 1 つの KukanPipeline スタックから移るときは先に削除する
+#    （docs/specs/jp/phase4-deploy.md の移行の節）
+npx cdk deploy KukanPipeline-Prd
 
 # 7. After that, pushes to each env's deployBranch deploy automatically (self-mutating)
 #    以降は各 env の deployBranch への push で自動デプロイ（自己変異）

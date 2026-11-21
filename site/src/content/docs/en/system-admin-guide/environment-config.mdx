@@ -15,11 +15,11 @@ site-scoped fields (`domainName` / `allowedIpRanges` / `basicAuth`, etc.) the
 from stamping every site at once).
 
 The top level of the file exports the CodeConnections connection ARN (shared by
-all envs) and, optionally, the account the pipelines are expected to be built in:
+all envs). An environment entry's `connectionArn` overrides it for that environment:
 
 ```ts
 export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
-export const pipelineAccount = '000000000000' // optional; validated against the active credentials
+// export const pipelineAccount = '000000000000' // not needed; if set, checked against the top-level connection's account
 ```
 
 **The multi-site shape (declaring `sites`) is the standard way to create an
@@ -51,10 +51,32 @@ dev / prd out to separate accounts** is supported. For the setup this needs —
 bootstrapping the target accounts, where the connection lives — see
 `docs/specs/en/phase4-deploy.md` in the repository.
 
-The top-level `pipelineAccount` is optional, but **recommended once the accounts are
-separated**. Left unset, the pipeline is created in whichever account the credentials
-running `cdk deploy KukanPipeline` belong to — run it from a prd session and a second
-pipeline grows in prd. Set, synth stops when the credentials are for another account.
+There is one pipeline stack per environment (`KukanPipeline-<Env>`, e.g.
+`KukanPipeline-Dev`). A pipeline is built in the account of the CodeConnections
+connection it uses (`connectionArn`), because a connection belongs to one account and
+a pipeline can only read its own account's connections. The top-level `connectionArn`
+applies to every environment, an environment entry's to that environment only. You can
+put each environment's pipeline in that environment's account, or gather them in a
+dedicated CI/CD account.
+
+When splitting accounts, **set on each environment entry the `connectionArn` of a
+connection created in that account**. The trailing ID of a connection ARN is assigned
+at creation, so what you write is the connection's ARN, not the account. The top-level
+`pipelineAccount` is no longer needed; it is still accepted for forks that have it, and
+synth stops if it differs from the top-level connection's account.
+
+Synth builds only the pipelines in the credentials' account, warning about and skipping
+the others, and stops if the credentials would build none. Once the pipelines are split
+across accounts, run the synth that records `cdk.context.json` (setup step 5) once per
+pipeline account, switching credentials.
+
+Separate stacks prevent only **unintended** overwrites of other environments'
+pipelines. Pipelines in the same account use the same bootstrap deploy role, so
+someone who can push to develop could deliberately rewrite prd's pipeline stack too
+(also when every environment is gathered in one CI/CD account). To cut that off, put
+**prd's pipeline in an account dev's pipeline does not share** (prd's account, or a
+CI/CD account for prd only). The procedure for moving a pipeline to another account is
+in `docs/specs/en/phase4-deploy.md` in the repository.
 
 Note that with separate accounts the pipeline's artifact bucket is encrypted with a KMS
 customer-managed key (decided automatically), adding roughly $1 per month per key.
@@ -79,6 +101,7 @@ CI/CD.
 | `bedrock`              | object \| `false`                                                | enabled (Titan v2)                               | Semantic search, AI metadata suggestions, and AI-written descriptions. `false` disables (`AI_TYPE=none`). Fields under "`bedrock` fields" below                                         |
 | `githubRepo`           | string                                                           | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                                                       |
 | `deployBranch`         | string                                                           | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                                                           |
+| `connectionArn`        | string                                                           | the top-level value                              | CodeConnections connection this env's pipeline uses; the pipeline is built in this connection's account                                                                                 |
 | `deployNotification`   | boolean                                                          | none                                             | Post deploy outcomes to Slack (pipeline mode only). The webhook URL goes into a secret the stack creates                                                                                |
 | `overrides`            | deep-partial                                                     | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                                                                                                                      |
 | `sites`                | SiteConfig[]                                                     | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine)                                                                                         |

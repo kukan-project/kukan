@@ -379,21 +379,69 @@ export function resolveRegion(env: Pick<EnvironmentConfig, 'region'>): string {
   return env.region ?? DEFAULT_REGION
 }
 
+/** Where one environment's pipeline goes (ADR-074). */
+export interface PipelinePlacement {
+  /** The account of its connection, which it must be built in. */
+  account: string
+  connectionArn: string
+}
+
 /**
- * The pipeline always lands in the active credentials' account; `pipelineAccount` only
- * refuses a mismatch (misdeployment guard for separate-account operation, ADR-031).
+ * An environment's pipeline placement. A connection belongs to one account and
+ * a pipeline reads only its own account's, so the connection names the
+ * account: the environment's `connectionArn`, else the top level's. The
+ * top-level `pipelineAccount`, from before ADR-074, is checked against the
+ * top-level connection's account.
  */
-export function assertPipelineAccount(
-  pipelineAccount: string | undefined,
-  credentialsAccount: string
-): void {
-  if (pipelineAccount && pipelineAccount !== credentialsAccount) {
+export function resolvePipelinePlacement(
+  name: string,
+  env: Pick<EnvironmentConfig, 'connectionArn'>,
+  /** The top level of config/environments.ts. */
+  defaults: { connectionArn?: string; pipelineAccount?: string }
+): PipelinePlacement {
+  const connectionArn = env.connectionArn ?? defaults.connectionArn
+  if (!connectionArn) {
     throw new Error(
-      `Pipeline account mismatch: config/environments.ts declares pipelineAccount ` +
-        `"${pipelineAccount}" but the active credentials are for "${credentialsAccount}". ` +
-        `Switch credentials, or update pipelineAccount.`
+      `Environment "${name}" has a pipeline but no connectionArn: set it on the environment ` +
+        `or export it at the top level of config/environments.ts. See ADR-030.`
     )
   }
+  const account = connectionArn.split(':')[4] ?? ''
+  if (!/^\d{12}$/.test(account)) {
+    throw new Error(`Environment "${name}": "${connectionArn}" is not a CodeConnections ARN.`)
+  }
+  const declared = env.connectionArn === undefined ? defaults.pipelineAccount : undefined
+  if (declared !== undefined && declared !== account) {
+    throw new Error(
+      `pipelineAccount "${declared}" is not the account of connectionArn "${connectionArn}", ` +
+        `"${account}". A pipeline is built in its connection's account, so pipelineAccount ` +
+        `is no longer needed — drop it, or correct it. See ADR-074.`
+    )
+  }
+  return { account, connectionArn }
+}
+
+/**
+ * The pipelines a synth builds, `here`: those in the active credentials'
+ * account, so a pipeline's self-mutation, synthesized in its own account,
+ * builds only the pipelines that live there. A synth that would build none of
+ * them is refused — the misdeployment guard (ADR-031).
+ */
+export function pipelinesInAccount<T extends { placement: PipelinePlacement }>(
+  pipelines: T[],
+  credentialsAccount: string
+): { here: T[]; elsewhere: T[] } {
+  const isHere = (p: T) => p.placement.account === credentialsAccount
+  const here = pipelines.filter(isHere)
+  if (pipelines.length > 0 && here.length === 0) {
+    const accounts = [...new Set(pipelines.map((p) => p.placement.account))].join(', ')
+    throw new Error(
+      `Pipeline account mismatch: config/environments.ts puts the pipelines in ${accounts} ` +
+        `(the accounts of their connections) but the active credentials are for ` +
+        `"${credentialsAccount}". Switch credentials.`
+    )
+  }
+  return { here, elsewhere: pipelines.filter((p) => !isHere(p)) }
 }
 
 /**

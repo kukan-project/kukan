@@ -150,12 +150,12 @@ To get a webhook URL: in [Slack app settings](https://api.slack.com/apps), **Cre
 **Incoming Webhooks**, then **Add New Webhook to Workspace** and pick the channel.
 
 The stack creates the box it goes into. Deploying with `deployNotification: true` outputs the
-secret's ARN on the pipeline stack as `Notify<Environment>SlackWebhookSecretArn`:
+secret's ARN on that environment's pipeline stack (`KukanPipeline-<Environment>`) as `NotifySlackWebhookSecretArn`:
 
 ```bash
 # Read the ARN (<Environment> is the environments.ts key, capitalised — e.g. Demo)
-aws cloudformation describe-stacks --stack-name KukanPipeline \
-  --query "Stacks[0].Outputs[?contains(OutputKey, 'Notify<Environment>SlackWebhookSecretArn')].OutputValue" \
+aws cloudformation describe-stacks --stack-name KukanPipeline-<Environment> \
+  --query "Stacks[0].Outputs[?contains(OutputKey, 'NotifySlackWebhookSecretArn')].OutputValue" \
   --output text
 
 # Paste the webhook URL into it, once
@@ -300,8 +300,15 @@ How to write the setting: [environment config reference, "WAF rate limits"](/en/
 3. `cdk bootstrap` (prerequisite for deploy; per account/region, include us-east-1 for the GlobalStack)
 4. For a custom domain / WAF only: create the us-east-1 certificate/WAF once via standalone (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`) and set `certificateArn`/`webAclArn` on each site entry
 5. Commit `environments.ts` and `cdk.context.json` so the CodeBuild synth reads them from the checkout
-6. Deploy the pipeline stack once (`npx cdk deploy KukanPipeline`)
-7. After that, pushes to each env's `deployBranch` deploy automatically (the pipeline self-mutates)
+6. Deploy each environment's pipeline stack once, from that environment's branch (e.g. `npx cdk deploy KukanPipeline-Dev`; there is one stack per environment)
+7. After that, pushes to each env's `deployBranch` deploy automatically (each pipeline self-mutates, updating only its own environment's stack)
+
+:::note[Migrating from a single pipeline stack]
+If you deployed with a version that had a single pipeline stack (`KukanPipeline`), a one-time manual step is
+needed: delete the old stack, then deploy the per-environment stacks (the app stacks stay as they are).
+Automatic deployment stops until this is done. See "Migrating to per-environment pipeline stacks" in
+`docs/specs/en/phase4-deploy.md` in the repository, and the release notes.
+:::
 
 Structure of `environments.ts` (`connectionArn` is top-level; per-env settings go inside `environments`):
 

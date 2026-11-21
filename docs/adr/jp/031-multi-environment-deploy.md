@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/stacks/kukan-stage.ts` / `config/environments.ts`）。ADR-030（CDK Pipelines）と対で設計する。サイト軸の追加は ADR-041 が拡張する。
+**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/stacks/kukan-stage.ts` / `config/environments.ts`）。ADR-030（CDK Pipelines）と対で設計する。サイト軸の追加は ADR-041 が拡張する。`pipelineAccount` を検証だけのガードとし接続を全環境で共有する部分は ADR-074 が置換した（パイプラインのアカウントと接続を環境ごとに選べる）。
 
 ## コンテキスト
 
@@ -97,6 +97,11 @@ export const environments = {
 artifact バケットの CMK 化（`crossAccountKeys`）は「パイプラインアカウント ≠ Stage の
 アカウント」から自動導出するため、設定項目にしていない。
 
+> [!NOTE]
+> 以下の段落は ADR-074 で置換した。パイプラインのスタックは環境ごとに分かれ、`connectionArn` は環境ごとに
+> 書ける。パイプラインは接続のアカウントに作られ、synth は認証情報のアカウントにあるパイプラインだけを作る。
+> `pipelineAccount` は不要になった（書いてあれば接続のアカウントと突き合わせる）。
+
 `environments.ts` の `pipelineAccount`（省略可）は、この分離に対する**誤デプロイ防止ガード**である。
 env 側の `account` と違い、パイプラインの配置先は認証情報が黙って決めてしまう
 （prd の認証情報で `cdk deploy KukanPipeline` すると prd にもう 1 本パイプラインが生える）。
@@ -167,6 +172,7 @@ env エントリ（`scale` + `overrides`）　＞　スケール既定（`config
 ## 関連
 
 - ADR-041（マルチサイトデプロイ）: 本 ADR の環境軸の内側にサイト軸を追加する拡張
+- ADR-074（パイプラインのスタックを環境ごとに分ける）: `pipelineAccount` と接続の部分を置換
 - ADR-030（CDK Pipelines による自動デプロイ）: `docs/adr/jp/030-cdk-pipelines-deploy.md`
 - ADR-020（ECS Fargate + ALB）: `docs/adr/jp/020-ecs-fargate-alb-migration.md`
 - ADR-027（CloudFront 再導入・2 スタック構成）: `docs/adr/jp/027-cloudfront-reintroduction.md`

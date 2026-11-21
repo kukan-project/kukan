@@ -62,7 +62,7 @@ Principle: **time-billed "boxes" are shared; "logical resources" that hold data 
 ### Layout
 
 ```
-KukanPipeline (fork, one pipeline)
+KukanPipeline (fork; one pipeline stack per environment, KukanPipeline-<Env>, ADR-074)
 ├─ Dev stage                        ← the environment axis stays as in ADR-031
 │   ├─ SharedStack (dev)            ← small footprint (no OpenSearch + SEARCH_TYPE=postgres is possible)
 │   └─ SiteStack × n(dev)           ← the site list is defined per environment (dev can be minimal)

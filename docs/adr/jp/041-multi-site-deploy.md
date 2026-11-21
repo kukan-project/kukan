@@ -83,7 +83,7 @@
 ### 構成
 
 ```
-KukanPipeline（フォーク、1 本）
+KukanPipeline（フォーク。パイプラインのスタックは環境ごとに KukanPipeline-<Env>、ADR-074）
 ├─ Dev ステージ                    ← 環境軸は ADR-031 のまま
 │   ├─ SharedStack (dev)           ← 小構成（OpenSearch なし + SEARCH_TYPE=postgres も可）
 │   └─ SiteStack × n(dev)          ← サイト一覧は環境ごとに定義（dev は最小限でよい）

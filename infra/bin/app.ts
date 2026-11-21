@@ -3,8 +3,11 @@
  * KUKAN CDK App — Entry Point (ADR-030 / ADR-031)
  *
  * Two modes:
- *   - Pipeline (default):  npx cdk deploy KukanPipeline
- *       Deploys the CDK Pipelines stack; pushes auto-deploy each environment as a Stage.
+ *   - Pipeline (default):  npx cdk deploy KukanPipeline-Dev
+ *       Deploys one environment's CDK Pipelines stack (one stack per environment,
+ *       ADR-074); pushes to its branch auto-deploy the environment as a Stage.
+ *       A synth builds only the pipelines in the credentials' account (each
+ *       pipeline's is its connection's).
  *       Manual ops on a pipeline-managed env use its qualified path WITHOUT -c env
  *       (e.g. `npx cdk deploy 'KukanPipeline/Dev/KukanStack'`); the -c env synthesis
  *       path differs, changing physical names and forcing resource replacement.
@@ -20,8 +23,6 @@
 import { existsSync } from 'node:fs'
 import * as cdk from 'aws-cdk-lib'
 import {
-  assertPipelineAccount,
-  DEFAULT_REGION,
   resolveEnv,
   type EnvironmentConfig,
   validateEcrImageRetention,
@@ -29,12 +30,12 @@ import {
 } from '../lib/config.js'
 import { pascal } from '../lib/naming.js'
 import { KukanStage } from '../lib/stacks/kukan-stage.js'
-import { KukanPipelineStack } from '../lib/stacks/pipeline-stack.js'
+import { buildPipelines } from '../lib/stacks/pipeline-stack.js'
 import * as exampleEnvs from '../config/environments.example.js'
 
 interface EnvModule {
   environments: Record<string, EnvironmentConfig>
-  connectionArn: string
+  connectionArn?: string
   pipelineAccount?: string
 }
 
@@ -79,12 +80,17 @@ if (standaloneEnv) {
     config,
   })
 } else {
-  // --- Pipeline mode (default): deploy CDK Pipelines ---
-  assertPipelineAccount(pipelineAccount, account)
-  new KukanPipelineStack(app, 'KukanPipeline', {
-    env: { account, region: DEFAULT_REGION },
-    crossRegionReferences: true,
+  // --- Pipeline mode (default): one CDK Pipelines stack per environment ---
+  const { skipped } = buildPipelines(app, {
     environments,
     connectionArn,
+    pipelineAccount,
+    credentialsAccount: account,
   })
+  for (const { name, account: elsewhere } of skipped) {
+    console.warn(
+      `Skipping the pipeline of "${name}": it is in account ${elsewhere}, ` +
+        `the credentials are for ${account}.`
+    )
+  }
 }

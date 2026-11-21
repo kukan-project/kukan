@@ -9,7 +9,6 @@ import { describe, it, expect } from 'vitest'
 import { Match, Template } from 'aws-cdk-lib/assertions'
 import * as cdk from 'aws-cdk-lib'
 import {
-  assertPipelineAccount,
   DERIVED_ALB_PRIORITY_MAX,
   DERIVED_ALB_PRIORITY_MIN,
   RDS_DEFAULT_INSTANCE_CLASS,
@@ -20,7 +19,7 @@ import {
   type SiteConfig,
 } from '../config.js'
 import { pascal } from '../naming.js'
-import { KukanPipelineStack } from '../stacks/pipeline-stack.js'
+import { buildPipelines } from '../stacks/pipeline-stack.js'
 import {
   bedrockProfiles,
   CDN_LOG_BUCKET,
@@ -549,30 +548,18 @@ describe('pipeline mode', () => {
     app = testApp(),
     extra: Partial<EnvironmentConfig> = {}
   ) =>
-    new KukanPipelineStack(app, 'KukanPipeline', {
-      env: { account: TEST_ACCOUNT, region: TEST_REGION },
-      connectionArn: `arn:aws:codeconnections:${TEST_REGION}:${TEST_ACCOUNT}:connection/x`,
+    buildPipelines(app, {
       environments: {
-        dev: {
-          account: targetAccount,
-          githubRepo: 'example/kukan',
-          sites: [site],
-          ...extra,
-        },
+        dev: { account: targetAccount, githubRepo: 'example/kukan', sites: [site], ...extra },
       },
-    })
+      connectionArn: `arn:aws:codeconnections:${TEST_REGION}:${TEST_ACCOUNT}:connection/x`,
+      credentialsAccount: TEST_ACCOUNT,
+    }).built[0]
 
   it('rejects multi-site environments that need the global stack', () => {
     expect(() => pipelineStack({ name: 'main' })).toThrow(
       /pipeline mode cannot create the us-east-1 ACM certificate \/ WAF/
     )
-  })
-
-  it('rejects a pipeline account that differs from the active credentials', () => {
-    expect(() => assertPipelineAccount(OTHER_ACCOUNT, TEST_ACCOUNT)).toThrow(
-      /Pipeline account mismatch/
-    )
-    expect(() => assertPipelineAccount(undefined, TEST_ACCOUNT)).not.toThrow()
   })
 
   it('gives a cross-account target CMK-encrypted artifacts, and a same-account one none', () => {
@@ -634,7 +621,7 @@ describe('pipeline mode', () => {
     expect(dockerAssetBuilds({ cpuArchitecture: 'x86_64' })).toEqual([x86, x86])
   })
 
-  /** The synth step's CodeBuild project: its environment and its commands. */
+  /** The synth step's CodeBuild project: its environment. */
   const synthBuild = (extra: Partial<EnvironmentConfig> = {}) => {
     const [project] = Object.values(notifications(extra).findResources('AWS::CodeBuild::Project'))
       .map(
@@ -643,17 +630,8 @@ describe('pipeline mode', () => {
       )
       .filter((p) => p.Source.BuildSpec.includes('cdk synth'))
     const { Image, Type, ComputeType, PrivilegedMode } = project.Environment
-    return {
-      environment: { Image, Type, ComputeType, PrivilegedMode },
-      spec: project.Source.BuildSpec,
-    }
+    return { environment: { Image, Type, ComputeType, PrivilegedMode } }
   }
-
-  it("bundles only its own environment's assets on synth", () => {
-    expect(synthBuild().spec).toContain(
-      "npx cdk synth --exclusively KukanPipeline 'KukanPipeline/Dev/**'"
-    )
-  })
 
   it('synthesizes on ARM with Docker before any switch to Web Functions (ADR-068)', () => {
     const arm = {

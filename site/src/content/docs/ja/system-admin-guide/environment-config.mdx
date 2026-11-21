@@ -13,12 +13,12 @@ AWS デプロイの環境(dev / prd 等)は `infra/config/environments.ts` で�
 `allowedIpRanges` / `basicAuth` 等)への `-c` はマルチサイト環境では**無視されます**
 (1 つの `-c` が全サイトへ一括適用される事故の防止)。
 
-ファイルのトップレベルには CodeConnections の接続 ARN(全 env 共通)と、
-パイプラインを置く想定アカウント(任意)を export します:
+ファイルのトップレベルには CodeConnections の接続 ARN(全 env 共通)を export します。
+環境エントリの `connectionArn` で環境ごとに上書きできます:
 
 ```ts
 export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
-export const pipelineAccount = '000000000000' // 任意。認証情報のアカウントとの一致を検証する
+// export const pipelineAccount = '000000000000' // 不要。書いてあればトップレベルの接続のアカウントと突き合わせる
 ```
 
 環境は**マルチサイト形状(`sites` 宣言)で作成するのが標準**です。フィールドは
@@ -47,10 +47,27 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 構成が可能です。デプロイ先アカウントの bootstrap やコネクションの置き場所など、必要な準備は
 リポジトリの `docs/specs/jp/phase4-deploy.md` を参照してください。
 
-トップレベルの `pipelineAccount` は省略できますが、**分離運用では設定を推奨**します。
-未設定だと `cdk deploy KukanPipeline` を実行したときの認証情報のアカウントにパイプラインが
-作られるため、たとえば prd の認証情報のまま実行すると prd 側にもう 1 本パイプラインが
-できてしまいます。設定しておくと、認証情報のアカウントと一致しない場合に synth が停止します。
+パイプラインのスタックは環境ごとに 1 つ(`KukanPipeline-<Env>`、例 `KukanPipeline-Dev`)です。
+パイプラインは、使う CodeConnections の接続(`connectionArn`)のアカウントに作られます。
+接続はアカウントに属し、パイプラインは自分のアカウントの接続しか読めないためです。
+トップレベルの `connectionArn` は全環境、環境エントリの `connectionArn` はその環境だけに効きます。
+各環境のパイプラインをその環境のアカウントに置くことも、CI/CD 専用アカウントにまとめることもできます。
+
+アカウントを分けるときは、**環境エントリごとに、そのアカウントで作った接続の `connectionArn` を書きます**。
+接続の ARN の末尾の ID は作成時に振られるので、書くのはアカウントではなく接続の ARN です。
+トップレベルの `pipelineAccount` は不要になりました。書いてあるフォークのために受け付け、
+トップレベルの接続のアカウントと食い違うと synth が停止します。
+
+synth は認証情報のアカウントにあるパイプラインだけを作り、ほかのアカウントのパイプラインは警告に出して
+外します。作るパイプラインが 1 つも無い認証情報では停止します。パイプラインをアカウントごとに分けたら、
+`cdk.context.json` を作る synth(初回の手順 5)もパイプラインのアカウントごとに認証情報を切り替えて行います。
+
+スタックが環境ごとに分かれていても、防げるのはほかの環境のパイプラインの**意図しない**上書きまでです。
+同じアカウントのパイプラインは同じ bootstrap のデプロイ用ロールを使うので、develop に push できる人は
+意図すれば prd のパイプラインのスタックも書き換えられます(CI/CD 専用アカウントに全環境をまとめた場合も同じ)。
+これを断つには、**prd のパイプラインを dev のパイプラインと共有しないアカウント**(prd のアカウント、または
+prd 専用の CI/CD アカウント)に置きます。パイプラインを別のアカウントへ移す手順はリポジトリの
+`docs/specs/jp/phase4-deploy.md` にあります。
 
 なお別アカウント運用では、パイプラインの成果物バケットが KMS カスタマーマネージドキーで
 暗号化されます(自動判定)。キー 1 本あたり月 $1 程度の費用が加わります。
@@ -74,6 +91,7 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 | `bedrock`              | object \| `false`                                                | 有効(Titan v2)                                 | セマンティック検索・AI メタデータ提案・AI による説明(抄録)。`false` で無効(`AI_TYPE=none`)。フィールドは下記「`bedrock` のフィールド」                       |
 | `githubRepo`           | string                                                           | なし                                           | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外                                                                            |
 | `deployBranch`         | string                                                           | `main`                                         | この env を pipeline でデプロイするブランチ                                                                                                                  |
+| `connectionArn`        | string                                                           | トップレベルの値                               | この env のパイプラインが使う CodeConnections の接続。パイプラインはこの接続のアカウントに作られる                                                           |
 | `deployNotification`   | boolean                                                          | なし                                           | デプロイの成否を Slack に投稿する(パイプラインモードのみ)。webhook URL はスタックが作るシークレットに貼る                                                    |
 | `overrides`            | 部分指定                                                         | なし                                           | スケール preset の個別上書き(下記「overrides」)                                                                                                              |
 | `sites`                | SiteConfig[]                                                     | なし(過去互換のシングルサイト形状)             | この環境が運用するサイトの一覧。**新規構築では必ず宣言する**(1 件でも可)                                                                                     |

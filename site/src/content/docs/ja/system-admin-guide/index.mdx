@@ -140,12 +140,12 @@ webhook URL は [Slack のアプリ管理画面](https://api.slack.com/apps) で
 を有効化 → **Add New Webhook to Workspace** で投稿先チャンネルを選ぶと発行されます。
 
 貼り先の箱はスタックが作ります。`deployNotification: true` でデプロイすると、シークレットの ARN が
-パイプラインスタックの出力（`Notify<環境名>SlackWebhookSecretArn`）に出ます:
+その環境のパイプラインのスタック（`KukanPipeline-<環境名>`）の出力（`NotifySlackWebhookSecretArn`）に出ます:
 
 ```bash
 # ARN を取得（<環境名> は environments.ts のキー。Demo のように先頭大文字）
-aws cloudformation describe-stacks --stack-name KukanPipeline \
-  --query "Stacks[0].Outputs[?contains(OutputKey, 'Notify<環境名>SlackWebhookSecretArn')].OutputValue" \
+aws cloudformation describe-stacks --stack-name KukanPipeline-<環境名> \
+  --query "Stacks[0].Outputs[?contains(OutputKey, 'NotifySlackWebhookSecretArn')].OutputValue" \
   --output text
 
 # 取得した ARN へ webhook URL を一度だけ貼る
@@ -289,8 +289,15 @@ us-east-1 の WebACL を standalone で作り、ARN を貼ります）には、�
 3. `cdk bootstrap`（deploy の前提。各アカウント・リージョン。GlobalStack 用に us-east-1 も含める）
 4. 独自ドメイン/WAF を使う場合のみ: us-east-1 の証明書/WAF を一度 standalone で作成（`npx cdk deploy -c env=prd Prd/KukanGlobalStack`）し、ARN を各サイトエントリの `certificateArn`/`webAclArn` に設定
 5. `environments.ts` と `cdk.context.json` をコミット（CodeBuild の synth が checkout から読み込む）
-6. パイプラインスタックを初回デプロイ（`npx cdk deploy KukanPipeline`）
-7. 以降は各 env の `deployBranch` への push で自動デプロイ（パイプラインも自己変異で更新）
+6. パイプラインのスタックを環境ごとに初回デプロイ（その環境のブランチで `npx cdk deploy KukanPipeline-Dev` のように。スタックは環境ごとに 1 つ）
+7. 以降は各 env の `deployBranch` への push で自動デプロイ（パイプラインも自己変異で、自分の環境のスタックだけを更新）
+
+:::note[パイプラインのスタックが 1 つだった版からの移行]
+パイプラインのスタックが 1 つ（`KukanPipeline`）だった版でデプロイしている場合は、古いスタックを削除してから
+環境ごとのスタックをデプロイし直す手作業が 1 回要ります（アプリのスタックはそのまま残ります）。
+移行が済むまで自動デプロイは止まります。手順はリポジトリの `docs/specs/jp/phase4-deploy.md`
+「環境ごとのパイプラインのスタックへの移行」とリリースノートを参照してください。
+:::
 
 `environments.ts` の構造（`connectionArn` はトップレベル、env 個別設定は `environments` の中）:
 

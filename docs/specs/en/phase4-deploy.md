@@ -170,7 +170,7 @@ certificate and the WAF WebACL) are deployed to us-east-1.
 | KukanSharedStack       | the environment's `region` (default ap-northeast-1) | Multi-site (ADR-041): the boxes every site shares (VPC, SGs, DB cluster, OpenSearch, ECS cluster, ALB …) |
 | KukanSiteStack\<Name\> | the environment's `region` (default ap-northeast-1) | Multi-site: one per site — its database, bucket, web / worker, ALB listener rule, CloudFront etc.        |
 | KukanGlobalStack       | us-east-1                                           | ACM certificate + WAF WebACL (for CloudFront)                                                            |
-| KukanPipeline          | ap-northeast-1 (fixed)                              | CDK Pipelines (pipeline mode; top level, outside the Stage — ADR-030)                                    |
+| KukanPipeline-\<Env\>  | ap-northeast-1 (fixed)                              | CDK Pipelines (pipeline mode; one per environment, top level, outside the Stage — ADR-030 / ADR-074)     |
 
 - KukanGlobalStack is created only when CDK has to create the certificate or the WAF (a domain name
   is given or WAF is enabled, and no ARN is supplied)
@@ -232,10 +232,12 @@ already-deployed stack (`cdk destroy` is needed manually).
 At deploy time you choose the environment with `-c env=<name>`. Both same-account and
 cross-account setups are switched purely by what is written in this file (the same `account` ID on
 every env means one account; a distinct ID per env means separate ones). The account the pipelines
-themselves are built in is independent of the targets and is decided by the credentials running
-`cdk deploy KukanPipeline` (`CDK_DEFAULT_ACCOUNT`); the top-level optional `pipelineAccount` does
-not _choose_ it but declares the intended account, which synth then validates against those
-credentials (ADR-031; see "Setup procedure" below).
+themselves are built in is independent of the targets and can be chosen per environment (ADR-074).
+A pipeline's account is the account of the connection it uses (`connectionArn`, at the top level or
+overridden on an environment entry). Synth builds only the pipelines in the credentials' account
+(`CDK_DEFAULT_ACCOUNT`) and stops if there are none. The top-level `pipelineAccount` is no longer
+needed (if set, synth stops when it differs from the top-level connection's account; see "Setup
+procedure" below).
 
 ```bash
 cp infra/config/environments.example.ts infra/config/environments.ts
@@ -904,7 +906,7 @@ Stack names are prefixed with the env (e.g. `Dev/KukanStack` → the CloudFormat
 > [!IMPORTANT]
 > **The two modes target the same CloudFormation stack names but synthesize along different
 > paths.** Standalone puts the Stage directly under the App (`Dev/KukanStack/...`) while pipeline
-> puts it under `KukanPipeline` (`KukanPipeline/Dev/KukanStack/...`), so **the physical resource
+> puts it under the Construct `KukanPipeline` directly under the App (`KukanPipeline/Dev/KukanStack/...`), so **the physical resource
 > names generated from the path change**. Logical IDs are relative to the stack and therefore
 > match, but resources whose physical name is replacement-required (e.g. an Application Auto
 > Scaling ScalingPolicy) are **replaced**, and because the ECS service name is fixed the old and
@@ -993,7 +995,8 @@ One connection per account is enough; it can be reused across pipelines.
 6. On the connection detail page, **copy the ARN**
    (`arn:aws:codeconnections:<region>:<account>:connection/...`)
 7. Set that ARN as the **top-level `connectionArn`** in `infra/config/environments.ts` (a single
-   export shared by every env, not inside an env entry)
+   export shared by every env). For an environment whose pipeline lives in another account, write
+   the connection created in that account as the `connectionArn` of the environment entry (ADR-074)
 
 > [!NOTE]
 > The old name was "AWS CodeStar Connections". Both names may appear in the console and the
@@ -1013,9 +1016,10 @@ and the GitHub App authorization is per connection (not per IAM user). Reuse wor
 Important: the connection is used by **the pipeline (the source action)**, so it only needs to
 exist in **the account where the pipeline runs**. Even if the deployment target (a Stage) is in
 another account, deployment there happens through cross-account roles, so the target account does
-not need a connection. In this setup (`KukanPipelineStack` in one account, one pipeline per env),
-creating **one connection** and sharing `connectionArn` across every env is enough (you only need
-one per account if you split the pipelines themselves across accounts).
+not need a connection. If every environment's pipeline lives in one account, creating **one
+connection** and sharing `connectionArn` across every env is enough. To split the pipelines across
+accounts, create a connection in each of those accounts and write it as the `connectionArn` of the
+environment entry. The connection's account becomes the pipeline's account (ADR-074).
 
 ### Setup procedure (manual, first time only)
 
@@ -1024,8 +1028,8 @@ one per account if you split the pipelines themselves across accounts).
 cp infra/config/environments.example.ts infra/config/environments.ts
 #    edit environments.ts (githubRepo / deployBranch / scale / domain etc. per env;
 #    set connectionArn to the value obtained in step 2)
-#    To hold the pipelines in an account separate from the targets, set pipelineAccount to its ID
-#    (step 6's credentials decide where it lands; pipelineAccount guards against a mismatch)
+#    A pipeline is built in the account of its connectionArn's connection. To split them per
+#    environment, write that account's connectionArn on the environment entry (ADR-074)
 
 # 2. Create the CodeConnections connection (see "console work" above)
 #    → set the connection ARN as connectionArn in environments.ts
@@ -1059,13 +1063,18 @@ npx cdk deploy -c env=prd Prd/KukanGlobalStack
 
 # 5. Commit environments.ts and cdk.context.json (the fork commits them; CodeBuild's synth reads them)
 #    If you switched credentials in step 4, switch back to the pipeline account here: a synth without
-#    -c env runs in pipeline mode, so the pipelineAccount guard checks it against the credentials
-#    Run cdk synth to resolve the context lookups (AZs, the CloudFront prefix list) into cdk.context.json
+#    -c env runs in pipeline mode and fails if the credentials' account holds no pipeline at all
+#    Run cdk synth to resolve the context lookups (AZs, the CloudFront prefix list) into cdk.context.json.
+#    Synth builds only the Stages of the pipelines in the credentials' account, so once the pipelines
+#    are split across accounts, switch credentials and synth once per pipeline account
 npx cdk synth >/dev/null
 git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
 
-# 6. Deploy the pipeline stack manually the first time (run it with the pipeline account's credentials)
-npx cdk deploy KukanPipeline
+# 6. Deploy the pipeline stack of each environment manually the first time (with that pipeline's
+#    account's credentials, from a checkout of that environment's branch; one stack per
+#    environment, ADR-074)
+npx cdk deploy KukanPipeline-Dev
+npx cdk deploy KukanPipeline-Prd
 
 # 7. From then on, pushing to the target branch deploys automatically
 #    (changes to the pipeline definition are applied by self-mutation)
@@ -1079,14 +1088,34 @@ the approval for production. To hold it further, disable the transition between 
 CodePipeline (a console action; it sends no notification), or add a `ManualApprovalStep` to the
 pipeline in your fork.
 
-**The account that holds the pipelines**: every environment's pipeline lives in one stack
-(`KukanPipeline`), so they all sit in one account. If dev and prd share an account, put it there.
-If they are in separate accounts, **a dedicated CI/CD account is recommended** (not required). In
-the prd account, the dev pipeline's synth (unreleased `develop` code) would run in the production
-account's CodeBuild; in the dev account, dev would become the starting point of deploy rights into
-prd. In a dedicated account each pipeline gets a KMS key for its artifacts (`crossAccountKeys`),
-about USD 1 a month per pipeline. Setting `pipelineAccount` stops a deploy with another account's
-credentials at synth.
+**The account that holds the pipelines**: there is one pipeline stack per environment
+(`KukanPipeline-<Env>`), and each one's self-mutation updates only its own stack (ADR-074). If dev
+and prd share an account, put them there. If they are in separate accounts, either **put each
+environment's pipeline in that environment's account** (on the environment entry, a
+`connectionArn` of a connection created in that account) or **gather them in a dedicated CI/CD
+account** (the top-level `connectionArn` set to the dedicated account's connection). Avoid gathering every environment in the prd account, where the dev pipeline's
+synth (unreleased `develop` code) would run in the production account's CodeBuild, or in the dev
+account, where dev would become the starting point of deploy rights into prd. A pipeline in an
+account different from its target gets a KMS key for its artifacts (`crossAccountKeys`), about
+USD 1 a month per pipeline.
+
+Splitting the stacks prevents only **unintended** overwrites of other environments' pipelines.
+Pipelines in the same account use the same bootstrap deploy role, so someone who can push to
+develop can change self-mutation's command and rewrite prd's pipeline stack too. The same holds
+when every environment is gathered in a dedicated CI/CD account. To cut that off, put **prd's
+pipeline in an account that dev's pipeline does not share** (prd's account, or a CI/CD account for
+prd only).
+
+**Moving a pipeline to another account** (e.g. prd's pipeline from account A to B):
+
+1. In B, create a CodeConnections connection from the console (approve the GitHub App) and
+   bootstrap B (if the targets are not B, re-bootstrap the targets with `--trust` B)
+2. Write B's connection as `connectionArn` on prd's entry in `environments.ts` and commit
+3. With A's credentials, delete the old pipeline stack (A's synth skips prd, so it is not removed
+   automatically): `aws cloudformation delete-stack --stack-name KukanPipeline-Prd`
+4. With B's credentials, from prd's branch, run `npx cdk deploy KukanPipeline-Prd`. Run the synth
+   that records `cdk.context.json` once with B's credentials too. From then on, updates happen by
+   self-mutation inside B when the pipeline receives a push
 
 > [!IMPORTANT]
 > **CDK Pipelines is incompatible with cross-region references.** For an env using a custom
@@ -1114,6 +1143,40 @@ credentials at synth.
 > Approving the CodeConnections GitHub App is a one-off manual console step and cannot be fully
 > expressed as IaC (only the connection ARN is referenced from code).
 
+### Migrating to per-environment pipeline stacks (ADR-074)
+
+For forks deployed from a version with a single pipeline stack (`KukanPipeline`). The pipeline name
+`kukan-<env>` and the CodeBuild project name `kukan-<env>-selfupdate` are fixed physical names and
+cannot exist in the old and the new stacks at the same time, so delete the old stack first. The app
+stacks (`<Env>-KukanStack`, `<Env>-KukanSharedStack` etc.) are separate CloudFormation stacks, so
+they are not deleted, and neither their names nor their templates change.
+
+Pushing to a branch that has the new code makes the old pipeline fail at synth or self-mutation,
+before it reaches deployment. That environment is not deployed automatically until the migration is
+done. If it is urgent, deploy by hand with the qualified path
+(`npx cdk deploy 'KukanPipeline/<Env>/<Stack>'`, without `-c env`).
+
+```bash
+# 1. Delete the old stack (with the pipeline account's credentials; the new code's app has no
+#    KukanPipeline stack, so cdk destroy cannot select it)
+aws cloudformation delete-stack --stack-name KukanPipeline
+aws cloudformation wait stack-delete-complete --stack-name KukanPipeline
+#    If an environment is in a region different from the pipeline's, delete that region's support stack too
+aws cloudformation delete-stack --stack-name KukanPipeline-support-<region> --region <region>
+
+# 2. For each environment, deploy its pipeline stack from that environment's branch with the new code
+#    (it runs once on the branch head right after creation; branches without the new code wait until it arrives)
+git switch develop && cd infra && npx cdk deploy KukanPipeline-Dev
+```
+
+3. Environments with `deployNotification`: the secret holding the Slack webhook is deleted with the
+   old stack. Paste the URL again into the secret shown in the new stack's outputs (see "Deploy
+   notifications (Slack)" below)
+4. Cleanup: the old stack's artifact bucket, the support stack's replication bucket and the
+   notification Lambda's log group are retained (DeletionPolicy Retain). Empty them, then delete
+   them by hand. The KMS key of a pipeline that deploys to other accounts is scheduled for deletion
+   by CloudFormation
+
 ### Deploy notifications (Slack)
 
 Setting `deployNotification: true` on an environment posts the outcome of that
@@ -1130,7 +1193,8 @@ Chatbot is not used, because approving a workspace there is a manual console ste
 3. Copy the issued `https://hooks.slack.com/services/...`
 
 **Where it goes**: the stack creates the box. Deploying with `deployNotification: true`
-outputs the secret's ARN (`Notify<Environment>SlackWebhookSecretArn`); paste the URL into it once:
+outputs the secret's ARN on the pipeline stack (`KukanPipeline-<Env>`) as `NotifySlackWebhookSecretArn`;
+paste the URL into it once:
 
 ```bash
 aws secretsmanager put-secret-value --secret-id <ARN from the output> --secret-string 'https://hooks.slack.com/services/...'

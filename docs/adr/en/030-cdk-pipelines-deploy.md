@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Implemented and in operation (`infra/lib/stacks/pipeline-stack.ts`; CodePipeline V2). Designed together with ADR-031 (Stage-based multi-environment).
+**Accepted** — Implemented and in operation (`infra/lib/stacks/pipeline-stack.ts`; CodePipeline V2). Designed together with ADR-031 (Stage-based multi-environment). The part that places a single pipeline stack (the first item of "Pipeline structure" and setup step 3) is superseded by ADR-074 (one `KukanPipeline-<Env>` per environment).
 
 ## Context
 
@@ -47,7 +47,7 @@ new CodePipeline(this, 'Pipeline', {
 
 ### Pipeline structure
 
-- Define `CodePipeline` in `KukanPipelineStack`
+- Define `CodePipeline` in `KukanPipelineStack` (superseded by ADR-074: one stack per environment)
 - Add each environment as a Stage (ADR-031's `KukanStage`) via `addStage()`. Insert `ManualApprovalStep` in `pre`/`post` to set gates such as manual approval for prd and automatic for dev
 - Branch strategy: `develop` → dev, `main` → prd. Choose either "a single pipeline with multiple stages (waves + approvals)" or "a pipeline per branch"
   - (2026-10 note) The implementation chose **a pipeline per branch** (one per environment, started by that environment's `deployBranch`), so that what reaches production matches an ADR-035 release (the fast-forward to `main` and its tag); no `ManualApprovalStep` is set. With one pipeline of several stages, every push to `develop` would queue a production approval, and the production version would no longer be tied to a release
@@ -56,7 +56,7 @@ new CodePipeline(this, 'Pipeline', {
 
 1. **Create a CodeConnections connection**: approve the GitHub App (AWS Connector) in the AWS console and obtain the Connection ARN (this approval is a one-time manual step that cannot be expressed as IaC)
 2. `cdk bootstrap` (per account / region; for cross-account, bootstrap with a trust relationship)
-3. **Deploy the pipeline stack once manually** (`cd infra && npx cdk deploy KukanPipeline`)
+3. **Deploy the pipeline stack once manually** (since ADR-074, per environment: `cd infra && npx cdk deploy KukanPipeline-<Env>`)
 4. After that, pushes deploy automatically; changes to the pipeline definition are applied via self-mutation
 
 ## Trade-offs
@@ -80,6 +80,7 @@ new CodePipeline(this, 'Pipeline', {
 ## Related
 
 - ADR-031 (Stage-based multi-environment deployment): `docs/adr/en/031-multi-environment-deploy.md`
+- ADR-074 (One pipeline stack per environment): `docs/adr/en/074-pipeline-stack-per-environment.md`
 - ADR-020 (ECS Fargate + ALB): `docs/adr/en/020-ecs-fargate-alb-migration.md`
 - ADR-027 (CloudFront reintroduction / 2-stack setup): `docs/adr/en/027-cloudfront-reintroduction.md`
 - AWS official: [CDK Pipelines](https://docs.aws.amazon.com/cdk/v2/guide/cdk_pipeline.html) / [CodeConnections](https://docs.aws.amazon.com/dtconsole/latest/userguide/connections.html)

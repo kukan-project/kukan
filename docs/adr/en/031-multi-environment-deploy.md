@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Implemented and in operation (`infra/lib/stacks/kukan-stage.ts` / `config/environments.ts`). Designed together with ADR-030 (CDK Pipelines). ADR-041 extends it with the site axis.
+**Accepted** — Implemented and in operation (`infra/lib/stacks/kukan-stage.ts` / `config/environments.ts`). Designed together with ADR-030 (CDK Pipelines). ADR-041 extends it with the site axis. The part that makes `pipelineAccount` a guard that only validates and shares one connection across all environments is superseded by ADR-074 (the pipeline's account and connection can be chosen per environment).
 
 ## Context
 
@@ -100,6 +100,12 @@ trust, where the connection lives, which account creates the us-east-1 cert / WA
 CMK-encrypting the artifact bucket (`crossAccountKeys`) is derived from "pipeline account
 != Stage account", not exposed as a setting.
 
+> [!NOTE]
+> The paragraph below is superseded by ADR-074. The pipeline stack is split per environment, and
+> `connectionArn` can be set per environment. A pipeline is built in its connection's account, and
+> synth builds only the pipelines in the credentials' account. `pipelineAccount` is no longer needed
+> (if set, it is checked against the connection's account).
+
 `pipelineAccount` in `environments.ts` (optional) is the misdeployment guard for that
 separation. Unlike an env's `account`, where the pipeline lands is otherwise decided
 silently by the active credentials (running `cdk deploy KukanPipeline` from a prd session
@@ -174,6 +180,7 @@ env entry (`scale` + `overrides`) > scale defaults (`config.ts`) > built-in defa
 ## Related
 
 - ADR-041 (Multi-site deployment): extends this ADR by adding a site axis inside the environment axis
+- ADR-074 (One pipeline stack per environment): supersedes the `pipelineAccount` and connection part
 - ADR-030 (Automated deployment via CDK Pipelines): `docs/adr/en/030-cdk-pipelines-deploy.md`
 - ADR-020 (ECS Fargate + ALB): `docs/adr/en/020-ecs-fargate-alb-migration.md`
 - ADR-027 (CloudFront reintroduction / 2-stack setup): `docs/adr/en/027-cloudfront-reintroduction.md`
