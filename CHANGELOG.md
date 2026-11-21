@@ -6,6 +6,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.45.1] - 2026-11-21
+
+**Highlights**
+
+- **AWS: the global stack keeps managing its WAF WebACL after the WebACL's ARN is pasted into a site.** Pipeline-managed environments paste the ARN (`webAclArn`) because the pipeline cannot deploy the us-east-1 global stack. Until now, the paste took the WebACL out of the global stack: a standalone deploy of that stack (for example, to create a new site's certificate) kept the WebACL but deleted its logging configuration and the log bucket's policy, so the WAF log stopped. Rule changes from later releases also reached the WebACL only if the ARN was removed locally for the deploy (#1258). The global stack now recognizes its own WebACL by its ARN and keeps the WebACL, its logging and its rules up to date; a WebACL made elsewhere is still left alone, and none is created unused.
+
+**Bug Fixes**
+
+- fix(infra): keep managing the global stack's WebACL after its ARN is pasted (#1258)
+
+**Upgrade Notes** (for system administrators)
+
+- **AWS, environments that paste the WAF ARN (pipeline-managed environments with WAF on):** after taking this version, deploy the global stack once by hand to apply the rule changes that have not reached your WebACL yet (for example, masking API tokens in sampled requests and in the log). From `infra/`, run `npx cdk diff -c env=<env> '<Stage>/KukanGlobalStack'`, check that no WAF resource is removed, then run `npx cdk deploy -c env=<env> '<Stage>/KukanGlobalStack'`. Keep `webAclArn` as it is; you no longer remove it for this. Use the same steps for later WAF changes.
+- **Do not deploy the global stack by hand on an older version while `webAclArn` is set:** it deletes the WAF logging. If you must, comment `webAclArn` out locally for that deploy and check `cdk diff` first.
+- **If an older version already took the WebACL out of the global stack** (the global stack was deployed with `webAclArn` set and the WAF resources were orphaned), deploying the global stack on this version fails on the log bucket's name and rolls back, without harm. Bring the WebACL, its IP sets and the log bucket back into the stack with `cdk import`, then deploy; the steps are in the deployment spec's WAF section. Try them in a test environment first.
+- Share a WebACL among the sites of one environment, not across environments: the global stack also takes a WebACL created by another environment in the same account as its own.
+- **Database:** no migrations. **Docker Compose:** nothing changes.
+
+---
+
+**ハイライト**
+
+- **AWS：WAF の WebACL の ARN をサイトに貼った後も、global スタックが WebACL を管理し続けるようになりました。** パイプラインは us-east-1 の global スタックをデプロイできないので、パイプラインで管理している環境は ARN（`webAclArn`）を貼ります。これまでは貼ると WebACL が global スタックから外れ、そのスタックを手でデプロイすると（新しいサイトの証明書を作るときなど）、WebACL は残るもののログ設定とログのバケットのポリシーが削除され、WAF のログが止まりました。後のリリースのルールの変更も、デプロイの間だけ手元で ARN を外したときにしか届きませんでした（#1258）。いまは global スタックが ARN から自分の WebACL を見分け、WebACL・ログ・ルールを最新に保ちます。外部で作った WebACL は今までどおり扱わず、使われない WebACL も作りません。
+
+**バグ修正**
+
+- fix(infra): ARN を貼った後も global スタックの WebACL を管理し続ける（#1258）
+
+**更新時の注意**（システム管理者向け）
+
+- **AWS（WAF の ARN を貼っている環境＝WAF を使っているパイプライン管理の環境）：** この版を取り込んだら、global スタックを一度手でデプロイして、まだ WebACL に届いていないルールの変更（サンプリングした要求やログで API トークンを伏せる設定など）を反映してください。`infra/` で `npx cdk diff -c env=<env> '<Stage>/KukanGlobalStack'` を実行して WAF のリソースが削除されないことを確かめ、`npx cdk deploy -c env=<env> '<Stage>/KukanGlobalStack'` を実行します。`webAclArn` はそのままで構いません（外す必要はなくなりました）。以後の WAF の変更も同じ手順で反映します。
+- **古い版のまま、`webAclArn` を貼った状態で global スタックを手でデプロイしないでください。** WAF のログ設定が削除されます。どうしても必要なときは、その間だけ手元で `webAclArn` をコメントアウトし、先に `cdk diff` を確かめてください。
+- **古い版ですでに WebACL が global スタックから外れた環境**（`webAclArn` を貼ったまま global スタックをデプロイし、WAF のリソースが切り離された環境）では、この版で global スタックをデプロイするとログのバケットの名前がぶつかって失敗し、ロールバックします（壊れはしません）。WebACL・IP セット・ログのバケットを `cdk import` でスタックに取り込み直してから、デプロイしてください。手順はデプロイの仕様書の WAF の節にあります。先に検証用の環境で試してください。
+- WebACL は 1 つの環境のサイトで共有し、環境をまたいで共有しないでください。global スタックは、同じアカウントの別の環境が作った WebACL も自分のものと見なします。
+- **データベース：** マイグレーションはありません。**Docker Compose：** 変更はありません。
+
 ## [0.45.0] - 2026-11-21
 
 **Breaking Changes**
