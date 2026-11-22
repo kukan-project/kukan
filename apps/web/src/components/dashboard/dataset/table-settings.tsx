@@ -46,7 +46,13 @@ import type {
 import {
   canIdentifyRows,
   canOverrideRole,
+  ISO_8601_TIMESTAMP,
   OVERRIDABLE_COLUMN_ROLES,
+  parseSettledType,
+  readTypeOf,
+  RESOURCE_COLUMN_TYPES,
+  SETTLED_DATE_FORMATS,
+  SETTLED_TIMESTAMP_FORMATS,
   sameKeyColumns,
   sameColumnValues,
 } from '@kukan/shared'
@@ -66,8 +72,16 @@ const INFERRED = 'inferred'
 /** The draft's overrides by column; none is an empty object, which the API stores as none. */
 type RoleOverrides = Record<string, OverridableColumnRole>
 /** A column's override, by own key only: a column named `constructor` is not the prototype's */
-const overrideOf = (roles: RoleOverrides | null | undefined, name: string) =>
-  roles && Object.hasOwn(roles, name) ? roles[name] : null
+const overrideOf = <T,>(values: Record<string, T> | null | undefined, name: string) =>
+  values && Object.hasOwn(values, name) ? values[name] : null
+
+/** The draft's settled types by column, as stored (`"decimal"`, `"date:%d/%m/%Y"`) */
+type SettledTypes = Record<string, string>
+
+/** A draft built on what the server still holds is kept on a reload; one whose base moved under it is not */
+function keepDraft<T>(base: T | undefined, current: T, loaded: T, same: (a: T, b: T) => boolean) {
+  return base !== undefined && !same(base, current) && same(base, loaded)
+}
 
 /**
  * The Table settings tab (ADR-072 decision 5): every column in one table, with
@@ -117,6 +131,9 @@ export function TableSettings({
   const [view, setView] = useState<ColumnSettingsView | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [roleDraft, setRoleDraft] = useState<RoleOverrides>({})
+  const [typeDraft, setTypeDraft] = useState<SettledTypes>({})
+  /** Key columns a type change took out of the draft, to give back if it is undone */
+  const droppedByType = useRef(new Set<string>())
   /** Whether the apply behind `queued` changed roles alone, which says so differently */
   const [queuedRolesOnly, setQueuedRolesOnly] = useState(false)
   const [check, setCheck] = useState<KeyCheck | null>(null)
@@ -137,7 +154,10 @@ export function TableSettings({
   const selectedKey = selected.length > 0 ? selected : null
   const keyDraft = !!view && !sameKeyColumns(view.primaryKey, selectedKey)
   const rolesDraft = !!view && !sameColumnValues(view.roles, roleDraft)
-  const draft = keyDraft || rolesDraft
+  const typesDraft = !!view && !sameColumnValues(view.types, typeDraft)
+  /** A change that makes a version, and so is confirmed: the key or a type */
+  const readingDraft = keyDraft || typesDraft
+  const draft = readingDraft || rolesDraft
   useEffect(() => {
     onDraftChange?.(draft)
   }, [draft, onDraftChange])
@@ -149,6 +169,8 @@ export function TableSettings({
   const loadedKey = useRef<string[] | null | undefined>(undefined)
   /** The overrides the role draft was last reset to, likewise */
   const loadedRoles = useRef<RoleOverrides | null | undefined>(undefined)
+  /** The settled types the type draft was last reset to, likewise */
+  const loadedTypes = useRef<SettledTypes | null | undefined>(undefined)
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
@@ -168,15 +190,20 @@ export function TableSettings({
             ? current
             : (data.primaryKey ?? [])
         )
-        // The same for the roles: a draft on overrides that still stand is kept
+        // The same for the roles and the types
         const roleBase = loadedRoles.current
         loadedRoles.current = data.roles
         setRoleDraft((current) =>
-          roleBase !== undefined &&
-          !sameColumnValues(roleBase, current) &&
-          sameColumnValues(roleBase, data.roles)
+          keepDraft<RoleOverrides | null>(roleBase, current, data.roles, sameColumnValues)
             ? current
             : { ...data.roles }
+        )
+        const typeBase = loadedTypes.current
+        loadedTypes.current = data.types
+        setTypeDraft((current) =>
+          keepDraft<SettledTypes | null>(typeBase, current, data.types, sameColumnValues)
+            ? current
+            : { ...data.types }
         )
       } catch {
         if (!signal?.aborted) setLoadError(true)
@@ -197,8 +224,17 @@ export function TableSettings({
     return () => controller.abort()
   }, [load, reloadKey])
 
-  /** A selection that is not yet what the resource is set to. */
-  const pending = selected.length > 0 && !sameKeyColumns(view?.primaryKey ?? null, selected)
+  /**
+   * A selection that is not yet what the resource is set to — or the key as it
+   * stands with one of its columns to be read as another type, which is a new
+   * key to check and to refuse as much as a new selection is (the server asks
+   * it again then too).
+   */
+  const keyRetyped = selected.some(
+    (name) => overrideOf(view?.types, name) !== overrideOf(typeDraft, name)
+  )
+  const pending =
+    selected.length > 0 && (!sameKeyColumns(view?.primaryKey ?? null, selected) || keyRetyped)
 
   /**
    * The columns no key may rest on, because their type cannot identify a row
@@ -210,9 +246,14 @@ export function TableSettings({
    * something the next publication might fix.
    */
   const columns = view?.schema?.columns
+  // By the type the draft reads each column as: a float column settled as
+  // decimal can be picked, one settled as float cannot
   const unkeyable = useMemo(
-    () => new Set((columns ?? []).filter((c) => !canIdentifyRows(c.type)).map((c) => c.name)),
-    [columns]
+    () =>
+      new Set(
+        (columns ?? []).filter((c) => !canIdentifyRows(readTypeOf(c, typeDraft))).map((c) => c.name)
+      ),
+    [columns, typeDraft]
   )
   /**
    * A selection the server will not take (400), rather than one it takes and
@@ -223,8 +264,6 @@ export function TableSettings({
    * resend that repairs a failed enqueue has to go on working.
    */
   const refused = pending && selected.some((name) => unkeyable.has(name))
-  // Sent with the check as with the apply: a key column's settled type is what it is judged by
-  const settledTypes = view?.types ?? null
 
   // The endpoint is built to be re-fired as the selection changes — it takes the request's
   // own signal — so the selection is checked as it is built rather than behind
@@ -250,7 +289,8 @@ export function TableSettings({
         const res = await clientFetch(`/api/v1/resources/${resourceId}/column-settings/check`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ primaryKey: selected, types: settledTypes }),
+          // With the types, as the apply sends them: a key column is judged by its settled type
+          body: JSON.stringify({ primaryKey: selected, types: typeDraft }),
           signal: controller.signal,
         })
         if (!res.ok) throw new Error(String(res.status))
@@ -270,7 +310,7 @@ export function TableSettings({
     }
     // `reloadKey` too: a draft kept across a run landing was checked against
     // the content before it, and the new content may break it
-  }, [resourceId, pending, refused, selected, reloadKey, settledTypes])
+  }, [resourceId, pending, refused, selected, reloadKey, typeDraft])
 
   /** Append or remove, keeping the order columns were picked in: a composite
    *  key is its columns *in that order* (spec §6.2). */
@@ -294,6 +334,37 @@ export function TableSettings({
   const answered = check && sameKeyColumns(check.primaryKey ?? null, selectedKey) ? check : null
   const fault = answered?.checked ? answered.fault : null
 
+  /**
+   * A column's settled type, or back to inference's with null. A column it
+   * makes no longer text gives up its role in the draft too: the type is the
+   * role then (ADR-063 §決定 5), and the apply would drop it anyway. One it
+   * types as a float leaves the key, which could not be applied with it.
+   */
+  function setType(name: string, type: string | null) {
+    setQueued(null)
+    setError(null)
+    const next = { ...typeDraft }
+    delete next[name]
+    if (type) next[name] = type
+    setTypeDraft(next)
+    const column = columns?.find((c) => c.name === name)
+    if (column && !canOverrideRole(readTypeOf(column, next))) setRole(name, null)
+    if (!column) return
+    // And its place in the key, where the type is one no key may rest on —
+    // given back where it stood once the type is one a key may rest on again
+    if (!canIdentifyRows(readTypeOf(column, next))) {
+      if (selected.includes(name)) droppedByType.current.add(name)
+      setSelected((current) => current.filter((c) => c !== name))
+    } else if (droppedByType.current.delete(name)) {
+      const place = (view?.primaryKey ?? []).indexOf(name)
+      setSelected((current) =>
+        current.includes(name)
+          ? current
+          : [...current.slice(0, Math.max(place, 0)), name, ...current.slice(Math.max(place, 0))]
+      )
+    }
+  }
+
   /** A text column's role, or back to the rules' with null. */
   function setRole(name: string, role: OverridableColumnRole | null) {
     setQueued(null)
@@ -308,17 +379,16 @@ export function TableSettings({
     setConfirming(false)
     setSaving(true)
     setError(null)
-    const rolesOnly = !keyDraft && rolesDraft
+    const rolesOnly = !readingDraft && rolesDraft
     try {
       const res = await clientFetch(`/api/v1/resources/${resourceId}/column-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        // All of it, always: a PUT replaces the setting, and what is left out is
-        // cleared. The types as they stand until this screen edits them
+        // All of it, always: a PUT replaces the setting, and what is left out is cleared
         body: JSON.stringify({
           primaryKey: selectedKey,
           roles: roleDraft,
-          types: settledTypes,
+          types: typeDraft,
         }),
       })
       if (!res.ok) {
@@ -326,6 +396,9 @@ export function TableSettings({
         return
       }
       const data: { queued: boolean | null } = await res.json()
+      // What a type change took out is settled now: undoing a type later must
+      // not put back a key the person applied without
+      droppedByType.current.clear()
       setQueuedRolesOnly(rolesOnly)
       setQueued(data.queued)
       await load()
@@ -383,12 +456,26 @@ export function TableSettings({
   const schemaNames = new Set(view.schema.columns.map((column) => column.name))
   /** Key columns this version does not have (the content dropped or renamed
    *  them): drawn as rows too, or such a key could never be taken apart here */
-  const absent = [...new Set([...storedKey, ...selected])].filter((name) => !schemaNames.has(name))
+  const storedTypes = view.types ?? {}
+  /** And settled types on columns it does not have, or such a type could never be lifted here */
+  const absent = [
+    ...new Set([...storedKey, ...selected, ...Object.keys(storedTypes), ...Object.keys(typeDraft)]),
+  ].filter((name) => !schemaNames.has(name))
   const storedRoles = view.roles ?? {}
   const roleChanged = (name: string) =>
     overrideOf(storedRoles, name) !== overrideOf(roleDraft, name)
+  const typeChanged = (name: string) =>
+    overrideOf(storedTypes, name) !== overrideOf(typeDraft, name)
+  /** The type changes, for the confirmation to list */
+  const retyped = [...schemaNames, ...absent].filter(typeChanged)
+  const liveColumns = view.schema.columns
+  const inferredOf = (name: string) => {
+    const column = liveColumns.find((c) => c.name === name)
+    return column ? (column.inferredType ?? column.type) : null
+  }
   const changed = [...schemaNames, ...absent].filter(
-    (name) => storedKey.indexOf(name) !== selected.indexOf(name) || roleChanged(name)
+    (name) =>
+      storedKey.indexOf(name) !== selected.indexOf(name) || roleChanged(name) || typeChanged(name)
   ).length
 
   return (
@@ -414,11 +501,23 @@ export function TableSettings({
       {/* What a person decides about the columns, under the preview of what
           they hold — headed as the preview is */}
       <h4 className="mt-2 text-xl font-semibold">{t('sectionColumns')}</h4>
-      {/* The advice to set a key where a column can carry one — the guide's
-          caution about unstable columns is the other half — and what applying
-          does (ADR-072 decision 4). The same on every resource. */}
-      <p className="text-sm">{t('recommendKey')}</p>
-      <p className="text-sm">{t('rolesIntro')}</p>
+      {/* In the table's order: the type, the key, the role. The advice to set a
+          key where a column can carry one — the guide's caution about unstable
+          columns is the other half — and what applying does (ADR-072 decision 4).
+          The same on every resource. */}
+      {(
+        [
+          [tr('columnRoles.type'), t('typesIntro')],
+          [t('title'), t('recommendKey')],
+          [tr('columnRoles.role'), t('rolesIntro')],
+        ] as const
+      ).map(([label, text]) => (
+        <p key={label} className="text-sm">
+          {/* Headed with the column it is about, as the table heads it */}
+          <span className="font-semibold">{t('introLabel', { label })}</span>
+          {text}
+        </p>
+      ))}
 
       {/* The explanations, folded and in short lists: they are read once, and
           the table is what the tab is for. The conditional warnings stay
@@ -458,9 +557,12 @@ export function TableSettings({
         storedKey={storedKey}
         roleDraft={roleDraft}
         roleChanged={roleChanged}
+        typeDraft={typeDraft}
+        typeChanged={typeChanged}
         unkeyable={unkeyable}
         onToggle={toggle}
         onRole={setRole}
+        onType={setType}
       />
       {rolesFailed && (
         <p className="text-muted-foreground text-xs">{tr('columnRoles.loadError')}</p>
@@ -502,6 +604,7 @@ export function TableSettings({
           {/* What a role change does, beside what the key's state is: the two
               are applied together but cost different things */}
           {rolesDraft && queued === null && <p className="text-sm">{t('rolesWillApply')}</p>}
+          {typesDraft && queued === null && <p className="text-sm">{t('typesWillApply')}</p>}
           {/* A role makes no version, so whether it is read is the profile's to say */}
           {!rolesDraft && queued === null && !view.rolesCarried && (
             <p className="text-sm">{t('rolesPending')}</p>
@@ -526,6 +629,8 @@ export function TableSettings({
           onClick={() => {
             setSelected(storedKey)
             setRoleDraft({ ...storedRoles })
+            setTypeDraft({ ...storedTypes })
+            droppedByType.current.clear()
             setError(null)
           }}
           disabled={saving || settled}
@@ -534,10 +639,10 @@ export function TableSettings({
         </Button>
         <Button
           size="sm"
-          // A change of key is always confirmed with what it changes: it makes
-          // a version (ADR-072 decision 5). Roles alone make none, and the
-          // repair resend changes nothing, so both apply straight away.
-          onClick={() => (keyDraft ? setConfirming(true) : apply())}
+          // A change of key or of a type is always confirmed with what it
+          // changes: it makes a version (ADR-072 decision 5). Roles alone make
+          // none, and the repair resend changes nothing, so both apply straight away.
+          onClick={() => (readingDraft ? setConfirming(true) : apply())}
           // While a check is out, this key has no verdict — and applying
           // without one skips a confirmation that cannot be shown afterwards:
           // the version is made, layer 2 refuses it, and nothing puts it back
@@ -565,26 +670,62 @@ export function TableSettings({
           never cleared (spec §6.6), and correcting the key afterwards does not
           put it in. */}
       {/* Closed once there is nothing to apply: a run landing can settle it */}
-      <Dialog open={confirming && keyDraft} onOpenChange={(open) => !open && setConfirming(false)}>
+      <Dialog
+        open={confirming && readingDraft}
+        onOpenChange={(open) => !open && setConfirming(false)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{fault ? t('confirmTitle') : t('confirmChangeTitle')}</DialogTitle>
+            <DialogTitle>
+              {fault
+                ? t('confirmTitle')
+                : keyDraft
+                  ? t('confirmChangeTitle')
+                  : t('confirmTypesTitle')}
+            </DialogTitle>
             <DialogDescription>
               {fault
                 ? t(`fault.${fault}`)
-                : selected.length === 0
-                  ? t('willClear')
-                  : t('willApply')}
+                : !keyDraft
+                  ? t('typesWillApply')
+                  : selected.length === 0
+                    ? t('willClear')
+                    : t('willApply')}
             </DialogDescription>
           </DialogHeader>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-            <dt className="text-muted-foreground">{t('before')}</dt>
-            <dd className="break-all">
-              {storedKey.length ? storedKey.join(' → ') : t('kindNone')}
-            </dd>
-            <dt className="text-muted-foreground">{t('after')}</dt>
-            <dd className="break-all">{selected.length ? selected.join(' → ') : t('kindNone')}</dd>
-          </dl>
+          {keyDraft && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <dt className="text-muted-foreground">{t('before')}</dt>
+              <dd className="break-all">
+                {storedKey.length ? storedKey.join(' → ') : t('kindNone')}
+              </dd>
+              <dt className="text-muted-foreground">{t('after')}</dt>
+              <dd className="break-all">
+                {selected.length ? selected.join(' → ') : t('kindNone')}
+              </dd>
+            </dl>
+          )}
+          {/* Each type change, before and after: what the reading will be */}
+          {typesDraft && (
+            // Scrolled within, so a long list keeps the buttons in reach
+            <ul className="flex max-h-[40vh] flex-col gap-1 overflow-y-auto text-sm">
+              {retyped.map((name) => (
+                <li key={name} className="break-all">
+                  <span className="font-medium">{name}</span>
+                  {': '}
+                  <SettledTypeLabel
+                    type={overrideOf(storedTypes, name)}
+                    inferred={inferredOf(name)}
+                  />
+                  {' → '}
+                  <SettledTypeLabel
+                    type={overrideOf(typeDraft, name)}
+                    inferred={inferredOf(name)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
           {fault && <p className="text-muted-foreground text-sm">{t('confirmCost')}</p>}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setConfirming(false)} disabled={saving}>
@@ -598,7 +739,7 @@ export function TableSettings({
                 ? t('applying')
                 : fault
                   ? t('confirmApply')
-                  : selected.length === 0
+                  : keyDraft && selected.length === 0
                     ? t('clear')
                     : t('apply')}
             </Button>
@@ -739,9 +880,12 @@ function ColumnTable({
   storedKey,
   roleDraft,
   roleChanged,
+  typeDraft,
+  typeChanged,
   unkeyable,
   onToggle,
   onRole,
+  onType,
 }: {
   columns: ResourceColumn[]
   /** Key columns this version does not have */
@@ -756,8 +900,12 @@ function ColumnTable({
   /** The roles the draft gives text columns, by name */
   roleDraft: RoleOverrides
   roleChanged: (name: string) => boolean
+  /** The settled types the draft gives columns, by name */
+  typeDraft: SettledTypes
+  typeChanged: (name: string) => boolean
   onToggle: (name: string) => void
   onRole: (name: string, role: OverridableColumnRole | null) => void
+  onType: (name: string, type: string | null) => void
 }) {
   const t = useTranslations('resource.columnSettings')
   const tr = useTranslations('resource')
@@ -793,11 +941,16 @@ function ColumnTable({
           ].map(({ name, column, role }, i) => {
             const place = selected.indexOf(name)
             const placeId = `${idPrefix}-place-${i}`
-            const draft = storedKey.indexOf(name) !== place || roleChanged(name)
+            const draft =
+              storedKey.indexOf(name) !== place || roleChanged(name) || typeChanged(name)
             // Not for a column the stored key already rests on: that key stands
             // (spec §6.4), so the box has to press both ways, or taking the
-            // column out is a one-way door
-            const blocked = unkeyable.has(name) && !storedKey.includes(name)
+            // column out is a one-way door. Unless the draft retypes it: then
+            // it is a new reading, and the key left it with the type
+            const blocked = unkeyable.has(name) && (!storedKey.includes(name) || typeChanged(name))
+            // A column the version lacks is drawn for its key place or its
+            // settled type; only a key place can be taken out here
+            const keyable = column !== null || storedKey.includes(name) || place >= 0
             return (
               <TableRow
                 // By place: headings can repeat, and a repeated one is a
@@ -812,19 +965,28 @@ function ColumnTable({
                 >
                   {name}
                 </TableCell>
-                <TableCell className="align-top">
-                  {column ? (
-                    <Badge variant="secondary" className="font-normal">
-                      {tr(columnTypeKey(column.type))}
-                    </Badge>
-                  ) : (
+                <TableCell className="align-top whitespace-normal">
+                  {/* A column the version lacks keeps its choice if it had a
+                      type settled, so the type can be lifted */}
+                  {column || overrideOf(typeDraft, name) !== null || typeChanged(name) ? (
+                    <TypeChoice
+                      name={name}
+                      column={column}
+                      chosen={overrideOf(typeDraft, name)}
+                      changed={typeChanged(name)}
+                      onChoose={(next) => onType(name, next)}
+                    />
+                  ) : null}
+                  {!column && (
                     <span className="text-warning-tint-foreground text-xs">
                       {t('notInVersion')}
                     </span>
                   )}
                 </TableCell>
                 <TableCell className="align-top">
-                  {blocked ? (
+                  {!keyable ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : blocked ? (
                     <span className="text-muted-foreground text-xs" title={t('floatNotKeyable')}>
                       {t('notKeyable')}
                     </span>
@@ -859,14 +1021,25 @@ function ColumnTable({
                 </TableCell>
                 <TableCell className="align-top whitespace-normal">
                   {/* Offered with no profile too: an override stored before it
-                      failed must stay changeable */}
-                  {column && canOverrideRole(column.type) ? (
+                      failed must stay changeable. By the type the draft reads
+                      the column as: a role is a text column's alone */}
+                  {column && canOverrideRole(readTypeOf(column, typeDraft)) ? (
                     <RoleChoice
                       name={name}
-                      role={role}
+                      // A column the draft makes text has no rules' role yet
+                      role={typeChanged(name) ? null : role}
                       chosen={overrideOf(roleDraft, name)}
                       onChoose={(next) => onRole(name, next)}
                     />
+                  ) : column && typeChanged(name) ? (
+                    // A column the draft types takes its role from the type, as
+                    // the profile gives every typed column, so it can be told now
+                    <span className="flex flex-col gap-0.5">
+                      <span>
+                        <Badge variant="outline">{tr('fieldRoles.measure')}</Badge>
+                      </span>
+                      <RoleBasis basis={{ rule: 'typed' }} />
+                    </span>
                   ) : role ? (
                     <span className="flex flex-col gap-0.5">
                       <span>
@@ -893,6 +1066,157 @@ function ColumnTable({
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+/** A date's or a time's parts as a format spells them, for a format to be shown by example. */
+const FORMAT_EXAMPLE: Record<string, string> = {
+  // A year no day or month can be, so a two-digit one tells the order too
+  '%Y': '1999',
+  '%y': '99',
+  '%m': '12',
+  '%d': '31',
+  '%H': '13',
+  '%M': '45',
+  '%S': '30',
+}
+
+/** A format as the date it writes: day 31 and month 12 tell the orders apart. */
+function formatExample(format: string): string {
+  if (format === ISO_8601_TIMESTAMP) return '1999-12-31T13:45:30+09:00'
+  return format.replace(/%[YymdHMS]/g, (part) => FORMAT_EXAMPLE[part])
+}
+
+/** A settled type as a person reads it: the type, with its format by example. */
+function SettledTypeLabel({
+  type,
+  inferred,
+}: {
+  type: string | null
+  /** What inference makes of the column, which "Auto" reads as; unknown where it has none */
+  inferred: ResourceColumn['type'] | null
+}) {
+  const t = useTranslations('resource.columnSettings')
+  const tr = useTranslations('resource')
+  const spec = type ? parseSettledType(type) : null
+  if (!spec) {
+    return (
+      <>{inferred ? t('typeAuto', { type: tr(columnTypeKey(inferred)) }) : t('typeAutoShort')}</>
+    )
+  }
+  return (
+    <>
+      {tr(columnTypeKey(spec.type))}
+      {spec.format && ` (${formatExample(spec.format)})`}
+    </>
+  )
+}
+
+/**
+ * A column's type: inference's or a settled one (Versioning ii-c §8.7), with a
+ * date's or a time's format where it has one. Under it, what the live version
+ * made of a settled column: the values that did not convert, and a format it
+ * could not tell.
+ */
+function TypeChoice({
+  name,
+  column,
+  chosen,
+  changed,
+  onChoose,
+}: {
+  name: string
+  /** The live version's column; null where it has none */
+  column: ResourceColumn | null
+  chosen: string | null
+  /** Whether the draft changes it: the notes then describe a reading that will not stand */
+  changed: boolean
+  onChoose: (type: string | null) => void
+}) {
+  const t = useTranslations('resource.columnSettings')
+  const tr = useTranslations('resource')
+  const spec = chosen ? parseSettledType(chosen) : null
+  /** What inference made of the column, where a settled type replaced it */
+  const inferred = column ? (column.inferredType ?? column.type) : null
+  const dated = spec?.type === 'date' || spec?.type === 'timestamp'
+  const formats = spec?.type === 'timestamp' ? SETTLED_TIMESTAMP_FORMATS : SETTLED_DATE_FORMATS
+  return (
+    <span className="flex flex-col gap-1">
+      <Select
+        value={spec?.type ?? INFERRED}
+        // A new type takes no format along: the formats are the type's own
+        onValueChange={(value) => onChoose(value === INFERRED ? null : value)}
+      >
+        <SelectTrigger
+          className="h-8 w-fit gap-1 py-1 whitespace-nowrap"
+          aria-label={t('typeFor', { name })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={INFERRED}>
+            {inferred ? t('typeAuto', { type: tr(columnTypeKey(inferred)) }) : t('typeAutoShort')}
+          </SelectItem>
+          {/* A column the version lacks can only have its type lifted: a new
+              one needs a column to read (the apply refuses it) */}
+          {(column ? RESOURCE_COLUMN_TYPES : spec ? [spec.type] : []).map((option) => (
+            <SelectItem key={option} value={option}>
+              {tr(columnTypeKey(option))}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {dated && (
+        <Select
+          value={spec.format ?? INFERRED}
+          onValueChange={(value) =>
+            onChoose(value === INFERRED ? spec.type : `${spec.type}:${value}`)
+          }
+        >
+          <SelectTrigger
+            className="h-8 w-fit gap-1 py-1 whitespace-nowrap"
+            aria-label={t('formatFor', { name })}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INFERRED} description={t('formatAutoHint')}>
+              {t('formatAuto')}
+            </SelectItem>
+            {formats.map((format) => (
+              <SelectItem key={format} value={format}>
+                {formatExample(format)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {/* The examples are padded; the file's values need not be */}
+      {dated && <span className="text-muted-foreground text-xs">{t('formatNote')}</span>}
+      {column?.settled && !changed && <SettledNotes column={column} />}
+    </span>
+  )
+}
+
+/** What the live version's reading of a settled column came to, where it is worth a line. */
+function SettledNotes({ column }: { column: ResourceColumn }) {
+  const t = useTranslations('resource.columnSettings')
+  return (
+    <>
+      {column.dateFormatUndecided && (
+        <span className="text-warning-tint-foreground text-xs">{t('dateUndecided')}</span>
+      )}
+      {column.castFailures !== undefined && (
+        <span
+          className="text-warning-tint-foreground text-xs"
+          title={column.castFailureSamples
+            ?.map((sample) => t('castFailureSample', sample))
+            .join('\n')}
+        >
+          {t('castFailures', { count: column.castFailures })}
+        </span>
+      )}
+    </>
   )
 }
 
@@ -969,8 +1293,9 @@ function RoleBasis({ basis }: { basis: ColumnRoleBasis }) {
 }
 
 /**
- * What the primary key and the roles are, and what to keep in mind choosing a
- * key — as short lists under four headings rather than paragraphs.
+ * What the types, the primary key and the roles are, and what to keep in mind
+ * choosing a key — as short lists under the table's three headings rather than
+ * paragraphs.
  *
  * The rules are the three the ingest checks (spec §6.6), plus the one nothing
  * can check: the same row keeps its value and the value keeps its row. Breaking
@@ -982,47 +1307,79 @@ function TableSettingsGuide() {
   const tr = useTranslations('resource')
   const roles = (keys: string[]) =>
     keys.map((key) => tr(`fieldRoles.${key}`)).join(tr('fieldRoleSeparator'))
-  const section = (title: string, items: string[], lead?: string) => (
+  const list = (items: string[]) => (
+    <ul className="text-muted-foreground list-disc space-y-0.5 pl-5 text-xs">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  )
+  const lead = (text: string) => <p className="text-muted-foreground text-xs">{text}</p>
+  /** One of the three things the table decides, as the table heads them */
+  const section = (title: string, body: ReactNode) => (
     <section className="flex flex-col gap-1">
       <h3 className="text-xs font-semibold">{title}</h3>
-      {lead && <p className="text-muted-foreground text-xs">{lead}</p>}
-      <ul className="text-muted-foreground list-disc space-y-0.5 pl-5 text-xs">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
+      {body}
     </section>
+  )
+  /** A part of the key's section, under it */
+  const part = (title: string, body: ReactNode) => (
+    <div className="mt-1 flex flex-col gap-1">
+      <h4 className="text-muted-foreground text-xs font-semibold">{title}</h4>
+      {body}
+    </div>
   )
   return (
     <details className="rounded-md border px-3 py-2">
       <summary className="text-muted-foreground cursor-pointer text-sm">{t('summary')}</summary>
+      {/* The type and the role in one column, the key — the longest — in the other */}
       <div className="mt-3 grid gap-4 md:grid-cols-2">
-        {section(t('keyTitle'), [t('keyWhat'), t('keyDiff'), t('keyNone')])}
+        <div className="flex flex-col gap-4">
+          {section(
+            t('typesTitle'),
+            <>
+              {lead(t('typesLead'))}
+              {list([t('typesUse'), t('typesFormat'), t('typesFailures'), t('typesVersion')])}
+            </>
+          )}
+          {section(
+            t('rolesTitle'),
+            <>
+              {lead(t('rolesLead'))}
+              {list([
+                t('rolesListed', { roles: roles(['name', 'category']) }),
+                t('rolesFree', { roles: roles(['free-text']) }),
+                t('rolesUnsearched', { roles: roles(['measure', 'numeric-text', 'identifier']) }),
+                t('rolesOverride'),
+              ])}
+            </>
+          )}
+        </div>
         {section(
-          t('rulesTitle'),
-          [
-            t('rulePresent'),
-            t('ruleNoEmpty'),
-            t('ruleUnique'),
-            t('ruleUniqueMark'),
-            t('ruleFloat'),
-          ],
-          t('rulesLead')
-        )}
-        {section(
-          t('stableTitle'),
-          [t('stableRenumber'), t('stableReuse'), t('stableNone')],
-          t('stableLead')
-        )}
-        {section(
-          t('rolesTitle'),
-          [
-            t('rolesListed', { roles: roles(['name', 'category']) }),
-            t('rolesFree', { roles: roles(['free-text']) }),
-            t('rolesUnsearched', { roles: roles(['measure', 'numeric-text', 'identifier']) }),
-            t('rolesOverride'),
-          ],
-          t('rolesLead')
+          t('keyTitle'),
+          <>
+            {list([t('keyWhat'), t('keyDiff'), t('keyNone')])}
+            {part(
+              t('rulesTitle'),
+              <>
+                {lead(t('rulesLead'))}
+                {list([
+                  t('rulePresent'),
+                  t('ruleNoEmpty'),
+                  t('ruleUnique'),
+                  t('ruleUniqueMark'),
+                  t('ruleFloat'),
+                ])}
+              </>
+            )}
+            {part(
+              t('stableTitle'),
+              <>
+                {lead(t('stableLead'))}
+                {list([t('stableRenumber'), t('stableReuse'), t('stableNone')])}
+              </>
+            )}
+          </>
         )}
       </div>
     </details>

@@ -3224,6 +3224,32 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     ).toBe(400)
   })
 
+  it('gives a role to a column settled as text, and takes it from one settled as a number', async () => {
+    const resource = await withColumns('types-roles-pkg', ['code', '区分'], {
+      types: { code: 'integer' },
+    })
+
+    // In one apply: the role rests on the type it is settled with
+    expect(
+      (
+        await setSettings(resource.id, {
+          primaryKey: null,
+          roles: { code: 'identifier', 区分: 'name' },
+          types: { code: 'string' },
+        })
+      ).status
+    ).toBe(200)
+    expect((await storedSettings(resource.id)).roles).toEqual({ code: 'identifier', 区分: 'name' })
+
+    // Settled as a number, a text column's role goes
+    await setSettings(resource.id, {
+      primaryKey: null,
+      roles: { code: 'identifier', 区分: 'name' },
+      types: { code: 'string', 区分: 'integer' },
+    })
+    expect((await storedSettings(resource.id)).roles).toEqual({ code: 'identifier' })
+  })
+
   it('lets a standing float key stand while another column is settled', async () => {
     // A key is asked again only when it, or the type of one of its columns, changes (spec §6.4)
     const resource = await withColumns('types-standing-pkg', ['ratio', 'n'], {
@@ -3514,6 +3540,60 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
 
     expect(await check({ ratio: 'decimal' })).not.toMatchObject({ fault: 'key-float' })
     expect(await check(null)).toMatchObject({ fault: 'key-float' })
+  })
+
+  it('cannot tell from the live values a key whose column will read as another type', async () => {
+    // `001` and `1` are two strings and one integer: the counts live recorded answer nothing
+    const resource = await withColumns('key-check-retyped-pkg', ['code'], { distinctCount: 2 })
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['code'], types: { code: 'integer' } }),
+    })
+
+    expect(await res.json()).toMatchObject({ checked: false, reason: 'retyped' })
+  })
+
+  it('cannot tell either a key whose date column will read in another format', async () => {
+    // `13/02/2026` is a date day first and none month first
+    const resource = await withColumns('key-check-reformat-pkg', ['day'], { distinctCount: 2 })
+    await db
+      .update(resourceVersion)
+      .set({
+        schema: {
+          rowCount: 2,
+          columns: [
+            {
+              name: 'day',
+              type: 'date',
+              inferredType: 'string',
+              settled: true,
+              dateFormat: '%d/%m/%Y',
+              nullable: false,
+              nullCount: 0,
+              distinctCount: 2,
+            },
+          ],
+        },
+      })
+      .where(eq(resourceVersion.resourceId, resource.id))
+    await db
+      .update(resourceVersion)
+      .set({ settledTypes: { day: 'date:%d/%m/%Y' } })
+      .where(eq(resourceVersion.resourceId, resource.id))
+    const check = async (type: string) =>
+      (
+        await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ primaryKey: ['day'], types: { day: type } }),
+        })
+      ).json()
+
+    expect(await check('date:%m/%d/%Y')).toMatchObject({ checked: false, reason: 'retyped' })
+    // Left to the values, the format may come out another way too
+    expect(await check('date')).toMatchObject({ checked: false, reason: 'retyped' })
+    expect(await check('date:%d/%m/%Y')).not.toMatchObject({ reason: 'retyped' })
   })
 
   it('offers the columns the apply will validate against, and where the key stands', async () => {

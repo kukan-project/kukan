@@ -1416,8 +1416,11 @@ key-matched tier and degrades.
 ### 8.7 Screens (ADR-072)
 
 - **Settled types are set on the Table settings tab** (ADR-072 decision 5). A settled type changes how the bytes
-  are read, so applying it creates one version. The Table settings tab's table has "inferred type" and "settled
-  type" columns, and a settled column is marked
+  are read, so applying it creates one version. The table's "Type" column is a choice in the same form as the
+  role: "Auto" carries the inferred type ("Auto (Integer)"), and a settled column is told apart by a choice other
+  than "Auto". A date or a timestamp adds a choice of format, shown by an example value (the way the file writes
+  the values, not a display format). A settled column shows how many values did not convert, with samples, and
+  that its format could not be told
 - **Type changes are reviewed on the Version history tab** (ADR-072 decision 4). A version needing review shows
   which columns changed and how, samples of values that did not convert, and §8.4's choices. The list's
   dot is "needs review" (ADR-072 decision 3)

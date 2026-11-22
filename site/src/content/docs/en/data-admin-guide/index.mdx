@@ -177,6 +177,17 @@ When the site has column vocabulary turned on ([System Admin Guide](/en/system-a
 - The Table settings tab shows how many values matched, which level of area they hit, and the date of the code list. A column left unsettled lists its candidates
 - This version has no way for a person to correct the result
 
+### Settling column types
+
+A column's type (integer, decimal, date and so on) is inferred from its values. Where the inference is wrong, settle the type under "Type" on the Table settings tab.
+
+- "Auto" follows the inferred type, which it names ("Auto (Integer)"). The other choices are String, Integer, Number, Decimal, Boolean, Date and Datetime
+- Settle a code column whose leading zeros matter as String, and an amount or a rate whose digits must stay exact as Decimal
+- A Date or Datetime also takes the way the file writes its values (the format). "Format: auto" takes the format that reads the most values, and where it cannot tell whether the day or the month comes first it reads the column as text and says so. A month, day or hour without its leading zero reads too
+- A value the settled type cannot read (such as "N/A") is read as empty, and the column shows how many with examples. No row is dropped
+- Settling a type changes how the file is read, so applying it **creates a version** (after a confirmation). Going back to "Auto" does too
+- A Number column cannot be a primary key: settle it as Integer or Decimal to key on it
+
 ## Version history
 
 Every time a resource's file is replaced, the content it replaced is kept as a **version**.
@@ -206,10 +217,10 @@ The tab shows a table with a row per column. Ticking the columns for the key mar
 - The columns you choose — the combination, if more than one — have to be **present in the
   content, hold no empty values, and not repeat across rows**. Where they are not met, the
   reason is shown before you apply
-- **A column inferred as Number (floating-point) cannot be chosen.** 1.0 and 1 are the same
-  value there, so two spellings the file keeps apart collapse into one key, and a value written
-  out is not guaranteed to read back as itself. Such a column cannot identify a row — choose an
-  Integer or String column instead
+- **A Number (floating-point) column cannot be chosen.** A floating-point value is approximate
+  and is not guaranteed to read back as written, so the same row cannot be matched by the same
+  value across versions. Choose Integer as the column's type for values without a fraction, or
+  Decimal for values with one, and it can be a key
 - Applying creates one version, and **versions from then on** are loaded under this key. Diffs
   of past versions do not change
 - When content arrives that does not satisfy the key, that version is left out of row-level

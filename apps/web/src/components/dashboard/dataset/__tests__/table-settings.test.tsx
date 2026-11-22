@@ -90,8 +90,15 @@ function route(handlers: {
       const body = JSON.parse(init.body as string) as {
         primaryKey: string[] | null
         roles?: Record<string, string> | null
+        types?: Record<string, string> | null
       }
-      stored = { ...stored, primaryKey: body.primaryKey, roles: body.roles ?? null, carried: false }
+      stored = {
+        ...stored,
+        primaryKey: body.primaryKey,
+        roles: body.roles ?? null,
+        types: body.types ?? null,
+        carried: false,
+      }
       return handlers.put ?? json({ primaryKey: body.primaryKey, queued: true })
     }
     return settings(stored)
@@ -204,7 +211,7 @@ describe('TableSettings', () => {
   it('leaves a floating-point column on screen, unpressable, with the reason beside it', async () => {
     // Dropped from the list it would read as a column the resource does not
     // have, and the publisher would go looking for it. The reason is about the
-    // type — 1.0 and 1 are the same value there — which is exactly what they
+    // type — an approximate value — which is exactly what they
     // need to pick a different column (spec §6.4).
     route({
       get: {
@@ -474,7 +481,7 @@ describe('TableSettings', () => {
     const body = JSON.parse(
       (mockClientFetch.mock.calls.find(([p]) => p.endsWith('/check'))![1]!.body as string) ?? '{}'
     )
-    expect(body).toEqual({ primaryKey: ['order', 'line'], types: null })
+    expect(body).toEqual({ primaryKey: ['order', 'line'], types: {} })
   })
 
   it('says a rebuild is on its way once a key is applied', async () => {
@@ -765,7 +772,9 @@ describe('TableSettings', () => {
         ]),
       })
       render(<TableSettings resourceId="r1" />)
-      const trigger = await waitFor(() => within(rowOf('line')).getByRole('combobox'))
+      const trigger = await waitFor(() =>
+        within(rowOf('line')).getByRole('combobox', { name: /^Role of/ })
+      )
       fireEvent.click(trigger)
       // Each role says what it does in search, in the list and not in the trigger
       expect(await screen.findByText(/Searchable by value \(facility/)).toBeInTheDocument()
@@ -802,7 +811,9 @@ describe('TableSettings', () => {
       // A profile that failed must not leave the override stuck
       route({ get: { roles: { line: 'name' }, rolesCarried: false } })
       render(<TableSettings resourceId="r1" />)
-      const trigger = await waitFor(() => within(rowOf('line')).getByRole('combobox'))
+      const trigger = await waitFor(() =>
+        within(rowOf('line')).getByRole('combobox', { name: /^Role of/ })
+      )
       expect(trigger).toHaveTextContent('Name')
       fireEvent.click(trigger)
       expect(await screen.findByRole('option', { name: 'Auto' })).toBeInTheDocument()
@@ -829,7 +840,9 @@ describe('TableSettings', () => {
       })
       render(<TableSettings resourceId="r1" />)
       await waitFor(() =>
-        expect(within(rowOf('line')).getByRole('combobox')).toHaveTextContent('Name')
+        expect(within(rowOf('line')).getByRole('combobox', { name: /^Role of/ })).toHaveTextContent(
+          'Name'
+        )
       )
       // The rules' reason for what they decided, not the override's
       expect(rowOf('line')).toHaveTextContent('50%')
@@ -910,7 +923,9 @@ describe('TableSettings', () => {
 
       await waitFor(() => expect(keyBox('order')).toBeEnabled())
       // Still a text column to give a role to, with no rules' decision to name
-      expect(within(rowOf('order')).getByRole('combobox')).toHaveTextContent(/^Auto$/)
+      expect(within(rowOf('order')).getByRole('combobox', { name: /^Role of/ })).toHaveTextContent(
+        /^Auto$/
+      )
       expect(rowOf('order')).not.toHaveTextContent('Identifier')
     })
 
@@ -1013,6 +1028,141 @@ describe('TableSettings', () => {
       render(<TableSettings resourceId="r1" />)
       await waitFor(() => expect(rowOf('order')).toHaveTextContent('90%'))
       expect(rowOf('order')).toHaveTextContent(/do not read as numbers: -.*\(8\)/)
+    })
+  })
+
+  describe('settled types (Versioning ii-c)', () => {
+    const typeOf = (name: string) => within(rowOf(name)).getByRole('combobox', { name: /^Type of/ })
+    const choose = async (trigger: HTMLElement, option: string) => {
+      fireEvent.click(trigger)
+      fireEvent.click(await screen.findByRole('option', { name: option }))
+    }
+
+    it('applies a type through a confirmation, as it makes a version', async () => {
+      route({})
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(typeOf('line')).toHaveTextContent('Auto (String)'))
+
+      await choose(typeOf('line'), 'Integer')
+      expect(rowOf('line')).toHaveAttribute('data-draft')
+      // A number has no role to choose: the type is its role
+      expect(within(rowOf('line')).queryByRole('combobox', { name: /^Role of/ })).toBeNull()
+      expect(within(rowOf('line')).getByText('Number / date')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText('Apply with the column types changed?')).toBeInTheDocument()
+      expect(dialog).toHaveTextContent('line: Auto (String) → Integer')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Apply' }))
+
+      await waitFor(() => {
+        const put = mockClientFetch.mock.calls.find(([, init]) => init?.method === 'PUT')!
+        expect(JSON.parse(put[1]!.body as string)).toEqual({
+          primaryKey: null,
+          roles: {},
+          types: { line: 'integer' },
+        })
+      })
+    })
+
+    it('offers a format, shown by example, for a date', async () => {
+      route({})
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(typeOf('line')).toBeInTheDocument())
+
+      await choose(typeOf('line'), 'Date')
+      const format = within(rowOf('line')).getByRole('combobox', { name: /^Format of/ })
+      expect(format).toHaveTextContent('Format: auto')
+      await choose(format, '31/12/1999')
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveTextContent('line: Auto (String) → Date (31/12/1999)')
+    })
+
+    it('checks the key again when one of its columns is to be read as another type', async () => {
+      // The values the key was checked on are not the ones it will read
+      const check = vi.fn(() => json({ checked: false, primaryKey: ['order'], reason: 'retyped' }))
+      route({ get: { primaryKey: ['order'] }, check })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(typeOf('order')).toBeInTheDocument())
+
+      await choose(typeOf('order'), 'Integer')
+      await afterCheck()
+
+      expect(check).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(
+        mockClientFetch.mock.calls.find(([p]) => p.endsWith('/check'))![1]!.body as string
+      )
+      expect(body).toEqual({ primaryKey: ['order'], types: { order: 'integer' } })
+      expect(await screen.findByText(/will be read as another type/)).toBeInTheDocument()
+    })
+
+    it('takes a column out of the key when it is typed as a float', async () => {
+      route({ get: { primaryKey: ['order'] } })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('order')).toBeChecked())
+
+      await choose(typeOf('order'), 'Number')
+
+      // Out of the key, and not offered back while the draft types it so
+      expect(within(rowOf('order')).queryByRole('checkbox')).toBeNull()
+      expect(within(rowOf('order')).getByText('Not allowed')).toBeInTheDocument()
+
+      // On a type a key may rest on again, the key comes back — by way of
+      // another type too, which the check then asks about
+      await choose(typeOf('order'), 'Date')
+      expect(keyBox('order')).toBeChecked()
+      await choose(typeOf('order'), 'Number')
+      await choose(typeOf('order'), 'Auto (String)')
+      expect(keyBox('order')).toBeChecked()
+    })
+
+    it('gives no key back once the type change that took it out is applied', async () => {
+      route({ get: { primaryKey: ['order'] } })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('order')).toBeChecked())
+
+      await choose(typeOf('order'), 'Number')
+      fireEvent.click(screen.getByRole('button', { name: 'Remove the key' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Remove the key' }))
+      await waitFor(() => expect(typeOf('order')).toHaveTextContent('Number'))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+      await choose(typeOf('order'), 'Date')
+      expect(keyBox('order')).not.toBeChecked()
+    })
+
+    it('says what the live version made of a settled column', async () => {
+      route({
+        get: {
+          types: { line: 'integer' },
+          schema: {
+            rowCount: 2,
+            columns: [
+              { name: 'order', type: 'string', nullable: false, nullCount: 0, unique: true },
+              {
+                name: 'line',
+                type: 'integer',
+                inferredType: 'string',
+                settled: true,
+                nullable: true,
+                nullCount: 1,
+                castFailures: 1,
+                castFailureSamples: [{ row: 2, value: 'N/A' }],
+              },
+            ],
+          },
+        },
+      })
+      render(<TableSettings resourceId="r1" />)
+
+      const note = await screen.findByText('Values that could not be converted: 1 (read as empty)')
+      expect(note).toHaveAttribute('title', 'Row 2: N/A')
+      expect(typeOf('line')).toHaveTextContent('Integer')
+      // Lifted in the draft, the note describes a reading that will not stand
+      await choose(typeOf('line'), 'Auto (String)')
+      expect(screen.queryByText(/could not be converted/)).toBeNull()
     })
   })
 })

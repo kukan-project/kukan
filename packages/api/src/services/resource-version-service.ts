@@ -42,8 +42,8 @@ import {
   sameKeyColumns,
   sameColumnValues,
   sameSettledReads,
-  parseSettledType,
   settledTypesOf,
+  readTypeOf,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
   PIPELINE_JOB_TYPE,
@@ -770,17 +770,7 @@ function unusableKeyColumns(
   columns: Map<string, ResourceColumn>,
   types: Record<string, string> | null
 ): string[] {
-  // What the column will read as (Versioning ii-c §8.2): its settled type — a
-  // float settled as decimal can be a key, an integer settled as float cannot —
-  // or, with none, what inference makes of it, which is what a column the live
-  // version read on a type that is now lifted goes back to
-  const typeOf = (column: string) => {
-    const settled =
-      types && Object.hasOwn(types, column) ? parseSettledType(types[column])?.type : undefined
-    const live = columns.get(column)!
-    return settled ?? live.inferredType ?? live.type
-  }
-  return key.filter((column) => !canIdentifyRows(typeOf(column)))
+  return key.filter((column) => !canIdentifyRows(readTypeOf(columns.get(column)!, types)))
 }
 
 /**
@@ -2390,7 +2380,7 @@ export class ResourceVersionService {
     const asked = roleOverridesOf(settings)
     // Through the check even when sent back as it stood: an override the content
     // has outgrown goes, or a column of its name coming back would take it again
-    const roles = await this.usableRoles(resourceId, asked, storedRoles)
+    const roles = await this.usableRoles(resourceId, asked, storedRoles, types)
     const rolesSettled = sameColumnValues(storedRoles, roles)
     const unchanged = settled && rolesSettled && typesSettled
 
@@ -2469,14 +2459,18 @@ export class ResourceVersionService {
   private async usableRoles(
     resourceId: string,
     asked: NonNullable<ColumnSettings['roles']> | null,
-    stored: NonNullable<ColumnSettings['roles']> | null
+    stored: NonNullable<ColumnSettings['roles']> | null,
+    types: Record<string, string> | null
   ): Promise<NonNullable<ColumnSettings['roles']> | null> {
     if (!asked) return null
     const schema = await this.liveSchemaOrNull(resourceId)
     const columns = schema ? columnsByName(schema) : new Map<string, ResourceColumn>()
+    // By the type the column will read as under the types set with it: a
+    // number settled as text takes a role, a text column settled as a number
+    // gives its role up (Versioning ii-c §8.2)
     const usable = (name: string) => {
       const column = columns.get(name)
-      return !!column && canOverrideRole(column.type)
+      return !!column && canOverrideRole(readTypeOf(column, types))
     }
     const refused = Object.entries(asked)
       .filter(([name, role]) => stored?.[name] !== role && !usable(name))
@@ -2620,8 +2614,21 @@ export class ResourceVersionService {
     // the type rather than the values, so no number the interpretation recorded
     // can overturn it. Answered here as well as refused at the apply, through
     // the same function, so the two cannot come out differently.
-    if (unusableKeyColumns(key, columns, settledTypesOf(settings.types)).length > 0) {
+    const types = settledTypesOf(settings.types)
+    if (unusableKeyColumns(key, columns, types).length > 0) {
       return { checked: true, primaryKey: key, fault: 'key-float' }
+    }
+
+    // Read otherwise than live was — another type, another format, or a format
+    // left to the values that live had named — a key column's values are not
+    // the ones live holds (`001` and `1` are one integer, `13/02/2026` no date
+    // month first), so nothing live recorded can say whether they identify a
+    // row. Compared as the setting live froze: the same setting reads the same
+    const liveTypes = settledTypesOf(await this.liveSettledTypes(resourceId))
+    const setting = (map: Record<string, string> | null, column: string) =>
+      map && Object.hasOwn(map, column) ? map[column] : null
+    if (key.some((column) => setting(types, column) !== setting(liveTypes, column))) {
+      return { checked: false, primaryKey: key, reason: 'retyped' }
     }
 
     const frozen = frozenKeyFault(schema, key)
@@ -2700,6 +2707,12 @@ export class ResourceVersionService {
   private async liveSchemaOrNull(resourceId: string): Promise<ResourceSchema | null> {
     const version = await this.liveVersionNumber(this.db, resourceId)
     return version === null ? null : (await this.getRow(this.db, resourceId, version)).schema
+  }
+
+  /** The settled types the live version froze, or null where it froze none or nothing is live. */
+  private async liveSettledTypes(resourceId: string): Promise<Record<string, string> | null> {
+    const version = await this.liveVersionNumber(this.db, resourceId)
+    return version === null ? null : (await this.getRow(this.db, resourceId, version)).settledTypes
   }
 
   /** {@link liveSchemaOrNull} for the callers that cannot proceed without it. */

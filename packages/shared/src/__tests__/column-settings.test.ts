@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { columnSettingsSchema, primaryKeyOf, sameKeyColumns } from '../column-settings'
+import { columnSettingsSchema, primaryKeyOf, readTypeOf, sameKeyColumns } from '../column-settings'
 import { sameVersionIdentity } from '../version-identity'
 import { sameSettledReads, type ResourceSchema } from '../pipeline-types'
 
@@ -109,5 +109,31 @@ describe('sameSettledReads', () => {
   it('takes a missing schema as one that decided nothing', () => {
     expect(sameSettledReads(null, read({}), ['d'])).toBe(true)
     expect(sameSettledReads(null, read({ dateFormat: '%d/%m/%Y' }), ['d'])).toBe(false)
+  })
+})
+
+describe('readTypeOf', () => {
+  const column = {
+    name: 'd',
+    type: 'string' as const,
+    inferredType: 'string' as const,
+    settled: true as const,
+    dateFormatUndecided: true as const,
+    nullable: false,
+    nullCount: 0,
+  }
+
+  it('reads a date the live version could not order as the text it is, until a format is named', () => {
+    expect(readTypeOf(column, { d: 'date' })).toBe('string')
+    expect(readTypeOf(column, { d: 'date:%d/%m/%Y' })).toBe('date')
+    // Settled as another type, it reads as that one
+    expect(readTypeOf(column, { d: 'float' })).toBe('float')
+  })
+
+  it('reads a column by its settled type, or with none by inference', () => {
+    expect(readTypeOf({ ...column, dateFormatUndecided: undefined }, { d: 'integer' })).toBe(
+      'integer'
+    )
+    expect(readTypeOf({ ...column, type: 'integer', inferredType: 'float' }, null)).toBe('float')
   })
 })

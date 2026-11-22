@@ -21,6 +21,7 @@ import {
   OVERRIDABLE_COLUMN_ROLES,
   parseSettledType,
   type OverridableColumnRole,
+  type ResourceColumn,
   type ResourceColumnType,
 } from './pipeline-types'
 
@@ -68,6 +69,26 @@ export type ColumnSettings = z.infer<typeof columnSettingsSchema>
  */
 export function canOverrideRole(type: ResourceColumnType): boolean {
   return type === 'string'
+}
+
+/**
+ * The type a column of the live version will read as under `types`
+ * (Versioning ii-c §8.2): its settled type — a float settled as decimal can be
+ * a key, an integer settled as float cannot — or, with none, what inference
+ * makes of it, which is what a column the live version read on a type that is
+ * now lifted goes back to. The one rule the API's checks and the dashboard agree on.
+ */
+export function readTypeOf(
+  column: ResourceColumn,
+  types: Record<string, string> | null | undefined
+): ResourceColumnType {
+  const spec =
+    types && Object.hasOwn(types, column.name) ? parseSettledType(types[column.name]) : null
+  // A date left to its values that the live version could not order is text,
+  // and the same bytes under the same setting stay so until a format is named
+  const dated = spec?.type === 'date' || spec?.type === 'timestamp'
+  if (dated && !spec.format && column.dateFormatUndecided) return column.type
+  return spec?.type ?? column.inferredType ?? column.type
 }
 
 /** The role overrides a setting names, or null when it names none. */

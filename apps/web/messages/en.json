@@ -1166,7 +1166,8 @@
       },
       "unchecked": {
         "no-preview": "The current content could not be read, so whether this key narrows a row down to one could not be checked. Applying still works.",
-        "preview-stale": "The interpretation has not caught up with the current content, so whether this key narrows a row down to one could not be checked. Applying still works."
+        "preview-stale": "The interpretation has not caught up with the current content, so whether this key narrows a row down to one could not be checked. Applying still works.",
+        "retyped": "A key column will be read as another type or in another format, so the current values cannot say whether this key identifies a row. You can still apply it."
       },
       "rebuild": "Rebuild the interpretation",
       "rebuilding": "Queueing…",
@@ -1180,7 +1181,7 @@
       "kindSingle": "(single)",
       "kindComposite": "(composite)",
       "noCounts": "This version does not record per-column duplicate and empty counts, so nothing can be marked unique — it was interpreted before those were kept. Choose and check, or rebuild the interpretation.",
-      "floatNotKeyable": "A column of type Number cannot be used in a primary key: it holds a floating-point value, and 1.0 and 1 are the same value there, so two spellings the file keeps apart become one key — and a value written out is not guaranteed to read back as itself. Choose an Integer or String column, or leave the key unset. A key set before the column was read this way keeps working, but it does not identify a row either.",
+      "floatNotKeyable": "A column of type Number cannot be used in a primary key: a floating-point value is approximate, and a value written out is not guaranteed to read back as itself, so the same row cannot be matched by the same value across versions. To key on such a column, choose Integer as its type for values without a fraction, or Decimal for values with one (a decimal keeps the digits as written). A key set before the column was read this way keeps working, but it does not identify a row either.",
       "recommendKey": "If a column holds an identifier that stays with each row (a ward code, a facility number), setting it as the primary key is recommended: diffs between versions then show which rows changed. Applying a change of primary key creates one version.",
       "notKeyable": "Not allowed",
       "keyFor": "Use {name} in the primary key",
@@ -1190,7 +1191,7 @@
       "before": "Before",
       "after": "After",
       "guide": {
-        "summary": "About the primary key and roles",
+        "summary": "About types, the primary key and roles",
         "keyTitle": "What the primary key is",
         "keyWhat": "The column (or columns together) that identifies each row of the table.",
         "keyDiff": "Here it matches the same row between two versions, so a diff can count \"changed rows\".",
@@ -1201,7 +1202,7 @@
         "ruleNoEmpty": "It has no empty values",
         "ruleUnique": "No two rows share a value",
         "ruleUniqueMark": "A column marked \"unique\" meets all three on its own.",
-        "ruleFloat": "Number (floating-point) columns cannot be used, because 1.0 and 1 are the same value there.",
+        "ruleFloat": "Number (floating-point) columns cannot be used: the value is approximate, and is not guaranteed to read back as written. Settled as Integer or Decimal, they can.",
         "stableTitle": "Before you choose",
         "stableLead": "This cannot be checked in advance. Choose columns where the same row always keeps the same value, and a value always stays with the same row.",
         "stableRenumber": "Numbers reassigned at every release: unchanged rows show as removed and added.",
@@ -1212,7 +1213,13 @@
         "rolesListed": "{roles}: values listed and used in search",
         "rolesFree": "{roles}: used in search as text, with the row for context",
         "rolesUnsearched": "{roles}: not used in search",
-        "rolesOverride": "A text column's role can be chosen again. No version is made, and applying takes it in by reprocessing. A column read as a number or date has its role from its type."
+        "rolesOverride": "A text column's role can be chosen again. No version is made, and applying takes it in by reprocessing. A column read as a number or date has its role from its type.",
+        "typesTitle": "What a type is",
+        "typesLead": "What a column's values are read as. It is inferred from the values; where the inference is wrong, settle it.",
+        "typesUse": "A code whose leading zeros matter as String; an amount or a rate whose digits must stay exact as Decimal.",
+        "typesFormat": "A Date or Datetime also takes the way the file writes it (the format). Auto decides it from the values, and reads the column as text where the day and month order cannot be told.",
+        "typesFailures": "A value the settled type cannot read is read as empty, and the column shows how many with examples. No row is dropped.",
+        "typesVersion": "A type changes how the file is read, so applying it creates a version. Going back to Auto does too."
       },
       "notInVersion": "Not in this version",
       "keyPlace": "position {place} in the primary key",
@@ -1232,12 +1239,26 @@
         "category": "Searchable by value, and put beside free-text sentences as the row's context (kinds, types)",
         "free-text": "Searchable as one sentence per row, with the row's category values beside it (remarks, descriptions)"
       },
-      "rolesPending": "The role changes are not in the profile and the search index yet. They are once the run finishes; if it does not move, \"Queue the rebuild\" starts it again."
+      "rolesPending": "The role changes are not in the profile and the search index yet. They are once the run finishes; if it does not move, \"Queue the rebuild\" starts it again.",
+      "typesWillApply": "A type changes how the file is read, so applying makes a version. Values the settled type cannot read are left empty, and the column says how many.",
+      "confirmTypesTitle": "Apply with the column types changed?",
+      "typeFor": "Type of {name}",
+      "typeAuto": "Auto ({type})",
+      "typeAutoShort": "Auto",
+      "formatFor": "Format of {name}",
+      "formatAuto": "Format: auto",
+      "formatAutoHint": "Takes the format that reads the most values",
+      "dateUndecided": "The values do not tell whether the day or the month comes first, so the column is read as text. Choose a format.",
+      "castFailures": "Values that could not be converted: {count} (read as empty)",
+      "castFailureSample": "Row {row}: {value}",
+      "typesIntro": "A column can be read as a type you settle instead of the inferred one — a code column as text to keep its leading zeros, an amount or a rate as a decimal. Changing a type and applying makes a version.",
+      "formatNote": "The format is how the file writes the values. A month, day or hour without its leading zero reads too (2026/8/8 7:05).",
+      "introLabel": "{label}: "
     },
     "columnRoles": {
       "loadError": "Could not load the column roles",
       "column": "Column",
-      "type": "Type (inferred)",
+      "type": "Type",
       "role": "Role",
       "vocabulary": "Vocabulary"
     },

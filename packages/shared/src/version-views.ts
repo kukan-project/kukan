@@ -232,11 +232,14 @@ export type PreviewUnusable = 'no-preview' | 'preview-stale'
  * Three states, not two: "it will work", "this is what would stop it", and
  * "this cannot be established" — the last because the apply asks nothing of the
  * content, so a resource whose preview is missing can still be settled and a
- * screen must not read "cannot check" as "do not apply".
+ * screen must not read "cannot check" as "do not apply". `retyped` is a key
+ * column the settings read on another type than the live version did: its
+ * values are not the ones that version holds (`001` and `1` are one integer),
+ * so its counts and Parquet answer nothing (Versioning ii-c §8.2).
  */
 export type KeyCheck =
   | { checked: true; primaryKey: string[] | null; fault: KeyCheckFault | null }
-  | { checked: false; primaryKey: string[]; reason: PreviewUnusable }
+  | { checked: false; primaryKey: string[]; reason: PreviewUnusable | 'retyped' }
 
 /** A column of a version's table, as the diff names it. */
 export interface DiffColumn {
