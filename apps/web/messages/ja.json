@@ -1253,7 +1253,14 @@
       "castFailureSample": "{row} 行目: {value}",
       "typesIntro": "列の型は、推定した型の代わりに確定した型で読むようにできます。先頭の 0 を残したいコードの列を文字列に、金額や率の列を十進数にする、といった使い方です。型を変えて適用すると、版が 1 つ増えます。",
       "formatNote": "書式は元のファイルでの書き方です。月・日・時の先頭の 0 は省かれていても読めます（2026/8/8 7:05 など）。",
-      "introLabel": "{label}："
+      "introLabel": "{label}：",
+      "castFailuresEstimate": "先頭 {rows} 行のうち {count} 行（{percent}）は変換できない見込みです（空として読まれます）。プレビューでは赤い点線の枠で示します",
+      "castFailuresEstimateWhole": "{rows} 行のうち {count} 行（{percent}）は変換できない見込みです（空として読まれます）。プレビューでは赤い点線の枠で示します",
+      "noFailuresEstimate": "先頭 {rows} 行はすべて読める見込みです",
+      "noFailuresEstimateWhole": "すべての値を読める見込みです",
+      "dateUndecidedEstimate": "日と月のどちらが先か値から決まらず、文字列のまま読まれる見込みです。書式を選んでください。",
+      "formatEstimate": "自動では {example} の書式で読まれる見込みです",
+      "castFailureCell": "この型では変換できない見込みの値です"
     },
     "columnRoles": {
       "loadError": "列の役割を読み込めませんでした",

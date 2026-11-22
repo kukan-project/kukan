@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { DataExplorer } from '../data-explorer'
+import { CellMarksContext, cellKey } from '../cell-marks'
 
 // Both engines are mocked as mutable state the tests drive between rerenders:
 // the static reader always has rows, the duck engine flips through the
@@ -25,10 +26,14 @@ vi.mock('@/hooks/use-duckdb', () => ({
   },
 }))
 
+// One array and one footer, as the real reader keeps them between renders
+const staticRows = [{ name: 'x' }, { name: 'y' }]
+const staticMetadata = { numRows: 2, columns: ['name'] }
+
 vi.mock('@/hooks/use-parquet-preview', () => ({
   useParquetPreview: () => ({
-    metadata: { numRows: 2, columns: ['name'] },
-    rows: [{ name: 'x' }, { name: 'y' }],
+    metadata: staticMetadata,
+    rows: staticRows,
     page: 0,
     totalPages: 1,
     loading: false,
@@ -110,5 +115,56 @@ describe('implicit engine boot and demotion', () => {
     view.rerender(<DataExplorer resourceId="r1" />)
     expect(screen.getByText(/sort and filter are unavailable/i)).toBeInTheDocument()
     expect(lastEnabled).toBe(false)
+  })
+})
+
+describe('cells marked by the screen around it', () => {
+  it('marks the cells the judge names, on the rows shown', async () => {
+    const judge = vi.fn(async () => new Set([cellKey(1, 'name')]))
+    // One value, as the settings memoize it: a new one is a new judge
+    const marks = { judge, title: 'would not convert' }
+    render(
+      <CellMarksContext.Provider value={marks}>
+        <DataExplorer resourceId="r1" />
+      </CellMarksContext.Provider>
+    )
+
+    await waitFor(() => expect(screen.getByText('y')).toHaveAttribute('data-marked', 'true'))
+    expect(screen.getByText('y')).toHaveAttribute('title', 'would not convert')
+    expect(screen.getByText('x')).not.toHaveAttribute('data-marked')
+    expect(judge).toHaveBeenCalledWith([{ name: 'x' }, { name: 'y' }])
+  })
+
+  it('shows no marks from the last rows while the new ones are judged', async () => {
+    let settle: (cells: Set<string>) => void = () => {}
+    const judge = vi
+      .fn<(rows: Record<string, string>[]) => Promise<Set<string>>>()
+      .mockResolvedValueOnce(new Set([cellKey(1, 'name')]))
+      .mockImplementationOnce(() => new Promise((resolve) => (settle = resolve)))
+    const marks = { judge, title: 'would not convert' }
+    const view = render(
+      <CellMarksContext.Provider value={marks}>
+        <DataExplorer resourceId="r1" />
+      </CellMarksContext.Provider>
+    )
+    await waitFor(() => expect(screen.getByText('y')).toHaveAttribute('data-marked', 'true'))
+
+    // The engine takes over with other rows: row 1 is now another value
+    Object.assign(duckState, {
+      ready: true,
+      columns: ['name'],
+      totalRows: 2,
+      filteredRows: 2,
+      rows: [{ name: 'p' }, { name: 'q' }],
+    })
+    view.rerender(
+      <CellMarksContext.Provider value={marks}>
+        <DataExplorer resourceId="r1" />
+      </CellMarksContext.Provider>
+    )
+    expect(screen.getByText('q')).not.toHaveAttribute('data-marked')
+
+    settle(new Set([cellKey(0, 'name')]))
+    await waitFor(() => expect(screen.getByText('p')).toHaveAttribute('data-marked', 'true'))
   })
 })

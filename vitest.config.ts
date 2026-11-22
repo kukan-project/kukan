@@ -310,6 +310,8 @@ export default defineConfig({
             '@': resolve(import.meta.dirname, 'apps/web/src'),
             '@kukan/ui': resolve(import.meta.dirname, 'packages/ui/src'),
             '@kukan/shared': resolve(import.meta.dirname, 'packages/shared/src'),
+            '@kukan/lake/settled': resolve(import.meta.dirname, 'packages/lake/src/settled'),
+            '@kukan/lake/sql': resolve(import.meta.dirname, 'packages/lake/src/sql'),
           },
         },
       },

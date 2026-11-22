@@ -234,13 +234,17 @@ const isoTimestamp = (value: string) =>
   `THEN TRY_CAST(${value} AS TIMESTAMPTZ) AT TIME ZONE 'UTC' ` +
   `ELSE TRY_CAST(${value} AS TIMESTAMP) END END`
 
+/** Where the expression left empty a value that was not: a value that did not convert. */
+export const settledFailed = (col: string, expr: string) =>
+  `${trimmed(col)} <> '' AND (${expr}) IS NULL`
+
 /** How many values the expression left empty that were not, and the first of them. */
 export async function settledFailures(
   rel: SettledRelation,
   col: string,
   expr: string
 ): Promise<Pick<SettledNote, 'castFailures' | 'castFailureSamples'>> {
-  const failed = `${trimmed(col)} <> '' AND (${expr}) IS NULL`
+  const failed = settledFailed(col, expr)
   const rows = (await rel.rows(
     `SELECT ${rel.row} AS r, ${col}::VARCHAR AS v, count(*) OVER () AS n FROM ${rel.from} WHERE ${failed} ORDER BY ${rel.row} LIMIT ${SAMPLES}`
   )) as { r: number | bigint; v: string; n: number | bigint }[]

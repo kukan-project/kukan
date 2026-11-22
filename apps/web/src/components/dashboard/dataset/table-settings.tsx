@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import type {
   ColumnRoleBasis,
   ColumnRolesView,
@@ -58,13 +58,21 @@ import {
 } from '@kukan/shared'
 import { clientFetch, readProblem } from '@/lib/client-api'
 import { useProblemMessage } from '@/hooks/use-problem-message'
+import {
+  useSettledEstimate,
+  type ColumnEstimate,
+  type SettledEstimate,
+} from '@/hooks/use-settled-estimate'
 import { useFetch } from '@/hooks/use-fetch'
 import { columnTypeKey } from '@/lib/format-utils'
 import { ColumnVocabularyDetails } from '@/components/resource/column-vocabulary'
+import { CellMarksContext, type CellMarks } from '@/components/data-explorer/cell-marks'
 
 /** How long a selection has to hold still before it is checked. Each check can
  *  scan the content, and a key is built one column at a time. */
 const CHECK_DEBOUNCE_MS = 400
+/** A stable empty schema, so the estimate does not read again on every render */
+const NO_COLUMNS: ResourceColumn[] = []
 
 /** The select's value for "Auto": no override. */
 const INFERRED = 'inferred'
@@ -312,6 +320,32 @@ export function TableSettings({
     // the content before it, and the new content may break it
   }, [resourceId, pending, refused, selected, reloadKey, typeDraft])
 
+  // The same for the types: what each change would make of its column, worked
+  // out in the browser off the top of the preview as it is chosen. Only the
+  // changed ones — the others' reading is on the screen already
+  const changedTypes = useMemo(() => {
+    const stored = view?.types ?? {}
+    const names = new Set([...Object.keys(stored), ...Object.keys(typeDraft)])
+    return Object.fromEntries(
+      [...names].flatMap((name) => {
+        const type = overrideOf(typeDraft, name)
+        return type !== null && type !== overrideOf(stored, name) ? [[name, type]] : []
+      })
+    )
+  }, [view?.types, typeDraft])
+  const estimate = useSettledEstimate({
+    resourceId,
+    types: changedTypes,
+    columns: columns ?? NO_COLUMNS,
+    rowCount: view?.schema?.rowCount ?? 0,
+  })
+  // And the cells of the preview those values are in, wherever they sit
+  const markTitle = t('castFailureCell')
+  const cellMarks = useMemo<CellMarks | null>(
+    () => (estimate ? { judge: estimate.judge, title: markTitle } : null),
+    [estimate, markTitle]
+  )
+
   /** Append or remove, keeping the order columns were picked in: a composite
    *  key is its columns *in that order* (spec §6.2). */
   function toggle(name: string) {
@@ -413,12 +447,21 @@ export function TableSettings({
     }
   }
 
+  /**
+   * The preview, with the cells a type being chosen would not convert marked.
+   * Wrapped alike in every state, so the preview the tab shows while loading
+   * is the one it keeps rather than one it draws again
+   */
+  const withMarks = (key: string[] | null) => (
+    <CellMarksContext.Provider value={cellMarks}>{preview?.(key)}</CellMarksContext.Provider>
+  )
+
   // The preview stands without the settings: it is this tab's, with no other
   // tab to see it on
   if (loadError) {
     return (
       <div className="flex w-0 min-w-full flex-col gap-4">
-        {preview?.(null)}
+        {withMarks(null)}
         <Alert variant="destructive">
           <AlertDescription>{t('loadError')}</AlertDescription>
         </Alert>
@@ -428,7 +471,7 @@ export function TableSettings({
   if (!view) {
     return (
       <div className="flex w-0 min-w-full flex-col gap-4">
-        {preview?.(null)}
+        {withMarks(null)}
         <p className="text-muted-foreground text-sm">{t('loading')}</p>
       </div>
     )
@@ -441,7 +484,7 @@ export function TableSettings({
     return (
       <div className="flex w-0 min-w-full flex-col gap-4">
         <p className="text-muted-foreground text-sm">{t('noColumns')}</p>
-        {preview?.(null)}
+        {withMarks(null)}
       </div>
     )
   }
@@ -495,7 +538,7 @@ export function TableSettings({
       {view.preview === 'preview-stale' ? (
         <p className="text-muted-foreground text-xs">{t('previewStale')}</p>
       ) : (
-        preview?.(selectedKey)
+        withMarks(selectedKey)
       )}
 
       {/* What a person decides about the columns, under the preview of what
@@ -559,6 +602,7 @@ export function TableSettings({
         roleChanged={roleChanged}
         typeDraft={typeDraft}
         typeChanged={typeChanged}
+        estimate={estimate}
         unkeyable={unkeyable}
         onToggle={toggle}
         onRole={setRole}
@@ -882,6 +926,7 @@ function ColumnTable({
   roleChanged,
   typeDraft,
   typeChanged,
+  estimate,
   unkeyable,
   onToggle,
   onRole,
@@ -903,6 +948,8 @@ function ColumnTable({
   /** The settled types the draft gives columns, by name */
   typeDraft: SettledTypes
   typeChanged: (name: string) => boolean
+  /** What the changed types would make of their columns, off the top of the preview */
+  estimate: SettledEstimate | null
   onToggle: (name: string) => void
   onRole: (name: string, role: OverridableColumnRole | null) => void
   onType: (name: string, type: string | null) => void
@@ -974,6 +1021,7 @@ function ColumnTable({
                       column={column}
                       chosen={overrideOf(typeDraft, name)}
                       changed={typeChanged(name)}
+                      estimate={estimate}
                       onChoose={(next) => onType(name, next)}
                     />
                   ) : null}
@@ -1123,12 +1171,15 @@ function TypeChoice({
   column,
   chosen,
   changed,
+  estimate,
   onChoose,
 }: {
   name: string
   /** The live version's column; null where it has none */
   column: ResourceColumn | null
   chosen: string | null
+  /** What the changed types would make of their columns, this one's among them where it changed */
+  estimate: SettledEstimate | null
   /** Whether the draft changes it: the notes then describe a reading that will not stand */
   changed: boolean
   onChoose: (type: string | null) => void
@@ -1194,6 +1245,14 @@ function TypeChoice({
       {/* The examples are padded; the file's values need not be */}
       {dated && <span className="text-muted-foreground text-xs">{t('formatNote')}</span>}
       {column?.settled && !changed && <SettledNotes column={column} />}
+      {changed && estimate?.columns[name] && (
+        <EstimateNotes
+          column={estimate.columns[name]}
+          rows={estimate.rows}
+          whole={estimate.whole}
+          autoFormat={dated && !spec.format}
+        />
+      )}
     </span>
   )
 }
@@ -1214,6 +1273,61 @@ function SettledNotes({ column }: { column: ResourceColumn }) {
             .join('\n')}
         >
           {t('castFailures', { count: column.castFailures })}
+        </span>
+      )}
+    </>
+  )
+}
+
+/**
+ * What a type chosen and not applied would make of the column, off the top of
+ * the preview: how many of the rows read would not convert, out of how many,
+ * so a sample reads as one.
+ */
+function EstimateNotes({
+  column,
+  rows,
+  whole,
+  autoFormat,
+}: {
+  column: ColumnEstimate
+  rows: number
+  /** Whether the rows read are all the table has */
+  whole: boolean
+  /** Whether the format is left to the values, which the estimate then names */
+  autoFormat: boolean
+}) {
+  const t = useTranslations('resource.columnSettings')
+  const locale = useLocale()
+  const count = new Intl.NumberFormat(locale)
+  const percent = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 })
+  const failures = column.castFailures ?? 0
+  const numbers = {
+    rows: count.format(rows),
+    count: count.format(failures),
+    percent: percent.format(rows > 0 ? failures / rows : 0),
+  }
+  return (
+    <>
+      {autoFormat && column.dateFormat && (
+        <span className="text-muted-foreground text-xs">
+          {t('formatEstimate', { example: formatExample(column.dateFormat) })}
+        </span>
+      )}
+      {column.dateFormatUndecided ? (
+        <span className="text-warning-tint-foreground text-xs">{t('dateUndecidedEstimate')}</span>
+      ) : failures > 0 ? (
+        <span
+          className="text-warning-tint-foreground text-xs"
+          title={column.castFailureSamples
+            ?.map((sample) => t('castFailureSample', sample))
+            .join('\n')}
+        >
+          {t(whole ? 'castFailuresEstimateWhole' : 'castFailuresEstimate', numbers)}
+        </span>
+      ) : (
+        <span className="text-muted-foreground text-xs">
+          {t(whole ? 'noFailuresEstimateWhole' : 'noFailuresEstimate', numbers)}
         </span>
       )}
     </>

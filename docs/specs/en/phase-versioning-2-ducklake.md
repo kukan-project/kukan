@@ -1421,6 +1421,17 @@ key-matched tier and degrades.
   than "Auto". A date or a timestamp adds a choice of format, shown by an example value (the way the file writes
   the values, not a display format). A settled column shows how many values did not convert, with samples, and
   that its format could not be told
+- **While a type is being chosen, the values expected not to convert are shown.** Before the apply, the
+  chosen type reads the top 10,000 rows of the preview (one row group) and the share is shown, as "of the first
+  10,000 rows, 12 (0.12%)". A smaller table is counted in full. It runs in the browser on DuckDB-WASM, with the
+  rules the worker uses (`@kukan/lake`'s settled). The preview is read by range, so only the first row group
+  comes over whatever the file's size, and a new choice counts again on the rows at hand. Counted on the
+  preview's values, it stays an estimate (a column the live version read as a type keeps only that type's
+  spelling). An automatic format also names the format the values would decide. Node's and WASM's DuckDB are
+  kept on one version, and a test checks they give the same result on the same input. The same reading (the
+  formats and digits the estimate decided included) judges the values of the rows the preview shows, and the
+  cells expected not to convert are marked. A value decides it alone, so the marks hold after a sort or a
+  filter, and on pages past the first 10,000 rows
 - **Type changes are reviewed on the Version history tab** (ADR-072 decision 4). A version needing review shows
   which columns changed and how, samples of values that did not convert, and §8.4's choices. The list's
   dot is "needs review" (ADR-072 decision 3)

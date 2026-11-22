@@ -1253,7 +1253,14 @@
       "castFailureSample": "Row {row}: {value}",
       "typesIntro": "A column can be read as a type you settle instead of the inferred one — a code column as text to keep its leading zeros, an amount or a rate as a decimal. Changing a type and applying makes a version.",
       "formatNote": "The format is how the file writes the values. A month, day or hour without its leading zero reads too (2026/8/8 7:05).",
-      "introLabel": "{label}: "
+      "introLabel": "{label}: ",
+      "castFailuresEstimate": "Of the first {rows} rows, {count} ({percent}) are expected not to convert (they would read as empty). The preview outlines them in red",
+      "castFailuresEstimateWhole": "Of {rows} rows, {count} ({percent}) are expected not to convert (they would read as empty). The preview outlines them in red",
+      "noFailuresEstimate": "The first {rows} rows are expected to read",
+      "noFailuresEstimateWhole": "Every value is expected to read",
+      "dateUndecidedEstimate": "The values are not expected to tell whether the day or the month comes first, so the column would read as text. Choose a format.",
+      "formatEstimate": "Left to the values, the format is expected to be {example}",
+      "castFailureCell": "Expected not to convert to the chosen type"
     },
     "columnRoles": {
       "loadError": "Could not load the column roles",

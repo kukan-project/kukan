@@ -25,7 +25,9 @@
       "@kukan/shared": ["../../packages/shared/src"],
       "@kukan/ui": ["../../packages/ui/src"],
       "@kukan/api": ["../../packages/api/src"],
-      "@kukan/api/secrets": ["../../packages/api/src/secrets"]
+      "@kukan/api/secrets": ["../../packages/api/src/secrets"],
+      "@kukan/lake/settled": ["../../packages/lake/src/settled"],
+      "@kukan/lake/sql": ["../../packages/lake/src/sql"]
     }
   },
   "include": [

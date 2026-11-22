@@ -32,7 +32,8 @@ interface UseDuckDBResult {
 let dbInstance: AsyncDuckDB | null = null
 let dbInitPromise: Promise<AsyncDuckDB> | null = null
 
-async function getDB(): Promise<AsyncDuckDB> {
+/** The page's one DuckDB-WASM instance, started on first use. */
+export async function getDB(): Promise<AsyncDuckDB> {
   if (dbInstance) return dbInstance
   if (dbInitPromise) return dbInitPromise
 
@@ -108,7 +109,7 @@ export function decimalText(unscaled: string, scale: number): string {
  * shows `2026-08-23 12:00:00`. Rebuilt into `Date` here so `formatCell` reads
  * them the one way.
  */
-function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string, string>[] {
+export function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string, string>[] {
   // Which of the two they are is carried through, not just that they are
   // temporal: a TIMESTAMP at midnight has a time of day to show and a DATE
   // does not, and the value alone cannot tell them apart.

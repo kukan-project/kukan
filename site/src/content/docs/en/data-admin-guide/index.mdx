@@ -185,6 +185,7 @@ A column's type (integer, decimal, date and so on) is inferred from its values. 
 - Settle a code column whose leading zeros matter as String, and an amount or a rate whose digits must stay exact as Decimal
 - A Date or Datetime also takes the way the file writes its values (the format). "Format: auto" takes the format that reads the most values, and where it cannot tell whether the day or the month comes first it reads the column as text and says so. A month, day or hour without its leading zero reads too
 - A value the settled type cannot read (such as "N/A") is read as empty, and the column shows how many with examples. No row is dropped
+- Choosing a type shows, before you apply it, how many values are expected not to read, as "of the first 10,000 rows, 12 (0.12%)" (a table under 10,000 rows is counted in full). With the format left automatic, it also shows the format the values would decide. It is counted on the preview's values, so treat it as a guide. The preview's table colors the cells expected not to read too
 - Settling a type changes how the file is read, so applying it **creates a version** (after a confirmation). Going back to "Auto" does too
 - A Number column cannot be a primary key: settle it as Integer or Decimal to key on it
 

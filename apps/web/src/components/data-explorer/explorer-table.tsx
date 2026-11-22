@@ -2,11 +2,12 @@
 
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { TableHeader, TableBody, TableHead, TableRow, TableCell } from '@kukan/ui'
+import { TableHeader, TableBody, TableHead, TableRow, TableCell, cn } from '@kukan/ui'
 import type { ResourceColumn } from '@kukan/shared'
 import { KEY_HEADER_CLASS, numericLayout, dataCellClass, decimalAligned } from '@/lib/table-cells'
 import { columnTypeKey } from '@/lib/format-utils'
 import { ColumnFilter } from './column-filter'
+import { cellKey } from './cell-marks'
 import type { ColumnFilter as ColumnFilterType, SortState } from '@/hooks/use-duckdb'
 
 interface ExplorerTableProps {
@@ -17,6 +18,9 @@ interface ExplorerTableProps {
   primaryKey?: string[] | null
   /** The version's column schema; numeric columns are right-aligned by it. */
   schemaColumns?: ResourceColumn[] | null
+  /** Cells to mark, as `cellKey`s, and what a marked one says on hover */
+  marked?: Set<string>
+  markTitle?: string
   onSortChange: (sort: SortState | null) => void
   onFilterApply: (filter: ColumnFilterType) => void
   onFilterClear: (column: string) => void
@@ -29,6 +33,8 @@ export function ExplorerTable({
   filters,
   primaryKey,
   schemaColumns,
+  marked,
+  markTitle,
   onSortChange,
   onFilterApply,
   onFilterClear,
@@ -111,14 +117,25 @@ export function ExplorerTable({
         <TableBody>
           {rows.map((row, ri) => (
             <TableRow key={ri}>
-              {columns.map((col) => (
-                <TableCell
-                  key={col}
-                  className={dataCellClass(isNumeric(col), primaryKey?.includes(col) ?? false)}
-                >
-                  {decimalAligned(row[col], maxFractions.get(col) ?? 0)}
-                </TableCell>
-              ))}
+              {columns.map((col) => {
+                // Outlined, not tinted (a tint marks a changed row in the settings), and the
+                // whole cell, which a short value like `-` would not show underlined
+                const mark = marked?.has(cellKey(ri, col))
+                return (
+                  <TableCell
+                    key={col}
+                    className={cn(
+                      dataCellClass(isNumeric(col), primaryKey?.includes(col) ?? false),
+                      mark &&
+                        'text-destructive outline-1 outline-dashed outline-destructive -outline-offset-4'
+                    )}
+                    title={mark ? markTitle : undefined}
+                    data-marked={mark || undefined}
+                  >
+                    {decimalAligned(row[col], maxFractions.get(col) ?? 0)}
+                  </TableCell>
+                )
+              })}
             </TableRow>
           ))}
           {rows.length === 0 && (

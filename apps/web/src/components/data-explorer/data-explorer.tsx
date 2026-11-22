@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useContext } from 'react'
 import { Card, CardContent, Skeleton } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import type { ResourceColumn } from '@kukan/shared'
@@ -11,6 +11,7 @@ import { formatCell } from '@/lib/format-utils'
 import { ExplorerToolbar } from './explorer-toolbar'
 import { ExplorerTable } from './explorer-table'
 import { PreviewFooter } from './preview-footer'
+import { CellMarksContext, type CellMarks } from './cell-marks'
 
 const PAGE_SIZE = 100
 
@@ -136,6 +137,36 @@ export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExpl
     })
   }, [staticSource.metadata, staticSource.rows, schemaColumns])
 
+  // The cells a screen around the preview wants marked, judged on the rows
+  // shown: whichever page, sort or filter, the cells on screen are the ones
+  // asked about
+  const marks = useContext(CellMarksContext)
+  const rows = engineActive ? duck.rows : staticRows
+  // Kept with the rows and the judge they were for: a page turned, or a type
+  // chosen again, shows no marks until its own are in rather than the last
+  // page's at the same places
+  const [judged, setJudged] = useState<{
+    marks: CellMarks
+    rows: Record<string, string>[]
+    cells: Set<string>
+  } | null>(null)
+  useEffect(() => {
+    if (!marks || rows.length === 0) return
+    let cancelled = false
+    marks.judge(rows).then(
+      (cells) => {
+        if (!cancelled) setJudged({ marks, rows, cells })
+      },
+      () => {
+        if (!cancelled) setJudged(null)
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [marks, rows])
+  const marked = judged?.marks === marks && judged.rows === rows ? judged.cells : undefined
+
   if (staticSource.loading) {
     return (
       <Card>
@@ -181,7 +212,6 @@ export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExpl
   }
 
   const columns = engineActive ? duck.columns : staticSource.metadata.columns
-  const rows = engineActive ? duck.rows : staticRows
   const totalRows = engineActive ? duck.totalRows : staticSource.metadata.numRows
   const filteredRows = engineActive ? duck.filteredRows : totalRows
   const totalPages = engineActive
@@ -224,6 +254,8 @@ export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExpl
             filters={filters}
             primaryKey={primaryKey}
             schemaColumns={schemaColumns}
+            marked={marked}
+            markTitle={marks?.title}
             onSortChange={handleSortChange}
             onFilterApply={handleFilterApply}
             onFilterClear={handleFilterRemove}

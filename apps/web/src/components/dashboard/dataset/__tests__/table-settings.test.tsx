@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
+import { useSettledEstimate, type SettledEstimate } from '@/hooks/use-settled-estimate'
 import { TableSettings } from '../table-settings'
 
 vi.mock('@/lib/client-api', async (importOriginal) => ({
@@ -9,6 +10,15 @@ vi.mock('@/lib/client-api', async (importOriginal) => ({
 }))
 
 const mockClientFetch = vi.mocked(clientFetch)
+
+// DuckDB-WASM does not run here; the estimate's rules are tested in @kukan/lake
+vi.mock('@/hooks/use-settled-estimate', () => ({ useSettledEstimate: vi.fn(() => null) }))
+const mockEstimate = vi.mocked(useSettledEstimate)
+/** An estimate once a type is changed, as the hook gives none before */
+const estimateOnceTyped = (estimate: Omit<SettledEstimate, 'judge'>) =>
+  mockEstimate.mockImplementation(({ types }) =>
+    Object.keys(types).length > 0 ? { ...estimate, judge: async () => new Set<string>() } : null
+  )
 
 /** The box that puts a column in the key, or takes it out */
 const keyBox = (name: string) =>
@@ -108,6 +118,8 @@ function route(handlers: {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   mockClientFetch.mockReset()
+  mockEstimate.mockReset()
+  mockEstimate.mockReturnValue(null)
 })
 
 afterEach(() => {
@@ -1131,6 +1143,42 @@ describe('TableSettings', () => {
 
       await choose(typeOf('order'), 'Date')
       expect(keyBox('order')).not.toBeChecked()
+    })
+
+    it('estimates, as a type is chosen, how many of the rows read would not convert', async () => {
+      estimateOnceTyped({
+        rows: 10_000,
+        whole: false,
+        columns: { line: { castFailures: 12, castFailureSamples: [{ row: 3, value: 'a' }] } },
+      })
+      route({})
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(typeOf('line')).toBeInTheDocument())
+
+      await choose(typeOf('line'), 'Integer')
+
+      const note = await screen.findByText(
+        'Of the first 10,000 rows, 12 (0.12%) are expected not to convert (they would read as empty). The preview outlines them in red'
+      )
+      expect(note).toHaveAttribute('title', 'Row 3: a')
+      // Only the change is estimated
+      expect(mockEstimate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ types: { line: 'integer' } })
+      )
+    })
+
+    it('names the format the values would decide, and that every row read reads', async () => {
+      estimateOnceTyped({ rows: 2, whole: true, columns: { line: { dateFormat: '%Y/%m/%d' } } })
+      route({})
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(typeOf('line')).toBeInTheDocument())
+
+      await choose(typeOf('line'), 'Date')
+
+      expect(
+        await screen.findByText('Left to the values, the format is expected to be 1999/12/31')
+      ).toBeInTheDocument()
+      expect(screen.getByText('Every value is expected to read')).toBeInTheDocument()
     })
 
     it('says what the live version made of a settled column', async () => {
