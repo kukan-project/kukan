@@ -24,7 +24,7 @@
     "build:jp-pack": "tsx scripts/build-jp-pack.ts"
   },
   "devDependencies": {
-    "@duckdb/node-api": "1.5.5-r.5",
+    "@duckdb/node-api": "1.5.6-r.2",
     "@types/node": "^24.19.2",
     "tsx": "^4.23.15"
   }
