@@ -1024,6 +1024,7 @@
     "previewSourceMap": "Map",
     "previewSourceAttributes": "Attributes",
     "previewSourceFileList": "File List",
+    "previewSourceOriginalText": "Original (text)",
     "previewSourceOriginal": "Original",
     "previewSourceExtractedText": "Extracted text",
     "documentTextNone": "No extracted text yet. Processing has not finished, or extraction failed; reprocessing makes it again.",

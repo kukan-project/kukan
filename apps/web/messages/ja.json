@@ -1024,6 +1024,7 @@
     "previewSourceMap": "地図",
     "previewSourceAttributes": "属性テーブル",
     "previewSourceFileList": "ファイル一覧",
+    "previewSourceOriginalText": "原本（テキスト）",
     "previewSourceOriginal": "原本",
     "previewSourceExtractedText": "抽出テキスト",
     "documentTextNone": "抽出テキストはまだありません。処理が終わっていないか、取り出しに失敗しています。再処理すると作り直されます。",

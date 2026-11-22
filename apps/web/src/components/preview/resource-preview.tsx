@@ -348,7 +348,8 @@ function TablePreview({
 
   const sources: { key: PreviewSource; label: string }[] = [
     { key: 'parquet', label: t('previewSourceTable') },
-    { key: 'raw', label: raw?.label ?? t('previewSourceText') },
+    // The file itself, beside the table read from it — the Office previews' 原本
+    { key: 'raw', label: raw?.label ?? t('previewSourceOriginalText') },
   ]
 
   return (
