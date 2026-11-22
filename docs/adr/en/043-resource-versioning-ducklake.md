@@ -3,7 +3,8 @@
 ## Status
 
 **Accepted** — layer 1 implemented 2026-07-25, layer 2 (ii-a) 2026-07-27, ii-b (changed-row
-tracking via a declared primary key) 2026-08-22. ii-c (settled types) onwards remain open issues
+tracking via a declared primary key) 2026-08-22, ii-c (settled types, and reviewing a type change after
+ingest) 2026-11-22
 
 > **The ii-b design revised §5 (purge) and §6 (operations) on 2026-08-17 (since built).** The
 > largest change is that **a purge no longer guarantees the erasure of layer 2's bytes**, and

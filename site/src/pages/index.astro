@@ -31,7 +31,15 @@ const t = {
     pillarsLead: '公開して終わりにせず、データが使われるところまで面倒を見ます。',
     recentTitle: '最近の更新',
     foundationTitle: '運用の土台',
-    plannedNote: '今後の予定: SSO 連携（OIDC）、CSV の列型の確定と差分への反映、列の役割の上書き。',
+    plannedTitle: '今後の予定',
+    planned: [
+      '読む：Excel のシートから表のデータを自動で取り出す、シェープファイルを地図で見る、スキャンした PDF や図の中身を読む',
+      '分析する：テラバイト級の大きなデータ、表と文書をまたいだ分析、グラフなどの可視化の支援',
+      'つなぐ：列の語彙を増やす（年度・郵便番号・地域メッシュ、組織独自のコード、ほかの国、標準データモデル）、ほかのシステムからの取り込みと変換（ETL）',
+      '整える：値の書き方の揺れを自動で整えるクリーニング、BI ツールで開ける表の拡大',
+      'AI の土台：MCP の機能の充実など、AI のバックエンドとしての足回り',
+      '運用：更新が止まったデータの通知、データの使われ方の分析、SSO（OIDC）など、運用を助ける機能',
+    ],
     learnMore: '詳しく見る',
     techTitle: '技術スタック',
     ctaTitle: 'さっそく始めてみましょう',
@@ -158,7 +166,15 @@ const t = {
     pillarsLead: 'Publishing is where it starts. KUKAN stays with the data until it is actually used.',
     recentTitle: 'Recent Updates',
     foundationTitle: 'Built to Run',
-    plannedNote: 'Coming up: SSO (OIDC) sign-in, settled column types for CSV carried into diffs, and overriding column roles.',
+    plannedTitle: 'Coming Up',
+    planned: [
+      'Read: tables picked out of Excel sheets automatically, shapefiles on a map, and what scanned PDFs and figures say',
+      'Analyze: terabyte-scale data, tables and documents together, help with charts and other visuals',
+      "Connect: more column vocabularies (fiscal years, postal codes, mesh codes, your own codes, other countries, standard data models), and loading and transforming data from other systems (ETL)",
+      'Tidy: automatic cleaning of how values are written, and more tables that open in BI tools',
+      'AI backbone: a fuller MCP, and the groundwork for serving AI',
+      'Run: alerts for data that has stopped being updated, analysis of how data is used, SSO (OIDC) sign-in, and other help with running a site',
+    ],
     learnMore: 'Learn more',
     techTitle: 'Tech Stack',
     ctaTitle: 'Get Started',
@@ -304,18 +320,22 @@ const techStack = [
   'Next.js 16',
   'Tailwind CSS 4',
   'Hono',
+  'MCP',
   'Better Auth',
   'Drizzle ORM',
   'PostgreSQL',
   'pgvector',
   'OpenSearch',
   'DuckDB',
+  'DuckDB-WASM',
   'Parquet',
   'DuckLake',
   'Turborepo',
   'Vitest',
   'Playwright',
   'AWS CDK',
+  'ECS Fargate',
+  'Lambda Web Functions',
 ]
 ---
 
@@ -508,7 +528,12 @@ const techStack = [
             ))
           }
         </div>
-        <p class="planned-note" data-i18n="plannedNote">{t.en.plannedNote}</p>
+        <div class="planned">
+          <p class="planned-title" data-i18n="plannedTitle">{t.en.plannedTitle}</p>
+          <ul class="planned-list">
+            {t.en.planned.map((item, i) => <li data-i18n={`planned.${i}`}>{item}</li>)}
+          </ul>
+        </div>
       </div>
     </section>
 
@@ -1041,11 +1066,21 @@ const techStack = [
           grid-template-columns: repeat(2, 1fr);
         }
       }
-      .planned-note {
-        margin-top: 2rem;
-        text-align: center;
+      .planned {
+        max-width: 44rem;
+        margin: 2.5rem auto 0;
         font-size: 0.875rem;
         color: #64748b;
+      }
+      .planned-title {
+        margin: 0 0 0.5rem;
+        text-align: center;
+        font-weight: 600;
+      }
+      .planned-list {
+        margin: 0;
+        padding-left: 1.25rem;
+        line-height: 1.7;
       }
       .feature-card {
         display: flex;

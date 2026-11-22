@@ -247,13 +247,14 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 
 ### バージョン (versions)
 
-| Method | Path                                    | 説明                                           | 認証        |
-| ------ | --------------------------------------- | ---------------------------------------------- | ----------- |
-| GET    | `/resources/{id}/versions`              | 版の一覧（新しい順。削除済みも記録として残る） | 公開        |
-| GET    | `/resources/{id}/versions/{v}`          | 版の詳細                                       | 公開        |
-| GET    | `/resources/{id}/versions/{v}/diff`     | 直前の版との行差分。表形式のみ                 | 組織 editor |
-| GET    | `/resources/{id}/versions/{v}/download` | その版のファイルをダウンロード                 | 公開        |
-| POST   | `/resources/{id}/versions/{v}/purge`    | 版の内容を完全削除（法的削除）                 | sysadmin    |
+| Method | Path                                       | 説明                                           | 認証        |
+| ------ | ------------------------------------------ | ---------------------------------------------- | ----------- |
+| GET    | `/resources/{id}/versions`                 | 版の一覧（新しい順。削除済みも記録として残る） | 公開        |
+| GET    | `/resources/{id}/versions/{v}`             | 版の詳細                                       | 公開        |
+| GET    | `/resources/{id}/versions/{v}/diff`        | 直前の版との行差分。表形式のみ                 | 組織 editor |
+| GET    | `/resources/{id}/versions/{v}/download`    | その版のファイルをダウンロード                 | 公開        |
+| POST   | `/resources/{id}/versions/{v}/purge`       | 版の内容を完全削除（法的削除）                 | sysadmin    |
+| POST   | `/resources/{id}/versions/{v}/type-review` | 型の変化の確認を記録する（版ごとに 1 回）      | 組織 editor |
 
 公開エンドポイントの可視性判定はダウンロード・プレビューと同じです（非公開データセットは
 権限が必要）。
@@ -466,6 +467,8 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
       "schema": { "rowCount": 1688, "columns": [] },
       "noTableReason": null,
       "keyColumns": ["注文番号", "明細番号"],
+      "typeChanges": null,
+      "reviewedAt": null,
       "created": "2026-08-01T09:12:44.000Z",
       "purgedAt": null
     }
@@ -483,6 +486,8 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 | `schema`           | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                                                                                  |
 | `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large` / `out-of-memory` / `timed-out` / `ragged-rows` / `not-records`） |
 | `keyColumns`       | その版の行を同定した主キー列。主キーなしで読まれた版は `null`。リソースの現在の設定は「**次の**版が何で読まれるか」なので別物です       |
+| `typeChanges`      | その版の読み方で、人が確かめる必要のあること（型の変化・変換できない値・確定した列が無い・日付の書式が決まらない）。無ければ `null`     |
+| `reviewedAt`       | `typeChanges` を人が確認した時刻。確認を待つ間は `null`。誰が確認したかは返しません                                                     |
 
 完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` / `keyColumns` は
 `null` になり、
@@ -491,6 +496,13 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 なので残ります）。**パージの理由は返しません** — 消した内容についての自由記述であり、この
 エンドポイントはリソースと同じ範囲で読めるためです。誰が何をいつどんな理由でパージしたかは監査
 ログにあります。
+
+**型の変化の確認** — `POST /resources/{id}/versions/{v}/type-review`、ボディ `{"choices": {"列名": "accept" | "settle-previous" | "lift"}}`（**editor 権限**が必要）:
+
+- `typeChanges` のある列ごとに、`accept`（このまま受け入れる）・`settle-previous`（前の版の型に確定する）・`lift`（確定型を外す）のどれかを選びます。選べるのは、その列の変化が許すものだけです
+- 確認は版ごとに 1 回です。確認済みの版と、`state` が `active` でない版（削除済みなど）には `409` を返します。配信中でない過去の版でも、`active` なら `accept` は記録できます
+- `settle-previous` と `lift` は読み方を変えるので、列の設定を書き換えて新しい版を作ります（`queued` の意味は列設定の `PUT` と同じです）。最新の版でだけ選べ、それ以外の版では `409` です
+- 応答は `{"id": "…", "version": 2, "queued": true | false | null}` です
 
 **差分** — `GET /resources/{id}/versions/{v}/diff?from={v'}`（既定の `from` は直前の版）:
 
@@ -633,8 +645,9 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 - `roles` は列名から役割への対応です（後述の[列の役割](#列の役割)）。`PUT` は設定を丸ごと置き換えるので、**省くと役割の上書きは消えます**。今の設定は `GET` の `roles` で読めます
 - `types` は列名から型への対応です。型は `string` / `integer` / `float` / `boolean` / `date` / `timestamp` /
   `decimal` で、`date` と `timestamp` には `"date:%d/%m/%Y"` のように書式を添えられます。変換できない値は空になり、
-  版の `schema` の列に `castFailures` として数えられます。`roles` と同じく、**省くと型の確定は消えます**。新しく
-  確定できるのは live 版にある列だけです
+  版の `schema` の列に `castFailures` として数えられます。値を変換する型では、記号だけの値（`-`・`…`・`n/a`・
+  `:`・`[x]` など）は空と同じに値なしとして読み、`castFailures` には数えず、`noValueMarks`（件数と多い順の 3 つ）に
+  数えます。`roles` と同じく、**省くと型の確定は消えます**。新しく確定できるのは live 版にある列だけです
 
 - `[]` と `null` はどちらも「主キーなし」です。ボディの側で 1 つの綴りに正規化されます
 - 主キーの列の型は、確定した型があればその型で判断します。`float` の列も `decimal` に確定すれば主キーにできます
@@ -665,7 +678,12 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
       "name": "定員",
       "type": "string",
       "role": "numeric-text",
-      "roleBasis": { "rule": "number-shape", "share": 0.92, "examples": ["-", "1,000"] }
+      "roleBasis": {
+        "rule": "number-shape",
+        "share": 0.99,
+        "counts": { "numbers": 1553, "marks": 120, "blank": 0, "others": 15 },
+        "examples": ["（8）", "不明"]
+      }
     },
     { "name": "区分", "type": "string", "role": "category", "roleBasis": { "rule": "other" } }
   ]
@@ -673,7 +691,8 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 ```
 
 - `roleBasis.rule` は判定した規則、`share` はその規則が数えた値の割合です
-- `numeric-text` の `examples` は、数値として読めない値（公開する人が直す対象）です
+- `numeric-text` の `counts` は全行の内訳（数値・値なしの印・空・その他）です。`share` は空と印を除いた値のうち数値の形の割合です
+- `numeric-text` の `examples` は、確定型の数値として読めない値（公開する人が直す対象）を多い順に 3 つまで並べます。値なしの印は含みません
 - 役割がまだ判定されていない表では `columns` が `null` です
 - 人が上書きした列は `roleBasis.rule` が `override` になり、規則の判定が `inferred`（`role` と `roleBasis`）に入ります
 

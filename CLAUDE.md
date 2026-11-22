@@ -161,14 +161,13 @@ pnpm format        # Prettier フォーマット
 
 ## Review guidelines
 
-- PR のレビューは日本語で書く（指摘の見出し・本文・要約、レビューのまとめ）。
-  コード・識別子・エラーメッセージ・ログの引用は原文のまま
-- 指摘の重さは、起きる頻度と回復の手段で量る。まれな場合で、致命的な状態（データの消失、取り返しの
-  つかない状態、いつまでも残り続ける誤り）を引き起こさず、回復の手段（再処理・設定のやり直し・
-  ファイルの差し替えなど、管理者の操作を含む）があるものには、対応を求めない。そのために実装を
-  複雑にする提案（継ぎ足しの印・ロック・判定の追加など）はしない。それでも指摘する場合は、どの
-  くらい起きるかと、回復の手段が無い理由を書く。優先度（P1・P2 など）も同じ基準で付け、まれで
-  致命的な状態を引き起こさず回復の手段があるものを P1 にしない
+- PR のレビューは日本語で書く（指摘の見出し・本文・要約、レビューのまとめ）。コード・識別子・エラー
+  メッセージ・ログの引用は原文のまま。指摘の重さは、起きる頻度と回復の手段で量る。まれな場合で、致
+  命的な状態（データの消失、取り返しのつかない状態、いつまでも残り続ける誤り）を引き起こさず、回復
+  の手段（再処理・設定のやり直し・ファイルの差し替えなど、管理者の操作を含む）があるものには、対応
+  を求めない。そのために実装を複雑にする提案（継ぎ足しの印・ロック・判定の追加など）はしない。それ
+  でも指摘する場合は、どのくらい起きるかと、回復の手段が無い理由を書く。優先度（P1・P2 など）も同じ
+  基準で付け、まれで致命的な状態を引き起こさず回復の手段があるものを P1 にしない
 
 ## インフラ抽象化の原則
 
@@ -229,7 +228,7 @@ pnpm format        # Prettier フォーマット
 - AI メタデータ提案（提案型・オンデマンド生成） → `docs/adr/jp/040-ai-metadata-suggest.md`
 - マルチサイトデプロイ（共用インフラ + サイト単位の論理分離、ADR-031 拡張） → `docs/adr/jp/041-multi-site-deploy.md`
 - マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張） → `docs/adr/jp/042-multi-brand-build.md`
-- リソースバージョニングと行レベル差分（DuckLake、層 1・ii-a・ii-b 実装済み） → `docs/adr/jp/043-resource-versioning-ducklake.md`
+- リソースバージョニングと行レベル差分（DuckLake、層 1・ii-a・ii-b・ii-c 実装済み） → `docs/adr/jp/043-resource-versioning-ducklake.md`
 - リソース単位の実行 claim（同時実行の排他） → `docs/adr/jp/044-resource-execution-claim.md`
 - ストレージオブジェクトの先行記録（クラッシュ由来のリーク） → `docs/adr/jp/045-object-write-ahead.md`
 - 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ） → `docs/adr/jp/046-interpret-stage.md`
@@ -267,17 +266,16 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Versioning ii-b まで実装済み。** 層 1（正本バージョン保持・パージ）と層 2（DuckLake
+**Versioning ii-c まで実装済み。** 層 1（正本バージョン保持・パージ）と層 2（DuckLake
 行レベル差分、主キーなし）はどちらも v0.12.0、ii-b（主キー指定による変更行追跡。
-巻き戻しの版発行化・`superseded` 廃止を含む）は v0.15.0 で入っている。
+巻き戻しの版発行化・`superseded` 廃止を含む）は v0.15.0 で入っている。ii-c（型の確定、
+型の変化の取り込み後の確認、主キーと型の推奨、値なしの印）は 2026-11-22 に実装を終えた
+（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md` §8・§6.3・§6.5）。
 バージョン番号を書くのは「どこで入ったか」だけにする —
 「最新リリースは」はリリースごとに古くなるので書かない。
 
-**次: Phase Versioning-ii-c — 型の確定と、型の変化の取り込み後の確認**
-（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md` §8・§6.3・§6.5。結論は §8.0 の表）。
-着手前に §6.5 を読むこと — 確定型は版のゲートの 4 つ目の入力になる。主キー/型の候補（規則、
-ADR-040 拡張）も ii-c の枠（同 §8.6）。画面は ADR-072 の列のタブと版のタブに載るので、
-ADR-072 の Step 1 が先に要る。
+**次のフェーズは未定。** ii-c を前提にしていたものに、ADR-057 の Step 2（XLSX の表の範囲の確定）、
+ADR-073 の段階 2（「表の設定」タブでの語彙の確定）、標準データモデルとの対応付けがある。
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/jp/phase2-frontend.md`）
@@ -291,6 +289,8 @@ ADR-072 の Step 1 が先に要る。
   （`docs/specs/jp/phase-versioning-2-ducklake.md`、ADR-043 層 2）
 - Phase Versioning-ii-b: 主キー指定による変更行追跡 ✅ 完了
   （`docs/specs/jp/phase-versioning-2-ducklake.md` §6、ADR-043 層 2 / ADR-044 改訂）
+- Phase Versioning-ii-c: 型の確定と、型の変化の取り込み後の確認 ✅ 完了
+  （`docs/specs/jp/phase-versioning-2-ducklake.md` §8、ADR-043 層 2 / ADR-072 Step 3）
 - Phase AI-Summary: リソースの AI 生成抄録 ✅ 完了
   （`docs/specs/jp/phase-ai-summary.md`、ADR-053）
 

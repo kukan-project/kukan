@@ -2,16 +2,16 @@
 
 # Phase Versioning-ii: Row-Level Diffs via DuckLake (layer 2) — Implementation Spec
 
-> **ii-a implementation complete (2026-07-27). ii-b implementation complete (2026-08-22). ii-c is specified but not started (2026-11-11, §8).**
-> ii-c's screens sit on ADR-072's Table settings and Version history tabs, so ADR-072 Step 1 comes first.
+> **ii-a implementation complete (2026-07-27). ii-b implementation complete (2026-08-22). ii-c implementation complete (2026-11-22, §8).**
+> ii-c's screens sit on ADR-072's Table settings and Version history tabs.
 >
 > **§1–§5, §7 (except §7.2), §10, §12 and §13 are a record.** After implementation, ADR-046
 > changed the ordering and who does the interpreting (`Fetch → Version → Interpret → Lake → Index`,
 > with type inference in DuckDB). For the current shape see `docs/pipeline.md`. The file paths and
 > step names below are the ones in use at the time.
 >
-> **§6, §7.2, §8, §9, §11 and §14 are design notes written before starting.** They reflect what was
-> learned from implementing and operating ii-a, and ii-b can start from here.
+> **§6 (ii-b) and §8 (ii-c) are the specs as built, with what was decided while building them.** §7.2,
+> §9, §11 and §14 are design notes written before starting.
 
 > **Goal**: Ingest tabular resources (CSV/TSV) as DuckLake tables and provide **row-level diffs,
 > time travel and column schema history** between versions. The catalog is the existing PostgreSQL

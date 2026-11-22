@@ -259,13 +259,14 @@ values may be any JSON.
 
 ### Versions
 
-| Method | Path                                    | Description                                                 | Auth       |
-| ------ | --------------------------------------- | ----------------------------------------------------------- | ---------- |
-| GET    | `/resources/{id}/versions`              | List versions (newest first; purged ones remain as records) | Public     |
-| GET    | `/resources/{id}/versions/{v}`          | Version details                                             | Public     |
-| GET    | `/resources/{id}/versions/{v}/diff`     | Row diff against the preceding version. Tables only         | Org editor |
-| GET    | `/resources/{id}/versions/{v}/download` | Download that version's file                                | Public     |
-| POST   | `/resources/{id}/versions/{v}/purge`    | Permanently erase a version's content                       | Sysadmin   |
+| Method | Path                                       | Description                                                      | Auth       |
+| ------ | ------------------------------------------ | ---------------------------------------------------------------- | ---------- |
+| GET    | `/resources/{id}/versions`                 | List versions (newest first; purged ones remain as records)      | Public     |
+| GET    | `/resources/{id}/versions/{v}`             | Version details                                                  | Public     |
+| GET    | `/resources/{id}/versions/{v}/diff`        | Row diff against the preceding version. Tables only              | Org editor |
+| GET    | `/resources/{id}/versions/{v}/download`    | Download that version's file                                     | Public     |
+| POST   | `/resources/{id}/versions/{v}/purge`       | Permanently erase a version's content                            | Sysadmin   |
+| POST   | `/resources/{id}/versions/{v}/type-review` | Record the review of a version's type changes (once per version) | Org editor |
 
 The public endpoints apply the same visibility check as download and preview (a private dataset
 still requires permission).
@@ -491,6 +492,8 @@ is added while the content stays the same.
       "schema": { "rowCount": 1688, "columns": [] },
       "noTableReason": null,
       "keyColumns": ["order_no", "line_no"],
+      "typeChanges": null,
+      "reviewedAt": null,
       "created": "2026-08-01T09:12:44.000Z",
       "purgedAt": null
     }
@@ -508,6 +511,8 @@ is added while the content stays the same.
 | `schema`           | The version's column schema (tabular only), frozen per version                                                                                                                                           |
 | `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large` / `out-of-memory` / `timed-out` / `ragged-rows` / `not-records`)                                                              |
 | `keyColumns`       | The primary key this version's rows were identified by, `null` for a version read without one. The resource's current setting is a different question — it is what the _next_ version will be read under |
+| `typeChanges`      | What this version's reading needs a person to look at (a type change, values that did not convert, a settled column the file lacks, a date format left undecided); `null` for nothing                    |
+| `reviewedAt`       | When a person reviewed `typeChanges`; `null` while they wait. Who is not returned                                                                                                                        |
 
 A purged version stays in the list as a record, but `size` / `hash` / `schema` / `keyColumns`
 become `null` and `purgedAt` is filled in. Downloading it returns `404`. `keyColumns` goes with them
@@ -515,6 +520,13 @@ because a primary key is only settable over columns the content has, so its name
 the withheld `schema` (a `format` is a closed vocabulary, and stays). **The reason it was purged is
 not returned** — it is free text about content that has been destroyed, and this endpoint is as
 readable as the resource; who purged what, when and why is in the audit log.
+
+**Type review** — `POST /resources/{id}/versions/{v}/type-review`, body `{"choices": {"column": "accept" | "settle-previous" | "lift"}}` (**editor** required):
+
+- For each column with `typeChanges`, choose `accept` (take it as read), `settle-previous` (settle the type the version before read) or `lift` (lift a settled type) — only what that column's changes offer
+- A version is reviewed once. A version already reviewed, or one whose `state` is not `active` (purged and the like), gets `409`. An older version that is not live but still `active` can have `accept` recorded
+- `settle-previous` and `lift` change how the column reads, so they rewrite the column settings and make a version (`queued` as for the column settings `PUT`). They are offered on the newest version only; on another, `409`
+- The response is `{"id": "…", "version": 2, "queued": true | false | null}`
 
 **Diff** — `GET /resources/{id}/versions/{v}/diff?from={v'}` (`from` defaults to the preceding
 version):
@@ -666,8 +678,11 @@ data.
 - `roles` maps column names to roles (see [Column roles](#column-roles) below). A `PUT` replaces the whole setting, so **leaving `roles` out clears the overrides**. The current setting is `roles` in the `GET`
 - `types` maps column names to types: `string` / `integer` / `float` / `boolean` / `date` / `timestamp` /
   `decimal`, a `date` or `timestamp` optionally with its format (`"date:%d/%m/%Y"`). A value that does not
-  convert is left empty and counted as `castFailures` on the column in the version's `schema`. Like
-  `roles`, **leaving `types` out clears them**. Only a column of the live version can be newly settled
+  convert is left empty and counted as `castFailures` on the column in the version's `schema`. For a type
+  that converts values, a value of marks alone (`-`, `…`, `n/a`, `:`, `[x]` and the like) is read as no value,
+  as a blank one is, and counted in `noValueMarks` (the count and the three commonest) rather than
+  `castFailures`. Like `roles`, **leaving `types` out clears them**. Only a column of the live version can be
+  newly settled
 
 - `[]` and `null` both mean "no key"; the body normalizes to one spelling
 - A key column's type is its settled type where it has one: a `float` column settled as `decimal` can be a key
@@ -700,7 +715,12 @@ why it was decided:
       "name": "capacity",
       "type": "string",
       "role": "numeric-text",
-      "roleBasis": { "rule": "number-shape", "share": 0.92, "examples": ["-", "1,000"] }
+      "roleBasis": {
+        "rule": "number-shape",
+        "share": 0.99,
+        "counts": { "numbers": 1553, "marks": 120, "blank": 0, "others": 15 },
+        "examples": ["(8)", "unknown"]
+      }
     },
     { "name": "category", "type": "string", "role": "category", "roleBasis": { "rule": "other" } }
   ]
@@ -708,8 +728,10 @@ why it was decided:
 ```
 
 - `roleBasis.rule` is the rule that decided the role, and `share` the share of values it measured
-- The `examples` of a `numeric-text` column are values that do not read as numbers — what the
-  publisher has to fix
+- The `counts` of a `numeric-text` column break down every row: numbers, no-value marks, blanks and the
+  rest. `share` is the share of number-shaped values among those that are neither blank nor marks
+- The `examples` of a `numeric-text` column are up to three values a settled number does not read, the
+  commonest first — what the publisher has to fix. Marks are not among them
 - `columns` is `null` for a table whose roles have not been worked out yet
 - A column a person overrode has `roleBasis.rule` `override`, with the rules' decision in `inferred` (`role` and `roleBasis`)
 
