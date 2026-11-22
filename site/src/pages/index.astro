@@ -54,6 +54,9 @@ const t = {
     releaseNotes: 'リリースノート',
     switchLang: 'English',
     recent: [
+      { title: '推定された列の型を固定、適用前に読めない値の見込みも分かる', doc: { guide: 'data-admin-guide', hash: '列の型を確定する' } },
+      { title: 'データの更新で型が変わったら知らせ、受け入れるか戻すか選べる', doc: { guide: 'data-admin-guide', hash: '型の変化を確かめる' } },
+      { title: 'Lambda Web Functions で運用費を抑えられる（試験的）', doc: { guide: 'system-admin-guide/web-functions' } },
       { title: '列から地域を読み取り、都道府県・市区町村で探せる（試験的）', doc: { guide: 'system-admin-guide', hash: '列の語彙試験的' } },
       { title: '編集画面を一新、プレビュー・表の設定・版の履歴をタブで', doc: { guide: 'data-admin-guide', hash: '編集画面' } },
       { title: 'Office 文書を、閉域網や非公開のサイトでもプレビューできる', doc: { guide: 'system-admin-guide', hash: 'office-文書の原本' } },
@@ -189,6 +192,9 @@ const t = {
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
     recent: [
+      { title: 'Pin Guessed Column Types, Seeing What Would Not Convert', doc: { guide: 'data-admin-guide', hash: 'settling-column-types' } },
+      { title: 'Review Type Changes After a Data Update: Accept or Revert', doc: { guide: 'data-admin-guide', hash: 'reviewing-type-changes' } },
+      { title: 'Cut Running Costs with Lambda Web Functions (Experimental)', doc: { guide: 'system-admin-guide/web-functions' } },
       { title: 'Find Tables by the Places Their Columns Name (Experimental)', doc: { guide: 'system-admin-guide', hash: 'column-vocabulary-experimental' } },
       { title: 'A New Editor with Preview, Table Settings and Versions', doc: { guide: 'data-admin-guide', hash: 'the-editor' } },
       { title: 'Preview Office Documents on Private Sites and Closed Networks', doc: { guide: 'system-admin-guide', hash: 'office-originals' } },
@@ -291,6 +297,9 @@ const t = {
 
 // Release and date read the same in both locales; icons too.
 const recentMeta = [
+  { icon: '🔢', version: 'v0.46.0', date: '2026-11-22' },
+  { icon: '🔔', version: 'v0.46.0', date: '2026-11-22' },
+  { icon: '⚡', version: 'v0.44.0', date: '2026-11-18' },
   { icon: '🗾', version: 'v0.43.0', date: '2026-11-17' },
   { icon: '✏️', version: 'v0.43.0', date: '2026-11-17' },
   { icon: '🗂️', version: 'v0.41.0', date: '2026-11-09' },
@@ -301,8 +310,11 @@ const recentMeta = [
   { icon: '📝', version: 'v0.30.0', date: '2026-09-18' },
   { icon: '🔎', version: 'v0.30.0', date: '2026-09-18' },
 ]
-// The newest release's cards, newest first in the list, are marked NEW
-const newestRecent = recentMeta[0].version
+// Cards within 30 days of the newest release (first in the list) are marked NEW.
+// Measured from that release, not the build date, so a rebuild does not change it.
+const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const newestRecentDate = Date.parse(recentMeta[0].date)
+const isNewRecent = (date: string) => newestRecentDate - Date.parse(date) <= NEW_WINDOW_MS
 const pillarMeta = [
   { id: 'read', icon: '📖' },
   { id: 'query', icon: '💬' },
@@ -461,7 +473,7 @@ const techStack = [
                 <span class="recent-body">
                   <span class="recent-title" data-i18n={`recent.${i}.title`}>{r.title}</span>
                   <span class="recent-date">
-                    {recentMeta[i].version === newestRecent && <span class="recent-new">NEW</span>}
+                    {isNewRecent(recentMeta[i].date) && <span class="recent-new">NEW</span>}
                     {recentMeta[i].version} · {recentMeta[i].date}
                   </span>
                 </span>

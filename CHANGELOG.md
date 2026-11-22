@@ -6,6 +6,93 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.46.0] - 2026-11-22
+
+**Highlights**
+
+- **Pin a column's guessed type.** Column types are still guessed from the values; you can now settle (pin) a column's type on the Table settings tab, keeping the guess so that later versions read the column the same way, or choosing another where the guess is wrong: text, integer, number (floating point), decimal (fixed-point), boolean, date or date-time, with the written format for dates (#1264, #1265, #1267, #1269). A code column keeps its leading zeros as text; an amount keeps its exact digits as a decimal. A value the settled type cannot read becomes "no value" and is counted on the column; no row is dropped. Applying a type makes one new version, because the type is part of how the file is read.
+- **See what a type would do before applying it.** While you choose a type, the browser estimates how many values it would not read ("12 of the first 10,000 rows") and marks those cells in the preview (#1274).
+- **Review type changes when the data is updated.** When an updated file makes a new version that reads differently from the one before (a guessed type changed, a settled type met values it cannot read, a settled column is missing, or a date format could not be decided), the version is marked "Needs review" in the Version history tab and in the resource list. Publishing is not held back. For each column you accept the change, settle the previous type, or lift the settled type (#1276, #1277).
+- **Recommendations by rules.** Columns show a recommended key, and a recommended type for digit codes, numbers written as text and floating-point columns. A recommendation only fills the draft; you decide by applying (#1280).
+- **Marks that mean "no value".** In a column settled to a number, boolean or date type, a value of marks alone (`-`, `…`, `n/a`, `:`, `[x]` and the like) is read as no value, like an empty cell, and counted apart from unreadable values (#1280).
+
+**Features**
+
+- Settled column types for CSV, TSV and JSON tables, through the Table settings tab and `PUT /resources/{id}/column-settings` (`types`) (#1264, #1265, #1267, #1269). Dates and date-times take a format such as `date:%d/%m/%Y`; with the format left automatic, the format that reads the most values is chosen, and a column whose day and month cannot be told apart stays text and is reported. A version keeps the types it was read with, so reprocessing reads it the same way, and reverting to a version reads with that version's types.
+- New column type `decimal` (fixed-point), used only when a person settles it (#1264). A floating-point column cannot be a key, but the same column settled to decimal or integer can. It also reads exponent notation (`1e3`). OData serves it as `Edm.Decimal` with `Precision` and `Scale`.
+- An estimate, computed in the browser, of the values a type being chosen would not read, with those cells marked in the preview (#1274). It counts the preview's first 10,000 rows, so it is a guide.
+- Type review: `typeChanges` and `reviewedAt` on a version, `POST /resources/{id}/versions/{v}/type-review`, and the review panel on the Version history tab (#1276, #1277). Accepting only records the review; settling the previous type or lifting a settled type makes a new version and is offered on the latest version only.
+- Recommended key and types, by rules (#1280): a key from columns whose values all differ (a column named like an ID, then a running number, then the leftmost); text for digit codes; integer or decimal for numbers written as text when at least 90% of the values read as numbers; decimal for floating-point columns.
+- Values of marks alone are read as no value in columns settled to a type that converts values, and reported as `noValueMarks` (#1280). A column settled to text is read as written.
+- The role "number written as text" is now told by how the values are written: commas, brackets, signs such as `▲`, full-width digits, units (`100円`, `5 kg`) and other countries' separators (`1.234,5`). Its basis shows the count of every row (numbers, marks, blanks, others) and the most frequent values that do not read as numbers (#1281).
+- The table preview shows a cell with no value as a gray italic "(no value)", apart from an empty string. Copying the table leaves that cell empty (#1275).
+
+**Bug Fixes**
+
+- fix(web): a CSV's raw view is called "Original (text)", as the Office previews call the file (#1278)
+- fix(infra): Slack deploy notifications show the commit subject, and the link to the release notes, instead of CodeConnections' raw JSON (#1266)
+
+**Improvements**
+
+- DuckDB is 1.5.6 on both the server and the browser, and a test checks that the rules for settled types read values the same on both (#1272, #1273).
+
+**Documentation**
+
+- The data administrator guide and the REST API reference cover settling types, type review, no-value marks and numbers written as text; the site's "Coming Up" list is rewritten (#1283).
+
+**Upgrade Notes** (for system administrators)
+
+- **Database:** two migrations add three nullable columns to `resource_version` (`settled_types`, `type_changes`, `type_review`). They only add columns, so the previous version keeps working while the deploy rolls.
+- **Nothing changes for existing resources until someone settles a type.** No reprocessing is needed. Guessed types are read as before.
+- **The basis of "number written as text" on existing resources** keeps showing a share only, without the row counts, until the resource is reprocessed from its edit page.
+- **A column of numbers with units can change role.** Values such as `100円` now count as numbers, so when a resource is next read, a column of such values (a grade column like `1年生`, for example) can turn from a category into a number written as text, and its values stop being listed for search. Where that is wrong, override the role on the Table settings tab.
+- **API:** version objects gain `typeChanges` and `reviewedAt`, and column settings gain `types`. As with `roles`, a `PUT /resources/{id}/column-settings` that leaves `types` out removes the settled types; a client that writes column settings should send `types` back.
+- **AWS / Docker Compose:** no configuration changes.
+
+---
+
+**ハイライト**
+
+- **推定された列の型を固定できるようになりました。** 列の型はこれまでどおり値から推定し、「表の設定」タブでその列の型を確定（固定）できます。推定どおりに固定すれば、後の版も同じ型で読みます。推定が合わない列は、別の型を選べます。選べるのは文字列・整数・浮動小数点・固定小数点・真偽値・日付・日時で、日付と日時は書式も選べます（#1264、#1265、#1267、#1269）。コードの列は文字列にすれば先頭の 0 が残り、金額は固定小数点にすれば桁を正確に持てます。確定した型で読めない値は「値なし」として読み、その数が列に出ます。行は落ちません。型は読み方の一部なので、適用すると版が 1 つ作られます。
+- **適用する前に、その型でどうなるかが分かります。** 型を選んでいる間、読めない値の見込み（「先頭 10,000 行のうち 12 行」）をブラウザで数え、プレビューの表でもそのセルに色を付けます（#1274）。
+- **データの更新で型が変わったら、確かめられます。** ファイルが更新されてできた新しい版の読み方が前の版と違うとき（推定された型が変わった、確定した型で読めない値がある、確定した列が無い、日付の書式が決まらない）、「バージョン履歴」タブと左のリソース一覧でその版に「要確認」が付きます。公開は止まりません。列ごとに「このまま受け入れる」「前の型に確定する」「確定型を外す」から選びます（#1276、#1277）。
+- **規則による推奨が出ます。** 列に、主キーの推奨と、数字のコード・文字で書かれた数値・浮動小数点の列への型の推奨が出ます。押しても下書きに入るだけで、決めるのは「適用」です（#1280）。
+- **「値なし」を表す印を読み分けます。** 数値・真偽値・日付の型に確定した列では、記号だけの値（`-`・`…`・`n/a`・`:`・`[x]` など）を空のセルと同じく値なしとして読み、読めない値とは別に数えます（#1280）。
+
+**機能**
+
+- CSV・TSV・JSON の表で、列の型を確定できます。「表の設定」タブと `PUT /resources/{id}/column-settings`（`types`）から行います（#1264、#1265、#1267、#1269）。日付と日時には `date:%d/%m/%Y` のように書式を添えられます。書式が自動なら最も多くの値を読める書式を選び、日と月のどちらが先か決まらない列は文字列のまま読んで知らせます。版は読んだときの型を持ち続けるので、再処理しても同じ読み方になり、版へ巻き戻すとその版の型で読みます。
+- 列の型に `decimal`（固定小数点）を追加しました。人が確定したときだけ使います（#1264）。浮動小数点の列は主キーにできませんが、固定小数点か整数に確定すれば主キーにできます。指数の書き方（`1e3`）も読みます。OData では `Edm.Decimal` として、`Precision` と `Scale` を付けて返します。
+- 選んでいる型で読めない値の見込みをブラウザで数え、プレビューの表でそのセルに色を付けます（#1274）。プレビューの先頭 10,000 行で数えるので、目安です。
+- 型の変化の確認：版に `typeChanges` と `reviewedAt`、`POST /resources/{id}/versions/{v}/type-review`、「バージョン履歴」タブの確認のパネルを追加しました（#1276、#1277）。「このまま受け入れる」は確認を記録するだけです。「前の型に確定する」と「確定型を外す」は新しい版を作り、最新の版でだけ選べます。
+- 主キーと型を規則で推奨します（#1280）。主キーは、値がすべて異なる列から、列名が ID を表す列・行の連番・一番左の列の順に選びます。数字のコードには文字列を、文字で書かれた数値には値の 9 割以上が数として読めるとき整数か固定小数点を、浮動小数点の列には固定小数点を推奨します。
+- 値を変換する型に確定した列では、記号だけの値を値なしとして読み、`noValueMarks` として数えます（#1280）。文字列に確定した列は、書かれたまま読みます。
+- 役割「文字列表記数値」を、値の書き方で見分けるようになりました。カンマ・括弧・`▲` などの符号・全角の数字・単位（`100円`、`5 kg`）・国ごとの区切り（`1.234,5`）が対象です。根拠には、全部の行の内訳（数値・印だけの値・空・その他）と、数として読めない値のうち多いものが出ます（#1281）。
+- プレビューの表で、値の無いセルを灰色の斜体の「(値なし)」と出し、空の文字列と見分けられるようにしました。表をコピーしても、そのセルは空のままです（#1275）。
+
+**バグ修正**
+
+- fix(web): CSV のプレビューの「テキスト表示」を、Office のプレビューと同じ呼び方の「原本（テキスト）」に（#1278）
+- fix(infra): Slack のデプロイ通知に、CodeConnections の JSON ではなくコミットの件名とリリースノートへのリンクが出るように（#1266）
+
+**改善**
+
+- DuckDB をサーバーとブラウザの両方で 1.5.6 にそろえ、確定型の規則がどちらでも同じ値に読むことをテストで確かめています（#1272、#1273）。
+
+**ドキュメント**
+
+- データ管理者ガイドと REST API のリファレンスに、型の確定・型の変化の確認・値なしの印・文字列表記数値を書きました。公式サイトの「今後の予定」も書き直しました（#1283）。
+
+**更新時の注意**（システム管理者向け）
+
+- **データベース：** マイグレーション 2 本が、`resource_version` に null を許す列を 3 つ足します（`settled_types`・`type_changes`・`type_review`）。列を足すだけなので、デプロイの途中で前の版が動いていても問題ありません。
+- **型を確定するまで、既存のリソースは何も変わりません。** 再処理は要りません。推定された型は今までどおりに読みます。
+- **既存のリソースの「文字列表記数値」の根拠**は、リソースの編集画面から再処理するまで、割合だけの表示のままです（行の内訳は出ません）。
+- **単位の付いた数の列は、役割が変わることがあります。** `100円` のような値を数として数えるようになったので、次にリソースを読んだとき、そうした値の列（`1年生` のような区分の列など）が「カテゴリ」から「文字列表記数値」に変わり、その値の一覧が検索に出なくなることがあります。合っていなければ、「表の設定」タブで役割を選び直してください。
+- **型の呼び方（日本語の画面）：** 公開ページの項目一覧も含めて、「数値」は「浮動小数点」に変わりました。英語の画面は Number のままです。
+- **API：** 版に `typeChanges` と `reviewedAt` が、列の設定に `types` が加わります。`roles` と同じく、`PUT /resources/{id}/column-settings` で `types` を省くと型の確定が消えます。列の設定を書き込むクライアントは、`types` も送り返してください。
+- **AWS・Docker Compose：** 設定の変更はありません。
+
 ## [0.45.2] - 2026-11-21
 
 **Highlights**
