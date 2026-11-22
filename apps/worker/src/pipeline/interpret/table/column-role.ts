@@ -45,8 +45,13 @@ export interface TextColumnClues {
   phone: number
   /** `2026/5/12`, `令和6年4月`, `H31.4.1` and the like. */
   date: number
-  /** A number with commas, brackets, a sign, a percent — or only dashes and dots. */
+  /**
+   * A number however it is written: commas or spaces between its digits,
+   * brackets, a sign, full-width digits, a currency, a percent, a unit.
+   */
   number: number
+  /** Marks alone (`-`, `…`, `n/a`): no value, as a blank is, and out of the number's share. */
+  mark: number
 }
 
 /** Headings that say what the column is, where the values alone leave it open. */
@@ -82,9 +87,11 @@ export function textColumnRole(name: string, c: TextColumnClues): RoleDecision {
   if (c.digits >= 0.9 && c.leadingZero > 0) {
     return { role: 'identifier', roleBasis: { rule: 'leading-zero' } }
   }
-  // Type inference leaves these as text: one `-` or `（8）` in the column does it.
-  if (c.number >= 0.9) {
-    return { role: 'numeric-text', roleBasis: { rule: 'number-shape', share: share(c.number) } }
+  // Type inference leaves these as text: one `-` or `（8）` in the column does
+  // it. Of the values that are not marks: a column of `-` and numbers is all numbers
+  const numbers = c.mark < 1 ? c.number / (1 - c.mark) : 0
+  if (c.number > 0 && numbers >= 0.9) {
+    return { role: 'numeric-text', roleBasis: { rule: 'number-shape', share: share(numbers) } }
   }
   // Before distinctness: a phone number repeats on every row of its facility.
   if (c.url >= 0.8) {

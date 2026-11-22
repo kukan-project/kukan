@@ -1055,6 +1055,32 @@ describe('TableSettings', () => {
       await waitFor(() => expect(rowOf('order')).toHaveTextContent('90%'))
       expect(rowOf('order')).toHaveTextContent(/do not read as numbers: -.*\(8\)/)
     })
+
+    it('counts the rows of a number written as text where the rules counted them', async () => {
+      route({
+        roles: json({
+          columns: [
+            {
+              name: 'order',
+              type: 'string',
+              role: 'numeric-text',
+              roleBasis: {
+                rule: 'number-shape',
+                share: 1,
+                counts: { numbers: 171, marks: 119, blank: 0, others: 0 },
+              },
+            },
+          ],
+        }),
+      })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() =>
+        expect(rowOf('order')).toHaveTextContent(
+          'Of 290 rows: 171 numbers, 119 marks alone (no value) (every number reads as written)'
+        )
+      )
+      expect(rowOf('order')).not.toHaveTextContent('100%')
+    })
   })
 
   describe('recommendations by rules (Versioning ii-c §8.6)', () => {
@@ -1153,6 +1179,63 @@ describe('TableSettings', () => {
       ).toBeInTheDocument()
       expect(
         within(rowOf('line')).queryByRole('button', { name: /^Recommended: (?!key)/ })
+      ).not.toBeInTheDocument()
+    })
+
+    it('recommends a decimal for a float, never an integer, whatever its fractions', async () => {
+      // The preview spells a float's `100.0` as `100`: an integer would not read the file's
+      mockEstimateState.mockReturnValue({
+        estimate: {
+          rows: 2,
+          whole: true,
+          columns: { lat: { decimalPrecision: 3, decimalScale: 0, values: 2 } },
+          judge: async () => new Set<string>(),
+        },
+        failed: false,
+      })
+      route({
+        get: {
+          schema: {
+            rowCount: 2,
+            columns: [
+              { name: 'lat', type: 'float', nullable: false, nullCount: 0, distinctCount: 2 },
+            ],
+          },
+        },
+      })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(rowOf('lat')).toBeInTheDocument())
+      const offer = await within(rowOf('lat')).findByRole('button', {
+        name: 'Recommended: Decimal',
+      })
+      expect(offer).toHaveAttribute('title', expect.stringMatching(/^Decimal digits as written/))
+    })
+
+    it('recommends no decimal for a float the preview writes in exponent notation', async () => {
+      // Too small or large to write out: a range a float suits
+      mockEstimateState.mockReturnValue({
+        estimate: {
+          rows: 2,
+          whole: true,
+          columns: { lat: { decimalPrecision: 8, decimalScale: 7, values: 2, exponents: 1 } },
+          judge: async () => new Set<string>(),
+        },
+        failed: false,
+      })
+      route({
+        get: {
+          schema: {
+            rowCount: 2,
+            columns: [
+              { name: 'lat', type: 'float', nullable: false, nullCount: 0, distinctCount: 2 },
+            ],
+          },
+        },
+      })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(rowOf('lat')).toBeInTheDocument())
+      expect(
+        within(rowOf('lat')).queryByRole('button', { name: /^Recommended:/ })
       ).not.toBeInTheDocument()
     })
 

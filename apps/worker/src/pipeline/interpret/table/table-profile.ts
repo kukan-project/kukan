@@ -8,13 +8,13 @@
  */
 
 import type { DuckDBConnection } from '@duckdb/node-api'
-import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
+import { NO_VALUE_MARK, isNoValueMark, readsAsNumber, sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import {
   COLUMN_VALUES_KEPT,
   TABLE_SENTENCES_MAX_BYTES,
   vocabularySearchFields,
 } from '@kukan/shared'
-import type { ColumnProfile, ResourceColumn, TableProfile } from '@kukan/shared'
+import type { ColumnProfile, ColumnRoleBasis, ResourceColumn, TableProfile } from '@kukan/shared'
 import {
   INFERENCE_RULES,
   corroborate,
@@ -38,6 +38,27 @@ const NUMBER_EXAMPLES = 3
 
 /** Category columns put in front of a sentence, the least varied first. */
 const SENTENCE_CONTEXT_COLUMNS = 3
+
+/**
+ * A number as written: a sign (`▲` `△` for minus), a currency, brackets, and
+ * digits in groups split by commas, dots, apostrophes or spaces — any
+ * country's way, `1,234.5`, `1.234,5`, `1 234`, `1'234` — full-width or not,
+ * with an exponent or without.
+ */
+const NUMBER =
+  "[-−‐－▲△+＋]?\\s*[¥￥$＄€£₩]?\\s*[(（]?[0-9０-９]+([,，.．'’ ][0-9０-９]+)*([eE][-+]?[0-9]+)?[)）]?"
+/**
+ * What may follow a number, a unit by its shape rather than a list of every
+ * language's: a percent or a currency; up to four letters of Chinese,
+ * Japanese or Korean (`円`, `世帯`, `か月`, `万`, `명`); lower-case Latin ones
+ * (`kg`, `hrs`, a flag like `p`), or any after a space (`5 KB`, `12 USD`). Not
+ * an upper-case run touching the digits, which is a code (`1A`, `2LDK`).
+ */
+const UNIT =
+  '(\\s*[%％‰¥￥$＄€£₩]|\\s*[\\p{Han}\\p{Hiragana}\\p{Katakana}\\p{Hangul}ヶ㎡℃°]{1,4}|' +
+  '\\s*[a-zµ°][a-zA-Z0-9²³/.]{0,5}|\\s+[A-Za-z][A-Za-z0-9²³/.]{0,5})'
+/** Units that make a number a place or a name: an address, a room, a floor plan. */
+const NOT_UNIT = '(丁目|番地?|号(室|棟|機|館)?|階|S?L?DK)'
 
 /**
  * One regex per clue, matched against the trimmed value. RE2 syntax; `full`
@@ -65,10 +86,10 @@ export const CLUES = {
       '([0-9]{4}|[RHSrhs][0-9０-９元]{1,2}|(令和|平成|昭和)[0-9０-９元]{1,2})' +
       '([/／年-][0-9０-９]{1,2}月?([/／-]?[0-9０-９]{1,2}日?)?|[.．][0-9０-９]{1,2}[.．][0-9０-９]{1,2})',
   },
-  number: {
-    full: true,
-    re: '[-−‐－▲△+＋]?\\s*[(（]?[0-9０-９][0-9０-９,，.．]*[)）]?\\s*[%％]?|[-−‐－…・*＊xX×]+',
-  },
+  number: { full: true, re: `${NUMBER}${UNIT}?` },
+  // Taken off `number`: a unit that makes the value a place or a name
+  notNumber: { full: true, re: `${NUMBER}\\s*${NOT_UNIT}` },
+  mark: { full: true, re: NO_VALUE_MARK },
 } satisfies Record<string, { full: boolean; re: string }>
 
 /**
@@ -86,9 +107,6 @@ const SHAPE_SAMPLE_ROWS = 50_000
  * values sit mostly in the rows the sample skips is measured over every row.
  */
 const SHAPE_SAMPLE_MIN_VALUES = 1_000
-
-/** A value DuckDB would read as a number as it stands. */
-const PLAIN_NUMBER = '-?[0-9]+(\\.[0-9]+)?'
 
 /** The trimmed value of a column, with blank as missing. */
 const value = (name: string, { cast = false } = {}) =>
@@ -138,7 +156,7 @@ export async function profileTable(
     }
     const decision = textColumnRole(column.name, counted)
     if (decision.role === 'numeric-text') {
-      decision.roleBasis.examples = await notPlainNumbers(conn, names[i], stride)
+      Object.assign(decision.roleBasis, await numberCounts(conn, names[i]))
     }
     profiled.push(decision)
   }
@@ -167,7 +185,7 @@ export async function profileTable(
       role,
       roleBasis: {
         rule: 'override',
-        ...(role === 'numeric-text' && { examples: await notPlainNumbers(conn, names[i], stride) }),
+        ...(role === 'numeric-text' && (await numberCounts(conn, names[i]))),
       },
       inferred: { role: was, roleBasis },
     }
@@ -473,6 +491,8 @@ async function countClues(
   return new Map(
     text.map((i) => {
       const clues = Object.fromEntries(measured.map((k) => [k, Number(row[`c${i}_${k}`] ?? 0)]))
+      // Every value `notNumber` matches, `number` does too
+      clues.number -= clues.notNumber
       const blank = Number(row[`c${i}_sampled`]) === 0
       return [
         i,
@@ -486,21 +506,41 @@ async function countClues(
   )
 }
 
-/** The values that are not numbers as written, most frequent first. */
-async function notPlainNumbers(
+/**
+ * What a `numeric-text` column holds, over every row: how many values are
+ * numbers, marks, blank or else, and the commonest values a settled number
+ * would not read — what a publisher has to mend (ADR-063 §決定 5).
+ */
+async function numberCounts(
   conn: DuckDBConnection,
-  name: string,
-  stride: number
-): Promise<string[]> {
+  name: string
+): Promise<Pick<ColumnRoleBasis, 'counts' | 'examples'>> {
   const x = value(name)
-  const rows = (
+  const mark = isNoValueMark(x)
+  const number =
+    `regexp_full_match(${x}, ${sqlLiteral(CLUES.number.re)}) ` +
+    `AND NOT regexp_full_match(${x}, ${sqlLiteral(CLUES.notNumber.re)})`
+  const [row] = (
+    await conn.runAndReadAll(`
+      SELECT count(*) FILTER (WHERE ${x} IS NULL) AS blank,
+        count(*) FILTER (WHERE ${mark}) AS marks,
+        count(*) FILTER (WHERE ${number} AND NOT ${mark}) AS numbers,
+        count(*) AS total
+      FROM t`)
+  ).getRowObjectsJson() as Record<string, string | number>[]
+  const [blank, marks, numbers, total] = ['blank', 'marks', 'numbers', 'total'].map((k) =>
+    Number(row[k])
+  )
+  const examples = (
     await conn.runAndReadAll(`
       SELECT ${x} AS v FROM t
-      WHERE rowid % ${stride} = 0
-        AND ${x} IS NOT NULL AND NOT regexp_full_match(${x}, ${sqlLiteral(PLAIN_NUMBER)})
+      WHERE ${x} IS NOT NULL AND NOT ${mark} AND NOT ${readsAsNumber(x)}
       GROUP BY 1 ORDER BY count(*) DESC, min(rowid) LIMIT ${NUMBER_EXAMPLES}`)
   ).getRowObjectsJson() as { v: string }[]
-  return rows.map((r) => r.v)
+  return {
+    counts: { numbers, marks, blank, others: total - blank - marks - numbers },
+    ...(examples.length > 0 && { examples: examples.map((r) => r.v) }),
+  }
 }
 
 /**

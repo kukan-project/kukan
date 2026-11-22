@@ -39,8 +39,15 @@ describe('columnCandidates', () => {
     ).toBeNull()
   })
 
-  it('offers text for a code of digits, and decimal for numbers written as text', () => {
-    const columns = [col('a', 'string'), col('b', 'string'), col('c', 'string'), col('d', 'string')]
+  it('offers text for a code of digits, and decimal for numbers written as text or read as floats', () => {
+    const columns = [
+      col('a', 'string'),
+      col('b', 'string'),
+      col('c', 'string'),
+      col('d', 'string'),
+      col('lat', 'float'),
+      col('n', 'integer'),
+    ]
     const roles = [
       role('a', 'identifier', 'leading-zero'),
       role('b', 'identifier', 'mostly-digits'),
@@ -51,6 +58,7 @@ describe('columnCandidates', () => {
       a: { type: 'string' },
       b: { type: 'string' },
       d: { type: 'decimal' },
+      lat: { type: 'decimal' },
     })
   })
 

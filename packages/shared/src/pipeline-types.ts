@@ -351,6 +351,18 @@ export const columnRoleBasisSchema = z.object({
    * frequent first — what a publisher has to change (ADR-063 §決定 5).
    */
   examples: z.array(z.string()).optional(),
+  /**
+   * A `numeric-text` column's rows, every one counted: numbers however they
+   * are written, marks alone read as no value, blanks, and the rest
+   */
+  counts: z
+    .object({
+      numbers: z.number().int().nonnegative(),
+      marks: z.number().int().nonnegative(),
+      blank: z.number().int().nonnegative(),
+      others: z.number().int().nonnegative(),
+    })
+    .optional(),
 })
 export type ColumnRoleBasis = z.infer<typeof columnRoleBasisSchema>
 

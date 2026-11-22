@@ -64,8 +64,8 @@ export function formatCell(value: unknown, type?: FieldType | ResourceColumnType
 const COLUMN_TYPE_KEY: Record<FieldType | ResourceColumnType, string> = {
   string: 'fieldTypeString',
   integer: 'fieldTypeInteger',
-  number: 'fieldTypeNumber',
-  float: 'fieldTypeNumber',
+  number: 'fieldTypeFloat',
+  float: 'fieldTypeFloat',
   boolean: 'fieldTypeBoolean',
   date: 'fieldTypeDate',
   datetime: 'fieldTypeDatetime',

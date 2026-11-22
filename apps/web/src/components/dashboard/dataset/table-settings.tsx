@@ -372,9 +372,11 @@ export function TableSettings({
         : null,
     [view, roles]
   )
-  // Numbers written as text, read as a settled decimal: offered where nine in
-  // ten values read (§8.6), an integer where none has a fraction
-  const numericText = useMemo(
+  // Decimal candidates, read as a settled decimal: offered where nine in ten
+  // values read (§8.6). Numbers written as text get an integer where none has
+  // a fraction; a float does not — the preview spells its `100.0` as `100`,
+  // which a settled integer would not read in the file
+  const decimals = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(candidates?.types ?? {}).flatMap(([name, candidate]) =>
@@ -385,7 +387,7 @@ export function TableSettings({
   )
   const { estimate: fractions } = useSettledEstimateState({
     resourceId,
-    types: numericText,
+    types: decimals,
     columns: columns ?? NO_COLUMNS,
     rowCount: view?.schema?.rowCount ?? 0,
   })
@@ -400,10 +402,14 @@ export function TableSettings({
       const read = fractions?.columns[name]
       if (read?.values === undefined || read.values === 0) continue
       if ((read.castFailures ?? 0) > read.values / UNREADABLE_PARTS) continue
-      types[name] = { type: read.decimalScale === 0 ? 'integer' : 'decimal' }
+      // The preview writes a float in exponent notation only where it is too
+      // small or large to write out: a range a float suits and 38 digits may not
+      if (read.exponents) continue
+      const text = columns?.find((c) => c.name === name)?.type === 'string'
+      types[name] = { type: text && read.decimalScale === 0 ? 'integer' : 'decimal' }
     }
     return { ...candidates, types }
-  }, [candidates, fractions])
+  }, [candidates, fractions, columns])
 
   // And the cells of the preview those values are in, wherever they sit
   const markTitle = t('castFailureCell')
@@ -1338,7 +1344,7 @@ function TypeChoice({
           variant="link"
           size="sm"
           className="h-auto w-fit p-0 text-xs"
-          title={t(CANDIDATE_TITLE[recommended.type])}
+          title={t(column?.type === 'float' ? 'candidateFloat' : CANDIDATE_TITLE[recommended.type])}
           onClick={() => onChoose(recommended.type)}
         >
           {t('recommendedType', { type: tr(columnTypeKey(recommended.type)) })}
@@ -1537,12 +1543,33 @@ function RoleChoice({
  */
 function RoleBasis({ basis }: { basis: ColumnRoleBasis }) {
   const t = useTranslations('resource')
+  const locale = useLocale()
   const percent = basis.share !== undefined ? Math.round(basis.share * 100) : 0
+  const counts = basis.counts
+  const count = new Intl.NumberFormat(locale)
   return (
     <span className="text-muted-foreground text-xs">
-      {t(`fieldRoleBasis.${basis.rule}`, { percent, hint: basis.hint ?? '' })}
-      {basis.examples && basis.examples.length > 0 && (
+      {/* Counted rows say what a share would leave to guess: the marks, read as no value */}
+      {counts
+        ? t('fieldRoleCounts', {
+            rows: count.format(counts.numbers + counts.marks + counts.blank + counts.others),
+            parts: (
+              [
+                ['fieldRoleCountNumbers', counts.numbers],
+                ['fieldRoleCountMarks', counts.marks],
+                ['fieldRoleCountBlank', counts.blank],
+                ['fieldRoleCountOthers', counts.others],
+              ] as const
+            )
+              .filter(([, n]) => n > 0)
+              .map(([key, n]) => t(key, { count: count.format(n) }))
+              .join(t('fieldRoleCountSeparator')),
+          })
+        : t(`fieldRoleBasis.${basis.rule}`, { percent, hint: basis.hint ?? '' })}
+      {basis.examples && basis.examples.length > 0 ? (
         <> {t('fieldRoleNotNumbers', { values: basis.examples.join(t('fieldRoleSeparator')) })}</>
+      ) : (
+        counts && <> {t('fieldRoleAllRead')}</>
       )}
     </span>
   )

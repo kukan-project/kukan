@@ -66,6 +66,10 @@ const GROUPED = String.raw`[+-]?\d{1,3}(,\d{3})+(\.\d+)?`
 /** A plain decimal number, the only shape a `decimal` takes. */
 const PLAIN_DECIMAL = String.raw`[+-]?(\d+(\.\d+)?|\.\d+)`
 
+/** A number in exponent notation (`1e3`, `2.5E-4`): its mantissa's sign, digits and point, and the exponent. */
+const EXPONENT = String.raw`([+-]?)(\d*)\.?(\d*)[eE]([+-]?)0*(\d{1,2})`
+const EXPONENT_SHAPE = String.raw`[+-]?(\d+\.?\d*|\.\d+)[eE][+-]?0*\d{1,2}`
+
 /** The value with the spaces around it gone, as the reader drops them for a number or date. */
 const trimmed = (col: string) => `trim(${col})`
 
@@ -73,6 +77,30 @@ const trimmed = (col: string) => `trim(${col})`
 const numeric = (col: string) =>
   `CASE WHEN regexp_full_match(${trimmed(col)}, ${sqlLiteral(GROUPED)}) ` +
   `THEN replace(${trimmed(col)}, ',', '') ELSE ${trimmed(col)} END`
+
+/** Whether a value is written in exponent notation, as SQL. */
+export const isExponent = (col: string) =>
+  `regexp_full_match(${trimmed(col)}, ${sqlLiteral(EXPONENT_SHAPE)})`
+
+/**
+ * The value as a plain decimal: {@link numeric}, and exponent notation written
+ * out — `2.5e-3` as `0.0025`, every digit kept, so the digits a decimal takes
+ * are counted as for any other value. An exponent of up to two digits past
+ * its leading zeros (`1e003` is written out to fixed widths): past that no
+ * value fits a decimal anyway, and the string stays short.
+ */
+const plainNumber = (col: string) => {
+  const part = (n: number) => `regexp_extract(${trimmed(col)}, ${sqlLiteral(EXPONENT)}, ${n})`
+  const digits = `(${part(2)} || ${part(3)})`
+  const point = `(length(${part(2)}) + CAST(${part(4)} || ${part(5)} AS INTEGER))`
+  return (
+    `CASE WHEN ${isExponent(col)} THEN ${part(1)} || CASE ` +
+    `WHEN ${point} <= 0 THEN '0.' || repeat('0', -${point}) || ${digits} ` +
+    `WHEN ${point} >= length(${digits}) THEN ${digits} || repeat('0', ${point} - length(${digits})) ` +
+    `ELSE substr(${digits}, 1, ${point}) || '.' || substr(${digits}, ${point} + 1) END ` +
+    `ELSE ${numeric(col)} END`
+  )
+}
 
 /**
  * The expression a settled column is read with, or null where it stays as it
@@ -122,7 +150,7 @@ async function decimalExpression(
   previous: SettledRead | undefined,
   fixed: boolean
 ): Promise<{ expr: string; note: SettledNote }> {
-  const value = numeric(col)
+  const value = plainNumber(col)
   // Leading zeros take no digit, as in DuckDB: `007` is one digit, `0.5` none
   const intDigits = `length(ltrim(regexp_extract(${value}, '^[+-]?(\\d*)', 1), '0'))`
   const fracDigits = `length(regexp_extract(${value}, '\\.(\\d+)$', 1))`
@@ -236,14 +264,25 @@ const isoTimestamp = (value: string) =>
   `ELSE TRY_CAST(${value} AS TIMESTAMP) END END`
 
 /**
- * A value of marks alone — `-`, `…`, `*`, `×`, `x` — which a table writes
- * where it has no value (none, not applicable, withheld). Read as empty, as a
- * blank cell is: not a value that did not convert.
+ * A value of marks alone, which a table writes where it has no value (none,
+ * not applicable, withheld): dashes, dots and crosses, and the shorthands of
+ * statistics offices — `:` (Eurostat), `(X)` (US Census), `[x]` `[c]` `[z]`
+ * (UK ONS), `n/a`. Read as empty, as a blank cell is: not a value that did not
+ * convert. RE2, matched against the whole trimmed value.
  */
-const NO_VALUE_MARK = '[-−‐－―—–ー….・･*＊xXｘＸ×]+'
+export const NO_VALUE_MARK = '[-−‐－―—–ー….・･*＊xXｘＸ×]+|[:：]|\\([Xx]\\)|\\[[xcz]\\]|[Nn]/?[Aa]'
+
 /** Whether a value is marks alone, as SQL. */
 export const isNoValueMark = (col: string) =>
   `regexp_full_match(${trimmed(col)}, ${sqlLiteral(NO_VALUE_MARK)})`
+
+/**
+ * Whether a value reads as a settled number, as SQL: a plain decimal, its
+ * commas grouping every three digits. What a column written as numbers is
+ * told apart by, the values that do not being the ones to mend.
+ */
+export const readsAsNumber = (col: string) =>
+  `regexp_full_match(${plainNumber(col)}, ${sqlLiteral(PLAIN_DECIMAL)})`
 
 /** Where the expression left empty a value that was not: a value that did not convert. */
 export const settledFailed = (col: string, expr: string) =>

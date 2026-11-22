@@ -11,7 +11,7 @@ import type { ColumnRoleRow } from './version-views'
 export interface ColumnCandidates {
   /** A one-column key, offered only while none is set */
   primaryKey: string | null
-  /** A settled type per column with none: string for a code of digits, decimal for numbers written as text */
+  /** A settled type per column with none: string for a code of digits, decimal for numbers written as text or read as floats */
   types: Record<string, { type: 'string' | 'decimal' }>
 }
 
@@ -71,7 +71,8 @@ export function columnCandidates(
     const row = roleOf.get(column.name)
     if (row?.role === 'identifier' && DIGIT_CODE_RULES.includes(row.roleBasis.rule)) {
       types[column.name] = { type: 'string' }
-    } else if (row?.role === 'numeric-text') {
+    } else if (row?.role === 'numeric-text' || column.type === 'float') {
+      // A float as written in the file is decimal digits, which a decimal keeps exactly
       types[column.name] = { type: 'decimal' }
     }
   }

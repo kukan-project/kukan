@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import {
+  isExponent,
   isNoValueMark,
   settledExpression,
   settledFailed,
@@ -26,6 +27,8 @@ const ESTIMATE_ROWS = 10_000
 export type ColumnEstimate = Omit<SettledNote, 'settled' | 'inferredType'> & {
   /** Values among the rows read, neither blank nor marks: what the failures are a share of */
   values?: number
+  /** Of them, values the preview spells in exponent notation: a float too wide for a decimal */
+  exponents?: number
 }
 
 export interface SettledEstimate {
@@ -138,7 +141,7 @@ export function useSettledEstimateState({ resourceId, types, columns, rowCount }
             ...read.note,
             ...(read.expr !== null && (await settledFailures(rel, col, read.expr))),
             ...(read.expr !== null && (await settledMarks(rel, col, read.expr))),
-            values: await valuesOf(rel, col),
+            ...(await valuesOf(rel, col)),
           }
           if (cancelled) return
         }
@@ -171,12 +174,16 @@ export function useSettledEstimateState({ resourceId, types, columns, rowCount }
   return { estimate: current?.estimate ?? null, failed: !!current && !current.estimate }
 }
 
-/** How many values of a column are neither blank nor marks alone. */
-async function valuesOf(rel: SettledRelation, col: string): Promise<number> {
+/** How many values of a column are neither blank nor marks alone, and how many of them are in exponent notation. */
+async function valuesOf(
+  rel: SettledRelation,
+  col: string
+): Promise<Pick<ColumnEstimate, 'values' | 'exponents'>> {
   const [row] = await rel.rows(
-    `SELECT count(*) AS n FROM ${rel.from} WHERE trim(${col}) <> '' AND NOT ${isNoValueMark(col)}`
+    `SELECT count(*) AS n, count(*) FILTER (WHERE ${isExponent(col)}) AS e FROM ${rel.from} ` +
+      `WHERE trim(${col}) <> '' AND NOT ${isNoValueMark(col)}`
   )
-  return Number(row.n)
+  return { values: Number(row.n), exponents: Number(row.e) }
 }
 
 /** The cells of rows a preview shows that the expressions leave empty. */

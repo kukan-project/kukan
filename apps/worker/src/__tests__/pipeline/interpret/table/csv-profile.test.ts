@@ -131,12 +131,13 @@ describe('interpretCsv — column roles', () => {
     expect(cols['市区町村名'].inferred).toBeUndefined()
   })
 
-  it('names what keeps a number written as text from being one', async () => {
+  it('counts what a number written as text holds, its marks apart from what does not read', async () => {
     const cols = await columns(header, rows)
+    // `-` is no value, and `1,000` reads: nothing to name
     expect(cols['定員'].roleBasis).toEqual({
       rule: 'number-shape',
       share: 1,
-      examples: ['-', '1,000'],
+      counts: { numbers: 32, marks: 8, blank: 0, others: 0 },
     })
   })
 
@@ -154,7 +155,7 @@ describe('interpretCsv — column roles', () => {
 
   it('reads dates written with dots or in abbreviated eras as dates, not numbers', async () => {
     // One `-` keeps the column text, as it does in published tables; the
-    // number shape takes both the dates and the dash, so the order decides
+    // number shape takes the dates too, so the order decides
     const cols = await columns(
       ['公表日', '施行日', '金額'],
       Array.from({ length: 20 }, (_, i) => [
@@ -167,6 +168,31 @@ describe('interpretCsv — column roles', () => {
     expect(cols['施行日'].roleBasis).toEqual({ rule: 'date-shape', share: 0.95 })
     // One dot is a number, however many digits come before it
     expect(cols['金額'].role).toBe('numeric-text')
+  })
+
+  it('takes a number with a unit or the separators of any country for a number, not a place', async () => {
+    const cols = await columns(
+      ['金額', '重さ', '人口', 'rate', '所在', '区画', '間取り'],
+      Array.from({ length: 40 }, (_, i) => [
+        i === 0 ? '-' : `${i * 100}円`,
+        i === 0 ? 'n/a' : `${i} kg`,
+        i === 0 ? '[c]' : `"${i}.234,5"`,
+        i === 0 ? ':' : `${i}%`,
+        `${i}丁目`,
+        `${i}A`,
+        `${i}LDK`,
+      ])
+    )
+    for (const name of ['金額', '重さ', '人口', 'rate']) {
+      expect(cols[name].roleBasis, name).toMatchObject({
+        rule: 'number-shape',
+        share: 1,
+        counts: { numbers: 39, marks: 1, blank: 0, others: 0 },
+      })
+    }
+    for (const name of ['所在', '区画', '間取り']) {
+      expect(cols[name].role, name).not.toBe('numeric-text')
+    }
   })
 
   it('takes digits that start with a zero for a code, not a number written as text', async () => {
@@ -207,16 +233,20 @@ describe('interpretCsv — column roles', () => {
     expect(cols['その他'].roleBasis).toEqual({ rule: 'punctuation', share: 1 })
   })
 
-  it('names the values that keep a number as text from being one past the sample size', async () => {
-    // More rows than the sample: the examples are read over the sampled rows
+  it('counts every row past the sample size, and names the values that do not read', async () => {
     const rows = Array.from({ length: 60_000 }, (_, i) => [
       i % 2 ? '公園' : '広場',
-      i % 9 ? '100' : '-',
+      i % 9 ? (i % 1000 === 1 ? '（8）' : '100') : '-',
     ])
     const cols = await columns(['区分', '金額'], rows)
     expect(cols['金額']).toEqual({
       role: 'numeric-text',
-      roleBasis: { rule: 'number-shape', share: 1, examples: ['-'] },
+      roleBasis: {
+        rule: 'number-shape',
+        share: 1,
+        counts: { numbers: 53_333, marks: 6_667, blank: 0, others: 0 },
+        examples: ['（8）'],
+      },
     })
     expect(cols['区分'].values).toEqual(['広場', '公園'])
   })

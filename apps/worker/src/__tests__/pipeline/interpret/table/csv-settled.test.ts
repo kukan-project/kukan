@@ -61,14 +61,14 @@ describe('interpretCsv — settled types', () => {
   })
 
   it('leaves a value that does not convert empty, counts it and keeps the row', async () => {
-    const { schema } = await interpret('n\n1\nN/A\n3\n', { types: { n: 'integer' } })
+    const { schema } = await interpret('n\n1\nunknown\n3\n', { types: { n: 'integer' } })
     expect(schema.rowCount).toBe(3)
     expect(column(schema.columns, 'n')).toMatchObject({
       type: 'integer',
       settled: true,
       inferredType: 'string',
       castFailures: 1,
-      castFailureSamples: [{ row: 2, value: 'N/A' }],
+      castFailureSamples: [{ row: 2, value: 'unknown' }],
     })
     expect(await preview('n')).toEqual(['1', null, '3'])
   })
@@ -101,7 +101,7 @@ describe('interpretCsv — settled types', () => {
   })
 
   it('takes the previous digits, or the default, where no value is readable', async () => {
-    const previous = await interpret('rate\nN/A\n', {
+    const previous = await interpret('rate\nunknown\n', {
       types: { rate: 'decimal' },
       previous: { rate: { decimalPrecision: 10, decimalScale: 2 } },
     })
@@ -110,7 +110,7 @@ describe('interpretCsv — settled types', () => {
       decimalScale: 2,
       castFailures: 1,
     })
-    const none = await interpret('rate\nN/A\n', { types: { rate: 'decimal' } })
+    const none = await interpret('rate\nunknown\n', { types: { rate: 'decimal' } })
     expect(column(none.schema.columns, 'rate')).toMatchObject({
       decimalPrecision: 18,
       decimalScale: 3,
@@ -118,7 +118,7 @@ describe('interpretCsv — settled types', () => {
   })
 
   it('reads a date in the format most of its values take', async () => {
-    const { schema } = await interpret('d\n31/12/2026\n30/11/2026\nN/A\n', {
+    const { schema } = await interpret('d\n31/12/2026\n30/11/2026\nunknown\n', {
       types: { d: 'date' },
     })
     expect(column(schema.columns, 'd')).toMatchObject({

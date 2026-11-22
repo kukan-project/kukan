@@ -53,7 +53,7 @@ describe('interpretJson — settled types', () => {
 
   it('reads a nested field by its flattened name, unquoted where it is a string', async () => {
     const { schema } = await interpret(
-      [{ contact: { n: '1,234' } }, { contact: { n: 'N/A' } }, { contact: { n: 5 } }],
+      [{ contact: { n: '1,234' } }, { contact: { n: 'unknown' } }, { contact: { n: 5 } }],
       { types: { contact_n: 'integer' } }
     )
     expect(schema.rowCount).toBe(3)
@@ -61,7 +61,7 @@ describe('interpretJson — settled types', () => {
       type: 'integer',
       settled: true,
       castFailures: 1,
-      castFailureSamples: [{ row: 2, value: 'N/A' }],
+      castFailureSamples: [{ row: 2, value: 'unknown' }],
     })
     expect(await preview('contact_n')).toEqual(['1234', null, '5'])
   })
