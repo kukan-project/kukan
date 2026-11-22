@@ -152,6 +152,13 @@ export const resourceColumnSchema = z.object({
   castFailureSamples: z
     .array(z.object({ row: z.number().int().positive(), value: z.string() }))
     .optional(),
+  /**
+   * Values of marks alone (`-`, `…`) in a settled column, read as no value
+   * rather than counted as not converting (§8.3): how many, and the commonest
+   */
+  noValueMarks: z
+    .object({ count: z.number().int().positive(), examples: z.array(z.string()) })
+    .optional(),
   /** The format a settled `date`/`timestamp` column was read with. */
   dateFormat: z.string().optional(),
   /**

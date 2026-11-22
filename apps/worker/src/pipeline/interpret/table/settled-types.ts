@@ -14,6 +14,7 @@ import type { DuckDBConnection } from '@duckdb/node-api'
 import {
   settledExpression,
   settledFailures,
+  settledMarks,
   sqlIdentifier,
   type SettledNote as LakeSettledNote,
   type SettledRead,
@@ -183,6 +184,7 @@ export async function settleColumns(
       inferredType: inferred.get(name) ?? 'string',
       ...read.note,
       ...(read.expr !== null && (await settledFailures(rel, col, read.expr))),
+      ...(read.expr !== null && (await settledMarks(rel, col, read.expr))),
     })
   }
   const renamed = reachable.some((name, i) => name !== names[i])

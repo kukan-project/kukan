@@ -23,6 +23,7 @@ import {
 import { clientFetch } from '@/lib/client-api'
 import { columnTypeKey } from '@/lib/format-utils'
 import { useSettledEstimateState, type ColumnEstimate } from '@/hooks/use-settled-estimate'
+import { NoValueMarksNote } from './table-settings'
 
 /** Choices that change how the column reads, and so make a version (§8.4) */
 const MAKES_VERSION: readonly TypeReviewChoice[] = ['settle-previous', 'lift']
@@ -258,6 +259,9 @@ function SettleEstimate({
   if (column.dateFormatUndecided) {
     return <span className="text-muted-foreground text-xs">{t('settleUndecided')}</span>
   }
+  const marks = column.noValueMarks && (
+    <NoValueMarksNote marks={column.noValueMarks} rows={rows} className="block" />
+  )
   return failures > 0 ? (
     <span
       className="text-xs"
@@ -266,10 +270,14 @@ function SettleEstimate({
         .join('\n')}
     >
       {t(whole ? 'settleFailuresWhole' : 'settleFailures', numbers)}
+      {marks}
     </span>
   ) : (
     <span className="text-muted-foreground text-xs">
-      {t(whole ? 'settleReadsWhole' : 'settleReads', numbers)}
+      {marks
+        ? t(whole ? 'settleReadsBesideMarksWhole' : 'settleReadsBesideMarks', numbers)
+        : t(whole ? 'settleReadsWhole' : 'settleReads', numbers)}
+      {marks}
     </span>
   )
 }

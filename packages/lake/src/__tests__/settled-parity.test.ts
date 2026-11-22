@@ -12,7 +12,7 @@ import { createRequire } from 'node:module'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { SettledTypeSpec } from '@kukan/shared'
-import { settledExpression, settledFailures, type SettledRelation } from '../settled'
+import { settledExpression, settledFailures, settledMarks, type SettledRelation } from '../settled'
 import { sqlLiteral } from '../sql'
 
 type Rows = (sql: string) => Promise<Record<string, unknown>[]>
@@ -91,6 +91,14 @@ const CASES: Case[] = [
       '',
       null,
       '9223372036854775808',
+      '-',
+      '－',
+      '…',
+      '***',
+      'x',
+      '―',
+      'ｘ',
+      '...',
     ],
   },
   {
@@ -165,8 +173,9 @@ async function read(rows: Rows, c: Case) {
   const { expr, note } = await settledExpression(rel, 'v', c.spec, undefined, false)
   if (expr === null) return { note }
   const failures = await settledFailures(rel, 'v', expr)
+  const marks = await settledMarks(rel, 'v', expr)
   const converted = await rows(`SELECT (${expr})::VARCHAR AS x FROM ${from} ORDER BY r`)
-  return { note, failures, values: converted.map((row) => plain(row.x)) }
+  return { note, failures, marks, values: converted.map((row) => plain(row.x)) }
 }
 
 describe('the settled rules on the server and in the browser', () => {

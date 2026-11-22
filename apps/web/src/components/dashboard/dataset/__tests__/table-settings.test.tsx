@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
-import { useSettledEstimate, type SettledEstimate } from '@/hooks/use-settled-estimate'
+import {
+  useSettledEstimate,
+  useSettledEstimateState,
+  type SettledEstimate,
+} from '@/hooks/use-settled-estimate'
 import { TableSettings } from '../table-settings'
 
 vi.mock('@/lib/client-api', async (importOriginal) => ({
@@ -12,8 +16,14 @@ vi.mock('@/lib/client-api', async (importOriginal) => ({
 const mockClientFetch = vi.mocked(clientFetch)
 
 // DuckDB-WASM does not run here; the estimate's rules are tested in @kukan/lake
-vi.mock('@/hooks/use-settled-estimate', () => ({ useSettledEstimate: vi.fn(() => null) }))
+vi.mock('@/hooks/use-settled-estimate', () => ({
+  useSettledEstimate: vi.fn(() => null),
+  useSettledEstimateState: vi.fn(),
+}))
 const mockEstimate = vi.mocked(useSettledEstimate)
+const mockEstimateState = vi.mocked(useSettledEstimateState)
+/** What reading numbers written as text found, where it could not read them */
+const NO_FRACTIONS_READ = { estimate: null, failed: true }
 /** An estimate once a type is changed, as the hook gives none before */
 const estimateOnceTyped = (estimate: Omit<SettledEstimate, 'judge'>) =>
   mockEstimate.mockImplementation(({ types }) =>
@@ -120,6 +130,8 @@ beforeEach(() => {
   mockClientFetch.mockReset()
   mockEstimate.mockReset()
   mockEstimate.mockReturnValue(null)
+  mockEstimateState.mockReset()
+  mockEstimateState.mockReturnValue(NO_FRACTIONS_READ)
 })
 
 afterEach(() => {
@@ -1045,6 +1057,139 @@ describe('TableSettings', () => {
     })
   })
 
+  describe('recommendations by rules (Versioning ii-c §8.6)', () => {
+    const roles = () =>
+      json({
+        columns: [
+          {
+            name: 'order',
+            type: 'string',
+            role: 'identifier',
+            roleBasis: { rule: 'leading-zero' },
+          },
+          {
+            name: 'line',
+            type: 'string',
+            role: 'numeric-text',
+            roleBasis: { rule: 'number-shape' },
+          },
+        ],
+      })
+
+    it('offers the recommended key one press from the draft', async () => {
+      route({ roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('order')).toBeInTheDocument())
+
+      const offer = await within(rowOf('order')).findByRole('button', { name: 'Recommended: key' })
+      expect(offer).toHaveAttribute(
+        'title',
+        'Every value differs and none is empty, so it can be the key'
+      )
+      fireEvent.click(offer)
+      expect(keyBox('order')).toBeChecked()
+      // Picked, the recommendation has said what it had to
+      expect(
+        within(rowOf('order')).queryByRole('button', { name: 'Recommended: key' })
+      ).not.toBeInTheDocument()
+    })
+
+    /** What reading `line`, written as numbers, as a decimal found */
+    const lineRead = (
+      read: { decimalScale: number; castFailures?: number; values?: number },
+      rows = 2
+    ) =>
+      mockEstimateState.mockReturnValue({
+        estimate: {
+          rows,
+          whole: true,
+          columns: { line: { decimalPrecision: 18, values: rows, ...read } },
+          judge: async () => new Set<string>(),
+        },
+        failed: false,
+      })
+
+    it('offers the recommended type one press from the draft, and nothing is written', async () => {
+      lineRead({ decimalScale: 2 })
+      route({ roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+
+      fireEvent.click(
+        await within(rowOf('line')).findByRole('button', { name: 'Recommended: Decimal' })
+      )
+      expect(within(rowOf('line')).getByRole('combobox', { name: /^Type of/ })).toHaveTextContent(
+        'Decimal'
+      )
+      expect(
+        within(rowOf('line')).queryByRole('button', { name: /^Recommended:/ })
+      ).not.toBeInTheDocument()
+      expect(mockClientFetch.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+      expect(mockEstimateState).toHaveBeenCalledWith(
+        expect.objectContaining({ types: { line: 'decimal' } })
+      )
+    })
+
+    it('recommends an integer where no value of numbers written as text has a fraction', async () => {
+      lineRead({ decimalScale: 0 })
+      route({ roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+
+      const offer = await within(rowOf('line')).findByRole('button', {
+        name: 'Recommended: Integer',
+      })
+      expect(offer).toHaveAttribute('title', expect.stringMatching(/^Whole numbers/))
+    })
+
+    it('recommends no type for numbers written as text where more than a tenth would not read', async () => {
+      lineRead({ decimalScale: 0, castFailures: 1 })
+      route({ roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+      // The code's offer stands
+      expect(
+        await within(rowOf('order')).findByRole('button', { name: 'Recommended: String' })
+      ).toBeInTheDocument()
+      expect(
+        within(rowOf('line')).queryByRole('button', { name: /^Recommended: (?!key)/ })
+      ).not.toBeInTheDocument()
+    })
+
+    it('recommends a type where nine in ten of the values read, to the line', async () => {
+      // Of the values the rows read hold, not of the rows: half of them blank
+      lineRead({ decimalScale: 0, castFailures: 1, values: 10 }, 20)
+      route({ roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+      expect(
+        await within(rowOf('line')).findByRole('button', { name: 'Recommended: Integer' })
+      ).toBeInTheDocument()
+    })
+
+    it('recommends no type for numbers written as text until their values are read', async () => {
+      mockEstimateState.mockReturnValue({ estimate: null, failed: false })
+      route({ roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('line')).toBeInTheDocument())
+      expect(
+        await within(rowOf('order')).findByRole('button', { name: 'Recommended: String' })
+      ).toBeInTheDocument()
+      expect(
+        within(rowOf('line')).queryByRole('button', { name: /^Recommended: (?!key)/ })
+      ).not.toBeInTheDocument()
+    })
+
+    it('recommends no key where one is set', async () => {
+      route({ get: { primaryKey: ['order'] }, roles: roles() })
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(keyBox('order')).toBeChecked())
+      expect(
+        within(rowOf('order')).queryByRole('button', { name: 'Recommended: key' })
+      ).not.toBeInTheDocument()
+    })
+  })
+
   describe('settled types (Versioning ii-c)', () => {
     const typeOf = (name: string) => within(rowOf(name)).getByRole('combobox', { name: /^Type of/ })
     const choose = async (trigger: HTMLElement, option: string) => {
@@ -1183,6 +1328,25 @@ describe('TableSettings', () => {
       expect(screen.getByText('Every value is expected to read')).toBeInTheDocument()
     })
 
+    it('says how many values are marks read as no value, apart from those that read', async () => {
+      estimateOnceTyped({
+        rows: 290,
+        whole: true,
+        columns: { line: { noValueMarks: { count: 119, examples: ['-', '…'] } } },
+      })
+      route({})
+      render(<TableSettings resourceId="r1" />)
+      await waitFor(() => expect(typeOf('line')).toBeInTheDocument())
+
+      await choose(typeOf('line'), 'Integer')
+
+      expect(await screen.findByText('No value is expected not to convert')).toBeInTheDocument()
+      expect(
+        screen.getByText('119 rows (41.03%) hold marks alone, such as -, …, and read as no value')
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Every value is expected to read')).not.toBeInTheDocument()
+    })
+
     it('says what the live version made of a settled column', async () => {
       route({
         get: {
@@ -1200,6 +1364,7 @@ describe('TableSettings', () => {
                 nullCount: 1,
                 castFailures: 1,
                 castFailureSamples: [{ row: 2, value: 'N/A' }],
+                noValueMarks: { count: 3, examples: ['-', '…'] },
               },
             ],
           },
@@ -1211,6 +1376,10 @@ describe('TableSettings', () => {
         'Values that could not be converted: 1 (read as no value)'
       )
       expect(note).toHaveAttribute('title', 'Row 2: N/A')
+      // Marks, read as no value too, said apart from the values that failed
+      expect(
+        screen.getByText('3 values of marks alone, such as -, … (read as no value)')
+      ).toBeInTheDocument()
       expect(typeOf('line')).toHaveTextContent('Integer')
       // Lifted in the draft, the note describes a reading that will not stand
       await choose(typeOf('line'), 'Auto (String)')

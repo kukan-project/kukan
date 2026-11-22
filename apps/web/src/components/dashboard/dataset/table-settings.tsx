@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import {
+  cn,
   Alert,
   AlertDescription,
   Badge,
@@ -45,6 +46,7 @@ import type {
 } from '@kukan/shared'
 import {
   canIdentifyRows,
+  columnCandidates,
   canOverrideRole,
   ISO_8601_TIMESTAMP,
   OVERRIDABLE_COLUMN_ROLES,
@@ -60,6 +62,7 @@ import { clientFetch, readProblem } from '@/lib/client-api'
 import { useProblemMessage } from '@/hooks/use-problem-message'
 import {
   useSettledEstimate,
+  useSettledEstimateState,
   type ColumnEstimate,
   type SettledEstimate,
 } from '@/hooks/use-settled-estimate'
@@ -73,6 +76,24 @@ import { CellMarksContext, type CellMarks } from '@/components/data-explorer/cel
 const CHECK_DEBOUNCE_MS = 400
 /** A stable empty schema, so the estimate does not read again on every render */
 const NO_COLUMNS: ResourceColumn[] = []
+/**
+ * A column of which more than one value in this many does not read has no type
+ * recommended: nine in ten must read (§8.6). A divisor, so the line itself
+ * holds without a floating-point remainder
+ */
+const UNREADABLE_PARTS = 10
+
+/** The rules' candidates, with numbers written as text narrowed to integer where none has a fraction */
+interface Recommendations {
+  primaryKey: string | null
+  types: Record<string, { type: 'string' | 'decimal' | 'integer' }>
+}
+/** Why each type is recommended, said on hover */
+const CANDIDATE_TITLE = {
+  string: 'candidateCode',
+  decimal: 'candidateDecimal',
+  integer: 'candidateInteger',
+} as const
 
 /** The select's value for "Auto": no override. */
 const INFERRED = 'inferred'
@@ -339,6 +360,51 @@ export function TableSettings({
     columns: columns ?? NO_COLUMNS,
     rowCount: view?.schema?.rowCount ?? 0,
   })
+  // What the rules recommend (§8.6), from what this screen reads already: marked
+  // on the columns, for a person to take or leave
+  const candidates = useMemo(
+    () =>
+      view?.schema
+        ? columnCandidates(view.schema.columns, view.schema.rowCount, roles?.columns ?? null, {
+            primaryKey: view.primaryKey,
+            types: view.types,
+          })
+        : null,
+    [view, roles]
+  )
+  // Numbers written as text, read as a settled decimal: offered where nine in
+  // ten values read (§8.6), an integer where none has a fraction
+  const numericText = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(candidates?.types ?? {}).flatMap(([name, candidate]) =>
+          candidate.type === 'decimal' ? [[name, 'decimal']] : []
+        )
+      ),
+    [candidates]
+  )
+  const { estimate: fractions } = useSettledEstimateState({
+    resourceId,
+    types: numericText,
+    columns: columns ?? NO_COLUMNS,
+    rowCount: view?.schema?.rowCount ?? 0,
+  })
+  const offered = useMemo((): Recommendations | null => {
+    if (!candidates) return null
+    const types: Recommendations['types'] = {}
+    for (const [name, candidate] of Object.entries(candidates.types)) {
+      if (candidate.type !== 'decimal') {
+        types[name] = candidate
+        continue
+      }
+      const read = fractions?.columns[name]
+      if (read?.values === undefined || read.values === 0) continue
+      if ((read.castFailures ?? 0) > read.values / UNREADABLE_PARTS) continue
+      types[name] = { type: read.decimalScale === 0 ? 'integer' : 'decimal' }
+    }
+    return { ...candidates, types }
+  }, [candidates, fractions])
+
   // And the cells of the preview those values are in, wherever they sit
   const markTitle = t('castFailureCell')
   const cellMarks = useMemo<CellMarks | null>(
@@ -594,6 +660,7 @@ export function TableSettings({
 
       <ColumnTable
         columns={view.schema.columns}
+        candidates={offered}
         absent={absent}
         roles={roles?.columns ?? null}
         selected={selected}
@@ -926,6 +993,7 @@ function ColumnTable({
   roleChanged,
   typeDraft,
   typeChanged,
+  candidates,
   estimate,
   unkeyable,
   onToggle,
@@ -948,6 +1016,8 @@ function ColumnTable({
   /** The settled types the draft gives columns, by name */
   typeDraft: SettledTypes
   typeChanged: (name: string) => boolean
+  /** What the rules recommend (§8.6) */
+  candidates: Recommendations | null
   /** What the changed types would make of their columns, off the top of the preview */
   estimate: SettledEstimate | null
   onToggle: (name: string) => void
@@ -1023,6 +1093,7 @@ function ColumnTable({
                       chosen={overrideOf(typeDraft, name)}
                       changed={typeChanged(name)}
                       estimate={estimate}
+                      recommended={candidates?.types[name] ?? null}
                       onChoose={(next) => onType(name, next)}
                     />
                   ) : null}
@@ -1040,30 +1111,44 @@ function ColumnTable({
                       {t('notKeyable')}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-2">
-                      <Checkbox
-                        checked={place >= 0}
-                        onCheckedChange={() => onToggle(name)}
-                        aria-label={t('keyFor', { name })}
-                        aria-describedby={place >= 0 ? placeId : undefined}
-                      />
-                      <span
-                        id={placeId}
-                        className="text-primary w-4 text-center text-xs font-bold tabular-nums"
-                      >
-                        {place >= 0 && (
-                          <>
-                            <span aria-hidden>{place + 1}</span>
-                            <span className="sr-only">{t('keyPlace', { place: place + 1 })}</span>
-                          </>
+                    <span className="flex flex-col gap-1">
+                      <span className="flex items-center gap-2">
+                        <Checkbox
+                          checked={place >= 0}
+                          onCheckedChange={() => onToggle(name)}
+                          aria-label={t('keyFor', { name })}
+                          aria-describedby={place >= 0 ? placeId : undefined}
+                        />
+                        <span
+                          id={placeId}
+                          className="text-primary w-4 text-center text-xs font-bold tabular-nums"
+                        >
+                          {place >= 0 && (
+                            <>
+                              <span aria-hidden>{place + 1}</span>
+                              <span className="sr-only">{t('keyPlace', { place: place + 1 })}</span>
+                            </>
+                          )}
+                        </span>
+                        {/* Identifies a row on its own, so choosing it needs no
+                          check (ADR-046). Says nothing about a combination. */}
+                        {column?.unique && (
+                          <Badge variant="secondary" className="font-normal">
+                            {t('unique')}
+                          </Badge>
                         )}
                       </span>
-                      {/* Identifies a row on its own, so choosing it needs no
-                          check (ADR-046). Says nothing about a combination. */}
-                      {column?.unique && (
-                        <Badge variant="secondary" className="font-normal">
-                          {t('unique')}
-                        </Badge>
+                      {/* The rules' pick, one press from the draft, as a type's is (§8.6) */}
+                      {selected.length === 0 && candidates?.primaryKey === name && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-auto w-fit p-0 text-xs"
+                          title={t('candidateKey')}
+                          onClick={() => onToggle(name)}
+                        >
+                          {t('recommendedKey')}
+                        </Button>
                       )}
                     </span>
                   )}
@@ -1173,12 +1258,15 @@ function TypeChoice({
   chosen,
   changed,
   estimate,
+  recommended,
   onChoose,
 }: {
   name: string
   /** The live version's column; null where it has none */
   column: ResourceColumn | null
   chosen: string | null
+  /** The type the rules recommend, and why (§8.6) */
+  recommended: Recommendations['types'][string] | null
   /** What the changed types would make of their columns, this one's among them where it changed */
   estimate: SettledEstimate | null
   /** Whether the draft changes it: the notes then describe a reading that will not stand */
@@ -1245,6 +1333,17 @@ function TypeChoice({
       )}
       {/* The examples are padded; the file's values need not be */}
       {dated && <span className="text-muted-foreground text-xs">{t('formatNote')}</span>}
+      {recommended && chosen !== recommended.type && (
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto w-fit p-0 text-xs"
+          title={t(CANDIDATE_TITLE[recommended.type])}
+          onClick={() => onChoose(recommended.type)}
+        >
+          {t('recommendedType', { type: tr(columnTypeKey(recommended.type)) })}
+        </Button>
+      )}
       {column?.settled && !changed && <SettledNotes column={column} />}
       {changed && estimate?.columns[name] && (
         <EstimateNotes
@@ -1274,6 +1373,14 @@ function SettledNotes({ column }: { column: ResourceColumn }) {
             .join('\n')}
         >
           {t('castFailures', { count: column.castFailures })}
+        </span>
+      )}
+      {column.noValueMarks && (
+        <span className="text-muted-foreground text-xs">
+          {t('noValueMarks', {
+            count: column.noValueMarks.count,
+            marks: column.noValueMarks.examples.join(t('marksSeparator')),
+          })}
         </span>
       )}
     </>
@@ -1328,10 +1435,44 @@ function EstimateNotes({
         </span>
       ) : (
         <span className="text-muted-foreground text-xs">
-          {t(whole ? 'noFailuresEstimateWhole' : 'noFailuresEstimate', numbers)}
+          {column.noValueMarks
+            ? t(whole ? 'noFailuresBesideMarksWhole' : 'noFailuresBesideMarks', numbers)
+            : t(whole ? 'noFailuresEstimateWhole' : 'noFailuresEstimate', numbers)}
         </span>
       )}
+      {!column.dateFormatUndecided && column.noValueMarks && (
+        <NoValueMarksNote marks={column.noValueMarks} rows={rows} />
+      )}
     </>
+  )
+}
+
+/**
+ * How many of the rows read are marks alone, read as no value: said, so "no
+ * value fails to convert" is not taken to mean every row keeps one.
+ */
+export function NoValueMarksNote({
+  marks,
+  rows,
+  className,
+}: {
+  marks: NonNullable<ColumnEstimate['noValueMarks']>
+  rows: number
+  className?: string
+}) {
+  const t = useTranslations('resource.columnSettings')
+  const locale = useLocale()
+  return (
+    <span className={cn('text-muted-foreground text-xs', className)}>
+      {t('marksEstimate', {
+        count: new Intl.NumberFormat(locale).format(marks.count),
+        percent: new Intl.NumberFormat(locale, {
+          style: 'percent',
+          maximumFractionDigits: 2,
+        }).format(rows > 0 ? marks.count / rows : 0),
+        marks: marks.examples.join(t('marksSeparator')),
+      })}
+    </span>
   )
 }
 

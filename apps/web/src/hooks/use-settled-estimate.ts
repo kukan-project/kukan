@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import {
+  isNoValueMark,
   settledExpression,
   settledFailed,
   settledFailures,
+  settledMarks,
   type SettledNote,
   type SettledRelation,
 } from '@kukan/lake/settled'
@@ -21,7 +23,10 @@ import { cellKey } from '@/components/data-explorer/cell-marks'
 const ESTIMATE_ROWS = 10_000
 
 /** What a chosen type would make of one column, off the rows read. */
-export type ColumnEstimate = Omit<SettledNote, 'settled' | 'inferredType'>
+export type ColumnEstimate = Omit<SettledNote, 'settled' | 'inferredType'> & {
+  /** Values among the rows read, neither blank nor marks: what the failures are a share of */
+  values?: number
+}
 
 export interface SettledEstimate {
   /** How many rows the estimate read */
@@ -132,6 +137,8 @@ export function useSettledEstimateState({ resourceId, types, columns, rowCount }
           out[name] = {
             ...read.note,
             ...(read.expr !== null && (await settledFailures(rel, col, read.expr))),
+            ...(read.expr !== null && (await settledMarks(rel, col, read.expr))),
+            values: await valuesOf(rel, col),
           }
           if (cancelled) return
         }
@@ -164,6 +171,14 @@ export function useSettledEstimateState({ resourceId, types, columns, rowCount }
   return { estimate: current?.estimate ?? null, failed: !!current && !current.estimate }
 }
 
+/** How many values of a column are neither blank nor marks alone. */
+async function valuesOf(rel: SettledRelation, col: string): Promise<number> {
+  const [row] = await rel.rows(
+    `SELECT count(*) AS n FROM ${rel.from} WHERE trim(${col}) <> '' AND NOT ${isNoValueMark(col)}`
+  )
+  return Number(row.n)
+}
+
 /** The cells of rows a preview shows that the expressions leave empty. */
 async function judgeCells(
   conn: AsyncDuckDBConnection,
@@ -187,6 +202,9 @@ async function judgeCells(
   return cells
 }
 
+/** Samples read so far, numbering their files */
+let samples = 0
+
 /**
  * The top of the preview, held in memory on a connection of its own. Read by
  * range through the same-origin proxy, so only the footer and the first row
@@ -194,10 +212,12 @@ async function judgeCells(
  */
 async function readSample(resourceId: string) {
   const db = await getDB()
-  const file = `settled-${resourceId}.parquet`
+  // Named apart per read: a screen may hold two estimates reading at once
+  const name = `settled-${resourceId}-${++samples}`
+  const file = `${name}.parquet`
+  const text = `${name}.json`
   const { DuckDBDataProtocol } = await import('@duckdb/duckdb-wasm')
   const url = new URL(`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`, location.href)
-  await db.dropFile(file).catch(() => {})
   await db.registerFileURL(file, url.href, DuckDBDataProtocol.HTTP, false)
   const conn = await db.connect()
   try {
@@ -208,7 +228,6 @@ async function readSample(resourceId: string) {
     const read = await conn.query(`SELECT * FROM '${file}' LIMIT ${ESTIMATE_ROWS}`)
     const names = read.schema.fields.map((field) => field.name)
     const rows = arrowToStringRows(read, names).map((row, i) => ({ ...row, [SAMPLE_ROW]: i }))
-    const text = `settled-${resourceId}.json`
     await db.registerFileText(text, JSON.stringify(rows))
     const columns = [
       ...names.map((name) => `${sqlLiteral(name)}: 'VARCHAR'`),
@@ -218,10 +237,13 @@ async function readSample(resourceId: string) {
       `CREATE OR REPLACE TEMP TABLE settled_sample AS ` +
         `SELECT * FROM read_json('${text}', columns = {${columns.join(', ')}})`
     )
-    await db.dropFile(text)
     return { conn, rows: rows.length }
   } catch (err) {
     await conn.close().catch(() => {})
     throw err
+  } finally {
+    // The rows are in the temp table: the files, named per read, are let go now
+    await db.dropFile(text).catch(() => {})
+    await db.dropFile(file).catch(() => {})
   }
 }

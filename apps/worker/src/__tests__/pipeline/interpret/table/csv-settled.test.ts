@@ -73,6 +73,16 @@ describe('interpretCsv — settled types', () => {
     expect(await preview('n')).toEqual(['1', null, '3'])
   })
 
+  it('reads a value of marks alone as empty, not as a value that did not convert', async () => {
+    // Statistical tables write `-` or `…` where there is no value
+    const { schema } = await interpret('n\n1\n-\n…\n － \nx\n6\n', { types: { n: 'integer' } })
+    expect(column(schema.columns, 'n')).toMatchObject({
+      noValueMarks: { count: 4, examples: ['-', 'x', '…'] },
+    })
+    expect(column(schema.columns, 'n').castFailures).toBeUndefined()
+    expect(await preview('n')).toEqual(['1', null, null, null, null, '6'])
+  })
+
   it('does not round a fraction into an integer column, and reads grouped digits', async () => {
     const { schema } = await interpret('n\n"1,234"\n1.5\n 7 \n', { types: { n: 'integer' } })
     expect(await preview('n')).toEqual(['1234', null, '7'])
@@ -161,8 +171,8 @@ describe('interpretCsv — settled types', () => {
   })
 
   it('keeps the rows in order and numbers samples by row beside a column named rowid', async () => {
-    const { schema } = await interpret('ROWID,v\nb,1\na,x\n', { types: { v: 'integer' } })
-    expect(column(schema.columns, 'v').castFailureSamples).toEqual([{ row: 2, value: 'x' }])
+    const { schema } = await interpret('ROWID,v\nb,1\na,y\n', { types: { v: 'integer' } })
+    expect(column(schema.columns, 'v').castFailureSamples).toEqual([{ row: 2, value: 'y' }])
     expect(column(schema.columns, 'ROWID').type).toBe('string')
     expect(await preview('ROWID')).toEqual(['b', 'a'])
     expect(await preview('v')).toEqual(['1', null])

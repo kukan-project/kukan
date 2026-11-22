@@ -32,6 +32,7 @@ export type SettledNote = Pick<
   | 'inferredType'
   | 'castFailures'
   | 'castFailureSamples'
+  | 'noValueMarks'
   | 'dateFormat'
   | 'dateFormatUndecided'
   | 'decimalPrecision'
@@ -234,9 +235,42 @@ const isoTimestamp = (value: string) =>
   `THEN TRY_CAST(${value} AS TIMESTAMPTZ) AT TIME ZONE 'UTC' ` +
   `ELSE TRY_CAST(${value} AS TIMESTAMP) END END`
 
+/**
+ * A value of marks alone — `-`, `…`, `*`, `×`, `x` — which a table writes
+ * where it has no value (none, not applicable, withheld). Read as empty, as a
+ * blank cell is: not a value that did not convert.
+ */
+const NO_VALUE_MARK = '[-−‐－―—–ー….・･*＊xXｘＸ×]+'
+/** Whether a value is marks alone, as SQL. */
+export const isNoValueMark = (col: string) =>
+  `regexp_full_match(${trimmed(col)}, ${sqlLiteral(NO_VALUE_MARK)})`
+
 /** Where the expression left empty a value that was not: a value that did not convert. */
 export const settledFailed = (col: string, expr: string) =>
-  `${trimmed(col)} <> '' AND (${expr}) IS NULL`
+  `${trimmed(col)} <> '' AND NOT ${isNoValueMark(col)} ` + `AND (${expr}) IS NULL`
+
+/** Marks named where a column holds them */
+const MARK_EXAMPLES = 3
+
+/** How many values of a column are marks alone the expression read as no value, and the commonest of them. */
+export async function settledMarks(
+  rel: SettledRelation,
+  col: string,
+  expr: string
+): Promise<Pick<SettledNote, 'noValueMarks'>> {
+  const rows = (await rel.rows(
+    `SELECT ${trimmed(col)} AS v, count(*) AS n FROM ${rel.from} ` +
+      `WHERE ${isNoValueMark(col)} AND (${expr}) IS NULL ` +
+      `GROUP BY 1 ORDER BY n DESC, v`
+  )) as { v: string; n: number | bigint }[]
+  if (rows.length === 0) return {}
+  return {
+    noValueMarks: {
+      count: rows.reduce((sum, row) => sum + Number(row.n), 0),
+      examples: rows.slice(0, MARK_EXAMPLES).map((row) => row.v),
+    },
+  }
+}
 
 /** How many values the expression left empty that were not, and the first of them. */
 export async function settledFailures(

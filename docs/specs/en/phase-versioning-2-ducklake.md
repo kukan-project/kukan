@@ -1278,6 +1278,12 @@ Steps:
    the schema column's `castFailures`. Keep the first few (line number and original text) as
    `castFailureSamples` (up to 10), each original text cut to 100 characters. A free-text value of
    several megabytes kept whole would swell the version's `schema` and every response that returns it
+
+   A value of marks alone (`-`, `…`, `*`, `×`, `x` and the like) is read as no value, as an empty one is,
+   and not counted in `castFailures`. Statistical tables write them for "not applicable" or "withheld";
+   counted, every column with many `-` would need review. So that reading them as no value is said, the
+   count and the three commonest go in `noValueMarks`, shown in the type column in the plain text color
+
 4. Recount `nullCount`, `distinctCount`, `unique` and `stats` on the converted column
 
 **JSON tables** (ADR-063 decision 10) read a settled column as `VARCHAR` through `read_json`'s
@@ -1420,15 +1426,24 @@ key-matched tier and degrades.
 
 **Candidates come from rules; no LLM.** The values the interpretation already produces suffice.
 
-| Candidate     | Rule                                                                                                                                                                                                                                                                                                                                   |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Key           | A column whose `unique` is true (all values distinct, none empty). Floating-point columns excluded. No candidate if one column is not enough                                                                                                                                                                                           |
-| `string`      | Inferred `integer` where the original values had leading zeros (`"007"`). Reading as integers drops the zeros, so the interpretation recounts only the integer-inferred columns as text and records `leadingZeros` on the schema column. Or a column whose ADR-063 role is "identifier" (settled as text, so inference stops wobbling) |
-| `decimal`     | A column whose ADR-063 role is "numbers written as text" whose values are §8.3's comma-grouped form or plain decimals, and read once ungrouped                                                                                                                                                                                         |
-| `integer` etc | A column that changed type: its previous version's type (the same as §8.4's "settle on the previous type")                                                                                                                                                                                                                             |
+| Candidate            | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Key                  | A column whose `unique` is true (all values distinct, none empty) of a type a key can rest on. Of several, one named as an ID (ending in "ID", "コード", "番号", "No" or "識別子", and not a contact's such as phone, postal or fax), then one numbering the rows (an integer whose max − min + 1 is the row count), then the leftmost. Not ADR-063's "identifier", a search treatment that takes in URLs and phone numbers. Only while no key is set. None if one column is not enough                                                                                                                                    |
+| `string`             | A column with no settled type whose ADR-063 role is "identifier" by "leading zero" (`leading-zero`) or "mostly digits" (`mostly-digits`). Text now, a later version without the zeros would be inferred integer: zeros lost, or a type change                                                                                                                                                                                                                                                                                                                                                                              |
+| `decimal`, `integer` | A column with no settled type whose ADR-063 role is "number written as text" (`numeric-text`). The screen reads the top of the preview (the same 10,000 rows as the estimate in §8.7) by the settled `decimal` rules and recommends a type **only where nine in ten of the values read** (the same line as the role's). `integer` where the fraction digits are 0, `decimal` otherwise. A column with many values written so they do not read (units, brackets, full-width digits) needs its writing mended (cleaning) first, so nothing is recommended. Nothing either until the values are read, or where they cannot be |
 
-- Candidates only **fill the draft** on ADR-072's Table settings tab; a person presses apply (ADR-040's
-  suggest-only stance)
+**Dropped from the first plan (2026-11-22).**
+
+- **"Inferred `integer` with leading zeros → `string`" (`leadingZeros`).** CSV and JSON type inference reads
+  every row (DuckDB's `sample_size = -1`), so a column with a `007` anywhere is text from the start; it is never
+  inferred integer with its zeros dropped
+- **"A column that changed type → its previous type".** §8.4's review offers "settle on the previous type", with
+  how many values it would leave without a value
+
+- Candidates show on the columns of ADR-072's Table settings tab, as "Recommended: key" or "Recommended:
+  String"; pressing one only **puts it in that column's draft**, and a person presses apply (ADR-040's
+  suggest-only stance). Hovering a recommendation says why. What they rest on (`unique`, the roles) the
+  screen already reads, so the screen works them out; no API is added
 - Composite key candidates (sets of two or more columns that are unique together) are not offered in
   ii-c. The number of sets grows with the square of the column count and weighs on interpretation time.
   Add them separately if demand appears
