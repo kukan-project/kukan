@@ -3,6 +3,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection, DuckDBBundles } from '@duckdb/
 import { clientFetch } from '@/lib/client-api'
 import { parquetFileName, buildQuery, type DuckDBQueryParams } from '@/lib/duckdb-sql'
 import { formatCell } from '@/lib/format-utils'
+import type { DisplayRow } from '@/lib/table-cells'
 
 type ArrowTable = Awaited<ReturnType<AsyncDuckDBConnection['query']>>
 
@@ -23,7 +24,7 @@ interface UseDuckDBResult {
   columns: string[]
   totalRows: number
   filteredRows: number
-  rows: Record<string, string>[]
+  rows: DisplayRow[]
   query: (params: DuckDBQueryParams) => Promise<void>
 }
 
@@ -109,7 +110,7 @@ export function decimalText(unscaled: string, scale: number): string {
  * shows `2026-08-23 12:00:00`. Rebuilt into `Date` here so `formatCell` reads
  * them the one way.
  */
-export function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string, string>[] {
+export function arrowToStringRows(result: ArrowTable, columns: string[]): DisplayRow[] {
   // Which of the two they are is carried through, not just that they are
   // temporal: a TIMESTAMP at midnight has a time of day to show and a DATE
   // does not, and the value alone cannot tell them apart.
@@ -124,17 +125,19 @@ export function arrowToStringRows(result: ArrowTable, columns: string[]): Record
       .map((f) => [f.name, (f.type as unknown as { scale: number }).scale])
   )
   return result.toArray().map((row: Record<string, unknown>) => {
-    const obj: Record<string, string> = {}
+    const obj: DisplayRow = {}
     for (const col of columns) {
       const value = row[col]
       const type = temporal.get(col)
       const scale = scales.get(col)
       obj[col] =
-        scale !== undefined && value != null
-          ? decimalText(String(value), scale)
-          : type && typeof value === 'number'
-            ? formatCell(new Date(value), type)
-            : formatCell(value, type)
+        value == null
+          ? null
+          : scale !== undefined
+            ? decimalText(String(value), scale)
+            : type && typeof value === 'number'
+              ? formatCell(new Date(value), type)
+              : formatCell(value, type)
     }
     return obj
   })
@@ -150,7 +153,7 @@ export function useDuckDB({ resourceId, enabled }: UseDuckDBOptions): UseDuckDBR
   const [columns, setColumns] = useState<string[]>([])
   const [totalRows, setTotalRows] = useState(0)
   const [filteredRows, setFilteredRows] = useState(0)
-  const [rows, setRows] = useState<Record<string, string>[]>([])
+  const [rows, setRows] = useState<DisplayRow[]>([])
 
   const connRef = useRef<AsyncDuckDBConnection | null>(null)
   const fileNameRef = useRef<string>('')

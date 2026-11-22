@@ -8,6 +8,7 @@ import { useDuckDB, type ColumnFilter, type SortState } from '@/hooks/use-duckdb
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { formatCell } from '@/lib/format-utils'
+import type { DisplayRow } from '@/lib/table-cells'
 import { ExplorerToolbar } from './explorer-toolbar'
 import { ExplorerTable } from './explorer-table'
 import { PreviewFooter } from './preview-footer'
@@ -131,8 +132,10 @@ export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExpl
     // the value cannot, since a timestamp at midnight looks like a date.
     const types = new Map((schemaColumns ?? []).map((c) => [c.name, c.type]))
     return staticSource.rows.map((row) => {
-      const obj: Record<string, string> = {}
-      for (const col of cols) obj[col] = formatCell(row[col], types.get(col))
+      const obj: DisplayRow = {}
+      for (const col of cols) {
+        obj[col] = row[col] == null ? null : formatCell(row[col], types.get(col))
+      }
       return obj
     })
   }, [staticSource.metadata, staticSource.rows, schemaColumns])
@@ -147,7 +150,7 @@ export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExpl
   // page's at the same places
   const [judged, setJudged] = useState<{
     marks: CellMarks
-    rows: Record<string, string>[]
+    rows: DisplayRow[]
     cells: Set<string>
   } | null>(null)
   useEffect(() => {

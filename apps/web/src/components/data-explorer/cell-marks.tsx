@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext } from 'react'
+import type { DisplayRow } from '@/lib/table-cells'
 
 /**
  * Cells a screen around the preview wants marked — the Table settings tab's
@@ -9,7 +10,7 @@ import { createContext } from 'react'
  */
 export interface CellMarks {
   /** The cells of these rows to mark, as {@link cellKey}s */
-  judge(rows: Record<string, string>[]): Promise<Set<string>>
+  judge(rows: DisplayRow[]): Promise<Set<string>>
   /** What a marked cell says on hover */
   title: string
 }

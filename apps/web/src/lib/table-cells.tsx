@@ -10,6 +10,29 @@ import type { ResourceColumn, ResourceColumnType } from '@kukan/shared'
 export const KEY_HEADER_CLASS = 'bg-primary/15 text-foreground'
 export const KEY_CELL_CLASS = 'bg-primary/10'
 
+/**
+ * A row as a table shows it: each value as display text, or null where the
+ * file holds none — which an empty string, a value a file can hold, is not.
+ */
+export type DisplayRow = Record<string, string | null>
+
+/**
+ * A cell with no value. The label is drawn by CSS from an attribute, so it is
+ * not the cell's text: copying the table leaves the cell empty rather than
+ * pasting the word, and it reads apart from a value that spells the same word
+ * by its colour and slant.
+ */
+export function NullValue({ label, hint }: { label: string; hint: string }) {
+  return (
+    <span
+      data-label={label}
+      title={hint}
+      aria-label={hint}
+      className="text-muted-foreground/70 italic select-none before:content-[attr(data-label)]"
+    />
+  )
+}
+
 /** A number rendered the plain way — the only shape the decimal padding fits. */
 const PLAIN_DECIMAL = /^-?\d+(\.\d+)?$/
 

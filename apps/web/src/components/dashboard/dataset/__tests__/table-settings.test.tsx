@@ -203,7 +203,9 @@ describe('TableSettings', () => {
 
     await waitFor(() => expect(keyBox(wide)).toBeInTheDocument())
     const cell = screen.getAllByTitle(wide).find((el) => el.tagName === 'TD')!
-    expect(cell).toHaveClass('max-w-48', 'truncate')
+    expect(cell).toHaveClass('max-w-48')
+    // Broken anywhere, and cut at two lines
+    expect(cell.firstElementChild).toHaveClass('line-clamp-2', '[overflow-wrap:anywhere]')
     // And the section declares a width the page can resolve, so nothing inside
     // it contributes to how wide the tab becomes
     expect(cell.closest('div.flex.w-0')).not.toBeNull()
@@ -1158,7 +1160,7 @@ describe('TableSettings', () => {
       await choose(typeOf('line'), 'Integer')
 
       const note = await screen.findByText(
-        'Of the first 10,000 rows, 12 (0.12%) are expected not to convert (they would read as empty). The preview outlines them in red'
+        'Of the first 10,000 rows, 12 (0.12%) are expected not to convert (they would read as no value). The preview outlines them in red'
       )
       expect(note).toHaveAttribute('title', 'Row 3: a')
       // Only the change is estimated
@@ -1205,7 +1207,9 @@ describe('TableSettings', () => {
       })
       render(<TableSettings resourceId="r1" />)
 
-      const note = await screen.findByText('Values that could not be converted: 1 (read as empty)')
+      const note = await screen.findByText(
+        'Values that could not be converted: 1 (read as no value)'
+      )
       expect(note).toHaveAttribute('title', 'Row 2: N/A')
       expect(typeOf('line')).toHaveTextContent('Integer')
       // Lifted in the draft, the note describes a reading that will not stand

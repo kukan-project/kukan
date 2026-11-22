@@ -10,6 +10,7 @@ import {
 import { sqlIdentifier, sqlLiteral } from '@kukan/lake/sql'
 import { parseSettledType, type ResourceColumn } from '@kukan/shared'
 import { arrowToStringRows, getDB } from '@/hooks/use-duckdb'
+import type { DisplayRow } from '@/lib/table-cells'
 import { cellKey } from '@/components/data-explorer/cell-marks'
 
 /**
@@ -34,7 +35,7 @@ export interface SettledEstimate {
    * formats and digits the estimate decided included, so a cell is marked
    * wherever it sits in the file
    */
-  judge(rows: Record<string, string>[]): Promise<Set<string>>
+  judge(rows: DisplayRow[]): Promise<Set<string>>
 }
 
 const DEBOUNCE_MS = 300
@@ -157,7 +158,7 @@ export function useSettledEstimate({
 async function judgeCells(
   conn: AsyncDuckDBConnection,
   exprs: Map<string, string>,
-  rows: Record<string, string>[]
+  rows: DisplayRow[]
 ): Promise<Set<string>> {
   const cells = new Set<string>()
   for (const [name, expr] of exprs) {

@@ -1007,10 +1007,11 @@ function ColumnTable({
                 className="hover:bg-transparent data-[draft]:bg-warning/10 data-[draft]:hover:bg-warning/10"
               >
                 <TableCell
-                  className="bg-background sticky left-0 max-w-48 truncate align-top font-medium in-data-[draft]:bg-warning-surface in-data-[draft]:shadow-[inset_3px_0_0_var(--color-warning)]"
+                  className="bg-background sticky left-0 max-w-48 align-top font-medium whitespace-normal in-data-[draft]:bg-warning-surface in-data-[draft]:shadow-[inset_3px_0_0_var(--color-warning)]"
                   title={name}
                 >
-                  {name}
+                  {/* Two lines, which the row's choices take anyway */}
+                  <span className="line-clamp-2 [overflow-wrap:anywhere]">{name}</span>
                 </TableCell>
                 <TableCell className="align-top whitespace-normal">
                   {/* A column the version lacks keeps its choice if it had a

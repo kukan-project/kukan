@@ -4,7 +4,14 @@ import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { TableHeader, TableBody, TableHead, TableRow, TableCell, cn } from '@kukan/ui'
 import type { ResourceColumn } from '@kukan/shared'
-import { KEY_HEADER_CLASS, numericLayout, dataCellClass, decimalAligned } from '@/lib/table-cells'
+import {
+  KEY_HEADER_CLASS,
+  NullValue,
+  numericLayout,
+  dataCellClass,
+  decimalAligned,
+  type DisplayRow,
+} from '@/lib/table-cells'
 import { columnTypeKey } from '@/lib/format-utils'
 import { ColumnFilter } from './column-filter'
 import { cellKey } from './cell-marks'
@@ -12,7 +19,7 @@ import type { ColumnFilter as ColumnFilterType, SortState } from '@/hooks/use-du
 
 interface ExplorerTableProps {
   columns: string[]
-  rows: Record<string, string>[]
+  rows: DisplayRow[]
   sort: SortState | null
   filters: ColumnFilterType[]
   primaryKey?: string[] | null
@@ -46,7 +53,7 @@ export function ExplorerTable({
     columns,
     schemaColumns,
     rows,
-    (row, col) => row[col]
+    (row, col) => row[col] ?? ''
   )
 
   const handleSort = (column: string) => {
@@ -132,7 +139,11 @@ export function ExplorerTable({
                     title={mark ? markTitle : undefined}
                     data-marked={mark || undefined}
                   >
-                    {decimalAligned(row[col], maxFractions.get(col) ?? 0)}
+                    {row[col] === null ? (
+                      <NullValue label={t('nullValue')} hint={t('nullValueHint')} />
+                    ) : (
+                      decimalAligned(row[col], maxFractions.get(col) ?? 0)
+                    )}
                   </TableCell>
                 )
               })}
