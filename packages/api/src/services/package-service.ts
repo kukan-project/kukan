@@ -584,6 +584,7 @@ export class PackageService {
           ...publicResourceColumns,
           pipelineStatus: resourcePipeline.status,
           latestVersion: versionAgg.maxVersion,
+          typeReviewDue: sql<boolean>`coalesce(${versionAgg.typeReviewDue}, false)`,
         })
         .from(resource)
         .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))

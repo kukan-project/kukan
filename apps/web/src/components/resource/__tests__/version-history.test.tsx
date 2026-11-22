@@ -25,6 +25,8 @@ function makeVersion(overrides: Partial<VersionView> = {}): VersionView {
     restoredFrom: null,
     created: '2026-08-01T00:00:00.000Z',
     purgedAt: null,
+    typeChanges: null,
+    reviewedAt: null,
     ...overrides,
   }
 }

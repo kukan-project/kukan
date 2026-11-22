@@ -42,6 +42,7 @@ import {
   uploadCompleteSchema,
   columnSettingsBodySchema,
   revertResourceSchema,
+  typeReviewBodySchema,
   versionNumberSchema,
   runPipelineSchema,
   KukanError,
@@ -889,6 +890,31 @@ resourcesRouter.post(
       c.get('queue')
     )
     return c.json(view, 202)
+  }
+)
+
+// POST /api/v1/resources/:id/versions/:v/type-review - A person's choice for
+// each column the version's reading needs looked at (Versioning ii-c §8.4).
+// Editor+, as the column settings it may write are.
+resourcesRouter.post(
+  '/:id/versions/:v/type-review',
+  zValidator('json', typeReviewBodySchema),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new UnauthorizedError()
+
+    const db = c.get('db')
+    const id = c.req.param('id')
+    const version = parseVersionParam(c.req.param('v'))
+    await checkResourcePermission(db, user, new ResourceService(db), id)
+
+    const result = await new ResourceVersionService(db).reviewTypeChanges(
+      id,
+      version,
+      c.req.valid('json').choices,
+      { queue: c.get('queue'), logger: c.get('logger'), userId: user.id }
+    )
+    return c.json({ id, version, ...result })
   }
 )
 

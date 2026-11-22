@@ -21,6 +21,8 @@ import type {
   LakeIngestReason,
   NoTableReason,
   ResourceSchema,
+  TypeChange,
+  TypeReview,
   VersionOrigin,
   VersionState,
 } from '@kukan/shared'
@@ -89,6 +91,14 @@ export const resourceVersion = pgTable(
     // as the key is (Versioning ii-c §8.2): the resource's setting at that
     // moment, by column name. Null is "none settled".
     settledTypes: jsonb('settled_types').$type<Record<string, string> | null>(),
+    // What this version's reading needs a person to look at (ii-c §8.4),
+    // against the version before it when its schema was written. Null is
+    // "nothing", and is what every version made before the column reads as.
+    typeChanges: jsonb('type_changes').$type<TypeChange[] | null>(),
+    // A person's review of those, written once (§8.8): who, when, and what
+    // was chosen per column. Accepting does not change the reading, so it
+    // makes no version and lives here.
+    typeReview: jsonb('type_review').$type<TypeReview | null>(),
     // Why the key stopped this version reaching layer 2 (spec §6.6). Written
     // once by the Lake step and never cleared — re-reading the same bytes under
     // the same key reaches the same answer — and it is what takes the version

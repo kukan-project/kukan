@@ -180,6 +180,11 @@ export class UserService {
         .update(resourceVersion)
         .set({ createdBy: null, updated: sql`NOW()` })
         .where(eq(resourceVersion.createdBy, userId))
+      // And the reviewer a type review names, which is no foreign key to null
+      await tx.execute(sql`
+        UPDATE resource_version SET type_review = type_review - 'reviewedBy', updated = NOW()
+        WHERE type_review->>'reviewedBy' = ${userId}
+      `)
       await tx.update(activity).set({ userId: null }).where(eq(activity.userId, userId))
       await tx.update(auditLog).set({ userId: null }).where(eq(auditLog.userId, userId))
 

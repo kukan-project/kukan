@@ -987,6 +987,7 @@ DuckLake のカタログ（ADR-043 層 2）は PostgreSQL ではなく、リソ�
 | `catalog`          | `delete_all`（`DELETE /admin/data`）             | 乱数          | 消した件数（`packages`、`organizations`、`groups`、`tags`）。`audit_log` 自体は消さない |
 | `system_setting`   | `update`                                         | 設定の id     | `key`、`value`、`previous`                                                              |
 | `resource_version` | `purge_request` / `purge`                        | リソースの id | `version`、`reason`（`purge` は `rolledBack` も）                                       |
+| `resource_version` | `type_review`                                    | リソースの id | `version`、`choices`（列ごとの選択、Versioning ii-c §8.4）                              |
 
 ### 6.4 計画中の表（未実装）
 

@@ -1157,6 +1157,7 @@ change and the handling of versions whose snapshots have already been rewritten 
 | Two choices: **accept as is** (no version) / **settle on the previous type** (a version is created)                                                                                                           | §8.4  |
 | The choices that create a version are offered **only on the current version**: sent with the reviewed version's number, refused (409) if the current version differs                                          | §8.4  |
 | The acceptance is **recorded on the version row, written once** (`resource_version.type_review`). No version                                                                                                  | §8.8  |
+| What needs review is **kept on the version row when the version is made** (`resource_version.type_changes`). A version made before it never needs review                                                      | §8.4  |
 | **Add a `decimal` settled type.** Inference never produces it; the interpretation picks the digits from the data                                                                                              | §8.8  |
 | Key and type candidates come from **rules** (no LLM). Candidates only fill the draft                                                                                                                          | §8.6  |
 | The screens are ADR-072's Table settings tab (setting types) and Version history tab (reviewing changes). ADR-072 Step 1 comes first                                                                          | §8.7  |
@@ -1336,6 +1337,23 @@ review":
 
 Added or removed columns do not count because that is not a type problem; ii-a already records it as a
 schema diff.
+
+**What is found is written on the version row once (2026-11-22).** When the worker writes a version's `schema`,
+it writes what the four comparisons above found to `resource_version.type_changes` (jsonb, null where nothing
+needs review). It is a column apart from the record of acceptance (`type_review`, §8.8).
+
+- **Not compared on every read.** The list's dot (§8.7) comes from "a version has `type_changes` not accepted";
+  comparing again would read two `schema`s per version
+- **A version made before this column never needs review**, having no `type_changes`. Turning it on does not
+  bring every past wobble of a type up for review at once
+- **The judgement made then stays.** It is written by the first reading only, not by reading again (a reprocess or
+  a rebuild). Purging the version before later does not change what needs review
+- **A version a revert issues never needs review.** It is made with the destination's schema, and reads as a person
+  chose
+- **The dot shows while any version is not accepted**, not only the latest, for the reason §8.8 turned down
+  keeping no record (with versions coming one after another, the chance to review would pass)
+- **Who accepted is not public.** The version list (`GET /versions`) is read by the public page too, so it carries
+  `type_changes` and when it was accepted only. Who accepted stays in `type_review` and the audit log
 
 **Choices** (type change):
 

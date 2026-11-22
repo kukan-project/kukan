@@ -7,6 +7,7 @@ import { VALIDATION_MESSAGES } from './messages'
 import type { ColumnSettings } from '../column-settings'
 import { OVERRIDABLE_COLUMN_ROLES, parseSettledType } from '../pipeline-types'
 import { checkUrlSafety } from '../url'
+import { TYPE_REVIEW_CHOICES } from '../type-changes'
 
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
 const CONTROL_CHAR = /[\u0000-\u001f\u007f]/
@@ -219,6 +220,11 @@ export const revertResourceSchema = z.object({
 })
 
 export type RevertResourceInput = z.infer<typeof revertResourceSchema>
+
+/** A review of what a version's reading needs looked at (ii-c §8.4): a choice per column it names. */
+export const typeReviewBodySchema = z.object({
+  choices: z.record(z.string(), z.enum(TYPE_REVIEW_CHOICES)),
+})
 
 /**
  * Reprocess options. Absent means an ordinary run — fetch included.

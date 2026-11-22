@@ -16,6 +16,7 @@
  * the type would be true on the server and false in every browser, and the one
  * place to settle that is where the view is built.
  */
+import type { TypeChange } from './type-changes'
 import type { VersionOrigin } from './formats'
 import type {
   ColumnProfile,
@@ -162,6 +163,10 @@ export interface VersionView {
   /** When the version was retracted — the whole of what a tombstone says about it,
    *  since the reason is not exposed (see above). ISO 8601. */
   purgedAt: string | null
+  /** What this version's reading needs a person to look at (ii-c §8.4); null for nothing, or a tombstone. */
+  typeChanges: TypeChange[] | null
+  /** When a person reviewed those (§8.8); null while they wait. Who is not exposed. */
+  reviewedAt: string | null
 }
 
 /** What the primary-key picker reads before it offers anything (spec §6.4). */

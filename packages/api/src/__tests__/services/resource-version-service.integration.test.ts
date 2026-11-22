@@ -2768,3 +2768,181 @@ describe('the artifacts derived from retracted content', () => {
     expect(deps.storage.deleteMany).not.toHaveBeenCalled()
   })
 })
+
+describe('reviewing what a reading needs looked at (Versioning ii-c §8.4)', () => {
+  const typed = (type: 'integer' | 'string', extra: Record<string, unknown> = {}) =>
+    ({
+      rowCount: 2,
+      columns: [{ name: 'code', type, nullable: false, nullCount: 0, ...extra }],
+    }) as ResourceSchema
+
+  /** v1 read `code` as integer, v2 as text: the change v2 asks about */
+  async function retyped() {
+    await addVersion(1, 'sha256:v1', 'active', 'csv', typed('integer'))
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await setVersionSchemaIfHeld(db, null, {
+      resourceId,
+      version: 2,
+      schema: typed('string'),
+      noTableReason: null,
+    })
+  }
+
+  const settingsTypes = async () =>
+    (
+      await db
+        .select({ s: resource.columnSettings })
+        .from(resource)
+        .where(eq(resource.id, resourceId))
+    )[0]?.s.types ?? null
+
+  it('finds a change against the version before when the schema is written, and lists it', async () => {
+    await retyped()
+    const [v2, v1] = await service.listByResource(resourceId)
+    expect(v2.typeChanges).toEqual([
+      { kind: 'type', column: 'code', from: { type: 'integer' }, to: { type: 'string' } },
+    ])
+    expect(v2.reviewedAt).toBeNull()
+    // The first version has none to compare with
+    expect(v1.typeChanges).toBeNull()
+  })
+
+  it('records an acceptance once, with who in the audit log, and changes nothing else', async () => {
+    await retyped()
+    const deps = { ...mockDeps(), userId }
+
+    expect(await service.reviewTypeChanges(resourceId, 2, { code: 'accept' }, deps)).toEqual({
+      queued: null,
+    })
+    expect((await service.getVersion(resourceId, 2)).reviewedAt).not.toBeNull()
+    expect(await settingsTypes()).toBeNull()
+    expect(deps.queue.enqueue).not.toHaveBeenCalled()
+    const [audit] = await db
+      .select({ userId: auditLog.userId, changes: auditLog.changes })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityId, resourceId), eq(auditLog.action, 'type_review')))
+    expect(audit).toEqual({ userId, changes: { version: 2, choices: { code: 'accept' } } })
+
+    await expect(
+      service.reviewTypeChanges(resourceId, 2, { code: 'accept' }, deps)
+    ).rejects.toThrow(/has been reviewed/)
+  })
+
+  it('settles the previous type on the current version, and queues the rebuild', async () => {
+    await retyped()
+    const deps = { ...mockDeps(), userId }
+
+    const result = await service.reviewTypeChanges(resourceId, 2, { code: 'settle-previous' }, deps)
+    expect(result.queued).not.toBeNull()
+    expect(await settingsTypes()).toEqual({ code: 'integer' })
+    expect((await service.getVersion(resourceId, 2)).reviewedAt).not.toBeNull()
+  })
+
+  it('refuses a choice that makes a version on a version no longer current', async () => {
+    await retyped()
+    await addVersion(3, 'sha256:v3', 'active', 'csv', typed('string'))
+    await db.update(resource).set({ hash: 'sha256:v3' }).where(eq(resource.id, resourceId))
+    const deps = { ...mockDeps(), userId }
+
+    await expect(
+      service.reviewTypeChanges(resourceId, 2, { code: 'settle-previous' }, deps)
+    ).rejects.toThrow(/no longer the current version/)
+    expect(await settingsTypes()).toBeNull()
+    expect((await service.getVersion(resourceId, 2)).reviewedAt).toBeNull()
+
+    // Accepting stays open on it
+    await service.reviewTypeChanges(resourceId, 2, { code: 'accept' }, deps)
+    expect((await service.getVersion(resourceId, 2)).reviewedAt).not.toBeNull()
+  })
+
+  it('keeps what the first reading found, and its review, when the version is read again', async () => {
+    await retyped()
+    await service.reviewTypeChanges(resourceId, 2, { code: 'accept' }, { ...mockDeps(), userId })
+    const before = await service.getVersion(resourceId, 2)
+
+    // v1 purged, a reprocess reads v2 again with nothing below it to compare
+    await db
+      .update(resourceVersion)
+      .set({ state: 'purged' })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await setVersionSchemaIfHeld(db, null, {
+      resourceId,
+      version: 2,
+      schema: typed('string'),
+      noTableReason: null,
+    })
+
+    const after = await service.getVersion(resourceId, 2)
+    expect(after.typeChanges).toEqual(before.typeChanges)
+    expect(after.reviewedAt).toBe(before.reviewedAt)
+  })
+
+  it('leaves no setting behind a review refused as second', async () => {
+    await retyped()
+    // Another person's review lands first, between this one's checks and its write
+    await db
+      .update(resourceVersion)
+      .set({ typeReview: { reviewedBy: userId, reviewedAt: 'x', choices: { code: 'accept' } } })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    const getRow = vi.spyOn(service as never, 'getRow' as never) as unknown as {
+      mockImplementationOnce: (f: unknown) => void
+    }
+    const row = (
+      await db
+        .select()
+        .from(resourceVersion)
+        .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    )[0]
+    getRow.mockImplementationOnce(async () => ({ ...row, typeReview: null }))
+
+    await expect(
+      service.reviewTypeChanges(
+        resourceId,
+        2,
+        { code: 'settle-previous' },
+        { ...mockDeps(), userId }
+      )
+    ).rejects.toThrow(/has been reviewed/)
+    expect(await settingsTypes()).toBeNull()
+  })
+
+  it('drops the reviewer from the record when the account is purged, keeping the review', async () => {
+    const reviewer = await db.execute(sql`
+      INSERT INTO "user" (id, name, email, "emailVerified", state, role, "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), 'reviewer', 'reviewer@example.com', false, 'deleted', 'user', NOW(), NOW())
+      RETURNING id
+    `)
+    const reviewerId = (reviewer.rows[0] as { id: string }).id
+    await retyped()
+    await service.reviewTypeChanges(
+      resourceId,
+      2,
+      { code: 'accept' },
+      { ...mockDeps(), userId: reviewerId }
+    )
+
+    await new UserService(db).purge(reviewerId, { id: userId, authMethod: 'session' })
+
+    const [row] = await db
+      .select({ review: resourceVersion.typeReview })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    expect(row.review).not.toHaveProperty('reviewedBy')
+    expect(row.review?.choices).toEqual({ code: 'accept' })
+  })
+
+  it('refuses a choice the change does not offer, a column it does not name, and a version with nothing to review', async () => {
+    await retyped()
+    const deps = { ...mockDeps(), userId }
+
+    await expect(service.reviewTypeChanges(resourceId, 2, { code: 'lift' }, deps)).rejects.toThrow(
+      /Choose what to do with code/
+    )
+    await expect(
+      service.reviewTypeChanges(resourceId, 2, { code: 'accept', other: 'accept' }, deps)
+    ).rejects.toThrow(/Not to review/)
+    await expect(service.reviewTypeChanges(resourceId, 1, {}, deps)).rejects.toThrow(
+      /nothing to review/
+    )
+  })
+})

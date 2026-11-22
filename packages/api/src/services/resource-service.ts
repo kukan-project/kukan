@@ -169,6 +169,11 @@ export function latestLiveVersionAgg(db: Database) {
     .select({
       resourceId: resourceVersion.resourceId,
       maxVersion: sql<number>`MAX(${resourceVersion.version})`.as('max_version'),
+      // A version whose reading waits on a person (ii-c §8.4): the list's dot
+      typeReviewDue:
+        sql<boolean>`bool_or(${resourceVersion.typeChanges} IS NOT NULL AND ${resourceVersion.typeReview} IS NULL)`.as(
+          'type_review_due'
+        ),
     })
     .from(resourceVersion)
     .where(notInArray(resourceVersion.state, ['purged', 'superseded']))

@@ -9,6 +9,7 @@ import { digestStream } from '@kukan/shared/hash-node'
 import {
   eq,
   and,
+  isNull,
   countDistinct,
   desc,
   exists,
@@ -45,6 +46,8 @@ import {
   settledTypesOf,
   readTypeOf,
   sameVersionIdentity,
+  typeChangesOf,
+  typeReviewChoicesFor,
   LAKE_INGEST_JOB_TYPE,
   PIPELINE_JOB_TYPE,
   PURGE_VERSION_JOB_TYPE,
@@ -64,6 +67,8 @@ import type {
   VersionState,
   VersionView,
   LakeIngestReason,
+  TypeReview,
+  TypeReviewChoice,
   ResourceSummaryMeta,
 } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
@@ -295,9 +300,19 @@ export async function setVersionSchemaIfHeld(
     noTableReason: NoTableReason | null
   }
 ): Promise<boolean> {
+  // What needs review, against the version before that read to a table (§8.4).
+  // Found here, where every reading of a version is written, and kept: the
+  // list's dot reads it without comparing two schemas per version
+  const changes = v.noTableReason
+    ? null
+    : typeChangesOf(v.schema, await previousTableSchema(db, v.resourceId, v.version))
+  // Only by the first reading: a later one may compare with another version —
+  // the one before purged — and the judgement made then is what stands
   const result = await db.execute(sql`
     UPDATE resource_version
-    SET schema = ${JSON.stringify(v.schema)}::jsonb,
+    SET type_changes = CASE WHEN schema IS NULL
+          THEN ${changes && JSON.stringify(changes)}::jsonb ELSE type_changes END,
+        schema = ${JSON.stringify(v.schema)}::jsonb,
         no_table_reason = ${v.noTableReason}::varchar,
         updated = NOW()
     WHERE resource_id = ${v.resourceId}::uuid
@@ -306,6 +321,21 @@ export async function setVersionSchemaIfHeld(
     RETURNING id
   `)
   return result.rows.length > 0
+}
+
+/** The schema of the newest active version below `version` that read to a table. */
+async function previousTableSchema(
+  db: Pick<Database, 'execute'>,
+  resourceId: string,
+  version: number
+): Promise<ResourceSchema | null> {
+  const before = await db.execute<{ schema: ResourceSchema }>(sql`
+    SELECT schema FROM resource_version
+    WHERE resource_id = ${resourceId}::uuid AND version < ${version}
+      AND state = 'active' AND schema IS NOT NULL AND no_table_reason IS NULL
+    ORDER BY version DESC LIMIT 1
+  `)
+  return before.rows[0]?.schema ?? null
 }
 
 /**
@@ -531,13 +561,7 @@ export async function pendingLakeVersionSource(
   // table decided, as the pipeline's first reading falls back on
   let previousSchema: ResourceSchema | null = null
   if (settledTypes && !schema) {
-    const before = await db.execute(sql`
-      SELECT schema FROM ${resourceVersion}
-      WHERE resource_id = ${row.resourceId}::uuid AND version < ${row.version}
-        AND state = 'active' AND schema IS NOT NULL AND no_table_reason IS NULL
-      ORDER BY version DESC LIMIT 1
-    `)
-    previousSchema = (before.rows[0] as { schema: ResourceSchema } | undefined)?.schema ?? null
+    previousSchema = await previousTableSchema(db, row.resourceId, row.version)
   }
   return { ...found, settledTypes, schema, previousSchema }
 }
@@ -694,6 +718,9 @@ function toView(
     hash: purged ? null : row.hash,
     schema: purged ? null : row.schema,
     noTableReason: purged ? null : noTableReason(row),
+    // Who reviewed stays off the public list (§8.4)
+    typeChanges: purged ? null : row.typeChanges,
+    reviewedAt: row.typeReview?.reviewedAt ?? null,
     // Withheld when *either* end is a tombstone, unlike the fields above, which
     // are settled by this row alone. "v8 re-published v5" states the two held
     // identical content — and with v5 purged and v8 alive, that hands over the
@@ -2308,6 +2335,17 @@ export class ResourceVersionService {
    *   when none was needed. Never whether a version was created: that is the
    *   gate's answer, minutes later.
    */
+  /** What the resource is set to read its columns by. */
+  private async storedColumnSettings(resourceId: string): Promise<ColumnSettings> {
+    const [current] = await this.db
+      .select({ settings: resource.columnSettings })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!current) throw new NotFoundError('Resource', resourceId)
+    return current.settings
+  }
+
   /**
    * What a picker needs to offer a key and say where the current one stands
    * (spec §6.4).
@@ -2324,12 +2362,7 @@ export class ResourceVersionService {
    * behaviours.
    */
   async columnSettings(resourceId: string): Promise<ColumnSettingsView> {
-    const [current] = await this.db
-      .select({ settings: resource.columnSettings })
-      .from(resource)
-      .where(eq(resource.id, resourceId))
-      .limit(1)
-    if (!current) throw new NotFoundError('Resource', resourceId)
+    const current = { settings: await this.storedColumnSettings(resourceId) }
 
     const key = primaryKeyOf(current.settings)
     const types = settledTypesOf(current.settings.types)
@@ -2349,7 +2382,14 @@ export class ResourceVersionService {
   async setColumnSettings(
     resourceId: string,
     settings: ColumnSettings,
-    deps: { queue: JobQueue; logger?: Logger }
+    deps: {
+      queue: JobQueue
+      logger?: Logger
+      /** The version a review's choice was made on: still current, or 409 (§8.4) */
+      ifVersion?: number
+      /** Written in the same transaction as the settings, which a throw from it undoes */
+      alongside?: (tx: Transaction) => Promise<void>
+    }
   ): Promise<{
     primaryKey: string[] | null
     roles: ColumnSettings['roles'] | null
@@ -2360,12 +2400,7 @@ export class ResourceVersionService {
     // "No key" and "no overrides" have one spelling from here on (spec §6.2).
     const key = primaryKeyOf(settings)
 
-    const [current] = await this.db
-      .select({ settings: resource.columnSettings })
-      .from(resource)
-      .where(eq(resource.id, resourceId))
-      .limit(1)
-    if (!current) throw new NotFoundError('Resource', resourceId)
+    const current = { settings: await this.storedColumnSettings(resourceId) }
 
     const storedTypes = settledTypesOf(current.settings.types)
     const types = await this.usableTypes(resourceId, settledTypesOf(settings.types), storedTypes)
@@ -2384,20 +2419,38 @@ export class ResourceVersionService {
     const rolesSettled = sameColumnValues(storedRoles, roles)
     const unchanged = settled && rolesSettled && typesSettled
 
-    if (!unchanged) {
-      await this.db
-        .update(resource)
-        .set({
-          columnSettings: {
-            ...(key && { primaryKey: key as [string, ...string[]] }),
-            ...(roles && { roles }),
-            ...(types && { types }),
-          },
-          // A person's edit, so it moves the resource's own timestamp — that is
-          // what the screens and the API mean by "updated".
-          updated: sql`NOW()`,
-        })
-        .where(eq(resource.id, resourceId))
+    const { ifVersion, alongside } = deps
+    if (!unchanged || ifVersion !== undefined || alongside) {
+      await this.db.transaction(async (tx) => {
+        if (ifVersion !== undefined) {
+          await tx
+            .select({ id: resource.id })
+            .from(resource)
+            .where(eq(resource.id, resourceId))
+            .for('update')
+          const newest = await this.newestActiveVersion(tx, resourceId)
+          if (newest?.version !== ifVersion) {
+            throw new ConflictError(
+              `v${ifVersion} of ${resourceId} is no longer the current version; review the current one`
+            )
+          }
+        }
+        await alongside?.(tx)
+        if (unchanged) return
+        await tx
+          .update(resource)
+          .set({
+            columnSettings: {
+              ...(key && { primaryKey: key as [string, ...string[]] }),
+              ...(roles && { roles }),
+              ...(types && { types }),
+            },
+            // A person's edit, so it moves the resource's own timestamp — that is
+            // what the screens and the API mean by "updated".
+            updated: sql`NOW()`,
+          })
+          .where(eq(resource.id, resourceId))
+      })
     }
 
     const latest = await this.newestActiveVersion(this.db, resourceId)
@@ -2412,6 +2465,85 @@ export class ResourceVersionService {
       return { primaryKey: key, roles, types, queued: null }
     }
     return { primaryKey: key, roles, types, queued: await this.queueRebuild(resourceId, deps, log) }
+  }
+
+  /**
+   * A person's review of what a version's reading needs looked at (ii-c §8.4):
+   * a choice for each column it names. Accepting is recorded and changes
+   * nothing else; settling the previous type, or lifting a settled one, writes
+   * the column settings — which makes a version, so only on the current one —
+   * and queues the rebuild that reads it.
+   *
+   * The record is written once (§8.8); a second review is refused.
+   */
+  async reviewTypeChanges(
+    resourceId: string,
+    version: number,
+    choices: Record<string, TypeReviewChoice>,
+    deps: { queue: JobQueue; logger?: Logger; userId: string }
+  ): Promise<{ queued: boolean | null }> {
+    const row = await this.getRow(this.db, resourceId, version)
+    if (row.state !== 'active') {
+      throw new ConflictError(`v${version} of ${resourceId} is ${row.state}`)
+    }
+    const changes = row.typeChanges
+    if (!changes) throw new ValidationError(`v${version} of ${resourceId} has nothing to review`)
+    const reviewed = () => new ConflictError(`v${version} of ${resourceId} has been reviewed`)
+    if (row.typeReview) throw reviewed()
+    const named = new Set(changes.map((change) => change.column))
+    const stray = Object.keys(choices).filter((column) => !named.has(column))
+    if (stray.length > 0) {
+      throw new ValidationError(`Not to review on v${version}: ${stray.join(', ')}`)
+    }
+    for (const column of named) {
+      const choice = choices[column]
+      if (!choice || !typeReviewChoicesFor(changes, column).includes(choice)) {
+        throw new ValidationError(`Choose what to do with ${column} on v${version}`)
+      }
+    }
+
+    const review: TypeReview = {
+      reviewedBy: deps.userId,
+      reviewedAt: new Date().toISOString(),
+      choices,
+    }
+    // Recorded with the settings it chose, in one transaction: a review refused
+    // as second leaves no setting behind it
+    const record = async (tx: Transaction) => {
+      const written = await tx
+        .update(resourceVersion)
+        .set({ typeReview: review, updated: sql`NOW()` })
+        .where(and(eq(resourceVersion.id, row.id), isNull(resourceVersion.typeReview)))
+        .returning({ id: resourceVersion.id })
+      if (written.length === 0) throw reviewed()
+      await tx.insert(auditLog).values({
+        entityType: 'resource_version',
+        entityId: resourceId,
+        action: 'type_review',
+        userId: deps.userId,
+        changes: { version, choices },
+      })
+    }
+
+    const changing = [...named].filter((column) => choices[column] !== 'accept')
+    if (changing.length === 0) {
+      await this.db.transaction(record)
+      return { queued: null }
+    }
+    const settings = await this.storedColumnSettings(resourceId)
+    const types = { ...settledTypesOf(settings.types) }
+    for (const column of changing) {
+      const retyped = changes.find((change) => change.column === column && change.kind === 'type')
+      if (choices[column] === 'settle-previous' && retyped?.kind === 'type') {
+        types[column] = retyped.from.type
+      } else delete types[column]
+    }
+    const { queued } = await this.setColumnSettings(
+      resourceId,
+      { ...settings, types },
+      { ...deps, ifVersion: version, alongside: record }
+    )
+    return { queued }
   }
 
   /**

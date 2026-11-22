@@ -38,6 +38,8 @@ function version(n: number, overrides: Partial<VersionView> = {}): VersionView {
     keyColumns: null,
     created: '2026-08-08T00:00:00.000Z',
     purgedAt: null,
+    typeChanges: null,
+    reviewedAt: null,
     ...overrides,
   }
 }

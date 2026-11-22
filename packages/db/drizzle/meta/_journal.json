@@ -435,6 +435,13 @@
       "when": 1795273496771,
       "tag": "0061_organic_cloak",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1795316756739,
+      "tag": "0062_greedy_jack_flag",
+      "breakpoints": true
     }
   ]
 }

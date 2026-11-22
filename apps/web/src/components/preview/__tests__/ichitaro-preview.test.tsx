@@ -155,6 +155,7 @@ describe('IchitaroPreview', () => {
     mockOpen.mockRejectedValue(new Error('no'))
     render(preview())
     expect(await screen.findByText('not shown')).toBeInTheDocument()
-    expect(localStorage.length).toBe(0)
+    // The mark goes in the effect's cleanup, which runs after the text is up
+    await waitFor(() => expect(localStorage.length).toBe(0))
   })
 })
