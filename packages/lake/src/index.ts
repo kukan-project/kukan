@@ -25,6 +25,8 @@ export { removeStaleTempDirs, spillDirPrefix } from './spill'
 export type { DuckdbHandle } from './duckdb'
 export { lakeTableName, lakeTableExists, currentSnapshotId } from './table'
 export { sqlLiteral, sqlIdentifier } from './sql'
+export { settledExpression, settledFailures } from './settled'
+export type { SettledNote, SettledRead, SettledRelation } from './settled'
 export { readRowGroupRows } from './parquet'
 export { rowObjectsJson } from './json-rows'
 export {

@@ -27,6 +27,7 @@
     "@kukan/shared": "workspace:*"
   },
   "devDependencies": {
+    "@duckdb/duckdb-wasm": "1.33.1-dev65.0",
     "@types/node": "^24.19.2",
     "tsx": "^4.23.15"
   }
