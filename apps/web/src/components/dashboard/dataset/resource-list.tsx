@@ -80,6 +80,8 @@ interface Resource {
   description?: string | null
   pipelineStatus?: PipelineStatus | null
   latestVersion?: number | null
+  /** A version whose reading waits on a person (ii-c §8.4) */
+  typeReviewDue?: boolean
   section?: string | null
   extras?: Record<string, unknown> | null
 }
@@ -353,6 +355,7 @@ function SortableResourceRow({
           initialStatus={r.pipelineStatus}
           onSettled={onPipelineSettled}
           justRan={justRan}
+          reviewDue={r.typeReviewDue}
         />
       )}
     </div>

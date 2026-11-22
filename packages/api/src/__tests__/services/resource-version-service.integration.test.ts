@@ -2838,6 +2838,26 @@ describe('reviewing what a reading needs looked at (Versioning ii-c §8.4)', () 
     expect((await service.getVersion(resourceId, 2)).reviewedAt).not.toBeNull()
   })
 
+  it('does not ask again, on the version it makes, about the values settling left out', async () => {
+    await retyped()
+    await service.reviewTypeChanges(
+      resourceId,
+      2,
+      { code: 'settle-previous' },
+      { ...mockDeps(), userId }
+    )
+    // The rebuild reads v3 with code settled as integer: one value does not convert
+    await addVersion(3, 'sha256:v3', 'active', 'csv')
+    await setVersionSchemaIfHeld(db, null, {
+      resourceId,
+      version: 3,
+      schema: typed('integer', { settled: true, castFailures: 1 }),
+      noTableReason: null,
+    })
+
+    expect((await service.getVersion(resourceId, 3)).typeChanges).toBeNull()
+  })
+
   it('refuses a choice that makes a version on a version no longer current', async () => {
     await retyped()
     await addVersion(3, 'sha256:v3', 'active', 'csv', typed('string'))

@@ -207,6 +207,25 @@ each row showing the version number, creation time, size, origin (**Upload**, **
 
 Every version can be downloaded exactly as it was. The version number is added to the filename.
 
+### Reviewing type changes
+
+When reading a new version against the one before finds something worth checking, the version is
+marked **Needs review**, and so are its dot in the resource list on the left of the editor and the
+**Version history** tab.
+Nothing is held back: the version is published as inferred.
+
+- A version needs review when a column's inferred type changed from the version before (a column of
+  integers read as text, say), when a column with a settled type has values that do not convert, when
+  a column with a settled type is not in the file, or when a date format cannot be told from the values.
+  Columns added or dropped show in the diff and are not included here
+- **Needs review** opens what happened to each column and the choices. **Accept as read** only records
+  it, and makes no version. **Settle the previous type** and **Lift the settled type** change a settled
+  type, so they make one version reading the same file again. These two can be chosen on the newest
+  version only. Choosing **Settle the previous type** shows how many values are expected not to convert
+  and to read as no value; the version it makes does not ask about those values again
+- Once confirmed, the version reads **Reviewed**. A review is made once; to change a type afterwards,
+  use the Table settings tab
+
 ### Declaring a primary key
 
 The **Table settings** tab of the resource editor names the columns used to match a row to

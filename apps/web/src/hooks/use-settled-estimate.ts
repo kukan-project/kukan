@@ -54,21 +54,30 @@ const ROW_INDEX = '"kukan row index"'
  * where the preview cannot be read — it is a hint, and a stale or failed one
  * is not shown.
  */
-export function useSettledEstimate({
-  resourceId,
-  types,
-  columns,
-  rowCount,
-}: {
+export function useSettledEstimate(input: EstimateInput): SettledEstimate | null {
+  return useSettledEstimateState(input).estimate
+}
+
+interface EstimateInput {
   resourceId: string
   /** The types to estimate, by column; nothing is read while it is empty */
   types: Record<string, string>
   columns: ResourceColumn[]
   rowCount: number
-}): SettledEstimate | null {
-  /** The estimate, with what it was made for: one for other inputs is not shown */
+}
+
+/**
+ * {@link useSettledEstimate}, and whether the last try for these inputs failed —
+ * for a screen that waits on the estimate, which must not wait on one that
+ * will not come.
+ */
+export function useSettledEstimateState({ resourceId, types, columns, rowCount }: EstimateInput): {
+  estimate: SettledEstimate | null
+  failed: boolean
+} {
+  /** The answer, with what it was for: one for other inputs is not shown */
   const [made, setMade] = useState<{
-    estimate: SettledEstimate
+    estimate: SettledEstimate | null
     types: Record<string, string>
     columns: ResourceColumn[]
   } | null>(null)
@@ -142,7 +151,7 @@ export function useSettledEstimate({
           sampleRef.current = null
           sample.then(({ conn }) => conn.close()).catch(() => {})
         }
-        if (!cancelled) setMade(null)
+        if (!cancelled) setMade({ estimate: null, types, columns })
       }
     }, DEBOUNCE_MS)
     return () => {
@@ -151,7 +160,8 @@ export function useSettledEstimate({
     }
   }, [resourceId, types, columns, rowCount])
 
-  return made && made.types === types && made.columns === columns ? made.estimate : null
+  const current = made && made.types === types && made.columns === columns ? made : null
+  return { estimate: current?.estimate ?? null, failed: !!current && !current.estimate }
 }
 
 /** The cells of rows a preview shows that the expressions leave empty. */

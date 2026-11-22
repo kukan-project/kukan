@@ -1361,8 +1361,12 @@ needs review). It is a column apart from the record of acceptance (`type_review`
    is created. The acceptance is recorded on the version row (`type_review`) and the review cleared (§8.8)
 2. **Settle on the previous type**: write the column's previous type into the settled-type setting. Version
    identity changes, so one version is created and the same bytes are read again under the previous type.
-   Values that do not fit are counted in `castFailures` and shown on the Version history tab as "values that did
-   not convert" (that version starts out needing review; look at the values and accept)
+   Values that do not fit are counted in `castFailures` and shown in the type column as "values that did not
+   convert". **That version does not ask about this column's values that did not convert (2026-11-22).** How many
+   would read as no value is shown when the choice is made (§8.7), so it is not asked again: where the version
+   before's `type_review` chose "settle on the previous type" for the column, the detection does not count its
+   values that did not convert. It does not either when a fetch of new content runs after the review and before the
+   rebuild, which is rare, and recoverable as the count shows in the type column
 
 **When only the digits of a column settled as `decimal` change**, only "accept as is" is offered. The
 settled type is `decimal` either way, so writing it back changes nothing (version identity is the same,
@@ -1452,7 +1456,9 @@ key-matched tier and degrades.
   filter, and on pages past the first 10,000 rows
 - **Type changes are reviewed on the Version history tab** (ADR-072 decision 4). A version needing review shows
   which columns changed and how, samples of values that did not convert, and §8.4's choices. The list's
-  dot is "needs review" (ADR-072 decision 3)
+  dot is "needs review" (ADR-072 decision 3). Choosing "settle the previous type" shows, as it is chosen, how
+  many values are expected to read as no value, by the estimate the Table settings tab uses (DuckDB-WASM in the
+  browser, the first 10,000 rows; only the current version can be settled, so the preview is its own)
 - **ADR-072 Step 1 comes first.** Nothing is put on today's row-expansion screen
 - **The settled-type choices are "Auto (inferred type)" and each type.** Following the inference is
   named as the role choices in the same table name it (ADR-063 §Decision 5). Lifting a settled type

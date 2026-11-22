@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
   Textarea,
+  cn,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
@@ -26,6 +27,8 @@ import type { VersionView } from '@kukan/shared'
 import { formatBytes } from '@/lib/format-utils'
 import { useUser } from '@/components/dashboard/user-provider'
 import { VersionDiffPanel } from './version-diff-panel'
+import { TypeReviewPanel } from './type-review-panel'
+import { REVIEW_DUE_DOT_CLASS } from './pipeline-status-badge'
 
 /**
  * Flat keys, because `origin` is already the column heading.
@@ -50,9 +53,12 @@ interface Props {
    *  interpretation was rewritten under it — which a remount would also do, at
    *  the cost of closing an open diff. */
   reloadKey?: number | string
+  /** Where the viewer may review a version's type changes (§8.4): called once
+   *  one is reviewed, so the owner reloads what reads it — the list's dot */
+  onReviewed?: () => void
 }
 
-export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
+export function ResourceVersionHistory({ resourceId, reloadKey, onReviewed }: Props) {
   const t = useTranslations('resource.versions')
   /** The picker's labels for the same three states, so a key is not called one
    *  thing where it is chosen and another where it is listed. */
@@ -64,6 +70,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
   const [reason, setReason] = useState('')
   const [purging, setPurging] = useState(false)
   const [openDiff, setOpenDiff] = useState<number | null>(null)
+  const [openReview, setOpenReview] = useState<number | null>(null)
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -166,6 +173,9 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
         .map((v) => v.version)
     : []
 
+  // The version a choice that makes a version may be made on (§8.4)
+  const newest = versions.find((v) => v.state === 'active')?.version
+
   return (
     <div className="flex flex-col gap-2">
       <h4 className="text-sm font-medium">{t('title')}</h4>
@@ -193,6 +203,8 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
             // nothing to diff against.
             const hasPrevious = i < versions.length - 1
             const diffOpen = openDiff === v.version
+            const reviewOpen = openReview === v.version
+            const reviewDue = !v.reviewedAt
             /** Named once so the cell and its hover text cannot drift apart. */
             const keyLabel = v.keyColumns
               ? `${v.keyColumns.join(' → ')} ${tk(
@@ -259,6 +271,26 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                         <Badge variant="secondary">{t('purging')}</Badge>
                       ) : (
                         <>
+                          {v.typeChanges && (
+                            <Button
+                              // Framed while it waits: the one thing on the row left to do
+                              variant={reviewDue ? 'outline' : 'ghost'}
+                              size="sm"
+                              onClick={() => setOpenReview(reviewOpen ? null : v.version)}
+                            >
+                              {/* The list's mark, beside the word that names it */}
+                              {reviewDue && (
+                                <span
+                                  aria-hidden
+                                  className={cn(
+                                    'size-2 shrink-0 rounded-full',
+                                    REVIEW_DUE_DOT_CLASS
+                                  )}
+                                />
+                              )}
+                              {reviewDue ? t('review') : t('reviewed')}
+                            </Button>
+                          )}
                           {hasPrevious && (
                             <Button
                               variant="ghost"
@@ -293,6 +325,28 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                     </div>
                   </TableCell>
                 </TableRow>
+                {reviewOpen && v.typeChanges && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="bg-muted/30">
+                      <TypeReviewPanel
+                        // Drawn again where what it may offer moved — a newer
+                        // version came, or the changes were read again — so no
+                        // choice it can no longer offer stays picked
+                        key={`${v.version === newest}:${JSON.stringify(v.typeChanges)}`}
+                        resourceId={resourceId}
+                        version={v}
+                        current={v.version === newest}
+                        onReviewed={
+                          onReviewed &&
+                          (() => {
+                            onReviewed()
+                            void load()
+                          })
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
                 {diffOpen && (
                   <TableRow>
                     <TableCell colSpan={6} className="bg-muted/30">

@@ -31,6 +31,12 @@ interface PipelineStatusBadgeProps {
    * failure, or that no version was stored — on hover and to screen readers.
    */
   variant?: 'badge' | 'dot'
+  /**
+   * A version whose reading waits on a person (Versioning ii-c §8.4): a
+   * finished run's dot then says "needs review" in the warning colour — weaker
+   * than a failure, which a run still in flight or failed keeps (ADR-072 decision 3)
+   */
+  reviewDue?: boolean
 }
 
 const STATUS_CONFIG: Record<
@@ -52,6 +58,25 @@ const STATUS_CONFIG: Record<
     variant: 'secondary',
     className: 'bg-warning/15 text-warning-tint-foreground',
   },
+}
+
+/**
+ * A version waiting on a person's review: weaker than a stopped run's warning
+ * (ADR-072 decision 3), told by its shape — a ring — rather than a paler fill,
+ * which a dot this small cannot spare
+ */
+export const REVIEW_DUE_DOT_CLASS = 'border-2 border-warning'
+
+/** The list's "needs review" dot, for another place that says it — the tab it leads to. */
+export function ReviewDueDot({ label }: { label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn('size-2 shrink-0 rounded-full', REVIEW_DUE_DOT_CLASS)}
+    />
+  )
 }
 
 /** The dot's colour per state — the same reading as the badge */
@@ -129,6 +154,7 @@ export function PipelineStatusBadge({
   onSettled,
   justRan,
   variant = 'badge',
+  reviewDue,
 }: PipelineStatusBadgeProps) {
   const t = useTranslations('resource')
   const shouldPoll = isRunActive(initialStatus)
@@ -188,8 +214,9 @@ export function PipelineStatusBadge({
   const noNewVersion = sameContent || (settled !== null && storedNoVersion(settled))
 
   if (variant === 'dot') {
+    const review = reviewDue && displayStatus === 'complete'
     const note = reason ?? (noNewVersion ? t('pipelineNoNewVersion') : null)
-    const name = note ? `${label}: ${note}` : label
+    const name = review ? t('pipelineReviewDue') : note ? `${label}: ${note}` : label
     return (
       <span
         role="img"
@@ -197,9 +224,9 @@ export function PipelineStatusBadge({
         title={name}
         className={cn(
           'size-2 shrink-0 rounded-full',
-          STATUS_DOT_CLASS[displayStatus],
+          review ? REVIEW_DUE_DOT_CLASS : STATUS_DOT_CLASS[displayStatus],
           // Finished without a version: still a success, told apart by its name
-          noNewVersion && 'opacity-50'
+          noNewVersion && !review && 'opacity-50'
         )}
       />
     )

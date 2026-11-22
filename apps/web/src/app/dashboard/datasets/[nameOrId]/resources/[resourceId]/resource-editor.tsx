@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { ViewPublicLink } from '@/components/dashboard/dataset/view-public-link'
 import { TableSettings } from '@/components/dashboard/dataset/table-settings'
 import { ResourceVersionHistory } from '@/components/dashboard/dataset/resource-version-history'
+import { ReviewDueDot } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { useDatasetEditor } from '@/components/dashboard/dataset/dataset-editor-context'
 import {
   ResourceEditForm,
@@ -74,6 +75,7 @@ export function ResourceEditor({
   }, [version, seenVersion])
   const router = useRouter()
   const t = useTranslations('datasetEditor')
+  const ts = useTranslations('resource')
   // Unsaved edits on the Basic tab, or a key picked and not applied: leaving
   // the page asks first
   const [dirty, setDirty] = useState(false)
@@ -224,7 +226,11 @@ export function ResourceEditor({
           {/* Not where nothing may be written: a deleted dataset's column
               settings and roles are not read at all (ADR-072 decision 4) */}
           {settingsTab && <TabsTrigger value="columns">{t('tabColumns')}</TabsTrigger>}
-          <TabsTrigger value="versions">{t('tabVersions')}</TabsTrigger>
+          <TabsTrigger value="versions">
+            {t('tabVersions')}
+            {/* The list's dot, so the two read as one mark */}
+            {listed?.typeReviewDue && !readOnly && <ReviewDueDot label={ts('pipelineReviewDue')} />}
+          </TabsTrigger>
           {/* Reprocess, cancel and revert: nothing a reader may do */}
           {!readOnly && <TabsTrigger value="processing">{t('tabProcessing')}</TabsTrigger>}
         </TabsList>
@@ -313,7 +319,12 @@ export function ResourceEditor({
         )}
 
         <TabsContent value="versions" className="pt-4">
-          <ResourceVersionHistory resourceId={resource.id} reloadKey={reloadKey} />
+          <ResourceVersionHistory
+            resourceId={resource.id}
+            reloadKey={reloadKey}
+            // The list reads the review back, and its dot follows
+            onReviewed={readOnly ? undefined : () => editor?.reload()}
+          />
         </TabsContent>
 
         {!readOnly && (

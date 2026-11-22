@@ -23,6 +23,8 @@ export interface EditorResource {
   pipelineStatus?: PipelineStatus | null
   /** Moves when a run stores a version — what the resource page's panels reload on */
   latestVersion?: number | null
+  /** A version whose reading waits on a person (ii-c §8.4): the list's dot */
+  typeReviewDue?: boolean
 }
 
 interface DatasetEditorContextValue {

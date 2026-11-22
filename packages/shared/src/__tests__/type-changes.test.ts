@@ -97,4 +97,12 @@ describe('typeChangesOf', () => {
     expect(changes.map((change) => change.kind)).toEqual(['cast-failures', 'type'])
     expect(typeReviewChoicesFor(changes, 'd')).toEqual(['accept', 'lift'])
   })
+
+  it('does not ask again about values a review settled the previous type over', () => {
+    const now = schema([col('n', 'integer', { settled: true, castFailures: 1 })])
+    expect(typeChangesOf(now, null, ['n'])).toBeNull()
+    expect(typeChangesOf(now, null, ['other'])).toEqual([
+      { kind: 'cast-failures', column: 'n', count: 1 },
+    ])
+  })
 })

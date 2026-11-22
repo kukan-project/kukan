@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import type { VersionView } from '@kukan/shared'
+import { useSettledEstimateState } from '@/hooks/use-settled-estimate'
 import { ResourceVersionHistory } from '../resource-version-history'
 
 vi.mock('@/lib/client-api', async (importOriginal) => ({
@@ -15,6 +16,12 @@ vi.mock('@/components/dashboard/user-provider', () => ({
 }))
 
 const mockClientFetch = vi.mocked(clientFetch)
+
+// DuckDB-WASM does not run here; the estimate's rules are tested in @kukan/lake
+vi.mock('@/hooks/use-settled-estimate', () => ({
+  useSettledEstimateState: vi.fn(() => ({ estimate: null, failed: false })),
+}))
+const mockEstimate = vi.mocked(useSettledEstimateState)
 
 function versionsResponse(versions: unknown[]) {
   return { ok: true, json: async () => ({ versions }) } as Response
@@ -47,6 +54,8 @@ function version(n: number, overrides: Partial<VersionView> = {}): VersionView {
 describe('ResourceVersionHistory', () => {
   beforeEach(() => {
     mockClientFetch.mockReset()
+    mockEstimate.mockReset()
+    mockEstimate.mockReturnValue({ estimate: null, failed: false })
   })
 
   it('should reload when the owner bumps reloadKey', async () => {
@@ -234,5 +243,132 @@ describe('ResourceVersionHistory', () => {
 
     await screen.findByRole('dialog')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  describe('type changes to review (Versioning ii-c §8.4)', () => {
+    const schema = {
+      rowCount: 2,
+      columns: [{ name: 'code', type: 'string' as const, nullable: false, nullCount: 0 }],
+    }
+    const retyped = (n: number, overrides: Partial<VersionView> = {}) =>
+      version(n, {
+        typeChanges: [
+          { kind: 'type', column: 'code', from: { type: 'integer' }, to: { type: 'string' } },
+        ],
+        ...overrides,
+      })
+
+    it('offers the review, and sends the choice for each column', async () => {
+      const onReviewed = vi.fn()
+      mockClientFetch.mockImplementation(async (path: string) =>
+        path.endsWith('/type-review')
+          ? ({ ok: true, status: 200, json: async () => ({}) } as Response)
+          : versionsResponse([retyped(2), version(1)])
+      )
+      render(<ResourceVersionHistory resourceId="r1" onReviewed={onReviewed} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Needs review' }))
+      expect(screen.getByText('The type changed from Integer to String')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('combobox', { name: 'What to do with code' }))
+      fireEvent.click(
+        await screen.findByRole('option', { name: 'Settle the previous type (Integer)' })
+      )
+      expect(
+        screen.getByText(
+          'This changes a settled type, so confirming makes one version reading the same file again.'
+        )
+      ).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+      await waitFor(() => expect(onReviewed).toHaveBeenCalled())
+      const [, init] = mockClientFetch.mock.calls.find(([p]) => p.endsWith('/type-review'))!
+      expect(JSON.parse(init!.body as string)).toEqual({ choices: { code: 'settle-previous' } })
+    })
+
+    it('says what settling the previous type would leave without a value, before it is chosen', async () => {
+      mockEstimate.mockImplementation(({ types }) => ({
+        estimate:
+          Object.keys(types).length > 0
+            ? {
+                rows: 10_000,
+                whole: false,
+                columns: {
+                  code: { castFailures: 1, castFailureSamples: [{ row: 4, value: 'N/A' }] },
+                },
+                judge: async () => new Set<string>(),
+              }
+            : null,
+        failed: false,
+      }))
+      mockClientFetch.mockResolvedValue(versionsResponse([retyped(2, { schema }), version(1)]))
+      render(<ResourceVersionHistory resourceId="r1" onReviewed={vi.fn()} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Needs review' }))
+      fireEvent.click(screen.getByRole('combobox', { name: 'What to do with code' }))
+      fireEvent.click(
+        await screen.findByRole('option', { name: 'Settle the previous type (Integer)' })
+      )
+
+      const note = await screen.findByText(
+        /^Settling the previous type, 1 of the first 10,000 rows/
+      )
+      expect(note).toHaveAttribute('title', 'Row 4: N/A')
+      expect(mockEstimate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ types: { code: 'integer' } })
+      )
+    })
+
+    it('confirms a settling only once what it leaves out is counted, or could not be', async () => {
+      const withSchema = retyped(2, { schema })
+      mockClientFetch.mockResolvedValue(versionsResponse([withSchema, version(1)]))
+      const view = render(<ResourceVersionHistory resourceId="r1" onReviewed={vi.fn()} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Needs review' }))
+      fireEvent.click(screen.getByRole('combobox', { name: 'What to do with code' }))
+      fireEvent.click(
+        await screen.findByRole('option', { name: 'Settle the previous type (Integer)' })
+      )
+      expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+
+      mockEstimate.mockReturnValue({ estimate: null, failed: true })
+      view.rerender(<ResourceVersionHistory resourceId="r1" onReviewed={vi.fn()} />)
+      expect(
+        screen.getByText(
+          'Could not count the values settling would leave without a value. You can still confirm'
+        )
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    })
+
+    it('offers only accepting on a version no longer the newest', async () => {
+      mockClientFetch.mockResolvedValue(versionsResponse([version(3), retyped(2), version(1)]))
+      render(<ResourceVersionHistory resourceId="r1" onReviewed={vi.fn()} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Needs review' }))
+      fireEvent.click(screen.getByRole('combobox', { name: 'What to do with code' }))
+      expect(
+        await screen.findByRole('option', { name: 'Settle the previous type (Integer)' })
+      ).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('shows what changed without a form to a viewer who may not review', async () => {
+      mockClientFetch.mockResolvedValue(versionsResponse([retyped(2), version(1)]))
+      render(<ResourceVersionHistory resourceId="r1" />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Needs review' }))
+      expect(screen.getByText('The type changed from Integer to String')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    })
+
+    it('shows a reviewed version as done, without a form', async () => {
+      mockClientFetch.mockResolvedValue(
+        versionsResponse([retyped(2, { reviewedAt: '2026-11-22T00:00:00.000Z' }), version(1)])
+      )
+      render(<ResourceVersionHistory resourceId="r1" onReviewed={vi.fn()} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Reviewed' }))
+      expect(screen.getByText(/^Reviewed at /)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    })
   })
 })

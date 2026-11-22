@@ -305,7 +305,15 @@ export async function setVersionSchemaIfHeld(
   // list's dot reads it without comparing two schemas per version
   const changes = v.noTableReason
     ? null
-    : typeChangesOf(v.schema, await previousTableSchema(db, v.resourceId, v.version))
+    : await previousTableVersion(db, v.resourceId, v.version).then((previous) =>
+        typeChangesOf(
+          v.schema,
+          previous?.schema ?? null,
+          Object.entries(previous?.typeReview?.choices ?? {}).flatMap(([column, choice]) =>
+            choice === 'settle-previous' ? [column] : []
+          )
+        )
+      )
   // Only by the first reading: a later one may compare with another version —
   // the one before purged — and the judgement made then is what stands
   const result = await db.execute(sql`
@@ -323,19 +331,20 @@ export async function setVersionSchemaIfHeld(
   return result.rows.length > 0
 }
 
-/** The schema of the newest active version below `version` that read to a table. */
-async function previousTableSchema(
+/** The newest active version below `version` that read to a table: its schema, and its review. */
+async function previousTableVersion(
   db: Pick<Database, 'execute'>,
   resourceId: string,
   version: number
-): Promise<ResourceSchema | null> {
-  const before = await db.execute<{ schema: ResourceSchema }>(sql`
-    SELECT schema FROM resource_version
+): Promise<{ schema: ResourceSchema; typeReview: TypeReview | null } | null> {
+  const before = await db.execute<{ schema: ResourceSchema; type_review: TypeReview | null }>(sql`
+    SELECT schema, type_review FROM resource_version
     WHERE resource_id = ${resourceId}::uuid AND version < ${version}
       AND state = 'active' AND schema IS NOT NULL AND no_table_reason IS NULL
     ORDER BY version DESC LIMIT 1
   `)
-  return before.rows[0]?.schema ?? null
+  const row = before.rows[0]
+  return row ? { schema: row.schema, typeReview: row.type_review } : null
 }
 
 /**
@@ -561,7 +570,7 @@ export async function pendingLakeVersionSource(
   // table decided, as the pipeline's first reading falls back on
   let previousSchema: ResourceSchema | null = null
   if (settledTypes && !schema) {
-    previousSchema = await previousTableSchema(db, row.resourceId, row.version)
+    previousSchema = (await previousTableVersion(db, row.resourceId, row.version))?.schema ?? null
   }
   return { ...found, settledTypes, schema, previousSchema }
 }

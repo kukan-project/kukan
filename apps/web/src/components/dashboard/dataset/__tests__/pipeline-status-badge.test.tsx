@@ -296,4 +296,18 @@ describe('PipelineStatusBadge', () => {
     rerender(<PipelineStatusBadge resourceId="r1" initialStatus="complete" />)
     expect(screen.getByText('Complete')).toBeInTheDocument()
   })
+
+  it('says a finished run waits on a review, where a version needs one', () => {
+    mockClientFetch.mockReturnValue(new Promise(() => {}))
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="complete" variant="dot" reviewDue />)
+    const dot = screen.getByRole('img')
+    expect(dot).toHaveAccessibleName('Needs review: a version has type changes to check')
+    expect(dot).toHaveClass('border-warning')
+  })
+
+  it('keeps a failure ahead of a review', () => {
+    mockClientFetch.mockReturnValue(new Promise(() => {}))
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="error" variant="dot" reviewDue />)
+    expect(screen.getByRole('img')).toHaveClass('bg-destructive')
+  })
 })

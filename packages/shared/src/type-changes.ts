@@ -6,7 +6,7 @@
 import type { ResourceColumn, ResourceColumnType, ResourceSchema } from './pipeline-types'
 
 /** A column's type as read, with a decimal's digits. */
-interface ReadType {
+export interface ReadType {
   type: ResourceColumnType
   decimalPrecision?: number
   decimalScale?: number
@@ -76,13 +76,19 @@ const readType = (column: ResourceColumn): ReadType => ({
  */
 export function typeChangesOf(
   schema: ResourceSchema,
-  previous: ResourceSchema | null
+  previous: ResourceSchema | null,
+  /**
+   * Columns the previous version's review settled on their previous type. That
+   * choice was made seeing what would not convert, so this version does not
+   * ask about it again
+   */
+  settledByReview: readonly string[] = []
 ): TypeChange[] | null {
   const changes: TypeChange[] = []
   const before = new Map(previous?.columns.map((column) => [column.name, column]))
   for (const column of schema.columns) {
     if (column.settled) {
-      if (column.castFailures) {
+      if (column.castFailures && !settledByReview.includes(column.name)) {
         changes.push({ kind: 'cast-failures', column: column.name, count: column.castFailures })
       }
       if (column.dateFormatUndecided) changes.push({ kind: 'date-undecided', column: column.name })
