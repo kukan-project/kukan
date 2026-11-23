@@ -6,6 +6,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.47.1] - 2026-11-23
+
+**Bug Fixes**
+
+- fix(worker): reading an Excel sheet bounds the work spent on the borders its row and column formats draw on empty cells, and looks only at the columns that have such a format. Some workbooks took the worker's parsing process up to its time limit (#1304)
+
+**Upgrade Notes** (for system administrators)
+
+- No migration, configuration change or reprocessing is needed.
+
+---
+
+**バグ修正**
+
+- fix(worker): Excel のシートを読むとき、行や列の書式が空のセルに引く罫線の計算に使う手間に上限を設け、そうした書式のある列だけを見るようにしました。一部のブックで、worker の解析用の子プロセスが時間制限まで使われることがありました（#1304）
+
+**アップグレードの注意**（システム管理者向け）
+
+- マイグレーション・設定の変更・再処理は要りません。
+
 ## [0.47.0] - 2026-11-23
 
 **Highlights**
