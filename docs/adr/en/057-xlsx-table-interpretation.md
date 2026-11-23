@@ -444,8 +444,9 @@ Cues for making the proposal, in the order of strength measured (Context 7):
 
 1. The sequence of row types — the switch from rows of text only to rows holding numbers or dates.
    This is the axis
-2. Structure the author set in Excel — print titles, frozen panes, Excel tables. The autofilter is
-   used for the left and right edges only, not for the last row
+2. Structure the author set in Excel — print titles, frozen panes, the autofilter. They join the
+   vote on the first data row; the autofilter's last row is not used. Excel tables were in only 3
+   workbooks of the sample and are not a cue (implementation spec §8.1)
 3. The shape of merges in the header band — a horizontal merge over several children is a
    hierarchy; a full-width merge is a title. Weak alone; used to confirm 1
 4. Words for totals, notes and units
@@ -542,7 +543,7 @@ The current reader is made to produce a grid of positioned cells as well as the 
 - merged-cell ranges
 - from number formats, whether a cell is a date or text-formatted, and the date base (1900 / 1904)
 - hidden sheets, rows and columns
-- frozen panes, the autofilter range, print titles, Excel tables
+- frozen panes, the autofilter range, print titles
 
 Bold, fills and column widths are added if the spike shows they improve the proposals. The position
 and style of borders are read. A person needs them to judge on the settling screen (Decision 10);
@@ -551,7 +552,7 @@ they are used neither as a cue for the rules nor as input to AI (Context 7).
 XLS produces the same grid. XLS was first put out of scope because few parsers read it and because
 its share in public data was expected to be falling. Neither holds now (Context 4 and 5). Print
 titles are read for XLS too (three in ten XLS files have them, and they are often right). For XLS,
-reading Excel tables may come later.
+the autofilter is not read.
 
 The row text for the full-text index does not change.
 

@@ -27,7 +27,7 @@ The matters ADR-057 left to the implementation spec, and this spec's answer.
 | When the settled header is not found in a new version | Read by rules if plain; otherwise no table, flagged for review                                      | §10.2   |
 | When a plain table stops being plain after an update  | No table; flagged because the last version was a table. The last reading is offered as the proposal | §10.3   |
 | The table while under review                          | The last version that was a table keeps being served, marked as old                                 | §10.4   |
-| Shapes one rectangle cannot express                   | No proposal; show the reason. No unfolding option                                                   | §8.3    |
+| Shapes one rectangle cannot express                   | The first table's proposal, noted as possibly such a shape. No unfolding option                     | §8.3    |
 | Size limit and worker memory                          | Keep today's 100MB. Measured within Step 1; a limit is added if exceeded                            | §4.3    |
 
 ## 1. Premises
@@ -444,6 +444,18 @@ the shape of merges in the header band, words for totals, notes and units). The 
 
 A proposal on which the sequence of row types and another cue agree is shown as "likely".
 
+The port copied the spike's use of the cues as it was, which differs from Decision 4's wording in two
+points. The spike's use is taken as correct (the measured figures come from it; 2026-11-23).
+
+- **Excel tables (ListObject) are not a cue.** The grid reader does not read them. The sample had
+  only 3, and one sheet depended on it
+- **The autofilter joins the vote on the first data row.** Like frozen panes, print titles and the
+  merge band, two or more pointing at the same row win over the sequence of row types. It is not used
+  for the left and right edges
+
+The ported rules matched 88 of the 111 hand-checked answers (the spike 89; the one difference used an
+Excel table as a cue). 45 proposals were "likely", 40 of them right.
+
 ### 8.2 Joining column names (decided 2026-11-23)
 
 A multi-row header becomes one name per column.
@@ -453,7 +465,9 @@ A multi-row header becomes one name per column.
 - A merged cell's value is given to every column in its range
 - **A part equal to the one above is not repeated.** A vertical merge, or the same text written below,
   becomes one part (not "区分_区分")
-- Empty parts are skipped
+- Empty parts are skipped. **A column with no part at all is named by its letter (`A`, `B`, …)** (a
+  row-label column under an empty top-left header cell, for example): independent of language, and a
+  person can change it
 - A joined name that repeats gets `_2`, `_3` from the second on
 
 Besides `_`, a space, `／` and `・` were candidates. `_` works as is in SQL and OData column names and
@@ -464,9 +478,13 @@ matches JSON tables, so it is `_` for now.
 Tables whose header or notes appear again inside the range, tables folded sideways, and multi-column
 layouts cannot be read correctly with any range and number of header rows (ADR-057 Context 7).
 
-- **No proposal.** Showing a plausible frame invites an editor to settle it as is and make a broken
-  table
-- The reason (`multiple-tables`) is shown, with "this shape cannot be made into a table"
+- Rules cannot tell these from named tables stacked or side by side (where reading the first table is
+  right): in both, the header appears again outside the range (§5.5). Of the 17 sheets where the
+  header repeated, on 11 the rules' first-table proposal equalled the person's answer
+- **So the first table's proposal is given, noted "the header repeats; this proposal reads the first
+  table only; a folded or multi-column table cannot be made a table"** (decided 2026-11-23). On the
+  screen with borders (§9), a person judges the shape
+- The reason (`multiple-tables`) is recorded on the version
 - A person may still choose a range and settle it (read the first table only, for example)
 - No unfolding option and no option to stack blocks of the same shape. Decided after counting this
   reason
