@@ -410,18 +410,23 @@ instructions if the settled header is found, otherwise back to plain-table judgi
 
 Two routes are needed. The layer-2 sweep alone does not change the public preview.
 
-| Route                              | What changes                                                                                                                                                                                                                                                                             |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The layer-2 sweep (`lakeLoadable`) | With `xlsx` and `xls` in `TABLE_SOURCE_FORMATS`, it picks up every existing Excel version without a schema, writes the version's `schema` and loads layer 2. **It does not keep the temporary Parquet for the public, and does not update `resource_pipeline`'s `previewKey` or schema** |
-| Reprocessing the resource          | Interpret runs again on the newest version, keeps the public Parquet and updates `resource_pipeline`. The preview, OData and MCP read this                                                                                                                                               |
+| Route                              | What changes                                                                                                                                                                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The layer-2 sweep (`lakeLoadable`) | With `xlsx` and `xls` (`WORKBOOK_FORMATS`) in `lakeLoadable`, it picks up every existing Excel version without a schema, writes the version's `schema` and loads layer 2. **It does not keep the temporary Parquet for the public, and does not update `resource_pipeline`'s `previewKey` or schema** |
+| Reprocessing the resource          | Interpret runs again on the newest version, keeps the public Parquet and updates `resource_pipeline`. The preview, OData and MCP read this                                                                                                                                                            |
 
-- **PR 1-e queues a reprocess of the Excel resources once.** The existing bulk reprocess (the bulk
-  enqueue in `PipelineService`) gets an option to narrow by format. No version is added (neither the
-  bytes nor the settled instructions change, ADR-046)
+- **The newest version is reprocessed by an administrator choosing formats.** The reprocess on the
+  background jobs page takes the formats to reprocess (all by default; `formats` on
+  `POST /admin/jobs/enqueue-all`). With Excel alone chosen, the Excel resources are rebuilt from their
+  stored files and the search index is not emptied. Nothing is queued automatically on upgrade. No
+  version is added (neither the bytes nor the settled instructions change, ADR-046)
+- Not added to `TABLE_SOURCE_FORMATS`: those are the formats sent down the CSV and JSON routes, and a
+  workbook is read from its grid
+- A workbook whose grid cannot be read writes nothing on its version, so the sweep counts it as a failed
+  ingest and marks it `ingest-failed` at the limit. Uncounted, it would be picked up every hour
 - Older versions' schemas and layer 2 are left to the sweep
 - **Count before release.** For each demo site, the number of Excel resources and of `active` versions
   and their total size; estimate how many hours the reprocess and the sweep take
-- On a site with many, between shipping 1-d and 1-e, reprocess a few by hand and look at the result
 
 ### 7.3 Places that branch on format
 

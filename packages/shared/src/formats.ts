@@ -157,6 +157,13 @@ export function isTableSourceFormat(format?: string | null, mimetype?: string | 
   return (!!f && TABLE_SOURCE_SET.has(f)) || isCsvFormat(null, mimetype)
 }
 
+/**
+ * Excel workbooks: a document whose sheet may also be read as a table, where
+ * its version's schema has columns (ADR-057 decision 9). The layer-2 sweep
+ * names them in SQL too.
+ */
+export const WORKBOOK_FORMATS = ['xlsx', 'xls'] as const
+
 /** Check if a format is an Excel workbook (XLSX or XLS) */
 export function isExcelFormat(format?: string | null): boolean {
   const f = format?.toLowerCase()

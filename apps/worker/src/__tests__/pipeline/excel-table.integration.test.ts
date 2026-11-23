@@ -248,14 +248,12 @@ describe('an uploaded Excel workbook', { timeout: 30_000 }, () => {
     expect(row.readingProposal).toBeNull()
   })
 
-  it('is not the sweep’s until it was read as a table, and then is loaded by the retry', async () => {
+  it('stored before workbooks were read as tables, is read and loaded by the sweep', async () => {
     const source = await uploadVersion(await plainWorkbook())
-    // Not interpreted yet: the pipeline reads it, not the sweep
-    expect(await pendingLakeVersionSource(db, { resourceId, version: 1 })).toBeNull()
-
-    // Read with no layer 2, as a run whose ingest never happened
-    await interpret(context(false), source)
-    expect(await pendingLakeVersionSource(db, { resourceId, version: 1 })).not.toBeNull()
+    // Never interpreted: a version stored before this reading existed (spec §7.2)
+    expect(await pendingLakeVersionSource(db, { resourceId, version: 1 })).toMatchObject({
+      storageKey: source.storageKey,
+    })
 
     const queue = new PostgresJobQueue({ db })
     await retryLakeIngest(
@@ -263,7 +261,24 @@ describe('an uploaded Excel workbook', { timeout: 30_000 }, () => {
       { ctx: context(), db, queue, log: createLogger({ name: 'test' }) }
     )
 
-    expect((await versionRow()).lakeSnapshotId).not.toBeNull()
+    const row = await versionRow()
+    expect(row.schema?.columns.length).toBeGreaterThan(0)
+    expect(row.lakeSnapshotId).not.toBeNull()
     expect(await lakeRows()).toHaveLength(12)
+  })
+
+  it('stored before and not a plain table, is settled by the sweep and leaves it', async () => {
+    await uploadVersion(await twoSheetWorkbook())
+
+    const queue = new PostgresJobQueue({ db })
+    await retryLakeIngest(
+      { resourceId, version: 1 },
+      { ctx: context(), db, queue, log: createLogger({ name: 'test' }) }
+    )
+
+    const row = await versionRow()
+    expect(row.noTableReason).toBe('multiple-sheets')
+    expect(row.schema?.columns).toEqual([])
+    expect(await pendingLakeVersionSource(db, { resourceId, version: 1 })).toBeNull()
   })
 })

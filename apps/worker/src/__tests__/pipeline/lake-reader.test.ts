@@ -52,6 +52,12 @@ describe('lakeVersionReader', () => {
     expect(await read()).toEqual({ table: false, failed: err })
   })
 
+  it('answers a workbook whose grid could not be read as a failed read, not as no table', async () => {
+    interpretation.run = async () => ({ schema: null })
+
+    expect(await read()).toMatchObject({ table: false, failed: expect.any(Error) })
+  })
+
   it('throws what cut the work short, which is no fault of the version', async () => {
     interpretation.run = async () => {
       throw new WorkerStoppingError()

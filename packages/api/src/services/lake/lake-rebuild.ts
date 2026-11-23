@@ -31,6 +31,7 @@ import {
   LAKE_REBUILD_JOB_TYPE,
   MAX_PARQUET_SOURCE_SIZE,
   TABLE_SOURCE_FORMATS,
+  WORKBOOK_FORMATS,
 } from '@kukan/shared'
 import type { NoTableReason, ResourceSchema } from '@kukan/shared'
 import { reserveObject } from '../pipeline/storage-pointer'
@@ -105,7 +106,7 @@ export interface LakeRebuildOptions {
 export interface LakeRebuildOutcome {
   /** The resource's catalog now, or null when no version remained to load */
   catalogKey: string | null
-  loaded: { version: number; snapshotId: number }[]
+  loaded: { version: number; snapshotId: number; schema?: ResourceSchema }[]
   refused: LakeRefusal[]
 }
 
@@ -126,9 +127,9 @@ export const versionAlias = (name: string) => alias(resourceVersion, name)
  * A recorded `no_table_reason` does not exclude a version here: over the cap or
  * out of memory, it is to be read again once that changes.
  *
- * Not by format alone: a workbook is a table only where its version was read
- * as one (ADR-057 decision 9), and one not read yet is the pipeline's to read,
- * not the sweep's.
+ * A workbook not read yet is taken too: a version stored before workbooks
+ * were read as tables is read here, and whether it is one is what that reading
+ * writes on it (ADR-057 decision 9, Excel-tables spec §7.2).
  */
 export const lakeLoadable = (
   version: typeof resourceVersion | ReturnType<typeof versionAlias> = resourceVersion
@@ -137,7 +138,7 @@ export const lakeLoadable = (
     eq(version.state, 'active'),
     or(
       and(
-        inArray(sql`lower(${version.format})`, [...TABLE_SOURCE_FORMATS]),
+        inArray(sql`lower(${version.format})`, [...TABLE_SOURCE_FORMATS, ...WORKBOOK_FORMATS]),
         isNull(version.schema)
       ),
       sql`jsonb_array_length(${version.schema} -> 'columns') > 0`
@@ -330,7 +331,12 @@ export async function rebuildResourceLake(
           } else if ('fault' in read.value) {
             refused.push({ version: v.version, keyFault: read.value.fault })
           } else {
-            loaded.push({ version: v.version, snapshotId: read.value.snapshotId })
+            loaded.push({
+              version: v.version,
+              snapshotId: read.value.snapshotId,
+              // Read here for the first time: nothing else would record it
+              ...(!v.schema && { schema: read.schema }),
+            })
             headKey = keyColumns
           }
           // What this reading came to, where no earlier one recorded it: the next

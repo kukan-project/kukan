@@ -35,7 +35,7 @@ import {
   keyColumnsOf,
   sharedKeyColumns,
 } from '@kukan/shared'
-import type { KeyFault, NoTableReason } from '@kukan/shared'
+import type { KeyFault, NoTableReason, ResourceSchema } from '@kukan/shared'
 import { PARKED_UNTIL, reserveObject } from '../pipeline/storage-pointer'
 import { stillHeld, touchResourceClaim, type ResourceClaim } from '../pipeline/pipeline-claim'
 
@@ -91,8 +91,12 @@ export interface LakeCatalogCommit {
   from: string | null
   /** The uploaded catalog, or null for a resource left with none */
   to: string | null
-  /** Snapshots to record, by version */
-  snapshots: { version: number; snapshotId: number }[]
+  /**
+   * Snapshots to record, by version, with the schema of a version read for
+   * the first time: a rebuild is what reads one stored before its format was
+   * read as a table, and once loaded nothing else would write it
+   */
+  snapshots: { version: number; snapshotId: number; schema?: ResourceSchema }[]
   /**
    * The catalog was built afresh (a rebuild): every version's snapshot is
    * cleared first, so one not in `snapshots` — the purged one, one that no
@@ -159,10 +163,15 @@ export async function commitLakeCatalog(
           )
         )
     }
-    for (const { version, snapshotId } of commit.snapshots) {
+    for (const { version, snapshotId, schema } of commit.snapshots) {
       await tx
         .update(resourceVersion)
-        .set({ lakeSnapshotId: snapshotId })
+        .set({
+          lakeSnapshotId: snapshotId,
+          ...(schema && {
+            schema: sql`coalesce(${resourceVersion.schema}, ${JSON.stringify(schema)}::jsonb)`,
+          }),
+        })
         .where(
           and(
             eq(resourceVersion.resourceId, commit.resourceId),

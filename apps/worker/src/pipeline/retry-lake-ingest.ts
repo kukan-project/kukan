@@ -113,6 +113,11 @@ export async function retryLakeIngest(
         readingProposal: result.readingProposal,
         claim: claims[0] ?? undefined,
       })
+    } else if (!result.reason) {
+      // A workbook whose grid could not be read: left unsettled, as the next
+      // reader may read it, so counted here like any failed read — or the
+      // sweep hands it out every hour for good
+      throw new Error(`Version ${version} of resource ${resourceId} could not be read`)
     }
     return result
   }).catch(async (err: unknown) => {

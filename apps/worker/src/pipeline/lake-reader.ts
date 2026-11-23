@@ -40,6 +40,11 @@ export function lakeVersionReader(
       if (loading || interruptsRun(err)) throw err
       return { table: false, failed: err }
     }
+    // A workbook whose grid could not be read is a failed read, not a version
+    // with no table: the next reader may read it
+    if (outcome.schema === null && !outcome.reason) {
+      return { table: false, failed: new Error('The version could not be read') }
+    }
     // A file interpreted to nothing says why; one too large to interpret at all
     // comes back the same way, as `too-large`
     if (outcome.used === undefined) {

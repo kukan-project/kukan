@@ -268,6 +268,26 @@ describe('retryLakeIngest', () => {
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
   })
 
+  it('counts a workbook whose grid could not be read against the version', async () => {
+    // Left unsettled, it would be handed out by the hourly sweep for good
+    pending.source = { storageKey: VERSION_KEY, format: 'XLSX' }
+    vi.mocked(withInterpretedVersion).mockResolvedValueOnce({ schema: null })
+
+    await expect(retryLakeIngest(job, deps)).resolves.toBeUndefined()
+
+    expect(deps.ctx.recordVersionSchema).not.toHaveBeenCalled()
+    expect(recordLakeIngestFailure).toHaveBeenCalledWith(deps.db, job)
+  })
+
+  it('records nothing and counts nothing for a version too large to interpret', async () => {
+    vi.mocked(withInterpretedVersion).mockResolvedValueOnce({ schema: null, reason: 'too-large' })
+
+    await retryLakeIngest(job, deps)
+
+    expect(deps.ctx.recordVersionSchema).not.toHaveBeenCalled()
+    expect(recordLakeIngestFailure).not.toHaveBeenCalled()
+  })
+
   it('counts a throw against the version, lets the message go, and asks after the catalog', async () => {
     // Why: see the catch in retryLakeIngest.
     const error = new Error('catalog unreachable')

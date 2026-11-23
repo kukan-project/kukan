@@ -327,6 +327,30 @@ describe('rebuildResourceLake', () => {
     expect(handed.get(3)).toEqual({ rowCount: 2, columns: [] })
   })
 
+  it('records the schema of a version it read for the first time, and keeps one recorded', async () => {
+    const { store, storage } = bucket()
+    const files = new Map([
+      [1, await parquet('v1', `(1, 'a')`)],
+      [2, await parquet('v2', `(1, 'b')`)],
+    ])
+    const recorded = { rowCount: 9, columns: [] }
+    await addVersion(1, { schema: recorded })
+    // Stored before its format was read as a table: once loaded, nothing else would write it
+    await addVersion(2, { format: 'XLSX' })
+
+    await rebuildResourceLake(db, { lake, store, storage, readVersion: reader(files) }, resourceId)
+
+    const rows = await db
+      .select({ version: resourceVersion.version, schema: resourceVersion.schema })
+      .from(resourceVersion)
+      .where(eq(resourceVersion.resourceId, resourceId))
+      .orderBy(resourceVersion.version)
+    expect(rows).toEqual([
+      { version: 1, schema: recorded },
+      { version: 2, schema: { rowCount: 1, columns: [] } },
+    ])
+  })
+
   it('records a version that no longer loads, and goes on without it', async () => {
     const { store, storage } = bucket()
     const files = new Map<number, string>([
