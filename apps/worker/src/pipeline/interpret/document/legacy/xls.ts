@@ -20,9 +20,14 @@ const RSTRING = 0x00d6
 const NUMBER = 0x0203
 const RK = 0x027e
 const MULRK = 0x00bd
+const BLANK = 0x0201
+const MULBLANK = 0x00be
 const FORMULA = 0x0006
 const STRING = 0x0207
 const BOOLERR = 0x0205
+
+/** What a formula's definition is spread over: these may stand between it and its STRING. */
+const FORMULA_PARTS = new Set([0x04bc, 0x0221, 0x0236]) // SHRFMLA, ARRAY, TABLE
 
 /**
  * Bytes of the stream for each CONTINUE record a walk of it holds, on average:
@@ -74,22 +79,67 @@ export interface XlsSheet {
   rows: Iterable<XlsRow>
 }
 
-interface BiffRecord {
+export interface BiffRecord {
   type: number
   data: Buffer
   /** The data of the CONTINUE records after it, which a long string runs on into. */
   continues: Buffer[]
 }
 
+/** A worksheet the globals list, before its records are read. */
+interface XlsSheetEntry {
+  /** 1-based, in the order of the workbook's tabs, counting the sheets that are not worksheets. */
+  sheet: number
+  name: string
+  /** Not shown as a tab (hidden, or very hidden). */
+  hidden: boolean
+  /** Where its BOF is in the stream. */
+  offset: number
+}
+
+/** A workbook's globals, read: what every sheet's records are read with. */
+export interface XlsWorkbook {
+  stream: Buffer
+  biff8: boolean
+  text: Strings
+  /** The SST's strings, through `cellText`. */
+  shared: string[]
+  /** The worksheets, in tab order; charts, macro sheets and modules left out. */
+  sheets: XlsSheetEntry[]
+  /**
+   * The bytes the sheets' records may take in all, at most twice the stream's:
+   * sheets that all start at one place, or each inside the last, would
+   * otherwise have it walked once for each.
+   */
+  budget: { bytes: number }
+  /** The globals' records, for what a caller reads beyond these. */
+  globals: BiffRecord[]
+}
+
 /**
- * The workbook's worksheets in tab order, each with its rows; throws where it
- * cannot read them. A cell's string is passed through `cellText`, a shared
- * string's once however many cells name it.
+ * A cell as its record gives it, row and column 0-based as the file numbers
+ * them, with the number of its format (XF). A number is the double the file
+ * stores; a boolean the byte it stores. An empty string, or an error Excel does
+ * not write, is a cell with no value, as a `blank` is; `uncached` is a formula
+ * whose string result, in the STRING record after it, never came.
  */
-export function* xlsSheets(
+export type XlsCell = { row: number; col: number; xf: number } & (
+  | { kind: 'text' | 'error'; value: string; formula?: true }
+  | { kind: 'number' | 'boolean'; value: number; formula?: true }
+  | { kind: 'blank' | 'uncached' }
+)
+
+/** A worksheet's cells in the order written, and its other records among them. */
+export type XlsSheetEvent = XlsCell | { kind: 'record'; record: BiffRecord }
+
+/**
+ * Read a workbook's globals; throws where it cannot. A cell's string is passed
+ * through `cellText`, a shared string's once however many cells name it.
+ */
+export function readXlsWorkbook(
   bytes: Buffer,
   cellText: (text: string) => string = (text) => text
-): Generator<XlsSheet> {
+): XlsWorkbook {
   const file = readCompoundFile(bytes)
   const stream = file.stream('Workbook') ?? file.stream('Book')
   if (!stream) throw new Error('XLS has no workbook stream')
@@ -106,31 +156,59 @@ export function* xlsSheets(
 
   let codePage = 1252
   let shared: string[] = []
-  const sheets: { offset: number; name: Buffer }[] = []
+  const bound: { offset: number; state: number; name: Buffer }[] = []
+  const walked: BiffRecord[] = []
   for (const record of globals) {
     if (record.type === EOF) break
+    walked.push(record)
     if (record.type === FILEPASS) throw new Error('XLS is encrypted')
     if (record.type === CODEPAGE) codePage = record.data.readUInt16LE(0)
     else if (record.type === BOUNDSHEET) {
-      sheets.push({ offset: record.data.readUInt32LE(0), name: record.data.subarray(6) })
+      bound.push({
+        offset: record.data.readUInt32LE(0),
+        state: record.data[4] & 0x03,
+        name: record.data.subarray(6),
+      })
     } else if (record.type === SST && biff8) shared = sharedStrings(record).map(cellText)
   }
   const text = new Strings(biff8, decoderFor(codePage), cellText)
 
-  // The bytes the sheets' records take in all, at most twice the stream's: sheets
-  // that all start at one place, or each inside the last, would otherwise have it
-  // walked once for each
-  const budget = { bytes: stream.length * 2 }
   const seen = new Set<number>()
-  for (const [index, sheet] of sheets.entries()) {
+  const sheets: XlsSheetEntry[] = []
+  for (const [index, sheet] of bound.entries()) {
     // A chart, a macro sheet or a module is told apart by its own BOF, and has no rows
     if (seen.has(sheet.offset) || !isWorksheet(stream, sheet.offset)) continue
     seen.add(sheet.offset)
-    yield {
+    sheets.push({
       sheet: index + 1,
       name: text.short(sheet.name),
-      rows: sheetRows(stream, sheet.offset, text, shared, budget),
-    }
+      hidden: sheet.state !== 0,
+      offset: sheet.offset,
+    })
+  }
+  return {
+    stream,
+    biff8,
+    text,
+    shared,
+    sheets,
+    budget: { bytes: stream.length * 2 },
+    globals: walked,
+  }
+}
+
+/**
+ * The workbook's worksheets in tab order, each with its rows; throws where it
+ * cannot read them. A cell's string is passed through `cellText`, a shared
+ * string's once however many cells name it.
+ */
+export function* xlsSheets(
+  bytes: Buffer,
+  cellText: (text: string) => string = (text) => text
+): Generator<XlsSheet> {
+  const book = readXlsWorkbook(bytes, cellText)
+  for (const sheet of book.sheets) {
+    yield { sheet: sheet.sheet, name: sheet.name, rows: sheetRows(book, sheet.offset) }
   }
 }
 
@@ -147,35 +225,151 @@ function isWorksheet(stream: Buffer, offset: number): boolean {
  * cells come: a writer puts a row's cells together, a block of rows in order.
  * A cell of a row already given, from one that did not, comes as a row of its own.
  */
-function* sheetRows(
-  stream: Buffer,
-  offset: number,
-  text: Strings,
-  shared: string[],
-  budget: { bytes: number }
-): Generator<XlsRow> {
+function* sheetRows(book: XlsWorkbook, offset: number): Generator<XlsRow> {
   let row = -1
   let cells = new Map<number, string>()
-  const ready: XlsRow[] = []
-  const flush = () => {
-    if (cells.size > 0) {
-      const values = [...cells.entries()].sort(([a], [b]) => a - b).map(([, value]) => value)
-      ready.push({ row: row + 1, cells: values })
-    }
+  const close = (): XlsRow | undefined => {
+    if (cells.size === 0) return undefined
+    const values = [...cells.entries()].sort(([a], [b]) => a - b).map(([, value]) => value)
     cells = new Map()
+    return { row: row + 1, cells: values }
   }
-  const put = (data: Buffer, value: string, col = data.readUInt16LE(2)) => {
-    if (!value) return
-    const at = data.readUInt16LE(0)
-    if (at !== row) {
-      flush()
-      row = at
+  for (const cell of sheetCells(book, offset)) {
+    if (cell.kind === 'record') continue
+    const value = cellString(cell)
+    if (!value) continue
+    if (cell.row !== row) {
+      const closed = close()
+      if (closed) yield closed
+      row = cell.row
     }
-    cells.set(col, value)
+    cells.set(cell.col, value)
   }
+  const last = close()
+  if (last) yield last
+}
+
+/** A cell's value as the document text writes it; a boolean as its `1` or `0`. */
+function cellString(cell: XlsCell): string | undefined {
+  switch (cell.kind) {
+    case 'text':
+    case 'error':
+      return cell.value
+    case 'number':
+    case 'boolean':
+      return String(cell.value)
+    default:
+      return undefined
+  }
+}
+
+/**
+ * The cells of the worksheet whose BOF is at `offset` in the order its records
+ * write them, a MULRK's or MULBLANK's one by one, and the sheet's other records
+ * between them.
+ */
+export function* sheetCells(book: XlsWorkbook, offset: number): Generator<XlsSheetEvent> {
+  /** A formula whose string result is in the STRING record after it. */
+  let pending: { row: number; col: number; xf: number } | undefined
+  for (const record of sheetRecords(book.stream, offset, book.budget)) {
+    const { type, data } = record
+    if (pending && type !== STRING && !FORMULA_PARTS.has(type)) {
+      yield { ...pending, kind: 'uncached' }
+      pending = undefined
+    }
+    // A cell record's row, column and format; read only by the cases that are one
+    const row = () => data.readUInt16LE(0)
+    const col = () => data.readUInt16LE(2)
+    const xf = () => data.readUInt16LE(4)
+    switch (type) {
+      case LABELSST:
+        yield {
+          row: row(),
+          col: col(),
+          xf: xf(),
+          kind: 'text',
+          value: book.shared[data.readUInt32LE(6)] ?? '',
+        }
+        break
+      case LABEL:
+      case RSTRING:
+        yield { row: row(), col: col(), xf: xf(), kind: 'text', value: book.text.long(record, 6) }
+        break
+      case NUMBER:
+        yield { row: row(), col: col(), xf: xf(), kind: 'number', value: data.readDoubleLE(6) }
+        break
+      case RK:
+        yield {
+          row: row(),
+          col: col(),
+          xf: xf(),
+          kind: 'number',
+          value: rkValue(data.readUInt32LE(6)),
+        }
+        break
+      case MULRK: {
+        const count = Math.floor((data.length - 6) / 6)
+        for (let i = 0; i < count; i++) {
+          yield {
+            row: row(),
+            col: col() + i,
+            xf: data.readUInt16LE(4 + i * 6),
+            kind: 'number',
+            value: rkValue(data.readUInt32LE(6 + i * 6)),
+          }
+        }
+        break
+      }
+      case BLANK:
+        yield { row: row(), col: col(), xf: xf(), kind: 'blank' }
+        break
+      case MULBLANK: {
+        const count = Math.floor((data.length - 6) / 2)
+        for (let i = 0; i < count; i++) {
+          yield { row: row(), col: col() + i, xf: data.readUInt16LE(4 + i * 2), kind: 'blank' }
+        }
+        break
+      }
+      case BOOLERR:
+        yield data[7]
+          ? { row: row(), col: col(), xf: xf(), kind: 'error', value: ERRORS[data[6]] ?? '' }
+          : { row: row(), col: col(), xf: xf(), kind: 'boolean', value: data[6] }
+        break
+      case FORMULA: {
+        const at = { row: row(), col: col(), xf: xf() }
+        if (data.readUInt16LE(12) !== 0xffff) {
+          yield { ...at, kind: 'number', value: data.readDoubleLE(6), formula: true }
+        } else if (data[6] === 0) pending = at
+        else if (data[6] === 1) yield { ...at, kind: 'boolean', value: data[8], formula: true }
+        else if (data[6] === 2) {
+          yield { ...at, kind: 'error', value: ERRORS[data[8]] ?? '', formula: true }
+        } else yield { ...at, kind: 'text', value: '', formula: true } // An empty string
+        break
+      }
+      case STRING:
+        if (pending) {
+          yield { ...pending, kind: 'text', value: book.text.long(record, 0), formula: true }
+          pending = undefined
+        }
+        break
+      default:
+        yield { kind: 'record', record }
+    }
+  }
+  if (pending) yield { ...pending, kind: 'uncached' }
+}
+
+/**
+ * The records of the worksheet whose BOF is at `offset`, to its EOF, counted
+ * against `budget`: not its BOF and EOF, nor those of a chart drawn on it,
+ * which is a substream of its own and whose records are not the sheet's.
+ */
+function* sheetRecords(
+  stream: Buffer,
+  offset: number,
+  budget: { bytes: number }
+): Generator<BiffRecord> {
   let depth = 0
-  /** The cell a formula's string result, in the STRING record after it, is for. */
-  let pending: Buffer | undefined
   for (const record of records(stream, offset)) {
     // Its CONTINUEs too, which a sheet inside another would have read again
     budget.bytes -= record.continues.reduce(
@@ -183,42 +377,16 @@ function* sheetRows(
       4 + record.data.length
     )
     if (budget.bytes < 0) throw new Error('XLS walks its sheets over and over')
-    yield* ready.splice(0)
-    const { type, data } = record
-    if (type === BOF) {
+    if (record.type === BOF) {
       depth++
       continue
     }
-    if (type === EOF) {
-      if (--depth === 0) break
+    if (record.type === EOF) {
+      if (--depth === 0) return
       continue
     }
-    // A chart drawn on the sheet is a substream of its own, and its records are not cells
-    if (depth > 1) continue
-    if (type === LABELSST) put(data, shared[data.readUInt32LE(6)] ?? '')
-    else if (type === LABEL || type === RSTRING) put(data, text.long(record, 6))
-    else if (type === NUMBER) put(data, String(data.readDoubleLE(6)))
-    else if (type === RK) put(data, String(rkValue(data.readUInt32LE(6))))
-    else if (type === MULRK) {
-      const first = data.readUInt16LE(2)
-      const count = Math.floor((data.length - 6) / 6)
-      for (let i = 0; i < count; i++)
-        put(data, String(rkValue(data.readUInt32LE(6 + i * 6))), first + i)
-    } else if (type === BOOLERR) {
-      put(data, data[7] ? (ERRORS[data[6]] ?? '') : String(data[6]))
-    } else if (type === FORMULA) {
-      pending = undefined
-      if (data.readUInt16LE(12) !== 0xffff) put(data, String(data.readDoubleLE(6)))
-      else if (data[6] === 0) pending = data
-      else if (data[6] === 1) put(data, String(data[8]))
-      else if (data[6] === 2) put(data, ERRORS[data[8]] ?? '')
-    } else if (type === STRING && pending) {
-      put(pending, text.long(record, 0))
-      pending = undefined
-    }
+    if (depth === 1) yield record
   }
-  flush()
-  yield* ready
 }
 
 /** The records from `offset`, each with the CONTINUE records that follow it. */
@@ -262,7 +430,7 @@ function sharedStrings(record: BiffRecord): string[] {
 }
 
 /** A cell's or a sheet name's string, as BIFF8 (UTF-16, or bytes of it) or BIFF5 (the code page) writes it. */
-class Strings {
+export class Strings {
   constructor(
     private readonly biff8: boolean,
     private readonly decoder: TextDecoder,

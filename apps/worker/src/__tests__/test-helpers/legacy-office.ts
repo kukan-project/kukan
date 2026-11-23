@@ -217,8 +217,9 @@ export const cell = {
   /** A BIFF5 label: its bytes as given, in the workbook's code page. */
   label5: (row: number, col: number, bytes: Buffer) =>
     biff(0x0204, Buffer.concat([u16(row, col, 0, bytes.length), bytes])),
-  number: (row: number, col: number, value: number) =>
-    biff(0x0203, Buffer.concat([u16(row, col, 0), f64(value)])),
+  /** Its format (XF) by number; 0 where a test gives none. */
+  number: (row: number, col: number, value: number, xf = 0) =>
+    biff(0x0203, Buffer.concat([u16(row, col, xf), f64(value)])),
   rk: (row: number, col: number, rk: number) =>
     biff(0x027e, Buffer.concat([u16(row, col, 0), u32(rk)])),
   mulrk: (row: number, col: number, rks: number[]) =>
@@ -232,6 +233,10 @@ export const cell = {
     ),
   boolerr: (row: number, col: number, value: number, error: boolean) =>
     biff(0x0205, Buffer.concat([u16(row, col, 0), Buffer.from([value, error ? 1 : 0])])),
+  /** An empty cell with a format, as a border is drawn on. */
+  blank: (row: number, col: number, xf: number) => biff(0x0201, u16(row, col, xf)),
+  mulblank: (row: number, col: number, xfs: number[]) =>
+    biff(0x00be, u16(row, col, ...xfs, col + xfs.length - 1)),
   /** A formula's cached result, and the STRING record a string result is in. */
   formula: (row: number, col: number, result: number | string | boolean | { error: number }) => {
     let value: Buffer
@@ -245,6 +250,65 @@ export const cell = {
     return typeof result === 'string'
       ? Buffer.concat([record, biff(0x0207, xlString(result))])
       : record
+  },
+}
+
+/** The records of a sheet's layout and of the globals that a grid of cells reads. */
+export const layoutRecord = {
+  /** A BIFF8 XF: its number format, and its line styles (left, right, top, bottom; 0 none). */
+  xf: (format: number, lines: [number, number, number, number] = [0, 0, 0, 0]) => {
+    const data = Buffer.alloc(20)
+    data.writeUInt16LE(format, 2)
+    data.writeUInt16LE(lines[0] | (lines[1] << 4) | (lines[2] << 8) | (lines[3] << 12), 10)
+    return biff(0x00e0, data)
+  },
+  format: (id: number, code: string) => biff(0x041e, Buffer.concat([u16(id), xlString(code)])),
+  datemode1904: () => biff(0x0022, u16(1)),
+  /** A row, 0-based; `xf` gives it a default format. */
+  row: (row: number, hidden: boolean, xf?: number) => {
+    const data = Buffer.alloc(16)
+    data.writeUInt16LE(row, 0)
+    data.writeUInt16LE((hidden ? 0x0020 : 0) | (xf !== undefined ? 0x0080 : 0), 12)
+    data.writeUInt16LE(xf ?? 0x0f, 14)
+    return biff(0x0208, data)
+  },
+  /** Columns, 0-based, and their default format. */
+  colinfo: (first: number, last: number, hidden: boolean, xf = 0) =>
+    biff(0x007d, u16(first, last, 0, xf, hidden ? 1 : 0, 0)),
+  /** The used range, 0-based and inclusive; BIFF5's rows are 16-bit. */
+  dimensions: (top: number, bottom: number, left: number, right: number, biff5 = false) =>
+    biff(
+      0x0200,
+      biff5
+        ? u16(top, bottom + 1, left, right + 1, 0)
+        : Buffer.concat([u32(top), u32(bottom + 1), u16(left, right + 1, 0)])
+    ),
+  /** Ranges as [first row, last row, first column, last column], 0-based. */
+  mergedcells: (ranges: [number, number, number, number][]) =>
+    biff(0x00e5, Buffer.concat([u16(ranges.length), ...ranges.map((r) => u16(...r))])),
+  window2: (frozen: boolean) => biff(0x023e, u16(frozen ? 0x0008 : 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+  pane: (columns: number, rows: number) => biff(0x0041, u16(columns, rows, rows, columns, 0)),
+  /** A built-in Print_Titles name for the 1-based tab: rows and columns are 0-based spans. */
+  printTitles: (tab: number, spans: { rows?: [number, number]; columns?: [number, number] }) => {
+    const area = (rows: [number, number], cols: [number, number]) =>
+      Buffer.concat([Buffer.from([0x3b]), u16(0, ...rows, ...cols)])
+    const areas = [
+      ...(spans.columns ? [area([0, 0xffff], spans.columns)] : []),
+      ...(spans.rows ? [area(spans.rows, [0, 0xff])] : []),
+    ]
+    const union = areas.length > 1 ? Buffer.from([0x10]) : Buffer.alloc(0)
+    const inner = Buffer.concat([...areas, union])
+    const formula = Buffer.concat([Buffer.from([0x29]), u16(inner.length), inner])
+    return biff(
+      0x0018,
+      Buffer.concat([
+        u16(0x0020),
+        Buffer.from([0, 1]),
+        u16(formula.length, 0, tab),
+        Buffer.from([0, 0, 0, 0, 0, 0x07]),
+        formula,
+      ])
+    )
   },
 }
 
@@ -273,6 +337,7 @@ export const EOF_RECORD = biff(0x000a, Buffer.alloc(0))
 interface XlsSheetSpec {
   /** In BIFF5, the code page's bytes. */
   name: string | Buffer
+  hidden?: boolean
   /** The sheet's cell records, in the order written; a chart sheet when undefined. */
   cells?: Buffer[]
 }
@@ -297,7 +362,10 @@ export function xlsBuffer(opts: {
       typeof sheet.name === 'string'
         ? Buffer.concat([Buffer.from([sheet.name.length]), biff8Chars(sheet.name)])
         : Buffer.concat([Buffer.from([sheet.name.length]), sheet.name])
-    return biff(0x0085, Buffer.concat([u32(offset), Buffer.from([0, sheet.cells ? 0 : 2]), name]))
+    return biff(
+      0x0085,
+      Buffer.concat([u32(offset), Buffer.from([sheet.hidden ? 1 : 0, sheet.cells ? 0 : 2]), name])
+    )
   }
   const head = Buffer.concat([bof(0x0005, version), ...(opts.globals ?? [])])
   const tail = Buffer.concat([opts.sst ?? Buffer.alloc(0), EOF_RECORD])

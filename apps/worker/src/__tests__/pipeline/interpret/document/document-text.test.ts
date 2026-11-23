@@ -1535,6 +1535,24 @@ describe('XLS', () => {
     expect(await lines(path, 'xls')).toEqual(['42\t合計\t1\t#DIV/0!\n0\t#N/A'])
   })
 
+  it("finds a formula's string result past the shared formula it is defined by", async () => {
+    const shared = cell.formula(0, 0, '共有')
+    // The FORMULA record, then its SHRFMLA, then the STRING record (4 + 3 + 4 bytes)
+    const formula = shared.subarray(0, shared.length - 11)
+    const path = await file(
+      'shared-formula.xls',
+      xlsBuffer({
+        sheets: [
+          {
+            name: 's',
+            cells: [formula, biff(0x04bc, Buffer.alloc(10)), shared.subarray(formula.length)],
+          },
+        ],
+      })
+    )
+    expect(await lines(path, 'xls')).toEqual(['共有'])
+  })
+
   it('reads a shared string that runs on into a CONTINUE, its width changing there, and leaves its phonetic reading out', async () => {
     // 東京都 starts in the SST as UTF-16, its last character in a CONTINUE that
     // starts with a flags byte of its own; the next string has a reading after it

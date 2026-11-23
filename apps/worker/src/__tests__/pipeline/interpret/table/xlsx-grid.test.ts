@@ -2,16 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  dateKindOf,
-  parseRange,
-  printTitleSpans,
-  serialToIso,
-  xlsxGrid,
-  type GridRow,
-  type GridSheet,
-  type SheetLayout,
-} from '@/pipeline/interpret/table/xlsx-grid'
+import { dateKindOf, serialToIso } from '@/pipeline/interpret/table/grid'
+import { parseRange, printTitleSpans, xlsxGrid } from '@/pipeline/interpret/table/xlsx-grid'
+import { collectGrid, type ReadSheet } from '../../../test-helpers/grid'
 import { xlsxBuffer } from '../../../test-helpers/xlsx'
 
 const NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
@@ -24,18 +17,10 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-type Read = Omit<GridSheet, 'rows' | 'layout'> & { rows: GridRow[]; layout: SheetLayout }
-
-async function read(opts: Parameters<typeof xlsxBuffer>[0]): Promise<Read[]> {
+async function read(opts: Parameters<typeof xlsxBuffer>[0]): Promise<ReadSheet[]> {
   const path = join(dir, 'book.xlsx')
   await writeFile(path, await xlsxBuffer(opts))
-  const sheets: Read[] = []
-  for await (const { rows: stream, layout, ...sheet } of xlsxGrid(path)) {
-    const rows: GridRow[] = []
-    for await (const row of stream) rows.push(row)
-    sheets.push({ ...sheet, rows, layout: layout() })
-  }
-  return sheets
+  return collectGrid(xlsxGrid(path))
 }
 
 function sheetXml(body: string, before = '', after = ''): string {
@@ -278,6 +263,105 @@ describe('borders', () => {
       parts: { 'xl/styles.xml': styles },
     })
     expect(sheet!.rows[0]!.borders).toEqual([{ col: 2, left: 'hair', right: 'thin' }])
+  })
+
+  describe('of cells written nothing for', () => {
+    const box = { top: 'medium', left: 'thin', bottom: 'double', right: 'thin' }
+    const sides = { left: 'hair', right: 'thin' }
+
+    it('draws the row’s default, else the column’s, inside the used range', async () => {
+      const [sheet] = await read({
+        sheets: {},
+        raw: {
+          1: sheetXml(
+            '<row r="1"><c r="A1"><v>1</v></c></row>' +
+              // A cell of its own keeps its own style, though it draws nothing
+              '<row r="2" s="1" customFormat="1"><c r="A2"><v>2</v></c></row>' +
+              // A style not marked as the row's format is not its default
+              '<row r="3" s="1"><c r="A3"><v>3</v></c></row>' +
+              '<row r="4" s="1" customFormat="1"/>',
+            // Columns D and E are past the used range: no line there
+            '<dimension ref="A1:C5"/><cols><col min="2" max="2" style="2"/><col min="4" max="5" style="1"/></cols>'
+          ),
+        },
+        parts: { 'xl/styles.xml': styles },
+      })
+      expect(sheet!.rows).toEqual([
+        {
+          row: 1,
+          cells: [{ col: 1, kind: 'number', value: '1' }],
+          borders: [{ col: 2, ...sides }],
+        },
+        {
+          row: 2,
+          cells: [{ col: 1, kind: 'number', value: '2' }],
+          // The row's default over the column's
+          borders: [
+            { col: 2, ...box },
+            { col: 3, ...box },
+          ],
+        },
+        {
+          row: 3,
+          cells: [{ col: 1, kind: 'number', value: '3' }],
+          borders: [{ col: 2, ...sides }],
+        },
+        // A row of no cells, by its own default
+        {
+          row: 4,
+          cells: [],
+          borders: [
+            { col: 1, ...box },
+            { col: 2, ...box },
+            { col: 3, ...box },
+          ],
+        },
+        // A row the file has nothing of, by its column's default
+        { row: 5, cells: [], borders: [{ col: 2, ...sides }] },
+      ])
+    })
+
+    it('fills the rows the file leaves out between and after its rows', async () => {
+      const [sheet] = await read({
+        sheets: {},
+        raw: {
+          1: sheetXml(
+            '<row r="2"><c r="A2"><v>1</v></c></row><row r="5"><c r="A5"><v>2</v></c></row>',
+            '<dimension ref="A2:B7"/><cols><col min="1" max="16384" style="2"/></cols>'
+          ),
+        },
+        parts: { 'xl/styles.xml': styles },
+      })
+      expect(sheet!.rows.map((r) => [r.row, r.borders?.map((b) => b.col)])).toEqual([
+        [2, [2]],
+        [3, [1, 2]],
+        [4, [1, 2]],
+        [5, [2]],
+        [6, [1, 2]],
+        [7, [1, 2]],
+      ])
+    })
+
+    it('keeps to the cells written where no used range is given', async () => {
+      const [sheet] = await read({
+        sheets: {},
+        raw: {
+          1: sheetXml(
+            '<row r="1"><c r="A1"><v>1</v></c><c r="C1"><v>2</v></c></row>' +
+              '<row r="2" s="1" customFormat="1"/>' +
+              '<row r="3"><c r="B3"><v>3</v></c></row>' +
+              '<row r="6" s="1" customFormat="1"/>',
+            '<cols><col min="1" max="10" style="2"/></cols>'
+          ),
+        },
+        parts: { 'xl/styles.xml': styles },
+      })
+      expect(sheet!.rows.map((r) => [r.row, r.borders?.map((b) => b.col)])).toEqual([
+        [1, [2]],
+        [2, [1, 2, 3]],
+        [3, [1, 3]],
+      ])
+    })
   })
 })
 
