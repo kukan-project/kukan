@@ -94,7 +94,7 @@ const REJECT_BATCH = 500
 function readOptions(
   path: string,
   head: Head,
-  asText: string[],
+  asText: readonly string[],
   lenient: boolean,
   storeRejects = true
 ): string {
@@ -102,51 +102,67 @@ function readOptions(
   if (storeRejects) parts.push('store_rejects = true')
   if (lenient) parts.push('strict_mode = false')
   if (head.skip > 0) parts.push(`skip = ${head.skip}`)
-  if (head.header) parts.push('header = true')
+  // A file this process wrote: its dialect is known, and a sniffer left to it
+  // can take a `'` or a `;` in the values for the quote or the delimiter
+  if (head.given) parts.push(`header = true, delim = ',', quote = '"', escape = '"'`)
   if (asText.length > 0) {
     parts.push(`types = {${asText.map((c) => `${sqlLiteral(c)}: 'VARCHAR'`).join(', ')}}`)
   }
   return parts.join(', ')
 }
 
-/** Where the table starts: lines to skip, and whether the first line after them is known to be the header. */
+/**
+ * Where the table starts: lines to skip, and whether the file is one whose
+ * structure is given, its first line the header and its dialect plain CSV.
+ */
 interface Head {
   skip: number
-  header?: true
+  given?: true
 }
 
 /**
  * How much of the table's structure is the reader's to find. `inferred`: the
- * header and the trailing notes, as a published CSV needs. `given`: whoever
- * wrote the file already decided where the table is (an Excel range, ADR-057
- * §決定 6), so the first line is the header and every line after it is a row —
- * a sparse last row such as a total is not taken for a note.
+ * header and the trailing notes, as a published CSV needs, below `skipRows`
+ * leading rows from the caller's title-row scan (DuckDB finds the header but
+ * has no notion of the title lines Japanese spreadsheets put above it).
+ * `given`: whoever wrote the file already decided where the table is (an
+ * Excel range, ADR-057 §決定 6), so the first line is the header and every
+ * line after it is a row — a sparse last row such as a total is not taken
+ * for a note.
  */
-export type CsvStructure = 'inferred' | 'given'
+export type CsvStructure =
+  | { inferred: { skipRows: number } }
+  | {
+      given: {
+        /**
+         * Columns, by their name in the header, to read as text whatever
+         * their values look like: those whose cells a workbook stored as
+         * strings (`00123`), which the CSV no longer tells apart
+         * (Excel-tables spec §6.3). A settled type still wins, as it is cast
+         * from text.
+         */
+        textColumns: readonly string[]
+      }
+    }
 
-/**
- * Interpret `csvPath` (UTF-8) and write its Parquet preview to `parquetPath`.
- *
- * @param skipRows - leading rows to drop before the header, from the caller's
- *   title-row scan. DuckDB finds the header but has no notion of the title
- *   lines Japanese spreadsheets put above it.
- * @param profileRequest - the profile to write too (ADR-063), when the caller
- *   publishes one; a lake retry wants the table alone.
- * @param structure - `given` when the file is a table already cut out of a
- *   larger sheet; `skipRows` is then 0.
- */
+export interface CsvOptions {
+  /** Omitted: inferred, with no rows skipped. */
+  structure?: CsvStructure
+  /** The profile to write too (ADR-063), when the caller publishes one; a lake retry wants the table alone. */
+  profile?: ProfileRequest
+  /** The settled types to read onto the table (Versioning ii-c §8.3). */
+  reading?: SettledReading
+}
+
+/** Interpret `csvPath` (UTF-8) and write its Parquet preview to `parquetPath`. */
 export async function interpretCsv(
   csvPath: string,
   parquetPath: string,
-  skipRows: number,
-  profileRequest?: ProfileRequest,
-  reading?: SettledReading,
-  structure: CsvStructure = 'inferred'
+  { structure = { inferred: { skipRows: 0 } }, profile: profileRequest, reading }: CsvOptions = {}
 ): Promise<InterpretedTableFile> {
-  if (structure === 'given' && skipRows > 0) {
-    throw new Error('A CSV of a given structure has no rows to skip')
-  }
-  const head: Head = structure === 'given' ? { skip: 0, header: true } : { skip: skipRows }
+  const given = 'given' in structure
+  const head: Head = given ? { skip: 0, given: true } : { skip: structure.inferred.skipRows }
+  const textColumns = given ? structure.given.textColumns : []
   // Somewhere of its own to spill, because the load below is meant to: a
   // spill file shared with the lake instance this process also holds fails
   // both (see `useOwnTempDirectory`).
@@ -165,7 +181,7 @@ export async function interpretCsv(
     // Described from the table, never from the `read_csv` call: with
     // `sample_size = -1` a DESCRIBE over the reader re-sniffs the whole file,
     // which on 27MB cost as much again as the load itself.
-    const lenient = await load(conn, csvPath, head)
+    const lenient = await load(conn, csvPath, head, textColumns)
     let columns = await describe(conn)
 
     // Settled columns are read as text, and cast once the table is settled
@@ -177,14 +193,16 @@ export async function interpretCsv(
       settledRead.map((c) => [withoutMark(c.name), semanticType(c.duckType)] as const)
     )
 
-    // Columns the sniffed type does not hold, read again as text
+    // Columns the sniffed type does not hold, read again as text, beside those
+    // the first read already took as text
     const asText = new Set([
+      ...textColumns,
       ...(await oversizeIntegerColumns(conn, columns)),
       ...(await castRefusedColumns(conn, columns)),
       ...(await signOnlyColumns(conn, csvPath, head, lenient, columns)),
       ...settledRead.map((c) => c.name),
     ])
-    if (asText.size > 0) {
+    if (asText.size > textColumns.length) {
       // The first read's refusals are what this read is for; what counts from
       // here is what this one refuses.
       await conn.run('DELETE FROM reject_errors')
@@ -201,10 +219,9 @@ export async function interpretCsv(
     // it refused, and whether all of them read as sign-offs.
     const dropped = await rejectedLines(conn, columns)
     // A given structure has no notes to find: a refused line is a broken row
-    const settled =
-      structure === 'given'
-        ? dropped.count === 0 && { total: await countRows(conn), footer: 0, brokenRow: false }
-        : dropped.notes && (await settleSignOffs(conn, columns, dropped.notes))
+    const settled = given
+      ? dropped.count === 0 && { total: await countRows(conn), footer: 0, brokenRow: false }
+      : dropped.notes && (await settleSignOffs(conn, columns, dropped.notes))
     if (!settled || settled.brokenRow) {
       // Refused. Something the reader would not take was not a sign-off either,
       // or was a row the table has more of, and a table quietly short of a row publishes counts that are wrong with
@@ -290,17 +307,22 @@ const SNIFF_FAILED = /Error when sniffing file/
  * dialect is pinned with `auto_detect = false` — measured — but that also
  * pins every column to a declared type, and typing is what the sniff is for.
  */
-async function load(conn: DuckDBConnection, csvPath: string, head: Head): Promise<boolean> {
+async function load(
+  conn: DuckDBConnection,
+  csvPath: string,
+  head: Head,
+  asText: readonly string[]
+): Promise<boolean> {
   try {
     await conn.run(
-      `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, head, [], false)})`
+      `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, head, asText, false)})`
     )
     return false
   } catch (e) {
     if (!(e instanceof Error) || !SNIFF_FAILED.test(e.message)) throw e
   }
   await conn.run(
-    `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, head, [], true)})`
+    `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, head, asText, true)})`
   )
   return true
 }

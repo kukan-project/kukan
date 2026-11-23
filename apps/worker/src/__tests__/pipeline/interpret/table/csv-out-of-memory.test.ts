@@ -35,7 +35,7 @@ describe('interpretCsv — out of memory', () => {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, lines.join('\n'))
 
-    const result = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0)
+    const result = await interpretCsv(csvPath, join(dir, 'out.parquet'))
 
     expect(result.reason).toBe('out-of-memory')
     expect(existsSync(join(dir, 'out.parquet'))).toBe(false)

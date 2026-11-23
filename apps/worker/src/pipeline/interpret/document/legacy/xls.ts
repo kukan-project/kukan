@@ -129,6 +129,9 @@ export type XlsCell = { row: number; col: number; xf: number } & (
   | { kind: 'blank' | 'uncached' }
 )
 
+/** A workbook saved with a password to open it: its cells are ciphertext. */
+export class EncryptedWorkbookError extends Error {}
+
 /** A worksheet's cells in the order written, and its other records among them. */
 export type XlsSheetEvent = XlsCell | { kind: 'record'; record: BiffRecord }
 
@@ -142,7 +145,13 @@ export function readXlsWorkbook(
 ): XlsWorkbook {
   const file = readCompoundFile(bytes)
   const stream = file.stream('Workbook') ?? file.stream('Book')
-  if (!stream) throw new Error('XLS has no workbook stream')
+  if (!stream) {
+    // An encrypted XLSX is a compound file too: the package, encrypted, in a stream of its own
+    if (file.paths().some((path) => path.toLowerCase() === 'encryptedpackage')) {
+      throw new EncryptedWorkbookError('XLSX is encrypted')
+    }
+    throw new Error('XLS has no workbook stream')
+  }
 
   const globals = records(stream, 0)
   const bof = globals.next()
@@ -161,7 +170,7 @@ export function readXlsWorkbook(
   for (const record of globals) {
     if (record.type === EOF) break
     walked.push(record)
-    if (record.type === FILEPASS) throw new Error('XLS is encrypted')
+    if (record.type === FILEPASS) throw new EncryptedWorkbookError('XLS is encrypted')
     if (record.type === CODEPAGE) codePage = record.data.readUInt16LE(0)
     else if (record.type === BOUNDSHEET) {
       bound.push({

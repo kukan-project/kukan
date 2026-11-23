@@ -60,10 +60,11 @@ export async function executeIndexContent(
   if (pkgState !== 'active') return null
 
   // A JSON whose records the interpretation read as a table is indexed as one
-  // (ADR-063 §決定 10); its format alone says text
-  const contentType = interpretResult?.schema?.columns.length
-    ? 'tabular'
-    : contentTypeOf(normalizedFormat)
+  // (ADR-063 §決定 10); its format alone says text. A workbook read as a table
+  // stays a document: its text is indexed as before (ADR-057 §決定 8)
+  const byFormat = contentTypeOf(normalizedFormat)
+  const contentType =
+    interpretResult?.schema?.columns.length && byFormat !== 'document' ? 'tabular' : byFormat
 
   if (!contentType) {
     // Clean up any previously indexed content (e.g. format changed to non-indexable)

@@ -8,6 +8,7 @@ import type { ContentDoc, IndexContentOptions } from '@kukan/search-adapter'
 import type { ObjectMeta } from '@kukan/storage-adapter'
 import type {
   NoTableReason,
+  ReadingProposal,
   OverridableColumnRole,
   PackageDbState,
   ResourceSchema,
@@ -220,6 +221,11 @@ export interface PipelineContext {
     schema: ResourceSchema
     /** Why the schema is empty, when it is. Absent once a table came out. */
     noTableReason?: NoTableReason
+    /**
+     * A workbook that is not a plain table: every reason it missed (Excel-tables
+     * spec §8.3.1). Absent otherwise, which clears one an earlier reading left.
+     */
+    readingProposal?: ReadingProposal
     claim?: ResourceClaim
   }): Promise<void>
   /**

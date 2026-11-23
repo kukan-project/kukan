@@ -22,24 +22,30 @@ import {
 } from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
 import {
+  createLogger,
   contentFormat,
   FORMAT_SIGNATURE_BYTES,
   getPreviewKey,
   isTableSourceFormat,
   isDocumentFormat,
+  isExcelFormat,
   isMarkdownFormat,
   isTextFormat,
   isZipFormat,
 } from '@kukan/shared'
-import type { NoTableReason, ResourceSchema, TableProfile } from '@kukan/shared'
+import type { NoTableReason, ReadingProposal, ResourceSchema, TableProfile } from '@kukan/shared'
 import { withInterpretedVersion } from '../interpret/version'
 import type { SettledReading } from '../interpret/table/settled-types'
 import { runHeavy } from '@/heavy'
+import { interruptsRun } from '@/heavy/process'
 // A type only: the parsers stay in the heavy process
 import type { ExtractedText } from '../interpret/document/document-text'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../run/types'
+import { RunCancelledError } from '../run/step-tracker'
 import { NO_ROW_GROUP_FIGURE } from '@kukan/api/services/pipeline/pipeline-service'
+
+const log = createLogger({ name: 'worker' }).child({ component: 'interpret' })
 
 export interface InterpretResult {
   previewKey: string | null
@@ -53,6 +59,8 @@ export interface InterpretResult {
   rowGroupRows?: number
   /** Why no table came out, when none did. Persisted for the operator. */
   reason?: NoTableReason
+  /** A workbook that is not a plain table: every reason (Excel-tables spec §5.8). */
+  readingProposal?: ReadingProposal
   /** The table profile (ADR-063), with its artifact uploaded beside the preview. */
   profile?: TableProfile
   /**
@@ -119,7 +127,8 @@ export interface InterpretHooks {
 /**
  * Interpret the version's bytes by their format: a text format's encoding, a
  * CSV/TSV's or JSON's Parquet preview and profile, a ZIP's manifest, a
- * document's text.
+ * document's text, and a workbook's text and, where it is a plain table, its
+ * preview and profile too.
  * Null for a format there is nothing to read from (an image).
  */
 export async function executeInterpret(
@@ -153,24 +162,44 @@ export async function executeInterpret(
     }
   }
 
-  if (isDocumentFormat(format)) {
-    const documentText = await interpretDocument(
-      resourceId,
-      packageId,
-      storageKey,
-      format!,
-      writeToken,
-      ctx
-    )
-    // Markdown is text as well, of a fixed encoding (UTF-8 by convention)
-    return { previewKey: null, ...(isMarkdownFormat(format) && { encoding: 'UTF8' }), documentText }
+  if (!format) return null
+  const fmt = format.toLowerCase()
+
+  if (isDocumentFormat(fmt)) {
+    // One download for both halves of a workbook: its table and its text
+    const document = await downloadDocument(storageKey, fmt, ctx)
+    try {
+      const workbook = isExcelFormat(fmt)
+        ? await interpretWorkbookTable(
+            resourceId,
+            packageId,
+            source,
+            fmt,
+            writeToken,
+            ctx,
+            hooks,
+            document.path
+          )
+        : undefined
+      // An encrypted workbook has no text to read either, and reading it would
+      // fail the step that records why
+      if (workbook?.reason === 'encrypted') return workbook
+      const documentText = await interpretDocument(resourceId, packageId, document, writeToken, ctx)
+      // Markdown is text as well, of a fixed encoding (UTF-8 by convention)
+      return {
+        previewKey: null,
+        ...workbook,
+        ...(isMarkdownFormat(fmt) && { encoding: 'UTF8' }),
+        documentText,
+      }
+    } finally {
+      await cleanupTempFile(document.path)
+    }
   }
 
-  if (!isTextFormat(format)) {
+  if (!isTextFormat(fmt)) {
     return null
   }
-
-  const fmt = format!.toLowerCase()
 
   // XML: only need first 200 bytes for encoding declaration
   if (fmt === 'xml') {
@@ -183,54 +212,71 @@ export async function executeInterpret(
   // Non-table text (TXT/HTML): labelled from a sample, with no table to produce.
   // No reason to record — the sweep never offers a format an interpretation
   // makes no table from, so there is nothing here to take out of it.
-  if (!isTableSourceFormat(format)) {
+  if (!isTableSourceFormat(fmt)) {
     const sample = await readEncodingSample(await ctx.storage.download(storageKey))
     return { previewKey: null, encoding: detectEncoding(fmt, sample) }
   }
 
-  // CSV/TSV and JSON/GeoJSON: publish what the interpretation produced. The
-  // interpretation itself is shared with the lake retry, which wants the table
-  // and nothing else (ADR-046).
+  return interpretTable(resourceId, packageId, source, fmt, writeToken, ctx, hooks)
+}
+
+/**
+ * CSV/TSV, JSON/GeoJSON and workbooks: publish what the interpretation
+ * produced. The interpretation itself is shared with the lake retry, which
+ * wants the table and nothing else (ADR-046).
+ */
+async function interpretTable(
+  resourceId: string,
+  packageId: string,
+  source: InterpretSource,
+  fmt: string,
+  writeToken: string,
+  ctx: PipelineContext,
+  hooks: InterpretHooks,
+  localPath?: string
+): Promise<InterpretResult> {
   const vocabularyPacks = (await ctx.vocabularyPacks?.()) ?? []
   const roleOverrides = (await ctx.roleOverrides?.(resourceId)) ?? undefined
-  const { encoding, schema, used, reason, rowGroupRows } = await withInterpretedVersion(
-    source,
-    fmt,
-    ctx,
-    async (table) => {
-      const previewKey = getPreviewKey(packageId, resourceId, 'parquet', writeToken)
-      // Beside the preview and under the same token, so the two describe one
-      // interpretation and a package purge takes both by prefix.
-      const { path: profilePath, ...profile } = table.profile ?? { columns: [] }
-      const profileKey = profilePath
-        ? getPreviewKey(packageId, resourceId, 'profile.ndjson.zst', writeToken)
-        : undefined
-      await Promise.all([
-        ctx.putObject(previewKey, createReadStream(table.parquetPath), {
-          contentType: 'application/vnd.apache.parquet',
-        }),
-        profileKey &&
-          ctx.putObject(profileKey, createReadStream(profilePath!), {
-            contentType: 'application/zstd',
+  const { encoding, schema, used, reason, rowGroupRows, readingProposal } =
+    await withInterpretedVersion(
+      source,
+      fmt,
+      ctx,
+      async (table) => {
+        const previewKey = getPreviewKey(packageId, resourceId, 'parquet', writeToken)
+        // Beside the preview and under the same token, so the two describe one
+        // interpretation and a package purge takes both by prefix.
+        const { path: profilePath, ...profile } = table.profile ?? { columns: [] }
+        const profileKey = profilePath
+          ? getPreviewKey(packageId, resourceId, 'profile.ndjson.zst', writeToken)
+          : undefined
+        await Promise.all([
+          ctx.putObject(previewKey, createReadStream(table.parquetPath), {
+            contentType: 'application/vnd.apache.parquet',
           }),
-      ])
-      // Dead once uploaded, and the hook below can wait on a catalog-wide lock
-      if (profilePath) await rm(profilePath, { force: true })
+          profileKey &&
+            ctx.putObject(profileKey, createReadStream(profilePath!), {
+              contentType: 'application/zstd',
+            }),
+        ])
+        // Dead once uploaded, and the hook below can wait on a catalog-wide lock
+        if (profilePath) await rm(profilePath, { force: true })
 
-      // Handed over after the upload, so the preview exists whatever the hook
-      // does with it.
-      await hooks.onTable?.(table.parquetPath)
-      return {
-        previewKey,
-        ...(table.profile && { profile: { ...profile, ...(profileKey && { key: profileKey }) } }),
+        // Handed over after the upload, so the preview exists whatever the hook
+        // does with it.
+        await hooks.onTable?.(table.parquetPath)
+        return {
+          previewKey,
+          ...(table.profile && { profile: { ...profile, ...(profileKey && { key: profileKey }) } }),
+        }
+      },
+      hooks.onEncoding,
+      {
+        profile: { vocabularyPacks, ...(roleOverrides && { roleOverrides }) },
+        reading: source.reading,
+        ...(localPath !== undefined && { localPath }),
       }
-    },
-    hooks.onEncoding,
-    {
-      profile: { vocabularyPacks, ...(roleOverrides && { roleOverrides }) },
-      reading: source.reading,
-    }
-  )
+    )
 
   // The schema goes back whether or not there was a table. An empty one is not
   // a missing answer: it records that this version has been interpreted and
@@ -238,15 +284,49 @@ export async function executeInterpret(
   // again for good (ADR-046).
   return {
     previewKey: null,
-    encoding,
+    ...(encoding !== undefined && { encoding }),
     schema: schema ?? undefined,
     reason,
+    ...(readingProposal && { readingProposal }),
     // A preview written says what it was asked, even with no single size to
     // give: left unrecorded, it reads as never asked, and the dashboard asks
     // an operator to confirm it
     rowGroupRows: used ? (rowGroupRows ?? NO_ROW_GROUP_FIGURE) : rowGroupRows,
     ...used,
     ...(used?.profile && { vocabularyPacks }),
+  }
+}
+
+/**
+ * A workbook's table, from the download its text is read from too. Its
+ * failure is not the step's: the text is read whatever came of the table, as
+ * it was before tables were read from workbooks. What ends the run still does.
+ */
+async function interpretWorkbookTable(
+  resourceId: string,
+  packageId: string,
+  source: InterpretSource,
+  fmt: string,
+  writeToken: string,
+  ctx: PipelineContext,
+  hooks: InterpretHooks,
+  localPath: string
+): Promise<InterpretResult | undefined> {
+  try {
+    return await interpretTable(
+      resourceId,
+      packageId,
+      source,
+      fmt,
+      writeToken,
+      ctx,
+      hooks,
+      localPath
+    )
+  } catch (err) {
+    if (err instanceof RunCancelledError || interruptsRun(err)) throw err
+    log.warn({ err, resourceId }, 'A workbook was left a document: reading its table failed')
+    return undefined
   }
 }
 
@@ -262,34 +342,42 @@ export async function executeInterpret(
 async function interpretDocument(
   resourceId: string,
   packageId: string,
-  storageKey: string,
-  format: string,
+  document: { path: string; fmt: string },
   writeToken: string,
   ctx: PipelineContext
 ): Promise<InterpretedDocument> {
-  const declared = format.toLowerCase()
-  let tempPath = await streamToTempFile(await ctx.storage.download(storageKey), declared)
-  const artifactPath = siblingTempPath(tempPath, 'text.ndjson.zst')
+  const artifactPath = siblingTempPath(document.path, 'text.ndjson.zst')
+  // In the heavy process: parsing is where a document's memory goes
+  const { bytes } = await runHeavy(
+    { kind: 'extract-text', documentPath: document.path, format: document.fmt, artifactPath },
+    ctx.keepHeld
+  )
+  const key = getPreviewKey(packageId, resourceId, 'text.ndjson.zst', writeToken)
+  await ctx.putObject(key, createReadStream(artifactPath), {
+    contentType: 'application/zstd',
+  })
+  return { key, bytes }
+}
+
+/**
+ * The version's file on local disk, named as what its bytes are: an XLSX
+ * published as `.xls` is read as XLSX, and named so, as officeparser goes by
+ * the name. The caller removes it (`cleanupTempFile`).
+ */
+async function downloadDocument(
+  storageKey: string,
+  declared: string,
+  ctx: PipelineContext
+): Promise<{ path: string; fmt: string }> {
+  const path = await streamToTempFile(await ctx.storage.download(storageKey), declared)
   try {
-    // Read as what the bytes are: an XLSX published as `.xls` is read as XLSX,
-    // and named so, as officeparser goes by the name
-    const fmt = contentFormat(declared, await readHead(tempPath, FORMAT_SIGNATURE_BYTES))
-    if (fmt !== declared) {
-      const renamed = siblingTempPath(tempPath, `data.${fmt}`)
-      await rename(tempPath, renamed)
-      tempPath = renamed
-    }
-    // In the heavy process: parsing is where a document's memory goes
-    const { bytes } = await runHeavy(
-      { kind: 'extract-text', documentPath: tempPath, format: fmt, artifactPath },
-      ctx.keepHeld
-    )
-    const key = getPreviewKey(packageId, resourceId, 'text.ndjson.zst', writeToken)
-    await ctx.putObject(key, createReadStream(artifactPath), {
-      contentType: 'application/zstd',
-    })
-    return { key, bytes }
-  } finally {
-    await cleanupTempFile(tempPath)
+    const fmt = contentFormat(declared, await readHead(path, FORMAT_SIGNATURE_BYTES))
+    if (fmt === declared) return { path, fmt }
+    const renamed = siblingTempPath(path, `data.${fmt}`)
+    await rename(path, renamed)
+    return { path: renamed, fmt }
+  } catch (err) {
+    await cleanupTempFile(path)
+    throw err
   }
 }

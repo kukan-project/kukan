@@ -46,10 +46,12 @@ async function versionExists(opts: { format?: string; snapshot?: number | null }
     hash: HASH,
     size: 10,
     format: opts.format ?? 'CSV',
-    schema: {
-      columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
-      rowCount: 1,
-    },
+    // A table where one was read: the lake loads any version with columns,
+    // whatever its format (ADR-057 decision 9), and a PDF or a ZIP has none
+    schema:
+      (opts.format ?? 'CSV') === 'CSV'
+        ? { columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }], rowCount: 1 }
+        : null,
     lakeSnapshotId: opts.snapshot === undefined ? 7 : opts.snapshot,
   })
 }

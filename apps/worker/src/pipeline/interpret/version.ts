@@ -14,8 +14,14 @@
 import { createReadStream } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { detectEncoding } from '@kukan/shared/encoding-node'
-import { isJsonFormat, MAX_PARQUET_SOURCE_SIZE, toCharset } from '@kukan/shared'
-import type { NoTableReason, ResourceSchema } from '@kukan/shared'
+import {
+  createLogger,
+  isExcelFormat,
+  isJsonFormat,
+  MAX_PARQUET_SOURCE_SIZE,
+  toCharset,
+} from '@kukan/shared'
+import type { NoTableReason, ReadingProposal, ResourceSchema } from '@kukan/shared'
 import {
   cleanupTempFile,
   readEncodingSample,
@@ -28,9 +34,12 @@ import { countTitleRows } from './table/csv-title-rows'
 import { jsonNestsDeeperThan, jsonStartsWithObject } from './table/json'
 import type { PipelineContext } from '../run/types'
 import type { InterpretedProfile } from './table/table-profile'
-import type { InterpretedTableFile, ProfileRequest } from './table/write-table'
+import type { ProfileRequest } from './table/write-table'
+import type { InterpretedWorkbook } from './table/workbook'
 import type { SettledReading } from './table/settled-types'
 import { MAX_JSON_DEPTH, MAX_JSON_OBJECT_SIZE, MAX_TABLE_COLUMNS } from '@/config'
+
+const log = createLogger({ name: 'worker' }).child({ component: 'interpret' })
 
 /** The interpretation, for as long as the callback runs. */
 export interface InterpretedTable {
@@ -43,8 +52,11 @@ export interface InterpretedTable {
 }
 
 export interface InterpretOutcome<T> {
-  /** Detected on the version file; reported whether or not a table came out. */
-  encoding: string
+  /**
+   * Detected on the version file; reported whether or not a table came out.
+   * Absent for a workbook, which its reader decodes.
+   */
+  encoding?: string
   /**
    * The interpretation — with no columns when the file held none, and **null
    * when nothing was interpreted at all**.
@@ -74,16 +86,23 @@ export interface InterpretOutcome<T> {
    * preview?" is after. Absent whenever a table *was* produced.
    */
   reason?: NoTableReason
+  /**
+   * A workbook that is not a plain table: every reason, where `reason` is the
+   * first (Excel-tables spec §5.8). Absent for any other outcome.
+   */
+  readingProposal?: ReadingProposal
 }
 
 /** What an interpretation that found nothing reports. */
 const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
 
 /**
- * Interpret a CSV/TSV or JSON/GeoJSON version file and hand the table to `use`.
+ * Interpret a CSV/TSV, JSON/GeoJSON or Excel version file and hand the table
+ * to `use`.
  *
  * @param fmt - lowercased format; the caller has already established that this
- *   is one an interpretation may make a table from (`isTableSourceFormat`).
+ *   is one an interpretation may make a table from (`isTableSourceFormat`, or
+ *   a workbook, `isExcelFormat`).
  *   Whether it is within the interpret cap is this function's to answer, so
  *   both callers give one answer.
  * @param opts.profile - write the profile artifact too (ADR-063), reading
@@ -109,6 +128,7 @@ export async function withInterpretedVersion<T>(
   // the file behind it never changes, so the size decides this before the
   // download, and the encoding still comes back.
   if (isJsonFormat(fmt)) return interpretJsonVersion(source, ctx, use, onEncoding, opts)
+  if (isExcelFormat(fmt)) return interpretWorkbookVersion(source, fmt, ctx, use, opts)
   if (source.size > MAX_PARQUET_SOURCE_SIZE) {
     const sample = await readEncodingSample(await ctx.storage.download(source.storageKey))
     const encoding = detectEncoding(fmt, sample)
@@ -158,7 +178,7 @@ export async function withInterpretedVersion<T>(
         kind: 'interpret-csv',
         csvPath,
         parquetPath,
-        skipRows: titleRows,
+        structure: { inferred: { skipRows: titleRows } },
         profile,
       }),
       ctx,
@@ -228,10 +248,52 @@ async function interpretJsonVersion<T>(
   }
 }
 
+/**
+ * The workbook half of `withInterpretedVersion` (ADR-057). No encoding: its
+ * reader decodes it. Whether it is a plain table, and its CSV, are worked out
+ * in the heavy process with the rest, where the grid is read.
+ */
+async function interpretWorkbookVersion<T>(
+  source: { storageKey: string; size: number },
+  fmt: string,
+  ctx: PipelineContext,
+  use: (table: InterpretedTable) => Promise<T>,
+  opts: InterpretOptions
+): Promise<InterpretOutcome<T>> {
+  if (source.size > MAX_PARQUET_SOURCE_SIZE) return { schema: null, reason: 'too-large' }
+  const owned = opts.localPath === undefined
+  const workbookPath =
+    opts.localPath ?? (await streamToTempFile(await ctx.storage.download(source.storageKey), fmt))
+  try {
+    return await interpretOnDisk(
+      workbookPath,
+      undefined,
+      (parquetPath, profile) => ({
+        kind: 'interpret-workbook',
+        workbookPath,
+        csvPath: `${workbookPath}.csv`,
+        parquetPath,
+        profile,
+      }),
+      ctx,
+      use,
+      opts,
+      owned
+    )
+  } finally {
+    if (owned) await cleanupTempFile(workbookPath)
+  }
+}
+
 /** What a caller asks of an interpretation beyond the table itself. */
 interface InterpretOptions {
   profile?: Omit<ProfileRequest, 'path'>
   reading?: SettledReading
+  /**
+   * A workbook's version file, already on local disk and the caller's to
+   * remove: the pipeline reads its text from the same download.
+   */
+  localPath?: string
 }
 
 /**
@@ -240,56 +302,74 @@ interface InterpretOptions {
  * the table is handed to `use` while the Parquet still exists.
  *
  * @param request - the heavy request for the file, given where its outputs go.
+ * @param ownsSource - whether the source is this call's to remove once read;
+ *   its outputs beside it are removed either way.
  */
 async function interpretOnDisk<T>(
   sourcePath: string,
-  encoding: string,
+  encoding: string | undefined,
   request: (
     parquetPath: string,
     profile: ProfileRequest | undefined
-  ) => Extract<HeavyRequest, { kind: 'interpret-csv' | 'interpret-json' }>,
+  ) => Extract<HeavyRequest, { kind: 'interpret-csv' | 'interpret-json' | 'interpret-workbook' }>,
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
-  opts: InterpretOptions
+  opts: InterpretOptions,
+  ownsSource = true
 ): Promise<InterpretOutcome<T>> {
   const parquetPath = `${sourcePath}.parquet`
   const profileRequest = opts.profile && {
     path: `${sourcePath}.profile.ndjson.zst`,
     ...opts.profile,
   }
-  // In the heavy process, where a file that outgrows the memory takes that
-  // process and not the worker (ADR-059). Recorded like the bounds above:
-  // interpreting it again on the same task would end the same way, and the
-  // hourly sweep would hand it out every hour to find that out.
-  let interpreted: InterpretedTableFile
   try {
-    interpreted = (await runHeavy(
-      { ...request(parquetPath, profileRequest), reading: opts.reading },
-      ctx.keepHeld
-    )) as InterpretedTableFile
-  } catch (err) {
-    if (err instanceof HeavyTooLargeError) {
-      return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
+    // In the heavy process, where a file that outgrows the memory takes that
+    // process and not the worker (ADR-059). Recorded like the bounds above:
+    // interpreting it again on the same task would end the same way, and the
+    // hourly sweep would hand it out every hour to find that out.
+    // A workbook's answer is a table file's, with what the CSV and JSON ones leave out
+    let interpreted: InterpretedWorkbook
+    try {
+      interpreted = (await runHeavy(
+        { ...request(parquetPath, profileRequest), reading: opts.reading },
+        ctx.keepHeld
+      )) as InterpretedWorkbook
+    } catch (err) {
+      if (err instanceof HeavyTooLargeError) {
+        return { encoding, schema: NO_TABLE, reason: 'out-of-memory' }
+      }
+      if (err instanceof HeavyTimedOutError) {
+        return { encoding, schema: NO_TABLE, reason: 'timed-out' }
+      }
+      throw err
     }
-    if (err instanceof HeavyTimedOutError) {
-      return { encoding, schema: NO_TABLE, reason: 'timed-out' }
+    const { schema, reason, rowGroupRows, profile, reasons, unreadable } = interpreted
+    // Not settled, as a workbook that is not a table is: what failed to read it
+    // may be the reader's, and the next one may read it
+    if (unreadable !== undefined) {
+      log.warn({ unreadable }, 'A workbook was left a document: its grid could not be read')
+      return { encoding, schema: null }
     }
-    throw err
-  }
-  const { schema, reason, rowGroupRows, profile } = interpreted
-  // And the source is dead once it has been interpreted. What the callback
-  // does next — an upload, a wait on the catalog-wide lock — would hold it
-  // for nothing.
-  await rm(sourcePath, { force: true })
+    // And the source is dead once it has been interpreted. What the callback
+    // does next — an upload, a wait on the catalog-wide lock — would hold it
+    // for nothing.
+    if (ownsSource) await rm(sourcePath, { force: true })
 
-  // Refused rather than read: there is no Parquet to hand on, and the reason
-  // is what stops "no preview" reading as "not interpreted yet".
-  if (reason) return { encoding, schema, reason }
+    // Refused rather than read: there is no Parquet to hand on, and the reason
+    // is what stops "no preview" reading as "not interpreted yet".
+    if (reason)
+      return { encoding, schema, reason, ...(reasons && { readingProposal: { reasons } }) }
 
-  return {
-    encoding,
-    schema,
-    rowGroupRows,
-    used: await use({ parquetPath, schema, ...(profile && { profile }) }),
+    return {
+      encoding,
+      schema,
+      rowGroupRows,
+      used: await use({ parquetPath, schema, ...(profile && { profile }) }),
+    }
+  } finally {
+    // A borrowed source's directory outlives this call
+    if (!ownsSource) {
+      await Promise.all([parquetPath, profileRequest?.path].map((p) => p && rm(p, { force: true })))
+    }
   }
 }

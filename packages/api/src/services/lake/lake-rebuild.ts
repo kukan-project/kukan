@@ -12,7 +12,7 @@
  * Interpretation is the worker's (ADR-046, ADR-059), so the caller hands it in
  * as {@link LakeVersionReader}.
  */
-import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
@@ -116,8 +116,8 @@ export interface LakeRebuildOutcome {
 export const versionAlias = (name: string) => alias(resourceVersion, name)
 
 /**
- * The versions of a format and a size an interpretation makes a table from,
- * not interpreted to nothing, and not refused over their key: what layer 2 is
+ * The versions read as a table, or of a table source format and not read yet,
+ * of a size an interpretation takes, and not refused over their key: what layer 2 is
  * to hold, decided from layer 1 alone (ADR-067 §6). The sweep's outstanding
  * versions (`pendingLakeIngestQuery`) are these, of an active resource, not
  * loaded yet. `purging` is left out with `purged`: the rebuild a purge runs is
@@ -125,16 +125,25 @@ export const versionAlias = (name: string) => alias(resourceVersion, name)
  *
  * A recorded `no_table_reason` does not exclude a version here: over the cap or
  * out of memory, it is to be read again once that changes.
+ *
+ * Not by format alone: a workbook is a table only where its version was read
+ * as one (ADR-057 decision 9), and one not read yet is the pipeline's to read,
+ * not the sweep's.
  */
 export const lakeLoadable = (
   version: typeof resourceVersion | ReturnType<typeof versionAlias> = resourceVersion
 ) =>
   and(
     eq(version.state, 'active'),
-    inArray(sql`lower(${version.format})`, [...TABLE_SOURCE_FORMATS]),
+    or(
+      and(
+        inArray(sql`lower(${version.format})`, [...TABLE_SOURCE_FORMATS]),
+        isNull(version.schema)
+      ),
+      sql`jsonb_array_length(${version.schema} -> 'columns') > 0`
+    ),
     isNotNull(version.size),
     lte(version.size, MAX_PARQUET_SOURCE_SIZE),
-    sql`(${version.schema} IS NULL OR jsonb_array_length(${version.schema} -> 'columns') > 0)`,
     sql`${version.lakeIngestReason} IS NULL`
   )
 

@@ -302,7 +302,7 @@ describe('buildPipelineContext — reads', () => {
     expect(await ctx.pendingLakeVersion('r', 'h')).toBeNull()
   })
 
-  it('recordVersionSchema spells an absent claim and reason as null', async () => {
+  it('recordVersionSchema spells an absent claim, reason and proposal as null', async () => {
     const { db } = createMockDb()
     const schema = { columns: [], rowCount: 0 }
 
@@ -317,6 +317,7 @@ describe('buildPipelineContext — reads', () => {
       version: 1,
       schema,
       noTableReason: null,
+      readingProposal: null,
     })
   })
 })

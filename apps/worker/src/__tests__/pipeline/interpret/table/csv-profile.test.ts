@@ -35,10 +35,12 @@ describe('interpretCsv — column roles', () => {
   ): Promise<Record<string, ColumnProfile>> {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, [header, ...rows].map((r) => r.join(',')).join('\n') + '\n')
-    const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
-      path: join(dir, 'profile.ndjson.zst'),
-      vocabularyPacks: [],
-      ...(roleOverrides && { roleOverrides }),
+    const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), {
+      profile: {
+        path: join(dir, 'profile.ndjson.zst'),
+        vocabularyPacks: [],
+        ...(roleOverrides && { roleOverrides }),
+      },
     })
     return Object.fromEntries(schema.columns.map((c, i) => [c.name, profile!.columns[i]]))
   }
@@ -347,9 +349,11 @@ describe('interpretCsv — the profile artifact', () => {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, lines.join('\n') + '\n')
     const path = join(dir, 'profile.ndjson.zst')
-    const result = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
-      path,
-      vocabularyPacks: [],
+    const result = await interpretCsv(csvPath, join(dir, 'out.parquet'), {
+      profile: {
+        path,
+        vocabularyPacks: [],
+      },
     })
     const read = () =>
       zstdDecompressSync(readFileSync(path))
@@ -453,7 +457,7 @@ describe('interpretCsv — the profile artifact', () => {
     // The lake retry: a version keeps no profile, so working one out is waste
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, '区分\n公園\n')
-    const { profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0)
+    const { profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'))
     expect(profile).toBeUndefined()
   })
 
@@ -461,9 +465,11 @@ describe('interpretCsv — the profile artifact', () => {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, '区分\n公園\n')
     const parquetPath = join(dir, 'out.parquet')
-    const result = await interpretCsv(csvPath, parquetPath, 0, {
-      path: join(dir, 'missing', 'p.gz'),
-      vocabularyPacks: [],
+    const result = await interpretCsv(csvPath, parquetPath, {
+      profile: {
+        path: join(dir, 'missing', 'p.gz'),
+        vocabularyPacks: [],
+      },
     })
     expect(existsSync(parquetPath)).toBe(true)
     expect(result.schema.columns.map((c) => c.name)).toEqual(['区分'])
@@ -491,9 +497,11 @@ describe('interpretCsv — vocabulary', () => {
   async function profile(rows: string[][], packs: string[]) {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, rows.map((r) => r.join(',')).join('\n') + '\n')
-    const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
-      path: join(dir, 'profile.ndjson.zst'),
-      vocabularyPacks: packs,
+    const { schema, profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), {
+      profile: {
+        path: join(dir, 'profile.ndjson.zst'),
+        vocabularyPacks: packs,
+      },
     })
     const columns = Object.fromEntries(schema.columns.map((c, i) => [c.name, profile!.columns[i]]))
     return { columns, registry: profile!.registry }
@@ -533,9 +541,11 @@ describe('interpretCsv — vocabulary', () => {
   it('writes the search fields of the columns’ vocabulary onto the profile', async () => {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, prefectures.map((r) => r.join(',')).join('\n') + '\n')
-    const { profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), 0, {
-      path: join(dir, 'profile.ndjson.zst'),
-      vocabularyPacks: ['JP'],
+    const { profile } = await interpretCsv(csvPath, join(dir, 'out.parquet'), {
+      profile: {
+        path: join(dir, 'profile.ndjson.zst'),
+        vocabularyPacks: ['JP'],
+      },
     })
     expect(profile?.search).toEqual({
       vocab_meanings: ['admin-area:code', 'admin-area:name'],

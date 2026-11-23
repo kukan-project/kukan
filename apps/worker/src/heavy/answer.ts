@@ -13,19 +13,22 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
   switch (request.kind) {
     case 'interpret-csv': {
       const { interpretCsv } = await import('../pipeline/interpret/table/csv')
-      return (await interpretCsv(
-        request.csvPath,
-        request.parquetPath,
-        request.skipRows,
-        request.profile,
-        request.reading,
-        request.structure
-      )) as HeavyResult<R>
+      return (await interpretCsv(request.csvPath, request.parquetPath, request)) as HeavyResult<R>
     }
     case 'interpret-json': {
       const { interpretJson } = await import('../pipeline/interpret/table/json')
       return (await interpretJson(
         request.jsonPath,
+        request.parquetPath,
+        request.profile,
+        request.reading
+      )) as HeavyResult<R>
+    }
+    case 'interpret-workbook': {
+      const { interpretWorkbook } = await import('../pipeline/interpret/table/workbook')
+      return (await interpretWorkbook(
+        request.workbookPath,
+        request.csvPath,
         request.parquetPath,
         request.profile,
         request.reading

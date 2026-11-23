@@ -38,6 +38,7 @@ import {
   type GridCell,
   type GridRow,
   type GridSheet,
+  type GridWorkbook,
   type SheetLayout,
 } from './grid'
 
@@ -48,6 +49,37 @@ const STYLES = 'xl/styles.xml'
  * read them before asking for the next sheet.
  */
 export async function* xlsxGrid(filePath: string): AsyncGenerator<GridSheet> {
+  const workbook = xlsxWorkbook(filePath)
+  try {
+    yield* workbook.sheets()
+  } finally {
+    await workbook.close()
+  }
+}
+
+/** The workbook, its sheets readable more than once (`GridWorkbook`). */
+export function xlsxWorkbook(filePath: string): GridWorkbook {
+  let opened: Promise<OpenedXlsx> | undefined
+  return {
+    async *sheets() {
+      yield* sheetsOf(await (opened ??= openXlsx(filePath)))
+    },
+    async close() {
+      const book = await opened?.catch(() => undefined)
+      book?.zip.close()
+    },
+  }
+}
+
+interface OpenedXlsx {
+  zip: yauzl.ZipFile
+  entries: Awaited<ReturnType<typeof listEntries>>
+  shared: SharedStrings
+  facts: WorkbookFacts
+  styles: CellStyles
+}
+
+async function openXlsx(filePath: string): Promise<OpenedXlsx> {
   const zip = await openZip(filePath)
   try {
     if (zip.entryCount > XLSX_MAX_ENTRIES) {
@@ -62,27 +94,38 @@ export async function* xlsxGrid(filePath: string): AsyncGenerator<GridSheet> {
     }
     const facts = await workbookFacts(zip, entries)
     const styles = await cellStyles(zip, entries)
-    const read = new Set<number>()
-    for (const [index, { part, name }] of (await sheetOrder(zip, entries)).entries()) {
-      const entry = entries.get(part)
-      if (!entry || read.has(entry.relativeOffsetOfLocalHeader)) continue
-      read.add(entry.relativeOffsetOfLocalHeader)
-      const titles = name !== undefined ? facts.printTitles.get(name) : undefined
-      yield gridSheet(
-        {
-          sheet: index + 1,
-          ...(name !== undefined && { name }),
-          hidden: name !== undefined && facts.hidden.has(name),
-          ...(titles && { printTitles: titles }),
-        },
-        (layout) =>
-          readPart<GridRow>(zip, entry, (emit) =>
-            sheetGridParser(emit, layout, shared, styles, facts.date1904)
-          )
-      )
-    }
-  } finally {
+    return { zip, entries, shared, facts, styles }
+  } catch (err) {
     zip.close()
+    throw err
+  }
+}
+
+async function* sheetsOf({
+  zip,
+  entries,
+  shared,
+  facts,
+  styles,
+}: OpenedXlsx): AsyncGenerator<GridSheet> {
+  const read = new Set<number>()
+  for (const [index, { part, name }] of (await sheetOrder(zip, entries)).entries()) {
+    const entry = entries.get(part)
+    if (!entry || read.has(entry.relativeOffsetOfLocalHeader)) continue
+    read.add(entry.relativeOffsetOfLocalHeader)
+    const titles = name !== undefined ? facts.printTitles.get(name) : undefined
+    yield gridSheet(
+      {
+        sheet: index + 1,
+        ...(name !== undefined && { name }),
+        hidden: name !== undefined && facts.hidden.has(name),
+        ...(titles && { printTitles: titles }),
+      },
+      (layout) =>
+        readPart<GridRow>(zip, entry, (emit) =>
+          sheetGridParser(emit, layout, shared, styles, facts.date1904)
+        )
+    )
   }
 }
 

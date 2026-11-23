@@ -27,6 +27,7 @@ import {
   type GridCell,
   type GridRow,
   type GridSheet,
+  type GridWorkbook,
   type SheetLayout,
 } from './grid'
 
@@ -81,19 +82,31 @@ interface Globals {
  * The workbook's worksheets in tab order. A sheet's rows are read as they are
  * iterated: read them before asking for the next sheet.
  */
-export async function* xlsGrid(filePath: string): AsyncGenerator<GridSheet> {
-  const { book, globals } = await readWorkbook(filePath)
-  for (const entry of book.sheets) {
-    const titles = globals.printTitles.get(entry.sheet)
-    yield gridSheet(
-      {
-        sheet: entry.sheet,
-        name: entry.name,
-        hidden: entry.hidden,
-        ...(titles && { printTitles: titles }),
-      },
-      (layout) => sheetGrid(book, entry.offset, globals, layout)
-    )
+export function xlsGrid(filePath: string): AsyncGenerator<GridSheet> {
+  return xlsWorkbook(filePath).sheets()
+}
+
+/** The workbook, its sheets readable more than once (`GridWorkbook`). */
+export function xlsWorkbook(filePath: string): GridWorkbook {
+  let opened: Promise<{ book: XlsWorkbook; globals: Globals }> | undefined
+  return {
+    async *sheets() {
+      const { book, globals } = await (opened ??= readWorkbook(filePath))
+      for (const entry of book.sheets) {
+        const titles = globals.printTitles.get(entry.sheet)
+        yield gridSheet(
+          {
+            sheet: entry.sheet,
+            name: entry.name,
+            hidden: entry.hidden,
+            ...(titles && { printTitles: titles }),
+          },
+          (layout) => sheetGrid(book, entry.offset, globals, layout)
+        )
+      }
+    },
+    // Nothing open: the bytes were read whole
+    async close() {},
   }
 }
 

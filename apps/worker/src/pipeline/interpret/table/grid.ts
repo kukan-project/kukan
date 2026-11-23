@@ -111,6 +111,16 @@ export interface GridSheet {
 }
 
 /**
+ * A workbook whose sheets can be read more than once, what they share (the
+ * shared strings, the styles) decoded on the first read and kept until
+ * `close`: judging a sheet and then writing its range reads it twice.
+ */
+export interface GridWorkbook {
+  sheets(): AsyncGenerator<GridSheet>
+  close(): Promise<void>
+}
+
+/**
  * A sheet whose rows `readRows` gives as it is iterated, filling in the
  * layout it is handed as it goes.
  */

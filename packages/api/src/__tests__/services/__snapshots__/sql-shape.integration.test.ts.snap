@@ -354,7 +354,7 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
     AND rv.lake_snapshot_id IS NULL
-    AND ("rv"."state" = $1 and lower("rv"."format") in ($2, $3, $4, $5) and "rv"."size" is not null and "rv"."size" <= $6 and ("rv"."schema" IS NULL OR jsonb_array_length("rv"."schema" -> 'columns') > 0) and "rv"."lake_ingest_reason" IS NULL)
+    AND ("rv"."state" = $1 and ((lower("rv"."format") in ($2, $3, $4, $5) and "rv"."schema" is null) or jsonb_array_length("rv"."schema" -> 'columns') > 0) and "rv"."size" is not null and "rv"."size" <= $6 and "rv"."lake_ingest_reason" IS NULL)
 ) pending
             ORDER BY "resourceId", version
           ) oldest
@@ -403,7 +403,7 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
     AND rv.lake_snapshot_id IS NULL
-    AND ("rv"."state" = $1 and lower("rv"."format") in ($2, $3, $4, $5) and "rv"."size" is not null and "rv"."size" <= $6 and ("rv"."schema" IS NULL OR jsonb_array_length("rv"."schema" -> 'columns') > 0) and "rv"."lake_ingest_reason" IS NULL)
+    AND ("rv"."state" = $1 and ((lower("rv"."format") in ($2, $3, $4, $5) and "rv"."schema" is null) or jsonb_array_length("rv"."schema" -> 'columns') > 0) and "rv"."size" is not null and "rv"."size" <= $6 and "rv"."lake_ingest_reason" IS NULL)
 ) pending
             ORDER BY "resourceId", version
           ) oldest

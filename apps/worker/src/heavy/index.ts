@@ -1,7 +1,7 @@
 /**
- * The worker's heavy work, run in a process of its own (ADR-059): CSV
- * interpretation, document text extraction, and the parsing of an abstract's
- * PDF or image (ADR-053). One request at a time, in the same turn as the lake
+ * The worker's heavy work, run in a process of its own (ADR-059): CSV, JSON
+ * and workbook interpretation, document text extraction, and the parsing of
+ * an abstract's PDF or image (ADR-053). One request at a time, in the same turn as the lake
  * ingest that stays in this process (`heavySection`).
  */
 
@@ -79,6 +79,7 @@ const heavy = new HeavyProcess(
       'extract-text': HEAVY_EXTRACT_TIMEOUT_MS,
       'interpret-csv': HEAVY_INTERPRET_TIMEOUT_MS,
       'interpret-json': HEAVY_INTERPRET_TIMEOUT_MS,
+      'interpret-workbook': HEAVY_INTERPRET_TIMEOUT_MS,
       'read-pdf': HEAVY_SUMMARY_TIMEOUT_MS,
       'downscale-image': HEAVY_SUMMARY_TIMEOUT_MS,
     },

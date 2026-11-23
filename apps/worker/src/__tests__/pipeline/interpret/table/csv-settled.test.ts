@@ -22,7 +22,7 @@ describe('interpretCsv — settled types', () => {
   function interpret(content: string, reading: SettledReading) {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, content)
-    return interpretCsv(csvPath, join(dir, 'out.parquet'), 0, undefined, reading)
+    return interpretCsv(csvPath, join(dir, 'out.parquet'), { reading })
   }
 
   const column = (columns: ResourceColumn[], name: string) => columns.find((c) => c.name === name)!

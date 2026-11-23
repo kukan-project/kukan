@@ -332,6 +332,7 @@ async function runPipeline(
               version: version.version,
               schema: interpretResult.schema,
               noTableReason: interpretResult.reason,
+              readingProposal: interpretResult.readingProposal,
             })
           }
         }

@@ -1116,6 +1116,7 @@ describe('insertVersionIfHeld', () => {
           version: 1,
           schema,
           noTableReason: null,
+          readingProposal: null,
         })
       ).toBe(true)
       expect(((await versions())[0] as { schema: unknown }).schema).toEqual(schema)
@@ -1134,6 +1135,7 @@ describe('insertVersionIfHeld', () => {
           version: 1,
           schema,
           noTableReason: null,
+          readingProposal: null,
         })
       ).toBe(false)
       expect(((await versions())[0] as { schema: unknown }).schema).toBeNull()
@@ -1153,6 +1155,7 @@ describe('insertVersionIfHeld', () => {
           version: 1,
           schema: { rowCount: 0, columns: [] },
           noTableReason: 'too-large',
+          readingProposal: null,
         })
       ).toBe(true)
       const [row] = await versions()
@@ -1186,6 +1189,7 @@ describe('insertVersionIfHeld', () => {
           version: 7,
           schema,
           noTableReason: null,
+          readingProposal: null,
         })
       ).toBe(false)
     })
@@ -2785,6 +2789,7 @@ describe('reviewing what a reading needs looked at (Versioning ii-c §8.4)', () 
       version: 2,
       schema: typed('string'),
       noTableReason: null,
+      readingProposal: null,
     })
   }
 
@@ -2853,6 +2858,7 @@ describe('reviewing what a reading needs looked at (Versioning ii-c §8.4)', () 
       version: 3,
       schema: typed('integer', { settled: true, castFailures: 1 }),
       noTableReason: null,
+      readingProposal: null,
     })
 
     expect((await service.getVersion(resourceId, 3)).typeChanges).toBeNull()
@@ -2890,6 +2896,7 @@ describe('reviewing what a reading needs looked at (Versioning ii-c §8.4)', () 
       version: 2,
       schema: typed('string'),
       noTableReason: null,
+      readingProposal: null,
     })
 
     const after = await service.getVersion(resourceId, 2)

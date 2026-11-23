@@ -6,26 +6,31 @@
 
 import type { InterpretedTableFile, ProfileRequest } from '../pipeline/interpret/table/write-table'
 import type { SettledReading } from '../pipeline/interpret/table/settled-types'
-import type { CsvStructure } from '../pipeline/interpret/table/csv'
+import type { CsvOptions } from '../pipeline/interpret/table/csv'
+import type { InterpretedWorkbook } from '../pipeline/interpret/table/workbook'
 import type { ExtractedText } from '../pipeline/interpret/document/document-text'
 import type { ReadPdf } from '../summary/material-files'
 
 /** Files in, files and JSON out: the process holds no connection of any kind. */
 export type HeavyRequest =
-  | {
-      kind: 'interpret-csv'
-      csvPath: string
-      parquetPath: string
-      skipRows: number
-      /** The packs it reads columns against travel here: the child has no DB to ask. */
-      profile?: ProfileRequest
-      /** And the settled types, for the same reason. */
-      reading?: SettledReading
-      structure?: CsvStructure
-    }
+  // The packs a profile reads columns against and the settled types travel
+  // here: the child has no DB to ask
+  | ({ kind: 'interpret-csv'; csvPath: string; parquetPath: string } & CsvOptions)
   | {
       kind: 'interpret-json'
       jsonPath: string
+      parquetPath: string
+      profile?: ProfileRequest
+      reading?: SettledReading
+    }
+  | {
+      /**
+       * An Excel workbook: judged, and read as a table where it is a plain one
+       * (ADR-057). `csvPath` is where the table's CSV is written on the way.
+       */
+      kind: 'interpret-workbook'
+      workbookPath: string
+      csvPath: string
       parquetPath: string
       profile?: ProfileRequest
       reading?: SettledReading
@@ -37,6 +42,7 @@ export type HeavyRequest =
 interface HeavyResults {
   'interpret-csv': InterpretedTableFile
   'interpret-json': InterpretedTableFile
+  'interpret-workbook': InterpretedWorkbook
   'extract-text': ExtractedText
   'read-pdf': ReadPdf
   /** False for an image whose header claims more pixels than the limit */
@@ -61,12 +67,18 @@ export type HeavyReply =
 const ALLOCATION_FAILURES = new Set(['Invalid string length', 'Array buffer allocation failed'])
 const ALLOCATION_FAILURE_CODES = new Set(['ERR_STRING_TOO_LONG', 'ERR_BUFFER_TOO_LARGE'])
 
-/** The reply for a request that threw `err` in the heavy process. */
-export function failedReply(err: unknown): HeavyReply {
+/** Whether `err` is V8 refusing an allocation, the request being too large. */
+export function isAllocationFailure(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code
-  const tooLarge =
+  return (
     (err instanceof RangeError && ALLOCATION_FAILURES.has(err.message)) ||
     (typeof code === 'string' && ALLOCATION_FAILURE_CODES.has(code))
+  )
+}
+
+/** The reply for a request that threw `err` in the heavy process. */
+export function failedReply(err: unknown): HeavyReply {
+  const tooLarge = isAllocationFailure(err)
   return {
     ok: false,
     message: err instanceof Error ? err.message : String(err),

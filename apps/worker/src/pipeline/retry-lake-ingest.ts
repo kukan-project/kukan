@@ -110,6 +110,7 @@ export async function retryLakeIngest(
         // The same answer whichever caller ran, or a version interpreted through
         // this path would carry the empty schema with nothing to say why.
         noTableReason: result.reason,
+        readingProposal: result.readingProposal,
         claim: claims[0] ?? undefined,
       })
     }

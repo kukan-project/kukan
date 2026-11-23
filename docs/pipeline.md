@@ -389,7 +389,8 @@ sweep が「判定 → 削除」の間に安全なのは、**書き手が判定�
 立つので、遡って入れ直すことはしない。
 
 形式を見るのは**版定義の `format`** であってリソースのラベルではない（§1、ADR-046 §6）。ラベルで絞ると、
-PDF として確定した bytes がラベル変更だけで表として読まれる側に回る。
+PDF として確定した bytes がラベル変更だけで表として読まれる側に回る。Excel は版によって表だったり
+そうでなかったりするので、形式に加えて**スキーマに列がある版**だけを数える（ADR-057 決定 9、§10）。
 
 **ハンドラは同じ述語を版 1 件に絞って引き直す**（`pendingLakeVersionSource`）。別の判断ではなく
 同じ判断で、これが無いと重複したジョブの大半が 100MB を読んでから「もう終わっていた」と気づく。
@@ -578,7 +579,7 @@ Interpret だけがフォーマットで処理を分ける（流れは §1）。
 | MD                             |     Yes      | UTF-8 固定（見出し付き文書テキスト成果物も） |           -           |     整形表示+ソース+抽出テキスト切替      |
 | RDF                            |      No      | スキップ                                     |           -           |                  非対応                   |
 | PDF                            |      No      | スキップ                                     |           -           |      iframe（本体）+抽出テキスト切替      |
-| XLSX/XLS                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
+| XLSX/XLS                       |      No      | スキップ                                     |     素直な表なら      |    原本（ibisOffice）+抽出テキスト切替    |
 | DOC/DOCX                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
 | PPT/PPTX                       |      No      | スキップ                                     |           -           |    原本（ibisOffice）+抽出テキスト切替    |
 | JTD/JTT（一太郎）              |      No      | スキップ                                     |           -           | 原本（EZPZ、シート一覧）+抽出テキスト切替 |
@@ -588,13 +589,34 @@ Interpret だけがフォーマットで処理を分ける（流れは §1）。
 Office の「原本」は ibisOffice がブラウザの sandbox の iframe で描く（ADR-065）。サイトの
 `OFFICE_PREVIEW_VIEWER=office-online` で Office Online Viewer（公開のデータセットのみ）にできる。
 
+**Excel（XLSX・XLS）は、文書のテキストに加えて表としても読む**（ADR-057、`docs/specs/jp/phase-excel-tables.md`）。
+heavy の子プロセス（`interpret-workbook`）でセルの格子を読み、「素直な表」かを判定する（表の候補のシートが
+1 枚、見出しが 1 行、範囲に結合が無い、など。仕様書 §5）。素直な表なら、その範囲を UTF-8 の中間 CSV に
+書き出し（1 行目は見出しの文字、値は生の値、日付は ISO 8601、非表示の行と列も書く）、構造を推定しない
+`interpretCsv`（`given`）で CSV と同じプレビュー Parquet・スキーマ・表のプロファイルを作り、層 2 にも入れる。
+文字列のセルだけの列は文字列として読む（`00123` の先頭の 0 を落とさない）。外れたら `NO_TABLE` とし、
+最初の理由を `no_table_reason` に、当たった理由すべてを `reading_proposal.reasons` に書く。暗号化された
+ブックは `encrypted` で外し、テキストも読まない。格子が読めないブックは表にせず、版に何も書かない
+（今までどおり文書のまま）。
+
+- 中身で読む。`.xls` で公開された XLSX は XLSX として読む
+- 全文索引は表になっても文書のテキストのまま（ADR-057 決定 8）。プレビューは版のスキーマに列があれば表、
+  無ければ原本（決定 9）
+- 層 2 の定期再投入が拾う Excel の版は、スキーマに列があるものだけ（`lakeLoadable`）。まだ解釈されていない
+  既存の Excel の版は拾わない。既存の版を解釈し直す経路は別に入れる（仕様書 §7.2）
+- 1 つの版のダウンロードは 1 回で、表とテキストの両方がそれを読む。表を読む途中で失敗しても、ステップは失敗に
+  しない（警告を残し、テキストの抽出に進む）。ブックの上限は CSV と同じ 100 MB
+- 中間 CSV も 100 MB まで。超えたら `too-large` で表にしない。ブックは圧縮されているので、100 MB の XLSX の
+  表は CSV にすると 2 倍ほどになり、heavy の子プロセスの上限（`HEAVY_PROCESS_MB`）を超える（実測）
+
 **サイズ制限:**
 
 | 項目                                  | 制限値     | 設定ファイル                                              |
 | ------------------------------------- | ---------- | --------------------------------------------------------- |
 | ブラウザアップロード                  | 100 MB     | `packages/shared/src/formats.ts`                          |
 | 外部 URL 取得（Fetch）                | 100 MB     | `apps/worker/src/config.ts`                               |
-| CSV/TSV Parquet 生成対象              | 100 MB     | `packages/shared/src/formats.ts`                          |
+| CSV/TSV・Excel Parquet 生成対象       | 100 MB     | `packages/shared/src/formats.ts`                          |
+| Excel の中間 CSV                      | 100 MB     | `packages/shared/src/formats.ts`                          |
 | JSON（1 オブジェクト）                | 32 MB      | `apps/worker/src/config.ts`                               |
 | JSON（入れ子の深さ）                  | 64 段      | `apps/worker/src/config.ts`                               |
 | XLSX の読み直し（展開後）             | 4 MB       | `apps/worker/src/config.ts`                               |
@@ -616,6 +638,7 @@ ZIP マニフェストはどちらかの上限に達したところで一覧を�
 - フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`, `isImageFormat`）
 - エンコーディング検出: `packages/shared/src/encoding-node.ts`（`detectEncoding`）
 - Interpret ステップ: `apps/worker/src/pipeline/steps/interpret.ts`
+- Excel の表: `apps/worker/src/pipeline/interpret/table/workbook.ts`（判定は `plain-table.ts`、格子は `xlsx-grid.ts`・`xls-grid.ts`）
 - フロントエンド プレビュー: `apps/web/src/components/preview/resource-preview.tsx`
 - GeoJSON 地図プレビュー: `apps/web/src/components/preview/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）
 - 画像プレビュー: `apps/web/src/components/preview/image-preview.tsx`

@@ -310,6 +310,8 @@ Before checking for duplicates and before writing them as column names:
   one space
 - Letters, digits and symbols are folded to half-width by NFKC (for comparison only; column names are
   written as in the cell)
+- For duplicates, ASCII letters compare without case (`ID` and `id` are one name). DuckDB compares
+  column names without case and renames the column that collides
 
 ### 5.8 Reasons
 
@@ -355,16 +357,19 @@ The range of the reading instructions is written to an intermediate UTF-8 CSV (A
 ### 6.2 The option added to `interpretCsv` (PR 1-c)
 
 ```ts
-interface CsvStructure {
+type CsvStructure =
+  | { inferred: { skipRows: number } }
   /** Where the table is was decided before the CSV was written: read it as written. */
-  given: true
-}
+  | { given: { textColumns: readonly string[] } } // §6.3
 ```
 
 With `given`:
 
 - No title-row scan (no rows skipped)
 - Line 1 is declared the header (`header = true`)
+- The delimiter, quote and escape are pinned to `,`, `"` and `"`: this process wrote the file, so it is
+  not left to the sniffer, which takes `'` for the quote when every value is in `'`, and `;` for the
+  delimiter when a line has more of them than `,`
 - **No inference of trailing notes (`settleSignOffs` and dropping trailing rows).** That inference
   takes a sparse trailing row for a note and can drop a row holding only "Total" and an amount at the
   end of a wide table
@@ -393,6 +398,10 @@ It becomes:
 3. A plain table: the intermediate CSV is written and `interpretCsv` (`given`) makes the Parquet and
    schema
 4. Otherwise: `NO_TABLE`, the reason and `reading_proposal` are written to the version
+
+The workbook is downloaded once, and both the table and the text read that copy. A failure while
+reading the table does not fail the step: a warning is logged and text extraction goes on (the
+workbook stays a document, as before tables were read).
 
 A resource with settled reading instructions (from Step 2) is read in §3.3's order: with the settled
 instructions if the settled header is found, otherwise back to plain-table judging.

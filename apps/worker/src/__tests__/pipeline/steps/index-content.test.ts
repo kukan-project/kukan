@@ -517,6 +517,25 @@ describe('executeIndexContent', () => {
       expect(ctx.putObject).not.toHaveBeenCalled()
     })
 
+    it('indexes a workbook read as a table by its text, as before (ADR-057)', async () => {
+      const ctx = createMockCtx()
+      const interpreted = {
+        ...documentInterpreted(ctx, [{ loc: { sheet: 1, rows: [1, 2] }, text: '地域\t人口' }]),
+        profile: { columns: [], key: 'previews/pkg-1/res-1.t.profile.ndjson.zst' },
+        schema: {
+          rowCount: 1,
+          columns: [{ name: '地域', type: 'string' as const, nullable: false, nullCount: 0 }],
+        },
+      }
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'XLSX', interpreted, ctx)
+
+      expect(ctx.storage.download).toHaveBeenCalledWith(DOCUMENT_TEXT)
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toBe('地域\t人口')
+      expect(result).toMatchObject({ contentIndexed: true, contentType: 'document' })
+    })
+
     it('leaves what was indexed before for a document with no text', async () => {
       const ctx = createMockCtx()
       const interpreted = documentInterpreted(ctx, [

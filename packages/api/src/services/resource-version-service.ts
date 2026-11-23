@@ -61,6 +61,7 @@ import type {
   ColumnSettingsView,
   KeyCheck,
   NoTableReason,
+  ReadingProposal,
   PreviewUnusable,
   VersionIdentity,
   VersionOrigin,
@@ -298,6 +299,8 @@ export async function setVersionSchemaIfHeld(
     version: number
     schema: ResourceSchema
     noTableReason: NoTableReason | null
+    /** A workbook's every reason with the first (Excel-tables spec §8.3.1); null clears one an earlier reading left. */
+    readingProposal: ReadingProposal | null
   }
 ): Promise<boolean> {
   // What needs review, against the version before that read to a table (§8.4).
@@ -322,6 +325,7 @@ export async function setVersionSchemaIfHeld(
           THEN ${changes && JSON.stringify(changes)}::jsonb ELSE type_changes END,
         schema = ${JSON.stringify(v.schema)}::jsonb,
         no_table_reason = ${v.noTableReason}::varchar,
+        reading_proposal = ${v.readingProposal ? JSON.stringify(v.readingProposal) : null}::jsonb,
         updated = NOW()
     WHERE resource_id = ${v.resourceId}::uuid
       AND version = ${v.version}

@@ -460,12 +460,13 @@ export function buildPipelineContext(
       }
     },
 
-    async recordVersionSchema({ claim, noTableReason, ...v }) {
-      // The column has to be cleared when a re-interpretation finds a table, so
+    async recordVersionSchema({ claim, noTableReason, readingProposal, ...v }) {
+      // The columns have to be cleared when a re-interpretation finds a table, so
       // the write spells "nothing" as null; callers spell it as absent.
       await setVersionSchemaIfHeld(db, claim ?? null, {
         ...v,
         noTableReason: noTableReason ?? null,
+        readingProposal: readingProposal ?? null,
       })
     },
 

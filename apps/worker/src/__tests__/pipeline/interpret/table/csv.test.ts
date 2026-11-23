@@ -25,7 +25,9 @@ describe('interpretCsv — reading the file', () => {
   function interpret(content: string, skipRows = 0) {
     const csvPath = join(dir, 'in.csv')
     writeFileSync(csvPath, content)
-    return interpretCsv(csvPath, join(dir, 'out.parquet'), skipRows)
+    return interpretCsv(csvPath, join(dir, 'out.parquet'), {
+      structure: { inferred: { skipRows } },
+    })
   }
 
   const names = (columns: { name: string }[]) => columns.map((c) => c.name)
@@ -255,8 +257,8 @@ describe('interpretCsv — reading the file', () => {
   })
 
   it('fails on a file it cannot open, which is no failed sniff', async () => {
-    await expect(
-      interpretCsv(join(dir, 'missing.csv'), join(dir, 'out.parquet'), 0)
-    ).rejects.toThrow(/IO Error/)
+    await expect(interpretCsv(join(dir, 'missing.csv'), join(dir, 'out.parquet'))).rejects.toThrow(
+      /IO Error/
+    )
   })
 })
