@@ -6,7 +6,8 @@ import JSZip from 'jszip'
  * string, or `{ inline: text }`, or `{ empty: true }` for one formatted but
  * empty; a row may be empty. `tabs` writes the workbook with its sheets in
  * that order, its relationships pointing at them through `target` (by default
- * `worksheets/`), and `raw` a sheet's XML as given.
+ * `worksheets/`), `raw` a sheet's XML as given, and `parts` any part by its
+ * name, over what the other options wrote.
  */
 type Cell = number | { s: number } | { inline: string } | { empty: true }
 
@@ -23,6 +24,7 @@ export async function xlsxBuffer(opts: {
   tabs?: number[]
   target?: string
   raw?: Record<number, string>
+  parts?: Record<string, string>
 }): Promise<Buffer> {
   const zip = new JSZip()
   if (opts.shared) {
@@ -59,5 +61,6 @@ export async function xlsxBuffer(opts: {
         .join('')}</Relationships>`
     )
   }
+  for (const [name, xml] of Object.entries(opts.parts ?? {})) zip.file(name, xml)
   return zip.generateAsync({ type: 'nodebuffer' })
 }
