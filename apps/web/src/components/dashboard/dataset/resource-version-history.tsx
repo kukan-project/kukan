@@ -230,14 +230,6 @@ export function ResourceVersionHistory({ resourceId, reloadKey, onReviewed }: Pr
                           ? t('originRevert', { version: String(v.restoredFrom) })
                           : t(ORIGIN_LABEL[v.origin])}
                       </Badge>
-                      {/* Why there is no preview, where the absence is noticed.
-                          The empty schema behind it says only that the version
-                          was interpreted (ADR-046). */}
-                      {!purged && v.noTableReason && (
-                        <span className="text-xs text-muted-foreground">
-                          {t(`noTable.${v.noTableReason}`)}
-                        </span>
-                      )}
                     </div>
                   </TableCell>
                   {/* What the rows were identified by — the version's own
@@ -350,7 +342,13 @@ export function ResourceVersionHistory({ resourceId, reloadKey, onReviewed }: Pr
                 {diffOpen && (
                   <TableRow>
                     <TableCell colSpan={6} className="bg-muted/30">
-                      <VersionDiffPanel resourceId={resourceId} version={v.version} />
+                      <VersionDiffPanel
+                        resourceId={resourceId}
+                        version={v.version}
+                        noTableReasonOf={(n) =>
+                          versions.find((other) => other.version === n)?.noTableReason ?? null
+                        }
+                      />
                     </TableCell>
                   </TableRow>
                 )}

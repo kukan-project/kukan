@@ -834,6 +834,26 @@ export class ResourceVersionService {
   constructor(private db: Database) {}
 
   /**
+   * Why the version the resource serves was not read as a table: every reason a
+   * workbook missed the plain-table conditions (ADR-057), or the one reason
+   * there is. Null when it was read as one, not read yet, or when no version
+   * holds what is served — a new file the Version step has not reached, or a
+   * resource reverted to nothing: an older version's reason is not its.
+   */
+  async noTableReasonsOfServed(resourceId: string): Promise<NoTableReason[] | null> {
+    const served = await this.liveVersionNumber(this.db, resourceId)
+    if (served === null) return null
+    const [row] = await this.db
+      .select()
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, served)))
+      .limit(1)
+    const reason = row && noTableReason(row)
+    if (!reason) return null
+    return row.readingProposal?.reasons.length ? row.readingProposal.reasons : [reason]
+  }
+
+  /**
    * Count active resources that have content but no version yet — the work left
    * for a one-time backfill (ADR-043). Zero means the migration is complete.
    */

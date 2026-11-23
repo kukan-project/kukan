@@ -2397,6 +2397,42 @@ describe('Resources API Routes', () => {
       })
     })
 
+    it('says why a workbook is not a table to its editors only', async () => {
+      const pkg = await createPackage('schema-workbook-pkg')
+      const resource = await createResource(pkg.id, { name: 'book.xlsx', format: 'XLSX' })
+      const storageKey = getStorageKey(pkg.id, resource.id, 'v1')
+      await db.insert(resourceVersion).values({
+        resourceId: resource.id,
+        version: 1,
+        storageKey,
+        hash: 'sha256:v1',
+        origin: 'upload',
+        format: 'XLSX',
+        schema: { rowCount: 0, columns: [] },
+        noTableReason: 'header-blank',
+        readingProposal: { reasons: ['header-blank', 'title-or-footer'] },
+      })
+      // Serving v1
+      await db
+        .update(resourceTable)
+        .set({ storageKey, hash: 'sha256:v1' })
+        .where(eq(resourceTable.id, resource.id))
+
+      const editor = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect((await editor.json()).noTableReasons).toEqual(['header-blank', 'title-or-footer'])
+
+      const reader = await unauthApp.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(await reader.json()).not.toHaveProperty('noTableReasons')
+
+      // A new file the Version step has not reached: v1's reasons are not its
+      await db
+        .update(resourceTable)
+        .set({ storageKey: getStorageKey(pkg.id, resource.id, 'v2'), hash: 'sha256:v2' })
+        .where(eq(resourceTable.id, resource.id))
+      const newer = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(await newer.json()).not.toHaveProperty('noTableReasons')
+    })
+
     it('returns the stored schema with queryable=true', async () => {
       const pkg = await createPackage('schema-pkg')
       const resource = await createResource(pkg.id, { name: 'with-schema.csv' })

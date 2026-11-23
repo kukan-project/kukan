@@ -10,6 +10,7 @@ import {
   mayHoldTable,
   showsAsTable,
   type OfficePreviewViewer,
+  type NoTableReason,
   type ResourceSchema,
 } from '@kukan/shared'
 import {
@@ -83,6 +84,7 @@ export function ResourceEditor({
   const router = useRouter()
   const t = useTranslations('datasetEditor')
   const ts = useTranslations('resource')
+  const tv = useTranslations('resource.versions')
   // Unsaved edits on the Basic tab, or a key picked and not applied: leaving
   // the page asks first
   const [dirty, setDirty] = useState(false)
@@ -117,6 +119,8 @@ export function ResourceEditor({
     : null
   const { data: schemaData, error: schemaError } = useFetch<{
     schema: ResourceSchema | null
+    /** Why the workbook is not a table, for its editors (ADR-057) */
+    noTableReasons?: NoTableReason[]
   }>(schemaPath, settled)
 
   // Not found: never read at all — a refetch that fails keeps what is shown —
@@ -234,6 +238,20 @@ export function ResourceEditor({
         latestVersion={listed?.latestVersion}
         hasTable={table}
       />
+      {/* Answered only where the version served made no table, and only to
+          its editors */}
+      {!!schemaData?.noTableReasons?.length && (
+        <Alert role="status">
+          <AlertDescription>
+            <p>{t('noTableReasons')}</p>
+            <ul className="list-disc pl-5">
+              {schemaData.noTableReasons.map((reason) => (
+                <li key={reason}>{tv(`noTable.${reason}`)}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
     </>
   )
 

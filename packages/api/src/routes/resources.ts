@@ -732,7 +732,16 @@ resourcesRouter.get('/:id/schema', async (c) => {
   // comparing two resources and guessing which of them is broken: three
   // quarters of the tabular resources in a real catalogue are refused for their
   // headings alone.
-  const feed = await describeFeed(db, { id, size: res.size }, pkg, target)
+  const [feed, noTableReasons] = await Promise.all([
+    describeFeed(db, { id, size: res.size }, pkg, target),
+    // Why a workbook is not a table is for its editors, as the dashboard shows
+    // it; asked only where there is no table
+    user &&
+      !target?.schema?.columns.length &&
+      canWritePackage(db, user, pkg, 'editor').then((editor) =>
+        editor ? new ResourceVersionService(db).noTableReasonsOfServed(id) : null
+      ),
+  ])
   // The setting, not what the standing version was read under: the public pages
   // mark the key the way the picker's own sample does, and the per-version
   // reading is the versions endpoint's story.
@@ -744,6 +753,9 @@ resourcesRouter.get('/:id/schema', async (c) => {
     odataKey: feed.key,
     primaryKey: primaryKeyOf(res.columnSettings),
     schema: target?.schema ?? null,
+    // Why the version served is not a table, where it was read and is not one:
+    // a workbook says every condition it missed (ADR-057). Its editors only
+    ...(noTableReasons && { noTableReasons }),
     // Each column's role (ADR-063), at its position in `schema`, with what it
     // stands for where that is decided (ADR-073). Without the values —
     // get_resource_schema is where an agent reads those — and without the rule

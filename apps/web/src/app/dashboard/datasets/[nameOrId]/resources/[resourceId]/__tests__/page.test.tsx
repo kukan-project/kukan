@@ -233,6 +233,46 @@ describe('ResourceEditorPage', () => {
     expect(tabFor('columns')).toBeUndefined()
   })
 
+  it('says under the preview why a workbook is not a table', async () => {
+    const workbook = { ...pkg.resources[0], name: 'data.xlsx', format: 'XLSX' }
+    schemaAnswer = { rowCount: 0, columns: [] }
+    vi.mocked(clientFetch).mockImplementation(
+      async (path) =>
+        ({
+          ok: true,
+          json: async () =>
+            String(path).endsWith('/schema')
+              ? { schema: schemaAnswer, noTableReasons: ['header-blank'] }
+              : { id: 'r1', name: 'data.xlsx', format: 'XLSX' },
+        }) as Response
+    )
+    render(
+      <DatasetEditorProvider
+        value={{
+          pkg: { ...pkg, resources: [workbook] },
+          mark: () => 0,
+          publish: vi.fn(),
+          reload,
+          canEdit: true,
+          readOnly: false,
+          organizations: [],
+          setPageReloader: () => {},
+          uploading: false,
+          setPageUnsaved: () => {},
+          resourceTab: 'preview',
+          setResourceTab: () => {},
+        }}
+      >
+        <ResourceEditorPage />
+      </DatasetEditorProvider>
+    )
+
+    expect(
+      await screen.findByText('This file was not read as a table, for these reasons.')
+    ).toBeInTheDocument()
+    expect(screen.getByRole('listitem')).toHaveTextContent('A heading cell is empty')
+  })
+
   it('labels the preview and the table settings one tab, whichever the resource has', async () => {
     renderPage({ format: 'CSV', url: 'https://example.com/a.csv' })
     await waitFor(() => expect(tabFor('columns') ?? tabFor('preview')).toBeDefined())

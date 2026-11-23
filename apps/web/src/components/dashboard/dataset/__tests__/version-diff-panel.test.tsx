@@ -240,8 +240,25 @@ describe('VersionDiffPanel', () => {
 
     await waitFor(() =>
       expect(
+        screen.getByText('v1 has no row-level snapshot, so there is nothing to compare against.')
+      ).toBeInTheDocument()
+    )
+  })
+
+  it('says why the version not covered is no table, where that is known', async () => {
+    mockDiff({ available: false, reason: 'not-ingested', from: 1, to: 2, reasonVersion: 1 })
+    render(
+      <VersionDiffPanel
+        resourceId="r1"
+        version={2}
+        noTableReasonOf={(n) => (n === 1 ? 'too-large' : null)}
+      />
+    )
+
+    await waitFor(() =>
+      expect(
         screen.getByText(
-          'v1 has no row-level snapshot, so there is nothing to compare against. Where a reason was recorded, the version list shows it.'
+          'v1 did not read as a table, so there is nothing to compare against (Too large to preview).'
         )
       ).toBeInTheDocument()
     )

@@ -12,7 +12,7 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import type { DiffRow, VersionDiffView } from '@kukan/shared'
+import type { DiffRow, NoTableReason, VersionDiffView } from '@kukan/shared'
 import { useFetch } from '@/hooks/use-fetch'
 
 /** How a cell reads, with `null` distinguished from an empty string. */
@@ -89,7 +89,16 @@ function SampleRows({
  * while a version's diff is expanded, so the query runs on demand rather than
  * once per row when the history loads.
  */
-export function VersionDiffPanel({ resourceId, version }: { resourceId: string; version: number }) {
+export function VersionDiffPanel({
+  resourceId,
+  version,
+  noTableReasonOf,
+}: {
+  resourceId: string
+  version: number
+  /** Why a version of the list is not a table, said where a diff cannot be had for it */
+  noTableReasonOf?: (version: number) => NoTableReason | null
+}) {
   const t = useTranslations('resource.versions')
   const { data: diff, error } = useFetch<VersionDiffView>(
     `/api/v1/resources/${resourceId}/versions/${version}/diff`
@@ -105,11 +114,19 @@ export function VersionDiffPanel({ resourceId, version }: { resourceId: string; 
   if (!diff) return <p className="text-sm text-muted-foreground">{t('diffLoading')}</p>
 
   if (!diff.available) {
+    // A string, not the number: ICU groups digits, so v1000 would read
+    // "v1,000". Unused by the reasons that name no version.
+    const named = String(diff.reasonVersion ?? '')
+    // Not loaded because it is no table: why, here, where it is asked
+    const noTable =
+      diff.reason === 'not-ingested' && diff.reasonVersion != null
+        ? noTableReasonOf?.(diff.reasonVersion)
+        : null
     return (
       <p className="text-sm text-muted-foreground">
-        {/* A string, not the number: ICU groups digits, so v1000 would read
-            "v1,000". Unused by the reasons that name no version. */}
-        {t(`diffUnavailable.${diff.reason}`, { version: String(diff.reasonVersion ?? '') })}
+        {noTable
+          ? t('diffUnavailableNoTable', { version: named, reason: t(`noTable.${noTable}`) })
+          : t(`diffUnavailable.${diff.reason}`, { version: named })}
       </p>
     )
   }
