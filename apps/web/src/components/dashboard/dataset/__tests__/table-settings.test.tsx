@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { clientFetch } from '@/lib/client-api'
 import {
   useSettledEstimate,
@@ -628,7 +629,13 @@ describe('TableSettings', () => {
     // The preview readers see, in place of a separate tab: seeing the values
     // is what tells someone that two columns together are the key
     route({})
-    const preview = vi.fn((key: string[] | null) => <p>preview of {key?.join('+') ?? 'no key'}</p>)
+    // The settings go under the table view, which the preview draws
+    const preview = vi.fn((key: string[] | null, belowTable: ReactNode) => (
+      <>
+        <p>preview of {key?.join('+') ?? 'no key'}</p>
+        {belowTable}
+      </>
+    ))
     render(<TableSettings resourceId="r1" preview={preview} />)
 
     expect(await screen.findByText('preview of no key')).toBeInTheDocument()

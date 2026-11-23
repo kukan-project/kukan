@@ -25,6 +25,16 @@ function renderExplorer(resource: Partial<Resource>) {
 }
 
 describe('ResourceExplorer', () => {
+  it('marks a resource read as a table beside its format, and no other', () => {
+    renderExplorer({ format: 'XLSX', hasTable: true })
+    expect(screen.getByRole('img', { name: 'Table' })).toHaveAttribute('title', 'Table')
+  })
+
+  it('leaves a resource not read as a table unmarked', () => {
+    renderExplorer({ format: 'XLSX', hasTable: false })
+    expect(screen.queryByRole('img', { name: 'Table' })).not.toBeInTheDocument()
+  })
+
   it('links to the source site when the resource lives on an external URL', () => {
     renderExplorer({ url: 'https://example.com/data/population.csv', urlType: null })
 

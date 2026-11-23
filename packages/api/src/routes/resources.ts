@@ -225,13 +225,17 @@ function isRangeNotSatisfiable(err: unknown): boolean {
 /** Resolve preview storage key and content type for a resource */
 async function resolvePreviewTarget(
   db: Database,
-  resource: { id: string; packageId: string; format: string | null; storageKey: string | null }
+  resource: { id: string; packageId: string; format: string | null; storageKey: string | null },
+  table = false
 ): Promise<{ storageKey: string; contentType: string } | null> {
+  // A workbook is drawn from its own bytes and read as a table from the
+  // Parquet its interpretation wrote (ADR-057): the table reader asks for that
   if (
-    isPdfFormat(resource.format) ||
-    isOfficeFormat(resource.format) ||
-    isIchitaroFormat(resource.format) ||
-    isImageFormat(resource.format)
+    !table &&
+    (isPdfFormat(resource.format) ||
+      isOfficeFormat(resource.format) ||
+      isIchitaroFormat(resource.format) ||
+      isImageFormat(resource.format))
   ) {
     return {
       storageKey: liveKey(resource),
@@ -533,7 +537,8 @@ resourcesRouter.get('/:id/download', async (c) => {
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, { headers })
 })
 
-// GET /api/v1/resources/:id/preview - Server-proxied preview with Range support
+// GET /api/v1/resources/:id/preview - Server-proxied preview with Range support. `?as=table`
+// asks for the table the interpretation wrote, which a workbook has beside its original
 // Used by hyparquet (Parquet preview) and local storage (file:// URLs).
 resourcesRouter.get('/:id/preview', async (c) => {
   const id = c.req.param('id')
@@ -542,7 +547,7 @@ resourcesRouter.get('/:id/preview', async (c) => {
   const resource = await service.getByIdWithAccessCheck(id, user)
   const storage = c.get('storage')
 
-  const target = await resolvePreviewTarget(c.get('db'), resource)
+  const target = await resolvePreviewTarget(c.get('db'), resource, c.req.query('as') === 'table')
   if (!target) {
     return c.json({ error: 'Preview not available' }, 404)
   }

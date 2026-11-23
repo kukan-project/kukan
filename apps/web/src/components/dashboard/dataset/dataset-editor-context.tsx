@@ -25,6 +25,8 @@ export interface EditorResource {
   latestVersion?: number | null
   /** A version whose reading waits on a person (ii-c §8.4): the list's dot */
   typeReviewDue?: boolean
+  /** The live version was read as a table: the list's table badge */
+  hasTable?: boolean
 }
 
 interface DatasetEditorContextValue {

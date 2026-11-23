@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ResourcePipelinePreview } from '../resource-pipeline-preview'
 
 const mockUseFetch = vi.fn()
@@ -21,10 +21,23 @@ vi.mock('../pipeline-status-detail', () => ({
   PipelineStatusDetail: () => <div data-testid="pipeline-status-detail">Pipeline Detail</div>,
 }))
 
-vi.mock('@/components/preview/resource-preview', () => ({
-  ResourcePreview: ({ resourceId, hasTable }: { resourceId: string; hasTable?: boolean }) => (
-    <div data-testid="resource-preview" data-has-table={String(hasTable)}>
+// The view is kept by the real hook; the preview only shows it and offers the original
+vi.mock('@/components/preview/resource-preview', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/preview/resource-preview')>()),
+  ResourcePreview: ({
+    resourceId,
+    hasTable,
+    view,
+    onViewChange,
+  }: {
+    resourceId: string
+    hasTable?: boolean
+    view?: string
+    onViewChange?: (view: 'original') => void
+  }) => (
+    <div data-testid="resource-preview" data-has-table={String(hasTable)} data-view={view}>
       Preview for {resourceId}
+      <button onClick={() => onViewChange?.('original')}>show the original</button>
     </div>
   ),
 }))
@@ -102,6 +115,103 @@ describe('ResourcePipelinePreview', () => {
     mockUseFetch.mockReturnValue({ data: null, loading: true, error: false })
     render(<ResourcePipelinePreview resourceId="r1" format="XLSX" hasTable />)
     expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-has-table', 'true')
+  })
+
+  it('shows the fields with the table view only', () => {
+    setSchemaFetch({
+      queryable: true,
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+      primaryKey: null,
+    })
+    render(<ResourcePipelinePreview resourceId="r1" format="CSV" />)
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-view', 'table')
+    expect(screen.getByTestId('resource-fields')).toBeVisible()
+
+    fireEvent.click(screen.getByText('show the original'))
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-view', 'original')
+    expect(screen.getByTestId('resource-fields')).not.toBeVisible()
+  })
+
+  it('opens a workbook read as a table on its original, the fields hidden from the first frame', () => {
+    setSchemaFetch({
+      queryable: true,
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+      primaryKey: null,
+    })
+    render(<ResourcePipelinePreview resourceId="r1" format="XLSX" hasTable />)
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-view', 'original')
+    expect(screen.getByTestId('resource-fields')).not.toBeVisible()
+  })
+
+  it('opens on the table where asked, with what goes under it in place of the fields', () => {
+    setSchemaFetch({
+      queryable: true,
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+      primaryKey: null,
+    })
+    render(
+      <ResourcePipelinePreview
+        resourceId="r1"
+        format="XLSX"
+        hasTable
+        opensOnTable
+        belowTable={<p>the settings</p>}
+      />
+    )
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-view', 'table')
+    expect(screen.getByText('the settings')).toBeVisible()
+    expect(screen.queryByTestId('resource-fields')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('show the original'))
+    expect(screen.getByText('the settings')).not.toBeVisible()
+  })
+
+  it('says a workbook was read as a table, and links its settings from the original', () => {
+    setSchemaFetch({
+      queryable: true,
+      schema: {
+        columns: [
+          { name: 'a', type: 'string', nullable: false, nullCount: 0 },
+          { name: 'b', type: 'integer', nullable: false, nullCount: 0 },
+        ],
+        rowCount: 1234,
+      },
+      primaryKey: null,
+    })
+    render(
+      <ResourcePipelinePreview
+        resourceId="r1"
+        format="XLSX"
+        hasTable
+        belowTable={<p>the settings</p>}
+      />
+    )
+    expect(screen.getByText('Table: 2 columns × 1,234 rows')).toBeInTheDocument()
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-view', 'original')
+    expect(screen.getByText('the settings')).not.toBeVisible()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Switch to the table view to open the table settings' })
+    )
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-view', 'table')
+    expect(screen.getByText('the settings')).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Switch to the table view to open the table settings' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows no table size where the file was not read as a table', () => {
+    render(<ResourcePipelinePreview resourceId="r1" format="DOCX" />)
+    expect(screen.queryByText(/^Table:/)).not.toBeInTheDocument()
   })
 
   it('asks a document that is not a workbook for no schema', () => {

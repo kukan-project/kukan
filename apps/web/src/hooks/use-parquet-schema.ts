@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FileMetaData, SchemaElement } from 'hyparquet'
+import { tablePreviewUrl } from '@/lib/paths'
 
 /** Semantic field type, decoupled from the Parquet physical/logical type. */
 export type FieldType =
@@ -100,7 +101,7 @@ export function useParquetSchema(resourceId: string): UseParquetSchemaResult {
         setLoading(true)
         setError(null)
 
-        const proxyUrl = `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
+        const proxyUrl = tablePreviewUrl(resourceId)
         const { asyncBufferFromUrl, parquetMetadataAsync } = await import('hyparquet')
 
         let file

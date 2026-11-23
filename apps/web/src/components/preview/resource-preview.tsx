@@ -68,11 +68,99 @@ interface ResourcePreviewProps {
    * waiting for `schema`. Absent, a workbook is drawn as its original.
    */
   hasTable?: boolean
+  /**
+   * Open on the table wherever there is one: where the table is what is being
+   * set up (the dashboard's table settings), not what a reader looks at first.
+   */
+  opensOnTable?: boolean
+  /**
+   * The view shown, kept by an owner that shows what goes with the table view
+   * ({@link usePreviewView}); with no `onViewChange` the preview keeps its own.
+   */
+  view?: PreviewView
+  onViewChange?: (view: PreviewView) => void
   /** The resource's settled primary key, from the same read */
   primaryKey?: string[] | null
 }
 
-type PreviewSource = 'parquet' | 'raw'
+/** A preview's views, where an owner keeps which one shows. */
+export type PreviewView = 'original' | 'table' | 'text' | 'map'
+
+/** What decides the view a preview opens on. */
+type PreviewOpening = Pick<
+  ResourcePreviewProps,
+  | 'resourceId'
+  | 'format'
+  | 'version'
+  | 'schema'
+  | 'hasTable'
+  | 'opensOnTable'
+  | 'notPublic'
+  | 'officePreviewViewer'
+>
+
+/**
+ * The view a resource's preview shows, and the way to change it: kept by
+ * whoever also shows what goes with the table view (the field list, the table
+ * settings), so that is right from the first frame. A table opens on itself
+ * but a GeoJSON's, which opens on its map, and a workbook's, which opens on its
+ * original unless that took a tab down last time (or there is none to draw).
+ * Undefined while the browser is asked about that.
+ */
+export function usePreviewView(
+  opening: PreviewOpening
+): [PreviewView | undefined, (view: PreviewView) => void] {
+  const [picked, setPicked] = useState<PreviewView>()
+  const f = opening.format ?? null
+  const workbook = isExcelFormat(f) && !!opening.hasTable
+  const doc = docOf(opening)
+  const hasOriginal =
+    workbook &&
+    officeOriginal({
+      ...opening,
+      format: f!,
+      officePreviewViewer: opening.officePreviewViewer ?? 'ibis-office',
+      doc,
+    }) !== undefined
+  const asksCrash = hasOriginal && !opening.opensOnTable
+  const crashed = useCrashedBefore(asksCrash ? doc : null)
+  if (picked) return [picked, setPicked]
+  const columns = (opening.schema?.columns.length ?? 0) > 0
+  const opens: PreviewView | undefined = isCsvFormat(f)
+    ? 'table'
+    : isGeoJsonFormat(f)
+      ? // On the map everywhere, the settings' tab too: the map is what a GeoJSON is looked at as
+        'map'
+      : isJsonFormat(f)
+        ? columns
+          ? 'table'
+          : 'original'
+        : !asksCrash
+          ? workbook
+            ? 'table'
+            : 'original'
+          : crashed === undefined
+            ? undefined
+            : crashed
+              ? 'table'
+              : 'original'
+  return [opens, setPicked]
+}
+
+const docOf = ({ resourceId, version }: Pick<PreviewOpening, 'resourceId' | 'version'>) =>
+  `${resourceId}:${version ?? 0}`
+
+/**
+ * Whether this document's original took a tab down last time, once the
+ * browser has said: undefined until then, and for no document.
+ */
+function useCrashedBefore(doc: string | null): boolean | undefined {
+  const [answer, setAnswer] = useState<{ doc: string; crashed: boolean }>()
+  useEffect(() => {
+    if (doc) setAnswer({ doc, crashed: crashedBefore(doc) })
+  }, [doc])
+  return doc && answer?.doc === doc ? answer.crashed : undefined
+}
 
 /**
  * Checks for Parquet preview (pipeline output) first.
@@ -80,7 +168,17 @@ type PreviewSource = 'parquet' | 'raw'
  * TXT is displayed as raw text.
  * If no preview data exists in Storage, shows "not available".
  */
-export function ResourcePreview({
+export function ResourcePreview(props: ResourcePreviewProps) {
+  return props.onViewChange ? <PreviewOf {...props} /> : <OwnViewPreview {...props} />
+}
+
+/** A preview with no owner to keep its view: it keeps its own. */
+function OwnViewPreview(props: ResourcePreviewProps) {
+  const [view, setView] = usePreviewView(props)
+  return <PreviewOf {...props} view={view} onViewChange={setView} />
+}
+
+function PreviewOf({
   resourceId,
   format,
   url,
@@ -91,9 +189,12 @@ export function ResourcePreview({
   schema,
   hasTable,
   primaryKey,
+  view,
+  onViewChange,
 }: ResourcePreviewProps) {
   const f = format ?? null
-  const doc = `${resourceId}:${version ?? 0}`
+  const doc = docOf({ resourceId, version })
+  const table = { resourceId, schema, primaryKey, view, onViewChange }
 
   if (isImageFormat(f)) return <ImagePreview resourceId={resourceId} />
   if (isPdfFormat(f))
@@ -101,6 +202,7 @@ export function ResourcePreview({
       <DocumentPreview
         key={resourceId}
         resourceId={resourceId}
+        format={f!}
         original={<PdfPreview resourceId={resourceId} />}
       />
     )
@@ -108,13 +210,21 @@ export function ResourcePreview({
     return (
       <TablePreview
         key={resourceId}
-        resourceId={resourceId}
-        schema={schema}
-        primaryKey={primaryKey}
+        {...table}
+        format={f!}
+        original={<RawTextPreview resourceId={resourceId} dialect={dialectOf(schema)} />}
       />
     )
   if (isGeoJsonFormat(f))
-    return <GeoJsonPreview resourceId={resourceId} schema={schema} primaryKey={primaryKey} />
+    return (
+      <GeoJsonPreview
+        resourceId={resourceId}
+        schema={schema}
+        primaryKey={primaryKey}
+        view={view as 'map' | 'table' | 'original' | undefined}
+        onViewChange={onViewChange}
+      />
+    )
   // A JSON whose records the interpretation read as a table (ADR-063
   // extension) is shown as one, the file itself a toggle away; any other JSON
   // is the file
@@ -122,46 +232,47 @@ export function ResourcePreview({
     return schema?.columns.length ? (
       <TablePreview
         key={resourceId}
-        resourceId={resourceId}
-        schema={schema}
-        primaryKey={primaryKey}
-        raw={{ label: 'JSON', node: <JsonPreview resourceId={resourceId} /> }}
+        {...table}
+        format="JSON"
+        original={<JsonPreview resourceId={resourceId} />}
       />
     ) : (
       <JsonPreview resourceId={resourceId} />
     )
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (f && isOfficeFormat(f)) {
-    const office = (
-      <OfficePreview
+    const original = officeOriginal({
+      resourceId,
+      format: f,
+      url,
+      size,
+      notPublic,
+      officePreviewViewer,
+      doc,
+    })
+    // A workbook the interpretation read as a table (ADR-057 decision 9): its
+    // original, the table and the extracted text side by side
+    if (isExcelFormat(f) && hasTable) {
+      if (!view) return <PreviewSkeleton />
+      return <TablePreview key={resourceId} {...table} format={f} original={original} withText />
+    }
+    if (!original) return <DocumentTextPreview resourceId={resourceId} />
+    return (
+      <RememberedOriginal
+        key={`${doc}:${f}`}
         resourceId={resourceId}
         format={f}
-        url={url}
-        size={size}
-        notPublic={notPublic}
-        officePreviewViewer={officePreviewViewer}
         doc={doc}
+        original={original}
       />
     )
-    // A workbook the interpretation read as a table (ADR-057 decision 9) is
-    // shown as one, the original a toggle away; any other is the original
-    if (isExcelFormat(f) && hasTable)
-      return (
-        <TablePreview
-          key={resourceId}
-          resourceId={resourceId}
-          schema={schema}
-          primaryKey={primaryKey}
-          raw={{ label: f.toUpperCase(), node: office }}
-        />
-      )
-    return office
   }
   if (isIchitaroFormat(f))
     return (
       <RememberedOriginal
         key={doc}
         resourceId={resourceId}
+        format={f!}
         doc={doc}
         original={
           <IchitaroPreview
@@ -179,7 +290,13 @@ export function ResourcePreview({
   return <PreviewNotAvailable />
 }
 
-function OfficePreview({
+/**
+ * What draws an Office file's original, or nothing where none may be drawn (a
+ * private file and Microsoft's viewer). ibisOffice draws in the visitor's
+ * browser, from the file the visitor may read, so a private dataset's files
+ * are drawn too.
+ */
+function officeOriginal({
   resourceId,
   format,
   url,
@@ -195,28 +312,11 @@ function OfficePreview({
   notPublic?: boolean
   officePreviewViewer: OfficePreviewViewer
   doc: string
-}) {
-  // ibisOffice draws in the visitor's browser, from the file the visitor may
-  // read, so a private dataset's files are drawn too
+}): ReactNode | undefined {
   if (officePreviewViewer === 'ibis-office')
-    return (
-      <RememberedOriginal
-        key={`${doc}:${format}`}
-        resourceId={resourceId}
-        doc={doc}
-        original={
-          <IbisOfficePreview resourceId={resourceId} doc={doc} format={format} size={size} />
-        }
-      />
-    )
-  if (notPublic) return <DocumentTextPreview resourceId={resourceId} />
-  return (
-    <DocumentPreview
-      key={resourceId}
-      resourceId={resourceId}
-      original={<OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />}
-    />
-  )
+    return <IbisOfficePreview resourceId={resourceId} doc={doc} format={format} size={size} />
+  if (notPublic) return undefined
+  return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
 }
 
 /**
@@ -225,10 +325,13 @@ function OfficePreview({
  */
 function DocumentPreview({
   resourceId,
+  format,
   original,
   initial = 'original',
 }: {
   resourceId: string
+  /** Named on the original's badge, as every preview names its original */
+  format: string
   original: ReactNode
   initial?: 'original' | 'text'
 }) {
@@ -237,7 +340,11 @@ function DocumentPreview({
     <KeptViews
       initial={initial}
       views={[
-        { key: 'original', label: t('previewSourceOriginal'), node: original },
+        {
+          key: 'original',
+          label: t('previewSourceOriginal', { format: format.toUpperCase() }),
+          node: original,
+        },
         {
           key: 'text',
           label: t('previewSourceExtractedText'),
@@ -255,36 +362,52 @@ function DocumentPreview({
  */
 function RememberedOriginal({
   resourceId,
+  format,
   doc,
   original,
 }: {
   resourceId: string
+  format: string
   doc: string
   original: ReactNode
 }) {
-  const [opensOn, setOpensOn] = useState<'original' | 'text'>()
-  useEffect(() => setOpensOn(crashedBefore(doc) ? 'text' : 'original'), [doc])
-  if (!opensOn) return <PreviewSkeleton />
-  return <DocumentPreview resourceId={resourceId} initial={opensOn} original={original} />
+  const crashed = useCrashedBefore(doc)
+  if (crashed === undefined) return <PreviewSkeleton />
+  return (
+    <DocumentPreview
+      resourceId={resourceId}
+      format={format}
+      initial={crashed ? 'text' : 'original'}
+      original={original}
+    />
+  )
 }
 
 /**
  * Views of one resource behind a row of badges. Each stays mounted once
  * shown, so switching back neither loads nor draws it again, but for an original
- * too heavy to leave running, which closes itself while hidden.
+ * too heavy to leave running, which closes itself while hidden. The view shown
+ * is `value` where an owner keeps it, else this keeps its own from `initial`.
  */
 function KeptViews<K extends string>({
   views,
+  value,
   initial,
+  onChange,
 }: {
   views: { key: K; label: string; node: ReactNode }[]
-  initial: K
+  value?: K
+  initial?: K
+  onChange?: (key: K) => void
 }) {
-  const [source, setSource] = useState<K>(initial)
-  const [shown, setShown] = useState<Set<K>>(() => new Set([initial]))
+  const [own, setOwn] = useState<K>(() => value ?? initial ?? views[0]!.key)
+  const source = value ?? own
+  const [shown, setShown] = useState<Set<K>>(() => new Set([source]))
+  // During render: a view an owner switched to is drawn in the same pass
+  if (!shown.has(source)) setShown(new Set(shown).add(source))
   const show = (key: K) => {
-    setSource(key)
-    setShown((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+    setOwn(key)
+    onChange?.(key)
   }
 
   return (
@@ -384,41 +507,85 @@ function MarkdownPreview({ resourceId }: { resourceId: string }) {
   )
 }
 
-function TablePreview({
+/** The table read from a resource, with what it does not hold said above it. */
+function TableView({
   resourceId,
   schema,
   primaryKey,
-  raw,
 }: {
   resourceId: string
   schema?: ResourceSchema | null
   primaryKey?: string[] | null
-  /** The file behind the table, where it is not the text a CSV is */
-  raw?: { label: string; node: ReactNode }
+}) {
+  return (
+    <>
+      <DroppedRowsNote schema={schema} />
+      <DataExplorer
+        resourceId={resourceId}
+        primaryKey={primaryKey}
+        schemaColumns={schema?.columns ?? null}
+      />
+    </>
+  )
+}
+
+/**
+ * The table read from a resource behind a row of badges: its original first,
+ * as every preview orders its views, where there is one to draw, and the text
+ * extracted from it after, where it is a document (a workbook).
+ */
+function TablePreview({
+  resourceId,
+  format,
+  schema,
+  primaryKey,
+  original,
+  withText,
+  view,
+  onViewChange,
+}: {
+  resourceId: string
+  schema?: ResourceSchema | null
+  primaryKey?: string[] | null
+  /** The file's format, named on its original's badge */
+  format: string
+  original?: ReactNode
+  withText?: boolean
+  view?: PreviewView
+  onViewChange?: (view: PreviewView) => void
 }) {
   const t = useTranslations('resource')
-  const [source, setSource] = useState<PreviewSource>('parquet')
-
-  const sources: { key: PreviewSource; label: string }[] = [
-    { key: 'parquet', label: t('previewSourceTable') },
-    // The file itself, beside the table read from it — the Office previews' 原本
-    { key: 'raw', label: raw?.label ?? t('previewSourceOriginalText') },
-  ]
-
   return (
-    <div className="flex flex-col gap-2">
-      <SourceToggle sources={sources} value={source} onChange={setSource} />
-      {source === 'parquet' && <DroppedRowsNote schema={schema} />}
-      {source === 'parquet' && (
-        <DataExplorer
-          resourceId={resourceId}
-          primaryKey={primaryKey}
-          schemaColumns={schema?.columns ?? null}
-        />
-      )}
-      {source === 'raw' &&
-        (raw?.node ?? <RawTextPreview resourceId={resourceId} dialect={dialectOf(schema)} />)}
-    </div>
+    <KeptViews<PreviewView>
+      value={view}
+      initial="table"
+      onChange={onViewChange}
+      views={[
+        ...(original
+          ? [
+              {
+                key: 'original' as const,
+                label: t('previewSourceOriginal', { format: format.toUpperCase() }),
+                node: original,
+              },
+            ]
+          : []),
+        {
+          key: 'table',
+          label: t('previewSourceTable'),
+          node: <TableView resourceId={resourceId} schema={schema} primaryKey={primaryKey} />,
+        },
+        ...(withText
+          ? [
+              {
+                key: 'text' as const,
+                label: t('previewSourceExtractedText'),
+                node: <DocumentTextPreview resourceId={resourceId} />,
+              },
+            ]
+          : []),
+      ]}
+    />
   )
 }
 

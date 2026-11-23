@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Alert, AlertDescription, Tabs, TabsContent, TabsList, TabsTrigger } from '@kukan/ui'
@@ -197,11 +197,12 @@ export function ResourceEditor({
    * The public page's own preview, so what is checked here is what readers
    * see — for a draft or a private dataset too, which has no public page yet.
    * On the Preview tab, or on the Table settings tab of a writer's table,
-   * marking the key being picked and leaving the fields to that tab's table.
+   * opening on the table, marking the key being picked and putting that tab's
+   * settings where the fields would be.
    * Mounted only while its tab is open: the table and Office viewers are
    * heavy, and it remounts when a run settles.
    */
-  const preview = (primaryKey: string[] | null | undefined, withFields = true) => (
+  const preview = (primaryKey?: string[] | null, settings?: ReactNode) => (
     <>
       {/* Right after a save or a reprocess the preview is the previous
           version's, or none; say which, rather than leave "no preview" to
@@ -222,7 +223,7 @@ export function ResourceEditor({
       <ResourcePipelinePreview
         key={reloadKey}
         primaryKey={primaryKey}
-        withFields={withFields}
+        {...(settings !== undefined && { belowTable: settings })}
         resourceId={resource.id}
         format={resource.format}
         url={externalUrl(resource)}
@@ -253,10 +254,10 @@ export function ResourceEditor({
             (link or upload), and the page's sections must not read as those */}
         <TabsList>
           <TabsTrigger value="basic">{t('tabBasic')}</TabsTrigger>
-          {!settingsTab && <TabsTrigger value="preview">{t('tabPreview')}</TabsTrigger>}
-          {/* Not where nothing may be written: a deleted dataset's column
-              settings and roles are not read at all (ADR-072 decision 4) */}
-          {settingsTab && <TabsTrigger value="columns">{t('tabColumns')}</TabsTrigger>}
+          {/* The table settings under the preview, but where nothing may be
+              written: a deleted dataset's column settings and roles are not
+              read at all (ADR-072 decision 4) */}
+          <TabsTrigger value={settingsTab ? 'columns' : 'preview'}>{t('tabPreview')}</TabsTrigger>
           <TabsTrigger value="versions">
             {t('tabVersions')}
             {/* The list's dot, so the two read as one mark */}
@@ -335,9 +336,9 @@ export function ResourceEditor({
               preview={
                 tab !== 'columns'
                   ? undefined
-                  : (key) => (
+                  : (key, settings) => (
                       <div className="flex flex-col gap-4 [&_[data-slot=preview-scroll]]:max-h-[300px]">
-                        {preview(key, false)}
+                        {preview(key, settings)}
                       </div>
                     )
               }

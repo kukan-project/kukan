@@ -62,7 +62,7 @@ import {
   isPendingDragId,
 } from '@/lib/resource-sections'
 import { useFileDrop } from '@/hooks/use-file-drop'
-import { FormatBadge } from '@/components/format-badge'
+import { FormatBadge, TableBadge } from '@/components/format-badge'
 import { PipelineStatusBadge } from './pipeline-status-badge'
 import { DropFilesZone } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
@@ -82,6 +82,8 @@ interface Resource {
   latestVersion?: number | null
   /** A version whose reading waits on a person (ii-c §8.4) */
   typeReviewDue?: boolean
+  /** The live version was read as a table */
+  hasTable?: boolean
   section?: string | null
   extras?: Record<string, unknown> | null
 }
@@ -308,6 +310,8 @@ function SortableResourceRow({
       {r.name || '-'}
     </span>
   )
+  // At the row's right edge, where it stands in the same place whatever the name
+  const tableBadge = r.hasTable && <TableBadge className="shrink-0" />
 
   return (
     <div
@@ -338,7 +342,10 @@ function SortableResourceRow({
           first heading (ADR-050), so the tinted heading bars say which rows a
           section holds, and the narrow column keeps the width for the name */}
       {readOnly ? (
-        <span className="flex min-w-0 flex-1 items-center gap-2 py-1.5">{body}</span>
+        <span className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
+          {body}
+          {tableBadge}
+        </span>
       ) : (
         <Link
           href={href}
@@ -346,6 +353,7 @@ function SortableResourceRow({
           className="flex min-w-0 flex-1 items-center gap-2 py-1.5"
         >
           {body}
+          {tableBadge}
         </Link>
       )}
       {r.pipelineStatus && (

@@ -8,14 +8,14 @@ import type { ResourceSchema } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { DataExplorer } from '@/components/data-explorer/data-explorer'
 import { highlightJson } from './json-preview'
-import { SourceToggle } from './resource-preview'
+import { SourceToggle, type PreviewView } from './resource-preview'
 
 const GeoJsonMap = dynamic(() => import('./geojson-map'), {
   ssr: false,
   loading: () => <MapSkeleton />,
 })
 
-type PreviewSource = 'map' | 'table' | 'json'
+type PreviewSource = Extract<PreviewView, 'map' | 'table' | 'original'>
 
 interface GeoJsonPreviewProps {
   resourceId: string
@@ -26,11 +26,25 @@ interface GeoJsonPreviewProps {
   schema?: ResourceSchema | null
   /** The resource's settled primary key, marked in the table as a CSV's is */
   primaryKey?: string[] | null
+  /** The view shown, where its owner keeps it; otherwise this keeps its own, opening on the map */
+  view?: PreviewSource
+  onViewChange?: (view: PreviewSource) => void
 }
 
-export function GeoJsonPreview({ resourceId, schema, primaryKey }: GeoJsonPreviewProps) {
+export function GeoJsonPreview({
+  resourceId,
+  schema,
+  primaryKey,
+  view,
+  onViewChange,
+}: GeoJsonPreviewProps) {
   const t = useTranslations('resource')
-  const [source, setSource] = useState<PreviewSource>('map')
+  const [own, setOwn] = useState<PreviewSource>('map')
+  const source = view ?? own
+  const setSource = (key: PreviewSource) => {
+    setOwn(key)
+    onViewChange?.(key)
+  }
   const hasTable = (schema?.columns.length ?? 0) > 0
   const [geoJson, setGeoJson] = useState<GeoJSON.GeoJsonObject | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,7 +76,8 @@ export function GeoJsonPreview({ resourceId, schema, primaryKey }: GeoJsonPrevie
   }, [resourceId])
 
   const jsonNodes = useMemo(
-    () => (source === 'json' && geoJson ? highlightJson(JSON.stringify(geoJson, null, 2)) : null),
+    () =>
+      source === 'original' && geoJson ? highlightJson(JSON.stringify(geoJson, null, 2)) : null,
     [source, geoJson]
   )
 
@@ -80,9 +95,10 @@ export function GeoJsonPreview({ resourceId, schema, primaryKey }: GeoJsonPrevie
   if (file && !hasTable) return file
 
   const sources: { key: PreviewSource; label: string }[] = [
+    // The original first, as every preview orders its views; the map is what it opens on
+    { key: 'original', label: t('previewSourceOriginal', { format: 'GEOJSON' }) },
     { key: 'map', label: t('previewSourceMap') },
-    ...(hasTable ? [{ key: 'table' as const, label: t('previewSourceAttributes') }] : []),
-    { key: 'json', label: 'JSON' },
+    ...(hasTable ? [{ key: 'table' as const, label: t('previewSourceTable') }] : []),
   ]
 
   return (
@@ -96,8 +112,8 @@ export function GeoJsonPreview({ resourceId, schema, primaryKey }: GeoJsonPrevie
           schemaColumns={schema!.columns}
         />
       )}
-      {source === 'json' && file}
-      {source === 'json' && jsonNodes && (
+      {source === 'original' && file}
+      {source === 'original' && jsonNodes && (
         <div className="overflow-hidden rounded-lg border">
           <div data-slot="preview-scroll" className="max-h-[600px] overflow-auto bg-muted/20 p-4">
             <pre className="whitespace-pre text-xs leading-relaxed">{jsonNodes}</pre>

@@ -14,6 +14,7 @@ import { sqlIdentifier, sqlLiteral } from '@kukan/lake/sql'
 import { parseSettledType, type ResourceColumn } from '@kukan/shared'
 import { arrowToStringRows, getDB } from '@/hooks/use-duckdb'
 import type { DisplayRow } from '@/lib/table-cells'
+import { tablePreviewUrl } from '@/lib/paths'
 import { cellKey } from '@/components/data-explorer/cell-marks'
 
 /**
@@ -224,7 +225,7 @@ async function readSample(resourceId: string) {
   const file = `${name}.parquet`
   const text = `${name}.json`
   const { DuckDBDataProtocol } = await import('@duckdb/duckdb-wasm')
-  const url = new URL(`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`, location.href)
+  const url = new URL(tablePreviewUrl(resourceId), location.href)
   await db.registerFileURL(file, url.href, DuckDBDataProtocol.HTTP, false)
   const conn = await db.connect()
   try {

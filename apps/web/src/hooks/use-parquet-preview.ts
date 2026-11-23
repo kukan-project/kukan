@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { AsyncBuffer, FileMetaData } from 'hyparquet'
+import { tablePreviewUrl } from '@/lib/paths'
 
 interface ParquetMetadata {
   numRows: number
@@ -55,7 +56,7 @@ export function useParquetPreview({
         setError(null)
 
         // Server-proxied preview endpoint (same-origin, no CORS issues)
-        const proxyUrl = `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
+        const proxyUrl = tablePreviewUrl(resourceId)
 
         // Dynamically imported, like the reader: neither belongs in the bundle
         // of a page that never opens a preview.

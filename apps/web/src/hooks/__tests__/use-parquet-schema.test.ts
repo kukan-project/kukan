@@ -69,7 +69,9 @@ describe('useParquetSchema', () => {
         compressedSize: 71,
       },
     ])
-    expect(mockAsyncBufferFromUrl).toHaveBeenCalledWith({ url: '/api/v1/resources/r1/preview' })
+    expect(mockAsyncBufferFromUrl).toHaveBeenCalledWith({
+      url: '/api/v1/resources/r1/preview?as=table',
+    })
   })
 
   it('maps physical/logical types to semantic field types', async () => {

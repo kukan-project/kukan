@@ -46,7 +46,7 @@ describe('useParquetPreview', () => {
     expect(result.current.totalPages).toBe(3) // 250 / 100 = 3
 
     expect(mockAsyncBufferFromUrl).toHaveBeenCalledWith({
-      url: '/api/v1/resources/r1/preview',
+      url: '/api/v1/resources/r1/preview?as=table',
     })
   })
 

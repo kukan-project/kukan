@@ -98,3 +98,11 @@ export function externalUrl(
 export function keepsFilesPrivate(pkg: { private?: boolean; state?: string | null }): boolean {
   return pkg.private === true || pkg.state === 'draft' || pkg.state === 'deleted'
 }
+
+/**
+ * The Parquet the interpretation wrote of a resource, for the table readers.
+ * `as=table` because a workbook's own preview address serves its original.
+ */
+export function tablePreviewUrl(resourceId: string): string {
+  return `/api/v1/resources/${encodeURIComponent(resourceId)}/preview?as=table`
+}

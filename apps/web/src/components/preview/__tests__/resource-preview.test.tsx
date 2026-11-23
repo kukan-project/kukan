@@ -135,7 +135,7 @@ describe('ResourcePreview', () => {
       render(<ResourcePreview resourceId="r-json" format="JSON" schema={schema} />)
 
       expect(screen.getByTestId('data-explorer')).toBeInTheDocument()
-      expect(screen.getByText('JSON')).toBeInTheDocument()
+      expect(screen.getByText('Original (JSON)')).toBeInTheDocument()
       expect(screen.queryByTestId('json-preview')).not.toBeInTheDocument()
     })
 
@@ -189,7 +189,7 @@ describe('ResourcePreview', () => {
     it('draws the original of each format ibisOffice reads, beside its extracted text', () => {
       for (const format of ['XLSX', 'XLS', 'DOCX', 'DOC', 'PPTX', 'PPT']) {
         const { unmount } = render(<ResourcePreview resourceId="r1" format={format} />)
-        expect(screen.getByText('Original')).toBeInTheDocument()
+        expect(screen.getByText(`Original (${format})`)).toBeInTheDocument()
         expect(screen.getByText('Extracted text')).toBeInTheDocument()
         expect(screen.getByTestId('ibis-office-preview')).toHaveTextContent(
           `ibisOffice ${format} r1`
@@ -209,13 +209,13 @@ describe('ResourcePreview', () => {
       localStorage.setItem('kukan:original-draw:r1:3:gone', String(Date.now() - 60_000))
       render(<ResourcePreview resourceId="r1" format="XLSX" version={3} />)
 
-      expect(screen.getByText('Original')).toBeInTheDocument()
+      expect(screen.getByText('Original (XLSX)')).toBeInTheDocument()
       expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
       await waitFor(() =>
         expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/document-text')
       )
 
-      screen.getByText('Original').click()
+      screen.getByText('Original (XLSX)').click()
       expect(await screen.findByTestId('ibis-office-preview')).toBeInTheDocument()
       localStorage.clear()
     })
@@ -227,12 +227,37 @@ describe('ResourcePreview', () => {
       localStorage.clear()
     })
 
-    it('shows a workbook read as a table as the table, its original a toggle away (ADR-057)', async () => {
+    it('puts a workbook read as a table behind one row: original, table, text, opening on the original (ADR-057)', async () => {
       render(<ResourcePreview resourceId="r1" format="XLSX" hasTable />)
+
+      const labels = screen
+        .getAllByText(/^(Original \(XLSX\)|Table|Extracted text)$/)
+        .map((b) => b.textContent)
+      expect(labels.map((l) => (/^Original/.test(l!) ? 0 : /^Table/.test(l!) ? 1 : 2))).toEqual([
+        0, 1, 2,
+      ])
+      expect(await screen.findByTestId('ibis-office-preview')).toBeInTheDocument()
+      expect(screen.queryByTestId('data-explorer')).not.toBeInTheDocument()
+      screen.getByText('Table').click()
+      expect(await screen.findByTestId('data-explorer')).toBeInTheDocument()
+    })
+
+    it('opens a workbook read as a table on the table where its original took a tab down', async () => {
+      mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
+      localStorage.setItem('kukan:original-draw:r1:3:gone', String(Date.now() - 60_000))
+      render(<ResourcePreview resourceId="r1" format="XLSX" version={3} hasTable />)
+
+      expect(await screen.findByTestId('data-explorer')).toBeInTheDocument()
+      expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
+      localStorage.clear()
+    })
+
+    it('opens a workbook read as a table on the table where asked, its original a badge away', async () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" hasTable opensOnTable />)
 
       expect(screen.getByTestId('data-explorer')).toBeInTheDocument()
       expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
-      screen.getByText('XLSX').click()
+      screen.getByText('Original (XLSX)').click()
       expect(await screen.findByTestId('ibis-office-preview')).toBeInTheDocument()
     })
 
@@ -319,7 +344,7 @@ describe('ResourcePreview', () => {
         expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/r1/document-text')
       )
       expect(document.querySelector('iframe')).toBeNull()
-      expect(screen.queryByText('Original')).not.toBeInTheDocument()
+      expect(screen.queryByText(/^Original/)).not.toBeInTheDocument()
     })
 
     it('should route XLS to Office Online preview (not generic not-available)', () => {
@@ -331,7 +356,7 @@ describe('ResourcePreview', () => {
       stubObservers()
       mockClientFetch.mockResolvedValue(new Response(null, { status: 404 }))
       render(<ResourcePreview resourceId="r1" format="JTD" />)
-      expect(screen.getByText('Original')).toBeInTheDocument()
+      expect(screen.getByText('Original (JTD)')).toBeInTheDocument()
       expect(screen.getByText('Extracted text')).toBeInTheDocument()
       expect(
         await screen.findByText(
@@ -349,7 +374,7 @@ describe('ResourcePreview', () => {
         const { unmount } = render(
           <ResourcePreview resourceId="r1" format={format} officePreviewViewer="office-online" />
         )
-        expect(screen.getByText('Original')).toBeInTheDocument()
+        expect(screen.getByText(`Original (${format})`)).toBeInTheDocument()
         expect(screen.getByText('Extracted text')).toBeInTheDocument()
         unmount()
       }

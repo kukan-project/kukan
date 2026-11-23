@@ -3,6 +3,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection, DuckDBBundles } from '@duckdb/
 import { clientFetch } from '@/lib/client-api'
 import { parquetFileName, buildQuery, type DuckDBQueryParams } from '@/lib/duckdb-sql'
 import { formatCell } from '@/lib/format-utils'
+import { tablePreviewUrl } from '@/lib/paths'
 import type { DisplayRow } from '@/lib/table-cells'
 
 type ArrowTable = Awaited<ReturnType<AsyncDuckDBConnection['query']>>
@@ -193,7 +194,7 @@ export function useDuckDB({ resourceId, enabled }: UseDuckDBOptions): UseDuckDBR
         if (cancelled) return
 
         // Fetch and register Parquet file
-        const url = `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
+        const url = tablePreviewUrl(resourceId)
         const res = await clientFetch(url, { signal: abortController.signal })
         if (!res.ok) {
           throw new Error(res.status === 404 ? 'Preview not available' : `HTTP ${res.status}`)

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings2 } from 'lucide-react'
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -21,7 +22,7 @@ import {
   type ResourceSchema,
 } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
-import { ResourcePreview } from '@/components/preview/resource-preview'
+import { ResourcePreview, usePreviewView } from '@/components/preview/resource-preview'
 import { ResourceFields, type ColumnRoleView } from './resource-fields'
 import { DataApiDialog } from './data-api-dialog'
 import { OdataDialog, type ReportedRefusal } from './odata-dialog'
@@ -40,13 +41,19 @@ interface ResourcePipelinePreviewProps {
   latestVersion?: number | null
   /** Whether the live version was read as a table, as the server reported it with the page */
   hasTable?: boolean
+  /** Open on the table wherever there is one (the dashboard's table settings) */
+  opensOnTable?: boolean
   /**
    * The key to mark in place of the stored one: the dashboard's Table settings
    * marks the key being picked, before it is applied.
    */
   primaryKey?: string[] | null
-  /** Whether to list the fields under the preview. The Table settings tab has its own table of them. */
-  withFields?: boolean
+  /**
+   * What goes under the table view, in place of the field list: the Table
+   * settings tab has its own table of the fields. Shown with the table view only,
+   * and kept mounted while another view is.
+   */
+  belowTable?: ReactNode
 }
 
 /**
@@ -64,8 +71,9 @@ export function ResourcePipelinePreview({
   officePreviewViewer,
   latestVersion,
   hasTable,
+  opensOnTable,
   primaryKey: keyShown,
-  withFields = true,
+  belowTable,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
   const router = useRouter()
@@ -96,6 +104,22 @@ export function ResourcePipelinePreview({
   )
   const fields = showsAsTable(format, null, schemaData?.schema)
 
+  // Kept here, beside what goes with the table view: the field list describes
+  // the table, not the original or the text
+  const opening = {
+    resourceId,
+    format,
+    version: latestVersion,
+    schema: schemaData?.schema,
+    hasTable,
+    opensOnTable,
+    notPublic,
+    officePreviewViewer,
+  }
+  const [view, setView] = usePreviewView(opening)
+  const columns = schemaData?.schema?.columns.length ?? 0
+  const tableSize = columns > 0 ? { columns, rows: schemaData?.schema?.rowCount ?? 0 } : undefined
+
   const handleSettled = useCallback(() => {
     setPreviewKey((k) => k + 1)
     router.refresh()
@@ -114,6 +138,13 @@ export function ResourcePipelinePreview({
             <span className="text-xs text-muted-foreground">
               {t('previewGeneratedAt', { date: generatedAt })}
             </span>
+          )}
+          {/* That the file was read as a table, whichever view is shown: for a
+              workbook or a JSON it is not what the format says (ADR-057 decision 9) */}
+          {tableSize && (
+            <Badge variant="secondary" className="font-normal">
+              {t('previewTableSize', tableSize)}
+            </Badge>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -158,29 +189,35 @@ export function ResourcePipelinePreview({
       </div>
       <ResourcePreview
         key={`${resourceId}-${previewKey}`}
-        resourceId={resourceId}
-        format={format}
+        {...opening}
         url={url}
         size={size}
-        notPublic={notPublic}
-        officePreviewViewer={officePreviewViewer}
-        version={latestVersion}
-        schema={schemaData?.schema}
-        hasTable={hasTable}
+        view={view}
+        onViewChange={setView}
         primaryKey={keyShown !== undefined ? keyShown : schemaData?.primaryKey}
       />
-      {/* Field (column) list shares the preview's remount key so it refreshes
-          in lockstep when the pipeline (re)generates the Parquet preview. */}
-      {withFields && fields && (
-        <div className="mt-6">
-          <ResourceFields
-            key={`fields-${resourceId}-${previewKey}`}
-            resourceId={resourceId}
-            primaryKey={schemaData?.primaryKey}
-            schema={schemaData?.schema}
-            columnRoles={schemaData?.columnRoles}
-          />
-        </div>
+      {belowTable !== undefined && view !== undefined && view !== 'table' && tableSize && (
+        // The settings sit under the table view; said here so they are not missed
+        <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => setView('table')}>
+          {t('previewOpenTableSettings')}
+        </Button>
+      )}
+      {belowTable !== undefined ? (
+        <div hidden={view !== 'table'}>{belowTable}</div>
+      ) : (
+        // Field (column) list shares the preview's remount key so it refreshes
+        // in lockstep when the pipeline (re)generates the Parquet preview.
+        fields && (
+          <div className="mt-6" hidden={view !== 'table'}>
+            <ResourceFields
+              key={`fields-${resourceId}-${previewKey}`}
+              resourceId={resourceId}
+              primaryKey={schemaData?.primaryKey}
+              schema={schemaData?.schema}
+              columnRoles={schemaData?.columnRoles}
+            />
+          </div>
+        )
       )}
     </section>
   )

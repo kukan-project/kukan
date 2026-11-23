@@ -4,7 +4,7 @@ import { Fragment, useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Calendar, ExternalLink } from 'lucide-react'
 import { Card, CardContent, cn } from '@kukan/ui'
-import { FormatBadge } from '@/components/format-badge'
+import { FormatBadge, TableBadge } from '@/components/format-badge'
 import { formatBytes } from '@/lib/format-utils'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DownloadButton } from './download-button'
@@ -201,6 +201,7 @@ export function ResourceExplorer({
                       {r.name || t('unnamed')}
                     </p>
                   </div>
+                  {r.hasTable && <TableBadge className="shrink-0" />}
                 </CardContent>
               </Card>
             </Fragment>

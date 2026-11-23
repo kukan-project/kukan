@@ -52,12 +52,12 @@ describe('GeoJsonPreview', () => {
     expect(screen.queryByText('Attributes')).not.toBeInTheDocument()
   })
 
-  it('shows the file’s JSON on the JSON tab', async () => {
+  it('shows the file’s JSON as its original', async () => {
     mockClientFetch.mockResolvedValue(Response.json(featureCollection))
     const { container } = render(<GeoJsonPreview resourceId="g1" />)
     await screen.findByTestId('geojson-map')
 
-    fireEvent.click(screen.getByText('JSON'))
+    fireEvent.click(screen.getByText('Original (GEOJSON)'))
 
     expect(screen.queryByTestId('geojson-map')).not.toBeInTheDocument()
     expect(container.querySelector('pre')!.textContent).toBe(
@@ -73,6 +73,16 @@ describe('GeoJsonPreview', () => {
     expect(screen.queryByText('Map')).not.toBeInTheDocument()
   })
 
+  it('orders its views original, map, table, opening on the map', async () => {
+    mockClientFetch.mockRejectedValue(new Error('offline'))
+    render(<GeoJsonPreview resourceId="g1" schema={schema} primaryKey={['city']} />)
+    const labels = screen
+      .getAllByText(/^(Original \(GEOJSON\)|Map|Table)$/)
+      .map((b) => b.textContent)
+    expect(labels).toEqual(['Original (GEOJSON)', 'Map', 'Table'])
+    expect(await screen.findByText('Failed to load preview')).toBeInTheDocument()
+  })
+
   it('keeps the attribute table reachable when the file failed to load', async () => {
     mockClientFetch.mockRejectedValue(new Error('offline'))
     render(<GeoJsonPreview resourceId="g1" schema={schema} primaryKey={['city']} />)
@@ -81,12 +91,12 @@ describe('GeoJsonPreview', () => {
     expect(await screen.findByText('Failed to load preview')).toBeInTheDocument()
     expect(screen.queryByTestId('geojson-map')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Attributes'))
+    fireEvent.click(screen.getByText('Table'))
     const table = screen.getByTestId('data-explorer')
     expect(table).toHaveTextContent('g1:city')
     expect(table).toHaveAttribute('data-pk', 'city')
 
-    fireEvent.click(screen.getByText('JSON'))
+    fireEvent.click(screen.getByText('Original (GEOJSON)'))
     expect(screen.getByText('Failed to load preview')).toBeInTheDocument()
     expect(document.querySelector('pre')).toBeNull()
   })

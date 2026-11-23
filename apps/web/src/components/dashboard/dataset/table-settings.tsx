@@ -147,9 +147,11 @@ export function TableSettings({
    * The resource's preview, marking the key given — the one being picked. The
    * owner draws it, holding what a preview needs that this screen does not
    * (the format, the file's address, the viewer); it stands in for a separate
-   * Preview tab, and for a table that was not made it says why.
+   * Preview tab, and for a table that was not made it says why. `belowTable`
+   * goes under its table view, and only while that view is shown: the columns
+   * are decided looking at the table.
    */
-  preview?: (primaryKey: string[] | null) => ReactNode
+  preview?: (primaryKey: string[] | null, belowTable: ReactNode) => ReactNode
 }) {
   const t = useTranslations('resource.columnSettings')
   const tc = useTranslations('common')
@@ -524,9 +526,14 @@ export function TableSettings({
    * Wrapped alike in every state, so the preview the tab shows while loading
    * is the one it keeps rather than one it draws again
    */
-  const withMarks = (key: string[] | null) => (
-    <CellMarksContext.Provider value={cellMarks}>{preview?.(key)}</CellMarksContext.Provider>
-  )
+  const withMarks = (key: string[] | null, belowTable: ReactNode = null) =>
+    preview ? (
+      <CellMarksContext.Provider value={cellMarks}>
+        {preview(key, belowTable)}
+      </CellMarksContext.Provider>
+    ) : (
+      belowTable
+    )
 
   // The preview stands without the settings: it is this tab's, with no other
   // tab to see it on
@@ -593,33 +600,15 @@ export function TableSettings({
       storedKey.indexOf(name) !== selected.indexOf(name) || roleChanged(name) || typeChanged(name)
   ).length
 
-  return (
-    // `w-0 min-w-full`, on the whole section rather than the tables alone: a
-    // box is sized from its content, so a table sixty columns wide would widen
-    // the tab and the page would take the scrollbar. A declared width of zero
-    // keeps the section out of that measurement, and the minimum puts it back
-    // to the width it is given.
-    <div className="flex w-0 min-w-full flex-col gap-4">
-      {/* What the columns actually hold, before the choice — the preview
-          readers see, with the key being picked marked: a name does not say
-          whether a column identifies a row, and the counts do not say what a
-          value looks like. */}
-      {/* Not a preview of other bytes: a run whose Interpret failed leaves the
-          previous content's, and a key chosen over it is chosen over content
-          the resource does not serve (the check says `preview-stale` too) */}
-      {view.preview === 'preview-stale' ? (
-        <p className="text-muted-foreground text-xs">{t('previewStale')}</p>
-      ) : (
-        withMarks(selectedKey)
-      )}
-
+  const settings = (
+    <div className="mt-4 flex flex-col gap-4">
       {/* What a person decides about the columns, under the preview of what
-          they hold — headed as the preview is */}
+        they hold — headed as the preview is */}
       <h4 className="mt-2 text-xl font-semibold">{t('sectionColumns')}</h4>
       {/* In the table's order: the type, the key, the role. The advice to set a
-          key where a column can carry one — the guide's caution about unstable
-          columns is the other half — and what applying does (ADR-072 decision 4).
-          The same on every resource. */}
+        key where a column can carry one — the guide's caution about unstable
+        columns is the other half — and what applying does (ADR-072 decision 4).
+        The same on every resource. */}
       {(
         [
           [tr('columnRoles.type'), t('typesIntro')],
@@ -635,14 +624,14 @@ export function TableSettings({
       ))}
 
       {/* The explanations, folded and in short lists: they are read once, and
-          the table is what the tab is for. The conditional warnings stay
-          outside, below it. */}
+        the table is what the tab is for. The conditional warnings stay
+        outside, below it. */}
       <TableSettingsGuide />
 
       {/* The key as a unit. The table numbers the columns in it; with sixty of
-          them, the order is not something to reconstruct by hunting for
-          numbers. Always rendered, including with no key: a line that comes
-          and goes moves everything under it. */}
+        them, the order is not something to reconstruct by hunting for
+        numbers. Always rendered, including with no key: a line that comes
+        and goes moves everything under it. */}
       <div className="flex flex-wrap items-center gap-1 text-sm">
         <span className="text-muted-foreground">{t('current')}</span>
         {selected.map((name, i) => (
@@ -686,9 +675,9 @@ export function TableSettings({
       )}
 
       {/* Nothing to offer candidates from. A version interpreted before the
-          per-column counts existed carries none, and then every column looks
-          non-unique — the absence of the mark says "this repeats" when it means
-          "nobody counted". */}
+        per-column counts existed carries none, and then every column looks
+        non-unique — the absence of the mark says "this repeats" when it means
+        "nobody counted". */}
       {noCounts && <p className="text-warning-tint-foreground text-xs">{t('noCounts')}</p>}
       {/* Why some columns cannot be picked, only where the table has one */}
       {unkeyable.size > 0 && (
@@ -696,9 +685,9 @@ export function TableSettings({
       )}
 
       {/* Both notes above are "the derivatives are behind", and one run repairs
-          both — so one button. Not offered for `no-preview`: a resource with no
-          interpretation at all may simply have not run yet. It reloads nothing
-          of its own: the owner hears the run settle and moves `reloadKey`. */}
+        both — so one button. Not offered for `no-preview`: a resource with no
+        interpretation at all may simply have not run yet. It reloads nothing
+        of its own: the owner hears the run settle and moves `reloadKey`. */}
       {(noCounts || view.preview === 'preview-stale') && (
         <RebuildButton resourceId={resourceId} onRebuilt={() => onRunQueued?.()} />
       )}
@@ -710,7 +699,7 @@ export function TableSettings({
       )}
 
       {/* Kept in reach below a long table: the draft's count, what applying
-          does, and the two ways out of it */}
+        does, and the two ways out of it */}
       <div className="bg-background sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t py-3">
         <div className="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
           {changed > 0 && (
@@ -719,7 +708,7 @@ export function TableSettings({
             </span>
           )}
           {/* What a role change does, beside what the key's state is: the two
-              are applied together but cost different things */}
+            are applied together but cost different things */}
           {rolesDraft && queued === null && <p className="text-sm">{t('rolesWillApply')}</p>}
           {typesDraft && queued === null && <p className="text-sm">{t('typesWillApply')}</p>}
           {/* A role makes no version, so whether it is read is the profile's to say */}
@@ -782,10 +771,10 @@ export function TableSettings({
       </div>
 
       {/* Before every change of key, with the change itself. A fault adds what
-          it will cost: the apply is legal and the server takes it, but the
-          version it makes is refused by layer 2, the reason is written once and
-          never cleared (spec §6.6), and correcting the key afterwards does not
-          put it in. */}
+        it will cost: the apply is legal and the server takes it, but the
+        version it makes is refused by layer 2, the reason is written once and
+        never cleared (spec §6.6), and correcting the key afterwards does not
+        put it in. */}
       {/* Closed once there is nothing to apply: a run landing can settle it */}
       <Dialog
         open={confirming && readingDraft}
@@ -849,8 +838,8 @@ export function TableSettings({
               {tc('cancel')}
             </Button>
             {/* Not while the key is checked again: a run landing with the
-                dialog open re-checks it against new content, and the verdict
-                may turn this into a key that faults */}
+              dialog open re-checks it against new content, and the verdict
+              may turn this into a key that faults */}
             <Button onClick={apply} disabled={saving || checking}>
               {saving
                 ? t('applying')
@@ -863,6 +852,31 @@ export function TableSettings({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+
+  return (
+    // `w-0 min-w-full`, on the whole section rather than the tables alone: a
+    // box is sized from its content, so a table sixty columns wide would widen
+    // the tab and the page would take the scrollbar. A declared width of zero
+    // keeps the section out of that measurement, and the minimum puts it back
+    // to the width it is given.
+    <div className="flex w-0 min-w-full flex-col gap-4">
+      {/* What the columns actually hold, before the choice — the preview
+          readers see, with the key being picked marked: a name does not say
+          whether a column identifies a row, and the counts do not say what a
+          value looks like. */}
+      {/* Not a preview of other bytes: a run whose Interpret failed leaves the
+          previous content's, and a key chosen over it is chosen over content
+          the resource does not serve (the check says `preview-stale` too) */}
+      {view.preview === 'preview-stale' ? (
+        <>
+          <p className="text-muted-foreground text-xs">{t('previewStale')}</p>
+          {settings}
+        </>
+      ) : (
+        withMarks(selectedKey, settings)
+      )}
     </div>
   )
 }

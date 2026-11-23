@@ -18,10 +18,12 @@ vi.mock('next/navigation', () => ({
 
 // The panels are tested on their own; here they only have to be where the tabs put them
 vi.mock('@/components/dashboard/dataset/table-settings', () => ({
-  // Draws the preview it is handed, with a key being picked, as the real one does
-  TableSettings: ({ preview }: { preview?: (key: string[] | null) => React.ReactNode }) => (
-    <div data-testid="table-settings">{preview?.(['id'])}</div>
-  ),
+  // Draws the preview it is handed, with a key being picked and its settings, as the real one does
+  TableSettings: ({
+    preview,
+  }: {
+    preview?: (key: string[] | null, belowTable: React.ReactNode) => React.ReactNode
+  }) => <div data-testid="table-settings">{preview?.(['id'], <p>the settings</p>)}</div>,
 }))
 vi.mock('@/components/dashboard/dataset/resource-version-history', () => ({
   ResourceVersionHistory: () => <div data-testid="version-history" />,
@@ -109,6 +111,15 @@ function renderPage(
   )
 }
 
+/**
+ * A tab of the resource editor by what it holds: the preview and the table
+ * settings share one label ("Preview and settings"), so they are told apart by
+ * the value their trigger stands for.
+ */
+function tabFor(value: string): HTMLElement | undefined {
+  return screen.getAllByRole('tab').find((tab) => tab.id.endsWith(`-trigger-${value}`))
+}
+
 describe('ResourceEditorPage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
@@ -126,16 +137,14 @@ describe('ResourceEditorPage', () => {
         'true'
       )
     )
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
+    fireEvent.mouseDown(tabFor('columns')!)
     expect(setResourceTab).toHaveBeenCalledWith('columns')
   })
 
   it('opens on the preview where Table settings is remembered and the resource is no table', async () => {
     // A table's preview is on its Table settings tab, so each stands for the other
     renderPage({ format: 'PDF' }, pkg, true, { resourceTab: 'columns', setResourceTab: vi.fn() })
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('aria-selected', 'true')
-    )
+    await waitFor(() => expect(tabFor('preview')!).toHaveAttribute('aria-selected', 'true'))
   })
 
   it('opens on Basic where the remembered tab is not offered, and stays there once it is', async () => {
@@ -175,42 +184,40 @@ describe('ResourceEditorPage', () => {
     // The form saves the format; the page reads the resource again
     format = 'CSV'
     fireEvent.click(screen.getByTestId('resource-edit-form-save'))
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
-    )
+    await waitFor(() => expect(tabFor('columns')).toBeDefined())
     expect(screen.getByRole('tab', { name: 'Basic' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('splits the resource into tabs, with the columns for a table', async () => {
     renderPage({ format: 'CSV', url: 'https://example.com/a.csv' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Basic' })).toBeInTheDocument())
-    expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
+    expect(tabFor('columns')).toBeDefined()
     expect(screen.getByRole('tab', { name: 'Version history' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Processing' })).toBeInTheDocument()
 
     // Radix tabs select on mousedown
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
+    fireEvent.mouseDown(tabFor('columns')!)
     expect(screen.getByTestId('table-settings')).toBeInTheDocument()
   })
 
-  it('previews a table on its Table settings tab, with the key being picked and no field list', async () => {
+  it('previews a table on its Table settings tab as the public page does, with the key being picked and its settings in place of the field list', async () => {
     renderPage({ format: 'CSV' })
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
-    )
-    expect(screen.queryByRole('tab', { name: 'Preview' })).not.toBeInTheDocument()
+    await waitFor(() => expect(tabFor('columns')).toBeDefined())
+    expect(tabFor('preview')).toBeUndefined()
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Table settings' }))
+    fireEvent.mouseDown(tabFor('columns')!)
     expect(
       within(screen.getByTestId('table-settings')).getByTestId('resource-preview')
     ).toBeInTheDocument()
-    expect(preview.props).toMatchObject({ primaryKey: ['id'], withFields: false })
+    expect(preview.props).toMatchObject({ primaryKey: ['id'] })
+    expect(preview.props?.opensOnTable).toBeUndefined()
+    expect(preview.props?.belowTable).toBeDefined()
   })
 
   it('offers no columns for what is not read as a table', async () => {
     renderPage({ format: 'PDF' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Basic' })).toBeInTheDocument())
-    expect(screen.queryByRole('tab', { name: 'Table settings' })).not.toBeInTheDocument()
+    expect(tabFor('columns')).toBeUndefined()
   })
 
   /** A workbook whose current version's reading found these columns */
@@ -222,16 +229,20 @@ describe('ResourceEditorPage', () => {
 
   it('keeps a workbook whose reading found no columns on its Preview tab', async () => {
     renderWorkbook([])
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
-    expect(screen.queryByRole('tab', { name: 'Table settings' })).not.toBeInTheDocument()
+    await waitFor(() => expect(tabFor('preview')).toBeDefined())
+    expect(tabFor('columns')).toBeUndefined()
+  })
+
+  it('labels the preview and the table settings one tab, whichever the resource has', async () => {
+    renderPage({ format: 'CSV', url: 'https://example.com/a.csv' })
+    await waitFor(() => expect(tabFor('columns') ?? tabFor('preview')).toBeDefined())
+    expect(screen.getAllByRole('tab', { name: 'Preview and settings' })).toHaveLength(1)
   })
 
   it('offers Table settings on a workbook read as a table', async () => {
     renderWorkbook([{ name: 'a' }])
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
-    )
-    expect(screen.queryByRole('tab', { name: 'Preview' })).not.toBeInTheDocument()
+    await waitFor(() => expect(tabFor('columns')).toBeDefined())
+    expect(tabFor('preview')).toBeUndefined()
   })
 
   it('edits the resource on its Basic tab', async () => {
@@ -334,10 +345,10 @@ describe('ResourceEditorPage', () => {
       { format: 'PDF', url: 'https://example.com/a.csv', urlType: null, size: 10 },
       { ...pkg, state: 'draft' }
     )
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
+    await waitFor(() => expect(tabFor('preview')).toBeDefined())
     expect(screen.queryByTestId('resource-preview')).not.toBeInTheDocument()
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
+    fireEvent.mouseDown(tabFor('preview')!)
     expect(screen.getByTestId('resource-preview')).toBeInTheDocument()
     expect(preview.props).toMatchObject({
       url: 'https://example.com/a.csv',
@@ -348,8 +359,8 @@ describe('ResourceEditorPage', () => {
 
   it('gives an uploaded file no outside link to preview from', async () => {
     renderPage({ format: 'PDF', url: 'data.csv', urlType: 'upload' })
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
+    await waitFor(() => expect(tabFor('preview')).toBeDefined())
+    fireEvent.mouseDown(tabFor('preview')!)
     expect(preview.props).toMatchObject({ url: null, notPublic: false })
   })
 
@@ -358,8 +369,8 @@ describe('ResourceEditorPage', () => {
       { format: 'PDF' },
       { ...pkg, resources: [{ ...pkg.resources[0], pipelineStatus: 'processing' }] }
     )
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Preview' }))
+    await waitFor(() => expect(tabFor('preview')).toBeDefined())
+    fireEvent.mouseDown(tabFor('preview')!)
     expect(screen.getByText(/Processing\. The preview is shown again/)).toBeInTheDocument()
   })
 
@@ -386,7 +397,7 @@ describe('ResourceEditorPage', () => {
     renderPage({ format: 'CSV' }, { ...pkg, state: 'deleted' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Basic' })).toBeInTheDocument())
     expect(screen.queryByRole('tab', { name: 'Processing' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Table settings' })).not.toBeInTheDocument()
+    expect(tabFor('columns')).toBeUndefined()
   })
 
   it('treats another dataset’s resource as not found here', async () => {
