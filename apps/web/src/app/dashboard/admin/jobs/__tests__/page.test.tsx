@@ -118,9 +118,7 @@ describe('AdminJobsPage', () => {
     reprocessPending = true
     render(<AdminJobsPage />)
 
-    expect(
-      await screen.findByText(/Reprocessing of all resources is in progress/)
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/A reprocess is in progress/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reprocess all' })).toBeDisabled()
   })
 
@@ -133,9 +131,7 @@ describe('AdminJobsPage', () => {
     reprocessPending = true
 
     fireEvent.click(button)
-    expect(
-      await screen.findByText(/Reprocessing of all resources is in progress/)
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/A reprocess is in progress/)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(button).toBeDisabled()
   })

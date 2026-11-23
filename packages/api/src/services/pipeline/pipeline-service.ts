@@ -205,9 +205,12 @@ export class PipelineService {
    *   rather than fetching its URL again (ADR-044 §4). Applied only where
    *   there is one: a resource with no stored object has nothing to rebuild
    *   from and would fail in Fetch, so it is fetched as before.
+   * @param opts.formats - only resources whose format is one of these, compared
+   *   case-insensitively: a format whose reading changed (spec phase-excel-tables
+   *   §7.2). Omitted, every resource.
    */
   async enqueueAll(
-    opts: { rebuildOnly?: boolean } = {}
+    opts: { rebuildOnly?: boolean; formats?: readonly string[] } = {}
   ): Promise<{ enqueued: number; failed: number }> {
     const resources = await this.db
       .select({
@@ -216,7 +219,17 @@ export class PipelineService {
       })
       .from(resource)
       .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
-      .where(and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft'])))
+      .where(
+        and(
+          eq(resource.state, 'active'),
+          inArray(packageTable.state, ['active', 'draft']),
+          opts.formats &&
+            inArray(
+              sql`lower(${resource.format})`,
+              opts.formats.map((f) => f.toLowerCase())
+            )
+        )
+      )
 
     const { enqueued, failed } = await this.enqueueMany(
       resources.map((r) => ({

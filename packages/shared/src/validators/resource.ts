@@ -322,6 +322,11 @@ export type ResourceSummaryInput = z.infer<typeof resourceSummaryBodySchema>
 /** `refresh` also rewrites abstracts another model, prompt or language wrote */
 export const generateSummariesSchema = z.object({ refresh: z.boolean().optional() }).optional()
 
+/** `formats` narrows the reprocess of every resource to those formats, compared case-insensitively */
+export const enqueueAllSchema = z
+  .object({ formats: z.array(z.string().trim().min(1).max(50)).min(1).max(20).optional() })
+  .optional()
+
 export const reorderResourcesSchema = z.object({
   resourceIds: z.array(z.uuid()).min(1),
   /** Every active resource's label, or none: they ride with the order because a resource update would re-enqueue the pipeline (ADR-050). */

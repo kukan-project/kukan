@@ -481,6 +481,10 @@ purge-resource-version
   backfill-resource-versions / convert-set-aside-versions ──→ lake-ingest-version（未取込のものだけ）
   record-preview-row-groups ──→ resource-pipeline(rebuildOnly)（行グループが大きすぎるものだけ）
   POST /admin/jobs/enqueue-all（画面からの呼び出し元なし）──→ resource-pipeline × 全リソース（再取得あり）
+      ├ 本文を全件削除し、contentIndexed を全件 false に
+  POST /admin/jobs/enqueue-all{formats}（画面からの呼び出し元なし。リリースのときに一度だけ呼ぶ）
+      ├ 本文の索引には触れない（各 run が自分のリソースの本文を差し替える）
+      └──→ resource-pipeline(rebuildOnly) × 形式が formats のどれかのリソース（大文字小文字を区別しない）
 
 [cron / タイマー]
   5 分ごと（HEALTH_CHECK_CRON）──→ resource-pipeline（変化を検知したもの、定期の全取得）
@@ -538,14 +542,21 @@ purge-resource-version
 
 **無条件の全件** — 対象を絞らずに全データセット・全リソースへ展開する。
 
-| 全件                               | 何のためにあるか                                                                                           | 個別の側                                      |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 「埋め込みの再生成」               | 埋め込みを後から有効にした・モデルを変えた・テキストの組み立て方が変わった。全件に未反映フラグを立てる     | `embed-resources`（ハッシュ一致で生成しない） |
-| `summarize-all`                    | 抄録を後から有効にした・プロンプトを変えた                                                                 | パイプラインの Summarize                      |
-| `reindex-metadata{includeContent}` | 抽出・解釈のコードが変わった・索引を失った。派生物がどのコードで作られたかの記録が無いので、条件で絞れない | `resource-pipeline`                           |
-| `reindex-metadata{reindexContent}` | 本文の索引の作り方（チャンクの大きさ、プロファイルの行の組み方など）が変わった。解釈は前回のものを使う     | `resource-pipeline(indexOnly)`                |
-| `refresh-vocabulary-profiles`      | 取らない                                                                                                   | 積むだけ。判定し直しは run に任せる           |
-| `POST /admin/jobs/enqueue-all`     | 全件の再取得                                                                                               | `resource-pipeline`                           |
+| 全件                                    | 何のためにあるか                                                                                           | 個別の側                                      |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 「埋め込みの再生成」                    | 埋め込みを後から有効にした・モデルを変えた・テキストの組み立て方が変わった。全件に未反映フラグを立てる     | `embed-resources`（ハッシュ一致で生成しない） |
+| `summarize-all`                         | 抄録を後から有効にした・プロンプトを変えた                                                                 | パイプラインの Summarize                      |
+| `reindex-metadata{includeContent}`      | 抽出・解釈のコードが変わった・索引を失った。派生物がどのコードで作られたかの記録が無いので、条件で絞れない | `resource-pipeline`                           |
+| `reindex-metadata{reindexContent}`      | 本文の索引の作り方（チャンクの大きさ、プロファイルの行の組み方など）が変わった。解釈は前回のものを使う     | `resource-pipeline(indexOnly)`                |
+| `refresh-vocabulary-profiles`           | 取らない                                                                                                   | 積むだけ。判定し直しは run に任せる           |
+| `POST /admin/jobs/enqueue-all`          | 全件の再取得                                                                                               | `resource-pipeline`                           |
+| `POST /admin/jobs/enqueue-all{formats}` | 表の読み方が変わった形式（Excel など）。形式で絞るだけで、それ以上は条件で絞れない                         | `resource-pipeline(rebuildOnly)`              |
+
+`enqueue-all` に `formats` を渡すと、その形式のリソースだけを、保存済みのファイルから作り直す
+（読み方が変わった形式のためのもの。Excel の表は `docs/specs/jp/phase-excel-tables.md` §7.2）。
+全件の本文の削除は全件のときだけの下準備なので行わない。再取得しないので、版は増えない（バイト列も
+確定した指示も変わらない）。積む run は `reprocessAll` の印を持ち、全件の再処理と同じく、終わるまで次の
+再処理（全件・形式指定のどちらも）を断る。
 
 `rebuildOnly` の run は「同じバイト列なら Interpret と Index を飛ばす」判定（`derivativesReused`）を
 通らない。作り直すよう頼まれた run だからである。通常の run はこの判定で飛ばす。`indexOnly` の run も

@@ -50,6 +50,7 @@ import {
   escapeLike,
   generationKey,
   generateSummariesSchema,
+  enqueueAllSchema,
   userNameSchema,
   userRoleSchema,
   passwordLengthSchema,
@@ -672,12 +673,24 @@ adminRouter.post('/record-row-groups', async (c) => {
   return c.json({ queued: true })
 })
 
-// POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources
-adminRouter.post('/jobs/enqueue-all', async (c) => {
+// POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources.
+//
+// With `formats`, only the resources of those formats, rebuilt from the object
+// each holds: a format whose reading changed is the same bytes read anew, and
+// fetching again would ask publishers for what is stored and could make a
+// version of whatever changed upstream. The content index is left as it is —
+// emptying it is the whole catalog's preparation, and each run replaces its
+// own resource's documents.
+adminRouter.post('/jobs/enqueue-all', zValidator('json', enqueueAllSchema), async (c) => {
   const db = c.get('db')
   await refuseWhileReprocessing(db)
   const search = c.get('search')
   const pipelineService = new PipelineService(db, c.get('queue'))
+
+  const formats = c.req.valid('json')?.formats
+  if (formats) {
+    return c.json(await pipelineService.enqueueAll({ formats, rebuildOnly: true }))
+  }
 
   // Clear stale content (deleted resources, format changes) before re-processing.
   // Per-resource content is also cleaned in the pipeline Index step.

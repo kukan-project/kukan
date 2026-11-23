@@ -251,6 +251,35 @@ describe('PipelineService', () => {
       expect(await db.$count(job)).toBe(2)
     })
 
+    it('queues only the resources of the formats asked for, whatever their case', async () => {
+      const inserted = await db.execute(sql`
+        INSERT INTO resource (package_id, name, format, state, position, storage_key)
+        VALUES (${testPkgId}, 'book', 'XLSX', 'active', 1, 'resources/book.xlsx'),
+               (${testPkgId}, 'legacy', 'xls', 'active', 2, NULL),
+               (${testPkgId}, 'report', 'PDF', 'active', 3, 'resources/report.pdf')
+        RETURNING id, name
+      `)
+      const ids = Object.fromEntries(
+        (inserted.rows as { id: string; name: string }[]).map((r) => [r.name, r.id])
+      )
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
+
+      const result = await service.enqueueAll({ formats: ['xlsx', 'XLS'], rebuildOnly: true })
+
+      expect(result).toEqual({ enqueued: 2, failed: 0 })
+      const payloads = (await db.select({ payload: job.payload }).from(job)).map((r) => r.payload)
+      // Still the reprocess's own runs; one with nothing stored is fetched
+      expect(payloads).toEqual(
+        expect.arrayContaining([
+          { resourceId: ids.book, rebuildOnly: true, reprocessAll: true },
+          { resourceId: ids.legacy, rebuildOnly: false, reprocessAll: true },
+        ])
+      )
+      expect(payloads).toHaveLength(2)
+      expect(await reprocessAllPending(db)).toBe(true)
+      expect(await service.getStatus(testResId)).toBeNull()
+    })
+
     it('should return 0 when no active resources exist', async () => {
       await db.execute(sql`UPDATE resource SET state = 'deleted'`)
 

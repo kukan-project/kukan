@@ -603,6 +603,91 @@ describe('Admin API Routes', () => {
       ).rows
       expect(row).toEqual({ indexed: 'false' })
     })
+
+    describe('narrowed to formats', () => {
+      const queue = new PostgresJobQueue({ db })
+      const search: SearchAdapter = { ...mockSearch, deleteAllContents: vi.fn() }
+      const queueApp = createTestApp(db, { search, queue })
+      const press = (body: object) =>
+        queueApp.request('/api/v1/admin/jobs/enqueue-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+
+      beforeEach(() => {
+        vi.spyOn(queue, 'wake').mockImplementation(() => {})
+        vi.mocked(search.deleteAllContents).mockClear()
+      })
+
+      async function insertResources() {
+        const orgId = await ensureOrg('enqueue-formats-org')
+        const [pkg] = await db
+          .insert(packageTable)
+          .values({ name: 'enqueue-formats-pkg', ownerOrg: orgId, state: 'active' })
+          .returning({ id: packageTable.id })
+        const rows = await db
+          .insert(resource)
+          .values([
+            {
+              packageId: pkg.id,
+              name: 'book',
+              format: 'XLSX',
+              state: 'active',
+              storageKey: 'resources/book.xlsx',
+            },
+            {
+              packageId: pkg.id,
+              name: 'table',
+              format: 'CSV',
+              state: 'active',
+              storageKey: 'resources/t.csv',
+            },
+          ])
+          .returning({ id: resource.id, name: resource.name })
+        await db.insert(resourcePipeline).values(
+          rows.map((r) => ({
+            resourceId: r.id,
+            status: 'complete' as const,
+            metadata: { contentIndexed: true },
+          }))
+        )
+        return Object.fromEntries(rows.map((r) => [r.name, r.id]))
+      }
+
+      it('rebuilds only those, and leaves the content index and its record alone', async () => {
+        const ids = await insertResources()
+
+        const res = await press({ formats: ['xlsx', 'xls'] })
+
+        expect(res.status).toBe(200)
+        expect(await res.json()).toEqual({ enqueued: 1, failed: 0 })
+        expect(await db.select({ payload: job.payload }).from(job)).toEqual([
+          { payload: { resourceId: ids.book, rebuildOnly: true, reprocessAll: true } },
+        ])
+        expect(search.deleteAllContents).not.toHaveBeenCalled()
+        const indexed = await db
+          .select({ metadata: resourcePipeline.metadata })
+          .from(resourcePipeline)
+          .where(eq(resourcePipeline.resourceId, ids.table))
+        expect(indexed).toEqual([{ metadata: { contentIndexed: true } }])
+      })
+
+      it('is refused while a reprocess is on its way, and holds back the next one', async () => {
+        await insertResources()
+        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: randomUUID(), reprocessAll: true })
+        expect((await press({ formats: ['xlsx'] })).status).toBe(409)
+
+        await db.delete(job)
+        expect((await press({ formats: ['xlsx'] })).status).toBe(200)
+        expect((await press({})).status).toBe(409)
+      })
+
+      it('refuses an empty list rather than reading it as every resource', async () => {
+        expect((await press({ formats: [] })).status).toBe(400)
+        expect(await db.$count(job)).toBe(0)
+      })
+    })
   })
 
   describe('/api/v1/admin/settings/vector-search', () => {
