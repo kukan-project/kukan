@@ -179,9 +179,9 @@ the listing.
 | GET    | `/resources/{id}/text`                  | Text content (preview-size limited)                                                                                                               | Public     |
 | GET    | `/resources/{id}/json`                  | Minified JSON/GeoJSON (415 if not JSON, 413 over the limit)                                                                                       | Public     |
 | GET    | `/resources/{id}/download`              | Download file (302 redirect for external URLs)                                                                                                    | Public     |
-| GET    | `/resources/{id}/preview`               | Server-proxied preview (Range supported)                                                                                                          | Public     |
+| GET    | `/resources/{id}/preview`               | Server-proxied preview (Range supported). For Excel, the original; `?as=table` returns its table preview (Parquet)                                | Public     |
 | GET    | `/resources/{id}/pipeline-status`       | Pipeline job status                                                                                                                               | Public     |
-| GET    | `/resources/{id}/schema`                | Column schema (names, types, row count, numeric stats). Tables only                                                                               | Public     |
+| GET    | `/resources/{id}/schema`                | Column schema (names, types, row count, numeric stats). Tables, and Excel read as one                                                             | Public     |
 | POST   | `/resources/{id}/query`                 | Server-side DuckDB query (SELECT only). Tables only                                                                                               | Public     |
 | POST   | `/resources/{id}/upload-url`            | Issue presigned upload URL (start the PUT within 15 minutes)                                                                                      | Org editor |
 | POST   | `/resources/{id}/upload`                | Server-proxied upload (multipart `file`, streamed; 413 over the cap, 400 when the filename fails the same rule as `upload-url`: 1–500 characters) | Org editor |
@@ -345,7 +345,10 @@ Resources that cannot be queried (unsupported format, not yet processed) return
 `queryable: false`, `schema: null`. When a schema exists but there is nothing to
 query (the preview has been purged, the schema has zero columns, or the preview
 has not been regenerated after the content was replaced), `schema` is still
-returned with `queryable: false`. `primaryKey` lists the column names of the
+returned with `queryable: false`. For a resource that is not a table, `noTableReasons` is added **for users who
+can edit its dataset only**: why the version served did not read as a table — for Excel every plain-table
+condition it missed (for example `["header-blank", "title-or-footer"]`), for other formats one (for example
+`["too-large"]`). It is absent for a table, and from every answer to a user who cannot edit. `primaryKey` lists the column names of the
 resource's settled primary key (composite keys in their chosen order), or is
 `null` when none is set. `type` is one of `integer` / `float` / `boolean` / `string` /
 `date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are
@@ -873,8 +876,8 @@ The following return `403` with a sysadmin's API token and work only from a sign
 | POST   | `/admin/backfill-versions`          | Enqueue the one-time migrations (version backfill, conversion of old-style reverts; async, through the job queue)                                                                                                                                               |
 | GET    | `/admin/row-group-status`           | Previews without recorded row groups                                                                                                                                                                                                                            |
 | POST   | `/admin/record-row-groups`          | Enqueue row-group recording for previews (async, through the job queue)                                                                                                                                                                                         |
-| POST   | `/admin/jobs/enqueue-all`           | Enqueue pipeline for all resources (409 while a reprocess is on its way)                                                                                                                                                                                        |
-| GET    | `/admin/jobs/stats`                 | Per-resource pipeline status counts (`reprocessPending`: whether a reprocess of every resource is on its way)                                                                                                                                                   |
+| POST   | `/admin/jobs/enqueue-all`           | Enqueue pipeline for all resources (409 while a reprocess is on its way). `{ "formats": ["xlsx", "xls"] }` rebuilds only those formats (any case) from their stored files, without emptying the index                                                           |
+| GET    | `/admin/jobs/stats`                 | Per-resource pipeline status counts (`reprocessPending`: whether a reprocess of every resource is on its way; `formats`: the formats a reprocess covers, with their counts)                                                                                     |
 | GET    | `/admin/jobs`                       | Per-resource pipeline status list (`status` is comma-separated)                                                                                                                                                                                                 |
 | GET    | `/admin/queue/counts`               | Job counts by type and status (scheduled / waiting / running / dead)                                                                                                                                                                                            |
 | GET    | `/admin/queue/jobs`                 | List queued jobs (`status` and `type` filters, `offset` / `limit`)                                                                                                                                                                                              |

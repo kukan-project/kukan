@@ -274,7 +274,8 @@ pnpm format        # Prettier フォーマット
 バージョン番号を書くのは「どこで入ったか」だけにする —
 「最新リリースは」はリリースごとに古くなるので書かない。
 
-**次のフェーズは Excel の表の解釈（ADR-057）。** 実装仕様書は `docs/specs/jp/phase-excel-tables.md`。
+**Excel の表の解釈（ADR-057）は Step 1 まで実装済み**（素直な表を自動で表にする。既存の版も読み直す）。
+次は Step 2（読み方の指示を人が確定する）。実装仕様書は `docs/specs/jp/phase-excel-tables.md`。
 ii-c を前提にしていたもののうち、ADR-073 の段階 2（「表の設定」タブでの語彙の確定）と、
 標準データモデルとの対応付けは、まだ着手していない。
 
@@ -294,7 +295,7 @@ ii-c を前提にしていたもののうち、ADR-073 の段階 2（「表の�
   （`docs/specs/jp/phase-versioning-2-ducklake.md` §8、ADR-043 層 2 / ADR-072 Step 3）
 - Phase AI-Summary: リソースの AI 生成抄録 ✅ 完了
   （`docs/specs/jp/phase-ai-summary.md`、ADR-053）
-- Phase Excel-Tables: Excel の表をテーブルとして解釈する（仕様書作成、着手前）
+- Phase Excel-Tables: Excel の表をテーブルとして解釈する（Step 1 ✅ 完了、Step 2 着手前）
   （`docs/specs/jp/phase-excel-tables.md`、ADR-057）
 
 実装仕様書も ADR と同様に日本語を正本とし、`docs/specs/jp/` と `docs/specs/en/` の

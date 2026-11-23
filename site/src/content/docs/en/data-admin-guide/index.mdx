@@ -63,13 +63,12 @@ Opening a dataset in the dashboard swaps the left sidebar for that dataset's lis
 
 A resource is edited in tabs.
 
-| Tab             | What it holds                                                                                                                                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Basic           | Name, format, description, source and custom fields. The file's details (MIME type, size, hash, current version, rows, columns), its [AI-written description](#ai-written-descriptions), and deleting the resource |
-| Preview         | The same preview as the public page, also for draft and private datasets. For a resource that reads as a table, it is at the top of Table settings                                                                 |
-| Table settings  | The preview on top (with the key being picked marked), then the [primary key](#declaring-a-primary-key) and [column roles](#column-roles) under "Columns". Only for resources that read as a table                 |
-| Version history | [Versions, their downloads and diffs](#version-history)                                                                                                                                                            |
-| Processing      | How far the pipeline has got, and [reprocessing](#reprocessing)                                                                                                                                                    |
+| Tab                  | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Basic                | Name, format, description, source and custom fields. The file's details (MIME type, size, hash, current version, rows, columns), its [AI-written description](#ai-written-descriptions), and deleting the resource                                                                                                                                                                                                                          |
+| Preview and settings | The same preview as the public page, also for draft and private datasets. For a resource that reads as a table, "Table settings" — the [primary key](#declaring-a-primary-key), [column types](#settling-column-types) and [column roles](#column-roles) — is under the table view (the key being picked is marked in the preview's table). For a file that did not read as a table, [why](#why-a-file-is-not-a-table) is under the preview |
+| Version history      | [Versions, their downloads and diffs](#version-history)                                                                                                                                                                                                                                                                                                                                                                                     |
+| Processing           | How far the pipeline has got, and [reprocessing](#reprocessing)                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Managing resources
 
@@ -124,11 +123,36 @@ KUKAN supports many formats including CSV, TSV, JSON, GeoJSON, XML, PDF, Excel, 
 Uploaded files are automatically processed through the pipeline:
 
 - Text file encoding detection and conversion
-- Parquet conversion of CSV/TSV, and of JSON/GeoJSON whose records read as a table (for table preview)
+- Parquet conversion of CSV/TSV, of JSON/GeoJSON whose records read as a table, and of Excel sheets that are plain tables (for table preview, [Excel tables](#excel-tables))
 - ZIP file manifest generation
 - Recording a version ([Version history](#version-history))
 - Text extraction for search (so a file's contents can match a query)
 - An AI-written description, where the site has it enabled ([AI-written descriptions](#ai-written-descriptions))
+
+### Excel tables
+
+Besides extracting its text as a document, an Excel workbook (XLSX or XLS) is read as a table when its sheet is a **plain table**. Read as one, it has what a CSV has: the table view, the field list, table settings, diffs between versions and [serving to BI tools](#tables-a-bi-tool-can-open). Full-text search keeps using the document's text.
+
+A plain table is, roughly, a sheet where:
+
+- Only one sheet reads as a table (hidden sheets are not counted)
+- The header is one row, with no empty cell, no name twice, and no number or date
+- Above and below the table there are only titles or notes of one cell
+- Inside the table there is no merged cell, no empty row partway and no row that splits it into sections
+- No formula is without its saved result, and the workbook is not encrypted
+
+**When in doubt, it is not read as a table**: a header taken one row off breaks every row. Most of the conditions match items of the Digital Agency's rules on machine readability of government data.
+
+- In lists, a resource read as a table has a table icon at its right edge ("Table" on hover)
+- The preview opens on the original. The tabs are "Original (XLSX)", "Table" and "Extracted text", in that order. In the editor, "Switch to the table view to open the table settings" takes you to the table settings
+- Each version is read again, so a version that stops being a plain table after an update is not a table
+- An Excel file that was there before upgrading KUKAN becomes a table once an administrator [reprocesses the formats chosen](/en/system-admin-guide/#reprocessing-chosen-formats). Its older versions are read again in the background, one by one
+
+Reading a sheet that is not plain as a table, with a person saying how, comes in a later version.
+
+### Why a file is not a table
+
+When a file that could read as a table (CSV, TSV, JSON, GeoJSON or Excel) does not, the editor's "Preview and settings" tab says why under the preview. For Excel, every condition the sheet missed; for other formats, one such as "Too large to preview", "rows do not split into the same columns" or "Not a list of records, so there is no table". The reasons are shown only to those who can edit the dataset, never on the public page.
 
 ### Tables a BI tool can open
 
@@ -156,8 +180,8 @@ number or date, or number written as text — decided automatically from its val
 name. The role decides how search uses the column: name and category columns are searched by
 their values, free-text columns as sentences, and the rest are not used for search.
 
-The field list on the public page shows the role alone. The Table settings tab in the editor
-shows it with the reason it was decided.
+The field list on the public page shows the role alone. The table settings in the editor
+show it with the reason it was decided.
 
 A column of numbers written as text holds values that should read as numbers but were not inferred
 as numbers for how they are written: commas, brackets, signs such as `▲`, full-width digits, units
@@ -167,7 +191,7 @@ and `n/a` are no-value marks, taken as blanks are. The reason breaks down every 
 `100円` and the like) — what to fix in the data. A column of digits that start with a zero (local government codes such as
 `010006`) is taken for an identifier, not a number.
 
-Where the automatic decision got a column wrong, choose its role again on the Table settings tab.
+Where the automatic decision got a column wrong, choose its role again in the table settings.
 
 - **Only text columns** can be changed. A column read as a number or date has its role from its type
 - The roles to choose from are identifier, numeric (as text), name, category and free text; "Auto" returns to the automatic decision. An overridden column still shows the automatic decision and its reason
@@ -179,12 +203,12 @@ Where the automatic decision got a column wrong, choose its role again on the Ta
 When the site has column vocabulary turned on ([System Admin Guide](/en/system-admin-guide/#column-vocabulary-experimental)), KUKAN works out what a table's columns stand for — "a 6-digit local government code for an administrative area", "the name of an administrative area" and the like — by checking their values against code lists.
 
 - A column settled this way shows its vocabulary in the field list on the public page, and dataset search can filter by area and by column meaning ([User Guide](/en/user-guide/#filtering))
-- The Table settings tab shows how many values matched, which level of area they hit, and the date of the code list. A column left unsettled lists its candidates
+- The table settings show how many values matched, which level of area they hit, and the date of the code list. A column left unsettled lists its candidates
 - This version has no way for a person to correct the result
 
 ### Settling column types
 
-A column's type (integer, decimal, date and so on) is inferred from its values. Where the inference is wrong, settle the type under "Type" on the Table settings tab.
+A column's type (integer, decimal, date and so on) is inferred from its values. Where the inference is wrong, settle the type under "Type" in the table settings.
 
 - "Auto" follows the inferred type, which it names ("Auto (Integer)"). The other choices are String, Integer, Number, Decimal, Boolean, Date and Datetime
 - Settle a code column whose leading zeros matter as String, and an amount or a rate whose digits must stay exact as Decimal
@@ -200,7 +224,7 @@ A column's type (integer, decimal, date and so on) is inferred from its values. 
 ## Version history
 
 Every time a resource's file is replaced, the content it replaced is kept as a **version**.
-You can download any past version, and for a table (CSV/TSV, or JSON/GeoJSON read as one) you can see how many rows were added or
+You can download any past version, and for a table (CSV/TSV, or JSON/GeoJSON or Excel read as one) you can see how many rows were added or
 removed between two versions — and, with a primary key declared, how each row changed.
 
 A version is created only when the content **actually changed**. Re-fetching an external URL
@@ -232,11 +256,11 @@ Nothing is held back: the version is published as inferred.
   version only. Choosing **Settle the previous type** shows how many values are expected not to convert
   and to read as no value; the version it makes does not ask about those values again
 - Once confirmed, the version reads **Reviewed**. A review is made once; to change a type afterwards,
-  use the Table settings tab
+  use the table settings
 
 ### Declaring a primary key
 
-The **Table settings** tab of the resource editor names the columns used to match a row to
+The table settings on the **Preview and settings** tab of the resource editor name the columns used to match a row to
 the same row in another version (a combination of columns works too). With a key, a diff can
 count the **rows that changed**.
 

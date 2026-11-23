@@ -33,7 +33,7 @@ const t = {
     foundationTitle: '運用の土台',
     plannedTitle: '今後の予定',
     planned: [
-      '読む：Excel のシートから表のデータを自動で取り出す、シェープファイルを地図で見る、スキャンした PDF や図の中身を読む',
+      '読む：込み入った Excel の表も、読み方を指定して取り出す、シェープファイルを地図で見る、スキャンした PDF や図の中身を読む',
       '分析する：テラバイト級の大きなデータ、表と文書をまたいだ分析、グラフなどの可視化の支援',
       'つなぐ：列の語彙を増やす（年度・郵便番号・地域メッシュ、組織独自のコード、ほかの国、標準データモデル）、ほかのシステムからの取り込みと変換（ETL）',
       '整える：値の書き方の揺れを自動で整えるクリーニング、BI ツールで開ける表の拡大',
@@ -54,8 +54,8 @@ const t = {
     releaseNotes: 'リリースノート',
     switchLang: 'English',
     recent: [
+      { title: 'Excel ファイルからテーブルを自動抽出、CSV と同じように使える', doc: { guide: 'data-admin-guide', hash: 'excel-の表' } },
       { title: '推定された列の型を固定、適用前に読めない値の見込みも分かる', doc: { guide: 'data-admin-guide', hash: '列の型を確定する' } },
-      { title: 'データの更新で型が変わったら知らせ、受け入れるか戻すか選べる', doc: { guide: 'data-admin-guide', hash: '型の変化を確かめる' } },
       { title: 'Lambda Web Functions で運用費を抑えられる（試験的）', doc: { guide: 'system-admin-guide/web-functions' } },
       { title: '列から地域を読み取り、都道府県・市区町村で探せる（試験的）', doc: { guide: 'system-admin-guide', hash: '列の語彙試験的' } },
       { title: '編集画面を一新、プレビュー・表の設定・版の履歴をタブで', doc: { guide: 'data-admin-guide', hash: '編集画面' } },
@@ -171,7 +171,7 @@ const t = {
     foundationTitle: 'Built to Run',
     plannedTitle: 'Coming Up',
     planned: [
-      'Read: tables picked out of Excel sheets automatically, shapefiles on a map, and what scanned PDFs and figures say',
+      'Read: tables taken out of complex Excel sheets, as you say how to read them, shapefiles on a map, and what scanned PDFs and figures say',
       'Analyze: terabyte-scale data, tables and documents together, help with charts and other visuals',
       "Connect: more column vocabularies (fiscal years, postal codes, mesh codes, your own codes, other countries, standard data models), and loading and transforming data from other systems (ETL)",
       'Tidy: automatic cleaning of how values are written, and more tables that open in BI tools',
@@ -192,8 +192,8 @@ const t = {
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
     recent: [
+      { title: 'Extract Tables from Excel Files, Ready to Use Like a CSV', doc: { guide: 'data-admin-guide', hash: 'excel-tables' } },
       { title: 'Pin Guessed Column Types, Seeing What Would Not Convert', doc: { guide: 'data-admin-guide', hash: 'settling-column-types' } },
-      { title: 'Review Type Changes After a Data Update: Accept or Revert', doc: { guide: 'data-admin-guide', hash: 'reviewing-type-changes' } },
       { title: 'Cut Running Costs with Lambda Web Functions (Experimental)', doc: { guide: 'system-admin-guide/web-functions' } },
       { title: 'Find Tables by the Places Their Columns Name (Experimental)', doc: { guide: 'system-admin-guide', hash: 'column-vocabulary-experimental' } },
       { title: 'A New Editor with Preview, Table Settings and Versions', doc: { guide: 'data-admin-guide', hash: 'the-editor' } },

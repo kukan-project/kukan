@@ -67,18 +67,21 @@ shown on each dataset in search results. An organization or category name likewi
 
 The resource page provides format-specific previews:
 
-| Format                                     | Preview                                                                                                |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| CSV / TSV                                  | Table view + original (text)                                                                           |
-| JSON                                       | Table view + JSON view (where its records read as a table; otherwise JSON view alone)                  |
-| XML / TXT / HTML                           | Text view                                                                                              |
-| Markdown                                   | Formatted (headings, tables, links) + source + extracted text; its text is searched under its headings |
-| GeoJSON                                    | Map view + attribute table + JSON view                                                                 |
-| PDF                                        | PDF viewer + extracted text                                                                            |
-| Excel / Word / PowerPoint                  | Original (by default, drawn in the browser) + extracted text                                           |
-| Ichitaro (JTD / JTT)                       | Original (drawn in the browser, a sheet at a time) + extracted text                                    |
-| PNG / JPEG / GIF / WebP / SVG / BMP / TIFF | Image viewer                                                                                           |
-| ZIP                                        | File list                                                                                              |
+| Format                                     | Preview                                                                                                                             |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| CSV / TSV                                  | Original (text) + table view                                                                                                        |
+| JSON                                       | Original (JSON view) + table view (where its records read as a table; otherwise the original alone)                                 |
+| XML / TXT / HTML                           | Text view                                                                                                                           |
+| Markdown                                   | Formatted (headings, tables, links) + source + extracted text; its text is searched under its headings                              |
+| GeoJSON                                    | Original (JSON view) + map view + attribute table (opens on the map)                                                                |
+| PDF                                        | PDF viewer + extracted text                                                                                                         |
+| Excel                                      | Original (by default, drawn in the browser) + table view (for a [plain table](/en/data-admin-guide/#excel-tables)) + extracted text |
+| Word / PowerPoint                          | Original (by default, drawn in the browser) + extracted text                                                                        |
+| Ichitaro (JTD / JTT)                       | Original (drawn in the browser, a sheet at a time) + extracted text                                                                 |
+| PNG / JPEG / GIF / WebP / SVG / BMP / TIFF | Image viewer                                                                                                                        |
+| ZIP                                        | File list                                                                                                                           |
+
+The original is the leftmost tab, with the format in brackets (for example "Original (CSV)"). A resource that reads as a table opens on the table view, a GeoJSON on its map, and an Excel file on its original. The list of field names and types (the field list) is shown with the table view. In a dataset's list of resources, a resource that reads as a table has a table icon at its right edge ("Table" on hover).
 
 By default, the originals of Excel, Word and PowerPoint files are drawn inside your browser. The file is not sent
 anywhere else, so they also show for private datasets you are signed in to read. Drawing takes a lot of

@@ -176,9 +176,9 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | GET    | `/resources/{id}/text`                  | テキストコンテンツ取得（プレビューサイズ制限）                                                                                                      | 公開        |
 | GET    | `/resources/{id}/json`                  | JSON/GeoJSON を最小化して返す（JSON 以外は 415、上限超過は 413）                                                                                    | 公開        |
 | GET    | `/resources/{id}/download`              | ファイルダウンロード（外部 URL は 302 リダイレクト）                                                                                                | 公開        |
-| GET    | `/resources/{id}/preview`               | サーバー経由プレビュー（Range 対応）                                                                                                                | 公開        |
+| GET    | `/resources/{id}/preview`               | サーバー経由プレビュー（Range 対応）。Excel は原本を返し、`?as=table` で表のプレビュー（Parquet）を返す                                             | 公開        |
 | GET    | `/resources/{id}/pipeline-status`       | パイプライン処理状態                                                                                                                                | 公開        |
-| GET    | `/resources/{id}/schema`                | 列スキーマ（列名・型・行数・数値統計）。表形式のみ                                                                                                  | 公開        |
+| GET    | `/resources/{id}/schema`                | 列スキーマ（列名・型・行数・数値統計）。表形式と、表として読めた Excel                                                                              | 公開        |
 | POST   | `/resources/{id}/query`                 | サーバーサイド DuckDB クエリ（SELECT 限定）。表形式のみ                                                                                             | 公開        |
 | POST   | `/resources/{id}/upload-url`            | プリサインドアップロード URL 発行（PUT は 15 分以内に始める）                                                                                       | 組織 editor |
 | POST   | `/resources/{id}/upload`                | サーバー経由アップロード（multipart `file`、ストリーム処理、上限超過は 413、ファイル名が `upload-url` と同じ規則（1〜500 文字）に合わなければ 400） | 組織 editor |
@@ -328,6 +328,11 @@ PDF・Word・PowerPoint・Excel・一太郎・Markdown のリソースは、パ�
 クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
 スキーマはあるがクエリの実体が無い場合（プレビューが削除済み・列ゼロのスキーマ・
 内容差し替え後にプレビューが未再生成）は、`queryable: false` のまま `schema` を返します。
+
+表にならなかったリソースでは、**そのデータセットを編集できる利用者にだけ** `noTableReasons` が付きます。
+今の版が表にならなかった理由の一覧で、Excel は素直な表の条件に当たった理由のすべて（例:
+`["header-blank", "title-or-footer"]`）、ほかの形式は 1 つ（例: `["too-large"]`）です。表になったリソースや、
+編集できない利用者への応答には、この項目自体がありません。
 `primaryKey` はリソースに確定された主キーの列名リスト（複合キーは指定順)で、未設定なら `null` です。
 `type` は `integer` / `float` / `boolean` / `string` / `date` / `timestamp`。`stats` は数値列のみで、
 整数の min/max は値の大きさによらず常に十進文字列、小数の min/max は数値です（範囲が 2^53 を超えても桁を
@@ -826,8 +831,8 @@ MCP の `search_passages` と同じ検索です。パラメータは `q`（必�
 | POST   | `/admin/backfill-versions`          | 一度きりの移行（版の補完・旧方式の巻き戻しの変換）を予約（ジョブキュー経由、非同期）                                                                                                                                                       |
 | GET    | `/admin/row-group-status`           | 行グループ未記録のプレビュー数                                                                                                                                                                                                             |
 | POST   | `/admin/record-row-groups`          | プレビューの行グループ記録を予約（ジョブキュー経由、非同期）                                                                                                                                                                               |
-| POST   | `/admin/jobs/enqueue-all`           | 全リソースのパイプライン一括予約（再処理が進行中なら 409）                                                                                                                                                                                 |
-| GET    | `/admin/jobs/stats`                 | リソースの処理状況の集計（`reprocessPending`: 全リソースの再処理が進行中か）                                                                                                                                                               |
+| POST   | `/admin/jobs/enqueue-all`           | 全リソースのパイプライン一括予約（再処理が進行中なら 409）。`{ "formats": ["xlsx", "xls"] }` でその形式（大文字小文字は問わない）だけを保存済みのファイルから作り直す（索引は空にしない）                                                  |
+| GET    | `/admin/jobs/stats`                 | リソースの処理状況の集計（`reprocessPending`: 全リソースの再処理が進行中か、`formats`: 再処理の対象になる形式と件数）                                                                                                                      |
 | GET    | `/admin/jobs`                       | リソースの処理状況一覧（`status` はカンマ区切り）                                                                                                                                                                                          |
 | GET    | `/admin/queue/counts`               | 種類と状態ごとのジョブの件数（予約・待機・処理中・打ち切り）                                                                                                                                                                               |
 | GET    | `/admin/queue/jobs`                 | ジョブ一覧（`status` と `type` で絞り込み、`offset` / `limit`）                                                                                                                                                                            |
