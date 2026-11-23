@@ -6,6 +6,7 @@
 
 import type { InterpretedTableFile, ProfileRequest } from '../pipeline/interpret/table/write-table'
 import type { SettledReading } from '../pipeline/interpret/table/settled-types'
+import type { CsvStructure } from '../pipeline/interpret/table/csv'
 import type { ExtractedText } from '../pipeline/interpret/document/document-text'
 import type { ReadPdf } from '../summary/material-files'
 
@@ -20,6 +21,7 @@ export type HeavyRequest =
       profile?: ProfileRequest
       /** And the settled types, for the same reason. */
       reading?: SettledReading
+      structure?: CsvStructure
     }
   | {
       kind: 'interpret-json'

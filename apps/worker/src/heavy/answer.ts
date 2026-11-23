@@ -18,7 +18,8 @@ export async function answer<R extends HeavyRequest>(request: R): Promise<HeavyR
         request.parquetPath,
         request.skipRows,
         request.profile,
-        request.reading
+        request.reading,
+        request.structure
       )) as HeavyResult<R>
     }
     case 'interpret-json': {
