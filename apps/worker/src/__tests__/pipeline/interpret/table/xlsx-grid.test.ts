@@ -321,6 +321,22 @@ describe('borders', () => {
       ])
     })
 
+    it('walks only the columns a default is given for, however wide the used range claims to be', async () => {
+      // A million rows of the sheet's full width, with a formatted column just past
+      // it: walked cell by cell, this is seventeen billion cells for no line
+      const [sheet] = await read({
+        sheets: {},
+        raw: {
+          1: sheetXml(
+            '<row r="1"><c r="A1"><v>1</v></c></row>',
+            '<dimension ref="A1:XFC1048576"/><cols><col min="16384" max="16384" style="2"/></cols>'
+          ),
+        },
+        parts: { 'xl/styles.xml': styles },
+      })
+      expect(sheet!.rows).toEqual([{ row: 1, cells: [{ col: 1, kind: 'number', value: '1' }] }])
+    })
+
     it('fills the rows the file leaves out between and after its rows', async () => {
       const [sheet] = await read({
         sheets: {},

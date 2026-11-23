@@ -173,6 +173,14 @@ const GRID_MAX_COLUMNS = 16_384
  */
 const GRID_MAX_DEFAULT_BORDERS = 1_000_000
 
+/**
+ * Rows and cells looked at for those borders, drawn or not: a used range of a
+ * million rows with one formatted column far off would otherwise be walked a
+ * row and a whole row's width at a time, the borders' cap reached only slowly
+ * or never.
+ */
+const GRID_MAX_DEFAULT_SCANS = 10 * GRID_MAX_DEFAULT_BORDERS
+
 /** A row's default format's border; `null` where its default draws none, which still hides its columns'. */
 export type RowDefault = BorderSides | null
 
@@ -197,12 +205,16 @@ export class DefaultBorders {
    * the sheet's width.
    */
   private columns: (BorderSides | undefined)[] = []
+  /** The first and last column with a default, so a row's scan covers only those. */
+  private columnsFrom = Infinity
+  private columnsTo = 0
   private rows = new Map<number, RowDefault>()
   private bounds: CellRange | undefined
   private seen: CellRange | undefined
   /** The last row given; a row the file writes again after it gets no defaults twice. */
   private through = 0
   private given = 0
+  private scanned = 0
 
   /** The sheet's used range. */
   usedRange(range: CellRange): void {
@@ -219,7 +231,10 @@ export class DefaultBorders {
   /** A column default's border, for columns `min` to `max`, 1-based. */
   column(min: number, max: number, border: BorderSides | undefined): void {
     if (!border || !(min >= 1) || !(max >= min) || min > GRID_MAX_COLUMNS) return
-    for (let col = min; col <= Math.min(max, GRID_MAX_COLUMNS); col++) this.columns[col] ??= border
+    const to = Math.min(max, GRID_MAX_COLUMNS)
+    for (let col = min; col <= to; col++) this.columns[col] ??= border
+    this.columnsFrom = Math.min(this.columnsFrom, min)
+    this.columnsTo = Math.max(this.columnsTo, to)
   }
 
   /** A row's default, before the row is given. */
@@ -250,7 +265,7 @@ export class DefaultBorders {
     if (from > to) return
     const rows = this.anyColumnDefault() ? count(from, to) : this.rowsWithDefaults(from, to)
     for (const row of rows) {
-      if (this.given >= GRID_MAX_DEFAULT_BORDERS) break
+      if (this.spent() || ++this.scanned >= GRID_MAX_DEFAULT_SCANS) break
       const borders = this.fill(row, NO_COLUMNS, [])
       if (borders.length > 0) yield { row, borders }
     }
@@ -275,11 +290,18 @@ export class DefaultBorders {
     const range = this.bounds ?? this.seen
     if (!fresh || !range || row < range.top || row > range.bottom) return own
     // Past the cap nothing more is drawn, so nothing more is scanned either
-    if (this.given >= GRID_MAX_DEFAULT_BORDERS) return own
+    if (this.spent()) return own
     if (rowDefault === null || (rowDefault === undefined && !this.anyColumnDefault())) return own
     const added: CellBorder[] = []
-    const right = Math.min(range.right, GRID_MAX_COLUMNS)
-    for (let col = range.left; col <= right; col++) {
+    // A row's default spans the range; the columns' reach only as far as they were given
+    const left = rowDefault !== undefined ? range.left : Math.max(range.left, this.columnsFrom)
+    const right = Math.min(
+      range.right,
+      GRID_MAX_COLUMNS,
+      rowDefault !== undefined ? Infinity : this.columnsTo
+    )
+    for (let col = left; col <= right; col++) {
+      if (++this.scanned >= GRID_MAX_DEFAULT_SCANS) break
       const border = rowDefault !== undefined ? rowDefault : this.columns[col]
       if (!border || records.has(col)) continue
       added.push({ col, ...border })
@@ -287,6 +309,10 @@ export class DefaultBorders {
     }
     if (added.length === 0) return own
     return own.length === 0 ? added : [...own, ...added].sort((a, b) => a.col - b.col)
+  }
+
+  private spent(): boolean {
+    return this.given >= GRID_MAX_DEFAULT_BORDERS || this.scanned >= GRID_MAX_DEFAULT_SCANS
   }
 
   private anyColumnDefault(): boolean {
