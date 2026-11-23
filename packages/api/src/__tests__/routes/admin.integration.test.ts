@@ -1887,6 +1887,35 @@ describe('Admin API Routes', () => {
       // Numbers, not bigint strings — the count no longer carries an ::int cast.
       expect(body.jobs).toEqual({ complete: 2, error: 1 })
     })
+
+    it('lists the formats a reprocess reaches, lowercased, with how many of each', async () => {
+      const orgId = await ensureOrg('formats-org')
+      const [pkg, draft, gone] = await db
+        .insert(packageTable)
+        .values([
+          { name: 'formats-pkg', ownerOrg: orgId, state: 'active' as const },
+          { name: 'formats-draft', ownerOrg: orgId, state: 'draft' as const },
+          { name: 'formats-gone', ownerOrg: orgId, state: 'deleted' as const },
+        ])
+        .returning({ id: packageTable.id })
+      await db.insert(resource).values([
+        { packageId: pkg.id, name: 'a', format: 'CSV', state: 'active' as const },
+        { packageId: pkg.id, name: 'b', format: 'csv', state: 'active' as const },
+        { packageId: draft.id, name: 'c', format: 'XLSX', state: 'active' as const },
+        // Not reached: no format, a deleted resource, a deleted dataset
+        { packageId: pkg.id, name: 'd', format: null, state: 'active' as const },
+        { packageId: pkg.id, name: 'e', format: '', state: 'active' as const },
+        { packageId: pkg.id, name: 'f', format: 'PDF', state: 'deleted' as const },
+        { packageId: gone.id, name: 'g', format: 'JSON', state: 'active' as const },
+      ])
+
+      const body = await (await app.request('/api/v1/admin/jobs/stats')).json()
+
+      expect(body.formats).toEqual([
+        { format: 'csv', count: 2 },
+        { format: 'xlsx', count: 1 },
+      ])
+    })
   })
 
   describe('GET /api/v1/admin/jobs', () => {

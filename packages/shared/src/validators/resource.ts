@@ -322,9 +322,13 @@ export type ResourceSummaryInput = z.infer<typeof resourceSummaryBodySchema>
 /** `refresh` also rewrites abstracts another model, prompt or language wrote */
 export const generateSummariesSchema = z.object({ refresh: z.boolean().optional() }).optional()
 
-/** `formats` narrows the reprocess of every resource to those formats, compared case-insensitively */
+/**
+ * `formats` narrows the reprocess of every resource to those formats, compared
+ * case-insensitively. As many as a site may have: the dashboard sends every
+ * format left checked.
+ */
 export const enqueueAllSchema = z
-  .object({ formats: z.array(z.string().trim().min(1).max(50)).min(1).max(20).optional() })
+  .object({ formats: z.array(z.string().trim().min(1).max(50)).min(1).max(500).optional() })
   .optional()
 
 export const reorderResourcesSchema = z.object({

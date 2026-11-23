@@ -712,7 +712,7 @@ adminRouter.get('/jobs/stats', async (c) => {
 
   // The job queue's own counts are on its page (/queue/counts): they span every
   // job type, and set beside these per-resource ones they read as a mismatch
-  const [statusCounts, recentErrors, reprocessPending] = await Promise.all([
+  const [statusCounts, recentErrors, reprocessPending, formats] = await Promise.all([
     db
       .select({
         status: resourcePipeline.status,
@@ -733,6 +733,7 @@ adminRouter.get('/jobs/stats', async (c) => {
       .orderBy(sql`${resourcePipeline.updated} desc`)
       .limit(RECENT_ERROR_LIMIT),
     reprocessAllPending(db),
+    new PipelineService(db).formatCounts(),
   ])
 
   const statusMap: Record<string, number> = {}
@@ -745,6 +746,8 @@ adminRouter.get('/jobs/stats', async (c) => {
     recentErrors,
     // Whether "Reprocess all" would be refused: the button waits on it
     reprocessPending,
+    // What a reprocess can be narrowed to (`enqueue-all` with `formats`)
+    formats,
   })
 })
 

@@ -482,7 +482,7 @@ purge-resource-version
   record-preview-row-groups ──→ resource-pipeline(rebuildOnly)（行グループが大きすぎるものだけ）
   POST /admin/jobs/enqueue-all（画面からの呼び出し元なし）──→ resource-pipeline × 全リソース（再取得あり）
       ├ 本文を全件削除し、contentIndexed を全件 false に
-  POST /admin/jobs/enqueue-all{formats}（画面からの呼び出し元なし。リリースのときに一度だけ呼ぶ）
+  POST /admin/jobs/enqueue-all{formats}「選んだ形式を再処理」（全リソースの再処理で形式の一部を外したとき）
       ├ 本文の索引には触れない（各 run が自分のリソースの本文を差し替える）
       └──→ resource-pipeline(rebuildOnly) × 形式が formats のどれかのリソース（大文字小文字を区別しない）
 

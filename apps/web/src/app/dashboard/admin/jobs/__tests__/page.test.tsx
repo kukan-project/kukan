@@ -48,6 +48,8 @@ function mockFetchResponse(data: unknown) {
 let reprocessPending: boolean
 /** What pressing "Reprocess all" answers */
 let reprocessResponse: Response
+/** The formats the stats list */
+let formats: { format: string; count: number }[]
 
 describe('AdminJobsPage', () => {
   beforeEach(() => {
@@ -59,12 +61,14 @@ describe('AdminJobsPage', () => {
     mockPaginatedFetch.offset = 0
     reprocessPending = false
     reprocessResponse = mockFetchResponse({ queued: true })
+    formats = []
     mockClientFetch.mockImplementation(async (url) =>
-      String(url).endsWith('/reindex-metadata')
+      String(url).endsWith('/reindex-metadata') || String(url).endsWith('/enqueue-all')
         ? reprocessResponse
         : mockFetchResponse({
             jobs: { queued: 3, processing: 1, complete: 10, error: 2 },
             reprocessPending,
+            formats,
           })
     )
     mockUsePaginatedFetch.mockReturnValue(
@@ -112,6 +116,89 @@ describe('AdminJobsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Reprocessing of all resources queued'
     )
+  })
+
+  describe('narrowed to formats', () => {
+    beforeEach(() => {
+      formats = [
+        { format: 'csv', count: 12 },
+        { format: 'xlsx', count: 3 },
+        { format: 'pdf', count: 1 },
+      ]
+    })
+
+    it('lists the site’s formats with their resources, every one checked', async () => {
+      render(<AdminJobsPage />)
+
+      for (const name of ['CSV (12)', 'XLSX (3)', 'PDF (1)']) {
+        expect(await screen.findByRole('checkbox', { name })).toBeChecked()
+      }
+      expect(screen.getByRole('button', { name: 'Reprocess all' })).toBeEnabled()
+    })
+
+    it('reprocesses only the formats left checked, keeping the content index', async () => {
+      render(<AdminJobsPage />)
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'PDF (1)' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reprocess the chosen formats' }))
+      await waitFor(() =>
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/admin/jobs/enqueue-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ formats: ['csv', 'xlsx'] }),
+        })
+      )
+      expect(mockClientFetch).not.toHaveBeenCalledWith(
+        '/api/v1/admin/reindex-metadata',
+        expect.anything()
+      )
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Reprocessing of the resources of the chosen formats queued'
+      )
+    })
+
+    it('reprocesses everything again once every format is checked again', async () => {
+      render(<AdminJobsPage />)
+      const pdf = await screen.findByRole('checkbox', { name: 'PDF (1)' })
+      fireEvent.click(pdf)
+      fireEvent.click(pdf)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reprocess all' }))
+      await waitFor(() =>
+        expect(mockClientFetch).toHaveBeenCalledWith(
+          '/api/v1/admin/reindex-metadata',
+          expect.objectContaining({ body: JSON.stringify({ includeContent: true }) })
+        )
+      )
+    })
+
+    it('offers nothing to press with no format checked', async () => {
+      render(<AdminJobsPage />)
+      for (const name of ['CSV (12)', 'XLSX (3)', 'PDF (1)']) {
+        fireEvent.click(await screen.findByRole('checkbox', { name }))
+      }
+
+      expect(screen.getByRole('button', { name: 'Reprocess the chosen formats' })).toBeDisabled()
+    })
+
+    it('turns every format off and on again with one box, partly on in between', async () => {
+      render(<AdminJobsPage />)
+      const boxes = () =>
+        ['CSV (12)', 'XLSX (3)', 'PDF (1)'].map((name) => screen.getByRole('checkbox', { name }))
+      const all = await screen.findByRole('checkbox', { name: 'All formats' })
+      expect(all).toBeChecked()
+
+      fireEvent.click(all)
+      for (const box of boxes()) expect(box).not.toBeChecked()
+      expect(all).not.toBeChecked()
+
+      fireEvent.click(boxes()[0]!)
+      expect(all).toHaveAttribute('data-state', 'indeterminate')
+
+      fireEvent.click(all)
+      for (const box of boxes()) expect(box).toBeChecked()
+      expect(screen.getByRole('button', { name: 'Reprocess all' })).toBeEnabled()
+    })
   })
 
   it('holds back reprocessing all while one is on its way', async () => {

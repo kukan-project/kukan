@@ -590,7 +590,13 @@
       "contentDescription": "保存済みファイルからテキスト抽出とプレビューを作り直し、索引も再構築します。外部 URL は未取得のものだけ取得します。リソース数に応じて時間がかかります。",
       "contentButton": "すべて再処理",
       "contentQueued": "全リソースの再処理を投入しました。バックグラウンドで順次実行され、この画面の件数に反映されます。",
-      "contentRunning": "再処理を実行中です。終わるまで次の再処理は始められません。"
+      "contentRunning": "再処理を実行中です。終わるまで次の再処理は始められません。",
+      "contentFormats": "形式",
+      "contentFormatsAll": "すべての形式",
+      "contentFormatCount": "{format} ({count})",
+      "contentFormatsNote": "一部の形式だけ選ぶと、その形式のリソースだけを保存済みのファイルから作り直します。検索の索引は空にしません。",
+      "contentButtonFormats": "選んだ形式を再処理",
+      "contentQueuedFormats": "選んだ形式のリソースの再処理を投入しました。バックグラウンドで順次実行され、この画面の件数に反映されます。"
     },
     "adminQueue": {
       "title": "バックグラウンド処理状況",

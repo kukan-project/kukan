@@ -6,6 +6,8 @@
 import {
   eq,
   and,
+  count,
+  desc,
   exists,
   getTableColumns,
   inArray,
@@ -126,6 +128,17 @@ export const NO_ROW_GROUP_FIGURE = 0
 /** Runs per transaction in a bulk enqueue: few statements, row locks held briefly. */
 const ENQUEUE_BATCH_SIZE = 500
 
+/** The resources a reprocess of every resource reaches (`enqueueAll`). Made on use: tests mock `@kukan/db`. */
+const reachedByEnqueueAll = () =>
+  and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft']))
+
+/**
+ * A resource's format as the reprocess of every resource counts and narrows by
+ * it: lowercased and trimmed on both sides, since a stored format may keep the
+ * spaces it was typed with and the request's are trimmed.
+ */
+const formatKey = () => sql<string>`lower(btrim(${resource.format}))`
+
 export class PipelineService {
   constructor(
     private db: Database,
@@ -221,11 +234,10 @@ export class PipelineService {
       .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
       .where(
         and(
-          eq(resource.state, 'active'),
-          inArray(packageTable.state, ['active', 'draft']),
+          reachedByEnqueueAll(),
           opts.formats &&
             inArray(
-              sql`lower(${resource.format})`,
+              formatKey(),
               opts.formats.map((f) => f.toLowerCase())
             )
         )
@@ -241,6 +253,22 @@ export class PipelineService {
       { priority: 'low' }
     )
     return { enqueued, failed: failed.length }
+  }
+
+  /**
+   * The formats of the resources {@link enqueueAll} reaches, lowercased as it
+   * compares them, with how many of each: what a reprocess is narrowed by.
+   * A resource with no format is in none of them.
+   */
+  async formatCounts(): Promise<{ format: string; count: number }[]> {
+    const format = formatKey()
+    return this.db
+      .select({ format, count: count() })
+      .from(resource)
+      .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
+      .where(and(reachedByEnqueueAll(), sql`${format} <> ''`))
+      .groupBy(format)
+      .orderBy(desc(count()), format)
   }
 
   /**

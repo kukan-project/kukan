@@ -280,6 +280,22 @@ describe('PipelineService', () => {
       expect(await service.getStatus(testResId)).toBeNull()
     })
 
+    it('counts and narrows by a format typed with spaces the same way', async () => {
+      await db.execute(sql`
+        INSERT INTO resource (package_id, name, format, state, position)
+        VALUES (${testPkgId}, 'spaced', ' XLSX ', 'active', 1),
+               (${testPkgId}, 'blank', '  ', 'active', 2)
+      `)
+      const service = new PipelineService(db, new PostgresJobQueue({ db }))
+
+      const counts = await service.formatCounts()
+      expect(counts).toContainEqual({ format: 'xlsx', count: 1 })
+      expect(counts.map((c) => c.format)).not.toContain('')
+
+      const result = await service.enqueueAll({ formats: ['xlsx'] })
+      expect(result).toEqual({ enqueued: 1, failed: 0 })
+    })
+
     it('should return 0 when no active resources exist', async () => {
       await db.execute(sql`UPDATE resource SET state = 'deleted'`)
 

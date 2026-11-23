@@ -11,6 +11,8 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Checkbox,
+  Label,
   Table,
   TableBody,
   TableCell,
@@ -34,6 +36,8 @@ interface JobStatsResponse {
   jobs: Record<string, number>
   /** Whether "Reprocess all" would be refused: one is still on its way */
   reprocessPending: boolean
+  /** The formats a reprocess can be narrowed to, lowercased, with their resources */
+  formats: { format: string; count: number }[]
 }
 
 interface JobItem {
@@ -159,23 +163,38 @@ export default function AdminJobsPage() {
   )
 
   // Every resource's pipeline again, from the file it holds — the runs this
-  // page then follows (ADR-044 §4)
+  // page then follows (ADR-044 §4). The formats left out, rather than those
+  // checked, so a format that appears later is checked like the rest
+  const [leftOut, setLeftOut] = useState<ReadonlySet<string>>(new Set())
+  const formats = stats?.formats ?? []
+  const chosen = formats.filter((f) => !leftOut.has(f.format)).map((f) => f.format)
+  // Every format: the whole catalog, its content index emptied first and the
+  // resources with no format included
+  const everyFormat = chosen.length === formats.length
   const [contentBusy, setContentBusy] = useState(false)
-  const [contentOutcome, setContentOutcome] = useState<boolean | null>(null)
+  const [contentOutcome, setContentOutcome] = useState<'all' | 'formats' | 'failed' | null>(null)
   const reprocessContent = useCallback(async () => {
     setContentBusy(true)
     setContentOutcome(null)
     try {
-      const res = await requestReindex({ includeContent: true })
+      const res = everyFormat
+        ? await requestReindex({ includeContent: true })
+        : await clientFetch('/api/v1/admin/jobs/enqueue-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ formats: chosen }),
+          })
       // 409: one is already on its way, which the reload shows
-      setContentOutcome(res.status === 409 ? null : res.ok)
+      setContentOutcome(
+        res.status === 409 ? null : !res.ok ? 'failed' : everyFormat ? 'all' : 'formats'
+      )
       await reload()
     } catch {
-      setContentOutcome(false)
+      setContentOutcome('failed')
     } finally {
       setContentBusy(false)
     }
-  }, [reload])
+  }, [reload, everyFormat, chosen])
 
   return (
     <div className="flex flex-col gap-6">
@@ -189,24 +208,70 @@ export default function AdminJobsPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">{t('contentDescription')}</p>
+          {formats.length > 0 && (
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-2 text-sm font-medium">{t('contentFormats')}</legend>
+              {/* Every format at once: on, off, or partly on while some are left out */}
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="reprocess-format-all"
+                  checked={everyFormat ? true : chosen.length === 0 ? false : 'indeterminate'}
+                  disabled={contentBusy}
+                  onCheckedChange={() =>
+                    setLeftOut(everyFormat ? new Set(formats.map((f) => f.format)) : new Set())
+                  }
+                />
+                <Label htmlFor="reprocess-format-all">{t('contentFormatsAll')}</Label>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {formats.map(({ format, count }) => (
+                  <div key={format} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`reprocess-format-${format}`}
+                      checked={!leftOut.has(format)}
+                      disabled={contentBusy}
+                      onCheckedChange={(checked) =>
+                        setLeftOut((current) => {
+                          const next = new Set(current)
+                          if (checked) next.delete(format)
+                          else next.add(format)
+                          return next
+                        })
+                      }
+                    />
+                    <Label htmlFor={`reprocess-format-${format}`} className="font-normal">
+                      {t('contentFormatCount', { format: format.toUpperCase(), count })}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">{t('contentFormatsNote')}</p>
+            </fieldset>
+          )}
           <div className="flex items-center gap-4">
             <Button
               variant="outline"
               onClick={reprocessContent}
-              disabled={contentBusy || stats?.reprocessPending}
+              disabled={
+                contentBusy ||
+                stats?.reprocessPending ||
+                (formats.length > 0 && chosen.length === 0)
+              }
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${contentBusy ? 'animate-spin' : ''}`} />
-              {contentBusy ? tc('queueing') : t('contentButton')}
+              {contentBusy
+                ? tc('queueing')
+                : t(everyFormat ? 'contentButton' : 'contentButtonFormats')}
             </Button>
             {stats?.reprocessPending && contentOutcome === null && (
               <p className="text-sm text-muted-foreground">{t('contentRunning')}</p>
             )}
-            {contentOutcome === true && (
+            {(contentOutcome === 'all' || contentOutcome === 'formats') && (
               <p role="status" className="text-sm text-muted-foreground">
-                {t('contentQueued')}
+                {t(contentOutcome === 'all' ? 'contentQueued' : 'contentQueuedFormats')}
               </p>
             )}
-            {contentOutcome === false && (
+            {contentOutcome === 'failed' && (
               <p role="alert" className="text-sm text-destructive">
                 {tc('queueFailed')}
               </p>

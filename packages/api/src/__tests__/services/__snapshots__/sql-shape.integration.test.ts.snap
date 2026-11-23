@@ -10,6 +10,7 @@ exports[`emitted SQL shape > GET /api/v1/admin/jobs/stats > pins the sysadmin sh
 [
   "select  from "job" where ("job"."type" = $1 and "job"."state" = $2 and "job"."payload" @> '{"includeContent": true}'::jsonb) limit $3",
   "select  from "job" where ("job"."type" = $1 and "job"."state" = $2 and "job"."payload" @> '{"reprocessAll": true}'::jsonb) limit $3",
+  "select lower(btrim("resource"."format")), count(*) from "resource" inner join "package" on "resource"."package_id" = "package"."id" where (("resource"."state" = $1 and "package"."state" in ($2, $3)) and lower(btrim("resource"."format")) <> '') group by lower(btrim("resource"."format")) order by count(*) desc, lower(btrim("resource"."format"))",
   "select "status", count(*) from "resource_pipeline" group by "resource_pipeline"."status"",
   "select "resource_pipeline"."resource_id", "resource"."name", "resource_pipeline"."error", "resource_pipeline"."updated" from "resource_pipeline" inner join "resource" on "resource_pipeline"."resource_id" = "resource"."id" where "resource_pipeline"."status" = $1 order by "resource_pipeline"."updated" desc limit $2",
 ]
