@@ -6,6 +6,66 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.47.0] - 2026-11-23
+
+**Highlights**
+
+- **Tables taken out of Excel files automatically.** An Excel workbook (XLSX or XLS) whose sheet is a plain table is now read as a table, besides having its text extracted as before (#1286, #1290, #1296). It then has what a CSV has: the table view, the field list, table settings, row-level diffs between versions, the OData feed for BI tools and queries through MCP. A plain table is a single sheet with a one-row header (no empty, repeated, numeric or date heading), only one-cell titles or notes above and below, and no merged cells, empty rows partway, section rows or formulas without saved results inside. When in doubt, a sheet is not read as a table: a header taken one row off would break every row. Full-text search keeps using the document's text.
+- **Why a file is not a table.** Where a file that could be a table (CSV, TSV, JSON, GeoJSON or Excel) did not become one, the editor's "Preview and settings" tab says why under the preview: for Excel, every plain-table condition the sheet missed; for other formats, the one reason (too large, rows of different widths, not a list of records, and so on). Only those who can edit the dataset see it (#1291, #1300).
+- **One order for every preview.** The original is always the leftmost tab, named with its format ("Original (CSV)"); an Excel file read as a table shows "Original (XLSX)", "Table" and "Extracted text", and opens on the original. A GeoJSON opens on its map. The field list and the table settings appear with the table view only, and a badge says the table's size ("Table: 12 columns × 340 rows"). In dataset resource lists, a resource read as a table has a table icon at its right edge (#1297).
+- **Reprocess only the formats you choose.** "Reprocess all resources" on the Resource Processing page lists the site's formats with their counts, all checked by default. With only some checked, only those resources are rebuilt from their stored files, without fetching URLs again or emptying the search index (#1293, #1298).
+
+**Features**
+
+- Plain-table judgement and reading of XLSX and XLS sheets in the worker's heavy process, through an intermediate CSV read without inferring its structure (#1286, #1289, #1290, #1296). Cells are read as their raw values, dates as ISO 8601, hidden rows and columns included; a column of text cells only stays text, so leading zeros are kept. The first reason a sheet is not a plain table is recorded on the version, and every reason with it (#1291).
+- Excel versions stored before this release are read again in the background by the hourly sweep for row-level diffs; one that is a plain table gets its schema and joins the diffs (#1299).
+- `GET /resources/{id}/preview?as=table` serves an Excel file's table preview (Parquet); without it, the original is served as before (#1297).
+- `GET /resources/{id}/schema` answers for an Excel file read as a table, and adds `noTableReasons` for users who can edit the dataset (#1300).
+- `POST /admin/jobs/enqueue-all` takes `formats` (case-insensitive), and `GET /admin/jobs/stats` reports `formats` with their counts (#1293, #1298).
+- Where a diff cannot be had because a version is no table, the diff panel says why; the version list no longer shows the reason (#1300).
+
+**Documentation**
+
+- The user, data administrator and system administrator guides and the REST API reference cover Excel tables, why a file is not a table, the preview order and reprocessing chosen formats. The specification of the Excel work and ADR-057 are revised from measurements of public files (#1285, #1288, #1292, #1294, #1301).
+
+**Upgrade Notes** (for system administrators)
+
+- **Database:** one migration adds a nullable column to `resource_version` (`reading_proposal`). It only adds a column, so the previous version keeps working while the deploy rolls.
+- **Reprocess XLSX and XLS right after upgrading.** Existing Excel files become tables only when reprocessed. On "Resource Processing", check only "XLSX" and "XLS" under "Reprocess all resources" and press "Reprocess the chosen formats". Until then, an Excel file the background sweep has already read as a table can show the table icon and a "Table" tab with no preview in it.
+- **Background load after the upgrade.** The hourly sweep reads every stored Excel version once (download and parse in the worker's heavy process, one version of a resource at a time). On a site with many Excel versions it takes a while; nothing needs to be done.
+- **API:** `GET /resources/{id}/schema` may carry `noTableReasons`; `GET /admin/jobs/stats` carries `formats`. Both are additions.
+- **AWS / Docker Compose:** no configuration changes.
+
+---
+
+**ハイライト**
+
+- **Excel ファイルから表を自動で取り出します。** シートが素直な表になっている Excel（XLSX・XLS）を、これまでどおりのテキスト抽出に加えて、表として読むようになりました（#1286、#1290、#1296）。表になると、CSV と同じくテーブル表示・フィールド一覧・表の設定・版の間の行レベル差分・BI ツール向けの OData・MCP からの問い合わせが使えます。素直な表とは、シートが 1 枚で、見出しが 1 行（空・重複・数値や日付の見出しが無い）、表の上下は 1 セルだけの表題や注記、表の中に結合セル・途中の空行・区分けの行・計算結果の保存されていない数式が無いものです。迷ったら表にしません。見出しが 1 行ずれると全部の行が壊れるためです。全文検索は文書のテキストのままです。
+- **表にならなかった理由が分かります。** 表になりうるファイル（CSV・TSV・JSON・GeoJSON・Excel）が表にならなかったとき、編集画面の「プレビューと設定」タブで、プレビューの下に理由を出します。Excel は素直な表の条件に当たらなかった理由をすべて、ほかの形式は 1 つ（大きすぎる、行ごとに列数がそろっていない、レコードの一覧の形でない など）です。表示されるのはデータセットを編集できる人だけです（#1291、#1300）。
+- **プレビューの並びをそろえました。** 原本はいつも左端のタブで、形式名が付きます（「原本 (CSV)」）。表になった Excel は「原本 (XLSX)」「テーブル表示」「抽出テキスト」の順で、原本から開きます。GeoJSON は地図から開きます。フィールド一覧と表の設定はテーブル表示のときだけ出て、表の大きさのバッジ（「表 12 列 × 340 行」）が付きます。データセットのリソース一覧では、表になったリソースの右端に表のアイコンが出ます（#1297）。
+- **形式を選んで再処理できます。** 「リソースの処理状況」の「全リソースの再処理」に、サイトにある形式が件数付きで並び、既定ではすべて選ばれています。一部だけを選ぶと、その形式のリソースだけを保存済みのファイルから作り直します。URL の取得し直しも、検索の索引を空にすることもしません（#1293、#1298）。
+
+**機能**
+
+- XLSX・XLS のシートの素直な表の判定と読み取りを、worker の重い処理用の子プロセスで行います。構造を推定しない中間 CSV を経由します（#1286、#1289、#1290、#1296）。セルは生の値で、日付は ISO 8601 で読み、非表示の行と列も含めます。文字のセルだけの列は文字列のままなので、先頭の 0 は残ります。素直な表でない理由は、最初の 1 つと全部を版に記録します（#1291）。
+- このリリースより前に保存された Excel の版は、行レベル差分の毎時の定期再投入がバックグラウンドで読み直します。素直な表ならスキーマが付き、差分の対象になります（#1299）。
+- `GET /resources/{id}/preview?as=table` で Excel の表のプレビュー（Parquet）を返します。付けなければ、これまでどおり原本を返します（#1297）。
+- `GET /resources/{id}/schema` が表になった Excel にも答え、データセットを編集できる利用者には `noTableReasons` を付けます（#1300）。
+- `POST /admin/jobs/enqueue-all` が `formats`（大文字小文字は問わない）を受け取り、`GET /admin/jobs/stats` が形式ごとの件数 `formats` を返します（#1293、#1298）。
+- 表にならなかった版のために差分が取れないとき、差分の欄に理由を出します。版の一覧には理由を出さなくなりました（#1300）。
+
+**ドキュメント**
+
+- 利用者・データ管理者・システム管理者の各ガイドと REST API リファレンスに、Excel の表、表にならなかった理由、プレビューの並び、形式を選んだ再処理を追加しました。Excel の実装仕様書と ADR-057 を、公開ファイルの実測に基づいて改訂しました（#1285、#1288、#1292、#1294、#1301）。
+
+**アップグレードの注意**（システム管理者向け）
+
+- **データベース:** マイグレーション 1 件で `resource_version` に NULL を許す列（`reading_proposal`）を足します。列を足すだけなので、デプロイ中も前の版はそのまま動きます。
+- **アップグレード後すぐに XLSX と XLS を再処理してください。** 既存の Excel は、再処理するまで表になりません。「リソースの処理状況」の「全リソースの再処理」で「XLSX」と「XLS」だけを選び、「選んだ形式を再処理」を押します。それまでの間は、定期再投入が先に表として読んだ Excel に、表のアイコンと、中身の出ない「テーブル表示」タブが出ることがあります。
+- **アップグレード後の裏の負荷:** 毎時の定期再投入が、保存済みの Excel の版を 1 回ずつ読みます（worker の子プロセスでのダウンロードと解析、1 つのリソースにつき 1 版ずつ）。Excel の版が多いサイトでは時間がかかりますが、操作は要りません。
+- **API:** `GET /resources/{id}/schema` に `noTableReasons` が、`GET /admin/jobs/stats` に `formats` が付くことがあります。どちらも追加です。
+- **AWS / Docker Compose:** 設定の変更はありません。
+
 ## [0.46.0] - 2026-11-22
 
 **Highlights**
