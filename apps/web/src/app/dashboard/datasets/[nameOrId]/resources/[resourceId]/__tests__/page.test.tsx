@@ -69,6 +69,8 @@ const pkg: EditorPackage = {
 }
 
 const reload = vi.fn()
+/** What `/schema` answers with: the current version's reading */
+let schemaAnswer: unknown = null
 
 function renderPage(
   resource: Record<string, unknown>,
@@ -76,10 +78,16 @@ function renderPage(
   canEdit = true,
   tab?: { resourceTab: string; setResourceTab: (tab: string) => void }
 ) {
-  vi.mocked(clientFetch).mockResolvedValue({
-    ok: true,
-    json: async () => ({ id: 'r1', name: 'data.csv', ...resource }),
-  } as Response)
+  vi.mocked(clientFetch).mockImplementation(
+    async (path) =>
+      ({
+        ok: true,
+        json: async () =>
+          String(path).endsWith('/schema')
+            ? { schema: schemaAnswer }
+            : { id: 'r1', name: 'data.csv', ...resource },
+      }) as Response
+  )
   render(
     <DatasetEditorProvider
       value={{
@@ -105,6 +113,7 @@ describe('ResourceEditorPage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
     nav.search = ''
+    schemaAnswer = null
   })
 
   it('opens on the tab the last resource was left on, and tells the editor of a move', async () => {
@@ -202,6 +211,27 @@ describe('ResourceEditorPage', () => {
     renderPage({ format: 'PDF' })
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Basic' })).toBeInTheDocument())
     expect(screen.queryByRole('tab', { name: 'Table settings' })).not.toBeInTheDocument()
+  })
+
+  /** A workbook whose current version's reading found these columns */
+  function renderWorkbook(columns: { name: string }[]) {
+    const workbook = { ...pkg.resources[0], name: 'data.xlsx', format: 'XLSX' }
+    schemaAnswer = { rowCount: 1, columns }
+    renderPage({ format: 'XLSX' }, { ...pkg, resources: [workbook] })
+  }
+
+  it('keeps a workbook whose reading found no columns on its Preview tab', async () => {
+    renderWorkbook([])
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Preview' })).toBeInTheDocument())
+    expect(screen.queryByRole('tab', { name: 'Table settings' })).not.toBeInTheDocument()
+  })
+
+  it('offers Table settings on a workbook read as a table', async () => {
+    renderWorkbook([{ name: 'a' }])
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Table settings' })).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('tab', { name: 'Preview' })).not.toBeInTheDocument()
   })
 
   it('edits the resource on its Basic tab', async () => {

@@ -88,6 +88,28 @@ describe('materialKind', () => {
     expect(materialKind(json, settled)).toBe('text')
   })
 
+  it('reads a workbook as a table where a sheet read as one, as a document otherwise (ADR-057)', () => {
+    const xlsx = { id: 'r', format: 'XLSX' }
+    const schema = {
+      rowCount: 2,
+      columns: [{ name: 'id', type: 'string', nullable: false, nullCount: 0 }],
+    }
+    const text = { documentTextKey: 'previews/r.text.ndjson.zst', documentTextBytes: 10 }
+    expect(materialKind(xlsx, { ...settled, pipelineMetadata: { ...text, schema } })).toBe(
+      'tabular'
+    )
+    expect(
+      materialKind({ ...xlsx, format: 'XLS' }, { ...settled, pipelineMetadata: { schema } })
+    ).toBe('tabular')
+    expect(
+      materialKind(xlsx, {
+        ...settled,
+        pipelineMetadata: { ...text, schema: { rowCount: 0, columns: [] } },
+      })
+    ).toBe('document')
+    expect(materialKind(xlsx, { ...settled, pipelineMetadata: text })).toBe('document')
+  })
+
   it('needs the artifact, not just the format', () => {
     expect(
       materialKind({ id: 'r', format: 'PDF' }, { ...settled, pipelineMetadata: {} })

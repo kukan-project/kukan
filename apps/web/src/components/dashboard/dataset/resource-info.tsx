@@ -1,10 +1,9 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { isTableSourceFormat, type ResourceSchema, type ResourceSummaryMeta } from '@kukan/shared'
+import { showsAsTable, type ResourceSchema, type ResourceSummaryMeta } from '@kukan/shared'
 import { DateTime } from '@/components/date-time'
 import { ResourceAbstract } from '@/components/resource/resource-abstract'
-import { useFetch } from '@/hooks/use-fetch'
 import { formatBytes } from '@/lib/format-utils'
 
 export interface ResourceInfoFields {
@@ -26,26 +25,22 @@ export interface ResourceInfoFields {
  * description the public page shows (ADR-053), with the same notices. A
  * description hidden from readers is not shown here either.
  *
- * `reloadKey` moves when a run settles: rows, columns and the description are
- * a run's products.
+ * `schema` is the editor's read of it, which follows a run settling: rows and
+ * columns are a run's products.
  */
 export function ResourceInfo({
   resource,
   latestVersion,
-  reloadKey,
+  schema: read,
 }: {
   resource: ResourceInfoFields
   latestVersion?: number | null
-  reloadKey?: number | string
+  schema?: ResourceSchema | null
 }) {
   const t = useTranslations('datasetEditor')
   const tr = useTranslations('resource')
-  const table = isTableSourceFormat(resource.format)
-  const { data: schemaData } = useFetch<{ schema: ResourceSchema | null }>(
-    table ? `/api/v1/resources/${encodeURIComponent(resource.id)}/schema` : null,
-    reloadKey
-  )
-  const schema = schemaData?.schema ?? null
+  // A workbook not read as a table lists what any document does
+  const schema = read && showsAsTable(resource.format, resource.mimetype, read) ? read : null
 
   const rows: [string, React.ReactNode][] = [
     [tr('mimeType'), resource.mimetype],

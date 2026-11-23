@@ -174,6 +174,13 @@ export function latestLiveVersionAgg(db: Database) {
         sql<boolean>`bool_or(${resourceVersion.typeChanges} IS NOT NULL AND ${resourceVersion.typeReview} IS NULL)`.as(
           'type_review_due'
         ),
+      // Whether the version counted in `maxVersion` — the one the preview
+      // serves — was read as a table: a workbook's page picks table or original
+      // from this, before its schema is fetched (ADR-057 decision 9)
+      hasTable:
+        sql<boolean>`(array_agg(coalesce(jsonb_array_length(${resourceVersion.schema}->'columns'), 0) > 0 ORDER BY ${resourceVersion.version} DESC))[1]`.as(
+          'has_table'
+        ),
     })
     .from(resourceVersion)
     .where(notInArray(resourceVersion.state, ['purged', 'superseded']))

@@ -22,9 +22,16 @@ vi.mock('../pipeline-status-detail', () => ({
 }))
 
 vi.mock('@/components/preview/resource-preview', () => ({
-  ResourcePreview: ({ resourceId }: { resourceId: string }) => (
-    <div data-testid="resource-preview">Preview for {resourceId}</div>
+  ResourcePreview: ({ resourceId, hasTable }: { resourceId: string; hasTable?: boolean }) => (
+    <div data-testid="resource-preview" data-has-table={String(hasTable)}>
+      Preview for {resourceId}
+    </div>
   ),
+}))
+
+// Reads the Parquet footer itself; only whether it is mounted matters here
+vi.mock('../resource-fields', () => ({
+  ResourceFields: () => <div data-testid="resource-fields" />,
 }))
 
 vi.mock('@/components/date-time', () => ({
@@ -64,6 +71,43 @@ describe('ResourcePipelinePreview', () => {
     })
     render(<ResourcePipelinePreview resourceId="r1" format="CSV" />)
     expect(screen.queryByRole('button', { name: 'Data API' })).not.toBeInTheDocument()
+  })
+
+  it('lists the fields of a table source, schema or not', () => {
+    setSchemaFetch({ queryable: false, schema: null, primaryKey: null })
+    render(<ResourcePipelinePreview resourceId="r1" format="CSV" />)
+    expect(screen.getByTestId('resource-fields')).toBeInTheDocument()
+  })
+
+  it('lists the fields of a workbook only when its reading found columns', () => {
+    setSchemaFetch({ queryable: false, schema: { columns: [], rowCount: 0 }, primaryKey: null })
+    const { unmount } = render(<ResourcePipelinePreview resourceId="r1" format="XLSX" />)
+    expect(mockUseFetch).toHaveBeenCalledWith(expect.stringContaining('/resources/r1/schema'))
+    expect(screen.queryByTestId('resource-fields')).not.toBeInTheDocument()
+    unmount()
+
+    setSchemaFetch({
+      queryable: true,
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+      primaryKey: null,
+    })
+    render(<ResourcePipelinePreview resourceId="r1" format="XLSX" />)
+    expect(screen.getByTestId('resource-fields')).toBeInTheDocument()
+  })
+
+  it('hands the preview what the server said of the version, without waiting for the schema', () => {
+    mockUseFetch.mockReturnValue({ data: null, loading: true, error: false })
+    render(<ResourcePipelinePreview resourceId="r1" format="XLSX" hasTable />)
+    expect(screen.getByTestId('resource-preview')).toHaveAttribute('data-has-table', 'true')
+  })
+
+  it('asks a document that is not a workbook for no schema', () => {
+    render(<ResourcePipelinePreview resourceId="r1" format="DOCX" />)
+    expect(mockUseFetch).not.toHaveBeenCalledWith(expect.stringContaining('/schema'))
+    expect(screen.queryByTestId('resource-fields')).not.toBeInTheDocument()
   })
 
   it('should render preview heading', () => {

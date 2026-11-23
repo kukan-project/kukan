@@ -43,6 +43,8 @@ export interface Resource {
   summaryMeta?: ResourceSummaryMeta | null
   /** Highest live version (ADR-043); absent until the first create */
   latestVersion?: number | null
+  /** Whether that version was read as a table (ADR-057 decision 9) */
+  hasTable?: boolean
 }
 
 interface ResourceExplorerProps {
@@ -301,6 +303,7 @@ export function ResourceExplorer({
                   notPublic={notPublic}
                   officePreviewViewer={officePreviewViewer}
                   latestVersion={r.latestVersion}
+                  hasTable={r.hasTable}
                 />
                 <VersionHistory resourceId={r.id} />
               </div>

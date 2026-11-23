@@ -14,7 +14,8 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import {
-  isTableSourceFormat,
+  mayHoldTable,
+  showsAsTable,
   type OdataKey,
   type OfficePreviewViewer,
   type ResourceSchema,
@@ -37,6 +38,8 @@ interface ResourcePipelinePreviewProps {
   notPublic?: boolean
   officePreviewViewer?: OfficePreviewViewer
   latestVersion?: number | null
+  /** Whether the live version was read as a table, as the server reported it with the page */
+  hasTable?: boolean
   /**
    * The key to mark in place of the stored one: the dashboard's Table settings
    * marks the key being picked, before it is applied.
@@ -60,6 +63,7 @@ export function ResourcePipelinePreview({
   notPublic,
   officePreviewViewer,
   latestVersion,
+  hasTable,
   primaryKey: keyShown,
   withFields = true,
 }: ResourcePipelinePreviewProps) {
@@ -86,10 +90,11 @@ export function ResourcePipelinePreview({
     columnRoles: ColumnRoleView[] | null
     primaryKey: string[] | null
   }>(
-    isTableSourceFormat(format)
+    mayHoldTable(format)
       ? `/api/v1/resources/${encodeURIComponent(resourceId)}/schema?_k=${previewKey}`
       : null
   )
+  const fields = showsAsTable(format, null, schemaData?.schema)
 
   const handleSettled = useCallback(() => {
     setPreviewKey((k) => k + 1)
@@ -161,11 +166,12 @@ export function ResourcePipelinePreview({
         officePreviewViewer={officePreviewViewer}
         version={latestVersion}
         schema={schemaData?.schema}
+        hasTable={hasTable}
         primaryKey={keyShown !== undefined ? keyShown : schemaData?.primaryKey}
       />
       {/* Field (column) list shares the preview's remount key so it refreshes
           in lockstep when the pipeline (re)generates the Parquet preview. */}
-      {withFields && isTableSourceFormat(format) && (
+      {withFields && fields && (
         <div className="mt-6">
           <ResourceFields
             key={`fields-${resourceId}-${previewKey}`}

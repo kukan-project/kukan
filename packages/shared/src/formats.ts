@@ -149,9 +149,44 @@ export function isJsonFormat(format: string | null): boolean {
  */
 export const TABLE_SOURCE_FORMATS = ['csv', 'tsv', 'json', 'geojson'] as const
 
+const TABLE_SOURCE_SET: ReadonlySet<string> = new Set(TABLE_SOURCE_FORMATS)
+
 /** {@link TABLE_SOURCE_FORMATS}, or a CSV/TSV MIME type. */
 export function isTableSourceFormat(format?: string | null, mimetype?: string | null): boolean {
-  return isCsvFormat(format, mimetype) || isJsonFormat(format ?? null)
+  const f = format?.toLowerCase()
+  return (!!f && TABLE_SOURCE_SET.has(f)) || isCsvFormat(null, mimetype)
+}
+
+/** Check if a format is an Excel workbook (XLSX or XLS) */
+export function isExcelFormat(format?: string | null): boolean {
+  const f = format?.toLowerCase()
+  return f === 'xlsx' || f === 'xls'
+}
+
+/**
+ * Whether a resource of this format may have a table to show: a table source,
+ * or an Excel workbook, which is one only when its version's schema has columns
+ * (ADR-057 decision 9). For the UI, deciding where to look for a schema — not
+ * whether one is there.
+ */
+export function mayHoldTable(format?: string | null, mimetype?: string | null): boolean {
+  return isTableSourceFormat(format, mimetype) || isExcelFormat(format)
+}
+
+/**
+ * Whether a resource is shown as a table: a table source always — it lists its
+ * fields, or says it has none — and a workbook where its schema has columns
+ * (ADR-057 decision 9).
+ */
+export function showsAsTable(
+  format?: string | null,
+  mimetype?: string | null,
+  schema?: { columns: readonly unknown[] } | null
+): boolean {
+  return (
+    isTableSourceFormat(format, mimetype) ||
+    (mayHoldTable(format, mimetype) && !!schema?.columns.length)
+  )
 }
 
 /** Text, and a document too: read for its headings ({@link isDocumentFormat}). */

@@ -21,6 +21,11 @@ import {
   declaredFormatMismatch,
   contentFormat,
   isIchitaroFormat,
+  isTableSourceFormat,
+  isExcelFormat,
+  mayHoldTable,
+  showsAsTable,
+  TABLE_SOURCE_FORMATS,
 } from '../formats'
 
 describe('normalizeFormat', () => {
@@ -177,6 +182,70 @@ describe('isCsvFormat', () => {
     expect(isCsvFormat()).toBe(false)
     expect(isCsvFormat(null, null)).toBe(false)
     expect(isCsvFormat(undefined, undefined)).toBe(false)
+  })
+})
+
+describe('isTableSourceFormat', () => {
+  it('holds every format in TABLE_SOURCE_FORMATS, case-insensitively', () => {
+    for (const f of TABLE_SOURCE_FORMATS) {
+      expect(isTableSourceFormat(f)).toBe(true)
+      expect(isTableSourceFormat(f.toUpperCase())).toBe(true)
+    }
+  })
+
+  it('takes a CSV/TSV MIME type when the format says nothing', () => {
+    expect(isTableSourceFormat(null, 'text/csv')).toBe(true)
+    expect(isTableSourceFormat(undefined, 'text/tab-separated-values')).toBe(true)
+    expect(isTableSourceFormat(null, 'application/json')).toBe(false)
+  })
+
+  it('leaves Excel out until the layer-2 sweep is ready for it', () => {
+    expect(isTableSourceFormat('xlsx')).toBe(false)
+    expect(isTableSourceFormat('XLS')).toBe(false)
+    expect(isTableSourceFormat('pdf')).toBe(false)
+    expect(isTableSourceFormat()).toBe(false)
+  })
+})
+
+describe('isExcelFormat / mayHoldTable', () => {
+  it('names XLSX and XLS only', () => {
+    expect(isExcelFormat('xlsx')).toBe(true)
+    expect(isExcelFormat('XLS')).toBe(true)
+    expect(isExcelFormat('ods')).toBe(false)
+    expect(isExcelFormat('csv')).toBe(false)
+    expect(isExcelFormat(null)).toBe(false)
+  })
+
+  it('is a table source or Excel', () => {
+    expect(mayHoldTable('csv')).toBe(true)
+    expect(mayHoldTable('GeoJSON')).toBe(true)
+    expect(mayHoldTable(null, 'text/csv')).toBe(true)
+    expect(mayHoldTable('xlsx')).toBe(true)
+    expect(mayHoldTable('xls')).toBe(true)
+    expect(mayHoldTable('docx')).toBe(false)
+    expect(mayHoldTable(null)).toBe(false)
+  })
+})
+
+describe('showsAsTable', () => {
+  const columns = { columns: [{ name: 'a' }] }
+  const none = { columns: [] }
+
+  it('holds a table source whatever its schema says', () => {
+    expect(showsAsTable('csv')).toBe(true)
+    expect(showsAsTable('json', null, none)).toBe(true)
+    expect(showsAsTable(null, 'text/csv')).toBe(true)
+  })
+
+  it('holds a workbook only where its schema has columns (ADR-057 decision 9)', () => {
+    expect(showsAsTable('xlsx', null, columns)).toBe(true)
+    expect(showsAsTable('XLS', null, none)).toBe(false)
+    expect(showsAsTable('xlsx')).toBe(false)
+  })
+
+  it('holds no other format, schema or not', () => {
+    expect(showsAsTable('pdf', null, columns)).toBe(false)
+    expect(showsAsTable(null, null, columns)).toBe(false)
   })
 })
 

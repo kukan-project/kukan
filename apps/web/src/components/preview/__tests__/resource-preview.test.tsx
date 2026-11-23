@@ -227,6 +227,27 @@ describe('ResourcePreview', () => {
       localStorage.clear()
     })
 
+    it('shows a workbook read as a table as the table, its original a toggle away (ADR-057)', async () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" hasTable />)
+
+      expect(screen.getByTestId('data-explorer')).toBeInTheDocument()
+      expect(screen.queryByTestId('ibis-office-preview')).not.toBeInTheDocument()
+      screen.getByText('XLSX').click()
+      expect(await screen.findByTestId('ibis-office-preview')).toBeInTheDocument()
+    })
+
+    it('draws a workbook not read as a table as its original', () => {
+      render(<ResourcePreview resourceId="r1" format="XLS" hasTable={false} />)
+      expect(screen.queryByTestId('data-explorer')).not.toBeInTheDocument()
+      expect(screen.getByTestId('ibis-office-preview')).toBeInTheDocument()
+    })
+
+    it('draws a workbook as its original at once where nothing says whether it is a table', () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" />)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByTestId('ibis-office-preview')).toBeInTheDocument()
+    })
+
     it('never hands a file to Microsoft’s viewer', () => {
       render(<ResourcePreview resourceId="r1" format="XLSX" url="https://example.com/data.xlsx" />)
       expect(document.querySelector('iframe')).toBeNull()

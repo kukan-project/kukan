@@ -7,8 +7,9 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
-import type { VersionState } from '@kukan/shared'
+import type { ResourceSchema, VersionState } from '@kukan/shared'
 import { ResourceService } from '../../services/resource-service'
+import { PackageService } from '../../services/package-service'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -21,7 +22,12 @@ async function addResource(name: string): Promise<string> {
   return r.id
 }
 
-async function addVersion(resourceId: string, version: number, state: VersionState = 'active') {
+async function addVersion(
+  resourceId: string,
+  version: number,
+  state: VersionState = 'active',
+  schema: ResourceSchema | null = null
+) {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
@@ -29,7 +35,15 @@ async function addVersion(resourceId: string, version: number, state: VersionSta
     hash: `sha256:v${version}`,
     origin: 'upload',
     state,
+    schema,
   })
+}
+
+function schemaOf(...names: string[]): ResourceSchema {
+  return {
+    rowCount: 1,
+    columns: names.map((name) => ({ name, type: 'string', nullable: true, nullCount: 0 })),
+  }
 }
 
 beforeEach(async () => {
@@ -78,5 +92,30 @@ describe('listByPackage latestVersion', () => {
 
     const rows = await service.listByPackage(packageId)
     expect(rows.find((x) => x.id === r)?.latestVersion).toBe(1)
+  })
+})
+
+describe('package detail hasTable', () => {
+  it('answers for the version the resource serves, not for any version', async () => {
+    const table = await addResource('read-as-table')
+    await addVersion(table, 1)
+    await addVersion(table, 2, 'active', schemaOf('a', 'b'))
+    // A table once, no longer: only the live version counts
+    const wasTable = await addResource('was-table')
+    await addVersion(wasTable, 1, 'active', schemaOf('a'))
+    await addVersion(wasTable, 2, 'active', schemaOf())
+    // The newest row is purged, so the live one is the table below it
+    const purgedTop = await addResource('purged-top')
+    await addVersion(purgedTop, 1, 'active', schemaOf('a'))
+    await addVersion(purgedTop, 2, 'purged')
+    const unversioned = await addResource('no-versions')
+
+    const detail = await new PackageService(db).getDetailByNameOrId(packageId)
+    const hasTable = new Map(detail.resources.map((r) => [r.id, r.hasTable]))
+
+    expect(hasTable.get(table)).toBe(true)
+    expect(hasTable.get(wasTable)).toBe(false)
+    expect(hasTable.get(purgedTop)).toBe(true)
+    expect(hasTable.get(unversioned)).toBe(false)
   })
 })

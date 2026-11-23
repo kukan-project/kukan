@@ -15,7 +15,6 @@ import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import {
   isCsvFormat,
-  isJsonFormat,
   isTextFormat,
   isDocumentFormat,
   isZipFormat,
@@ -85,13 +84,10 @@ export function materialKind(
   artifacts: MaterialArtifacts
 ): MaterialKind | null {
   if (isCsvFormat(resource.format, resource.mimetype ?? null)) return 'tabular'
-  // A JSON is a table where its records made one (ADR-063 §決定 10), text otherwise
-  if (
-    isJsonFormat(resource.format) &&
-    parseResourceSchema(artifacts.pipelineMetadata)?.columns.length
-  ) {
-    return 'tabular'
-  }
+  // Whatever the interpretation read as a table is one, whatever the format: a
+  // JSON whose records made one (ADR-063 §決定 10), a workbook whose sheet did
+  // (ADR-057 decision 9). Otherwise a JSON is text and a workbook a document.
+  if (parseResourceSchema(artifacts.pipelineMetadata)?.columns.length) return 'tabular'
   // A document is read from its text artifact; text from the live object. A
   // Markdown is both, and read as a document where a run has extracted it.
   if (isDocumentFormat(resource.format) && documentTextOf(artifacts.pipelineMetadata)) {

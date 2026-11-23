@@ -738,6 +738,10 @@ export interface OdataKey {
  * FeatureCollection (ADR-063 extension) — or one that does not parse. A
  * configuration object or a deeply nested document, read again, is the same
  * file; the content index takes it as text.
+ *
+ * The rest are an Excel sheet missing the plain-table conditions (Excel-tables
+ * spec §5.8), listed in the order they are judged: the version records the first
+ * one hit, and `reading_proposal.reasons` every one.
  */
 export type NoTableReason =
   | 'no-columns'
@@ -747,6 +751,56 @@ export type NoTableReason =
   | 'timed-out'
   | 'ragged-rows'
   | 'not-records'
+  | 'no-table'
+  | 'multiple-sheets'
+  | 'title-or-footer'
+  | 'header-blank'
+  | 'header-duplicate'
+  | 'header-not-text'
+  | 'multi-row-header'
+  | 'merged-cells'
+  | 'not-rectangular'
+  | 'section-rows'
+  | 'multiple-tables'
+  | 'uncached-formulas'
+  | 'too-small'
+  | 'encrypted'
+
+/**
+ * One table read off a workbook (ADR-057 decision 2, Excel-tables spec §3.1).
+ * The rules, AI and a person all produce this shape.
+ */
+export interface TableReading {
+  /** A name for the table, unique within the resource. Default: the sheet's name. */
+  name: string
+  /** The sheet, by name. */
+  sheet: string
+  /** Top-left corner of the range, header included (A1 notation). */
+  from: string
+  /** Bottom-right corner (A1 notation), of the version it was read on. */
+  to: string
+  /** Rows from the top of the range that are header. */
+  headerRows: number
+  /** Names that replace the ones joined from the header, one per column. */
+  columnNames?: string[]
+  /** Settled only: the header band's text, row by row, as it was when settled. */
+  header?: string[][]
+  /** Settled only: the one-cell row just above the header band, when there is one. */
+  title?: string
+}
+
+/**
+ * What the worker records when a sheet misses the plain-table conditions
+ * (`resource_version.reading_proposal`, Excel-tables spec §8.3.1).
+ */
+export interface ReadingProposal {
+  /** The rules' proposal, absent when the shape cannot be expressed as one range. */
+  rules?: TableReading & { likely: boolean }
+  /** Every reason the sheet missed the plain-table conditions. */
+  reasons: NoTableReason[]
+  /** AI's proposal, with whether it agrees with the rules'. */
+  ai?: TableReading & { kind: string; agrees: boolean }
+}
 
 /**
  * Why a version was not loaded into layer 2, when the key is what stopped it

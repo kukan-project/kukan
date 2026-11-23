@@ -1,28 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import type { ResourceSchema } from '@kukan/shared'
 import { ResourceInfo } from '../resource-info'
 
-const fetched = vi.hoisted(() => ({ paths: [] as (string | null)[], data: null as unknown }))
-vi.mock('@/hooks/use-fetch', () => ({
-  useFetch: (path: string | null) => {
-    fetched.paths.push(path)
-    return { data: path ? fetched.data : null, loading: false, error: false }
-  },
-}))
 vi.mock('@/hooks/use-site-settings', () => ({
   useSiteSettings: () => ({ resourceSummaryEnabled: true }),
 }))
 
-beforeEach(() => {
-  fetched.paths = []
-  fetched.data = null
-})
+function schemaOf(rowCount: number, names: string[]): ResourceSchema {
+  return {
+    rowCount,
+    columns: names.map((name) => ({ name, type: 'string', nullable: true, nullCount: 0 })),
+  }
+}
 
 describe('ResourceInfo', () => {
   it('lists what the catalogue holds, with the table shape and the AI description', () => {
-    fetched.data = {
-      schema: { rowCount: 1234, columns: [{ name: 'a' }, { name: 'b' }] },
-    }
     render(
       <ResourceInfo
         resource={{
@@ -35,10 +28,10 @@ describe('ResourceInfo', () => {
           summaryMeta: { source: 'ai', material: 'schema', version: 2 },
         }}
         latestVersion={2}
+        schema={schemaOf(1234, ['a', 'b'])}
       />
     )
 
-    expect(fetched.paths).toContain('/api/v1/resources/r1/schema')
     expect(screen.getByText('text/csv')).toBeInTheDocument()
     expect(screen.getByText('v2')).toBeInTheDocument()
     expect(screen.getByText('Rows').nextSibling).toHaveTextContent('1,234')
@@ -49,12 +42,25 @@ describe('ResourceInfo', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('asks for no table shape for a file that is not a table, and leaves out what is unknown', () => {
-    render(<ResourceInfo resource={{ id: 'r2', format: 'PDF' }} />)
+  it('shows no table shape for a file that is not a table, and leaves out what is unknown', () => {
+    render(<ResourceInfo resource={{ id: 'r2', format: 'PDF' }} schema={schemaOf(3, ['a'])} />)
 
-    expect(fetched.paths.every((p) => p === null)).toBe(true)
     expect(screen.queryByText('Rows')).not.toBeInTheDocument()
     expect(screen.queryByText('MIME type')).not.toBeInTheDocument()
+  })
+
+  it('shows the table shape of a workbook only when its reading found columns', () => {
+    const { unmount } = render(
+      <ResourceInfo resource={{ id: 'r3', format: 'XLSX' }} schema={schemaOf(0, [])} />
+    )
+    expect(screen.queryByText('Rows')).not.toBeInTheDocument()
+    unmount()
+
+    render(
+      <ResourceInfo resource={{ id: 'r3', format: 'XLSX' }} schema={schemaOf(12, ['a', 'b'])} />
+    )
+    expect(screen.getByText('Rows').nextSibling).toHaveTextContent('12')
+    expect(screen.getByText('Columns').nextSibling).toHaveTextContent('2')
   })
 
   it('shows no description that was hidden from readers', () => {

@@ -4,7 +4,14 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Alert, AlertDescription, Tabs, TabsContent, TabsList, TabsTrigger } from '@kukan/ui'
-import { isRunActive, isTableSourceFormat, type OfficePreviewViewer } from '@kukan/shared'
+import {
+  isRunActive,
+  isTableSourceFormat,
+  mayHoldTable,
+  showsAsTable,
+  type OfficePreviewViewer,
+  type ResourceSchema,
+} from '@kukan/shared'
 import {
   datasetEditPath,
   editorStateQuery,
@@ -99,6 +106,18 @@ export function ResourceEditor({
     `/api/v1/resources/${encodeURIComponent(resourceId)}`,
     settled
   )
+  // Read once for the tabs and the information under the form. The format is
+  // taken from the list where it has loaded, so this goes out beside the read
+  // of the resource rather than after it.
+  // A workbook is a table only when its reading found columns (ADR-057
+  // decision 9). For now its Table settings tab follows that; Step 2 offers
+  // the tab on every workbook, as where its reading is settled.
+  const schemaPath = mayHoldTable(listed?.format ?? resource?.format)
+    ? `/api/v1/resources/${encodeURIComponent(resourceId)}/schema`
+    : null
+  const { data: schemaData, error: schemaError } = useFetch<{
+    schema: ResourceSchema | null
+  }>(schemaPath, settled)
 
   // Not found: never read at all — a refetch that fails keeps what is shown —
   // not one of this dataset's resources (a stale or hand-made address), or
@@ -125,15 +144,26 @@ export function ResourceEditor({
     )
   }
   // Inside the editor, nothing is shown until the dataset it belongs to is
-  // known: whether it is this dataset's, and who may write it, both hang on it
-  if (!resource || (editor && !pkg)) {
+  // known: whether it is this dataset's, and who may write it, both hang on it.
+  // The first time, a workbook's tabs also wait for its schema, so the page
+  // does not open on one tab only to move to the other; a read again keeps the
+  // page. A table source is a table whatever its schema says.
+  if (
+    !resource ||
+    (editor && !pkg) ||
+    (pageTab === null &&
+      schemaPath &&
+      !isTableSourceFormat(resource.format) &&
+      !schemaData &&
+      !schemaError)
+  ) {
     return <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
   }
 
   const reloadKey = settled
   const stateQuery = editorStateQuery(state)
   const readOnly = editor?.readOnly ?? true
-  const table = isTableSourceFormat(resource.format)
+  const table = showsAsTable(resource.format, null, schemaData?.schema)
   // A draft and a deleted dataset have no public page to link to
   const publicHref =
     pkg && pkg.state !== 'draft' && pkg.state !== 'deleted'
@@ -201,6 +231,7 @@ export function ResourceEditor({
         notPublic={!pkg || keepsFilesPrivate(pkg)}
         officePreviewViewer={officePreviewViewer}
         latestVersion={listed?.latestVersion}
+        hasTable={table}
       />
     </>
   )
@@ -268,7 +299,7 @@ export function ResourceEditor({
           <ResourceInfo
             resource={resource}
             latestVersion={listed?.latestVersion}
-            reloadKey={reloadKey}
+            schema={schemaData?.schema}
           />
           {!readOnly && (
             <ResourceDeleteCard

@@ -20,6 +20,7 @@ import { sql } from 'drizzle-orm'
 import type {
   LakeIngestReason,
   NoTableReason,
+  ReadingProposal,
   ResourceSchema,
   TypeChange,
   TypeReview,
@@ -76,6 +77,11 @@ export const resourceVersion = pgTable(
     // which nothing, which is what someone asking "why is there no preview?"
     // is after. Null whenever a table *was* produced (ADR-046).
     noTableReason: varchar('no_table_reason', { length: 32 }).$type<NoTableReason | null>(),
+    // Written by the worker when an Excel sheet misses the plain-table
+    // conditions: the rules' proposal and every reason hit, where
+    // `no_table_reason` keeps only the first (Excel-tables spec §8.3.1). Null
+    // for every other version.
+    readingProposal: jsonb('reading_proposal').$type<ReadingProposal | null>(),
     // DuckLake snapshot this tabular version maps to in the resource's own
     // catalog (ADR-043 layer 2, ADR-067): numbered within the resource, and
     // renumbered when a purge rebuilds it. Null for non-tabular versions, before

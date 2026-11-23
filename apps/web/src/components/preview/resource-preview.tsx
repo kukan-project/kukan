@@ -9,6 +9,7 @@ import {
   csvRecordLabels,
   dialectOf,
   isCsvFormat,
+  isExcelFormat,
   isTextFormat,
   isJsonFormat,
   isZipFormat,
@@ -61,6 +62,12 @@ interface ResourcePreviewProps {
   version?: number | null
   /** The version's column schema, fetched once by the owner (tabular formats only) */
   schema?: ResourceSchema | null
+  /**
+   * Whether the live version was read as a table, as the server reported it
+   * with the page: a workbook picks table or original from this rather than
+   * waiting for `schema`. Absent, a workbook is drawn as its original.
+   */
+  hasTable?: boolean
   /** The resource's settled primary key, from the same read */
   primaryKey?: string[] | null
 }
@@ -82,6 +89,7 @@ export function ResourcePreview({
   officePreviewViewer = 'ibis-office',
   version,
   schema,
+  hasTable,
   primaryKey,
 }: ResourcePreviewProps) {
   const f = format ?? null
@@ -124,25 +132,30 @@ export function ResourcePreview({
     )
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (f && isOfficeFormat(f)) {
-    // ibisOffice draws in the visitor's browser, from the file the visitor may
-    // read, so a private dataset's files are drawn too
-    if (officePreviewViewer === 'ibis-office')
-      return (
-        <RememberedOriginal
-          key={`${doc}:${f}`}
-          resourceId={resourceId}
-          doc={doc}
-          original={<IbisOfficePreview resourceId={resourceId} doc={doc} format={f} size={size} />}
-        />
-      )
-    if (notPublic) return <DocumentTextPreview resourceId={resourceId} />
-    return (
-      <DocumentPreview
-        key={resourceId}
+    const office = (
+      <OfficePreview
         resourceId={resourceId}
-        original={<OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />}
+        format={f}
+        url={url}
+        size={size}
+        notPublic={notPublic}
+        officePreviewViewer={officePreviewViewer}
+        doc={doc}
       />
     )
+    // A workbook the interpretation read as a table (ADR-057 decision 9) is
+    // shown as one, the original a toggle away; any other is the original
+    if (isExcelFormat(f) && hasTable)
+      return (
+        <TablePreview
+          key={resourceId}
+          resourceId={resourceId}
+          schema={schema}
+          primaryKey={primaryKey}
+          raw={{ label: f.toUpperCase(), node: office }}
+        />
+      )
+    return office
   }
   if (isIchitaroFormat(f))
     return (
@@ -164,6 +177,46 @@ export function ResourcePreview({
   if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />
   if (isDocumentFormat(f)) return <DocumentTextPreview resourceId={resourceId} />
   return <PreviewNotAvailable />
+}
+
+function OfficePreview({
+  resourceId,
+  format,
+  url,
+  size,
+  notPublic,
+  officePreviewViewer,
+  doc,
+}: {
+  resourceId: string
+  format: string
+  url?: string | null
+  size?: number | null
+  notPublic?: boolean
+  officePreviewViewer: OfficePreviewViewer
+  doc: string
+}) {
+  // ibisOffice draws in the visitor's browser, from the file the visitor may
+  // read, so a private dataset's files are drawn too
+  if (officePreviewViewer === 'ibis-office')
+    return (
+      <RememberedOriginal
+        key={`${doc}:${format}`}
+        resourceId={resourceId}
+        doc={doc}
+        original={
+          <IbisOfficePreview resourceId={resourceId} doc={doc} format={format} size={size} />
+        }
+      />
+    )
+  if (notPublic) return <DocumentTextPreview resourceId={resourceId} />
+  return (
+    <DocumentPreview
+      key={resourceId}
+      resourceId={resourceId}
+      original={<OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />}
+    />
+  )
 }
 
 /**
