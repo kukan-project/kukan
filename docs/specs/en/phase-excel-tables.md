@@ -18,7 +18,7 @@ The matters ADR-057 left to the implementation spec, and this spec's answer.
 | Shape and home of reading instructions                | A list of tables (one entry for now) in `column_settings.readings`                                  | §3      |
 | The range when the version changes                    | Taken again for every version; plain-table judging redone too                                       | §3.3    |
 | Details of the plain-table conditions                 | A procedure that drops a sheet on any single sign against it                                        | §5      |
-| `NO_TABLE` reasons                                    | 13 added. One on the version, all that hit on the proposal                                          | §5.8    |
+| `NO_TABLE` reasons                                    | 14 added. One on the version, all that hit on the proposal                                          | §5.8    |
 | The option added to `interpretCsv`                    | Do not infer structure (title-row scan, trailing notes)                                             | §6.2    |
 | Whether cell types seed `types`                       | A column of text cells only is read as text                                                         | §6.3    |
 | Re-interpreting existing Excel versions               | The layer-2 sweep picks them up. Counted before release                                             | §7.2    |
@@ -216,6 +216,8 @@ Each sheet falls into one of these.
 No candidate gives `no-table`; two or more give `multiple-sheets`. The thresholds follow the spike's
 classifier and are checked in the evaluation (§12).
 
+An encrypted workbook cannot be read at all; it misses with `encrypted`.
+
 ### 5.2 Decide the table's body, then check above and below it
 
 Only skipping rows with one value or fewer from the top and bottom lets a title or note that uses two
@@ -247,14 +249,18 @@ makes later versions read by the settled instructions (§3.3), so it can be reco
 
 The row after the titles is the header. All of these are checked.
 
-| Condition                                                        | Reason when missed |
-| ---------------------------------------------------------------- | ------------------ |
-| Every header cell from the left edge to the right edge is filled | `header-blank`     |
-| Normalized names do not repeat (§5.7)                            | `header-duplicate` |
-| Every header cell is text (no number, date or boolean)           | `header-not-text`  |
+| Condition                                                                | Reason when missed |
+| ------------------------------------------------------------------------ | ------------------ |
+| Every header cell from the table's left edge to its right edge is filled | `header-blank`     |
+| Normalized names do not repeat (§5.7)                                    | `header-duplicate` |
+| Every header cell is text (no number, date or boolean)                   | `header-not-text`  |
 
 A wide table with years as columns misses the third. That is fine: it is a statistical table and a
 Step 2 case.
+
+The table's edges are taken over the header and the data together. A row-label column under an empty
+top-left header cell, or a note in the right margin, falls outside the header and so misses with
+`header-blank` (and `not-rectangular`, §5.5).
 
 ### 5.4 Check that the header really is one row
 
@@ -278,7 +284,6 @@ From the first data row to the last:
 | ------------------------------------------------------------------------ | ------------------- |
 | A merge inside the range                                                 | `merged-cells`      |
 | A value outside the header's columns (left or right)                     | `not-rectangular`   |
-| An empty row inside the range                                            | `not-rectangular`   |
 | A row with a value in one cell only (a section row)                      | `section-rows`      |
 | 80% or more of the header row's text appears again below or to the right | `multiple-tables`   |
 | A formula with no cached result                                          | `uncached-formulas` |
@@ -287,8 +292,9 @@ From the first data row to the last:
   plain-table conditions
 - The repeated header is the rule that found 17 sheets with no false alarm in the evaluation. It
   signals several tables, a folded table, or a header repeated per page
-- Empty rows in the middle drop the sheet for now. Rules cannot tell whether what follows is the same
-  table or another
+- A table with empty rows in the middle is dropped for now. Rules cannot tell whether what follows is
+  the same table or another. Data after an empty row misses by §5.2 steps 1–2 (`title-or-footer`, and
+  also `multiple-tables` when the blocks are the same size)
 - Hidden rows and columns are not a condition. Inside the range they are read (ADR-057 Decision 6)
 
 ### 5.6 Minimum size
@@ -309,23 +315,25 @@ Before checking for duplicates and before writing them as column names:
 
 These are added to `NoTableReason` (`resource_version.no_table_reason`, varchar(32)).
 
-| Reason              | Meaning                                                       | Digital Agency rule |
-| ------------------- | ------------------------------------------------------------- | ------------------- |
-| `no-table`          | No sheet is a table candidate                                 |                     |
-| `multiple-sheets`   | Several sheets are table candidates                           | L1-02               |
-| `title-or-footer`   | Above or below the table, a row that is not a title or a note | L1-04               |
-| `header-blank`      | The header has an empty cell                                  | L1-05               |
-| `header-duplicate`  | Header names repeat                                           | L2-03               |
-| `header-not-text`   | The header has numbers or dates                               |                     |
-| `multi-row-header`  | The header is two rows or more                                | L2-03               |
-| `merged-cells`      | A merge inside the range                                      | L1-12               |
-| `not-rectangular`   | Values outside the data, or an empty row in the middle        | L1-03, L1-04        |
-| `section-rows`      | A section row in the middle of the data                       |                     |
-| `multiple-tables`   | Several tables on one sheet (the header repeats)              | L1-02               |
-| `uncached-formulas` | A formula with no cached result                               | L2-06               |
-| `too-small`         | Fewer than 2 columns, or no data rows                         |                     |
+| Reason              | Meaning                                                              | Digital Agency rule |
+| ------------------- | -------------------------------------------------------------------- | ------------------- |
+| `encrypted`         | The workbook is encrypted (a password to open), so it cannot be read |                     |
+| `no-table`          | No sheet is a table candidate                                        |                     |
+| `multiple-sheets`   | Several sheets are table candidates                                  | L1-02               |
+| `title-or-footer`   | Above or below the table, a row that is not a title or a note        | L1-04               |
+| `header-blank`      | The header has an empty cell                                         | L1-05               |
+| `header-duplicate`  | Header names repeat                                                  | L2-03               |
+| `header-not-text`   | The header has numbers or dates                                      |                     |
+| `multi-row-header`  | The header is two rows or more                                       | L2-03               |
+| `merged-cells`      | A merge inside the range                                             | L1-12               |
+| `not-rectangular`   | Values outside the header's columns                                  | L1-03, L1-04        |
+| `section-rows`      | A section row in the middle of the data                              |                     |
+| `multiple-tables`   | Several tables on one sheet (the header repeats)                     | L1-02               |
+| `uncached-formulas` | A formula with no cached result                                      | L2-06               |
+| `too-small`         | Fewer than 2 columns, or no data rows                                |                     |
 
 - **The version's `no_table_reason` holds one**: the first hit, in the order above
+- With `multiple-sheets` or `encrypted` there is no single sheet to judge, so no other reason is counted
 - **Every reason hit goes to `reading_proposal.reasons`** (§8.3). It counts which conditions drop the
   most and is where Step 2's proposal starts
 - Rule IDs are attached in the display layer (ADR-057 Decision 5), not in judging
