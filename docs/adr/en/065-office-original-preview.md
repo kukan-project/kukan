@@ -104,7 +104,7 @@ that. Documents and slides are few.
   (`text.ndjson.zst`), table Parquet, ZIP manifests. A PDF of the original fits the same place
 - `/preview` picks a version's artifact in `resolvePreviewTarget` and serves it by Range. PDFs
   already reach the iframe this way
-- The in-house BIFF reader (XLS) and officeparser (XLSX) can list a file's sheets and their used
+- The in-house readers (BIFF for XLS, and the one for XLSX) can list a file's sheets and their used
   ranges before conversion. The choice of export mode and the sheet tab names come from there
 - The worker's heavy work runs in a child process (ADR-059). A place to run an external
   executable with time and resource limits is close to that

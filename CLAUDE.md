@@ -241,7 +241,7 @@ pnpm format        # Prettier フォーマット
 - リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない） → `docs/adr/jp/053-ai-resource-summary.md`
 - 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
 - BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、Step 1 実装済み） → `docs/adr/jp/055-bi-table-access-odata.md`
-- 素直な表の XLSX をテーブルとして解釈（判定は規則、AI は範囲の提案に限り人が確定、提案） → `docs/adr/jp/057-xlsx-table-interpretation.md`
+- Excel の表をテーブルとして解釈（どこを読むかは「読み方の指示」、素直な表だけ規則で自動、ほかは規則と AI の案を人が確定、表の形は変えない、読み取りは自前のものを広げ XLS も対象、提案） → `docs/adr/jp/057-xlsx-table-interpretation.md`
 - ジョブキューの PostgreSQL 化（worker へは直接通知、SQS 廃止、ADR-002 を置換） → `docs/adr/jp/058-db-queue-direct-wake.md`
 - worker の重い処理を使い回す 1 つの子プロセスで行う（テキスト抽出・CSV の解釈、ADR-032 の子プロセスを worker へ） → `docs/adr/jp/059-worker-heavy-child-process.md`
 - CKAN 互換 API を CKAN 2.12 の読み取りに合わせる（POST・`/api/action`・`fq`/`sort`・extras の形、読めない指定は断る、書き込みは範囲外） → `docs/adr/jp/060-ckan-compat-read-parity.md`
@@ -274,7 +274,7 @@ pnpm format        # Prettier フォーマット
 バージョン番号を書くのは「どこで入ったか」だけにする —
 「最新リリースは」はリリースごとに古くなるので書かない。
 
-**次のフェーズは未定。** ii-c を前提にしていたものに、ADR-057 の Step 2（XLSX の表の範囲の確定）、
+**次のフェーズは未定。** ii-c を前提にしていたものに、ADR-057 の Step 2（Excel の表の読み方の確定）、
 ADR-073 の段階 2（「表の設定」タブでの語彙の確定）、標準データモデルとの対応付けがある。
 
 - Phase 1: Foundation ✅ 完了

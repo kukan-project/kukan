@@ -98,7 +98,7 @@ e-Gov データポータルの資源を形式で数えると（`resource_search?
   表の Parquet、ZIP のマニフェスト。原本の PDF も同じ置き場に収まる
 - `/preview` は `resolvePreviewTarget` で版ごとの成果物を選び、Range 配信する。PDF は
   この経路で iframe に出ている
-- XLS は自前の BIFF 読み手、XLSX は officeparser が、シートの一覧と使用範囲を変換前に
+- XLS は自前の BIFF 読み手、XLSX も自前の読み手が、シートの一覧と使用範囲を変換前に
   読める。表計算の書き出し方の判定と、シートタブの名前はここから取れる
 - worker の重い処理は子プロセスで行う（ADR-059）。外部の実行ファイルを時間と資源の上限付きで
   走らせる場所はそこに近い
