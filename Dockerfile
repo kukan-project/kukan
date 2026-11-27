@@ -245,16 +245,19 @@ RUN --mount=type=bind,from=web-function-files,source=/out/node_modules/.pnpm,tar
 # Installed by the binding that loads them, so on arm64 glibc: a Debian image
 # for its glibc and Node (Web Functions bring their own Node). The slim image
 # has no CA bundle for the download; Alpine's sits at the path Debian's would.
+# Not `aws`: a Web Function's credentials are in its environment, which the
+# lake reads without it (`s3SettingsFromEnv`), and its 72 MB would not fit.
 FROM --platform=linux/arm64 public.ecr.aws/docker/library/node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS web-function-extensions
 COPY --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=web-function-duckdb /duckdb /app/node_modules
 ENV DUCKDB_EXTENSION_DIRECTORY=/duckdb-extensions
 WORKDIR /app/node_modules/.pnpm/node_modules
-RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','aws','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
+RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/node-api'); const i = await DuckDBInstance.create(':memory:', {extension_directory: process.env.DUCKDB_EXTENSION_DIRECTORY}); const c = await i.connect(); for (const e of ['httpfs','sqlite','ducklake']) { await c.run('INSTALL ' + e); await c.run('LOAD ' + e) }"
 
 # Zipped on the build platform, keeping pnpm's symlinks (-y). Web Functions
 # take at most 512 MB unzipped, not adjustable: fail here rather than at the
-# deploy (448 MB when this was written, 111 MB of it public/vendor).
+# deploy (448 MB when this was written, 111 MB of it public/vendor; DuckDB 2.0's
+# larger binding and extensions take it close to the limit).
 FROM build-base AS web-function-zip
 RUN apk add --no-cache zip
 COPY --from=web-function-files /out /out

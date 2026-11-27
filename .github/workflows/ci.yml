@@ -864,7 +864,8 @@ jobs:
 
       # The zip runs on another libc than the images and loads DuckDB from its
       # own paths, so it gets the same two proofs: its DuckDB loads every
-      # extension from the zip, and the server starts as Web Functions start
+      # extension from the zip (all but `aws`, which it leaves out: its
+      # credentials are in the environment), and the server starts as Web Functions start
       # it and answers its health check. On Debian for its glibc, as
       # /var/task, read-only like the code directory of a Web Function.
       - name: Smoke-test the Web Function zip
@@ -877,7 +878,7 @@ jobs:
             const { DuckDBInstance } = await import('@duckdb/node-api');
             const i = await DuckDBInstance.create(':memory:', { extension_directory: '/var/task/duckdb-extensions', autoinstall_known_extensions: 'false' });
             const c = await i.connect();
-            for (const e of ['httpfs', 'aws', 'sqlite', 'ducklake']) await c.run('LOAD ' + e);
+            for (const e of ['httpfs', 'sqlite', 'ducklake']) await c.run('LOAD ' + e);
             console.log('web-function: DuckDB loaded its extensions')"
           run -w /var/task -e AWS_LAMBDA_HTTP_ENDPOINT=127.0.0.1:3000 -e NODE_ENV=production "$image" sh -c '
             node apps/web/start.mjs & server=$!

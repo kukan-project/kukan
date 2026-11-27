@@ -127,10 +127,25 @@ async function attach(
 }
 
 /**
+ * Throw when the session has a transaction open: DETACH would discard its
+ * writes, and a catalog published that way would be uploaded without them. A
+ * BEGIN is refused only inside a transaction, and leaves nothing behind
+ * outside one.
+ */
+async function refuseOpenTransaction(session: { run(sql: string): Promise<void> }) {
+  try {
+    await session.run('BEGIN TRANSACTION')
+  } catch {
+    throw new Error('A transaction is still open on the catalog; commit or roll it back first')
+  }
+  await session.run('ROLLBACK')
+}
+
+/**
  * Detach a catalog in cleanup, ending first any transaction the session left
- * open: DETACH refuses while one is, and a catalog left attached stays on the
- * shared instance for as long as the instance lives. Not for publishing —
- * rolling back there would upload the catalog without the writes.
+ * open, so a catalog is never left attached on the shared instance for as long
+ * as the instance lives. Not for publishing — that would upload the catalog
+ * without the transaction's writes.
  */
 async function detachDiscarding(
   session: { run(sql: string): Promise<void> },
@@ -161,7 +176,7 @@ export interface LakeCatalogDraft {
    * in the heavy process — so the instance is idle meanwhile and the memory
    * it keeps can be given back (`releaseIdleLakeInstances`).
    *
-   * Refuses while a transaction is open, as DETACH does.
+   * Refuses while a transaction is open: detaching would discard its writes.
    */
   suspend(): Promise<void>
   /**
@@ -242,6 +257,7 @@ export async function openLakeCatalogDraft(
   const suspend = async () => {
     if (!bucket) return
     const opened = bucket
+    await refuseOpenTransaction(opened)
     await opened.run(`DETACH ${alias}`)
     bucket = null
     await opened.close()

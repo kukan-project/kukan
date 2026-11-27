@@ -67,12 +67,17 @@ describe('runSandboxedQuery statement checks', () => {
       await expect(run).rejects.toThrow(SINGLE_STATEMENT_MESSAGE)
     })
 
-    it.each([NESTED_COMMENT_DELETE, CONTINUED_E_STRING_DELETE])(
-      'refuses a single statement that is not a SELECT: %j',
-      async (sql) => {
-        await expect(runSandboxedQuery(fixture, sql, LIMITS)).rejects.toThrow(READ_ONLY_MESSAGE)
-      }
-    )
+    it('refuses a single statement that is not a SELECT', async () => {
+      await expect(runSandboxedQuery(fixture, NESTED_COMMENT_DELETE, LIMITS)).rejects.toThrow(
+        READ_ONLY_MESSAGE
+      )
+    })
+
+    it('refuses a continued E string, which DuckDB 2.0 no longer parses', async () => {
+      await expect(runSandboxedQuery(fixture, CONTINUED_E_STRING_DELETE, LIMITS)).rejects.toThrow(
+        ValidationError
+      )
+    })
 
     it('still runs a single statement', async () => {
       const res = await runSandboxedQuery(fixture, 'SELECT count(*) AS c FROM data;', LIMITS)

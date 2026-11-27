@@ -23,7 +23,7 @@
     "bench:compaction": "tsx scripts/bench-compaction.ts"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.6-r.2",
+    "@duckdb/node-api": "2.0.1-r.1",
     "@kukan/shared": "workspace:*"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { stat } from 'node:fs/promises'
 import type { Env } from '@kukan/shared'
-import { lakeConfigFromEnv } from '../config'
+import { lakeConfigFromEnv, s3SecretBody, usesCredentialChain } from '../config'
 import { useOwnTempDirectory } from '../spill'
 import { lakeTableName } from '../table'
 
@@ -50,6 +50,60 @@ describe('lakeConfigFromEnv', () => {
     const c = lakeConfigFromEnv(envWith({ S3_ENDPOINT: 'https://minio.example:443' }), limits)
     expect(c.s3Endpoint).toBe('minio.example')
     expect(c.s3UseSsl).toBe(true)
+  })
+})
+
+describe('the role keys in the environment', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  function withRoleKeys() {
+    vi.stubEnv('AWS_ACCESS_KEY_ID', 'AKIAROLE')
+    vi.stubEnv('AWS_SECRET_ACCESS_KEY', 'role-secret')
+    vi.stubEnv('AWS_SESSION_TOKEN', 'role-token')
+  }
+
+  it('are taken as they are, so the secret needs no credential chain', () => {
+    // A Lambda Web Function's credentials come this way, and the `aws`
+    // extension that backs the chain does not fit in one (ADR-068)
+    withRoleKeys()
+    const c = lakeConfigFromEnv(envWith({}), limits)
+    expect(usesCredentialChain(c)).toBe(false)
+    expect(s3SecretBody(c)).toContain(
+      "KEY_ID 'AKIAROLE', SECRET 'role-secret', SESSION_TOKEN 'role-token'"
+    )
+    expect(s3SecretBody(c)).not.toContain('credential_chain')
+  })
+
+  it('give way to the keys the deployment set', () => {
+    withRoleKeys()
+    const c = lakeConfigFromEnv(envWith({ S3_ACCESS_KEY: 'k', S3_SECRET_KEY: 's' }), limits)
+    expect(c.s3AccessKey).toBe('k')
+    expect(c.s3SessionToken).toBeUndefined()
+  })
+
+  it('leave the credential chain to a task role, whose keys are not in the environment', () => {
+    vi.stubEnv('AWS_ACCESS_KEY_ID', '')
+    vi.stubEnv('AWS_SECRET_ACCESS_KEY', '')
+    const c = lakeConfigFromEnv(envWith({}), limits)
+    expect(usesCredentialChain(c)).toBe(true)
+    expect(s3SecretBody(c)).toContain('PROVIDER credential_chain')
+  })
+
+  it('make a secret httpfs alone accepts', async () => {
+    withRoleKeys()
+    const { DuckDBInstance } = await import('@duckdb/node-api')
+    const instance = await DuckDBInstance.create(':memory:')
+    const conn = await instance.connect()
+    await conn.run('LOAD httpfs')
+    const body = s3SecretBody(lakeConfigFromEnv(envWith({}), limits))
+    await conn.run(`CREATE SECRET probe (${body})`)
+    const reader = await conn.runAndReadAll(`SELECT secret_string FROM duckdb_secrets()`)
+    // The values are kept back from what SQL can read
+    expect(JSON.stringify(reader.getRowObjectsJson())).not.toContain('role-secret')
+    conn.disconnectSync()
+    instance.closeSync()
   })
 })
 

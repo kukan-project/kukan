@@ -37,6 +37,8 @@ export interface LakeConfig {
   s3UseSsl: boolean
   s3AccessKey?: string
   s3SecretKey?: string
+  /** With a key pair from the environment, the session token that goes with it */
+  s3SessionToken?: string
   limits: LakeLimits
   /**
    * Where a resource's catalog keeps its data files, in place of
@@ -83,10 +85,20 @@ export function duckdbInstanceOptions(): { extension_directory: string } | undef
  */
 export type S3Settings = Pick<
   LakeConfig,
-  'bucket' | 'region' | 's3Endpoint' | 's3UseSsl' | 's3AccessKey' | 's3SecretKey'
+  'bucket' | 'region' | 's3Endpoint' | 's3UseSsl' | 's3AccessKey' | 's3SecretKey' | 's3SessionToken'
 >
 
-/** What DuckDB needs to reach the bucket, from the environment. */
+/**
+ * What DuckDB needs to reach the bucket, from the environment.
+ *
+ * Without `S3_ACCESS_KEY`, a key pair in `AWS_ACCESS_KEY_ID` and friends is
+ * taken as it is. That is the first thing the credential chain would read, and
+ * a process's environment does not change under it, so nothing is lost — and
+ * where the role's credentials come that way (a Lambda Web Function, ADR-068)
+ * the `aws` extension is not needed at all: at 72 MB in DuckDB 2.0 it does not
+ * fit in a Web Function's 512 MB. Where they come from an endpoint (a Fargate
+ * task role) the variables are unset, and the chain still resolves them.
+ */
 export function s3SettingsFromEnv(env: Env): S3Settings {
   // MinIO endpoints are given as a URL (http://host:9000); DuckDB wants host:port + a ssl flag.
   let s3Endpoint: string | undefined
@@ -96,13 +108,20 @@ export function s3SettingsFromEnv(env: Env): S3Settings {
     s3Endpoint = url.host
     s3UseSsl = url.protocol === 'https:'
   }
+  const roleKeys =
+    !(env.S3_ACCESS_KEY && env.S3_SECRET_KEY) &&
+    process.env.AWS_ACCESS_KEY_ID &&
+    process.env.AWS_SECRET_ACCESS_KEY
   return {
     bucket: env.S3_BUCKET,
     region: env.S3_REGION,
     s3Endpoint,
     s3UseSsl,
-    s3AccessKey: env.S3_ACCESS_KEY,
-    s3SecretKey: env.S3_SECRET_KEY,
+    s3AccessKey: roleKeys ? process.env.AWS_ACCESS_KEY_ID : env.S3_ACCESS_KEY,
+    s3SecretKey: roleKeys ? process.env.AWS_SECRET_ACCESS_KEY : env.S3_SECRET_KEY,
+    ...(roleKeys && process.env.AWS_SESSION_TOKEN
+      ? { s3SessionToken: process.env.AWS_SESSION_TOKEN }
+      : {}),
   }
 }
 
@@ -143,7 +162,11 @@ export function s3SecretBody(config: S3Settings, scope?: string): string {
     `TYPE s3`,
     `REGION ${sqlLiteral(config.region)}`,
     ...(staticKeys
-      ? [`KEY_ID ${sqlLiteral(config.s3AccessKey!)}`, `SECRET ${sqlLiteral(config.s3SecretKey!)}`]
+      ? [
+          `KEY_ID ${sqlLiteral(config.s3AccessKey!)}`,
+          `SECRET ${sqlLiteral(config.s3SecretKey!)}`,
+          ...(config.s3SessionToken ? [`SESSION_TOKEN ${sqlLiteral(config.s3SessionToken)}`] : []),
+        ]
       : [`PROVIDER credential_chain`, `REFRESH auto`]),
     ...(config.s3Endpoint
       ? [

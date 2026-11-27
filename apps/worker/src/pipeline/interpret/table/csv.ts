@@ -95,11 +95,14 @@ function readOptions(
   path: string,
   head: Head,
   asText: readonly string[],
-  lenient: boolean,
-  storeRejects = true
+  lenient: boolean
 ): string {
-  const parts = [sqlLiteral(path), 'sample_size = -1', 'ignore_errors = true']
-  if (storeRejects) parts.push('store_rejects = true')
+  const parts = [
+    sqlLiteral(path),
+    'sample_size = -1',
+    'ignore_errors = true',
+    'store_rejects = true',
+  ]
   if (lenient) parts.push('strict_mode = false')
   if (head.skip > 0) parts.push(`skip = ${head.skip}`)
   // A file this process wrote: its dialect is known, and a sniffer left to it
@@ -197,9 +200,9 @@ export async function interpretCsv(
     // the first read already took as text
     const asText = new Set([
       ...textColumns,
+      ...columns.filter((c) => WIDE_INTEGER.test(c.duckType)).map((c) => c.name),
       ...(await oversizeIntegerColumns(conn, columns)),
       ...(await castRefusedColumns(conn, columns)),
-      ...(await signOnlyColumns(conn, csvPath, head, lenient, columns)),
       ...settledRead.map((c) => c.name),
     ])
     if (asText.size > textColumns.length) {
@@ -358,6 +361,13 @@ async function stripByteOrderMark(conn: DuckDBConnection, columns: Column[]): Pr
   return [{ ...first, name }, ...rest]
 }
 
+/**
+ * Integer types wider than BIGINT, which the sniffer picks for integer text
+ * past BIGINT. Parquet has no integer this wide, and DuckDB writes a HUGEINT
+ * there as a DOUBLE, so these columns are read as text too.
+ */
+const WIDE_INTEGER = /^(HUGEINT|UHUGEINT|BIGNUM)$/i
+
 /** DOUBLE columns holding whole numbers too large for a double to keep exactly. */
 async function oversizeIntegerColumns(
   conn: DuckDBConnection,
@@ -386,8 +396,8 @@ async function oversizeIntegerColumns(
  * else.
  *
  * The sniffer decides a type from values that the load then fails to cast:
- * `- ` passes as an integer while it chooses, and a later `15.5` makes the
- * column DOUBLE, which `- ` is not (duckdb/duckdb#26532). Every such line would
+ * in DuckDB 1.5 `- ` passed as an integer while it chose, and a later `15.5`
+ * made the column DOUBLE, which `- ` is not (duckdb/duckdb#26532). Every such line would
  * be dropped and the table refused for rows it has. Read as text, they are rows.
  *
  * A line refused for its shape as well is not counted: a sign-off `出典: 港区`
@@ -407,69 +417,6 @@ async function castRefusedColumns(conn: DuckDBConnection, columns: Column[]): Pr
   // A name the binding decoded differently is not one `types` can take
   const names = new Set(columns.map((c) => c.name))
   return rows.map((r) => r.column_name).filter((name) => names.has(name))
-}
-
-/**
- * Integer columns holding a cell DuckDB read as 0 from a sign alone.
- *
- * `- ` casts to 0 as an integer, where `-` fails (duckdb/duckdb#26532), so a
- * count written `- ` for "none" is published as a zero, without a refusal to
- * show for it. Only a column holding a 0 can have one, which answers most
- * files without reading them again. The rest are read once more with those
- * columns as text, by the same reader: a cell is what it parses, quotes and
- * newlines inside them included.
- */
-async function signOnlyColumns(
-  conn: DuckDBConnection,
-  csvPath: string,
-  head: Head,
-  lenient: boolean,
-  columns: Column[]
-): Promise<string[]> {
-  const integers = columns.filter((c) => semanticType(c.duckType) === 'integer')
-  if (integers.length === 0) return []
-  // The zeros are counted on the rows read so far, so where the first read
-  // refused some — rows a re-read may bring back — every integer column is
-  // looked at.
-  const [{ refused }] = (
-    await conn.runAndReadAll('SELECT count(*) > 0 AS refused FROM reject_errors')
-  ).getRowObjectsJson() as { refused: boolean }[]
-  const zeroCounts = refused ? null : await countEach(conn, 'FROM t', integers, (c) => `${c} = 0`)
-  const zeros = zeroCounts ? integers.filter((_, i) => zeroCounts[i] > 0) : integers
-  if (zeros.length === 0) return []
-
-  // Not stored as refusals: this read only looks, and what it refuses the
-  // first refused already
-  const opts = readOptions(
-    csvPath,
-    head,
-    zeros.map((c) => c.name),
-    lenient,
-    false
-  )
-  const signCounts = await countEach(
-    conn,
-    `FROM read_csv(${opts})`,
-    zeros,
-    (c) => `regexp_full_match(${c}, '\\s*[-+]\\s+')`
-  )
-  return zeros.filter((_, i) => signCounts[i] > 0).map((c) => c.name)
-}
-
-/** How many rows of `from` meet `where` for each column, in one pass. */
-async function countEach(
-  conn: DuckDBConnection,
-  from: string,
-  columns: Column[],
-  where: (column: string) => string
-): Promise<number[]> {
-  const reader = await conn.runAndReadAll(
-    `SELECT ${columns
-      .map((c, i) => `count(*) FILTER (WHERE ${where(sqlIdentifier(c.name))}) AS c${i}`)
-      .join(', ')} ${from}`
-  )
-  const [row] = reader.getRowObjectsJson() as Record<string, unknown>[]
-  return columns.map((_, i) => Number(row[`c${i}`]))
 }
 
 /**

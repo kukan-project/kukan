@@ -3072,22 +3072,21 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
 - ✅ **`ducklake_table_changes` returns `update_preimage` / `update_postimage`.** With a
   single-statement upsert, one changed row comes back as one pair (something keyless ii-a could not
   produce)
-- ⚠️ **But in the two-statement shape, changed rows are returned several times.** The delete-side
-  statement rewrites the file the upsert wrote, so even untouched rows are reported again. **If you
-  count events, count distinct `rowid` rather than rows.** In measurements, two
-  `update_postimage` rows came back for the same `rowid`.
-  **The diff API does not depend on this** — it matches the content at both ends rather than reading
-  events, so neither duplicate reporting nor cancellation matters (§7, "diffs are produced by matching
-  the endpoints"). It is kept here because it is needed when reading events to verify an ingest.
-  Reproducing it needs **both "two statements in one transaction" and "inlining off"** (putting the
-  two statements in separate transactions behaves correctly, as does leaving inlining at its
-  default). We set inlining to 0 for the reasons in ADR-043 §6-1, so there is no way out.
-  Reported as [ducklake#1387](https://github.com/duckdb/ducklake/issues/1387)
+- ⚠️ **In DuckDB 1.5 the two-statement shape returned changed rows several times (fixed in 2.0.1).**
+  The delete-side statement rewrote the file the upsert wrote, so even untouched rows were reported
+  again; in measurements, two `update_postimage` rows came back for the same `rowid`. Reproducing it
+  needed both "two statements in one transaction" and "inlining off" (we set inlining to 0 for the
+  reasons in ADR-043 §6-1). Reported as [ducklake#1387](https://github.com/duckdb/ducklake/issues/1387);
+  DuckDB 2.0.1 (DuckLake 1.1) reports the row once. **Counting events still counts distinct `rowid`
+  rather than rows**, which is right on either version. **The diff API does not depend on this** — it
+  matches the content at both ends rather than reading events, so neither duplicate reporting nor
+  cancellation matters (§7, "diffs are produced by matching the endpoints")
 - ⚠️ **Duplicate keys pass silently.** With a source containing duplicate keys the MERGE succeeds and
   **one of the rows disappears** (with no notice, and no telling which survives). Settled upstream:
-  [duckdb/duckdb#24058](https://github.com/duckdb/duckdb/pull/24058) (merged, but after v1.5.5 so
-  **unreleased**) defines "a `WHEN MATCHED` that touches one target row twice is a cardinality error".
-  After a DuckDB update it will **throw**, so the ingest side needs an error path.
+  [duckdb/duckdb#24058](https://github.com/duckdb/duckdb/pull/24058) defined "a `WHEN MATCHED` that
+  touches one target row twice is a cardinality error" and shipped in 2.0.0, but 2.0.1 restored the
+  1.x behaviour ([duckdb/duckdb#28701](https://github.com/duckdb/duckdb/pull/28701)): **it still
+  passes silently on 2.0.1.** Should upstream throw again, the ingest side needs an error path.
   It also appears in [ducklake#520](https://github.com/duckdb/ducklake/issues/520), where the DuckLake
   answer is "deduplicate in the source"
 - 🔴 **Even that fix leaves half the hole open.** #24058 explicitly excludes `WHEN NOT MATCHED`.
@@ -3103,14 +3102,14 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
 - ✅ **Time travel over a table with delete vectors is transparent.** A keyed ingest produces row
   deletions rather than file replacement, but `AT (VERSION => …)` returns both the before and after
   versions correctly. The purge reclaim and the diff both depend on this
-- 🔴 **A `DELETE` inside a transaction takes the time-travel read of the same table with it.**
-  `BEGIN; DELETE FROM t; INSERT INTO t SELECT * FROM t AT (VERSION => n); COMMIT` **inserts zero rows
-  and empties the table whenever the current contents and `n` share files** (measured; no error). It
-  returns the rows correctly when they do not — ii-a's loads replace the contents wholesale, so the
-  head's files and an earlier version's never intersect and **this shape does not bite under ii-a**.
-  **ii-b's keyed load updates rows in place, so it always shares.** A re-load therefore **reads the
-  snapshot out into a temp table before deleting anything** (`restandLakeTable`). Measured in
-  `merge.ducklake.test.ts`
+- 🔴 **In DuckDB 1.5 a `DELETE` inside a transaction took the time-travel read of the same table
+  with it (fixed in 2.0.1).** `BEGIN; DELETE FROM t; INSERT INTO t SELECT * FROM t AT (VERSION => n); COMMIT`
+  **inserted zero rows and emptied the table whenever the current contents and `n` shared files**
+  (measured; no error). ii-a's loads replace the contents wholesale, so they never share and it did
+  not bite there, but **ii-b's keyed load updates rows in place, so it always shares.** A re-load
+  therefore **reads the snapshot out into a temp table before deleting anything**
+  (`restandLakeTable`). DuckDB 2.0.1 (DuckLake 1.1) returns the rows correctly; the read into a temp
+  table stays, being right on either version. Measured in `merge.ducklake.test.ts`
 - ⚠️ **Rewriting a version row's snapshot makes `table_changes` silently return empty.** The former
   `standLakeTableOn` overwrote the rollback target version with a new ID, inverting it against the
   version-number order, and `table_changes(6, 5)` returns **0 rows** (measured). Not an error.

@@ -11,7 +11,7 @@
  */
 import type { DiffRow } from '@kukan/shared'
 import type { LakeConfig } from './config'
-import { loadDuckdbExtensions, s3SecretBody } from './config'
+import { loadDuckdbExtensions, s3SecretBody, usesCredentialChain } from './config'
 import { openDuckdb } from './duckdb'
 import { rowObjectsJson } from './json-rows'
 import { createSpillRegistry } from './spill'
@@ -175,7 +175,13 @@ async function prepareInstance(config: LakeConfig): Promise<DuckDBInstance> {
     // and the commit with it (ADR-067). Its own catalog still answers.
     await conn.run('SET catalog_error_max_schemas = 0')
 
-    await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'sqlite', 'ducklake'])
+    // `aws` only backs the credential chain (see `s3SettingsFromEnv`)
+    await loadDuckdbExtensions(
+      conn,
+      usesCredentialChain(config)
+        ? ['httpfs', 'aws', 'sqlite', 'ducklake']
+        : ['httpfs', 'sqlite', 'ducklake']
+    )
 
     // S3 credentials, in the one shape both this and the OData feed use
     // (`s3SecretBody` — where the REFRESH story is written down).

@@ -54,12 +54,17 @@ describe('interpretCsv — reading the file', () => {
   })
 
   it('reads integers past what a double holds as text, every digit kept', async () => {
-    // Twenty digits is past BIGINT, so the sniffer makes the column DOUBLE and
-    // the first value would come back as 1e+20
-    const { schema } = await interpret('id,big\n1,99999999999999999999\n2,12345678901234567890\n')
+    // Twenty digits is past BIGINT: DuckDB 1.5's sniffer made the column DOUBLE,
+    // 2.0's makes it HUGEINT, which Parquet holds as a DOUBLE all the same, and
+    // the first value would come back as 1e+20. Longer still, 2.0 makes BIGNUM.
+    const huge = '9'.repeat(42)
+    const { schema } = await interpret(
+      `id,big,huge\n1,99999999999999999999,${huge}\n2,12345678901234567890,1\n`
+    )
 
-    expect(schema.columns.map((c) => c.type)).toEqual(['integer', 'string'])
+    expect(schema.columns.map((c) => c.type)).toEqual(['integer', 'string', 'string'])
     expect(await previewColumn('big')).toEqual(['99999999999999999999', '12345678901234567890'])
+    expect(await previewColumn('huge')).toEqual([huge, '1'])
   })
 
   it('keeps a double column whose values are fractional', async () => {

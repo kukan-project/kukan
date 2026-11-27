@@ -287,9 +287,10 @@ describe('interpretJson', () => {
   })
 
   it('types a value only as deep as the caller lets through, and gives what is past it as JSON text', async () => {
-    // Deeper than MAX_JSON_DEPTH, which the caller refuses first; this is what is left behind it
+    // Deeper than MAX_JSON_DEPTH, which the caller refuses first; this is what is left behind it.
+    // Not past 128, where DuckDB 2.0's reader refuses the file (the case below).
     const chain = (n: number) => '{"a":'.repeat(n) + '1' + '}'.repeat(n)
-    const deep = await interpret(`[{"x":${chain(1000)},"y":2}]`, false)
+    const deep = await interpret(`[{"x":${chain(100)},"y":2}]`, false)
     expect(deep.reason).toBeUndefined()
     expect(deep.schema.columns.map((c) => c.type)).toEqual(['string', 'integer'])
     // As deep as the caller lets through (64, the array and the record among them): typed as ever

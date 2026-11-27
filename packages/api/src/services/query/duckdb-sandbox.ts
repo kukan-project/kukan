@@ -198,16 +198,13 @@ export async function runSandboxedQuery(
       // statement but the last before returning, and a CTE can lead a DELETE.
       // Nothing is executed until there is one statement and it is a SELECT.
       const statements = await conn.extractStatements(userSql)
-      if (statements.count !== 1) {
-        // A PIVOT without IN (…) is expanded into a CREATE TYPE ahead of the query.
-        throw new ValidationError(
-          /\bpivot\b/i.test(userSql) ? PIVOT_IN_LIST_MESSAGE : SINGLE_STATEMENT_MESSAGE
-        )
-      }
+      if (statements.count !== 1) throw new ValidationError(SINGLE_STATEMENT_MESSAGE)
       prepared = await statements.prepare(0)
       const { StatementType } = await import('@duckdb/node-api')
       if (prepared.statementType !== StatementType.SELECT) {
-        throw new ValidationError(READ_ONLY_MESSAGE)
+        // A PIVOT without IN (…) is one MULTI statement: a CREATE TYPE, then the query
+        const pivot = prepared.statementType === StatementType.MULTI && /\bpivot\b/i.test(userSql)
+        throw new ValidationError(pivot ? PIVOT_IN_LIST_MESSAGE : READ_ONLY_MESSAGE)
       }
       // Read one past the cap so truncation is detectable without scanning everything.
       reader = await prepared.runAndReadUntil(limits.maxRows + 1)

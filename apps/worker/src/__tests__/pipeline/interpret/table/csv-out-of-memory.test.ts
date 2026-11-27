@@ -11,7 +11,7 @@ import { interpretCsv } from '@/pipeline/interpret/table/csv'
 // spills much, so it cannot be reached here quickly.
 vi.mock('@/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/config')>()),
-  INTERPRET_MEMORY_LIMIT_MB: 32,
+  INTERPRET_MEMORY_LIMIT_MB: 16,
   INTERPRET_THREADS: 1,
 }))
 

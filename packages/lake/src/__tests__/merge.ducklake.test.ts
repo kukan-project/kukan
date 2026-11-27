@@ -224,18 +224,15 @@ describe('MERGE INTO on DuckLake', () => {
     // the target's files.
   })
 
-  it('empties the table when the DELETE and the time travel share files', async () => {
-    // 🔴 **The trap under the branch above.** Inside the transaction, `DELETE`
-    // takes the time-travel read of the same table with it: `t AT (VERSION => n)`
-    // answers **zero rows** once the files that snapshot resolves through are the
-    // ones just deleted, so the `INSERT` writes nothing and the move empties the
-    // table. No error, and the contents are gone.
-    //
-    // Sharing is what decides it. ii-a's loads replace the contents wholesale,
-    // so the head's files and an earlier version's are disjoint and the case
-    // above passes. **A keyed load updates in place, so ii-b always shares** —
-    // which is why a move onto an earlier snapshot has to read it out into a
-    // temp table before it deletes anything, rather than rely on the branch above.
+  it('keeps the time-travel read when the DELETE shares its files', async () => {
+    // Inside the transaction, `DELETE` used to take the time-travel read of the
+    // same table with it: `t AT (VERSION => n)` answered **zero rows** once the
+    // files that snapshot resolves through were the ones just deleted, so the
+    // `INSERT` wrote nothing and the move emptied the table, with no error.
+    // DuckDB 2.0.1 (DuckLake 1.1) answers it. A keyed load updates in place, so
+    // ii-b always shares files with earlier versions; a move onto an earlier
+    // snapshot still reads it out into a temp table before it deletes anything
+    // (`restandLakeTable`), which is right whichever way this goes.
     const v1 = await latestSnapshot()
     // An append, so v1's file is still part of the current contents.
     await session.run(`INSERT INTO lake.t SELECT * FROM (VALUES (3, 'c')) v(id, name)`)
@@ -245,8 +242,12 @@ describe('MERGE INTO on DuckLake', () => {
     await session.run(`INSERT INTO lake.t SELECT * FROM lake.t AT (VERSION => ${v1})`)
     await session.run('COMMIT')
 
-    expect(await contents()).toEqual([])
-    // Reading it out first is the whole difference: same target, same statements.
+    expect(await contents()).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ])
+    await session.run(`INSERT INTO lake.t SELECT * FROM (VALUES (3, 'c')) v(id, name)`)
+    // Reading it out first gives the same: same target, same statements.
     await session.run(
       `CREATE OR REPLACE TEMP TABLE src2 AS SELECT * FROM lake.t AT (VERSION => ${v1})`
     )
@@ -312,21 +313,19 @@ describe('MERGE INTO on DuckLake', () => {
     expect(to).toBe(from + 1)
   })
 
-  it('repeats the changed row once per statement that touched its file', async () => {
-    // The cost of needing two statements: the delete half rewrites the file the
-    // upsert just wrote, and the row it did not touch is reported again. Reading
-    // these as rows counts one change twice, so anything reading the change feed
-    // has to count distinct rowids.
+  it('reports the changed row once though two statements touched its file', async () => {
+    // The delete half rewrites the file the upsert just wrote. DuckDB 1.5 then
+    // reported the row it did not touch again, so a reader of the change feed
+    // counting rows counted one change twice.
     //
     // **The diff is not one of those readers** (spec §7). It compares both
-    // endpoints under `AT (VERSION => …)`, where a repeated report has nothing to
-    // repeat — the two cases below are why counting events cannot answer a diff
-    // at all, and this one is why counting them needs care even so. What still
-    // reads the feed is ingest verification.
+    // endpoints under `AT (VERSION => …)` — the two cases below are why counting
+    // events cannot answer a diff at all. What still reads the feed is ingest
+    // verification.
     //
-    // Reported as [ducklake#1387](https://github.com/duckdb/ducklake/issues/1387).
-    // Failing here means the repetition is gone — either because DuckLake stopped
-    // reporting it or because the load became one statement.
+    // Reported as [ducklake#1387](https://github.com/duckdb/ducklake/issues/1387),
+    // and gone in DuckDB 2.0.1 (DuckLake 1.1): the row is reported once. Readers
+    // of the feed still count distinct rowids, which is right either way.
     await session.run('BEGIN TRANSACTION')
     await session.run(UPSERT)
     await session.run(DELETE_MISSING)
@@ -338,8 +337,7 @@ describe('MERGE INTO on DuckLake', () => {
     )) as { change_type: string; rowid: string; id: number }[]
 
     const postimages = changes.filter((c) => c.change_type === 'update_postimage')
-    expect(postimages.length).toBeGreaterThan(1)
-    expect(new Set(postimages.map((c) => String(c.rowid))).size).toBe(1)
+    expect(postimages.length).toBe(1)
   })
 
   it('accepts a source whose key repeats, and keeps one row of each', async () => {
@@ -348,7 +346,7 @@ describe('MERGE INTO on DuckLake', () => {
     // one aggregate, cheap enough to run on every keyed load.
     //
     // **When this stops passing, the check still stays.** duckdb/duckdb#24058
-    // (merged after v1.5.5, so not in a release yet) makes a WHEN MATCHED action
+    // (in 2.0.0, reverted in 2.0.1 by duckdb/duckdb#28701) makes a WHEN MATCHED action
     // that would touch one target row twice raise "cannot affect the same target
     // row more than once", and this case will start throwing. What that changes
     // is the reason for checking, not whether to: the merge refusing gives a

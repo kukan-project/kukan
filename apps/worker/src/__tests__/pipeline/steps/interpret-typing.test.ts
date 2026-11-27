@@ -364,8 +364,8 @@ describe('executeInterpret — column typing', () => {
   })
 
   it('does not read a count written as a sign alone as zero', async () => {
-    // `- ` casts to 0 as an integer (duckdb/duckdb#26532), with no refusal to
-    // show for it: "none" would be published as a zero.
+    // DuckDB 1.5 cast `- ` to 0 as an integer (duckdb/duckdb#26532), with no
+    // refusal to show for it: "none" would be published as a zero.
     csv('区分,人数\n' + '港,- \n' + '芝,5\n')
 
     await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)

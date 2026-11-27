@@ -66,12 +66,13 @@ const TOO_LARGE = /maximum_object_size/
 /**
  * What DuckDB raises of its own on a file nested too deep to lay out, anywhere
  * from the read to the flat table: its own memory limit, and the binder's bound
- * on how deep one expression goes. Settled, as the heavy process's bounds are —
+ * on how deep one expression goes, and from DuckDB 2.0 the reader's own bound
+ * on how deep a value nests. Settled, as the heavy process's bounds are —
  * reading the same file again ends the same way. A crash of DuckDB is not among
  * them: it can also be a passing fault, and `MAX_JSON_DEPTH` keeps the nesting
  * that causes one from reaching the reader at all.
  */
-const TOO_DEEP = /Max expression depth/
+const TOO_DEEP = /Max expression depth|JSON exceeds maximum recursion depth/
 
 /** The reason an error raised while interpreting settles the file with, if it does. */
 export function settledReason(err: unknown): NoTableReason | null {
@@ -586,7 +587,7 @@ async function describedTypes(conn: DuckDBConnection, query: string): Promise<st
 async function distinctGeometryTypes(conn: DuckDBConnection, typeExpr: string): Promise<string[]> {
   const [[types]] = (
     await conn.runAndReadAll(
-      `SELECT list_sort(list_distinct(list_transform(features, f -> (${typeExpr})::VARCHAR))) FROM src`
+      `SELECT list_sort(list_distinct(list_transform(features, lambda f: (${typeExpr})::VARCHAR))) FROM src`
     )
   ).getRowsJson() as [[string[] | null]]
   return types ?? []
