@@ -6,7 +6,13 @@
     "build": {
       "dependsOn": ["^build"],
       "env": ["KUKAN_BRAND"],
-      "outputs": ["dist/**", ".next/**", "!.next/dev/**", "!.next/cache/**"]
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/dev/**",
+        "!.next/cache/**",
+        "public/vendor/duckdb-extensions/**"
+      ]
     },
     "dev": {
       "cache": false,

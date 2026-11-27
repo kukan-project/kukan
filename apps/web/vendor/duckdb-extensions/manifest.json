@@ -1,0 +1,9 @@
+{
+  "duckdb": "v2.0.1",
+  "platform": "wasm_eh",
+  "extensions": {
+    "parquet": "fa88a43aa7366f3ac3b6d0ea6b3a0292c8da45b06070aabcd56da1233078ebcf",
+    "json": "01a1b18983a3515e606863c8cf284ec9ee988e7a7f578dbd1ef9c83c5b096389",
+    "icu": "3a180a5c2948c7a6d84e1afa3c9cb2df1c0f5b58e39262e5483e7688f301b110"
+  }
+}

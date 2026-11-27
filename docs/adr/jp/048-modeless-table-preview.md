@@ -248,6 +248,17 @@ duckdb-wasm はサイズ調査に `HEAD` + `Range: bytes=0-` を投げ、応答�
 - `apps/worker`: 変更なし。`ROW_GROUP_SIZE` の見直しは URL 登録の活性化
   （生成上限引き上げ）とセットの後続作業
 - プレビュー Parquet の生成上限の引き上げは、本 ADR の実測を材料に別途判断する
+- **DuckDB-WASM の拡張機能は自分のオリジンから配る**（2026-11-28 補足）。DuckDB-WASM は
+  Parquet・JSON・ICU を本体に持たず、初めて使うときに `extensions.duckdb.org` から
+  拡張機能（`parquet`・`json`・`icu`）を取りに行っていた。閉域網では届かず、利用者のブラウザが
+  第三者に接続する。取りに行くのは Web Worker の中で、Worker のスクリプトには CSP が
+  付かないので、CSP では止まっていなかった。ビルドのときに、版と SHA-256 を
+  `apps/web/vendor/duckdb-extensions/manifest.json` に固定した拡張機能を取り寄せて
+  `/vendor/duckdb-extensions/<版>/<基盤>/` から配り、起動の直後に
+  `custom_extension_repository` をそこへ向ける。版は DuckDB-WASM の中の DuckDB と同じで
+  なければならず、`settled-parity.test.ts` が確かめる。規則が配っていない拡張機能を使い始めた
+  ときも、同じテストが落ちる。版を上げた後、古い版のまま開いているタブは古い版の拡張機能を
+  取れず、表は読むだけに下がる（読み直せば戻る）
 
 ## 残課題
 

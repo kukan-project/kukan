@@ -31,6 +31,9 @@ interface UseDuckDBResult {
 
 // --- Singleton DuckDB instance ---
 
+/** Where the build serves DuckDB's extensions, as `<version>/<platform>/<name>.duckdb_extension.wasm` */
+const DUCKDB_EXTENSIONS_PATH = '/vendor/duckdb-extensions'
+
 let dbInstance: AsyncDuckDB | null = null
 let dbInitPromise: Promise<AsyncDuckDB> | null = null
 
@@ -42,8 +45,8 @@ export async function getDB(): Promise<AsyncDuckDB> {
   dbInitPromise = (async () => {
     const duckdb = await import('@duckdb/duckdb-wasm')
 
-    // Emitted as build assets rather than copied into `public/`, so the 79 MB
-    // these four files weigh gets what every other asset already has: a
+    // Emitted as build assets rather than copied into `public/`, so the 34 MB
+    // these two files weigh gets what every other asset already has: a
     // content-hashed name under `/_next/static/`, `immutable` caching, and a
     // 404 that Next marks `no-store`.
     //
@@ -52,18 +55,19 @@ export async function getDB(): Promise<AsyncDuckDB> {
     // container never shipped — ordinary during a rolling deploy — falls to the
     // catch-all page, which answers 200 with HTML. Under an `immutable` header
     // that answer is what the edge and every browser keep, for a year.
+    //
+    // The base build only, not the threaded one: that needs the page to be
+    // cross-origin isolated (COOP/COEP), which would stop the third-party
+    // frames, tiles and scripts the pages carry, for little on data this small.
+    // The base build loads `wasm_eh` extensions, the platform the build serves
+    // (vendor/duckdb-extensions/manifest.json); the threaded one wants others.
     const bundles: DuckDBBundles = {
-      mvp: {
-        mainModule: new URL('@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm', import.meta.url).href,
+      base: {
+        mainModule: new URL('@duckdb/duckdb-wasm/dist/duckdb-base.wasm', import.meta.url).href,
         mainWorker: new URL(
-          '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js',
+          '@duckdb/duckdb-wasm/dist/duckdb-browser-base.worker.js',
           import.meta.url
         ).href,
-      },
-      eh: {
-        mainModule: new URL('@duckdb/duckdb-wasm/dist/duckdb-eh.wasm', import.meta.url).href,
-        mainWorker: new URL('@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js', import.meta.url)
-          .href,
       },
     }
 
@@ -72,6 +76,10 @@ export async function getDB(): Promise<AsyncDuckDB> {
     const logger = new duckdb.ConsoleLogger()
     const db = new duckdb.AsyncDuckDB(logger, worker)
     await db.instantiate(bundle.mainModule)
+    // The extensions a query loads (parquet, json, icu) from this origin, where
+    // the build put them (scripts/fetch-duckdb-extensions.mjs), not DuckDB's
+    // own repository: out of reach on a closed network, and a third party
+    await db.open({ extensionRepository: new URL(DUCKDB_EXTENSIONS_PATH, location.href).href })
 
     dbInstance = db
     return db

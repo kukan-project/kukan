@@ -3,3 +3,5 @@ public/brand/
 # ibisOffice web build: upstream's release asset, and what unpack-ibis-office.mjs unpacks from it
 vendor/ibis-office/*.zip
 public/vendor/ibis-office/
+vendor/duckdb-extensions/v*/
+public/vendor/duckdb-extensions/

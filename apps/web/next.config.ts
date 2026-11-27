@@ -68,6 +68,11 @@ const nextConfig: NextConfig = {
       source: '/vendor/ibis-office/:version/:dir(pkg|assets)/:path*',
       headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
     },
+    // DuckDB's extensions, under a directory named by the DuckDB they are built for
+    {
+      source: '/vendor/duckdb-extensions/:path*',
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+    },
   ],
   // Brand alias for both bundlers (ADR-042). Empty for the default brand.
   turbopack: { resolveAlias: brandAliasRel },

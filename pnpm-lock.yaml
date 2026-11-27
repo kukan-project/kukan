@@ -88,8 +88,8 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@19.3.1)
       '@duckdb/duckdb-wasm':
-        specifier: 1.33.1-dev65.0
-        version: 1.33.1-dev65.0
+        specifier: 1.33.1-dev124.0
+        version: 1.33.1-dev124.0
       '@hookform/resolvers':
         specifier: ^7.0.6
         version: 7.0.6(@standard-schema/spec@1.1.0)(ajv-formats@3.0.1(ajv@8.20.0))(ajv@8.20.0)(react-hook-form@7.92.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
@@ -596,8 +596,8 @@ importers:
         version: link:../shared
     devDependencies:
       '@duckdb/duckdb-wasm':
-        specifier: 1.33.1-dev65.0
-        version: 1.33.1-dev65.0
+        specifier: 1.33.1-dev124.0
+        version: 1.33.1-dev124.0
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1317,8 +1317,8 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
-  '@duckdb/duckdb-wasm@1.33.1-dev65.0':
-    resolution: {integrity: sha512-qK8BQySzhixj5mY040Qs/aGJbF09B6dP5U8RyASndnk8HFdeWEQuOKeFm+7+cbVuLS78jaXLaFkdVpwVs1Ww8A==}
+  '@duckdb/duckdb-wasm@1.33.1-dev124.0':
+    resolution: {integrity: sha512-emdnMQFX+VmuAGA2qb1DbWv6PD4W3v6kzu64UuFIlEcY6z7i0pJwy1AQAfBflnxctagB0TAZsUz/nnjT5dFmTA==}
 
   '@duckdb/node-api@2.0.1-r.1':
     resolution: {integrity: sha512-YAuAEZOgd511AZkXl0i3c7WFlTdIE6hEa5avih+fwJ+FYgkhgyis9IU7b++IEadT2+9tGRh8QZK9qALOtLwdXw==}
@@ -7508,10 +7508,9 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@duckdb/duckdb-wasm@1.33.1-dev65.0':
+  '@duckdb/duckdb-wasm@1.33.1-dev124.0':
     dependencies:
       apache-arrow: 17.0.0
-      qs: 6.17.1
 
   '@duckdb/node-api@2.0.1-r.1':
     dependencies:

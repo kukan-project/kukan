@@ -8,6 +8,7 @@
  * trains — so each case runs on both, and the notes, the failures and every
  * converted value must match.
  */
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -34,6 +35,14 @@ async function nodeEngine(): Promise<Engine> {
   }
 }
 
+/** What the web serves the browser's DuckDB (scripts/fetch-duckdb-extensions.mjs) */
+const SERVED_EXTENSIONS = JSON.parse(
+  readFileSync(
+    new URL('../../../../apps/web/vendor/duckdb-extensions/manifest.json', import.meta.url),
+    'utf8'
+  )
+) as { duckdb: string; extensions: Record<string, string> }
+
 async function wasmEngine(): Promise<Engine> {
   const require = createRequire(import.meta.url)
   const duckdb =
@@ -41,8 +50,7 @@ async function wasmEngine(): Promise<Engine> {
   const wasm = (name: string) => require.resolve(`@duckdb/duckdb-wasm/dist/${name}`)
   const db = await duckdb.createDuckDB(
     {
-      mvp: { mainModule: wasm('duckdb-mvp.wasm'), mainWorker: '' },
-      eh: { mainModule: wasm('duckdb-eh.wasm'), mainWorker: '' },
+      base: { mainModule: wasm('duckdb-base.wasm'), mainWorker: '' },
     },
     new duckdb.VoidLogger(),
     duckdb.NODE_RUNTIME
@@ -211,21 +219,32 @@ describe('the settled rules on the server and in the browser', () => {
     await Promise.all([server?.close(), browser?.close()])
   })
 
-  it('runs the same DuckDB, but for the browser not yet on 2.0', async () => {
+  it('runs the same DuckDB', async () => {
     // The rest compares what the two make of the rules; this is why they can
-    // be expected to agree. The server moved to 2.0 ahead of the browser, whose
-    // 2.0 build is not yet DuckDB-WASM's latest; when it is, move the browser
-    // and expect the two versions equal again.
+    // be expected to agree. Upgrade one and this says to upgrade the other.
     const [[a], [b]] = await Promise.all([
       server.rows('SELECT version() AS v'),
       browser.rows('SELECT version() AS v'),
     ])
-    expect(a.v).toMatch(/^v2\./)
-    expect(b.v).toMatch(/^v1\.5\./)
+    expect(b.v).toBe(a.v)
   })
 
   it.each(CASES)('reads $name the same', async (c) => {
     const [a, b] = await Promise.all([read(server.rows, c), read(browser.rows, c)])
     expect(b).toEqual(a)
+  })
+
+  // After the cases, which load what the rules need: the browser loads its
+  // extensions from what the web serves (apps/web/vendor/duckdb-extensions),
+  // built for its DuckDB and nothing else, or a rule fails on the page alone
+  it('needs only the extensions the web serves, built for its DuckDB', async () => {
+    const [{ v }] = await browser.rows('SELECT version() AS v')
+    expect(SERVED_EXTENSIONS.duckdb).toBe(v)
+    const loaded = await browser.rows(
+      "SELECT extension_name AS name FROM duckdb_extensions() WHERE loaded AND install_mode IS DISTINCT FROM 'STATICALLY_LINKED'"
+    )
+    for (const { name } of loaded) {
+      expect(Object.keys(SERVED_EXTENSIONS.extensions), String(name)).toContain(name)
+    }
   })
 })

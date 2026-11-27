@@ -34,6 +34,7 @@ let adminRequest: APIRequestContext
 let orgId: string
 let orgName: string
 let datasetName: string
+let datasetId: string
 let resourceId: string
 
 test.beforeAll(async () => {
@@ -43,6 +44,7 @@ test.beforeAll(async () => {
   orgName = org.name
   const dataset = await seedDataset(adminRequest, orgId)
   datasetName = dataset.name
+  datasetId = dataset.id
   const resource = await seedResource(adminRequest, dataset.id)
   resourceId = resource.id
 })
@@ -136,12 +138,62 @@ test.describe('Content-Security-Policy: upload', () => {
       mimeType: 'text/csv',
       buffer: Buffer.from('a,b\n1,2\n'),
     })
-    // Done when the file is a row of the resource list (a reorder button,
-    // not a table row) whose source reads as the upload — the zone's own
-    // "complete" message is gone by then
-    await expect(
-      page.getByRole('button', { name: /e2e-csp\.csv.*(Upload|アップロード)/ })
-    ).toBeVisible({ timeout: 45_000 })
+    // Done when the file is a row of the resource list, which links to its
+    // table — the zone's own "complete" message is gone by then
+    await expect(page.getByRole('link', { name: /e2e-csp\.csv/ })).toBeVisible({ timeout: 45_000 })
     expect(await page.evaluate(() => window.__cspViolations ?? [])).toEqual([])
+  })
+})
+
+// The table's engine (DuckDB-WASM) starts on the first sort, and then loads the
+// extensions a query needs. Those come from this origin, not DuckDB's own
+// repository: nothing a page loads lazily can be checked by opening it alone
+test.describe('Content-Security-Policy: table engine', () => {
+  test('sorting a table loads DuckDB and its extensions from this origin', async ({ page }) => {
+    test.setTimeout(150_000)
+    const resource = await seedResource(adminRequest, datasetId)
+    const upload = await adminRequest.post(`/api/v1/resources/${resource.id}/upload`, {
+      multipart: {
+        file: {
+          name: 'e2e-engine.csv',
+          mimeType: 'text/csv',
+          buffer: Buffer.from('n,label\n1,a\n2,b\n3,c\n'),
+        },
+      },
+    })
+    expect(upload.ok()).toBe(true)
+    await expect
+      .poll(
+        async () =>
+          (
+            await (
+              await adminRequest.get(`/api/v1/resources/${resource.id}/pipeline-status`)
+            ).json()
+          ).pipeline_status,
+        { timeout: 90_000, intervals: [1_000] }
+      )
+      .toBe('complete')
+
+    const path = `/dataset/${datasetName}/resource/${resource.id}`
+    expect(await violationsOn(page, path)).toEqual([])
+    const elsewhere: string[] = []
+    const extensions: string[] = []
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (url.origin !== new URL(page.url()).origin) elsewhere.push(request.url())
+      else if (url.pathname.startsWith('/vendor/duckdb-extensions/')) extensions.push(url.pathname)
+    })
+    const table = page.locator('table', { has: page.locator('thead button') })
+    const firstValue = table.locator('tbody tr').first().locator('td').first()
+    await expect(firstValue).toHaveText('1')
+    // Ascending, then descending: the order the engine, not the file, gives
+    await table.locator('thead button').first().click()
+    await table.locator('thead button').first().click()
+    await expect(firstValue).toHaveText('3', { timeout: 60_000 })
+
+    expect(await page.evaluate(() => window.__cspViolations ?? [])).toEqual([])
+    expect(elsewhere).toEqual([])
+    // Not vacuous: the engine did load one, from here
+    expect(extensions).not.toEqual([])
   })
 })

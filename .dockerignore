@@ -21,3 +21,5 @@ docs
 apps/web/wasm/*/target
 # ibisOffice unpacked by the dev script; the build unpacks it again from the archive
 apps/web/public/vendor/ibis-office
+# DuckDB's extensions copied by the dev script; the build copies them again
+apps/web/public/vendor/duckdb-extensions

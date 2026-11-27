@@ -292,6 +292,17 @@ reads' applicable domain, settling as:
   with activating URL registration (the cap raise)
 - Raising the preview Parquet generation cap is decided separately, using this
   ADR's measurements as input
+- **DuckDB-WASM's extensions are served from this origin** (added 2026-11-28). DuckDB-WASM has no
+  built-in Parquet, JSON or ICU, and on first use fetched those extensions (`parquet`, `json`, `icu`)
+  from `extensions.duckdb.org`: out of reach on a closed network, and a third party every
+  visitor's browser contacted. The fetch is made inside the Web Worker, whose script carries no
+  CSP, so the CSP never stopped it. The build fetches the extensions pinned by version and SHA-256
+  in `apps/web/vendor/duckdb-extensions/manifest.json`, serves them under
+  `/vendor/duckdb-extensions/<version>/<platform>/`, and points `custom_extension_repository` there
+  right after start. The version has to be the DuckDB inside DuckDB-WASM, which
+  `settled-parity.test.ts` checks; the same test fails when a rule starts to need an extension
+  that is not served. After a bump, a tab still open on the old version cannot get the old
+  extensions, and its table falls back to plain reading until reloaded
 
 ## Open Questions
 
