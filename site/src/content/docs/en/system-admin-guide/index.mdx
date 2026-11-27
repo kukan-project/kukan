@@ -883,6 +883,13 @@ Choose with `OFFICE_PREVIEW_VIEWER` (AWS: the site's `officePreviewViewer`).
 - **Licence**: ibisOffice is AGPL-3.0, and the page shows "Powered by ibisOffice" with a link. Directions to the
   corresponding source are at `/vendor/ibis-office/<version>/SOURCE`
 
+## Sorting and filtering tables (DuckDB in the browser)
+
+Sorting, filtering or searching a table preview runs DuckDB (DuckDB-WASM) in the viewer's browser, as does the settled type estimate (the data administrator's "Table settings"). The extensions DuckDB uses (`parquet`, `json`, `icu`) are read from the site itself, under `/vendor/duckdb-extensions/<DuckDB version>/wasm_eh/`. Up to v0.47 the viewer's browser fetched them from `extensions.duckdb.org`, so these operations did not work on a closed network.
+
+- **Build**: building web fetches the extensions from `extensions.duckdb.org` and checks their SHA-256 (version and SHA-256 are in `apps/web/vendor/duckdb-extensions/manifest.json`). Neither the running service nor viewers' browsers go to `extensions.duckdb.org`. To build on a closed network that cannot reach it, put the same version's three files (`parquet.duckdb_extension.wasm` and the rest) in `apps/web/vendor/duckdb-extensions/<version>/wasm_eh/` first
+- **After an upgrade**: a tab still open on the old version cannot get the old version's extensions, and its table only reads (a reload fixes it)
+
 ## Environment variables
 
 Key environment variables are listed below. See `.env.example` for the full list.

@@ -291,7 +291,8 @@ issue 9). Layer 2 can be rebuilt, so this decision can be reversed later.
   `false`, <https://ducklake.select/docs/stable/duckdb/usage/connecting>). With a single catalog the
   migration happens once; per resource it is **tens of thousands of files**. Layer 2 can be rebuilt,
   so a release that raises the catalog version would by default run the rebuild of decision 6 (open
-  issue 6)
+  issue 6). The first such raise, DuckDB 2.0 (DuckLake 1.1), did not need it (see open issue 6's
+  resolution)
 - Non-tabular resources get no `lake/<resourceId>/` (context 5). Even within one resource, whether
   a version read as a table can change between versions (a broken CSV, a change in JSON structure, a
   corrected format label). Only versions that read as tables go into layer 2; the others keep a null
@@ -731,11 +732,14 @@ What this shows:
 4. **The doubled derivation of S3 connection settings** (ADR-043 open issue 11) is not solved here
 5. **Cross-resource queries** are out of scope. If done, through registering multiple preview
    Parquet files (ADR-032 open issue 3), independent of how layer 2 is split
-6. **The procedure when the DuckLake catalog version goes up.** Running the rebuild is the default
-   (decision 1), but the time for rebuilding everything and how diffs look meanwhile (open issue 1)
-   weigh with the count. Lazy migration — opening with `AUTOMATIC_MIGRATION` and writing to a new key
-   — is also possible, but rolling back to the previous image then cannot read migrated catalogs.
-   Decide when the catalog version first goes up
+6. ~~**The procedure when the DuckLake catalog version goes up.**~~ **Resolved (2026-11-27, DuckDB
+   2.0.1).** DuckLake 1.1, the first raise, reads and writes 1.0 catalogs without migrating them
+   (they stay 1.0 attached `READ_ONLY` or for writing; measured). Only catalogs created new are 1.1.
+   So neither the rebuild nor migration through `AUTOMATIC_MIGRATION` is run, and existing catalogs
+   stay 1.0. Rolling back to the previous image (1.5) loses only the catalogs 2.0 created new (new
+   resources, rebuilds after a purge or reset), which can be rebuilt from the originals. Nothing pins
+   the deploy order. When the catalog version next goes up, first check whether old catalogs open
+   without migrating
 7. ~~**Removing the global lock `LAKE_INGEST_LOCK`**~~ **Resolved (2026-10-12).** The four places
    that use it are all layer 2, so it can go (decision 2)
 8. ~~**Which wins when an existing SQLite catalog is ATTACHed with a different `DATA_PATH`.**~~

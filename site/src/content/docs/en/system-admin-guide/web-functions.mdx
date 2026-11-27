@@ -46,6 +46,8 @@ synth (the region alone fails at deploy).
 
 The zip may be at most 512 MB unzipped (a Web Functions limit that cannot be raised); the build fails above it.
 
+From v0.48.0 the static files (`/_next/static/` and ibisOffice's `/vendor/ibis-office/`, about 200 MB together) are not in the zip: they go to an S3 bucket of the site's own and CloudFront serves them from there. The zip is about 300 MB. Old files are not deleted, so a page opened before a deploy keeps loading. Right after the first deploy that moves to the bucket only, a page cached by CloudFront from before it (up to 5 minutes) can name old files that were never uploaded and fail to load them (a reload fixes it). DuckDB grew in 2.0, and S3 credentials are read from the environment, so a Web Function carries no aws extension.
+
 An environment deployed by a pipeline should switch on v0.44.1 or later. One zip is built per brand (about 140 MB each), and on v0.44.0 two or more brands pass CloudFormation's limit (256 MB) and stop the deployment. From v0.44.1 the pipeline hands CloudFormation the templates only.
 
 ## Sizing

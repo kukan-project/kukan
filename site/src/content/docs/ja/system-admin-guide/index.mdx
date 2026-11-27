@@ -766,6 +766,13 @@ Excel・Word・PowerPoint の原本は、既定では [ibisOffice](https://githu
 - **ライセンス**: ibisOffice は AGPL-3.0 で、画面に「Powered by ibisOffice」とリンクを表示します。
   対応するソースの案内は `/vendor/ibis-office/<版>/SOURCE` にあります
 
+## 表の並べ替え・絞り込み（ブラウザの DuckDB）
+
+表のプレビューで並べ替え・絞り込み・検索をすると、閲覧者のブラウザの中で DuckDB（DuckDB-WASM）が動きます。確定型の見積もり（データ管理者の「表の設定」）も同じです。DuckDB が使う拡張機能（`parquet`・`json`・`icu`）は、サイト自身の `/vendor/duckdb-extensions/<DuckDB の版>/wasm_eh/` から読みます。v0.47 までは閲覧者のブラウザが `extensions.duckdb.org` から取りに行っていたので、閉域網ではこれらの操作が使えませんでした。
+
+- **ビルド**: web のビルドが、拡張機能を `extensions.duckdb.org` から取って SHA-256 を照合します（`apps/web/vendor/duckdb-extensions/manifest.json` に版と SHA-256）。動いているサービスも閲覧者のブラウザも、`extensions.duckdb.org` には行きません。届かない閉域網でビルドするときは、同じ版の 3 つのファイル（`parquet.duckdb_extension.wasm` など）を先に `apps/web/vendor/duckdb-extensions/<版>/wasm_eh/` に置いてください
+- **版を上げた後**: 古い版のまま開いているタブは、古い版の拡張機能を取れず、表は読むだけになります（読み直せば戻ります）
+
 ## 環境変数
 
 主要な環境変数の一覧です。詳細は `.env.example` を参照してください。

@@ -6,6 +6,72 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.48.0] - 2026-11-28
+
+**Highlights**
+
+- **More tables reach BI tools through OData.** A table with a column whose heading is not a valid OData name (brackets, spaces, symbols, a leading digit) used to be refused by the OData feed as a whole. Such columns are now served under a normalized name: `人口（人）` becomes `人口_人`, `面積（㎡）` becomes `面積_m2`. Headings that were already valid keep their names, so existing feeds and their `$metadata` do not change. The original heading is given in `$metadata`, in the resource's schema, through MCP and in the OData dialog on the resource page. On the sites measured, every table the feed used to refuse can now be served; only a table with two columns of the same heading is still refused (#1313).
+- **DuckDB 2.0 on the server and in the browser.** The worker, the API and the browser's table engine move from DuckDB 1.5.6 to 2.0.1 (1.5 is supported until March 2027). Reading files from object storage is faster, most of all when many files are read at once (#1314, #1318).
+- **Sorting and filtering tables now work on a closed network.** The browser's DuckDB used to fetch its extensions (Parquet, JSON, time zones) from extensions.duckdb.org when a table was first sorted or filtered. They are now served by the site itself, so viewers' browsers contact no third party, and a closed network no longer stops these operations or the settled type estimate in "Table settings" (#1318).
+
+**Features**
+
+- OData: `$metadata` annotates a renamed column with its original heading (`Core.Description`); `GET /resources/{id}/schema` carries `odataRenamed`; MCP's `get_resource_schema` gives the mapping. The `unsupported-columns` reason is gone; `duplicate-columns` remains (#1313).
+- DuckDB 2.0.1 in the worker and the API. Integer text longer than BIGINT (which DuckDB 2.0 types as HUGEINT or BIGNUM) is kept as text with every digit, as before. A table catalog is never published with a transaction still open, which DuckDB 2.0 would otherwise drop silently (#1314).
+- The browser loads DuckDB-WASM's base build only (34 MB, from 77 MB). Its extensions are fetched at build time, pinned by version and SHA-256 (#1318).
+- On a Lambda Web Functions site, the static files (`/_next/static/` and the ibisOffice build) are served by CloudFront from an S3 bucket of the site's own instead of the function, taking the zip from 504 MB to about 300 MB of its 512 MB limit (#1316).
+
+**Dependencies**
+
+- 25 minor and patch updates, among them better-auth 1.7.27, Hono 4.13.21, undici 8.13.1, the AWS SDK and aws-cdk-lib 2.278.0. The minimatch override is removed now that every dependent requires a fixed version (#1308).
+- OpenSearch 3.10.0 for Docker Compose (#1306).
+
+**Documentation**
+
+- The system administrator guide covers DuckDB in the browser and building on a closed network; the Web Functions guide covers the static files bucket; the OData guides cover renamed columns. ADR-048, ADR-055, ADR-067 and ADR-068 are updated.
+
+**Upgrade Notes** (for system administrators)
+
+- **No migration, configuration change or reprocessing is needed.**
+- **Rolling back below 0.48.0.** Table catalogs that 0.48.0 creates (for new resources, and rebuilds after a purge or reset) use a newer catalog format that 0.47 cannot read; catalogs that existed before stay in the old format and work with both. During the deploy, or after rolling back, a 0.47 task that meets such a catalog fails to show that resource's version diff and queues a rebuild of its table history from the stored files, after which the diff comes back. Nothing needs to be done by hand.
+- **Building on a closed network.** Building the web now fetches three DuckDB extensions from extensions.duckdb.org, as it already fetches the ibisOffice build from GitHub. Where the build cannot reach it, put the files listed in `apps/web/vendor/duckdb-extensions/manifest.json` in `apps/web/vendor/duckdb-extensions/v2.0.1/wasm_eh/` first.
+- **Docker Compose:** the OpenSearch image is rebuilt on 3.10.0 (`docker compose up -d --build`). Existing indexes are read as they are; OpenSearch cannot go back to 3.9 on data 3.10 has opened.
+- **Lambda Web Functions sites:** the first deploy creates the static files bucket and uploads about 200 MB. Right after it, a page CloudFront cached from before the deploy (up to 5 minutes) can name static files that were never uploaded; a reload fixes it.
+- **API:** `GET /resources/{id}/schema` may carry `odataRenamed`. An addition.
+
+---
+
+**ハイライト**
+
+- **BI ツールへ OData で出せる表が増えました。** 見出しが OData の名前の規則に合わない列（括弧・空白・記号・先頭の数字）が 1 つでもあると、これまでは表ごと OData で配信しませんでした。そうした列を、規則に合うよう整えた名前で配信します（`人口（人）` → `人口_人`、`面積（㎡）` → `面積_m2`）。もとから規則に合っていた見出しの名前は変わらないので、これまでのフィードや `$metadata` はそのままです。元の見出しは、`$metadata`・リソースのスキーマ・MCP・リソースページの OData のダイアログに出ます。計測したサイトでは、配信を断っていた表がすべて配信できるようになりました。断るのは、同じ見出しの列が 2 つある表だけです（#1313）。
+- **サーバーとブラウザの DuckDB を 2.0 にしました。** worker・API・ブラウザの表のエンジンの DuckDB を、1.5.6 から 2.0.1 に上げました（1.5 のサポートは 2027 年 3 月まで）。オブジェクトストレージ上のファイルの読み込みが速くなり、特に多くのファイルを一度に読むときに効きます（#1314、#1318）。
+- **閉域網でも、表の並べ替え・絞り込みが使えるようになりました。** ブラウザの DuckDB は、表を初めて並べ替えたり絞り込んだりするときに、拡張機能（Parquet・JSON・タイムゾーン）を extensions.duckdb.org から取りに行っていました。サイト自身から配るようにしたので、閲覧者のブラウザは第三者に接続せず、閉域網でもこれらの操作と、「表の設定」の確定型の見積もりが使えます（#1318）。
+
+**機能**
+
+- OData：名前を変えた列には、`$metadata` で元の見出しを注釈（`Core.Description`）で付けます。`GET /resources/{id}/schema` に `odataRenamed` が付き、MCP の `get_resource_schema` も対応を返します。理由 `unsupported-columns` は無くなり、`duplicate-columns` は残ります（#1313）。
+- worker と API の DuckDB を 2.0.1 にしました。BIGINT より長い整数（DuckDB 2.0 は HUGEINT や BIGNUM と推定する）は、これまでどおり全桁を文字列として残します。トランザクションを開いたままの表のカタログは公開しません（DuckDB 2.0 では、そのまま切り離すと書き込みが黙って捨てられるため）（#1314）。
+- ブラウザは DuckDB-WASM の base のビルドだけを読み込みます（77 MB → 34 MB）。拡張機能は、ビルドのときに版と SHA-256 を固定して取り寄せます（#1318）。
+- Lambda Web Functions のサイトでは、静的ファイル（`/_next/static/` と ibisOffice）を関数からではなく、サイト専用の S3 バケットから CloudFront で配ります。zip は 504 MB から約 300 MB になり、上限の 512 MB に余裕ができました（#1316）。
+
+**依存関係**
+
+- minor・patch の更新 25 件（better-auth 1.7.27、Hono 4.13.21、undici 8.13.1、AWS SDK、aws-cdk-lib 2.278.0 など）。使う側がすべて修正版を求めるようになったので、minimatch の差し替え（override）を外しました（#1308）。
+- Docker Compose の OpenSearch を 3.10.0 にしました（#1306）。
+
+**ドキュメント**
+
+- システム管理者ガイドに、ブラウザの DuckDB と閉域網でのビルドを書きました。Web Functions のガイドに静的ファイルのバケットを、OData のガイドに名前を変えた列を書きました。ADR-048・ADR-055・ADR-067・ADR-068 を更新しました。
+
+**アップグレードの注意**（システム管理者向け）
+
+- **マイグレーション・設定の変更・再処理は要りません。**
+- **0.48.0 より前に戻すとき。** 0.48.0 が新しく作る表のカタログ（新しいリソースと、パージ・リセットの後の作り直し）は新しい形式で、0.47 では読めません。それより前からあるカタログは古い形式のままで、どちらの版でも読めます。デプロイの途中や戻した後に、0.47 のタスクがそうしたカタログに当たると、そのリソースの版の差分の表示が失敗し、表の履歴の作り直しを保存済みのファイルから行うジョブを積みます。作り直しが終われば差分は戻ります。手で何かをする必要はありません。
+- **閉域網でビルドするとき。** web のビルドが、ibisOffice を GitHub から取るのと同じく、DuckDB の拡張機能 3 つを extensions.duckdb.org から取るようになりました。届かないときは、`apps/web/vendor/duckdb-extensions/manifest.json` にあるファイルを、先に `apps/web/vendor/duckdb-extensions/v2.0.1/wasm_eh/` に置いてください。
+- **Docker Compose：** OpenSearch のイメージを 3.10.0 で作り直します（`docker compose up -d --build`）。既存の索引はそのまま読めます。3.10 で開いたデータは、3.9 には戻せません。
+- **Lambda Web Functions のサイト：** 最初のデプロイで静的ファイルのバケットを作り、約 200 MB を上げます。その直後だけ、デプロイの前に CloudFront にキャッシュされたページ（最大 5 分）が、上げていない静的ファイルを指して読み込めないことがあります。読み直せば戻ります。
+- **API：** `GET /resources/{id}/schema` に `odataRenamed` が付くことがあります（追加のみ）。
+
 ## [0.47.1] - 2026-11-23
 
 **Bug Fixes**
