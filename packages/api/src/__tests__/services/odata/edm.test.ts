@@ -6,6 +6,8 @@ import {
   edmRefusal,
   isEdmIdentifier,
   pickKeyName,
+  propertyNamesOf,
+  renamedColumnsOf,
   toEdmValue,
 } from '../../../services/odata/edm'
 
@@ -39,20 +41,8 @@ describe('isEdmIdentifier', () => {
 })
 
 describe('edmRefusal', () => {
-  it('passes a schema whose names are all identifiers', () => {
-    expect(edmRefusal(schemaOf(['id', '人口']))).toBeNull()
-  })
-
-  it('names the headings that need normalization', () => {
-    expect(edmRefusal(schemaOf(['id', '人口（人）', '面積 (km²)']))).toEqual({
-      reason: 'unsupported-columns',
-      columns: ['人口（人）', '面積 (km²)'],
-    })
-  })
-
-  it('names every one of them, not a sample', () => {
-    const many = Array.from({ length: 9 }, (_, i) => `列 ${i}`)
-    expect(edmRefusal(schemaOf(['id', ...many]))?.columns).toHaveLength(9)
+  it('passes a schema whose headings are not identifiers — they are renamed instead', () => {
+    expect(edmRefusal(schemaOf(['id', '人口（人）', '面積 (km²)']))).toBeNull()
   })
 
   it('names the heading that repeats, once', () => {
@@ -63,14 +53,70 @@ describe('edmRefusal', () => {
   })
 })
 
+describe('propertyNamesOf', () => {
+  const namesOf = (headings: string[]) => propertyNamesOf(schemaOf(headings).columns)
+
+  it('keeps a heading that already is an identifier, so earlier feeds do not change', () => {
+    expect(namesOf(['id', '人口', '_x1'])).toEqual(['id', '人口', '_x1'])
+  })
+
+  it('turns each run of what an identifier cannot carry into one underscore', () => {
+    expect(namesOf(['人口（人）', '面積 (km²)', 'H31.4.1現在', '[No.4]公開中'])).toEqual([
+      '人口_人',
+      '面積_km2',
+      'H31_4_1現在',
+      'No_4_公開中',
+    ])
+  })
+
+  it('folds compatibility characters rather than dropping them', () => {
+    expect(namesOf(['面積（㎡）', '２０２０年'])).toEqual(['面積_m2', '_2020年'])
+  })
+
+  it('gives a heading that leaves nothing a placeholder', () => {
+    expect(namesOf(['', '（　）'])).toEqual(['Column', 'Column_2'])
+  })
+
+  it('every name it gives is an identifier', () => {
+    const headings = ['1月', '-', 'a\nb', '人口\r\n（人）', '※注', `${'長'.repeat(200)}（人）`]
+    for (const name of namesOf(headings)) expect(isEdmIdentifier(name)).toBe(true)
+  })
+
+  it('leaves a real column its name and suffixes the renamed one, whatever the order', () => {
+    expect(namesOf(['人口（人）', '人口_人'])).toEqual(['人口_人_2', '人口_人'])
+    expect(namesOf(['面積 (km2)', '面積（km2）'])).toEqual(['面積_km2', '面積_km2_2'])
+  })
+
+  it('keeps a suffixed name within the length limit', () => {
+    const long = `${'長'.repeat(200)}`
+    const [a, b] = namesOf([`${long}（a）`, `${long}（b）`])
+    expect(Array.from(b)).toHaveLength(128)
+    expect(b.endsWith('_2')).toBe(true)
+    expect(a).not.toBe(b)
+  })
+})
+
+describe('renamedColumnsOf', () => {
+  it('lists only the columns served under another name', () => {
+    expect(renamedColumnsOf(buildModel(schemaOf(['id', '人口（人）'])))).toEqual([
+      { heading: '人口（人）', property: '人口_人' },
+    ])
+  })
+})
+
 describe('pickKeyName', () => {
   it('uses RowId when the table has no such column', () => {
-    expect(pickKeyName(schemaOf(['id']).columns)).toBe('RowId')
+    expect(pickKeyName(['id'])).toBe('RowId')
   })
 
   it('steps aside for a table that already has one', () => {
-    expect(pickKeyName(schemaOf(['RowId']).columns)).toBe('RowId_')
-    expect(pickKeyName(schemaOf(['RowId', 'RowId_']).columns)).toBe('RowId__')
+    expect(pickKeyName(['RowId'])).toBe('RowId_')
+    expect(pickKeyName(['RowId', 'RowId_'])).toBe('RowId__')
+  })
+
+  it('steps aside for a heading renamed into one', () => {
+    expect(buildModel(schemaOf(['Row Id', 'RowId（2）'])).syntheticKey).toBe('RowId')
+    expect(buildModel(schemaOf(['（RowId）'])).syntheticKey).toBe('RowId_')
   })
 })
 
@@ -194,6 +240,31 @@ describe('buildMetadataXml', () => {
       '<Property Name="rate" Type="Edm.Decimal" Nullable="true" Precision="5" Scale="3"/>'
     )
     expect(xml).toContain('<EntitySet Name="Rows" EntityType="KUKAN.Row"/>')
+    // Nothing renamed, so the document is the one served before renaming
+    expect(xml).not.toContain('edmx:Reference')
+  })
+
+  it('keeps a renamed heading beside its property, and references the vocabulary for it', () => {
+    const xml = buildMetadataXml(buildModel(schemaOf(['id', '人口\n（人） & "計"'])))
+    expect(xml).toContain('<edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>')
+    expect(xml).toContain(
+      '<Property Name="人口_人_計" Type="Edm.String" Nullable="true">\n' +
+        '          <Annotation Term="Core.Description" String="人口&#10;（人） &amp; &quot;計&quot;"/>\n' +
+        '        </Property>'
+    )
+    expect(xml).toContain('<Property Name="id" Type="Edm.String" Nullable="true"/>')
+  })
+
+  it('names a designated key by the property it is served under', () => {
+    const schema: ResourceSchema = {
+      columns: [
+        { name: 'コード（市）', type: 'string', nullable: false, nullCount: 0, distinctCount: 3 },
+      ],
+      rowCount: 3,
+    }
+    const model = buildModel(schema, ['コード（市）'])
+    expect(model.keyNames).toEqual(['コード_市'])
+    expect(buildMetadataXml(model)).toContain('<Key><PropertyRef Name="コード_市"/></Key>')
   })
 })
 

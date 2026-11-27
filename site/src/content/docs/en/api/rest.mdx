@@ -317,6 +317,7 @@ tools offer the same capability for AI agents.
   "odataRefusal": null,
   "odataWideRows": false,
   "odataKey": { "names": ["RowId"], "synthetic": true, "fallback": "not-designated" },
+  "odataRenamed": [{ "heading": "市区町村（発生地）", "property": "市区町村_発生地" }],
   "schema": {
     "rowCount": 1688,
     "columns": [
@@ -334,10 +335,12 @@ tools offer the same capability for AI agents.
 }
 ```
 
-`odataRefusal`, `odataWideRows` and `odataKey` belong to the OData feed (below): `odataRefusal` says
-why no feed is served (`not-public` / `unsupported-columns` / `duplicate-columns`) and names the
+`odataRefusal`, `odataWideRows`, `odataKey` and `odataRenamed` belong to the OData feed (below):
+`odataRefusal` says why no feed is served (`not-public` / `duplicate-columns`) and names the
 headings at fault, `odataWideRows` says whether a page of the feed may fail to read because rows are
-too wide (a caution, not a refusal), and `odataKey` says what the feed identifies rows by.
+too wide (a caution, not a refusal), `odataKey` says what the feed identifies rows by (as the feed's
+property names), and `odataRenamed` pairs each heading that is not an EDM identifier (`heading`) with
+the property it is served under (`property`).
 `odataKey` is `null` wherever no feed is served, and `odataRefusal` is `null` too where there is no
 table to serve.
 
@@ -466,8 +469,13 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 - **Rows are identified** by the publisher's primary key where OData allows that key, and otherwise
   by an added `RowId` column holding the row's position. Which of the two it is comes back in
   `/schema` as `odataKey`
-- A resource whose headings are not EDM identifiers (brackets, spaces, punctuation) answers `501`;
-  `/schema`'s `odataRefusal` says which headings
+- A column whose heading is not an EDM identifier (brackets, spaces, punctuation) is served under
+  another name: NFKC-normalized, each run of characters an identifier cannot hold replaced by one
+  `_`, leading and trailing `_` dropped, `_` prefixed where it starts with a digit, `Column` where
+  nothing is left, cut at 128 characters. A name another column already has gets `_2`, `_3` and so
+  on, in column order (a heading served as it is keeps its name). The heading goes in a
+  `Core.Description` annotation in `$metadata`, and `/schema`'s `odataRenamed` lists the pairs
+- A resource with two columns of one name answers `501`; `/schema`'s `odataRefusal` says which
 - `$metadata` **revalidates on every request** (`public, no-cache`), so a stale declaration of the
   columns is never paired with rows read under a newer one
 - **Pages read at once** are limited to 4 per source address (an IPv6 address by its /64), running and queued together. Beyond that the feed answers `429`: retry after the seconds in `Retry-After`

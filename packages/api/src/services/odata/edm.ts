@@ -6,11 +6,10 @@
  * lives here is the translation — identifiers, types, values — so the router
  * and the service stay about HTTP and reading.
  *
- * **Step 1 (ADR-055 §段階) takes column names as they are.** A name that is not
- * an EDM identifier is not renamed here; the resource is refused instead
- * (`unsupportedColumns`), because the normalization rules — conversion,
- * collision, where the original heading goes — are the ADR's first open item
- * and belong in one decision rather than in a guess made per column.
+ * **A heading that is not an EDM identifier is renamed, not refused**
+ * (ADR-055 決定 7): {@link propertyNamesOf} turns `人口（人）` into `人口_人`,
+ * and `$metadata` keeps the heading beside it. A heading that already is one
+ * goes out as it is, so the feeds served before the rule are unchanged.
  */
 
 import { canIdentifyRows, frozenKeyFault, sameKeyColumns } from '@kukan/shared'
@@ -19,6 +18,7 @@ import type {
   OdataKeyFallback,
   OdataRefusal,
   OdataRefusalReason,
+  OdataRenamedColumn,
   ResourceColumn,
   ResourceColumnType,
   ResourceSchema,
@@ -42,6 +42,68 @@ const SIMPLE_IDENTIFIER = /^[\p{L}\p{Nl}_][\p{L}\p{Nl}\p{Nd}\p{Mn}\p{Mc}\p{Pc}\p
 
 export function isEdmIdentifier(name: string): boolean {
   return SIMPLE_IDENTIFIER.test(name)
+}
+
+/** Characters a SimpleIdentifier may carry after its first. */
+const NOT_IDENTIFIER_CHARS = /[^\p{L}\p{Nl}\p{Nd}\p{Mn}\p{Mc}\p{Pc}\p{Cf}]+/gu
+const IDENTIFIER_START = /^[\p{L}\p{Nl}_]/u
+const MAX_IDENTIFIER_LENGTH = 128
+
+/** The first `n` code points — a length CSDL counts in characters, not UTF-16 units. */
+function firstChars(name: string, n: number): string {
+  // UTF-16 units are never fewer than code points
+  if (name.length <= n) return name
+  const chars = Array.from(name)
+  return chars.length > n ? chars.slice(0, n).join('') : name
+}
+
+/**
+ * A heading as an identifier: NFKC first, so `（`, `２` and `㎡` become `(`, `2`
+ * and `m2` rather than a gap, then each run of what an identifier cannot carry
+ * becomes one `_`. Brackets and units are the common case in Japanese open data
+ * and the words between them are what a reader recognizes the column by, so
+ * they are kept apart rather than dropped together.
+ */
+function toIdentifier(heading: string): string {
+  let name = heading
+    .normalize('NFKC')
+    .replace(NOT_IDENTIFIER_CHARS, '_')
+    .replace(/^_+|_+$/g, '')
+  if (name === '') name = 'Column'
+  if (!IDENTIFIER_START.test(name)) name = `_${name}`
+  return firstChars(name, MAX_IDENTIFIER_LENGTH)
+}
+
+/**
+ * The property each column is served under, in column order.
+ *
+ * **A heading that already is an identifier keeps its name, and is placed
+ * first.** That is what keeps every feed served before renaming exactly as it
+ * was, and it means a renamed heading never takes a name a real column holds:
+ * `人口（人）` beside a column already called `人口_人` becomes `人口_人_2`.
+ * A suffix is the only answer to a collision that keeps both columns, and the
+ * column order — not the data — decides who gets it, so the same table is
+ * always served under the same names.
+ */
+export function propertyNamesOf(columns: readonly { name: string }[]): string[] {
+  const kept = columns.map(({ name }) => isEdmIdentifier(name))
+  const taken = new Set(columns.filter((_, i) => kept[i]).map((c) => c.name))
+  // Where each base's suffixes resume, so a sheet of blank headings — all
+  // `Column` — is not probed from `_2` again for every one of them
+  const nextSuffix = new Map<string, number>()
+  return columns.map(({ name }, i) => {
+    if (kept[i]) return name
+    const base = toIdentifier(name)
+    let candidate = base
+    let n = nextSuffix.get(base) ?? 2
+    while (taken.has(candidate)) {
+      const suffix = `_${n++}`
+      candidate = firstChars(base, MAX_IDENTIFIER_LENGTH - suffix.length) + suffix
+    }
+    nextSuffix.set(base, n)
+    taken.add(candidate)
+    return candidate
+  })
 }
 
 /**
@@ -74,33 +136,26 @@ export interface EdmModel {
   /** Why the key had to be invented; null where it was not (reported to the page). */
   keyFallback: OdataKeyFallback | null
   columns: ResourceColumn[]
+  /** The property each of `columns` is served under ({@link propertyNamesOf}). */
+  properties: string[]
   rowCount: number
 }
 
 /**
  * Why a schema cannot be served as OData, or null when it can.
  *
- * Both refusals are Step 1's scope rather than permanent limits: normalization
- * (ADR-055 open item 1) answers the first, and the second is a duplicate the
- * interpreter should not have written in the first place.
+ * Only a heading that repeats is left: a row is read by heading, so two columns
+ * under one cannot be told apart, and the interpreter should not have written
+ * them in the first place. A heading that is merely not an identifier is
+ * renamed instead ({@link propertyNamesOf}).
  */
-export type EdmRefusal = Extract<OdataRefusalReason, 'unsupported-columns' | 'duplicate-columns'>
+export type EdmRefusal = Extract<OdataRefusalReason, 'duplicate-columns'>
 
-/**
- * Why a schema cannot be served, and which headings are the reason.
- *
- * The headings come back because the person reading them can usually fix the
- * table: a unit moved out of `人口（人）` is a table this feed can serve. A
- * refusal that names nothing leaves them comparing two resources and guessing.
- * All of them, not a sample — the response that carries this carries the whole
- * column list anyway, and whoever shows it decides how many to show.
- */
+/** Why a schema cannot be served, and which headings are the reason. */
 export type EdmRefusalDetail = OdataRefusal<EdmRefusal>
 
 export function edmRefusal(schema: ResourceSchema): EdmRefusalDetail | null {
   const names = schema.columns.map((c) => c.name)
-  const unsupported = names.filter((name) => !isEdmIdentifier(name))
-  if (unsupported.length > 0) return { reason: 'unsupported-columns', columns: unsupported }
   const seen = new Set<string>()
   const duplicated = new Set<string>()
   for (const name of names) (seen.has(name) ? duplicated : seen).add(name)
@@ -112,12 +167,13 @@ export function edmRefusal(schema: ResourceSchema): EdmRefusalDetail | null {
  * Name for the synthetic key, kept clear of the table's own columns.
  *
  * An OData EntityType must have a key, so where the table's own cannot be used
- * (see {@link buildModel}) the row's position in the Parquet becomes one. A table that already has a `RowId` column gets `RowId_`, and so on:
+ * (see {@link buildModel}) the row's position in the Parquet becomes one. A
+ * table already serving a `RowId` property gets `RowId_`, and so on:
  * the model is built once per request, so both the `$metadata` and the rows
  * agree on whichever name this returns.
  */
-export function pickKeyName(columns: ResourceColumn[]): string {
-  const taken = new Set(columns.map((c) => c.name))
+export function pickKeyName(properties: readonly string[]): string {
+  const taken = new Set(properties)
   let name = 'RowId'
   while (taken.has(name)) name += '_'
   return name
@@ -195,12 +251,15 @@ export function buildModel(
   verifiedKey: string[] | null = null
 ): EdmModel {
   const keyFallback = designatedKey(schema, primaryKey, verifiedKey)
-  const syntheticKey = keyFallback ? pickKeyName(schema.columns) : null
+  const properties = propertyNamesOf(schema.columns)
+  const syntheticKey = keyFallback ? pickKeyName(properties) : null
+  const propertyOf = (name: string) => properties[schema.columns.findIndex((c) => c.name === name)]
   return {
-    keyNames: syntheticKey ? [syntheticKey] : primaryKey!,
+    keyNames: syntheticKey ? [syntheticKey] : primaryKey!.map(propertyOf),
     syntheticKey,
     keyFallback,
     columns: schema.columns,
+    properties,
     rowCount: schema.rowCount,
   }
 }
@@ -214,22 +273,55 @@ export function odataKeyOf(model: EdmModel): OdataKey {
   }
 }
 
+/**
+ * An attribute value as XML reads it back. Line breaks are written as
+ * references because a parser folds a literal one into a space, and the
+ * control characters XML 1.0 cannot carry at all are dropped — a heading may
+ * hold either, where a property name never does.
+ */
 function escapeXmlAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+  return (
+    value
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g, '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\t/g, '&#9;')
+      .replace(/\n/g, '&#10;')
+      .replace(/\r/g, '&#13;')
+  )
 }
+
+/** The columns served under a name other than their heading, for the page that explains it. */
+export function renamedColumnsOf(model: EdmModel): OdataRenamedColumn[] {
+  return model.columns.flatMap((col, i) =>
+    col.name === model.properties[i] ? [] : [{ heading: col.name, property: model.properties[i] }]
+  )
+}
+
+/**
+ * The vocabulary `Core.Description` comes from. Referenced only by a document
+ * that renames a column, so a feed whose headings all were identifiers serves
+ * the `$metadata` it always did.
+ */
+const CORE_VOCABULARY_REFERENCE = [
+  '  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">',
+  '    <edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>',
+  '  </edmx:Reference>',
+]
 
 /** CSDL (`$metadata`) document for one resource's table. */
 export function buildMetadataXml(model: EdmModel): string {
-  const properties = model.columns.map((col) => {
+  const renamed = model.columns.some((col, i) => col.name !== model.properties[i])
+  const properties = model.columns.map((col, i) => {
+    const name = model.properties[i]
     const type = EDM_TYPE[col.type]
     // A key property may not be nullable (CSDL 4.01 §6.5), and one chosen here
     // holds no missing value in this version: `designatedKey` refuses a column
     // whose `nullCount` is not zero.
-    const nullable = model.keyNames.includes(col.name) ? false : col.nullable
+    const nullable = model.keyNames.includes(name) ? false : col.nullable
     // Without the facets a client reads Scale 0, a decimal with no fraction
     const facets =
       col.type === 'decimal'
@@ -237,11 +329,15 @@ export function buildMetadataXml(model: EdmModel): string {
           ? ` Precision="${col.decimalPrecision}" Scale="${col.decimalScale}"`
           : ' Scale="variable"'
         : ''
-    return `        <Property Name="${escapeXmlAttr(col.name)}" Type="${type}" Nullable="${nullable}"${facets}/>`
+    const open = `        <Property Name="${escapeXmlAttr(name)}" Type="${type}" Nullable="${nullable}"${facets}`
+    if (name === col.name) return `${open}/>`
+    // The heading the publisher wrote, where the property name had to differ
+    return `${open}>\n          <Annotation Term="Core.Description" String="${escapeXmlAttr(col.name)}"/>\n        </Property>`
   })
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
     '<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">',
+    ...(renamed ? CORE_VOCABULARY_REFERENCE : []),
     '  <edmx:DataServices>',
     `    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="${EDM_NAMESPACE}">`,
     `      <EntityType Name="${ENTITY_TYPE}">`,

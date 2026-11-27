@@ -747,7 +747,10 @@ describe('MCP Server', () => {
       })
       await storeSchema(resource.id, {
         rowCount: 1,
-        columns: [{ name: '人口（人）', type: 'integer', nullable: false, nullCount: 0 }],
+        columns: [
+          { name: '人口', type: 'integer', nullable: false, nullCount: 0 },
+          { name: '人口', type: 'integer', nullable: false, nullCount: 0 },
+        ],
       })
 
       const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
@@ -756,7 +759,27 @@ describe('MCP Server', () => {
       // Queryable and refused at once — the pair an agent has to be told apart.
       expect(text).toContain('is queryable')
       expect(text).toContain('OData: not served')
-      expect(text).toContain('人口（人）')
+      expect(text).toContain('two columns share the same name: 人口')
+    })
+
+    it('names the feed property of a heading that is not an identifier', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-odata-renamed', title: 'OData Renamed' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'renamed-headers.csv',
+        format: 'CSV',
+        url: 'http://example.com/renamed-headers.csv',
+      })
+      await storeSchema(resource.id, {
+        rowCount: 1,
+        columns: [{ name: '人口（人）', type: 'integer', nullable: false, nullCount: 0 }],
+      })
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('OData feed:')
+      expect(text).toContain('Columns renamed in the feed: "人口（人）" → 人口_人')
     })
 
     it('shows the schema but withholds query guidance when the preview is gone', async () => {

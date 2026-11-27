@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import type { OdataKey } from '@kukan/shared'
+import type { OdataKey, OdataRenamedColumn } from '@kukan/shared'
 import { OdataDialog, type ReportedRefusal } from '../odata-dialog'
 
 const OWN_KEY: OdataKey = { names: ['code'], synthetic: false, fallback: null }
@@ -9,7 +9,8 @@ const ROW_ID: OdataKey = { names: ['RowId'], synthetic: true, fallback: 'not-des
 function renderPanel(
   odataRefusal: ReportedRefusal | null = null,
   odataKey: OdataKey | null = ROW_ID,
-  odataWideRows = false
+  odataWideRows = false,
+  odataRenamed: OdataRenamedColumn[] = []
 ) {
   render(
     <OdataDialog
@@ -17,6 +18,7 @@ function renderPanel(
       odataRefusal={odataRefusal}
       odataKey={odataKey}
       odataWideRows={odataWideRows}
+      odataRenamed={odataRenamed}
     />
   )
   return screen.getByRole('button', { name: 'OData' })
@@ -33,27 +35,24 @@ describe('OdataDialog (ADR-055)', () => {
     // The button works — it explains the refusal — so neither `disabled` (no
     // hover events, unreachable by keyboard) nor `aria-disabled` (tells a
     // screen reader not to press the control carrying the explanation).
-    const button = renderPanel({
-      reason: 'unsupported-columns',
-      columns: ['人口（人）', '面積 (km²)'],
-    })
+    const button = renderPanel({ reason: 'duplicate-columns', columns: ['人口'] })
     expect(button).not.toBeDisabled()
     expect(button).not.toHaveAttribute('aria-disabled')
     expect(button).toHaveClass('opacity-60')
-    expect(button.getAttribute('title')).toMatch(/人口（人）/)
+    expect(button.getAttribute('title')).toMatch(/人口/)
 
     // and the same text is in the accessible tree, not just the tooltip
     const description = document.getElementById(button.getAttribute('aria-describedby')!)
-    expect(description).toHaveTextContent('人口（人）')
+    expect(description).toHaveTextContent('人口')
 
     fireEvent.click(button)
-    expect(screen.getAllByText(/人口（人）/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/人口/).length).toBeGreaterThan(0)
   })
 
   it('names the headings at fault, and counts the rest', () => {
     fireEvent.click(
       renderPanel({
-        reason: 'unsupported-columns',
+        reason: 'duplicate-columns',
         columns: ['a b', 'c d', 'e f', 'g h', 'i j', 'k l', 'm n'],
       })
     )
@@ -96,5 +95,22 @@ describe('OdataDialog (ADR-055)', () => {
   it('says nothing about width where the table is comfortably inside it', () => {
     fireEvent.click(renderPanel())
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('lists the headings served under another name, and counts past ten', () => {
+    const renamed = Array.from({ length: 12 }, (_, i) => ({
+      heading: `人口（${i}）`,
+      property: `人口_${i}`,
+    }))
+    fireEvent.click(renderPanel(null, ROW_ID, false, renamed))
+    expect(screen.getByText('Column names in the BI tool')).toBeInTheDocument()
+    expect(screen.getByText('人口_0')).toBeInTheDocument()
+    expect(screen.queryByText('人口_10')).not.toBeInTheDocument()
+    expect(screen.getByText('and 2 more')).toBeInTheDocument()
+  })
+
+  it('says nothing about names where every heading is served as it is', () => {
+    fireEvent.click(renderPanel())
+    expect(screen.queryByText('Column names in the BI tool')).not.toBeInTheDocument()
   })
 })

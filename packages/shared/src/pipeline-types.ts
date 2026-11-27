@@ -650,9 +650,9 @@ export interface DocumentText {
  * Why a resource is not served as an OData feed (ADR-055), or how it is not.
  *
  * The API decides this and the resource page explains it, so the set of
- * reasons has one owner rather than a spelling at each end. When Step 1's
- * heading rules change, a page that has not kept up is a type error here
- * rather than a message lookup that quietly comes back undefined.
+ * reasons has one owner rather than a spelling at each end. When the heading
+ * rules change, a page that has not kept up is a type error here rather than
+ * a message lookup that quietly comes back undefined.
  *
  * `not-queryable` is the one the page never shows: a resource with no table at
  * all says nothing about feeds. The narrowed parameter is how a reader of the
@@ -662,13 +662,22 @@ export interface DocumentText {
  * read can answer that, and it raises its own 501 where it happens rather than
  * having the page decide in advance (ADR-055 §6).
  */
-export type OdataRefusalReason =
-  'not-queryable' | 'not-public' | 'unsupported-columns' | 'duplicate-columns'
+export type OdataRefusalReason = 'not-queryable' | 'not-public' | 'duplicate-columns'
 
 export interface OdataRefusal<R extends OdataRefusalReason = OdataRefusalReason> {
   reason: R
   /** The headings at fault, where headings are the reason; empty otherwise. */
   columns: string[]
+}
+
+/**
+ * A column the OData feed serves under a name other than its heading, because
+ * the heading is not an EDM identifier (ADR-055 決定 7). A BI tool shows only
+ * the property, so the page says which heading it came from.
+ */
+export interface OdataRenamedColumn {
+  heading: string
+  property: string
 }
 
 /**

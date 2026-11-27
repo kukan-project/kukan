@@ -28,6 +28,7 @@ const model = (
   syntheticKey,
   keyFallback: null,
   columns: columns(names),
+  properties: names,
   rowCount,
 })
 

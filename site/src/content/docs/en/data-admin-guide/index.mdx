@@ -161,14 +161,18 @@ A resource with a table preview is served as an OData feed as it is
 served in the cases below, and the **OData** button on the resource page says which one applies.
 
 - **The dataset is private or a draft** — only resources in a public dataset are served
-- **A heading uses characters an identifier cannot** — brackets, spaces, punctuation and dots
-  among them. Fix the heading (`Population (people)` → `Population_people`) and replace the file,
-  and the table is served
 - **Two columns share a name** — there is no way to say which one is meant. Give them
   distinct headings
 - **A single row is very large** — a table with many columns, or with long text in one cell, can
   fail to fit in memory partway through a read. The button warns when this is a risk; point
   those readers at the download instead
+
+A heading with brackets, spaces, punctuation or dots cannot be an OData column name, so the column
+is served under another one: full-width characters are folded to their plain forms, and each run of
+characters a name cannot hold becomes one `_` (`人口（人）` becomes `人口_人`, `Area (㎡)` becomes
+`Area_m2`). Where that gives a name another column already has, `_2`, `_3` and so on are added. The
+heading itself stays in the table's definition (`$metadata`), and the **OData** button lists which
+column became which. To give BI users a cleaner name, fix the heading and replace the file.
 
 With a primary key declared, that column identifies the rows and no `RowId` column is added
 ([Declaring a primary key](#declaring-a-primary-key)).

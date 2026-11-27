@@ -167,8 +167,9 @@ query guidance is withheld.
 **Whether the table is served over OData comes back too.** When it is, the output carries the
 feed URL (ending in `/Rows`), what identifies its rows — the primary key, or the `RowId` column
 KUKAN adds and why it had to — and, for a table whose rows are large enough that a page may
-fail to read, a caution saying so. When it is not, it carries the reason: headings that are not OData
-identifiers, two columns of one name, a private or draft dataset. **Queryable over SQL and
+fail to read, a caution saying so. Columns served under another name, because their headings are not
+OData identifiers, are listed with the heading each came from. When it is not served, it carries the
+reason: two columns of one name, a private or draft dataset. **Queryable over SQL and
 readable over OData are not the same thing**, so read this line before choosing how to fetch
 the data.
 

@@ -302,6 +302,7 @@ PDF・Word・PowerPoint・Excel・一太郎・Markdown のリソースは、パ�
   "odataRefusal": null,
   "odataWideRows": false,
   "odataKey": { "names": ["RowId"], "synthetic": true, "fallback": "not-designated" },
+  "odataRenamed": [{ "heading": "市区町村（発生地）", "property": "市区町村_発生地" }],
   "schema": {
     "rowCount": 1688,
     "columns": [
@@ -319,10 +320,11 @@ PDF・Word・PowerPoint・Excel・一太郎・Markdown のリソースは、パ�
 }
 ```
 
-`odataRefusal`・`odataWideRows`・`odataKey` は OData フィード（後述）のためのものです。`odataRefusal` はフィードが
-出せない理由（`not-public` / `unsupported-columns` / `duplicate-columns`）と該当する見出し、
+`odataRefusal`・`odataWideRows`・`odataKey`・`odataRenamed` は OData フィード（後述）のためのものです。`odataRefusal` はフィードが
+出せない理由（`not-public` / `duplicate-columns`）と該当する見出し、
 `odataWideRows` は行が広すぎてフィードの 1 ページが読めない恐れがあるか（拒否ではなく注意）、
-`odataKey` はフィードが行を同定するキーです。フィードが無いリソースでは `odataKey` が、表そのものが無いリソースでは
+`odataKey` はフィードが行を同定するキー（名前はフィードでのプロパティ名）、`odataRenamed` は見出しが EDM 識別子に
+ならないためフィードで別の名前になる列の、見出し（`heading`）とプロパティ名（`property`）の対です。フィードが無いリソースでは `odataKey` が、表そのものが無いリソースでは
 `odataRefusal` も `null` になります。
 
 クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
@@ -443,8 +445,12 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
   受け取ることになるためです
 - **行の同定**は、公開者が指定した主キーが OData の条件を満たせばその列、満たさなければ
   行の位置を持つ `RowId` 列が足されます。どちらになったかは `/schema` の `odataKey` に出ます
-- 見出しが EDM 識別子にならないリソース（括弧・空白・記号などを含む見出し）は `501` を返します。
-  理由は `/schema` の `odataRefusal` で確認できます
+- 見出しが EDM 識別子にならない列（括弧・空白・記号などを含む見出し）は、名前を変えて配信します。
+  NFKC で正規化し、識別子に使えない文字の並びを `_` 1 つに置き換え、前後の `_` を落とします。先頭が数字なら
+  `_` を前に付け、空になれば `Column`、128 文字で切ります。ほかの列と同じ名前になるときは列の順に
+  `_2`・`_3` を付けます（見出しのままのプロパティ名が優先）。元の見出しは `$metadata` の
+  `Core.Description` 注釈に入り、対応は `/schema` の `odataRenamed` でも確認できます
+- 同じ名前の列が複数あるリソースは `501` を返します。理由は `/schema` の `odataRefusal` で確認できます
 - `$metadata` は**毎回再検証**されます（`public, no-cache`）。列の宣言が古いまま新しい行と
   組み合わされるのを防ぐためです
 - **同時に読めるページ**は送信元アドレスごと（IPv6 は /64 単位）に 4 まで（実行中と待ち行列を合わせる）。超えると `429` を返すので、`Retry-After` の秒数を待って再試行する

@@ -729,9 +729,7 @@ resourcesRouter.get('/:id/schema', async (c) => {
   // not, what identifies its rows and whether a page of it may fail to read —
   // one answer, shared with the MCP tool that reports the same four things
   // (ADR-055). A page that simply omitted the URL would leave a publisher
-  // comparing two resources and guessing which of them is broken: three
-  // quarters of the tabular resources in a real catalogue are refused for their
-  // headings alone.
+  // comparing two resources and guessing which of them is broken.
   const [feed, noTableReasons] = await Promise.all([
     describeFeed(db, { id, size: res.size }, pkg, target),
     // Why a workbook is not a table is for its editors, as the dashboard shows
@@ -751,6 +749,8 @@ resourcesRouter.get('/:id/schema', async (c) => {
     odataRefusal: feed.refusal,
     odataWideRows: feed.wideRows,
     odataKey: feed.key,
+    // The headings a BI tool sees under another name (ADR-055 決定 7)
+    odataRenamed: feed.renamed,
     primaryKey: primaryKeyOf(res.columnSettings),
     schema: target?.schema ?? null,
     // Why the version served is not a table, where it was read and is not one:

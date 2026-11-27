@@ -1,5 +1,5 @@
 /**
- * KUKAN OData service (ADR-055, Step 1)
+ * KUKAN OData service (ADR-055)
  *
  * Resolves what a resource's OData feed is allowed to show, and reads pages of
  * rows out of its preview Parquet.

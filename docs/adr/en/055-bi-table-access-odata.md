@@ -5,9 +5,9 @@
 
 ## Status
 
-**Accepted** — Step 1 implemented on 2026-09-24 (see "Phases"). The feed serves public resources
-whose column names pass as EDM identifiers as they are. Step 2 (column-name normalization, open
-question 1) and Step 3 have not been started.
+**Accepted** — Step 1 implemented on 2026-09-24 (see "Phases"). Step 2 (column-name normalization,
+open question 1) implemented in 2026-11: a column whose heading is not an EDM identifier is served
+under another name (decision 7). Step 3 has not been started.
 
 This ADR compares the routes by which a BI tool (Tableau as the originating request, and with it Power BI
 and Excel) can reach KUKAN's table data, and takes B (OData) as the entry point.
@@ -192,7 +192,8 @@ The affordance itself carries conditions too.
   whoever writes SQL, and someone who wants to paste a URL has no reason to open it. The resource page
   gets an entry point of its own
 - **Where the feed cannot be served, keep the affordance and say why.** Step 1 refuses a whole resource
-  whose headings are not EDM identifiers (open item 1), so **the refused are the majority**. Removing
+  whose headings are not EDM identifiers (open item 1; Step 2 serves them under other names —
+  decision 7), so **the refused were the majority**. Removing
   the entry point silently leaves a publisher looking at two resources, one with it and one without,
   and no reason given. It stays, dimmed, and names the headings at fault — because a heading is the
   kind of problem a publisher can fix
@@ -452,6 +453,38 @@ the body is written, so this arrives as a whole RFC 7807 body rather than a trun
 **The estimate is kept only as a caution** — the resource page's OData dialog says the table's rows
 are large and may not read. It does not say the table is refused.
 
+### 7. A heading that is not an EDM identifier is served under another name (Step 2, added)
+
+Step 1 refused every table with a heading that is not an EDM identifier. Measured in 2026-11 through
+the public API, over public resources only, that was 157 of 260 resources with a table on the demo
+site (60%) and 2,114 of 2,913 on another test site (73%). Open question 1 is closed as follows.
+
+- **The rule.** NFKC-normalize the heading (`（` → `(`, `２` → `2`, `㎡` → `m2`), replace each run
+  of characters an identifier cannot hold with one `_`, and drop leading and trailing `_`. Prefix
+  `_` where the result does not start with a letter or `_`, use `Column` where nothing is left, and
+  cut at 128 characters (code points). Japanese stays as it is. What is in brackets — units, say —
+  is kept, separated by `_`, because it is how a reader tells the columns apart. Every one of the
+  2,271 refused resources above is served under this rule
+- **A heading that already is an identifier is not changed.** A feed served under Step 1 keeps its
+  column names and its `$metadata`. Because of this, a rule version in the version token's seed is
+  not needed
+- **Collisions.** Headings that already are identifiers take their names first; a renamed heading
+  then takes `_2`, `_3` and so on in column order (`人口（人）` beside `人口_人` becomes `人口_人_2`).
+  The names depend only on the columns' order, not on the data, so the same table is always served
+  under the same names. The synthetic `RowId` key also avoids the renamed names. Measured, 4 of the
+  2,271 collided after renaming
+- **Where the heading survives.** A `Core.Description` annotation on each renamed property in
+  `$metadata`. The vocabulary reference (`edmx:Reference`) is added only to a document that renames
+  a column, so every other `$metadata` is the same as under Step 1. A BI tool shows the renamed
+  name, so the resource page's OData dialog, `/schema`'s `odataRenamed` and MCP's `get_resource`
+  also list the heading beside each name
+- **A table whose headings repeat before renaming is still refused** (`duplicate-columns`): rows are
+  read by heading, so two columns under one cannot be told apart. The `unsupported-columns` reason
+  is gone
+- **What is lost.** Symbols such as `％`, `△` and `～` become `_` and cannot be read from the name.
+  The heading is kept in the annotation and the list, for whoever needs the meaning. A publisher who
+  wants a cleaner name can still fix the heading and replace the file
+
 ## Consequences
 
 - **A new public surface.** Authentication, rate limiting and access control
@@ -518,7 +551,7 @@ building the rest is pointless.
 > can serve is 25.4% of the development catalogue's public tabular resources** (66 of 260); the rest
 > wait on the normalization in open item 1 (below).
 
-**Step 2**: settle the name normalization rules and extend it to every resource. This is the body of the work.
+**Step 2**: settle the name normalization rules and extend it to every resource. This is the body of the work. **Implemented (decision 7).**
 
 **Step 3**: the pointer to a file and `$filter` (~~the temp-file cache~~ — see the impact section).
 
@@ -535,6 +568,10 @@ building the rest is pointless.
    headers collide after it (`面積 (km2)` and `面積（km2）` land on the same name), and **where the
    original header survives** (an annotation such as `@Core.Description` is the natural home). Since
    the transformed name reads poorly to a person, display name and identifier end up separate things
+
+   > **Closed (added)**: decision 7 settles the rule, collisions and where the heading survives, and
+   > it is implemented.
+
 2. **Identifying a row.** An OData EntityType **requires a key**, and a KUKAN table does not
    necessarily have one (ADR-043 ii-b made a primary key expressible, not present). A synthetic key —
    the row number — is the fallback, but it assumes **the Parquet's row order is stable** (as does

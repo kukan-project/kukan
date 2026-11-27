@@ -12,11 +12,24 @@
  * business reading the database's shape.
  */
 
-import type { OdataKey, OdataRefusal, OdataRefusalReason, ResourceSchema } from '@kukan/shared'
+import type {
+  OdataKey,
+  OdataRefusal,
+  OdataRefusalReason,
+  OdataRenamedColumn,
+  ResourceSchema,
+} from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import { isQueryable, type QueryTarget } from '../pipeline/pipeline-service'
 import { ResourceVersionService } from '../resource-version-service'
-import { buildModel, edmRefusal, odataKeyOf, type EdmModel, type EdmRefusal } from './edm'
+import {
+  buildModel,
+  edmRefusal,
+  odataKeyOf,
+  renamedColumnsOf,
+  type EdmModel,
+  type EdmRefusal,
+} from './edm'
 import { estimateRowBytes, rowsMayBeTooWide } from './page-budget'
 
 /**
@@ -29,7 +42,7 @@ import { estimateRowBytes, rowsMayBeTooWide } from './page-budget'
  * (`ODATA_ROW_GROUP_CAUTION_BYTES`) — so `openPage` raises it where it happens.
  */
 export function isEdmRefusal(reason: OdataRefusalReason): reason is EdmRefusal {
-  return reason === 'unsupported-columns' || reason === 'duplicate-columns'
+  return reason === 'duplicate-columns'
 }
 
 /**
@@ -44,7 +57,6 @@ export function isEdmRefusal(reason: OdataRefusalReason): reason is EdmRefusal {
 export const FEED_REFUSAL_REASON: Record<OdataRefusalReason, string> = {
   'not-queryable': 'this resource has no table to serve',
   'not-public': 'only resources in a public, published dataset are served',
-  'unsupported-columns': 'one or more column names are not valid OData identifiers',
   'duplicate-columns': 'two columns share the same name',
 }
 
@@ -102,6 +114,8 @@ export interface FeedDescription {
   key: OdataKey | null
   /** Whether a page of it may fail to read — a caution, never a refusal. */
   wideRows: boolean
+  /** The columns a BI tool sees under another name, and which heading each is. */
+  renamed: OdataRenamedColumn[]
 }
 
 export async function describeFeed(
@@ -113,7 +127,7 @@ export async function describeFeed(
   const refusal = feedRefusal(pkg, target)
   if (refusal || !target?.schema) {
     const reported = refusal && refusal.reason !== 'not-queryable' ? refusal : null
-    return { refusal: reported, key: null, wideRows: false }
+    return { refusal: reported, key: null, wideRows: false, renamed: [] }
   }
   // The key is built rather than described: the conditions on one are the
   // feed's (`buildModel`), and a surface restating them tells a publisher their
@@ -127,5 +141,6 @@ export async function describeFeed(
     refusal: null,
     key: odataKeyOf(model),
     wideRows: rowsMayBeTooWide(rowBytes, target.rowGroupRows),
+    renamed: renamedColumnsOf(model),
   }
 }

@@ -2,7 +2,7 @@
 
 import { useId } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
-import { KeyRound, Table2 } from 'lucide-react'
+import { Columns3, KeyRound, Table2 } from 'lucide-react'
 import {
   Button,
   cn,
@@ -14,7 +14,7 @@ import {
   DialogTrigger,
 } from '@kukan/ui'
 import { odataFeedPath, ODATA_ENTITY_SET } from '@kukan/shared'
-import type { OdataKey, OdataRefusal, OdataRefusalReason } from '@kukan/shared'
+import type { OdataKey, OdataRefusal, OdataRefusalReason, OdataRenamedColumn } from '@kukan/shared'
 import { CodeBlock } from './code-block'
 
 /**
@@ -29,11 +29,12 @@ export type ReportedRefusal = OdataRefusal<Exclude<OdataRefusalReason, 'not-quer
 
 /** How many offending headings the dialog names before it counts the rest. */
 const NAMED_COLUMNS = 5
+/** How many renamed columns the dialog lists before it counts the rest. */
+const LISTED_RENAMES = 10
 
 const REFUSAL_MESSAGE = {
   'not-public': 'odataUnavailablePrivate',
   'duplicate-columns': 'odataUnavailableDuplicate',
-  'unsupported-columns': 'odataUnavailableColumns',
 } as const
 
 /**
@@ -57,6 +58,8 @@ interface OdataDialogProps {
   odataKey: OdataKey | null
   /** Whether a page of this table may be too wide to read (ADR-055 §6). */
   odataWideRows: boolean
+  /** The headings a BI tool sees under another name (ADR-055 決定 7). */
+  odataRenamed: OdataRenamedColumn[]
 }
 
 /**
@@ -74,6 +77,7 @@ export function OdataDialog({
   odataRefusal,
   odataKey,
   odataWideRows,
+  odataRenamed,
 }: OdataDialogProps) {
   const t = useTranslations('resource')
   const locale = useLocale()
@@ -134,8 +138,8 @@ export function OdataDialog({
             the dialog instead of scrolling inside the pre */}
         <div className="flex min-w-0 flex-col gap-3 text-sm">
           {odataRefusal ? (
-            // Named rather than omitted: a heading a publisher can fix is the
-            // usual reason a table is not served (ADR-055 Step 1).
+            // Named rather than omitted: a repeated heading is one the
+            // publisher can fix
             <p className="text-xs text-muted-foreground">
               {reason}
               {rest && ` ${rest}`}
@@ -172,6 +176,30 @@ export function OdataDialog({
                         when the table's own key is what rows come keyed by. */}
                     {odataKey.synthetic && ` ${t('odataKeyRemovable')}`}
                   </p>
+                </div>
+              )}
+              {/* Beside the key, for the same reason: it is about this table,
+                  and the names a BI tool shows are these rather than the
+                  headings on the page. */}
+              {odataRenamed.length > 0 && (
+                <div className="rounded-md border bg-muted p-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <Columns3 className="size-4 shrink-0" aria-hidden />
+                    {t('odataRenamedHeading')}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground">{t('odataRenamedNote')}</p>
+                  <ul className="mt-2 space-y-0.5 text-xs">
+                    {odataRenamed.slice(0, LISTED_RENAMES).map((r) => (
+                      <li key={r.property} className="break-all">
+                        {`“${r.heading}”`} → <code className="font-mono">{r.property}</code>
+                      </li>
+                    ))}
+                  </ul>
+                  {odataRenamed.length > LISTED_RENAMES && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('odataUnavailableMore', { count: odataRenamed.length - LISTED_RENAMES })}
+                    </p>
+                  )}
                 </div>
               )}
               {/* A caution, not a refusal: whether a page reads is the read's

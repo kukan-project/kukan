@@ -18,6 +18,7 @@ import {
   mayHoldTable,
   showsAsTable,
   type OdataKey,
+  type OdataRenamedColumn,
   type OfficePreviewViewer,
   type ResourceSchema,
 } from '@kukan/shared'
@@ -94,6 +95,7 @@ export function ResourcePipelinePreview({
     odataRefusal: ReportedRefusal | null
     odataWideRows: boolean
     odataKey: OdataKey | null
+    odataRenamed: OdataRenamedColumn[]
     schema: ResourceSchema | null
     columnRoles: ColumnRoleView[] | null
     primaryKey: string[] | null
@@ -156,6 +158,7 @@ export function ResourcePipelinePreview({
                 odataRefusal={schemaData.odataRefusal}
                 odataWideRows={schemaData.odataWideRows}
                 odataKey={schemaData.odataKey}
+                odataRenamed={schemaData.odataRenamed ?? []}
               />
             </>
           )}

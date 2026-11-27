@@ -73,6 +73,13 @@ function odataLines(env: Env, id: string, feed: FeedDescription): string[] {
     feed.key.fallback
       ? `  Rows carry an added \`${feed.key.names.join(', ')}\` column, because ${KEY_FALLBACK_REASON[feed.key.fallback]}.`
       : `  Rows are identified by ${feed.key.names.join(', ')}; no column is added.`,
+    // The name an agent will meet in the feed, beside the heading the schema
+    // above lists — the two differ where the heading is not an identifier.
+    ...(feed.renamed.length > 0
+      ? [
+          `  Columns renamed in the feed: ${feed.renamed.map((r) => `${JSON.stringify(r.heading)} → ${r.property}`).join(', ')}`,
+        ]
+      : []),
     // The caution the resource page gives a publisher, which an agent needs for
     // the same reason: a read that will not fit arrives as a 501 part-way
     // through an extract, not as a refusal up front (ADR-055 §6).

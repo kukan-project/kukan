@@ -1,5 +1,5 @@
 /**
- * KUKAN OData v4 routes (ADR-055, Step 1)
+ * KUKAN OData v4 routes (ADR-055)
  *
  * A read-only feed per resource, so a BI tool can open a table by pasting a
  * URL — the one route Tableau, Power BI and Excel all take without installing
@@ -398,7 +398,6 @@ odataRouter.get(
             // 34 over a 5,400-row page of 56 columns.
             const entity = emptyEntity(feed.model)
             const positions = columnPositions(feed.model, page.columns)
-            const { columns, syntheticKey } = feed.model
             for await (const chunk of page.chunks()) {
               // **A caller that has gone must not keep the slot.** Hono swallows
               // a write to a cancelled stream, so `flush` goes on resolving and
@@ -407,7 +406,7 @@ odataRouter.get(
               // few slots. Leaving the loop closes the page (`finally`).
               if (s.aborted) break
               for (const values of chunk) {
-                fillEntity(entity, values, columns, positions, syntheticKey, offset + delivered)
+                fillEntity(entity, values, feed.model, positions, offset + delivered)
                 const json = JSON.stringify(entity)
                 const size = Buffer.byteLength(json)
                 // The row that would cross the budget starts the next page
@@ -479,7 +478,7 @@ function emptyEntity(model: EdmModel): Record<string, unknown> {
   // A table whose own column is the key carries no extra property — the key
   // arrives with the row like any other value.
   const entity: Record<string, unknown> = model.syntheticKey ? { [model.syntheticKey]: 0 } : {}
-  for (const col of model.columns) entity[col.name] = null
+  for (const property of model.properties) entity[property] = null
   return entity
 }
 
@@ -487,14 +486,13 @@ function emptyEntity(model: EdmModel): Record<string, unknown> {
 function fillEntity(
   entity: Record<string, unknown>,
   values: readonly unknown[],
-  columns: EdmModel['columns'],
+  { columns, properties, syntheticKey }: EdmModel,
   positions: number[],
-  syntheticKey: string | null,
   rowId: number
 ): void {
   if (syntheticKey) entity[syntheticKey] = rowId
   for (let i = 0; i < columns.length; i++) {
     const at = positions[i]
-    entity[columns[i].name] = at < 0 ? null : toEdmValue(values[at], columns[i].type)
+    entity[properties[i]] = at < 0 ? null : toEdmValue(values[at], columns[i].type)
   }
 }

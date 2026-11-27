@@ -21,7 +21,7 @@ const db = getTestDb()
 // are wide enough that the byte budget ends a page first, and one whose
 // integers run past what a JS number holds exactly. The preview key names
 // which, so nothing has to recognise it from a prefix.
-type Fixture = 'small' | 'large' | 'wide' | 'wide-int'
+type Fixture = 'small' | 'large' | 'wide' | 'wide-int' | 'renamed'
 /**
  * Where each fixture sits on disk. The feed reads the location the adapter
  * names — `s3://…` in a deployment, a path here, which is the same code path
@@ -47,6 +47,7 @@ const FIXTURE: Record<Fixture, { rows: number; bytesPerRow: number }> = {
   large: { rows: ODATA_MAX_PAGE_ROWS + 1, bytesPerRow: 40 },
   wide: { rows: WIDE_ROWS, bytesPerRow: 195_000 },
   'wide-int': { rows: 1, bytesPerRow: 40 },
+  renamed: { rows: 2, bytesPerRow: 40 },
 }
 const WIDE_SCHEMA: ResourceSchema = {
   columns: [
@@ -59,8 +60,8 @@ const SCHEMA: ResourceSchema = {
   columns: [
     { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
     { name: 'name', type: 'string', nullable: false, nullCount: 0 },
-    // A Japanese heading passes as an EDM identifier as it stands; a bracketed
-    // one does not, which is the split Step 1 is drawn along (ADR-055).
+    // A Japanese heading passes as an EDM identifier as it stands, and is
+    // served under its own name (ADR-055)
     { name: '人口', type: 'float', nullable: true, nullCount: 1 },
     { name: 'at', type: 'timestamp', nullable: true, nullCount: 0 },
   ],
@@ -115,6 +116,13 @@ beforeAll(async () => {
       `SELECT 9007199254740993::BIGINT AS id, 'name0' AS name, NULL::DOUBLE AS "人口",
               TIMESTAMP '2024-01-02 03:04:05' AS at`,
       'odata-wide-int'
+    )
+  )
+  fixturePaths.set(
+    'renamed',
+    await writeParquet(
+      `SELECT i AS id, i * 2 AS "面積 (km2)", i * 3 AS "面積_km2" FROM range(2) t(i)`,
+      'odata-renamed'
     )
   )
 }, 60_000)
@@ -269,10 +277,13 @@ describe('GET /odata/v1/resources/:id', () => {
     expect((await res.json()).error.code).toBe('NOT_FOUND')
   })
 
-  it('501s when a column name is not an EDM identifier', async () => {
+  it('501s when two columns share a heading', async () => {
     const id = await createResource({
       schema: {
-        columns: [{ name: '人口（人）', type: 'integer', nullable: false, nullCount: 0 }],
+        columns: [
+          { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+          { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+        ],
         rowCount: 1,
       },
     })
@@ -366,6 +377,38 @@ describe('GET /odata/v1/resources/:id/$metadata', () => {
     })
     const xml = await (await app.request(`${base(id)}/$metadata`)).text()
     expect(xml).toContain('<Key><PropertyRef Name="RowId"/></Key>')
+  })
+})
+
+describe('a table whose headings are not identifiers (ADR-055 決定 7)', () => {
+  const RENAMED_SCHEMA: ResourceSchema = {
+    columns: [
+      { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+      { name: '面積 (km2)', type: 'integer', nullable: false, nullCount: 0 },
+      { name: '面積_km2', type: 'integer', nullable: false, nullCount: 0 },
+    ],
+    rowCount: 2,
+  }
+
+  it('serves the rows under the renamed properties, each value in its own column', async () => {
+    const id = await createResource({ schema: RENAMED_SCHEMA, fixture: 'renamed' })
+    const res = await app.request(`${base(id)}/Rows`)
+    expect(res.status).toBe(200)
+    expect((await res.json()).value).toEqual([
+      { RowId: 0, id: 0, 面積_km2_2: 0, 面積_km2: 0 },
+      { RowId: 1, id: 1, 面積_km2_2: 2, 面積_km2: 3 },
+    ])
+  })
+
+  it('keeps the heading in $metadata and tells the page which column it is', async () => {
+    const id = await createResource({ schema: RENAMED_SCHEMA, fixture: 'renamed' })
+    const xml = await (await app.request(`${base(id)}/$metadata`)).text()
+    expect(xml).toContain('<Annotation Term="Core.Description" String="面積 (km2)"/>')
+    const schema = await (await app.request(`/api/v1/resources/${id}/schema`)).json()
+    expect([schema.odataRefusal, schema.odataRenamed]).toEqual([
+      null,
+      [{ heading: '面積 (km2)', property: '面積_km2_2' }],
+    ])
   })
 })
 
@@ -857,18 +900,18 @@ describe('GET /api/v1/resources/:id/schema', () => {
 
     const closed = await createResource({ private: true })
 
-    const unnamed = await createResource({
+    const repeated = await createResource({
       schema: {
-        columns: [{ name: '面積 (km2)', type: 'float', nullable: false, nullCount: 0 }],
+        columns: [
+          { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+          { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+        ],
         rowCount: 1,
       },
     })
-    const refused = await (await app.request(`/api/v1/resources/${unnamed}/schema`)).json()
+    const refused = await (await app.request(`/api/v1/resources/${repeated}/schema`)).json()
     // Named, so the page can say which heading to fix rather than going quiet
-    expect(refused.odataRefusal).toEqual({
-      reason: 'unsupported-columns',
-      columns: ['面積 (km2)'],
-    })
+    expect(refused.odataRefusal).toEqual({ reason: 'duplicate-columns', columns: ['id'] })
     expect(
       (await (await app.request(`/api/v1/resources/${closed}/schema`)).json()).odataRefusal.reason
     ).toBe('not-public')

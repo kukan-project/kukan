@@ -154,10 +154,12 @@ download and load.
   not match the header, trailing notes — are not in it
 - A `RowId` column may be added to tell rows apart. The button says what this particular table got,
   and you can drop that column in the BI tool if you do not want it
+- A column whose heading has brackets, spaces or punctuation is shown under another name in the BI
+  tool (`Population (people)` becomes `Population_people`). The button lists which column became which
 - **Designating a primary key later changes the columns served** (`RowId` appears or disappears). A BI
   tool already connected may keep showing the old ones through a refresh — rebuild the query there
 
-Some tables cannot be served this way — headings with brackets or punctuation, for instance. The
+Some tables cannot be served this way — two columns with one heading, for instance. The
 button is then dimmed, and pressing it says why.
 
 ## Changing your password
