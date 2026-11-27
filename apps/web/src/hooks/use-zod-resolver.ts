@@ -29,7 +29,7 @@ function translateErrors<E>(node: E, translate: (message: string) => string): E 
  * meets (length, email, URL) are translated too.
  */
 export function useZodResolver<T extends FieldValues>(
-  schema: Parameters<typeof zodResolver>[0]
+  schema: z.ZodType<unknown, FieldValues>
 ): Resolver<T> {
   const t = useTranslations('validation')
   const tAll = useTranslations()
