@@ -288,6 +288,21 @@ Better Auth の回数制限は既定でプロセスのメモリに記録する�
   拡張機能、待ち受けの番地を `HOSTNAME` と `PORT` に移す入口のファイル。Docker イメージ
   （alpine、musl）とは別の配布物になる。glibc の arm64 のバイナリは、ビルドのインストールで
   `supportedArchitectures` に `libc: [glibc]`、`cpu: [arm64]` を足して入れる（段階 2c で確認）。
+- **静的ファイルは zip に入れず、サイトの専用のバケットから CloudFront で配る**（2026-11-27 補足）。
+  Web Functions の展開後の上限 512 MB は引き上げられない。DuckDB 2.0 でバインディングと拡張機能が
+  大きくなり、zip は 570 MB になった。aws 拡張機能を外して（資格情報は環境変数から読む）504 MB に
+  なったが、余裕が無い。`/_next/static/*`（約 87 MB）と `/vendor/ibis-office/*`（約 111 MB）は、
+  もとから CloudFront で別の振る舞いになっている。その 2 つのオリジンだけを、OAC を付けたバケットに
+  替える。
+  - Dockerfile の `web-function-static` ターゲットが、zip と同じビルドから静的ファイルを取り出す。
+    `BucketDeployment` で関数より先に上げ、古いファイルは消さない（`prune: false`）。エッジや
+    ブラウザに残ったページは、前のデプロイのハッシュを指しているため。
+  - Cache-Control は `next.config.ts` と同じく分ける。ハッシュの付いたファイルと ibisOffice の
+    `pkg`・`assets` は immutable、起動ページなどは `max-age=0`。
+  - web が付けていたヘッダー（`next.config.ts` のセキュリティヘッダー、ibisOffice のディレクトリの
+    CORS と proxy の CSP）は、CloudFront のレスポンスヘッダーポリシーで付ける。CSP の組み立ては
+    `@kukan/shared` の `ibisOfficeBootPolicy` を web と共用し、サイトの名前はデプロイの時点で決まる。
+  - Fargate のサイトは今のまま web から配る。
 - zip はシンボリックリンクを保って作る（`zip -y`）。`aws lambda-web deploy` の梱包には頼らない。
 - zip は、パイプラインがアセットのビルドに使っている ARM の CodeBuild
   （`LinuxArmBuildImage.AMAZON_LINUX_2023_STANDARD_3_0`、`infra/lib/cpu-architecture.ts`）で作る。

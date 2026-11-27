@@ -2,7 +2,8 @@
  * KUKAN Web Function Construct (ADR-068)
  * The Next.js web on Lambda Web Functions: the same server as the image, from
  * a zip, behind CloudFront with OAC and reaching the VPC through a network
- * connector of its own.
+ * connector of its own. Its static files are not in the zip: they go to a
+ * bucket of their own, which CloudFront serves them from.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -15,6 +16,9 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import * as logs from 'aws-cdk-lib/aws-logs'
+import * as s3 from 'aws-cdk-lib/aws-s3'
+import type * as s3assets from 'aws-cdk-lib/aws-s3-assets'
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment'
 import { Construct } from 'constructs'
 import { envPrefix, webFunctionRoleName } from '../naming.js'
 import { configureWebApp, type WebAppProps } from './web-service.js'
@@ -30,8 +34,25 @@ export interface WebFunctionProps extends WebAppProps {
   connectorSecurityGroup: ec2.ISecurityGroup
 }
 
+/** Cache-Control of the files whose names change with their content. */
+const IMMUTABLE = 'public, max-age=31536000, immutable'
+
+/**
+ * Of the static files, those named by their content or by a versioned
+ * directory: Next's hashed files, and the ibisOffice app's own (`pkg`,
+ * `assets`). Its boot page and SOURCE beside them may change under the same
+ * version. The same split as next.config.ts makes for the image.
+ */
+const IMMUTABLE_FILES = [
+  '_next/static/*',
+  'vendor/ibis-office/*/pkg/*',
+  'vendor/ibis-office/*/assets/*',
+]
+
 export class WebFunctionConstruct extends Construct {
   readonly webFunction: lambda.WebFunction
+  /** Where CloudFront serves `/_next/static/*` and `/vendor/ibis-office/*` from. */
+  readonly staticBucket: s3.Bucket
 
   /**
    * Add an environment variable after construction. Onto the revision: the
@@ -89,8 +110,44 @@ export class WebFunctionConstruct extends Construct {
       }),
     })
 
+    // The static files, uploaded before the function takes the pages that name
+    // them. Never pruned: a page cached at the edge or open in a browser still
+    // names the last deploy's hashes, and those files cost next to nothing.
+    this.staticBucket = new s3.Bucket(this, 'StaticBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    })
+    const staticFiles = s3deploy.Source.asset(
+      REPO_ROOT,
+      dockerTargetAsset('web-function-static', props.imageBuildArgs ?? {})
+    )
+    const deployments = [
+      new s3deploy.BucketDeployment(this, 'StaticImmutable', {
+        sources: [staticFiles],
+        destinationBucket: this.staticBucket,
+        exclude: ['*'],
+        include: IMMUTABLE_FILES,
+        cacheControl: [s3deploy.CacheControl.fromString(IMMUTABLE)],
+        prune: false,
+        ...STATIC_DEPLOYMENT_SIZE,
+      }),
+      new s3deploy.BucketDeployment(this, 'StaticRevalidated', {
+        sources: [staticFiles],
+        destinationBucket: this.staticBucket,
+        exclude: IMMUTABLE_FILES,
+        cacheControl: [s3deploy.CacheControl.fromString('public, max-age=0')],
+        prune: false,
+        ...STATIC_DEPLOYMENT_SIZE,
+      }),
+    ]
+
     this.webFunction = new lambda.WebFunction(this, 'Function', {
-      code: lambda.WebFunctionCode.fromAssetToManagedBucket(REPO_ROOT, webFunctionAsset(props)),
+      code: lambda.WebFunctionCode.fromAssetToManagedBucket(
+        REPO_ROOT,
+        dockerTargetAsset('web-function', props.imageBuildArgs ?? {})
+      ),
       runtime: lambda.WebFunctionRuntime.NODEJS_24_X,
       entryPoint: 'apps/web/start.mjs',
       role,
@@ -104,6 +161,8 @@ export class WebFunctionConstruct extends Construct {
       defaultEndpointAuth: lambda.WebFunctionAuthType.IAM_AUTH,
       defaultEndpoint: { maxEnvironments: config.webFunction.maxInstances },
     })
+
+    for (const deployment of deployments) this.webFunction.node.addDependency(deployment)
 
     cdk.Tags.of(this).add('kukan:component', 'web-function')
   }
@@ -124,21 +183,34 @@ export class WebFunctionConstruct extends Construct {
 }
 
 /**
- * The zip, built by the Dockerfile's `web-function` target with the site's
- * brand. Hashed on the same sources as the images (.dockerignore), so an
- * unchanged tree reuses the staged zip instead of building again.
+ * The upload of the static files: about 200 MB unpacked, past what the
+ * deployment's default handler (128 MB of memory, 512 MB of disk) holds.
  */
-function webFunctionAsset(props: WebFunctionProps): lambda.WebFunctionManagedBucketAssetOptions {
-  const buildArgs = props.imageBuildArgs ?? {}
+const STATIC_DEPLOYMENT_SIZE = {
+  memoryLimit: 1024,
+  ephemeralStorageSize: cdk.Size.gibibytes(2),
+}
+
+/**
+ * The output of one of the Dockerfile's targets — `web-function` (the zip) or
+ * `web-function-static` (its static files) — built with the site's brand.
+ * Hashed on the same sources as the images (.dockerignore), so an unchanged
+ * tree reuses the staged output instead of building again; and the two
+ * targets share the build in Docker's cache.
+ */
+function dockerTargetAsset(
+  target: string,
+  buildArgs: Record<string, string>
+): s3assets.AssetOptions {
   return {
     exclude: dockerignore(),
     ignoreMode: cdk.IgnoreMode.DOCKER,
     bundling: {
       // Never pulled: the local build below always takes it
       image: cdk.DockerImage.fromRegistry('kukan-web-function-build'),
-      // In the bundling options so each set of build args (a brand) gets an
-      // asset of its own; the same args as the site's image
-      environment: buildArgs,
+      // In the bundling options so each target and set of build args (a
+      // brand) gets an asset of its own; the same args as the site's image
+      environment: { ...buildArgs, KUKAN_DOCKER_TARGET: target },
       local: {
         tryBundle(outputDir) {
           execFileSync(
@@ -146,7 +218,7 @@ function webFunctionAsset(props: WebFunctionProps): lambda.WebFunctionManagedBuc
             [
               'build',
               '--target',
-              'web-function',
+              target,
               ...Object.entries(buildArgs).flatMap(([key, value]) => [
                 '--build-arg',
                 `${key}=${value}`,

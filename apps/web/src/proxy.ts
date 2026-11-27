@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { cspModeSchema, officePreviewViewerSchema, trustedOrigins } from '@kukan/shared'
+import {
+  cspModeSchema,
+  ibisOfficeBootPolicy,
+  officePreviewViewerSchema,
+  trustedOrigins,
+} from '@kukan/shared'
 import { brandConfig } from '@/brand/brand-config'
 import { siteOrigin } from '@/lib/site-origin'
 import { buildContentSecurityPolicy, uploadOrigin } from '@/lib/csp'
@@ -28,7 +33,7 @@ export function proxy(request: NextRequest) {
   // All of it, decoded: the boot page is served under other spellings of its
   // path too (`%62oot.html`), and a script or WASM response ignores the CSP
   if (decoded(request.nextUrl.pathname).startsWith(IBIS_OFFICE_ROOT)) {
-    response.headers.set('Content-Security-Policy', bootPolicy(origins))
+    response.headers.set('Content-Security-Policy', ibisOfficeBootPolicy(origins, IBIS_OFFICE_DIR))
     response.headers.set('X-DNS-Prefetch-Control', 'off')
     return response
   }
@@ -76,25 +81,6 @@ function decoded(path: string): string {
   } catch {
     return path
   }
-}
-
-/**
- * The boot page's own: an opaque origin even when opened directly, outside
- * the frame, and nothing loaded or fetched but the app's directory — not all
- * of 'self', where a request would reach the API with the visitor's cookies.
- */
-function bootPolicy(origins: string[]): string {
-  const app = origins.map((origin) => `${origin}${IBIS_OFFICE_DIR}`).join(' ')
-  return [
-    'sandbox allow-scripts',
-    "default-src 'none'",
-    `script-src ${app} 'wasm-unsafe-eval'`,
-    `connect-src ${app}`,
-    `img-src ${app} data: blob:`,
-    "style-src 'unsafe-inline'",
-    `font-src ${app} data:`,
-    "frame-ancestors 'self'",
-  ].join('; ')
 }
 
 export const config = {

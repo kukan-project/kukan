@@ -856,11 +856,34 @@ jobs:
           name: web-function
           options: --target web-function --output type=local,dest=/tmp/web-function
 
+      # Its static files, which CloudFront serves from S3 and the zip leaves
+      # out: the same build from Docker's cache, so the hashes the pages in the
+      # zip name have to be among these
+      - name: Build the Web Function's static files
+        if: steps.changes.outputs.code == 'true'
+        uses: ./.github/actions/build-image
+        with:
+          name: web-function-static
+          options: --target web-function-static --output type=local,dest=/tmp/web-function-static
+
       - name: Unpack the zip
         if: steps.changes.outputs.code == 'true'
         run: |
           mkdir /tmp/web-function/task
           unzip -q /tmp/web-function/web-function.zip -d /tmp/web-function/task
+
+      - name: Check the static files are out of the zip and beside it
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          task=/tmp/web-function/task/apps/web
+          out=/tmp/web-function-static
+          if [ -e "$task/.next/static" ] || [ -e "$task/public/vendor/ibis-office" ]; then
+            echo "web-function: the zip still carries static files" >&2; exit 1
+          fi
+          ls "$out"/vendor/ibis-office/*/boot.html >/dev/null
+          build_id=$(cat "$task/.next/BUILD_ID")
+          [ -d "$out/_next/static/$build_id" ] || { echo "web-function: no static files for build $build_id" >&2; exit 1; }
+          echo "web-function: static files for build $build_id, $(du -sm "$out" | cut -f1) MB"
 
       # The zip runs on another libc than the images and loads DuckDB from its
       # own paths, so it gets the same two proofs: its DuckDB loads every

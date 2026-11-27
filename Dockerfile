@@ -217,8 +217,10 @@ RUN pnpm build --filter='@kukan/web...'
 FROM build-base AS web-function-files
 WORKDIR /out
 COPY --from=web-function-build /app/apps/web/.next/standalone ./
-COPY --from=web-function-build /app/apps/web/.next/static ./apps/web/.next/static
+# Not .next/static nor the ibisOffice build: CloudFront serves those from S3
+# (web-function-static, below), and they would take 200 MB of the 512
 COPY --from=web-function-build /app/apps/web/public ./apps/web/public
+RUN rm -rf apps/web/public/vendor/ibis-office
 COPY --from=web-function-build /app/apps/web/start.mjs ./apps/web/start.mjs
 COPY --from=web-function-build /app/packages/api/dist/services/query/query-child.mjs ./node_modules/.pnpm/kukan-query-child.mjs
 COPY --from=rds-ca /rds-ca.crt ./rds-ca.crt
@@ -256,8 +258,7 @@ RUN node --input-type=module -e "const {DuckDBInstance} = await import('@duckdb/
 
 # Zipped on the build platform, keeping pnpm's symlinks (-y). Web Functions
 # take at most 512 MB unzipped, not adjustable: fail here rather than at the
-# deploy (448 MB when this was written, 111 MB of it public/vendor; DuckDB 2.0's
-# larger binding and extensions take it close to the limit).
+# deploy (504 MB with the static files in it, on DuckDB 2.0).
 FROM build-base AS web-function-zip
 RUN apk add --no-cache zip
 COPY --from=web-function-files /out /out
@@ -269,3 +270,11 @@ RUN size=$(du -sm /out | cut -f1) \
 
 FROM scratch AS web-function
 COPY --from=web-function-zip /web-function.zip /
+
+# What a Web Function site's CloudFront serves from S3 rather than from the
+# function, at the paths it is requested under: Next's hashed files and the
+# ibisOffice build, versioned by directory (ADR-065). The same build as the
+# zip's, so the hashes are the ones its pages name.
+FROM scratch AS web-function-static
+COPY --from=web-function-build /app/apps/web/.next/static /_next/static
+COPY --from=web-function-build /app/apps/web/public/vendor/ibis-office /vendor/ibis-office

@@ -13812,9 +13812,9 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
               ],
               "PathPattern": "/_next/static/*",
               "ResponseHeadersPolicyId": {
-                "Ref": "CDNSecurityHeadersEC36F6F3",
+                "Ref": "CDNStaticHeaders3C23586B",
               },
-              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin2663FDE53",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
             {
@@ -13833,9 +13833,9 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
               ],
               "PathPattern": "/vendor/ibis-office/*",
               "ResponseHeadersPolicyId": {
-                "Ref": "CDNSecurityHeadersEC36F6F3",
+                "Ref": "CDNIbisOfficeHeaders5C062891",
               },
-              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin2663FDE53",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
             {
@@ -14051,6 +14051,24 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
                 ],
               },
             },
+            {
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "WebFunctionStaticBucketCB2034D2",
+                  "RegionalDomainName",
+                ],
+              },
+              "Id": "DevKukanSiteStackCityaCDNDistributionOrigin2663FDE53",
+              "OriginAccessControlId": {
+                "Fn::GetAtt": [
+                  "CDNDistributionOrigin2S3OriginAccessControl78DE7698",
+                  "Id",
+                ],
+              },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": "",
+              },
+            },
           ],
           "ViewerCertificate": {
             "AcmCertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000",
@@ -14074,6 +14092,17 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
+    },
+    "CDNDistributionOrigin2S3OriginAccessControl78DE7698": {
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": "DevKukanSiteStackCityaCDNDisOrigin2S3OriginAccessControl56714A42",
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4",
+        },
+      },
+      "Type": "AWS::CloudFront::OriginAccessControl",
     },
     "CDNHtmlCachePolicyD4EF5254": {
       "Properties": {
@@ -14102,6 +14131,71 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
         },
       },
       "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNIbisOfficeHeaders5C062891": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "CorsConfig": {
+            "AccessControlAllowCredentials": false,
+            "AccessControlAllowHeaders": {
+              "Items": [
+                "*",
+              ],
+            },
+            "AccessControlAllowMethods": {
+              "Items": [
+                "GET",
+                "HEAD",
+              ],
+            },
+            "AccessControlAllowOrigins": {
+              "Items": [
+                "*",
+              ],
+            },
+            "OriginOverride": true,
+          },
+          "CustomHeadersConfig": {
+            "Items": [
+              {
+                "Header": "Permissions-Policy",
+                "Override": true,
+                "Value": "camera=(), microphone=(), geolocation=()",
+              },
+              {
+                "Header": "X-DNS-Prefetch-Control",
+                "Override": true,
+                "Value": "off",
+              },
+            ],
+          },
+          "Name": "kukan-dev-citya-ibis-office-headers",
+          "SecurityHeadersConfig": {
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": "sandbox allow-scripts; default-src 'none'; script-src https://catalog.city-a.example.jp/vendor/ibis-office/0.8.7/ 'wasm-unsafe-eval'; connect-src https://catalog.city-a.example.jp/vendor/ibis-office/0.8.7/; img-src https://catalog.city-a.example.jp/vendor/ibis-office/0.8.7/ data: blob:; style-src 'unsafe-inline'; font-src https://catalog.city-a.example.jp/vendor/ibis-office/0.8.7/ data:; frame-ancestors 'self'",
+              "Override": true,
+            },
+            "ContentTypeOptions": {
+              "Override": true,
+            },
+            "FrameOptions": {
+              "FrameOption": "SAMEORIGIN",
+              "Override": true,
+            },
+            "ReferrerPolicy": {
+              "Override": true,
+              "ReferrerPolicy": "strict-origin-when-cross-origin",
+            },
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
     },
     "CDNOdataCachePolicy8D77BE21": {
       "Properties": {
@@ -14132,6 +14226,42 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
         "ResponseHeadersPolicyConfig": {
           "Name": "kukan-dev-citya-security-headers",
           "SecurityHeadersConfig": {
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "IncludeSubdomains": false,
+              "Override": true,
+              "Preload": false,
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+    },
+    "CDNStaticHeaders3C23586B": {
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "CustomHeadersConfig": {
+            "Items": [
+              {
+                "Header": "Permissions-Policy",
+                "Override": true,
+                "Value": "camera=(), microphone=(), geolocation=()",
+              },
+            ],
+          },
+          "Name": "kukan-dev-citya-static-headers",
+          "SecurityHeadersConfig": {
+            "ContentTypeOptions": {
+              "Override": true,
+            },
+            "FrameOptions": {
+              "FrameOption": "SAMEORIGIN",
+              "Override": true,
+            },
+            "ReferrerPolicy": {
+              "Override": true,
+              "ReferrerPolicy": "strict-origin-when-cross-origin",
+            },
             "StrictTransportSecurity": {
               "AccessControlMaxAgeSec": 31536000,
               "IncludeSubdomains": false,
@@ -14346,6 +14476,183 @@ function expandV6(addr) {
         ],
       },
       "Type": "AWS::CloudFront::Function",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiB98A3C176": {
+      "DependsOn": [
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRoleDefaultPolicy0E2BB108",
+        "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRole3D247CAC",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "AWS_CA_BUNDLE": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+          },
+        },
+        "EphemeralStorage": {
+          "Size": 2048,
+        },
+        "Handler": "index.handler",
+        "Layers": [
+          {
+            "Ref": "WebFunctionStaticImmutableAwsCliLayer1F9D0D21",
+          },
+        ],
+        "MemorySize": 1024,
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRole3D247CAC",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.13",
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRole3D247CAC": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRoleDefaultPolicy0E2BB108": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":s3:::cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":s3:::cdk-hnb659fds-assets-123456789012-ap-northeast-1/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "WebFunctionStaticBucketCB2034D2",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "WebFunctionStaticBucketCB2034D2",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRoleDefaultPolicy0E2BB108",
+        "Roles": [
+          {
+            "Ref": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiBServiceRole3D247CAC",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
     },
     "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F": {
       "DependsOn": [
@@ -15079,6 +15386,10 @@ function expandV6(addr) {
       "DependsOn": [
         "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
         "SiteDatabase0F0CACF6",
+        "WebFunctionStaticImmutableAwsCliLayer1F9D0D21",
+        "WebFunctionStaticImmutableCustomResource1024MiB2048MiBBAA87240",
+        "WebFunctionStaticRevalidatedAwsCliLayerB031052A",
+        "WebFunctionStaticRevalidatedCustomResource1024MiB2048MiB5C568239",
       ],
       "Properties": {
         "FunctionName": "DevKukanSiteStacCityaWebFunctionB8F38504",
@@ -15104,6 +15415,10 @@ function expandV6(addr) {
       "DependsOn": [
         "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
         "SiteDatabase0F0CACF6",
+        "WebFunctionStaticImmutableAwsCliLayer1F9D0D21",
+        "WebFunctionStaticImmutableCustomResource1024MiB2048MiBBAA87240",
+        "WebFunctionStaticRevalidatedAwsCliLayerB031052A",
+        "WebFunctionStaticRevalidatedCustomResource1024MiB2048MiB5C568239",
       ],
       "Properties": {
         "Configuration": {
@@ -15379,6 +15694,10 @@ function expandV6(addr) {
         "SiteDatabase0F0CACF6",
         "WebFunction035F31A7",
         "WebFunctionRevision66232117",
+        "WebFunctionStaticImmutableAwsCliLayer1F9D0D21",
+        "WebFunctionStaticImmutableCustomResource1024MiB2048MiBBAA87240",
+        "WebFunctionStaticRevalidatedAwsCliLayerB031052A",
+        "WebFunctionStaticRevalidatedCustomResource1024MiB2048MiB5C568239",
       ],
       "Properties": {
         "AuthType": "IamAuth",
@@ -15724,6 +16043,10 @@ function expandV6(addr) {
       "DependsOn": [
         "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
         "SiteDatabase0F0CACF6",
+        "WebFunctionStaticImmutableAwsCliLayer1F9D0D21",
+        "WebFunctionStaticImmutableCustomResource1024MiB2048MiBBAA87240",
+        "WebFunctionStaticRevalidatedAwsCliLayerB031052A",
+        "WebFunctionStaticRevalidatedCustomResource1024MiB2048MiB5C568239",
       ],
       "Properties": {
         "PolicyDocument": {
@@ -15778,6 +16101,10 @@ function expandV6(addr) {
         "AWSCDKWebFunctionAssetBucketPolicy406CF5E7",
         "SiteDatabase0F0CACF6",
         "WebFunction035F31A7",
+        "WebFunctionStaticImmutableAwsCliLayer1F9D0D21",
+        "WebFunctionStaticImmutableCustomResource1024MiB2048MiBBAA87240",
+        "WebFunctionStaticRevalidatedAwsCliLayerB031052A",
+        "WebFunctionStaticRevalidatedCustomResource1024MiB2048MiB5C568239",
       ],
       "Properties": {
         "BuildConfig": {
@@ -15935,6 +16262,248 @@ function expandV6(addr) {
         },
       },
       "Type": "AWS::Lambda::WebFunctionRevision",
+    },
+    "WebFunctionStaticBucketCB2034D2": {
+      "DeletionPolicy": "Retain",
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:cr-owned:48a16a30",
+            "Value": "true",
+          },
+          {
+            "Key": "aws-cdk:cr-owned:c96f4f5e",
+            "Value": "true",
+          },
+          {
+            "Key": "kukan:component",
+            "Value": "web-function",
+          },
+          {
+            "Key": "kukan:env",
+            "Value": "dev",
+          },
+          {
+            "Key": "kukan:site",
+            "Value": "citya",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "WebFunctionStaticBucketPolicyF88CDD11": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "Bucket": {
+          "Ref": "WebFunctionStaticBucketCB2034D2",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "WebFunctionStaticBucketCB2034D2",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "WebFunctionStaticBucketCB2034D2",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:GetObject",
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition",
+                        },
+                        ":cloudfront::",
+                        {
+                          "Ref": "AWS::AccountId",
+                        },
+                        ":distribution/",
+                        {
+                          "Ref": "CDNDistributionD4FAE585",
+                        },
+                      ],
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudfront.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "WebFunctionStaticBucketCB2034D2",
+                        "Arn",
+                      ],
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "WebFunctionStaticImmutableAwsCliLayer1F9D0D21": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": "/opt/awscli/aws",
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+    },
+    "WebFunctionStaticImmutableCustomResource1024MiB2048MiBBAA87240": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "DestinationBucketName": {
+          "Ref": "WebFunctionStaticBucketCB2034D2",
+        },
+        "Exclude": [
+          "*",
+        ],
+        "Include": [
+          "_next/static/*",
+          "vendor/ibis-office/*/pkg/*",
+          "vendor/ibis-office/*/assets/*",
+        ],
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiB98A3C176",
+            "Arn",
+          ],
+        },
+        "SourceBucketNames": [
+          "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+        ],
+        "SourceObjectKeys": [
+          "ASSET_HASH.zip",
+        ],
+        "SystemMetadata": {
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+        "WaitForDistributionInvalidation": true,
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "WebFunctionStaticRevalidatedAwsCliLayerB031052A": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "Content": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": "/opt/awscli/aws",
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+    },
+    "WebFunctionStaticRevalidatedCustomResource1024MiB2048MiB5C568239": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+      ],
+      "Properties": {
+        "DestinationBucketName": {
+          "Ref": "WebFunctionStaticBucketCB2034D2",
+        },
+        "Exclude": [
+          "_next/static/*",
+          "vendor/ibis-office/*/pkg/*",
+          "vendor/ibis-office/*/assets/*",
+        ],
+        "OutputObjectKeys": true,
+        "Prune": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiB2048MiB98A3C176",
+            "Arn",
+          ],
+        },
+        "SourceBucketNames": [
+          "cdk-hnb659fds-assets-123456789012-ap-northeast-1",
+        ],
+        "SourceObjectKeys": [
+          "ASSET_HASH.zip",
+        ],
+        "SystemMetadata": {
+          "cache-control": "public, max-age=0",
+        },
+        "WaitForDistributionInvalidation": true,
+      },
+      "Type": "Custom::CDKBucketDeployment",
+      "UpdateReplacePolicy": "Delete",
     },
     "WorkerService2180CF14": {
       "DependsOn": [

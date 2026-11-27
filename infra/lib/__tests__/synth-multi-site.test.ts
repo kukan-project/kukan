@@ -1417,6 +1417,40 @@ describe('web on Lambda Web Functions (ADR-068)', () => {
     expect(endpoints[0].Properties.SubnetIds).toHaveLength(1)
   })
 
+  it('serves the static files from a bucket of their own, with the headers the web would give', () => {
+    // Out of the zip, which they would take 200 MB of the 512 MB Web Functions take
+    const behaviors = Object.values(site.findResources('AWS::CloudFront::Distribution'))[0]
+      .Properties.DistributionConfig.CacheBehaviors as {
+      PathPattern: string
+      TargetOriginId: string
+      ResponseHeadersPolicyId: { Ref: string }
+    }[]
+    const byPath = Object.fromEntries(behaviors.map((b) => [b.PathPattern, b]))
+    const staticOrigin = byPath['/_next/static/*'].TargetOriginId
+    expect(byPath['/vendor/ibis-office/*'].TargetOriginId).toBe(staticOrigin)
+    expect(byPath['/api/*'].TargetOriginId).not.toBe(staticOrigin)
+    expect(byPath['/_next/static/*'].ResponseHeadersPolicyId.Ref).toMatch(/^CDNStaticHeaders/)
+    expect(byPath['/vendor/ibis-office/*'].ResponseHeadersPolicyId.Ref).toMatch(
+      /^CDNIbisOfficeHeaders/
+    )
+
+    // The proxy's CSP for the directory, fixed at the deploy for the site's name
+    const csp = JSON.stringify(
+      Object.values(site.findResources('AWS::CloudFront::ResponseHeadersPolicy')).find((p) =>
+        JSON.stringify(p).includes('ContentSecurityPolicy')
+      )
+    )
+    expect(csp).toMatch(/sandbox allow-scripts/)
+    expect(csp).toMatch(
+      /script-src https:\/\/catalog\.city-a\.example\.jp\/vendor\/ibis-office\/[^/ ]+\/ /
+    )
+
+    // Uploaded before the function takes pages that name them, and never pruned
+    const deployments = Object.values(site.findResources('Custom::CDKBucketDeployment'))
+    expect(deployments).toHaveLength(2)
+    for (const d of deployments) expect(d.Properties.Prune).toBe(false)
+  })
+
   it('runs the web as a Web Function with no ECS web service, ALB rule or target group', () => {
     site.resourceCountIs('AWS::Lambda::WebFunction', 1)
     site.resourceCountIs('AWS::ECS::Service', 1) // the worker

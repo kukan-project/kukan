@@ -25,6 +25,13 @@ export interface CdnProps {
   certificateArn?: string
   /** WAF WebACL ARN in us-east-1 (from KukanGlobalStack). */
   webAclArn?: string
+  /**
+   * Where the static files come from instead of `origin`, on a Web Function
+   * site (its bucket, ADR-068), with the CSP of the ibisOffice directory
+   * (`ibisOfficeBootPolicy`). They then get here the headers the web would
+   * have given them (next.config.ts and its proxy).
+   */
+  staticFiles?: { origin: cloudfront.IOrigin; ibisOfficePolicy: string }
 }
 
 export class CdnConstruct extends Construct {
@@ -36,7 +43,7 @@ export class CdnConstruct extends Construct {
   constructor(scope: Construct, id: string, props: CdnProps) {
     super(scope, id)
 
-    const { config, origin: albOrigin, certificateArn, webAclArn } = props
+    const { config, origin: albOrigin, certificateArn, webAclArn, staticFiles } = props
 
     // --- CloudFront Function: IP restriction + cache bypass for credentialed requests ---
     // Env-prefixed name for readability + multi-environment uniqueness (ADR-031).
@@ -127,6 +134,62 @@ export class CdnConstruct extends Construct {
       },
     })
 
+    // --- Response headers: files served from S3 on a Web Function site ---
+    // What next.config.ts gives every response and, under the ibisOffice
+    // directory, CORS for the sandboxed frame's opaque origin, and the proxy's
+    // CSP — which, read at the web's runtime there, is fixed here at the deploy.
+    const staticSecurityHeaders: cloudfront.ResponseSecurityHeadersBehavior = {
+      strictTransportSecurity: {
+        accessControlMaxAge: cdk.Duration.days(365),
+        includeSubdomains: config.hstsIncludeSubDomains,
+        preload: false,
+        override: true,
+      },
+      frameOptions: { frameOption: cloudfront.HeadersFrameOption.SAMEORIGIN, override: true },
+      contentTypeOptions: { override: true },
+      referrerPolicy: {
+        referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+        override: true,
+      },
+    }
+    const permissionsPolicy: cloudfront.ResponseCustomHeader = {
+      header: 'Permissions-Policy',
+      value: 'camera=(), microphone=(), geolocation=()',
+      override: true,
+    }
+    const staticHeadersPolicy =
+      staticFiles &&
+      new cloudfront.ResponseHeadersPolicy(this, 'StaticHeaders', {
+        responseHeadersPolicyName: resourceName(this, 'static-headers'),
+        securityHeadersBehavior: staticSecurityHeaders,
+        customHeadersBehavior: { customHeaders: [permissionsPolicy] },
+      })
+    const ibisOfficeHeadersPolicy =
+      staticFiles &&
+      new cloudfront.ResponseHeadersPolicy(this, 'IbisOfficeHeaders', {
+        responseHeadersPolicyName: resourceName(this, 'ibis-office-headers'),
+        securityHeadersBehavior: {
+          ...staticSecurityHeaders,
+          contentSecurityPolicy: {
+            contentSecurityPolicy: staticFiles.ibisOfficePolicy,
+            override: true,
+          },
+        },
+        corsBehavior: {
+          accessControlAllowOrigins: ['*'],
+          accessControlAllowHeaders: ['*'],
+          accessControlAllowMethods: ['GET', 'HEAD'],
+          accessControlAllowCredentials: false,
+          originOverride: true,
+        },
+        customHeadersBehavior: {
+          customHeaders: [
+            permissionsPolicy,
+            { header: 'X-DNS-Prefetch-Control', value: 'off', override: true },
+          ],
+        },
+      })
+
     // --- Viewer certificate ---
     const viewerCertificate = certificateArn
       ? acm.Certificate.fromCertificateArn(this, 'ViewerCert', certificateArn)
@@ -151,11 +214,15 @@ export class CdnConstruct extends Construct {
 
     // Static: immutable assets with content-hash filenames
     const staticAssets: cloudfront.BehaviorOptions = {
-      origin: albOrigin,
+      origin: staticFiles?.origin ?? albOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-      responseHeadersPolicy,
+      responseHeadersPolicy: staticHeadersPolicy ?? responseHeadersPolicy,
       functionAssociations: fnAssociations,
+    }
+    const ibisOfficeAssets: cloudfront.BehaviorOptions = {
+      ...staticAssets,
+      responseHeadersPolicy: ibisOfficeHeadersPolicy ?? responseHeadersPolicy,
     }
 
     // HTML pages: short-lived cache, bypassed for requests with a session or an API token
@@ -212,7 +279,7 @@ export class CdnConstruct extends Construct {
       additionalBehaviors: {
         '/_next/static/*': staticAssets,
         // The ibisOffice build, versioned by directory (ADR-065)
-        '/vendor/ibis-office/*': staticAssets,
+        '/vendor/ibis-office/*': ibisOfficeAssets,
         '/auth/*': passthrough,
         '/api/*': passthrough,
         '/odata/*': odataFeed,

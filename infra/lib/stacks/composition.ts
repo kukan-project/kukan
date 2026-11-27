@@ -10,6 +10,7 @@
  * change.
  */
 
+import { readFileSync } from 'node:fs'
 import * as cdk from 'aws-cdk-lib'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
@@ -23,7 +24,8 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery'
 import type { Construct } from 'constructs'
 import { DEFAULT_CSP_MODE } from '@kukan/shared/env'
-import { isInZone, siteDomainNames, type KukanConfig } from '../config.js'
+import { ibisOfficeBootPolicy } from '@kukan/shared/ibis-office'
+import { httpsOrigin, isInZone, siteDomainNames, type KukanConfig } from '../config.js'
 import { athenaWorkGroupName, envPrefix } from '../naming.js'
 import { NetworkConstruct } from '../constructs/network.js'
 import { EcrAssetRetentionConstruct } from '../constructs/ecr-asset-retention.js'
@@ -289,6 +291,15 @@ export function composeSite(
     origin,
     certificateArn: edge.certificateArn,
     webAclArn: edge.webAclArn,
+    staticFiles: webFunction && {
+      origin: origins.S3BucketOrigin.withOriginAccessControl(webFunction.staticBucket),
+      // The origins the web's proxy reads from BETTER_AUTH_URL and
+      // TRUSTED_ORIGINS, which a Web Function site always has a domain for
+      ibisOfficePolicy: ibisOfficeBootPolicy(
+        siteDomainNames(config).map(httpsOrigin),
+        ibisOfficeDir()
+      ),
+    },
   })
 
   webFunction?.allowDistribution(cdn.distribution)
@@ -367,4 +378,18 @@ export function composeSite(
   }
 
   return { web, workerService, bucket: storage.bucket }
+}
+
+/**
+ * The ibisOffice app's directory, as the web names it (apps/web/src/lib/ibis-office.ts):
+ * by the version the committed archive's manifest gives.
+ */
+function ibisOfficeDir(): string {
+  const manifest = JSON.parse(
+    readFileSync(
+      new URL('../../../apps/web/vendor/ibis-office/manifest.json', import.meta.url),
+      'utf8'
+    )
+  ) as { version: string }
+  return `/vendor/ibis-office/${manifest.version}/`
 }

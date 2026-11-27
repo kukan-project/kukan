@@ -74,6 +74,7 @@ export * from './password-strength'
 
 // Validators
 export * from './url'
+export * from './ibis-office'
 export * from './catalog-paths'
 export * from './worker-metric'
 export * from './validators/messages'

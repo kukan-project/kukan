@@ -298,6 +298,22 @@ split the record, so store it in the DB.
   `linux_arm64`, and an entry file moving the listen address into `HOSTNAME` and `PORT`. A separate
   artifact from the Docker image (alpine, musl). The glibc arm64 binaries come from the build's
   install with `libc: [glibc]` and `cpu: [arm64]` added to `supportedArchitectures` (checked in stage 2c).
+- **The static files stay out of the zip and are served by CloudFront from a bucket of the site's
+  own** (added 2026-11-27). Web Functions take at most 512 MB unzipped, not adjustable. DuckDB 2.0
+  grew the binding and extensions until the zip reached 570 MB; leaving out the aws extension
+  (credentials are read from the environment) brought it to 504 MB, with no room left.
+  `/_next/static/*` (about 87 MB) and `/vendor/ibis-office/*` (about 111 MB) already have behaviors
+  of their own in CloudFront; only those two take a bucket with OAC as their origin.
+  - The Dockerfile's `web-function-static` target takes the static files from the same build as the
+    zip. A `BucketDeployment` uploads them before the function, and never deletes old ones
+    (`prune: false`): a page left at the edge or in a browser names the last deploy's hashes.
+  - Cache-Control is split as `next.config.ts` splits it: the hashed files and ibisOffice's `pkg`
+    and `assets` immutable, its boot page and the rest `max-age=0`.
+  - The headers the web gave them (`next.config.ts`'s security headers, and under the ibisOffice
+    directory CORS and the proxy's CSP) come from CloudFront response headers policies. The CSP is
+    built by `ibisOfficeBootPolicy` in `@kukan/shared`, shared with the web, with the site's names
+    fixed at the deploy.
+  - A Fargate site keeps serving them from the web.
 - Build the zip keeping symlinks (`zip -y`), not relying on `aws lambda-web deploy`'s packaging.
 - Build it on the ARM CodeBuild the pipeline already uses for assets
   (`LinuxArmBuildImage.AMAZON_LINUX_2023_STANDARD_3_0`, `infra/lib/cpu-architecture.ts`). It is the
