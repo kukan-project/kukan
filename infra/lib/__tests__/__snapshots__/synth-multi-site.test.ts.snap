@@ -3411,6 +3411,11 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {
@@ -6992,6 +6997,11 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {
@@ -14122,6 +14132,11 @@ exports[`web on Lambda Web Functions (ADR-068) > matches the golden templates 2`
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {

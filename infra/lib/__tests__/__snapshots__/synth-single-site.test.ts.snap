@@ -876,6 +876,11 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {
@@ -5904,6 +5909,11 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {
@@ -10887,6 +10897,11 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {
@@ -15605,6 +15620,11 @@ exports[`self-created global stack (domain without certificateArn) > matches the
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {
@@ -20574,6 +20594,11 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
               "Headers": [
                 "x-cache-bypass",
                 "x-kukan-locale",
+                "RSC",
+                "Next-Router-Prefetch",
+                "Next-Router-Segment-Prefetch",
+                "Next-Router-State-Tree",
+                "Next-Url",
               ],
             },
             "QueryStringsConfig": {

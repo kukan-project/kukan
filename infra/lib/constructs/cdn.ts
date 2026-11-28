@@ -34,6 +34,18 @@ export interface CdnProps {
   staticFiles?: { origin: cloudfront.IOrigin; ibisOfficePolicy: string }
 }
 
+/**
+ * What the app router sends for a page's payload: `RSC`, and the headers Next
+ * hashes into `_rsc` (next/dist/shared/lib/router/utils/cache-busting-search-param).
+ */
+const ROUTER_HEADERS = [
+  'RSC',
+  'Next-Router-Prefetch',
+  'Next-Router-Segment-Prefetch',
+  'Next-Router-State-Tree',
+  'Next-Url',
+]
+
 export class CdnConstruct extends Construct {
   readonly distribution: cloudfront.Distribution
   readonly distributionDomainName: string
@@ -60,12 +72,23 @@ export class CdnConstruct extends Construct {
     // locale the viewer-request function resolved. Without it the next viewer
     // gets whichever language the last cache miss was rendered in — and minTtl
     // holds even a `no-store` response for a minute.
+    //
+    // And on `RSC`: with it the app answers the same path with the page's
+    // payload for its own router, or a redirect to the URL that payload is
+    // cached under, and neither is the page a browser asked for. The router's
+    // other headers decide which of the two it is — the app redirects unless
+    // `_rsc` is their hash — so they are in the key with it. A router's own
+    // request has the headers its `_rsc` says, so this splits no entry of its.
     const htmlCachePolicy = new cloudfront.CachePolicy(this, 'HtmlCachePolicy', {
       cachePolicyName: resourceName(this, 'html'),
       defaultTtl: cdk.Duration.seconds(60),
       minTtl: cdk.Duration.seconds(60),
       maxTtl: cdk.Duration.seconds(300),
-      headerBehavior: cloudfront.CacheHeaderBehavior.allowList('x-cache-bypass', LOCALE_HEADER),
+      headerBehavior: cloudfront.CacheHeaderBehavior.allowList(
+        'x-cache-bypass',
+        LOCALE_HEADER,
+        ...ROUTER_HEADERS
+      ),
       queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       enableAcceptEncodingGzip: true,

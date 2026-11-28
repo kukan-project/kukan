@@ -94,6 +94,26 @@ describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
     })
   })
 
+  it("keys the HTML cache on the router's headers, so a page and its router payload are never one entry", () => {
+    template.hasResourceProperties('AWS::CloudFront::CachePolicy', {
+      CachePolicyConfig: Match.objectLike({
+        Name: Match.stringLikeRegexp('-html$'),
+        ParametersInCacheKeyAndForwardedToOrigin: Match.objectLike({
+          HeadersConfig: {
+            HeaderBehavior: 'whitelist',
+            Headers: Match.arrayWith([
+              'RSC',
+              'Next-Router-Prefetch',
+              'Next-Router-Segment-Prefetch',
+              'Next-Router-State-Tree',
+              'Next-Url',
+            ]),
+          },
+        }),
+      }),
+    })
+  })
+
   it('caches the sitemap and robots.txt for an hour, keyed on nothing the viewer sends', () => {
     template.hasResourceProperties('AWS::CloudFront::CachePolicy', {
       CachePolicyConfig: Match.objectLike({
