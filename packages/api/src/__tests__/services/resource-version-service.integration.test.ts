@@ -460,6 +460,61 @@ describe('executePurge', () => {
     )
   })
 
+  it('takes the derivatives with a historical version they were read from', async () => {
+    // The content that replaced v1 was never read — its interpretation failed,
+    // which keeps the previous preview, text and index. Purged as a middle
+    // version, v1 stayed readable through them under a row that said 'purged'
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await db.insert(resourcePipeline).values({
+      resourceId,
+      status: 'error',
+      previewKey: 'previews/pkg/res.v1.parquet',
+      metadata: { schema: columns('v1'), sourceHash: 'sha256:v1', sourceVersion: 1 },
+    })
+    await service.claimPurge(resourceId, 1, userId, 'illegal content', purgeQueue)
+
+    const deps = mockDeps()
+    expect(await service.executePurge(resourceId, 1, deps)).toEqual({
+      purged: true,
+      rolledBack: false,
+    })
+
+    expect(deps.storage.deleteMany).toHaveBeenCalledWith(['previews/pkg/res.v1.parquet'])
+    expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe.previewKey).toBeNull()
+    // Read again from what is live, which the purge left where it was
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ resourceId, rebuildOnly: true }),
+      { tx: expect.anything() }
+    )
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(liveKey)
+  })
+
+  it('tells derivatives from before the version was recorded by their hash', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await db.insert(resourcePipeline).values({
+      resourceId,
+      status: 'error',
+      previewKey: 'previews/pkg/res.v1.parquet',
+      metadata: { sourceHash: 'sha256:v1' },
+    })
+    await service.claimPurge(resourceId, 1, userId, 'illegal content', purgeQueue)
+
+    const deps = mockDeps()
+    await service.executePurge(resourceId, 1, deps)
+
+    expect(deps.storage.deleteMany).toHaveBeenCalledWith(['previews/pkg/res.v1.parquet'])
+    expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
+  })
+
   it('leaves the live resource derivatives alone when a historical version is purged', async () => {
     // The middle-version branch touches content this purge has nothing to do
     // with: the preview and the index describe whatever is live, which is a
@@ -470,6 +525,7 @@ describe('executePurge', () => {
       resourceId,
       status: 'complete',
       previewKey: 'previews/pkg/res.live.parquet',
+      metadata: { sourceHash: 'sha256:v2', sourceVersion: 2 },
     })
     await service.claimPurge(resourceId, 1, userId, 'illegal content', purgeQueue)
 

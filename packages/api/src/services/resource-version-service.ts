@@ -1910,10 +1910,20 @@ export class ResourceVersionService {
       }
     } else {
       // A middle version: what the resource serves is already free of it, and its
-      // derivatives describe content this purge does not touch. Layer 2 need not
-      // be — it stands on the newest version it took, which is this one whenever
-      // nothing above it reached the lake — so the same call runs, and decides for
-      // itself from the recorded snapshots (spec §9.1).
+      // derivatives describe content this purge does not touch — unless the
+      // content that replaced it was never read. A failed interpretation keeps
+      // the previous preview, text and index, so they are this version's still,
+      // and go as the live version's do, in the same order before layer 2.
+      if (await this.derivativesReadFrom(resourceId, row)) {
+        await this.discardDerivedArtifacts(resourceId, deps.storage)
+        if (deps.search) await deps.search.deleteContent(resourceId)
+        await markContentUnindexed(this.db, { resourceId })
+        await this.setPurgeRebuildPending(resourceId, true)
+      }
+      // Layer 2 need not be free of it either — it stands on the newest version
+      // it took, which is this one whenever nothing above it reached the lake —
+      // so the same call runs, and decides for itself from the recorded
+      // snapshots (spec §9.1).
       await this.purgeFromLake(resourceId, row, deps, claim)
     }
 
@@ -3292,6 +3302,38 @@ export class ResourceVersionService {
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
     return row?.pending === true
+  }
+
+  /**
+   * Whether the preview, text and index the resource carries were read from
+   * `version`, which is not the live one. By the version the interpretation
+   * recorded; one from before it recorded any is told by its hash, where the
+   * live content has another.
+   */
+  private async derivativesReadFrom(
+    resourceId: string,
+    version: { version: number; hash: string | null }
+  ): Promise<boolean> {
+    const meta = resourcePipeline.metadata
+    const [read] = await this.db
+      .select({ id: resourcePipeline.id })
+      .from(resourcePipeline)
+      .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
+      .where(
+        and(
+          eq(resourcePipeline.resourceId, resourceId),
+          or(
+            sql`${meta}->'sourceVersion' = to_jsonb(${version.version}::int)`,
+            and(
+              sql`${meta}->'sourceVersion' IS NULL`,
+              sql`${meta}->>'sourceHash' = ${version.hash}`,
+              sql`${resource.hash} IS DISTINCT FROM ${version.hash}`
+            )
+          )
+        )
+      )
+      .limit(1)
+    return read !== undefined
   }
 
   /** Whether the resource still serves an object — read after a purge, which
