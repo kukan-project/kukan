@@ -6,6 +6,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.50.0] - 2026-11-28
+
+**Highlights**
+
+- **Version diffs on the public resource page.** The "Version history" of a resource page now has the same **Diff** as the dashboard: anyone who can see the dataset can open, for a version of a table, how many rows were added and removed since the preceding version (and changed, when a primary key is set), with representative rows (#1346).
+- **A brand can replace the favicon entirely.** The icon a brand names in `faviconPath` is now the only one on the page, `/favicon.ico` itself answers with the brand's icon, and the iOS home-screen icon can be set (#1348).
+
+**Features**
+
+- The version diff API (`GET /resources/{id}/versions/{v}/diff`) answers anyone who can see the resource, as the version list and downloads do, instead of only the dataset's editors. Its load is bounded by the same limits as data queries (a cap per caller, anonymous callers after signed-in ones). Why a version was not loaded for diffs (a primary key that did not identify its rows, or repeated load failures) is told only to editors; anyone else is told the version cannot be compared row by row (#1346).
+- On the public resource page, each version except the oldest and deleted ones has a **Diff** button. A wide table of sample rows scrolls sideways within the diff instead of widening the list, in the dashboard too (#1346).
+- KUKAN's own icon no longer appears beside a brand's: before, the page carried two icon links and a browser could pick KUKAN's. A brand that puts `favicon.ico` in its `public/` also has it served at `/favicon.ico`, which browsers, bookmark sync, link previews and crawlers fetch without reading the page. A brand without one keeps KUKAN's (#1348).
+- The new optional `appleTouchIconPath` in the brand configuration names the iOS home-screen icon (a 180×180 PNG) (#1348).
+
+**Improvements**
+
+- The infrastructure tests allow 60 seconds per case, as synthesizing several stages could take over 30 seconds on a busy CI runner (#1349).
+
+**Documentation**
+
+- The REST API reference, the data administrator guide and the user guide describe the public diff (#1350). The brand customization guide and ADR-023 describe the favicon and `appleTouchIconPath` (#1348). The versioning specifications record the public diff (#1346).
+
+**Upgrade Notes** (for system administrators)
+
+- **No migration is needed.**
+- **Brands with their own favicon:** after the deploy, `/favicon.ico` answers with the brand's `favicon.ico` if the brand has one. Copies of the old icon held by a CDN or browsers are served until they expire.
+
+---
+
+**ハイライト**
+
+- **公開のリソースページで版の差分を見られるようにしました。** リソースページの「バージョン履歴」に、管理画面と同じ「差分」を出しました。データセットを見られる人なら誰でも、表形式の版について、直前の版から追加・削除（主キーが指定されていれば変更も）された行の数と、その代表的な行を見られます（#1346）。
+- **ブランドでファビコンを丸ごと差し替えられるようにしました。** ブランドが `faviconPath` で指定したアイコンだけがページに出るようになり、`/favicon.ico` もブランドのアイコンを返します。iOS のホーム画面用のアイコンも指定できます（#1348）。
+
+**新機能**
+
+- 版の差分の API（`GET /resources/{id}/versions/{v}/diff`）が、データセットの editor だけでなく、版の一覧やダウンロードと同じく、リソースを見られる人なら誰にでも答えるようにしました。負荷はデータの問い合わせと同じ上限（呼び出し元ごとの上限、匿名はログイン中の呼び出しの後）で抑えます。版が差分に取り込まれなかった理由（主キーが行を同定できなかった、取り込みが繰り返し失敗した）は editor 以上にだけ伝え、それ以外の人には行単位で比較できる形になっていないとだけ伝えます（#1346）。
+- 公開のリソースページの版の一覧で、最も古い版と削除済みの版を除く各版に「差分」ボタンを出しました。代表的な行の表が広いとき、一覧全体が広がらず、差分の中だけで横にスクロールします（管理画面も同じ）（#1346）。
+- ブランドのアイコンの横に KUKAN のアイコンが並ばないようにしました。これまではページにアイコンのリンクが 2 つ出て、ブラウザによっては KUKAN の方を使っていました。ブランドの `public/` に `favicon.ico` を置くと、`/favicon.ico` でもそれを返します。ブラウザ・ブックマークの同期・リンクのプレビュー・クローラーは、ページを読まずに `/favicon.ico` を取りに来ます。置いていないブランドは KUKAN のアイコンのままです（#1348）。
+- ブランドの設定に、iOS のホーム画面用のアイコン（180×180 の PNG）を指定する任意の `appleTouchIconPath` を足しました（#1348）。
+
+**改善**
+
+- インフラのテストの 1 件ごとの制限時間を 60 秒にしました。混んだ CI では、複数のステージの合成に 30 秒を超えることがありました（#1349）。
+
+**ドキュメント**
+
+- REST API・データ管理者ガイド・利用者ガイドに、公開の差分を書きました（#1350）。ブランドのカスタマイズのページと ADR-023 に、ファビコンと `appleTouchIconPath` を書きました（#1348）。バージョン管理の仕様書に、公開の差分を記録しました（#1346）。
+
+**更新時の注意**（システム管理者向け）
+
+- **マイグレーションは不要です。**
+- **独自のファビコンを持つブランド:** デプロイ後、ブランドに `favicon.ico` があれば `/favicon.ico` はそれを返します。CDN やブラウザが持っている古いアイコンは、期限が切れるまで使われます。
+
 ## [0.49.0] - 2026-11-28
 
 **Breaking Changes**
