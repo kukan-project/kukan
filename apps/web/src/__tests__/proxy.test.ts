@@ -36,6 +36,11 @@ afterEach(() => {
 })
 
 describe('proxy (ADR-065 decision 2)', () => {
+  // report-only leaves frame-src (and the unused directives) alone in the enforced header
+  beforeEach(() => {
+    vi.stubEnv('CSP_MODE', 'report-only')
+  })
+
   it('limits every page’s frames to the boot page and the PDF preview', () => {
     expect(cspFor(`${ORIGIN}/`)).toBe(
       `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/${UNUSED}`
@@ -96,7 +101,8 @@ describe('proxy (ADR-071)', () => {
     buildContentSecurityPolicy({ origins: [ORIGIN], officeOnline: false, ga: false, dev: false })
       .policy
 
-  it('reports the full policy beside what it enforces by default', () => {
+  it('reports the full policy beside what it enforces under CSP_MODE=report-only', () => {
+    vi.stubEnv('CSP_MODE', 'report-only')
     const headers = proxy(new NextRequest(`${ORIGIN}/`)).headers
     expect(headers.get('content-security-policy')).toBe(
       `frame-src ${ORIGIN}${IBIS_OFFICE_BOOT} ${ORIGIN}/api/v1/resources/${UNUSED}`
@@ -105,8 +111,7 @@ describe('proxy (ADR-071)', () => {
     expect(policy()).toContain("default-src 'self'")
   })
 
-  it('enforces the full policy, frame-src inside it, under CSP_MODE=enforce', () => {
-    vi.stubEnv('CSP_MODE', 'enforce')
+  it('enforces the full policy, frame-src inside it, by default', () => {
     const headers = proxy(new NextRequest(`${ORIGIN}/`)).headers
     expect(headers.get('content-security-policy')).toBe(policy())
     expect(headers.get('content-security-policy')).toContain(
@@ -125,6 +130,7 @@ describe('proxy (ADR-071)', () => {
   })
 
   it('puts a brand’s frame-src in the enforced header and the reported policy alike', () => {
+    vi.stubEnv('CSP_MODE', 'report-only')
     brandConfig.csp = { 'frame-src': ['https://map.example.jp'] }
     const headers = proxy(new NextRequest(`${ORIGIN}/`)).headers
     const frameSrc =

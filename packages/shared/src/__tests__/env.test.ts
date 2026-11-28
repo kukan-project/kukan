@@ -253,10 +253,10 @@ describe('timeZoneSchema', () => {
 
 describe('cspModeSchema', () => {
   // Read by the web's proxy on its own, like timeZoneSchema
-  it('should default an unset or empty value to report-only and reject anything else', () => {
-    expect(cspModeSchema.parse(undefined)).toBe('report-only')
-    expect(cspModeSchema.parse('')).toBe('report-only')
-    expect(cspModeSchema.parse('enforce')).toBe('enforce')
+  it('should default an unset or empty value to enforce and reject anything else', () => {
+    expect(cspModeSchema.parse(undefined)).toBe('enforce')
+    expect(cspModeSchema.parse('')).toBe('enforce')
+    expect(cspModeSchema.parse('report-only')).toBe('report-only')
     expect(() => cspModeSchema.parse('on')).toThrow()
   })
 })

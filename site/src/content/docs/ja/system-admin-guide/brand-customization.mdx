@@ -515,8 +515,8 @@ dev サーバーを再起動（コピーを再実行）してください。
 
 KUKAN のページは Content-Security-Policy（CSP）を出し、ページが読み込んでよい先と送ってよい先を絞っています（ADR-071）。既定で許していないものをブランドで使うときは、`brand-config.ts` の `csp` に足します。
 
-:::caution[iframe はもう止まる]
-`CSP_MODE` の既定は `report-only` で、ほとんどの違反はコンソールに出るだけです（[環境変数](/ja/system-admin-guide/#環境変数)）。ただし `frame-src` だけは常に強制され、既定では `'self'` も許していません。地図や動画だけでなく、サイト自身のページ（`/brand/` に置いた HTML など）を出す iframe も止まります。iframe を使うブランドは、下の表のとおり `frame-src` に足してください。
+:::caution[足さないと止まる]
+`CSP_MODE` の既定は `enforce` で、ブランドが外部から読み込むスクリプト・スタイル・フォント・iframe などは、下の表のとおり足さないと止まります（[環境変数](/ja/system-admin-guide/#環境変数)）。`frame-src` は既定では `'self'` も許していないので、地図や動画だけでなく、サイト自身のページ（`/brand/` に置いた HTML など）を出す iframe も足してください。`CSP_MODE=report-only` のサイトでも、`frame-src` だけは常に強制されます。
 :::
 
 ### 足す必要がないもの
@@ -558,10 +558,10 @@ csp: {
 
 ブランドで手を入れたページ（トップ、追加した静的ページ、ヘッダー・フッターのあるページ）を Chrome か Edge で開き、開発者ツールのコンソールを `Content Security Policy`（ハイフンなし）で絞り込みます。足りないと、次のようなメッセージが出ます。
 
-- `[Report Only] Refused to load the script 'https://widget.example.jp/...' because it violates ... "script-src ..."` — 今は止まっていないが、足すべきもの
-- `Refused to frame 'https://www.youtube.com/' because it violates ... "frame-src ..."` — iframe が実際に止まっている。同じ内容の `[Report Only]` のメッセージも並びますが、`frame-src` のものは止まっています
+- `Refused to load the script 'https://widget.example.jp/...' because it violates ... "script-src ..."` — スクリプトが止まっている
+- `Refused to frame 'https://www.youtube.com/' because it violates ... "frame-src ..."` — iframe が止まっている
 
-メッセージに出たオリジンを、そのディレクティブに足します。後のリリースで `CSP_MODE` の既定を `enforce` にする予定で、そうなると `[Report Only]` のものも止まります。それまでに、CSP のメッセージが出なくなるまで足しておいてください。
+メッセージに出たオリジンを、そのディレクティブに足します。CSP のメッセージが出なくなるまで足してください。足し終えるまで止まっては困るサイトは、`CSP_MODE=report-only`（AWS ではサイトの `cspMode: 'report-only'`）にすると、`frame-src` 以外は止めずに `[Report Only]` を付けてコンソールに出すだけになります。足し終えたら外してください。
 
 `pnpm dev` でもほぼ同じ CSP がかかりますが、開発時だけ `eval` を許しています。`eval` を使うスクリプトは、ビルドしたサイト（`pnpm build && pnpm --filter @kukan/web start`）か本番で確かめてください。
 

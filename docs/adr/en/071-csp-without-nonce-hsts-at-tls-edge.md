@@ -2,11 +2,11 @@
 
 ## Status
 
-**Accepted** — 2026-11-01
+**Accepted** — 2026-11-01 (the default switched to `enforce` on 2026-11-28; open issue 1)
 
 Every page carries a Content-Security-Policy. Its `script-src` includes `'unsafe-inline'`, with no
-nonce and no hashes. The policy arrives in report-only mode (`CSP_MODE`, default `report-only`) and
-is switched to `enforce` once no violations show. The Office preview's `frame-src` (ADR-065) and four
+nonce and no hashes. The policy arrived in report-only mode (`CSP_MODE=report-only`), and the
+default switched to `enforce` once no violations showed. The Office preview's `frame-src` (ADR-065) and four
 directives the pages have no use for stay enforced throughout. No violation-report endpoint. HSTS is sent only by what terminates TLS — CloudFront
 on AWS, a Caddy TLS site block on Docker Compose — with `max-age` of one year, `includeSubDomains`
 off by default and chosen per site, and never `preload`.
@@ -143,7 +143,7 @@ frame-ancestors 'self'
 
 ### 2. How it is sent — `CSP_MODE`
 
-Environment variable `CSP_MODE` (`report-only` / `enforce`, default `report-only`). Read per request
+Environment variable `CSP_MODE` (`report-only` / `enforce`, default `enforce`; `report-only` until 2026-11-28). Read per request
 by the web like `OFFICE_PREVIEW_VIEWER`, so switching needs no image build. On AWS it is the site's
 `cspMode`; on Compose, `.env` (`sites/<site>.env` for multi-site).
 
@@ -209,9 +209,10 @@ a caveat for operators.
 
 ## Open issues
 
-1. **Flip the default to `enforce`.** Run demo in report-only, confirm there are no violations, and
-   change the default in a later release. Note it in the release notes as a breaking change; a site
-   that wants to stay in report-only sets `CSP_MODE=report-only` explicitly. The default lives in
+1. **Flip the default to `enforce` — done (2026-11-28).** The five demo sites were walked in
+   report-only (anonymous pages, signed-in screens, an upload, inside the ibisOffice frame) with no
+   violations before the default changed. A site that wants to stay in report-only sets
+   `CSP_MODE=report-only` (on AWS, the site's `cspMode: 'report-only'`) explicitly. The default lives in
    one constant, `DEFAULT_CSP_MODE` in `@kukan/shared`, read by the web's default and by infra's
    "set the variable only away from the default" check alike
 2. **Drop `'unsafe-inline'`.** Revisit when Next.js lets its inline scripts be allowed by hash, or

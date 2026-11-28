@@ -43,7 +43,7 @@ x-app-environment: &app-environment
   # office-online = Office originals in Microsoft's viewer instead of ibisOffice (ADR-065)
   OFFICE_PREVIEW_VIEWER: ${OFFICE_PREVIEW_VIEWER:-ibis-office}
   # enforce = the pages' Content-Security-Policy blocks instead of reporting (ADR-071)
-  CSP_MODE: ${CSP_MODE:-report-only}
+  CSP_MODE: ${CSP_MODE:-enforce}
   OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
   # true = resource URLs on private networks are refused too (see .env.example)
   FETCH_DENY_PRIVATE_NETWORKS: ${FETCH_DENY_PRIVATE_NETWORKS:-false}

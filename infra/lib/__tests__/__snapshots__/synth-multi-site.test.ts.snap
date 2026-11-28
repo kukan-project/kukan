@@ -8189,7 +8189,7 @@ function expandV6(addr) {
               },
               {
                 "Name": "CSP_MODE",
-                "Value": "enforce",
+                "Value": "report-only",
               },
             ],
             "Essential": true,

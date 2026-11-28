@@ -1,10 +1,9 @@
 /**
  * E2E: the pages' Content-Security-Policy (ADR-071).
  *
- * Under `report-only` nothing is blocked, but the browser still fires a
- * `securitypolicyviolation` event for what the policy would block — so a run
- * that passes here says enforcing the policy would break nothing on these
- * pages. The dev server is what `pnpm test:e2e` starts, so `'unsafe-eval'` is
+ * The browser fires a `securitypolicyviolation` event for what the policy
+ * blocks, or would block under `report-only` — so a run that passes here says
+ * the policy breaks nothing on these pages. The dev server is what `pnpm test:e2e` starts, so `'unsafe-eval'` is
  * in the policy and Fast Refresh is not a violation.
  */
 

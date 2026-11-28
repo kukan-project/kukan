@@ -51,7 +51,7 @@ export const officePreviewViewerSchema = z.preprocess(
 export const CSP_MODES = ['report-only', 'enforce'] as const
 export type CspMode = (typeof CSP_MODES)[number]
 /** What an unset CSP_MODE means, in the web and in infra alike. */
-export const DEFAULT_CSP_MODE: CspMode = 'report-only'
+export const DEFAULT_CSP_MODE: CspMode = 'enforce'
 
 /**
  * `report-only` sends the full policy as Content-Security-Policy-Report-Only

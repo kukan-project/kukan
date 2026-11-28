@@ -515,8 +515,8 @@ file while the dev server is running does not take effect automatically.** Run
 
 KUKAN pages send a Content-Security-Policy (CSP) that limits where a page may load from and send to (ADR-071). When a brand uses something the default does not allow, add it to `csp` in `brand-config.ts`.
 
-:::caution[iframes are already blocked]
-`CSP_MODE` defaults to `report-only`, where most violations only show in the console ([Environment Variables](/en/system-admin-guide/#environment-variables)). `frame-src`, though, is always enforced, and by default it does not allow even `'self'`. Any iframe is blocked, a map or a video as much as a page of the site's own (such as an HTML file under `/brand/`). A brand that uses iframes adds to `frame-src` as in the table below.
+:::caution[Blocked until added]
+`CSP_MODE` defaults to `enforce`: scripts, styles, fonts, iframes and the like that a brand loads from elsewhere are blocked until added as in the table below ([Environment Variables](/en/system-admin-guide/#environment-variables)). By default `frame-src` does not allow even `'self'`, so add any iframe, a map or a video as much as a page of the site's own (such as an HTML file under `/brand/`). On a site with `CSP_MODE=report-only`, `frame-src` is still always enforced.
 :::
 
 ### What needs no addition
@@ -558,10 +558,10 @@ csp: {
 
 Open the pages the brand touches (the top page, added static pages, a page with the header and footer) in Chrome or Edge, and filter the developer tools console by `Content Security Policy` (no hyphens). A missing source shows up as a message like these:
 
-- `[Report Only] Refused to load the script 'https://widget.example.jp/...' because it violates ... "script-src ..."` — not blocked yet, but to be added
-- `Refused to frame 'https://www.youtube.com/' because it violates ... "frame-src ..."` — the iframe is actually blocked. A `[Report Only]` copy of the same message appears beside it, but a `frame-src` one is blocked
+- `Refused to load the script 'https://widget.example.jp/...' because it violates ... "script-src ..."` — the script is blocked
+- `Refused to frame 'https://www.youtube.com/' because it violates ... "frame-src ..."` — the iframe is blocked
 
-Add the origin in the message to the directive it names. A later release will make `enforce` the default for `CSP_MODE`, which blocks the `[Report Only]` ones too, so add sources until no CSP message appears before then.
+Add the origin in the message to the directive it names, until no CSP message appears. A site that cannot have them blocked meanwhile can set `CSP_MODE=report-only` (on AWS, the site's `cspMode: 'report-only'`): everything but `frame-src` then only shows in the console, marked `[Report Only]`, without being blocked. Remove it once the sources are added.
 
 `pnpm dev` sends nearly the same CSP, but allows `eval` in development only. Check a script that uses `eval` on a built site (`pnpm build && pnpm --filter @kukan/web start`) or in production.
 

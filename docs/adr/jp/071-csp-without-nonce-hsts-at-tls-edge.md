@@ -2,11 +2,11 @@
 
 ## ステータス
 
-**採用（Accepted）** — 2026-11-01
+**採用（Accepted）** — 2026-11-01（2026-11-28 に既定を `enforce` に切り替えた。残課題 1）
 
 すべてのページに Content-Security-Policy を出す。`script-src` は `'unsafe-inline'` を含み、nonce も
-ハッシュも使わない。ポリシーは `CSP_MODE`（既定 `report-only`）で報告だけの状態から入れ、
-違反が無いことを確かめてから `enforce` に切り替える。Office プレビューの `frame-src`（ADR-065）と、
+ハッシュも使わない。ポリシーは `CSP_MODE` で報告だけの状態（`report-only`）から入れ、
+違反が無いことを確かめてから既定を `enforce` に切り替えた。Office プレビューの `frame-src`（ADR-065）と、
 ページに使い道のない 4 つの指令は report-only の間も強制する。違反の報告先は置かない。HSTS は TLS を終端するもの —
 AWS では CloudFront、Docker Compose では Caddy の TLS サイトブロック — だけが出す。`max-age` は 1 年、
 `includeSubDomains` は既定で付けずサイト単位で選び、`preload` は付けない。
@@ -139,7 +139,7 @@ frame-ancestors 'self'
 
 ### 2. 出し方 — `CSP_MODE`
 
-環境変数 `CSP_MODE`（`report-only` / `enforce`、既定 `report-only`）。`OFFICE_PREVIEW_VIEWER` と同じく
+環境変数 `CSP_MODE`（`report-only` / `enforce`、既定 `enforce`。2026-11-28 までは `report-only`）。`OFFICE_PREVIEW_VIEWER` と同じく
 web が要求ごとに読むので、切り替えにイメージのビルドは要らない。AWS ではサイトの `cspMode`、
 Compose では `.env`（マルチサイトは `sites/<site>.env`）。
 
@@ -204,10 +204,11 @@ HTTP だけで公開している非公開ドメインのサイトは、この AD
 
 ## 残課題
 
-1. **既定を `enforce` に切り替える。** demo で report-only のまま運用し、違反が無いことを確かめた
-   あとのリリースで既定を変える。破壊的変更としてリリースノートに書き、report-only に留めたい
-   サイトは `CSP_MODE=report-only` を明示する。既定は `@kukan/shared` の `DEFAULT_CSP_MODE`
-   1 箇所にあり、web の既定値も infra の「既定と違うときだけ環境変数を出す」判定もそれを読む
+1. **既定を `enforce` に切り替える — 済み（2026-11-28）。** demo の 5 サイトを report-only のまま
+   巡回し（匿名のページ、ログイン後の画面、アップロード、ibisOffice の枠の中）、違反が無いことを
+   確かめてから既定を変えた。report-only に留めたいサイトは `CSP_MODE=report-only`（AWS ではサイトの
+   `cspMode: 'report-only'`）を明示する。既定は `@kukan/shared` の `DEFAULT_CSP_MODE` 1 箇所にあり、
+   web の既定値も infra の「既定と違うときだけ環境変数を出す」判定もそれを読む
 2. **`'unsafe-inline'` を外す。** Next.js がインラインスクリプトをハッシュで許可できる形にするか、
    HTML キャッシュと両立する nonce の配り方（エッジでの差し込み）ができたら、見直す
 3. **`img-src` を狭める。** 組織・グループの画像をアップロードに変える、または許すホストを

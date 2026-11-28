@@ -276,9 +276,9 @@ export interface EnvironmentConfig {
   officePreviewViewer?: OfficePreviewViewer
   /**
    * How the pages' Content-Security-Policy goes out (CSP_MODE, ADR-071). Omit →
-   * `report-only`: the policy is reported, not enforced, beside the enforced
-   * `frame-src` and directives the pages have no use for; `enforce` → the
-   * policy blocks.
+   * `enforce`: the policy blocks; `report-only` → the policy is reported, not
+   * enforced, beside the enforced `frame-src` and directives the pages have no
+   * use for.
    */
   cspMode?: CspMode
   /**
@@ -447,9 +447,9 @@ export interface SiteConfig {
   officePreviewViewer?: OfficePreviewViewer
   /**
    * How the pages' Content-Security-Policy goes out (CSP_MODE, ADR-071). Omit →
-   * `report-only`: the policy is reported, not enforced, beside the enforced
-   * `frame-src` and directives the pages have no use for; `enforce` → the
-   * policy blocks.
+   * `enforce`: the policy blocks; `report-only` → the policy is reported, not
+   * enforced, beside the enforced `frame-src` and directives the pages have no
+   * use for.
    */
   cspMode?: CspMode
   /**

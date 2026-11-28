@@ -59,7 +59,7 @@ const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
       enableWaf: false,
       nameSiteInUserAgent: true,
       generatorMeta: false,
-      cspMode: 'enforce',
+      cspMode: 'report-only',
     },
   ],
 }
@@ -91,9 +91,9 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     expect(containerEnvs(siteB).Worker).not.toHaveProperty('GENERATOR_META_ENABLED')
   })
 
-  it('enforces the CSP on the one site that asks, and sets nothing for the rest (ADR-071)', () => {
+  it('keeps the CSP report-only on the one site that asks, and sets nothing for the rest (ADR-071)', () => {
     expect(containerEnvs(siteA).Web).not.toHaveProperty('CSP_MODE')
-    expect(containerEnvs(siteB).Web.CSP_MODE).toBe('enforce')
+    expect(containerEnvs(siteB).Web.CSP_MODE).toBe('report-only')
     expect(containerEnvs(siteB).Worker).not.toHaveProperty('CSP_MODE')
   })
 
