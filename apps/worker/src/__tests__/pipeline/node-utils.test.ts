@@ -171,6 +171,31 @@ describe('streamLines', () => {
     expect(lines).toEqual(['x'.repeat(1000), '', 'y'])
   })
 
+  it('drops what a line holds past the cap, wherever the chunks fall, and keeps the next line', async () => {
+    const chunks = [
+      Buffer.from('abc'),
+      Buffer.from('defgh'),
+      Buffer.from('ij\nklmnopq\nr'),
+      Buffer.from('stuvwxyz'),
+    ]
+    const lines: string[] = []
+    let cuts = 0
+    for await (const line of streamLines(Readable.from(chunks), 'utf-8', 4, () => cuts++)) {
+      lines.push(line)
+    }
+    expect(lines).toEqual(['abcd', 'klmn', 'rstu'])
+    expect(cuts).toBeGreaterThan(0)
+  })
+
+  it('tells of no cut where every line fits the cap', async () => {
+    const lines: string[] = []
+    let cuts = 0
+    const stream = Readable.from([Buffer.from('abcd\nef'), Buffer.from('gh\n')])
+    for await (const line of streamLines(stream, 'utf-8', 4, () => cuts++)) lines.push(line)
+    expect(lines).toEqual(['abcd', 'efgh'])
+    expect(cuts).toBe(0)
+  })
+
   it('should handle large number of lines across multiple chunks', async () => {
     const text = Array.from({ length: 1000 }, (_, i) => `line${i}`).join('\n')
     const stream = Readable.from(Buffer.from(text))

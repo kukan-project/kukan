@@ -120,26 +120,55 @@ export function zstdLines(stream: Readable): AsyncGenerator<string> {
   return streamLines(pipeline(stream, createZstdDecompress(), () => {}))
 }
 
-/** Yield lines from a text stream in `encoding` without loading the entire file into memory. */
-export async function* streamLines(stream: Readable, encoding = 'utf-8'): AsyncGenerator<string> {
+/**
+ * Yield lines from a text stream in `encoding` without loading the entire file into memory.
+ *
+ * A line is held whole, so `maxLineChars` is what bounds the memory where the
+ * file decides the line's length: past it the rest of the line is read and
+ * dropped, and `onCut` is told.
+ */
+export async function* streamLines(
+  stream: Readable,
+  encoding = 'utf-8',
+  maxLineChars = Infinity,
+  onCut?: () => void
+): AsyncGenerator<string> {
   // Streaming decode carries a multi-byte character, or a stateful encoding's
   // shift, across chunk boundaries — so a Shift_JIS file need not be held whole
   const decoder = new TextDecoder(toCharset(encoding))
   // The line being read, in pieces: joining it to each chunk as it came would
   // copy it once a chunk, and a file with no line breaks is all one line
   let pieces: string[] = []
+  let held = 0
+  const hold = (piece: string) => {
+    const room = Math.max(maxLineChars - held, 0)
+    if (piece.length <= room) {
+      pieces.push(piece)
+      held += piece.length
+      return
+    }
+    onCut?.()
+    if (room > 0) pieces.push(piece.slice(0, room))
+    held = maxLineChars
+  }
   for await (const chunk of stream) {
     const text = decoder.decode(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk), {
       stream: true,
     })
     const parts = text.split('\n')
-    pieces.push(parts[0]!)
+    hold(parts[0]!)
     if (parts.length === 1) continue
     yield pieces.join('')
-    yield* parts.slice(1, -1)
-    pieces = [parts.at(-1)!]
+    // Every line this chunk starts, the last of them still being read
+    for (let i = 1; i < parts.length; i++) {
+      pieces = []
+      held = 0
+      hold(parts[i]!)
+      if (i < parts.length - 1) yield pieces.join('')
+    }
   }
-  const tail = pieces.join('') + decoder.decode()
+  hold(decoder.decode())
+  const tail = pieces.join('')
   if (tail) yield tail
 }
 

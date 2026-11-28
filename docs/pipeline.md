@@ -629,10 +629,14 @@ heavy の子プロセス（`interpret-workbook`）でセルの格子を読み、
 | JSON（入れ子の深さ）                  | 64 段      | `apps/worker/src/config.ts`                               |
 | XLSX の読み直し（展開後）             | 4 MB       | `apps/worker/src/config.ts`                               |
 | XLSX の読み直し（XML 要素）           | 20 万個    | `apps/worker/src/config.ts`                               |
+| HTML の索引（1 行の長さ）             | 1 MB 相当  | `apps/worker/src/pipeline/steps/index-content.ts`         |
 | ZIP マニフェスト（エントリ数）        | 1 万件     | `apps/worker/src/pipeline/interpret/zip.ts`               |
 | ZIP マニフェスト（エントリ名の合計）  | 200 万文字 | `apps/worker/src/pipeline/interpret/zip.ts`               |
 | Office の原本（ibisOffice、ファイル） | 64 MB      | `apps/web/src/components/preview/ibis-office-preview.tsx` |
 | Office の原本（ibisOffice、展開後）   | 128 MB     | `apps/web/src/components/preview/ibis-office-preview.tsx` |
+
+HTML の索引は、タグを外すために 1 行を丸ごと持つ。改行の無い HTML でもメモリが行の長さに比例しないよう、
+1 行は先頭の 1,048,576 文字までを読む。1 行のテキストのうち索引に入るのは、もともと先頭の 64 KB までである。
 
 XLSX は自前の読み取りで読み、それが失敗したとき（壊れた XML など）だけ officeparser で読み直す。読み直しは
 どちらかの上限を超えると読み始める前に失敗する（officeparser は要素ごとに 1 KB 前後を持つため、メモリで決めた値）。

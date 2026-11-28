@@ -196,6 +196,27 @@ describe('executeIndexContent', () => {
       expect(indexedDoc.resourceId).toBe('res-1')
     })
 
+    it('reads an HTML file of one line no further than the line cap', async () => {
+      // Markup need have no line breaks, and the line is held whole to take its tags off
+      const html = `<p>head</p>${'<i></i>'.repeat(200_000)}<p>tail</p>`
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(html)))
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'HTML',
+        defaultInterpretResult,
+        ctx
+      )
+
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toBe('head')
+      // Recorded as cut, as a table read by its head is
+      expect(result?.contentTruncated).toBe(true)
+    })
+
     it('should strip HTML tags for HTML format', async () => {
       const html = '<html><body><h1>Title</h1><p>Hello <b>world</b></p></body></html>'
       const ctx = createMockCtx()
@@ -750,6 +771,11 @@ describe('lineText', () => {
       '\t<td>東京</td>\t<td>大阪</td>\t',
     ]
     for (const line of lines) expect(lineText(line), line).toBe(byPattern(line))
+  })
+
+  it('reads a line of nothing but tags without a piece for each', () => {
+    expect(lineText('<>'.repeat(500_000))).toBe('')
+    expect(lineText(`${'<i></i>'.repeat(100_000)}end`)).toBe('end')
   })
 
   it('keeps an unclosed run of brackets as text without rescanning it', () => {

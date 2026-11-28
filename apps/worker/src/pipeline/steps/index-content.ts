@@ -317,7 +317,10 @@ async function indexTextStream(
       .replace(/\n$/, '')
       .split('\n')
   } else {
-    lines = streamLines(stream, encoding)
+    // Tags are taken off a line held whole, and markup need have no line breaks
+    lines = streamLines(stream, encoding, isHtml ? HTML_LINE_MAX_CHARS : undefined, () => {
+      truncated = true
+    })
   }
 
   await ctx.deleteContent(resourceId)
@@ -338,6 +341,13 @@ async function indexTextStream(
   }
 }
 
+/**
+ * How much of one HTML line is read for its text. A chunk keeps the first
+ * `MAX_CONTENT_CHUNK_SIZE` bytes of a line's text and no more, so this only
+ * has to leave room for the markup around that much text.
+ */
+const HTML_LINE_MAX_CHARS = 1024 * 1024
+
 /** HTML lines as their text, the lines left with none dropped */
 async function* withoutTags(lines: AsyncIterable<string> | Iterable<string>) {
   for await (const line of lines) {
@@ -353,18 +363,20 @@ async function* withoutTags(lines: AsyncIterable<string> | Iterable<string>) {
  * length. A `<` left unclosed stays as text, as it did under the pattern.
  */
 export function lineText(line: string): string {
-  let out = ''
+  // Joined once: appending per tag builds a string of as many pieces as the
+  // line has tags, at many times the line's size in memory
+  const texts: string[] = []
   let from = 0
   for (;;) {
     const open = line.indexOf('<', from)
     const close = open === -1 ? -1 : line.indexOf('>', open + 1)
     // No `>` after this `<` means none after any later one either
     if (close === -1) break
-    out += line.slice(from, open) + ' '
+    if (open > from) texts.push(line.slice(from, open))
     from = close + 1
   }
-  out += line.slice(from)
-  return out.replace(/\s+/g, ' ').trim()
+  texts.push(line.slice(from))
+  return texts.join(' ').replace(/\s+/g, ' ').trim()
 }
 
 interface WrittenChunks {
