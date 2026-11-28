@@ -6,6 +6,86 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.49.0] - 2026-11-28
+
+**Breaking Changes**
+
+- **The pages' Content-Security-Policy is enforced by default.** A page now blocks what its policy does not allow — scripts, styles, fonts, frames and connections to hosts not listed — instead of only reporting it in the browser's console. On the demo sites every public page, every preview format and the signed-in screens showed no violation under the policy. A site whose brand loads anything from another host must add that host to the brand's `csp`. To go back to the previous behavior at once, set `cspMode: 'report-only'` on the site (Docker Compose: `CSP_MODE=report-only`); no image rebuild is needed (#1337).
+
+**Highlights**
+
+- **A round of security fixes.** This release fixes what a security review of the whole project found: a permission check on resource edits that could let users change the resources of a dataset in the trash; a purge that could leave a purged version's preview, text and search content readable; small files that could stop the worker or hold its parsers for minutes; edge caching that could serve a page in a form a browser cannot show; and a gap in the read-only check of data queries on DuckDB 2.0. Details are below.
+
+**Bug Fixes**
+
+- Editing, uploading to, reprocessing or deleting a resource now always checks the rights of the dataset the resource belongs to. For a dataset in the trash, the check could be made against the wrong dataset, letting a signed-in user who should have no access change or delete its resources (#1334).
+- Purging a version also removes its preview, document text, column statistics and search content when those were still the version's own, which happens when the file that replaced it could not be read. Before, they stayed readable after the purge (#1335).
+- Indexing an HTML file reads at most about a million characters of one line. A large HTML file with no line breaks could use up the worker's memory and stop it. Such a line is recorded as truncated (#1336).
+- Reading an Excel or CSV file as a table takes time in proportion to the file: long runs of spaces in a cell, very long number formats and long text shared by many cells could each hold the worker's file reader until its time limit (#1338).
+- The default borders of a sheet, the rows of single values above and below a table, and the values kept in a column's profile are bounded, so a small crafted workbook can no longer use minutes of time or a gigabyte of memory. A sheet with more than 1,000 rows of single values above its header or below its table is not read as a plain table, and a column's frequent values keep their first 500 characters (#1341).
+- The HTML cache at the edge keys pages on the request headers the app's router sends, so a router request can no longer leave a page cached in a form a browser cannot show (#1339).
+- A data query (SQL) that writes inside a `WITH` clause is refused, and the read-only check reads comments and strings as DuckDB 2.0 does. Such a query could not reach anything outside its own throwaway database, but it could write temporary files past the query's disk limit (#1340).
+- Datasets, organizations, groups and users can no longer be named `..`, which a URL resolves away. The CKAN-compatible API's `fq=owner_org:` with a value that is no organization id matches nothing instead of failing on the PostgreSQL search (#1342).
+- On a multi-site deployment, each site's database role can no longer connect to the cluster's default database (#1343).
+- An Excel 5.0/95 workbook the Office preview cannot open shows the message that the original cannot be shown, instead of an empty frame (#1322).
+- The web finishes its shutdown work (writing AI usage records, closing database connections) before it exits on SIGTERM, and exits with 0. On Lambda Web Functions, environments being shut down no longer count as failures (#1324).
+
+**Improvements**
+
+- Docker images built on a developer's machine leave out `.env` files at any depth, not only at the top (#1343).
+
+**Documentation**
+
+- ADR-065 (Office originals drawn in the browser) is marked accepted and implemented (#1325). ADR-071 records the switch to enforcement (#1337). The project site's development diary lists part 8, on column types, keys and roles (#1320).
+
+**Upgrade Notes** (for system administrators)
+
+- **Check your brand's external hosts before deploying** (see Breaking Changes). The policy is enforced as soon as the new web serves the page; during the deploy, pages served by the old web still only report.
+- **No migration is needed.**
+- **CloudFront:** each site's HTML cache policy is updated in place. Pages cached before the deploy are served until they expire (up to 5 minutes).
+- **Multi-site AWS deployments:** the deploy revokes connections to the cluster's default `kukan` database from every site's database role. A single-site deployment, which connects as the cluster's administrator, is not affected.
+- **Existing resources:** the new limits on reading tables and HTML apply when a file is next read. Nothing has to be reprocessed. A resource whose purged version's preview is still shown is fixed by uploading a file that reads, or by reprocessing it.
+
+---
+
+**破壊的変更**
+
+- **ページの Content-Security-Policy を、既定で強制するようにしました。** ページは、ポリシーで許していないもの（一覧に無いホストのスクリプト・スタイル・フォント・iframe・送信）を止めます。これまではブラウザのコンソールに出すだけでした。demo のサイトでは、公開のすべてのページ、プレビューのすべての形式、ログイン後の画面で違反はありませんでした。ブランドでほかのホストから何かを読み込んでいるサイトは、ブランドの `csp` にそのホストを足してください。すぐに以前の動きに戻したいときは、そのサイトに `cspMode: 'report-only'`（Docker Compose では `CSP_MODE=report-only`）を設定します。イメージの作り直しは要りません（#1337）。
+
+**ハイライト**
+
+- **セキュリティの修正をまとめて入れました。** プロジェクト全体のセキュリティの点検で見つかったものを直しました。ごみ箱にあるデータセットのリソースを権限のない利用者が変更できた権限の確認、パージした版のプレビュー・テキスト・検索の内容が読めるまま残ることがあった件、小さなファイルで worker が止まったり読み取りに何分も掛かったりした件、ブラウザが表示できない形のページがエッジのキャッシュから配られることがあった件、DuckDB 2.0 でのデータの問い合わせの読み取り専用の検査の漏れです。詳しくは下にあります。
+
+**バグ修正**
+
+- リソースの編集・アップロード・再処理・削除で、必ずそのリソースが属するデータセットで権限を確かめるようにしました。ごみ箱にあるデータセットでは、違うデータセットで確かめてしまうことがあり、権限のないログイン利用者がそのリソースを変更・削除できました（#1334）。
+- 版をパージするとき、プレビュー・文書のテキスト・列の統計・検索の内容がまだその版のものなら、一緒に消すようにしました。差し替えたファイルが読めなかったときに起きる状態で、これまではパージの後も読めるまま残っていました（#1335）。
+- HTML ファイルの索引では、1 行を約 100 万文字までしか読まないようにしました。改行の無い大きな HTML ファイルで、worker のメモリを使い切って止まることがありました。切った行は、切ったことを記録します（#1336）。
+- Excel・CSV ファイルを表として読む時間が、ファイルの大きさに見合うようにしました。セルの中の長い空白、とても長い表示形式、多くのセルが共有する長い文字列で、worker のファイルの読み取りが時間制限まで終わらないことがありました（#1338）。
+- シートの既定の罫線、表の上下にある値 1 つの行、列のプロファイルに持つ値に上限を設け、細工した小さなブックで何分もの時間や 1 GB のメモリを使わせることができないようにしました。見出しの上か表の下に値 1 つの行が 1,000 行を超えて続くシートは、素直な表として読みません。列のよく出る値は先頭の 500 文字を持ちます（#1341）。
+- エッジの HTML のキャッシュで、アプリのルーターが送るリクエストのヘッダーもキーに入れました。ルーターの要求のあとに、ブラウザが表示できない形のページがキャッシュに残ることが無くなります（#1339）。
+- データの問い合わせ（SQL）で、`WITH` の中で書き込む文を断るようにしました。あわせて、読み取り専用の検査が、コメントと文字列を DuckDB 2.0 と同じように読むようにしました。こうした問い合わせは、問い合わせごとの使い捨てのデータベースの外には届きませんでしたが、問い合わせのディスクの上限を超えて一時ファイルを書けました（#1340）。
+- データセット・組織・グループ・ユーザーの名前に `..` を使えないようにしました（URL が解決して別のページになるため）。CKAN 互換 API の `fq=owner_org:` に組織の ID でない値を指定したとき、PostgreSQL の検索でエラーになっていたのを、結果なしにしました（#1342）。
+- マルチサイトの構成で、各サイトのデータベースのロールが、クラスタの既定のデータベースに接続できないようにしました（#1343）。
+- Office のプレビューで開けない Excel 5.0/95 のブックで、空の枠のままにならず、原本を表示できない旨の案内を出すようにしました（#1322）。
+- web が SIGTERM を受けたとき、終了処理（AI の使用量の記録の書き出し、データベースの接続を閉じる）を済ませてから、終了コード 0 で終わるようにしました。Lambda Web Functions で、環境が畳まれるたびに失敗として数えられることが無くなります（#1324）。
+
+**改善**
+
+- 開発機で Docker イメージを作るとき、リポジトリの直下だけでなく、どの階層の `.env` ファイルも入らないようにしました（#1343）。
+
+**ドキュメント**
+
+- ADR-065（Office 文書の原本をブラウザで描く）を「承認済み・実装済み」にしました（#1325）。ADR-071 に強制への切り替えを記録しました（#1337）。公式サイトの開発記のページに、列の型・主キー・役割を書いた第 8 回を足しました（#1320）。
+
+**アップグレードの注意**（システム管理者向け）
+
+- **デプロイの前に、ブランドが読み込む外部のホストを確かめてください**（破壊的変更を参照）。新しい web がページを返した時点からポリシーは強制されます。デプロイの途中、古い web が返すページは、これまでどおりコンソールに出すだけです。
+- **マイグレーションは要りません。**
+- **CloudFront：** 各サイトの HTML のキャッシュポリシーをその場で更新します。デプロイの前にキャッシュされたページは、期限（最大 5 分）まで配られます。
+- **AWS のマルチサイトの構成：** デプロイで、各サイトのデータベースのロールから、クラスタの既定の `kukan` データベースへの接続を取り消します。単一サイトの構成は、クラスタの管理者として接続するので影響しません。
+- **既存のリソース：** 表と HTML の読み取りの新しい上限は、次にファイルを読むときから効きます。再処理は要りません。パージした版のプレビューがまだ表示されるリソースは、読めるファイルに差し替えるか、再処理すれば直ります。
+
 ## [0.48.0] - 2026-11-28
 
 **Highlights**
