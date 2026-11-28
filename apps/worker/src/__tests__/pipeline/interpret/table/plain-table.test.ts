@@ -170,6 +170,28 @@ describe('a plain table', () => {
     })
   })
 
+  it('reads a long text in many cells, and a header of long runs of spaces, in the time of their length', async () => {
+    // A workbook's cells name one shared string, so a text is worked on once a cell
+    const long = `a${' '.repeat(300_000)}a`
+    const rows: Value[][] = [
+      ['名称', '備考', '日付'],
+      ...Array.from({ length: 2000 }, (_, i): Value[] => [
+        `施設${i}`,
+        long,
+        { date: '2026-02-01' },
+      ]),
+    ]
+    expect(await judge(sheet(rows))).toMatchObject({ reading: { to: 'C2001' } })
+    // The header's names are written whole
+    const header: Value[][] = [
+      ['名称', `人数${' '.repeat(300_000)}\n（人）`, '日付'],
+      ...list(8).slice(1),
+    ]
+    expect(await judge(sheet(header))).toMatchObject({
+      reading: { columnNames: ['名称', '人数 （人）', '日付'] },
+    })
+  })
+
   it('writes column names trimmed and with a line break as a space, but compares them folded', async () => {
     const rows: Value[][] = [['　名称 ', '人数\n（人）', 'ＡＢＣ'], ...list(8).slice(1)]
     expect(await judge(sheet(rows))).toMatchObject({

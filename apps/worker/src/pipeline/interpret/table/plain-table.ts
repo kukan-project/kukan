@@ -380,6 +380,13 @@ function newBlock(top: number): Block {
   }
 }
 
+/**
+ * The longest text read as a name or as a mark. Every cell that names a shared
+ * string is handed the whole string, so what is done to a text here is done
+ * once per cell; past any length a heading has, a text is only a text.
+ */
+const NAME_MAX_CHARS = 1000
+
 function valueCells(cells: GridCell[]): ValueCell[] {
   const out: ValueCell[] = []
   for (const cell of cells) {
@@ -390,7 +397,7 @@ function valueCells(cells: GridCell[]): ValueCell[] {
       kind: cell.kind,
       value,
       category: categoryOf(cell.kind, value),
-      ...(cell.kind === 'text' && { name: compareName(value) }),
+      ...(cell.kind === 'text' && value.length <= NAME_MAX_CHARS && { name: compareName(value) }),
     })
   }
   return out
@@ -400,7 +407,7 @@ function categoryOf(kind: GridCell['kind'], value: string): Category {
   if (kind === 'number' || kind === 'date') return 'number'
   if (kind === 'error') return 'mark'
   if (kind === 'boolean') return 'other'
-  return NO_VALUE.test(value) ? 'mark' : 'text'
+  return value.length <= NAME_MAX_CHARS && NO_VALUE.test(value) ? 'mark' : 'text'
 }
 
 function addCount(columns: Map<number, ColumnCount>, cell: ValueCell, by = 1): void {
@@ -473,7 +480,13 @@ function repeatsHeader(track: RepeatTrack | undefined): boolean {
 
 /** A header's text as a column name (spec §5.7): trimmed, a line break a space. */
 function columnName(text: string): string {
-  return text.replace(/\s*(?:\r\n|\r|\n)\s*/g, ' ').trim()
+  // Split and trimmed, not `/\s*(?:\r\n|\r|\n)\s*/g`: the pattern retries a run
+  // of spaces with no line break after it from each of its characters
+  return text
+    .split(/\r\n|\r|\n/)
+    .map((piece) => piece.trim())
+    .filter((piece) => piece !== '')
+    .join(' ')
 }
 
 /** A name as names are compared (spec §5.7): letters, digits and marks folded by NFKC. */

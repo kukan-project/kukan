@@ -66,17 +66,25 @@ export const CELL_SHAPES = [
 export type CellShape = (typeof CELL_SHAPES)[number][0] | 'text'
 
 const SHAPE_TESTS = CELL_SHAPES.map(([shape, re]) => [shape, new RegExp(`^(?:${re})$`)] as const)
+/**
+ * The longest cell tried as a number. The pattern is written for RE2, and read
+ * by JavaScript it is not linear in a run of spaces; no number is this long.
+ */
+const NUMBER_MAX_CHARS = 1000
 
 /** Each cell's shape by position, blank as null — all the rules need of a line. */
 export type LineShape = (CellShape | null)[]
 
 /** Characters a cell is trimmed of, in the line's cells and the table's alike. */
 export const CELL_BLANKS = ' \t　'
-const BLANK_ENDS = new RegExp(`^[${CELL_BLANKS}]+|[${CELL_BLANKS}]+$`, 'g')
 
 /** A cell's value, trimmed; blank as null. */
 export function cellValue(cell: string | null | undefined): string | null {
-  const v = cell?.replace(BLANK_ENDS, '')
+  if (!cell) return null
+  // Loops, as `trimTrailing` is: a pattern retries a run of blanks inside the cell
+  let start = 0
+  while (start < cell.length && CELL_BLANKS.includes(cell[start]!)) start++
+  const v = trimTrailing(cell.slice(start), CELL_BLANKS)
   return v ? v : null
 }
 
@@ -91,7 +99,11 @@ export function signOffShape(cells: (string | null)[], columnCount: number): Lin
   if (!isSignOffShape(values.filter((v) => v !== null).length, columnCount)) return null
   return Array.from({ length: Math.max(columnCount, values.length) }, (_, i) => {
     const v = values[i] ?? null
-    return v === null ? null : (SHAPE_TESTS.find(([, re]) => re.test(v))?.[0] ?? 'text')
+    if (v === null) return null
+    const found = SHAPE_TESTS.find(
+      ([shape, re]) => !(shape === 'number' && v.length > NUMBER_MAX_CHARS) && re.test(v)
+    )
+    return found?.[0] ?? 'text'
   })
 }
 

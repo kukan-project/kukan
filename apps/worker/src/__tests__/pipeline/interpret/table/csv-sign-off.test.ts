@@ -9,7 +9,9 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  cellValue,
   refusedLineShape,
+  signOffShape,
   vouches,
   type CsvDialect,
   type TableBody,
@@ -111,6 +113,26 @@ describe('refusedLineShape', () => {
     // …and three values two columns short of the table is a row, however few.
     expect(signOff('a,b,c', 5)).toBe(false)
     expect(signOff('a,b,c', 6)).toBe(true)
+  })
+})
+
+describe('cellValue and signOffShape', () => {
+  it('trims the blanks at the ends and keeps the ones inside', () => {
+    expect(cellValue(' \t　a　b \t　')).toBe('a　b')
+    expect(cellValue(' \t　')).toBeNull()
+    expect(cellValue('')).toBeNull()
+    expect(cellValue(null)).toBeNull()
+  })
+
+  it('reads a cell of a long run of blanks in the time of its length', () => {
+    const inner = `a${' '.repeat(300_000)}a`
+    expect(cellValue(inner)).toBe(inner)
+    // A no-break space is `\s` to JavaScript and no blank to the trim
+    expect(signOffShape([`-${'\u00a0'.repeat(300_000)}x`, '1,234'], 31)).toEqual([
+      'text',
+      'number',
+      ...Array.from({ length: 29 }, () => null),
+    ])
   })
 })
 

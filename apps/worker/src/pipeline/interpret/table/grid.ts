@@ -385,6 +385,8 @@ function builtinDateKind(id: number): FormatKind | undefined {
   return undefined
 }
 
+const FORMAT_CODE_MAX_CHARS = 1024
+
 /**
  * Whether a format code shows a date, a time of day or a duration. Literal
  * text, colours, locales and conditions are not part of what it shows; `g`
@@ -392,6 +394,9 @@ function builtinDateKind(id: number): FormatKind | undefined {
  * `[s]` counts past a day.
  */
 export function dateKindOf(code: string): DateKind | undefined {
+  // Excel writes no code past 255 characters, and the patterns below are not
+  // linear in a code made to be long
+  if (code.length > FORMAT_CODE_MAX_CHARS) return undefined
   const shown = code
     .replace(/"[^"]*"/g, '')
     .replace(/\\./g, '')

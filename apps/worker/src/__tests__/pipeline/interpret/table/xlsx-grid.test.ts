@@ -401,6 +401,11 @@ describe('formats and references', () => {
     expect(dateKindOf(code)).toBe(kind)
   })
 
+  it('reads a format code longer than Excel writes as no date, without working through it', () => {
+    expect(dateKindOf('['.repeat(300_000))).toBeUndefined()
+    expect(dateKindOf(`yyyy${'"'.repeat(300_000)}`)).toBeUndefined()
+  })
+
   it('steps over the 29 February 1900 that Excel counts', () => {
     expect(serialToIso(1, 'date', false)).toBe('1900-01-01')
     expect(serialToIso(59, 'date', false)).toBe('1900-02-28')
