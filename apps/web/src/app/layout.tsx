@@ -28,7 +28,11 @@ const staticMetadata: Metadata = {
   // Same origin the OData feed builds its links from (`publicOrigin`); the
   // TODO for a dedicated SITE_URL lives there now. Add an OG image to public/.
   metadataBase: new URL(siteOrigin()),
-  icons: { icon: brandConfig.faviconPath },
+  // From the brand alone: no app/favicon.ico, whose link would sit beside the brand's
+  icons: {
+    icon: brandConfig.faviconPath,
+    apple: brandConfig.appleTouchIconPath,
+  },
   openGraph: { images: [brandConfig.ogImage] },
   robots: brandConfig.noindex ? { index: false, follow: false } : null,
 }

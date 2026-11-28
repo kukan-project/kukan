@@ -276,6 +276,22 @@ const brand = resolveBrandConfig(useLocale())
 
 In both cases `brand.siteName` / `brand.footerLinks[].label` etc. are resolved strings.
 
+### Favicon (added 2026-11-28)
+
+Icons come from `brandConfig` alone. The main side's default icon lives in the default
+brand's `brands/default/public/favicon.ico` rather than `app/favicon.ico` (the Next.js file
+convention): with the file convention, the main side's icon link stays beside the brand's
+even when a brand names another file in `faviconPath`.
+
+- `<link rel="icon">` names `faviconPath` only (the default brand: `/favicon.ico`)
+- `/favicon.ico` answers with the brand's `public/favicon.ico` when it has one, the default
+  brand's otherwise (`copy-brand-assets.mjs` copies it to `public/favicon.ico` at the start
+  of `dev` / `build`; like `public/brand/`, a generated file). Clients that fetch
+  `/favicon.ico` without reading the page (PDFs and images opened directly, bookmark sync,
+  link previews, crawlers) get the brand's icon too
+- The iOS home-screen icon is the optional `appleTouchIconPath` (a 180×180 PNG); when set,
+  `<link rel="apple-touch-icon">` is emitted
+
 ### Conflict Avoidance Mechanism
 
 | File                           | Main-side change frequency       | Fork-side changes | Conflict Risk                                 |

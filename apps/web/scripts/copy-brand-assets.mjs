@@ -4,10 +4,13 @@
  * The active brand is KUKAN_BRAND (unset → 'default'), resolved uniformly to
  * brands/<brand>/public. public/brand/ is a generated directory (gitignored)
  * served at /brand/... — reset it each run so a previously built brand's assets
- * never linger. Run via the dev/build scripts.
+ * never linger. The brand's favicon.ico (else the default brand's) also goes to
+ * public/favicon.ico, also gitignored: `/favicon.ico` is fetched without reading
+ * the page (direct PDF/image views, bookmark sync, link previews, crawlers).
+ * Run via the dev/build scripts.
  */
 
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -31,5 +34,10 @@ if (existsSync(src)) {
   // Skip .gitkeep — it only keeps the source dir tracked; dest is gitignored.
   cpSync(src, dest, { recursive: true, filter: (s) => !s.endsWith('.gitkeep') })
 }
+
+const favicon = [brandRoot, join(webRoot, 'brands', 'default')]
+  .map((root) => join(root, 'public', 'favicon.ico'))
+  .find((path) => existsSync(path))
+copyFileSync(favicon, join(webRoot, 'public', 'favicon.ico'))
 
 console.log(`Copied ${brand} brand assets to ${dest}`)

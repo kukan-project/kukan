@@ -1,5 +1,6 @@
 # Brand public assets (copied from the active brand by copy-brand-assets.mjs)
 public/brand/
+public/favicon.ico
 # ibisOffice web build: upstream's release asset, and what unpack-ibis-office.mjs unpacks from it
 vendor/ibis-office/*.zip
 public/vendor/ibis-office/

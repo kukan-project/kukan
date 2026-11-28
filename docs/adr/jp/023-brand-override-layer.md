@@ -273,6 +273,22 @@ const brand = resolveBrandConfig(useLocale())
 
 いずれも `brand.siteName` / `brand.footerLinks[].label` 等は解決済みの string になる。
 
+### ファビコン（2026-11-28 追記）
+
+アイコンは `brandConfig` からだけ出す。本体の既定のアイコンは `app/favicon.ico`（Next.js の
+ファイル規約）ではなく既定のブランドの `brands/default/public/favicon.ico` に置く。ファイル
+規約だと、ブランドが `faviconPath` に別のファイルを指定しても本体のアイコンのリンクが並んで
+出てしまうため。
+
+- `<link rel="icon">` は `faviconPath` だけを指す（既定のブランドは `/favicon.ico`）
+- `/favicon.ico` は、ブランドが `public/favicon.ico` を持っていればそれを、無ければ既定の
+  ブランドのものを返す（`copy-brand-assets.mjs` が `dev` / `build` の開始時に
+  `public/favicon.ico` へコピーする。コピー先は `public/brand/` と同じく生成物）。ページを読まずに
+  `/favicon.ico` を直接取りに来るもの（直接開いた PDF・画像、ブックマークの同期、リンクの
+  プレビュー、クローラー）にもブランドのアイコンが届く
+- iOS のホーム画面用のアイコンは任意の `appleTouchIconPath`（180×180 の PNG）で指定し、
+  あれば `<link rel="apple-touch-icon">` を出す
+
 ### コンフリクト回避の仕組み
 
 | ファイル                       | 本体側の変更頻度                 | フォーク側の変更 | コンフリクトリスク         |

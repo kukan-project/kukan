@@ -152,25 +152,27 @@ export const brandConfig: BrandConfig = {
 
   ogImage: '/brand/og-image.png',
   faviconPath: '/brand/favicon.ico',
+  appleTouchIconPath: '/brand/apple-touch-icon.png',
 }
 ```
 
 ### Field Reference
 
-| Field             | Description                                                                                                                |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `siteName`        | Site title (browser tab, header, etc.)                                                                                     |
-| `siteDescription` | meta description (for search engines)                                                                                      |
-| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)                                                                |
-| `copyrightUrl`    | Link target for the site name in the footer (omit for no link)                                                             |
-| `logo`            | Header logo configuration (see below)                                                                                      |
-| `headerNavExtra`  | Additional navigation items for the header                                                                                 |
-| `footerLinks`     | Footer link list                                                                                                           |
-| `ogImage`         | OGP image path (relative to `public/`)                                                                                     |
-| `faviconPath`     | Favicon path                                                                                                               |
-| `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none)                                     |
-| `gaMeasurementId` | GA4 Measurement ID (`G-XXXXXXXXXX`). `null` / omitted disables GA4 ([Access Analytics](/en/system-admin-guide/analytics/)) |
-| `csp`             | Sources to add to the pages' CSP. See [External Resources and CSP](#external-resources-and-csp-csp)                        |
+| Field                | Description                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `siteName`           | Site title (browser tab, header, etc.)                                                                                     |
+| `siteDescription`    | meta description (for search engines)                                                                                      |
+| `copyright`          | Footer copyright text (`© 2026` is prepended automatically)                                                                |
+| `copyrightUrl`       | Link target for the site name in the footer (omit for no link)                                                             |
+| `logo`               | Header logo configuration (see below)                                                                                      |
+| `headerNavExtra`     | Additional navigation items for the header                                                                                 |
+| `footerLinks`        | Footer link list                                                                                                           |
+| `ogImage`            | OGP image path (relative to `public/`)                                                                                     |
+| `faviconPath`        | Favicon path (what the pages' `<link rel="icon">` names)                                                                   |
+| `appleTouchIconPath` | Path of the iOS home-screen icon (a 180×180 PNG); omitted = none                                                           |
+| `noindex`            | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none)                                     |
+| `gaMeasurementId`    | GA4 Measurement ID (`G-XXXXXXXXXX`). `null` / omitted disables GA4 ([Access Analytics](/en/system-admin-guide/analytics/)) |
+| `csp`                | Sources to add to the pages' CSP. See [External Resources and CSP](#external-resources-and-csp-csp)                        |
 
 Text fields (`siteName`, `siteDescription`, `copyright`, `logo.alt`, `headerNavExtra[].label`, `footerLinks[].label`) accept either a plain string or a locale map (e.g. `{ ja: '利用規約', en: 'Terms of Use' }`). A plain string applies to all locales; a map follows locale switching. Missing locales fall back to English (the default locale), then to any defined entry.
 
@@ -499,10 +501,13 @@ Place logos, favicons, and OG images in `apps/web/brands/default/public/`.
 apps/web/brands/default/public/
 ├── logo.svg
 ├── favicon.ico
+├── apple-touch-icon.png
 └── og-image.png
 ```
 
 Files placed here are served at URLs like `/brand/logo.svg`.
+
+`favicon.ico` is served at `/favicon.ico` as well as `/brand/favicon.ico`, so clients that fetch `/favicon.ico` without reading the page (PDFs and images opened directly in the browser, bookmark sync, link previews, search engine crawlers) get the brand's icon too. Without it, `/favicon.ico` stays KUKAN's icon.
 
 :::note[Requires a build (or dev restart) to take effect]
 The contents of `brands/default/public/` are copied to `public/brand/` at the

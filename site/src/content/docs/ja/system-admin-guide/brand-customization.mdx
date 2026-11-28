@@ -152,25 +152,27 @@ export const brandConfig: BrandConfig = {
 
   ogImage: '/brand/og-image.png',
   faviconPath: '/brand/favicon.ico',
+  appleTouchIconPath: '/brand/apple-touch-icon.png',
 }
 ```
 
 ### 各フィールドの説明
 
-| フィールド        | 説明                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                   |
-| `siteDescription` | meta description（検索エンジン向け）                                                                         |
-| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                          |
-| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                                             |
-| `logo`            | ヘッダーロゴの設定（後述）                                                                                   |
-| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                                             |
-| `footerLinks`     | フッターのリンク一覧                                                                                         |
-| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                                                       |
-| `faviconPath`     | ファビコンのパス                                                                                             |
-| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                            |
-| `gaMeasurementId` | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)） |
-| `csp`             | ページの CSP に足すソース。[外部のリソースと CSP](#外部のリソースと-cspcsp)                                  |
+| フィールド           | 説明                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `siteName`           | サイトタイトル（ブラウザタブ、ヘッダー等）                                                                   |
+| `siteDescription`    | meta description（検索エンジン向け）                                                                         |
+| `copyright`          | フッターの著作権表示テキスト（`© 2026` は自動付与）                                                          |
+| `copyrightUrl`       | フッターのサイト名リンク先（省略時はリンクなし）                                                             |
+| `logo`               | ヘッダーロゴの設定（後述）                                                                                   |
+| `headerNavExtra`     | ヘッダーナビゲーションの追加項目                                                                             |
+| `footerLinks`        | フッターのリンク一覧                                                                                         |
+| `ogImage`            | OGP 画像のパス（`public/` 配下のパス）                                                                       |
+| `faviconPath`        | ファビコンのパス（ページの `<link rel="icon">` が指すもの）                                                  |
+| `appleTouchIconPath` | iOS のホーム画面用のアイコン（180×180 の PNG）のパス（省略時は出さない）                                     |
+| `noindex`            | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし）                            |
+| `gaMeasurementId`    | GA4 測定 ID（`G-XXXXXXXXXX`）。`null` / 省略で GA4 無効（[アクセス統計](/ja/system-admin-guide/analytics/)） |
+| `csp`                | ページの CSP に足すソース。[外部のリソースと CSP](#外部のリソースと-cspcsp)                                  |
 
 テキスト系フィールド（`siteName`・`siteDescription`・`copyright`・`logo.alt`・`headerNavExtra[].label`・`footerLinks[].label`）は、文字列のほかにロケールマップ（例: `{ ja: '利用規約', en: 'Terms of Use' }`）を指定できます。文字列は全ロケール共通、マップは言語切替に追従します。指定のないロケールは英語（デフォルトロケール）→定義済みの値の順で補われます。
 
@@ -499,10 +501,13 @@ footerLinks: [
 apps/web/brands/default/public/
 ├── logo.svg
 ├── favicon.ico
+├── apple-touch-icon.png
 └── og-image.png
 ```
 
 配置したファイルは `/brand/logo.svg` のような URL で参照できます。
+
+`favicon.ico` は `/brand/favicon.ico` に加えて `/favicon.ico` でも返ります。ページを読まずに `/favicon.ico` を直接取りに来るもの（ブラウザで直接開いた PDF・画像、ブックマークの同期、リンクのプレビュー、検索エンジンのクローラーなど）にも、ブランドのアイコンが届きます。置かなければ `/favicon.ico` は KUKAN のアイコンのままです。
 
 :::note[反映にはビルド（または dev の再起動）が必要]
 `brands/default/public/` の中身は、`dev` / `build` の**開始時**に

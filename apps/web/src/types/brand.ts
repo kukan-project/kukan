@@ -21,7 +21,13 @@ export interface BrandConfig {
   headerNavExtra: NavItem[]
   footerLinks: NavItem[]
   ogImage: string
+  /**
+   * The icon pages name in `<link rel="icon">`. `/favicon.ico` itself is the brand's
+   * `public/favicon.ico`, else the default brand's.
+   */
   faviconPath: string
+  /** iOS home-screen icon (180×180 PNG), e.g. '/brand/apple-touch-icon.png'. */
+  appleTouchIconPath?: string
   /** GA4 Measurement ID (e.g. 'G-XXXXXXXXXX'). null = GA4 disabled. */
   gaMeasurementId?: string | null
   /**
