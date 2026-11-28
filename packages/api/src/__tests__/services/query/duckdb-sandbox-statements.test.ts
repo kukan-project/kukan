@@ -37,6 +37,18 @@ const NESTED_COMMENT_DELETE =
 const CONTINUED_E_STRING_DELETE =
   "WITH x AS (SELECT E'a'\n'\\'') DELETE FROM data RETURNING id -- '"
 
+// Writes DuckDB 2 types as a SELECT, the first two behind what the guard's lexer
+// read otherwise than DuckDB: a comment ended by a carriage return, and a
+// continued E string closed at its quote.
+const CTE_WRITES = [
+  'WITH x AS -- c\r (DELETE FROM data RETURNING *) SELECT count(*) AS n FROM x',
+  "WITH s AS (SELECT e'a'\n'\\' AS v), y AS (DELETE FROM data RETURNING *) SELECT count(*) AS n FROM y --'",
+  'WITH x AS (DELETE FROM data RETURNING *) SELECT count(*) AS n FROM x',
+  'WITH x AS (INSERT INTO data SELECT * FROM data RETURNING *) SELECT count(*) AS n FROM x',
+  'WITH x AS (UPDATE data SET v = 0 RETURNING *) SELECT count(*) AS n FROM x',
+  "WITH x AS (COPY data TO (current_setting('temp_directory') || '/x.csv')) SELECT * FROM x",
+]
+
 describe('runSandboxedQuery statement checks', () => {
   let fixture: string
 
@@ -79,6 +91,28 @@ describe('runSandboxedQuery statement checks', () => {
       )
     })
 
+    it.each(CTE_WRITES)('refuses a write in a CTE, typed a SELECT: %j', async (sql) => {
+      await expect(runSandboxedQuery(fixture, sql, LIMITS)).rejects.toThrow(READ_ONLY_MESSAGE)
+    })
+
+    it.each([
+      [
+        'WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r WHERE n < 3) SELECT * FROM r',
+        3,
+      ],
+      ['SELECT id FROM data UNION ALL SELECT id FROM data', 6],
+      ['FROM data SELECT id', 3],
+      ['VALUES (1), (2)', 2],
+      [
+        'WITH x AS MATERIALIZED (SELECT * FROM data) SELECT * FROM x WHERE id IN (SELECT id FROM x)',
+        3,
+      ],
+      ["SELECT * FROM (PIVOT data ON cat IN ('c0', 'c1') USING sum(v) GROUP BY id)", 3],
+      ['SELECT \'WITH x AS (DELETE FROM data RETURNING *)\' AS "DELETE_QUERY_NODE"', 1],
+    ])('still runs a statement that only reads: %j', async (sql, rows) => {
+      expect((await runSandboxedQuery(fixture, sql, LIMITS)).rowCount).toBe(rows)
+    })
+
     it('still runs a single statement', async () => {
       const res = await runSandboxedQuery(fixture, 'SELECT count(*) AS c FROM data;', LIMITS)
       expect(res.rows[0].c).toBe(3)
@@ -96,7 +130,9 @@ describe('runSandboxedQuery statement checks', () => {
       NESTED_COMMENT_DELETE,
       CONTINUED_E_STRING_DELETE,
       'SELECT 1 /* /* */ $$ */; CREATE TABLE evil AS SELECT 1 -- $$',
-      "SELECT E'a'\n'\\''; CREATE TABLE evil AS SELECT 1 -- '",
+      "SELECT E'a'\n'\\'; CREATE TABLE evil AS SELECT 1 -- '",
+      'SELECT 1 -- c\r; CREATE TABLE evil AS SELECT 1',
+      ...CTE_WRITES,
     ])('fails closed on %j', async (sql) => {
       await expect(runSandboxedQuery(fixture, sql, LIMITS)).rejects.toThrow(ValidationError)
     })

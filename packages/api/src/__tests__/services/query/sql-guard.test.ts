@@ -58,15 +58,28 @@ describe('assertReadOnlySql', () => {
 
   it.each([
     'SELECT 1 /* /* */ $$ */; DROP TABLE data -- $$', // block comments nest
-    "SELECT E'a'\n'\\''; DROP TABLE data -- '", // an E string continues on the next line
-    "SELECT E'a' -- c\n  '\\''; DROP TABLE data -- '",
+    // A continued segment of an E string closes at its quote, backslash or not
+    "SELECT E'a'\n'\\'; DROP TABLE data -- '",
+    "SELECT E'a' -- c\n  '\\'; DROP TABLE data -- '",
+    'SELECT 1 -- c\r; DROP TABLE data', // a carriage return ends a comment
   ])('rejects a second statement hidden by how DuckDB reads comments and strings: %j', (sql) => {
     expect(() => assertReadOnlySql(sql)).toThrow('Only a single SQL statement is allowed')
   })
 
   it.each([
+    'WITH x AS -- c\r (DELETE FROM data RETURNING *) SELECT count(*) FROM x',
+    "WITH s AS (SELECT e'a'\n'\\' AS v), y AS (DELETE FROM data RETURNING *) SELECT count(*) FROM y --'",
+  ])('rejects a write in a CTE hidden the same ways: %j', (sql) => {
+    expect(() => assertReadOnlySql(sql)).toThrow(
+      'Only read-only SELECT or WITH queries are allowed'
+    )
+  })
+
+  it.each([
     'SELECT 1 /* a /* ; */ b */ AS x',
     "SELECT E'a'\n'b;' AS x",
+    // One string: the continued segment holds a doubled quote and runs to the last quote
+    "SELECT E'a'\n'\\''; DROP TABLE data -- '",
     "SELECT E'a' /* c */ AS x, 'b;' AS y", // no newline: two literals, nothing continues
   ])('accepts nested comments and continued strings as one statement: %j', (sql) => {
     expect(() => assertReadOnlySql(sql)).not.toThrow()

@@ -21,7 +21,7 @@ import {
   sealDuckdb,
   sqlLiteral,
 } from '@kukan/lake'
-import type { DuckDBPreparedStatement } from '@duckdb/node-api'
+import type { DuckDBConnection, DuckDBPreparedStatement } from '@duckdb/node-api'
 import { assertReadOnlySql, READ_ONLY_MESSAGE, SINGLE_STATEMENT_MESSAGE } from './sql-guard'
 import { WEB_DUCKDB_MAX_SPILL_BYTES } from '../../config'
 
@@ -152,6 +152,32 @@ function redacting(err: unknown, location: string): string {
   return first.split(location).join('<the preview URL>')
 }
 
+/** The query nodes a statement that only reads is made of, as `json_serialize_sql` names them. */
+const READING_NODES = new Set([
+  'SELECT_NODE',
+  'SET_OPERATION_NODE',
+  'RECURSIVE_CTE_NODE',
+  'CTE_NODE',
+])
+
+/**
+ * Refuse a statement with a node that writes anywhere in it.
+ *
+ * DuckDB types `WITH x AS (DELETE … RETURNING *) SELECT …` as a SELECT, and an
+ * INSERT, UPDATE or COPY TO in a CTE the same, so the statement type does not
+ * say the statement only reads. Its own parse tree does, and names of nodes
+ * cannot be forged from inside it: a string or an identifier is serialized with
+ * its quotes escaped. A tree that does not serialize is refused as well.
+ */
+async function assertSelectNodesOnly(conn: DuckDBConnection, userSql: string): Promise<void> {
+  const tree = await conn.runAndReadAll('SELECT json_serialize_sql($1::VARCHAR)', [userSql])
+  const json = String(tree.getRows()[0]?.[0] ?? '')
+  const nodes = [...json.matchAll(/"type":"([A-Z_]*NODE)"/g)].map((m) => m[1]!)
+  if (nodes.length === 0 || nodes.some((node) => !READING_NODES.has(node))) {
+    throw new ValidationError(READ_ONLY_MESSAGE)
+  }
+}
+
 export async function runSandboxedQuery(
   location: string,
   userSql: string,
@@ -206,6 +232,7 @@ export async function runSandboxedQuery(
         const pivot = prepared.statementType === StatementType.MULTI && /\bpivot\b/i.test(userSql)
         throw new ValidationError(pivot ? PIVOT_IN_LIST_MESSAGE : READ_ONLY_MESSAGE)
       }
+      await assertSelectNodesOnly(conn, userSql)
       // Read one past the cap so truncation is detectable without scanning everything.
       reader = await prepared.runAndReadUntil(limits.maxRows + 1)
     } catch (err) {

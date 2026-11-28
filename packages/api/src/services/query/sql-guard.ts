@@ -44,10 +44,14 @@ function skipQuoted(sql: string, i: number, quote: string, backslash: boolean): 
   return n
 }
 
-/** Index just past the `E'…'` string whose quote is at `i`, continuations included. */
+/**
+ * Index just past the `E'…'` string whose quote is at `i`, continuations included.
+ * Only the first segment ends by the escape rules: DuckDB closes a continued one
+ * at its next quote, backslash before it or not.
+ */
 function skipEscapeString(sql: string, i: number): number {
-  for (;;) {
-    i = skipQuoted(sql, i, "'", true)
+  for (let backslash = true; ; backslash = false) {
+    i = skipQuoted(sql, i, "'", backslash)
     STRING_CONTINUATION_RE.lastIndex = i
     if (!STRING_CONTINUATION_RE.test(sql)) return i
     i = STRING_CONTINUATION_RE.lastIndex
@@ -78,7 +82,8 @@ function scrub(sql: string): string {
     const next = sql[i + 1]
     if (c === '-' && next === '-') {
       i += 2
-      while (i < n && sql[i] !== '\n') i++
+      // A carriage return ends the comment for DuckDB as a newline does
+      while (i < n && sql[i] !== '\n' && sql[i] !== '\r') i++
       out += ' '
     } else if (c === '/' && next === '*') {
       i += 2
