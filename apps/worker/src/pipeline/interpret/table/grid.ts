@@ -181,6 +181,22 @@ const GRID_MAX_DEFAULT_BORDERS = 1_000_000
  */
 const GRID_MAX_DEFAULT_SCANS = 10 * GRID_MAX_DEFAULT_BORDERS
 
+/**
+ * The same two counts over a whole workbook, each ten sheets' worth: a sheet's
+ * caps alone leave a workbook of a thousand sheets a thousand times the work.
+ * One is shared by every sheet's {@link DefaultBorders}.
+ */
+export class DefaultBorderBudget {
+  given = 0
+  scanned = 0
+
+  spent(): boolean {
+    return (
+      this.given >= 10 * GRID_MAX_DEFAULT_BORDERS || this.scanned >= 10 * GRID_MAX_DEFAULT_SCANS
+    )
+  }
+}
+
 /** A row's default format's border; `null` where its default draws none, which still hides its columns'. */
 export type RowDefault = BorderSides | null
 
@@ -216,6 +232,8 @@ export class DefaultBorders {
   private given = 0
   private scanned = 0
 
+  constructor(private readonly workbook = new DefaultBorderBudget()) {}
+
   /** The sheet's used range. */
   usedRange(range: CellRange): void {
     if (range.bottom >= range.top && range.right >= range.left) {
@@ -231,7 +249,10 @@ export class DefaultBorders {
   /** A column default's border, for columns `min` to `max`, 1-based. */
   column(min: number, max: number, border: BorderSides | undefined): void {
     if (!border || !(min >= 1) || !(max >= min) || min > GRID_MAX_COLUMNS) return
+    // Counted as looked at: a file may declare the whole width over and over
+    if (this.spent()) return
     const to = Math.min(max, GRID_MAX_COLUMNS)
+    this.scan(to - min + 1)
     for (let col = min; col <= to; col++) this.columns[col] ??= border
     this.columnsFrom = Math.min(this.columnsFrom, min)
     this.columnsTo = Math.max(this.columnsTo, to)
@@ -241,6 +262,7 @@ export class DefaultBorders {
   row(row: number, border: RowDefault): void {
     const b = this.bounds
     if (row <= this.through || (b && (row < b.top || row > b.bottom))) return
+    if (this.spent()) return
     this.rows.set(row, border)
   }
 
@@ -263,9 +285,15 @@ export class DefaultBorders {
     const from = Math.max(this.through + 1, range.top)
     const to = Math.min(before - 1, range.bottom)
     if (from > to) return
+    // Nothing more is drawn, so the rows' defaults are not walked for it either
+    if (this.spent()) {
+      this.through = Math.max(this.through, to)
+      return
+    }
     const rows = this.anyColumnDefault() ? count(from, to) : this.rowsWithDefaults(from, to)
     for (const row of rows) {
-      if (this.spent() || ++this.scanned >= GRID_MAX_DEFAULT_SCANS) break
+      if (this.spent()) break
+      this.scan(1)
       const borders = this.fill(row, NO_COLUMNS, [])
       if (borders.length > 0) yield { row, borders }
     }
@@ -301,18 +329,30 @@ export class DefaultBorders {
       rowDefault !== undefined ? Infinity : this.columnsTo
     )
     for (let col = left; col <= right; col++) {
-      if (++this.scanned >= GRID_MAX_DEFAULT_SCANS) break
+      this.scan(1)
+      if (this.spent()) break
       const border = rowDefault !== undefined ? rowDefault : this.columns[col]
       if (!border || records.has(col)) continue
       added.push({ col, ...border })
-      if (++this.given >= GRID_MAX_DEFAULT_BORDERS) break
+      this.given++
+      this.workbook.given++
+      if (this.spent()) break
     }
     if (added.length === 0) return own
     return own.length === 0 ? added : [...own, ...added].sort((a, b) => a.col - b.col)
   }
 
   private spent(): boolean {
-    return this.given >= GRID_MAX_DEFAULT_BORDERS || this.scanned >= GRID_MAX_DEFAULT_SCANS
+    return (
+      this.given >= GRID_MAX_DEFAULT_BORDERS ||
+      this.scanned >= GRID_MAX_DEFAULT_SCANS ||
+      this.workbook.spent()
+    )
+  }
+
+  private scan(cells: number): void {
+    this.scanned += cells
+    this.workbook.scanned += cells
   }
 
   private anyColumnDefault(): boolean {
@@ -321,6 +361,9 @@ export class DefaultBorders {
 
   /** Row defaults from `from` to `to` are spent; walked by whichever is shorter, the span or the map. */
   private dropRows(from: number, to: number): void {
+    // Counted as looked at, the span or the map: defaults for rows far below
+    // stay in the map, and a file may bring every later row here over a span as long
+    this.scan(Math.min(to - from + 1, this.rows.size))
     if (to - from + 1 <= this.rows.size) {
       for (let row = from; row <= to; row++) this.rows.delete(row)
       return
@@ -329,6 +372,7 @@ export class DefaultBorders {
   }
 
   private rowsWithDefaults(from: number, to: number): number[] {
+    this.scan(Math.min(to - from + 1, this.rows.size))
     if (to - from + 1 <= this.rows.size) {
       const rows: number[] = []
       for (let row = from; row <= to; row++) if (this.rows.get(row)) rows.push(row)

@@ -26,6 +26,7 @@ import {
   addHiddenRow,
   addMerge,
   BORDER_STYLES,
+  DefaultBorderBudget,
   DefaultBorders,
   formatKinds,
   gridSheet,
@@ -109,6 +110,8 @@ async function* sheetsOf({
   styles,
 }: OpenedXlsx): AsyncGenerator<GridSheet> {
   const read = new Set<number>()
+  // One for this pass over the sheets, so a second pass draws the lines the first did
+  const budget = new DefaultBorderBudget()
   for (const [index, { part, name }] of (await sheetOrder(zip, entries)).entries()) {
     const entry = entries.get(part)
     if (!entry || read.has(entry.relativeOffsetOfLocalHeader)) continue
@@ -123,7 +126,7 @@ async function* sheetsOf({
       },
       (layout) =>
         readPart<GridRow>(zip, entry, (emit) =>
-          sheetGridParser(emit, layout, shared, styles, facts.date1904)
+          sheetGridParser(emit, layout, shared, styles, facts.date1904, budget)
         )
     )
   }
@@ -305,14 +308,15 @@ function sheetGridParser(
   layout: SheetLayout,
   shared: SharedStrings,
   styles: CellStyles,
-  date1904: boolean
+  date1904: boolean,
+  budget: DefaultBorderBudget
 ): PartParser {
   let row = 0
   let hidden = false
   let cells: GridCell[] = []
   let borders: CellBorder[] = []
   let records = new Set<number>()
-  const defaults = new DefaultBorders()
+  const defaults = new DefaultBorders(budget)
   let col = 0
   let type: string | undefined
   let style = 0

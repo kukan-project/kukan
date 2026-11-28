@@ -111,6 +111,16 @@ describe('interpretCsv — column roles', () => {
     expect(cols['市区町村名'].inferred).toBeUndefined()
   })
 
+  it('keeps the start of a long value in the profile', async () => {
+    const long = 'あ'.repeat(3000)
+    const byName = await columns(
+      ['区分', '件数'],
+      Array.from({ length: 30 }, (_, i) => [i % 2 === 0 ? long : '短い', `${i}`]),
+      { 区分: 'category' }
+    )
+    expect(byName['区分']!.values).toEqual(['あ'.repeat(500), '短い'])
+  })
+
   it("reads only a setting's own keys, whatever a column is called", async () => {
     const cols = await columns(
       ['constructor', 'toString'],

@@ -170,6 +170,20 @@ describe('a plain table', () => {
     })
   })
 
+  it('keeps only so many rows of one value above a header and below the table, and is no plain table past that', async () => {
+    const singles = (n: number): Value[][] => Array.from({ length: n }, (_, i) => [`注${i}`])
+    // Within the bound, titles and notes are what they were
+    expect(await judge(sheet([...singles(50), ...list(10), ...singles(50)]))).toMatchObject({
+      reading: { from: 'A51', to: 'C61' },
+    })
+    expect(reasons(await judge(sheet([...singles(1500), ...list(10)])))).toEqual([
+      'title-or-footer',
+    ])
+    expect(reasons(await judge(sheet([...list(10), ...singles(1500)])))).toEqual([
+      'title-or-footer',
+    ])
+  })
+
   it('reads a long text in many cells, and a header of long runs of spaces, in the time of their length', async () => {
     // A workbook's cells name one shared string, so a text is worked on once a cell
     const long = `a${' '.repeat(300_000)}a`

@@ -87,6 +87,14 @@ interface ValueCell {
   name?: string
 }
 
+/**
+ * The most rows of one value kept in full above a header, and below the last
+ * row of two or more: what holds a sheet's memory to its widest rows where it
+ * is a column of single cells. More titles or notes than this is no plain
+ * table, so the rest are only counted.
+ */
+const EDGE_MAX_ROWS = 1000
+
 interface KeptRow {
   row: number
   cells: ValueCell[]
@@ -122,6 +130,8 @@ interface Block {
   headerAt: number
   /** The last row of two values or more, and the rows of one value after it. */
   tail: KeptRow[]
+  /** Rows of one value at an edge past {@link EDGE_MAX_ROWS}, counted and not kept. */
+  edgeRowsDropped: number
   repeat?: RepeatTrack
 }
 
@@ -188,7 +198,7 @@ function judgeSheet(scan: SheetScan): PlainTableJudgment {
   const body = scan.body
   if (!body || body.multiRows === 0) return { reasons: ['too-small'] }
   const reasons = new Set<NoTableReason>()
-  if (scan.multiBlocks > 1) reasons.add('title-or-footer')
+  if (scan.multiBlocks > 1 || body.edgeRowsDropped > 0) reasons.add('title-or-footer')
   if (scan.bodyTies > 0) reasons.add('multiple-tables')
 
   const header = body.head[body.headerAt]!
@@ -236,7 +246,7 @@ function judgeSheet(scan: SheetScan): PlainTableJudgment {
     if (dataCols.some((c) => c < headerLeft || c > headerRight)) {
       reasons.add('not-rectangular')
     }
-    const dataSingles = body.singleRows - titles.length - notes.length
+    const dataSingles = body.singleRows - titles.length - notes.length - body.edgeRowsDropped
     if (dataSingles > 0) reasons.add('section-rows')
   } else {
     if (scan.merges.some((m) => touchesRows(m, header.row, header.row))) {
@@ -304,7 +314,8 @@ class SheetScanner {
     else block.singleRows++
 
     if (block.headerAt < 0) {
-      block.head.push(row)
+      if (multi || block.head.length < EDGE_MAX_ROWS) block.head.push(row)
+      else block.edgeRowsDropped++
       if (multi) {
         block.headerAt = block.head.length - 1
         block.repeat = headerRepeat(row)
@@ -313,6 +324,7 @@ class SheetScanner {
       block.head.push(row)
     }
     if (multi) block.tail = [row]
+    else if (block.tail.length > EDGE_MAX_ROWS) block.edgeRowsDropped++
     else if (block.tail.length > 0) block.tail.push(row)
   }
 
@@ -377,6 +389,7 @@ function newBlock(top: number): Block {
     head: [],
     headerAt: -1,
     tail: [],
+    edgeRowsDropped: 0,
   }
 }
 

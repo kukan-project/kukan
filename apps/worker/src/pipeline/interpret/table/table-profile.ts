@@ -533,9 +533,9 @@ async function numberCounts(
   )
   const examples = (
     await conn.runAndReadAll(`
-      SELECT ${x} AS v FROM t
+      SELECT left(${x}, ${KEPT_VALUE_CHARS}) AS v FROM t
       WHERE ${x} IS NOT NULL AND NOT ${mark} AND NOT ${readsAsNumber(x)}
-      GROUP BY 1 ORDER BY count(*) DESC, min(rowid) LIMIT ${NUMBER_EXAMPLES}`)
+      GROUP BY ${x} ORDER BY count(*) DESC, min(rowid) LIMIT ${NUMBER_EXAMPLES}`)
   ).getRowObjectsJson() as { v: string }[]
   return {
     counts: { numbers, marks, blank, others: total - blank - marks - numbers },
@@ -563,11 +563,17 @@ async function countValues(
   await conn.run(`INSERT INTO profile_values ${selects.join(' UNION ALL ')}`)
 }
 
+/**
+ * How much of a value the profile keeps. The profile is stored on the row and
+ * read with it, and a cell may hold megabytes; the artifact has every value whole.
+ */
+const KEPT_VALUE_CHARS = 500
+
 /** The {@link COLUMN_VALUES_KEPT} most frequent values of each listed column. */
 async function mostFrequentValues(conn: DuckDBConnection): Promise<Map<number, string[]>> {
   const rows = (
     await conn.runAndReadAll(`
-      SELECT ord, text FROM profile_values
+      SELECT ord, left(text, ${KEPT_VALUE_CHARS}) AS text FROM profile_values
       QUALIFY row_number() OVER (PARTITION BY ord ORDER BY count DESC, "row") <= ${COLUMN_VALUES_KEPT}
       ORDER BY ord, count DESC, "row"`)
   ).getRowObjectsJson() as { ord: number; text: string }[]

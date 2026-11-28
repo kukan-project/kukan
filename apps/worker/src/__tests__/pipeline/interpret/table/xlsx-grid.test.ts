@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dateKindOf, serialToIso } from '@/pipeline/interpret/table/grid'
+import {
+  DefaultBorderBudget,
+  DefaultBorders,
+  dateKindOf,
+  serialToIso,
+} from '@/pipeline/interpret/table/grid'
 import { parseRange, printTitleSpans, xlsxGrid } from '@/pipeline/interpret/table/xlsx-grid'
 import { collectGrid, type ReadSheet } from '../../../test-helpers/grid'
 import { xlsxBuffer } from '../../../test-helpers/xlsx'
@@ -378,6 +383,53 @@ describe('borders', () => {
         [3, [1, 3]],
       ])
     })
+  })
+})
+
+describe('default borders, bounded by what is looked at', () => {
+  const LINE = { bottom: 'thin' as const }
+
+  it('walks row defaults left far below no more than its scans allow', () => {
+    // Rows of a default and no cells, numbered far below; then rows of cells
+    // each a long jump on: every gap was a walk as long as the defaults
+    const defaults = new DefaultBorders()
+    for (let i = 0; i < 300_000; i++) defaults.row(900_000_000 + i, LINE)
+    let drawn = 0
+    for (let k = 1; k <= 5000; k++) {
+      const row = k * 300_001
+      defaults.record(row, 1)
+      for (const gap of defaults.gap(row)) drawn += gap.borders.length
+      drawn += defaults.fill(row, new Set([1]), []).length
+    }
+    expect(drawn).toBe(0)
+  })
+
+  it('counts a width declared over and over as looked at, and draws no defaults once that is spent', () => {
+    const once = new DefaultBorders()
+    once.column(1, 16_384, LINE)
+    once.usedRange({ top: 1, bottom: 1, left: 1, right: 3 })
+    expect(once.fill(1, new Set([2]), [])).toEqual([
+      { col: 1, ...LINE },
+      { col: 3, ...LINE },
+    ])
+
+    const repeated = new DefaultBorders()
+    for (let i = 0; i < 200_000; i++) repeated.column(1, 16_384, LINE)
+    repeated.usedRange({ top: 1, bottom: 1, left: 1, right: 3 })
+    expect(repeated.fill(1, new Set([2]), [])).toEqual([])
+  })
+
+  it("draws no defaults on a sheet once the workbook's are spent", () => {
+    const budget = new DefaultBorderBudget()
+    const sheet = () => {
+      const defaults = new DefaultBorders(budget)
+      defaults.usedRange({ top: 1, bottom: 2, left: 1, right: 2 })
+      defaults.column(1, 2, LINE)
+      return [...defaults.rest()].length
+    }
+    expect(sheet()).toBe(2)
+    budget.scanned = Infinity
+    expect(sheet()).toBe(0)
   })
 })
 

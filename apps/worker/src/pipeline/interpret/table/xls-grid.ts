@@ -16,6 +16,7 @@ import {
 import {
   addHiddenRow,
   addMerge,
+  DefaultBorderBudget,
   DefaultBorders,
   formatKinds,
   gridSheet,
@@ -92,6 +93,8 @@ export function xlsWorkbook(filePath: string): GridWorkbook {
   return {
     async *sheets() {
       const { book, globals } = await (opened ??= readWorkbook(filePath))
+      // One for this pass over the sheets, so a second pass draws the lines the first did
+      const budget = new DefaultBorderBudget()
       for (const entry of book.sheets) {
         const titles = globals.printTitles.get(entry.sheet)
         yield gridSheet(
@@ -101,7 +104,7 @@ export function xlsWorkbook(filePath: string): GridWorkbook {
             hidden: entry.hidden,
             ...(titles && { printTitles: titles }),
           },
-          (layout) => sheetGrid(book, entry.offset, globals, layout)
+          (layout) => sheetGrid(book, entry.offset, globals, layout, budget)
         )
       }
     },
@@ -227,10 +230,11 @@ function* sheetGrid(
   book: XlsWorkbook,
   offset: number,
   globals: Globals,
-  layout: SheetLayout
+  layout: SheetLayout,
+  budget: DefaultBorderBudget
 ): Generator<GridRow> {
   const hidden = new Set<number>()
-  const defaults = new DefaultBorders()
+  const defaults = new DefaultBorders(budget)
   let row = -1
   let cells = new Map<number, GridCell>()
   let borders = new Map<number, CellBorder>()
