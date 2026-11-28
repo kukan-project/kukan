@@ -1,8 +1,8 @@
-# ADR-065: Draw the original of an Office document in the browser with ibisOffice (no document opened on the server, and an isolated iframe in the browser, proposed)
+# ADR-065: Draw the original of an Office document in the browser with ibisOffice (no document opened on the server, and an isolated iframe in the browser)
 
 ## Status
 
-**Proposed** — 2026-10-11 (option I added on 2026-10-27, measured on 2026-10-29, and the
+**Accepted** — 2026-11-28 (proposed 2026-10-11), implemented (option I added on 2026-10-27, measured on 2026-10-29, and the
 decision changed from F to I; on 2026-11-09 raised to 0.8.6, which moved DOC to the "Original" tab too; on 2026-11-14 raised to 0.8.7)
 
 Make Office documents (XLSX, XLS, DOCX, PPTX, PPT) viewable without relying on Microsoft's Office
