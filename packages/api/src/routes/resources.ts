@@ -31,7 +31,6 @@ import {
 } from '../services/document-text'
 import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline/pipeline-claim'
-import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query/query-service'
 import { enqueueResourceEmbedsIfDue } from '../services/search/resource-embedding'
 import { setResourceSummary } from '../services/ai/resource-summary-service'
@@ -77,7 +76,6 @@ import {
 } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
-  canViewPackage,
   canWritePackage,
   makePackageAuthorize,
   resolveUserOrgIds,
@@ -255,12 +253,13 @@ async function checkResourcePermission(
   resourceService: ResourceService,
   resourceId: string
 ) {
-  const existing = await resourceService.getById(resourceId)
-  const pkg = await new PackageService(db).getByNameOrId(existing.packageId, ['active', 'draft'])
+  // The parent by its id alone, joined to the resource: a dataset's name may be
+  // another dataset's id, and a lookup by name or id answers with that one
+  // wherever the id's own row is out of the states asked for (in the trash).
   // A resource the caller cannot see is not there, as the reads say
-  if (!(await canViewPackage(db, pkg, user))) throw new NotFoundError('Resource', resourceId)
+  const { pkg } = await resourceService.getByIdWithOwnership(resourceId, user)
   await makePackageAuthorize(db, user, 'editor')(pkg)
-  return existing
+  return resourceService.getById(resourceId)
 }
 
 // --- Read endpoints ---

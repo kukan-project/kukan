@@ -927,6 +927,41 @@ describe('Resources API Routes', () => {
   })
 
   describe('PUT /api/v1/resources/:id', () => {
+    it("refuses the creator of a draft named with a trashed dataset's id", async () => {
+      // The parent is found by id only: a lookup by name or id passed over the
+      // trashed row and answered with the draft whose name is that id
+      const pkg = await createPackage('trashed-parent-pkg')
+      const resource = await createResource(pkg.id)
+      expect((await app.request(`/api/v1/packages/${pkg.id}`, { method: 'DELETE' })).status).toBe(
+        200
+      )
+      const draft = await outsiderApp.request('/api/v1/packages/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: pkg.id }),
+      })
+      expect(draft.status).toBe(201)
+
+      const put = await outsiderApp.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'taken-over' }),
+      })
+      expect(put.status).toBe(404)
+      const settings = await outsiderApp.request(`/api/v1/resources/${resource.id}/column-settings`)
+      expect(settings.status).toBe(404)
+      const del = await outsiderApp.request(`/api/v1/resources/${resource.id}`, {
+        method: 'DELETE',
+      })
+      expect(del.status).toBe(404)
+
+      const [row] = await db
+        .select({ name: resourceTable.name, state: resourceTable.state })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row).toEqual({ name: resource.name, state: 'active' })
+    })
+
     it('writes the document under the sync lock, clearing the mark the edit set', async () => {
       // Through the lock, no sync can land an older document after this one
       const pkg = await createPackage('put-doc-sync-pkg')
