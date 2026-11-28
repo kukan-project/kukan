@@ -18,9 +18,13 @@ export function isValidPackageName(name: string): boolean {
   return (
     name.length >= PACKAGE_NAME_MIN_LENGTH &&
     name.length <= PACKAGE_NAME_MAX_LENGTH &&
-    PACKAGE_NAME_PATTERN.test(name)
+    PACKAGE_NAME_PATTERN.test(name) &&
+    !PATHLESS_NAMES.has(name)
   )
 }
+
+/** Names a URL resolves away as a path segment, which no slug may be: see {@link slugNameSchema}. */
+const PATHLESS_NAMES: ReadonlySet<string> = new Set(['..'])
 
 /**
  * A tag is reached at `/tag/<name>`, the name as one path segment. Empty, `.`
@@ -51,12 +55,17 @@ export const MAX_RESOURCES_PER_PACKAGE = 500
 
 const packageResourcesSchema = z.array(createResourceBodySchema).max(MAX_RESOURCES_PER_PACKAGE)
 
-/** The slug-style `name` that packages, organizations, groups and users share. */
+/**
+ * The slug-style `name` that packages, organizations, groups and users share.
+ * Not `..`: a name is a path segment (`/dataset/<name>`), and the URL resolves
+ * that one away, as it does for a tag ({@link PATHLESS_TAG_NAMES}).
+ */
 export const slugNameSchema = z
   .string()
   .min(PACKAGE_NAME_MIN_LENGTH)
   .max(PACKAGE_NAME_MAX_LENGTH)
   .regex(PACKAGE_NAME_PATTERN, VALIDATION_MESSAGES.nameFormat)
+  .refine((name) => !PATHLESS_NAMES.has(name), VALIDATION_MESSAGES.nameDots)
 
 export const createPackageSchema = z.object({
   name: slugNameSchema,

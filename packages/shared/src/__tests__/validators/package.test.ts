@@ -4,6 +4,7 @@ import {
   updatePackageSchema,
   createDraftPackageSchema,
   DRAFT_NAME_PLACEHOLDER_RE,
+  isValidPackageName,
   MAX_RESOURCES_PER_PACKAGE,
 } from '../../validators/package'
 import { VALIDATION_MESSAGES } from '../../validators/messages'
@@ -12,6 +13,21 @@ const TEST_ORG_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 describe('createPackageSchema', () => {
   describe('name', () => {
+    it('refuses "..", which a URL resolves away, and takes other names of dots', () => {
+      expect(createPackageSchema.safeParse({ name: '..', ownerOrg: TEST_ORG_ID }).success).toBe(
+        false
+      )
+      expect(createPackageSchema.safeParse({ name: '...', ownerOrg: TEST_ORG_ID }).success).toBe(
+        true
+      )
+      expect(createPackageSchema.safeParse({ name: 'a..b', ownerOrg: TEST_ORG_ID }).success).toBe(
+        true
+      )
+      // The predicate the name suggestions are checked with says the same
+      expect(isValidPackageName('..')).toBe(false)
+      expect(isValidPackageName('...')).toBe(true)
+    })
+
     it('should accept valid lowercase name with hyphens', () => {
       const result = createPackageSchema.safeParse({ name: 'my-dataset', ownerOrg: TEST_ORG_ID })
       expect(result.success).toBe(true)

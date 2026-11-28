@@ -7,6 +7,7 @@
  * paging on `metadata_modified`, say — has no way to notice.
  */
 
+import { isUuid } from '@kukan/shared'
 import type { SearchFilters, SearchQuery } from '@kukan/search-adapter'
 import { addExtrasCondition, extrasField } from '../extras-filter'
 
@@ -165,6 +166,10 @@ export function parseFq(fq: string | undefined, fqList: string[] = []): ParsedFq
           throw refuse('Solr syntax is not supported in an extras value; quote it')
         }
         addExtrasCondition(filters, extras, value, refuse)
+      } else if (field === 'owner_org' && !isUuid(value)) {
+        // An organization's id and nothing else: no dataset has another value,
+        // and the PostgreSQL search would fail the cast instead of finding none
+        empty = true
       } else if (Object.hasOwn(LIST_FIELDS, field)) {
         const key = LIST_FIELDS[field as keyof typeof LIST_FIELDS]
         const list = filters[key] ?? []

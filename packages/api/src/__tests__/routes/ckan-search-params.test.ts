@@ -110,6 +110,17 @@ describe('parseFq', () => {
     expect(parseFq('state:draft').empty).toBe(true)
   })
 
+  it('matches nothing for an owner_org that is no id, and leaves it out of the filters', () => {
+    const id = '11111111-2222-4333-8444-555555555555'
+    expect(parseFq(`owner_org:${id}`)).toMatchObject({
+      filters: { ownerOrgIds: [id] },
+      empty: false,
+    })
+    const notAnId = parseFq('owner_org:my-org')
+    expect(notAnId.empty).toBe(true)
+    expect(notAnId.filters.ownerOrgIds).toBeUndefined()
+  })
+
   it('passes over what every KUKAN dataset already is', () => {
     expect(parseFq('*:* +dataset_type:dataset +state:active')).toEqual({
       filters: {},

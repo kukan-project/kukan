@@ -7,6 +7,7 @@
 export const VALIDATION_MESSAGES = {
   nameFormat:
     'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods',
+  nameDots: 'Name cannot be ".."',
   invalidUrl: 'Invalid URL',
   httpOnly: 'Only http and https URLs are allowed',
   privateAddress: 'URL points to a private or reserved address',

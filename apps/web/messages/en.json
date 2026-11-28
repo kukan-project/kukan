@@ -1446,6 +1446,7 @@
   },
   "validation": {
     "nameFormat": "Use only lowercase letters, numbers, hyphens, underscores, and periods",
+    "nameDots": "Name cannot be \"..\"",
     "invalidUrl": "Enter a valid URL",
     "httpOnly": "Use a URL that starts with http or https",
     "privateAddress": "URLs pointing to a private or reserved address are not allowed",
