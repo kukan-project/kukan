@@ -7,6 +7,7 @@
  * here but the app's own files.
  */
 import { capMemory } from './cap-memory.js'
+import { stopsIbisOffice } from './stops-ibis-office.js'
 
 // A ceiling on ibisOffice's memory, in 64 KiB pages: 1 GiB
 const MEMORY_MAX_PAGES = 16384
@@ -78,12 +79,9 @@ addEventListener('message', async (e) => {
     tell('error')
   }
 })
-// Out of memory under the ceiling, or a panic, traps: ibisOffice has stopped, and
-// the parent points to the extracted text. Once it has drawn, anything else is
-// not the end of it: copying rejects here, as the frame may not use the clipboard.
-// A ResizeObserver loop's report carries no error at all.
+// The parent shows its message even after 'ready'
 const stopped = (err) => {
-  if (err != null && (!drawn || err instanceof WebAssembly.RuntimeError)) tell('error')
+  if (stopsIbisOffice(err, drawn)) tell('error')
 }
 addEventListener('error', (e) => stopped(e.error))
 addEventListener('unhandledrejection', (e) => stopped(e.reason))
