@@ -21,17 +21,3 @@ export function getApp(): Promise<App> {
   }
   return globalForApp.__kukanApp
 }
-
-// Graceful shutdown — close the DB pool when the process exits
-// Guard with globalThis to prevent duplicate listeners during HMR reloads
-const globalForShutdown = globalThis as unknown as { __kukanShutdownRegistered?: boolean }
-if (!globalForShutdown.__kukanShutdownRegistered) {
-  const shutdown = async () => {
-    const { closePool, flushAiUsage } = await import('@kukan/api')
-    await flushAiUsage()
-    await closePool()
-  }
-  process.on('SIGTERM', shutdown)
-  process.on('SIGINT', shutdown)
-  globalForShutdown.__kukanShutdownRegistered = true
-}

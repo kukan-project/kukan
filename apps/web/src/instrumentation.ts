@@ -6,4 +6,8 @@ export async function register() {
   // The module alone: the API's barrel would load every route here
   const { loadSecrets } = await import('@kukan/api/secrets')
   await loadSecrets()
+  if (process.env.NEXT_MANUAL_SIG_HANDLE) {
+    const { handleShutdownSignals } = await import('./lib/shutdown')
+    handleShutdownSignals()
+  }
 }

@@ -17,4 +17,8 @@ if (endpoint) {
 } else {
   process.env.HOSTNAME = '0.0.0.0'
 }
+// Next would end with 143 on SIGTERM, which Lambda counts as Runtime.ExitError
+// at every spin-down, without waiting for the app's shutdown work. The signals
+// are handled in src/lib/shutdown.ts instead.
+process.env.NEXT_MANUAL_SIG_HANDLE = 'true'
 await import('./server.js')
