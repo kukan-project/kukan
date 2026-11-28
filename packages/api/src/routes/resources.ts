@@ -67,7 +67,7 @@ import {
   updateRunsPipeline,
   publicVocabulary,
 } from '@kukan/shared'
-import type { ColumnRolesView } from '@kukan/shared'
+import type { ColumnRolesView, DiffUnavailableReason } from '@kukan/shared'
 import {
   MCP_SECTION_MAX_CHARS,
   MCP_SECTION_MAX_UNIT,
@@ -812,6 +812,21 @@ resourcesRouter.get('/:id/versions/:v', publicCache(), async (c) => {
   return c.json(view)
 })
 
+/**
+ * Whether a reason a diff is unavailable is told to anyone who can see the
+ * resource, or only to its editors (see the route). A record rather than a
+ * list, so a reason added to the union has to be placed here.
+ */
+const DIFF_REASON_FOR_READERS: Record<DiffUnavailableReason, boolean> = {
+  'no-previous-version': true,
+  purged: true,
+  'not-ingested': true,
+  'key-missing': false,
+  'key-null': false,
+  'key-not-unique': false,
+  'ingest-failed': false,
+}
+
 // GET /api/v1/resources/:id/versions/:v/diff - Row-level diff against another
 // version (ADR-043 layer 2). `from` defaults to the preceding version. The SQL
 // is composed server-side from version numbers; the ADR-032 query sandbox is a
@@ -822,12 +837,12 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   const fromRaw = c.req.query('from')
   const from = fromRaw === undefined ? undefined : parseVersionParam(fromRaw)
   const db = c.get('db')
-  // Editor on the owning package, not merely visibility: ii-a's diff lives in
-  // the dashboard (spec §7.1), and it is the one version route that scans both
-  // snapshots in full. Public diffs are Phase iii.
+  // Visibility, as for the version list and downloads: a diff shows rows of two
+  // versions anyone who can see the resource can download. The cost of scanning
+  // both snapshots is bounded where /query's is — the shared DuckDB slot, with
+  // its per-caller cap and anonymous callers behind signed-in ones.
   const user = c.get('user')
-  if (!user) throw new UnauthorizedError()
-  await checkResourcePermission(db, user, new ResourceService(db), id)
+  const { pkg } = await new ResourceService(db).getByIdWithOwnership(id, user)
   const service = new VersionDiffService(
     db,
     webLakeConfig(c.get('env')),
@@ -837,7 +852,16 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   // The request's own signal: a browser that hangs up (a page left, or dev's
   // double-fired fetch discarding its first attempt) must not keep scanning
   // both snapshots and holding the one DuckDB slot the live request needs.
-  const view = await service.diff(id, version, from, c.req.raw.signal, callerOf(c))
+  let view = await service.diff(id, version, from, c.req.raw.signal, callerOf(c))
+  // A refused load says something an editor can act on (a key to correct, a
+  // load to look into); to anyone else it is only that there is no snapshot
+  if (
+    !view.available &&
+    !DIFF_REASON_FOR_READERS[view.reason] &&
+    !(user && (await canWritePackage(db, user, pkg, 'editor')))
+  ) {
+    view = { ...view, reason: 'not-ingested' }
+  }
   // Held briefly, because this is the most expensive GET here and the UI
   // re-expands the same diff as the user works. Not `immutable` for a day, which
   // is what it was: a snapshot is written once and never changes, but purging a

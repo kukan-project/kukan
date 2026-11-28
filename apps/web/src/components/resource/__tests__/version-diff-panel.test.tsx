@@ -240,7 +240,7 @@ describe('VersionDiffPanel', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('v1 has no row-level snapshot, so there is nothing to compare against.')
+        screen.getByText('v1 cannot be compared row by row, so no diff is shown.')
       ).toBeInTheDocument()
     )
   })

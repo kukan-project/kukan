@@ -121,8 +121,8 @@ export interface VersionView {
    *
    * Why the version was *refused* is not here at all: it is a statement about
    * the content, and it belongs where someone asks for the diff it explains
-   * ({@link DiffUnavailableReason}), which is behind the editor permission its
-   * audience implies.
+   * ({@link DiffUnavailableReason}), which names a refusal only to the
+   * dataset's editors — its audience.
    */
   keyColumns: string[] | null
   size: number | null

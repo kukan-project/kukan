@@ -292,8 +292,9 @@ active → purging → purged
     公開リソース詳細に追加した。折りたたみセクションで、開いたときに初めて取得し、
     既定は最新 10 件 + 「すべて表示」。削除済みの版は墓標（削除済みバッジ + 作成日時）
     として表示する。API は従来どおり可視性チェックのみで、匿名レスポンスに
-    `publicCache()` を適用（ADR-026）。**差分の公開は引き続き Phase iii**（診断・
-    パージは従来どおりダッシュボード側のみ）。
+    `publicCache()` を適用（ADR-026）。差分の公開は当初 Phase iii に回したが、その後
+    同じ差分を公開ページにも出した（`phase-versioning-2-ducklake.md` §7.3）。診断・
+    パージは従来どおりダッシュボード側のみ。
 - i18n: 版履歴・パージ関連のラベルを ja/en に追加。
 
 ## 10. テスト戦略
@@ -336,7 +337,7 @@ active → purging → purged
 
 - **Phase ii（DuckLake）**: 表形式リソースの層2 ingest、行レベル差分 API（3 段フォールバック）、
   管理者向け差分サマリ、パージの層2波及（compaction rewrite）
-- **Phase iii**: 閲覧者向け「前版からの変更」UI、版指定クエリ、プレビュー Parquet の
+- **Phase iii**: 版指定クエリ、プレビュー Parquet の
   DuckLake export 統合、MCP 版差分ツール
 - 保持世代数のランタイム設定（ADR-036）、IAM 明示 Deny（ADR-043 残課題 7）、
   外部 URL 定期再取得（quality パッケージ相乗り）は必要になった時点で追加

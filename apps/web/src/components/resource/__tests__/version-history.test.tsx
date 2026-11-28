@@ -88,6 +88,34 @@ describe('VersionHistory', () => {
     ])
   })
 
+  it('opens a diff against the preceding version, and offers none on the oldest', async () => {
+    mockVersions([makeVersion({ version: 2, isLive: true }), makeVersion({ version: 1 })])
+    const { container } = render(<VersionHistory resourceId="r1" />)
+    openHistory(container)
+
+    // One button: v1 has nothing before it
+    const button = await screen.findByRole('button', { name: 'Diff' })
+    expect(screen.getAllByRole('button', { name: 'Diff' })).toHaveLength(1)
+
+    mockClientFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        available: false,
+        reason: 'not-ingested',
+        from: 1,
+        to: 2,
+        reasonVersion: 1,
+      }),
+    })
+    fireEvent.click(button)
+
+    expect(mockClientFetch).toHaveBeenCalledWith(
+      '/api/v1/resources/r1/versions/2/diff',
+      expect.anything()
+    )
+    expect(await screen.findByRole('button', { name: 'Hide diff' })).toBeInTheDocument()
+  })
+
   it('keeps the tail behind "show all"', async () => {
     mockVersions(Array.from({ length: 12 }, (_, i) => makeVersion({ version: 12 - i })))
     const { container } = render(<VersionHistory resourceId="r1" />)

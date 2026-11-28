@@ -335,8 +335,10 @@ active → purging → purged
     collapsible section fetched on first open, showing the latest 10 versions by
     default with a "show all" control. Deleted versions appear as tombstones
     (deleted badge + created timestamp). The API keeps its visibility-only check,
-    with `publicCache()` applied to the anonymous response (ADR-026). **Public
-    diffs remain Phase iii** (diagnostics and purge stay dashboard-only).
+    with `publicCache()` applied to the anonymous response (ADR-026). Public diffs
+    were first left to Phase iii, and the public page has since been given the
+    same diff (`phase-versioning-2-ducklake.md` §7.3). Diagnostics and purge stay
+    dashboard-only.
 - i18n: add version-history and purge labels in ja/en.
 
 ## 10. Test Strategy
@@ -384,7 +386,7 @@ active → purging → purged
 - **Phase ii (DuckLake)**: layer-2 ingest for tabular resources, the row-level diff API
   (three-stage fallback), the admin-facing diff summary, layer-2 propagation of purge
   (compaction rewrite)
-- **Phase iii**: viewer-facing "changes from the previous version" UI, version-pinned queries,
+- **Phase iii**: version-pinned queries,
   DuckLake export integration for preview Parquet, an MCP version-diff tool
 - Runtime configuration of the number of retained generations (ADR-036), explicit IAM Deny
   (ADR-043 open issue 7), and scheduled re-fetching of external URLs (riding along with the

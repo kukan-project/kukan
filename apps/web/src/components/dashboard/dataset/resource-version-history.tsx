@@ -26,7 +26,7 @@ import { clientFetch } from '@/lib/client-api'
 import type { VersionView } from '@kukan/shared'
 import { formatBytes } from '@/lib/format-utils'
 import { useUser } from '@/components/dashboard/user-provider'
-import { VersionDiffPanel } from './version-diff-panel'
+import { VersionDiffRow } from '@/components/resource/version-diff-panel'
 import { TypeReviewPanel } from './type-review-panel'
 import { REVIEW_DUE_DOT_CLASS } from './pipeline-status-badge'
 
@@ -287,6 +287,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey, onReviewed }: Pr
                             <Button
                               variant="ghost"
                               size="sm"
+                              aria-expanded={diffOpen}
                               onClick={() => setOpenDiff(diffOpen ? null : v.version)}
                             >
                               {diffOpen ? t('diffHide') : t('diff')}
@@ -340,17 +341,14 @@ export function ResourceVersionHistory({ resourceId, reloadKey, onReviewed }: Pr
                   </TableRow>
                 )}
                 {diffOpen && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="bg-muted/30">
-                      <VersionDiffPanel
-                        resourceId={resourceId}
-                        version={v.version}
-                        noTableReasonOf={(n) =>
-                          versions.find((other) => other.version === n)?.noTableReason ?? null
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
+                  <VersionDiffRow
+                    colSpan={6}
+                    resourceId={resourceId}
+                    version={v.version}
+                    noTableReasonOf={(n) =>
+                      versions.find((other) => other.version === n)?.noTableReason ?? null
+                    }
+                  />
                 )}
               </Fragment>
             )

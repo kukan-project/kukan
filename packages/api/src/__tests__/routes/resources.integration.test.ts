@@ -2826,24 +2826,71 @@ describe('Resources API Routes', () => {
     })
   })
 
-  // ADR-043 layer 2. The diff scans both snapshots in full, so unlike the other
-  // version routes it is gated on edit rights rather than visibility — ii-a puts
-  // it in the dashboard, and public diffs are Phase iii.
+  // ADR-043 layer 2. Gated on visibility like the other version routes: the
+  // public resource page shows the diff beside each version's download.
   describe('GET /api/v1/resources/:id/versions/:v/diff', () => {
-    it('should return 401 for unauthenticated users even on a public dataset', async () => {
-      const pkg = await createPackage('diff-unauth-pkg')
+    /** Two versions whose earlier one the ingest refused on its key. */
+    async function createKeyRefusedPair(name: string, options?: { private?: boolean }) {
+      const pkg = await createPackage(name, options)
       const resource = await createResource(pkg.id)
+      await db.insert(resourceVersion).values([
+        {
+          resourceId: resource.id,
+          version: 1,
+          storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
+          hash: 'sha256:v1',
+          origin: 'upload',
+          lakeIngestReason: 'key-null',
+        },
+        {
+          resourceId: resource.id,
+          version: 2,
+          storageKey: getStorageKey(pkg.id, resource.id, 'v2'),
+          hash: 'sha256:v2',
+          origin: 'upload',
+        },
+      ])
+      return resource
+    }
 
-      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/versions/1/diff`)
-      expect(res.status).toBe(401)
+    it('should answer an unauthenticated reader on a public dataset', async () => {
+      const resource = await createKeyRefusedPair('diff-unauth-pkg')
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/versions/2/diff`)
+      expect(res.status).toBe(200)
+      // Why the load was refused is the editors' to act on; a reader is told
+      // only that there is nothing to compare
+      expect(await res.json()).toMatchObject({
+        available: false,
+        reason: 'not-ingested',
+        reasonVersion: 1,
+      })
     })
 
-    it('should return 403 for a user who cannot edit the dataset', async () => {
-      const pkg = await createPackage('diff-outsider-pkg')
-      const resource = await createResource(pkg.id)
+    it('should withhold the refusal from a signed-in user who cannot edit the dataset', async () => {
+      const resource = await createKeyRefusedPair('diff-outsider-pkg')
 
-      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/versions/1/diff`)
-      expect(res.status).toBe(403)
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/versions/2/diff`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ available: false, reason: 'not-ingested' })
+    })
+
+    it('should name the refusal to an editor', async () => {
+      const resource = await createKeyRefusedPair('diff-editor-reason-pkg')
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/versions/2/diff`)
+      expect(await res.json()).toMatchObject({
+        available: false,
+        reason: 'key-null',
+        reasonVersion: 1,
+      })
+    })
+
+    it('should return 404 for a private dataset to an unauthenticated reader', async () => {
+      const resource = await createKeyRefusedPair('diff-private-pkg', { private: true })
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/versions/2/diff`)
+      expect(res.status).toBe(404)
     })
 
     it('should report no previous version for an editor when v1 is all there is', async () => {

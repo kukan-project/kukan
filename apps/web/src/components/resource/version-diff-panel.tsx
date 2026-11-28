@@ -1,5 +1,6 @@
 'use client'
 
+import type { ComponentProps } from 'react'
 import {
   Alert,
   AlertDescription,
@@ -45,7 +46,9 @@ function SampleRows({
           <TableHeader>
             <TableRow>
               {columns.map((col) => (
-                <TableHead key={col} className="h-8 font-normal">
+                // A floor, not nowrap: a wide table keeps its width in check, and a
+                // long heading wraps in lines of a few words rather than a character
+                <TableHead key={col} className="h-8 min-w-24 font-normal">
                   {col}
                 </TableHead>
               ))}
@@ -85,9 +88,10 @@ function SampleRows({
 }
 
 /**
- * Row-level diff against the preceding version (ADR-043 layer 2). Mounted only
- * while a version's diff is expanded, so the query runs on demand rather than
- * once per row when the history loads.
+ * Row-level diff against the preceding version (ADR-043 layer 2), on the
+ * dashboard's version history and the public resource page's alike. Mounted
+ * only while a version's diff is expanded, so the query runs on demand rather
+ * than once per row when the history loads.
  */
 export function VersionDiffPanel({
   resourceId,
@@ -188,5 +192,23 @@ export function VersionDiffPanel({
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * The panel as the expanded row of a version table. `max-w-0` keeps the sample
+ * tables' width out of the table's column sizing, so they scroll inside the
+ * row instead of widening every column of the list.
+ */
+export function VersionDiffRow({
+  colSpan,
+  ...panel
+}: { colSpan: number } & ComponentProps<typeof VersionDiffPanel>) {
+  return (
+    <TableRow>
+      <TableCell colSpan={colSpan} className="max-w-0 bg-muted/30">
+        <VersionDiffPanel {...panel} />
+      </TableCell>
+    </TableRow>
   )
 }

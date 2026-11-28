@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   AlertDescription,
@@ -18,6 +18,7 @@ import { clientFetch } from '@/lib/client-api'
 import type { VersionView } from '@kukan/shared'
 import { formatBytes } from '@/lib/format-utils'
 import { DateTime } from '@/components/date-time'
+import { VersionDiffRow } from './version-diff-panel'
 
 /** Rows shown before "show all". Fetch-origin resources accumulate versions
  *  without bound, so the long tail stays behind a click (ADR-043 open issue 13
@@ -29,10 +30,10 @@ interface Props {
 }
 
 /**
- * Viewer-facing version history for the public resource page: list and
- * per-version download only. Diff, purge, and provenance (the origin column —
- * publisher workflow, not a fact about the data) stay in the dashboard —
- * public diffs are Phase iii (spec §15).
+ * Viewer-facing version history for the public resource page: list, diff
+ * against the preceding version, and per-version download. Purge and
+ * provenance (the origin column — publisher workflow, not a fact about the
+ * data) stay in the dashboard.
  *
  * Rendered collapsed and fetched on first open, so resource views that never
  * look at history cost nothing.
@@ -43,6 +44,7 @@ export function VersionHistory({ resourceId }: Props) {
   const [versions, setVersions] = useState<VersionView[] | null>(null)
   const [error, setError] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [openDiff, setOpenDiff] = useState<number | null>(null)
   // A once-only guard, not view state: "loading" is versions === null.
   const requestedRef = useRef(false)
   const listRef = useRef<HTMLDivElement>(null)
@@ -108,45 +110,65 @@ export function VersionHistory({ resourceId }: Props) {
                   <TableHead className="w-32">{t('version')}</TableHead>
                   <TableHead>{t('created')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('size')}</TableHead>
-                  <TableHead className="w-[120px]" />
+                  <TableHead className="w-[160px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(showAll ? versions : versions.slice(0, INITIAL_ROWS)).map((v) => {
+                {(showAll ? versions : versions.slice(0, INITIAL_ROWS)).map((v, i) => {
                   const purged = v.state === 'purged'
                   const purging = v.state === 'purging'
+                  // Newest first, so the oldest is last and has nothing to diff against
+                  const hasPrevious = i < versions.length - 1
+                  const diffOpen = openDiff === v.version
                   return (
-                    <TableRow key={v.version}>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          v{v.version}
-                          {v.isLive && <Badge variant="secondary">{t('live')}</Badge>}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        <DateTime value={v.created} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {purged ? '—' : (formatBytes(v.size) ?? '—')}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end">
-                          {purged ? (
-                            <Badge variant="secondary">{t('purged')}</Badge>
-                          ) : purging ? (
-                            <Badge variant="secondary">{t('purging')}</Badge>
-                          ) : (
-                            <Button variant="ghost" size="sm" asChild>
-                              <a
-                                href={`/api/v1/resources/${resourceId}/versions/${v.version}/download`}
-                              >
-                                {t('download')}
-                              </a>
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={v.version}>
+                      <TableRow>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            v{v.version}
+                            {v.isLive && <Badge variant="secondary">{t('live')}</Badge>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <DateTime value={v.created} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {purged ? '—' : (formatBytes(v.size) ?? '—')}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end">
+                            {purged ? (
+                              <Badge variant="secondary">{t('purged')}</Badge>
+                            ) : purging ? (
+                              <Badge variant="secondary">{t('purging')}</Badge>
+                            ) : (
+                              <>
+                                {hasPrevious && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-expanded={diffOpen}
+                                    onClick={() => setOpenDiff(diffOpen ? null : v.version)}
+                                  >
+                                    {diffOpen ? t('diffHide') : t('diff')}
+                                  </Button>
+                                )}
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a
+                                    href={`/api/v1/resources/${resourceId}/versions/${v.version}/download`}
+                                  >
+                                    {t('download')}
+                                  </a>
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {diffOpen && (
+                        <VersionDiffRow colSpan={4} resourceId={resourceId} version={v.version} />
+                      )}
+                    </Fragment>
                   )
                 })}
               </TableBody>

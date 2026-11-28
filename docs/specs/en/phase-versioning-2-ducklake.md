@@ -907,7 +907,8 @@ the diff next to the version is the most natural path, and it reuses the Phase i
 - **When it is hidden**: non-tabular versions, versions not yet ingested into layer 2 and purged
   versions get no diff, with the reason shown ("this version is not tabular", "this version has been
   purged").
-- Showing diffs on the public pages for viewers is Phase iii (§15). ii-a stays inside the dashboard.
+- Showing diffs on the public pages for viewers was first left to Phase iii (§15), and ii-a stayed
+  inside the dashboard. **The public page has since been given the same diff** (§7.3).
 
 ### 7.2 Moving content is done by issuing a version (a premise of ii-b)
 
@@ -1127,6 +1128,26 @@ there is no reason to refuse.
 **There are two costs.** Every rollback adds one version number and one layer-1 object (a round
 trip grows them linearly). And **ADR-044 has already been released** (v0.11.x), so the contract
 change and the handling of versions whose snapshots have already been rewritten must be decided.
+
+### 7.3 Diffs on the public page
+
+The version list on the public resource page carries the same "diff against the previous version" as
+the dashboard. What it shows (counts, schema changes, sample rows) and how it is fetched (only once
+opened) are the dashboard's, and there is still one diff API.
+
+- **The permission is visibility**, the same check as the version list and version downloads
+  (a private dataset only to those who can see it). A diff shows rows of versions that anyone who
+  can see them can download. Purged and purging versions still get no diff.
+- **Its cost is bounded where `/query`'s is.** The diff shares the DuckDB slot with ADR-032's
+  queries, so the per-caller cap, anonymous callers waiting behind signed-in ones and the cap on how
+  many anonymous callers may wait all apply. Anonymous queries are already public, so this is not a
+  new kind of load.
+- **Caching stays `private`.** On the CDN, rows of a purged version would stay there.
+- **Why a load was refused goes to editors only.** Key faults (`key-*`) and `ingest-failed` are for
+  editors to act on; every other caller gets `not-ingested`. The public page's wording stops at
+  "cannot be compared row by row".
+- Moving from computing the diff on every view to computing it at ingest and storing it is a
+  separate piece of work.
 
 ## 8. Step 5 — Settling Types and Reviewing "Type Changes" (ii-c)
 
@@ -3468,7 +3489,8 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
 
 ## 15. Out of Scope (Phase iii)
 
-- The viewer-facing "changes from the previous version" UI, and version-pinned queries
+- Version-pinned queries (the viewer-facing "changes from the previous version" is on the public
+  page since §7.3)
 - Integrating the preview Parquet into a DuckLake export (consolidating the generation path)
 - MCP diff tools (`get_resource_diff` etc.)
 - Iceberg export (external engines reading published snapshots directly)

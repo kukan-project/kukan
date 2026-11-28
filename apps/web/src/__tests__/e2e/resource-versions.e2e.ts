@@ -142,7 +142,7 @@ test.describe('Resource versions', () => {
       .click()
 
     await expect(
-      page.getByText(/no row-level snapshot|行レベルのスナップショットが無い/i)
+      page.getByText(/cannot be compared row by row|行単位で比較できる形になっていない/i)
     ).toBeVisible({
       timeout: 10_000,
     })
