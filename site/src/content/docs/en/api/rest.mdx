@@ -263,7 +263,7 @@ values may be any JSON.
 | ------ | ------------------------------------------ | ---------------------------------------------------------------- | ---------- |
 | GET    | `/resources/{id}/versions`                 | List versions (newest first; purged ones remain as records)      | Public     |
 | GET    | `/resources/{id}/versions/{v}`             | Version details                                                  | Public     |
-| GET    | `/resources/{id}/versions/{v}/diff`        | Row diff against the preceding version. Tables only              | Org editor |
+| GET    | `/resources/{id}/versions/{v}/diff`        | Row diff against the preceding version. Tables only              | Public     |
 | GET    | `/resources/{id}/versions/{v}/download`    | Download that version's file                                     | Public     |
 | POST   | `/resources/{id}/versions/{v}/purge`       | Permanently erase a version's content                            | Sysadmin   |
 | POST   | `/resources/{id}/versions/{v}/type-review` | Record the review of a version's type changes (once per version) | Org editor |
@@ -542,8 +542,10 @@ readable as the resource; who purged what, when and why is in the audit log.
 **Diff** — `GET /resources/{id}/versions/{v}/diff?from={v'}` (`from` defaults to the preceding
 version):
 
-Requires **editor permission** on the owning dataset — it scans both snapshots in full, so it is
-not a public endpoint.
+Visibility is checked as for the version list and downloads (a private dataset needs
+permission). It scans both snapshots in full, so its load is bounded where
+`POST /resources/{id}/query`'s is — the shared DuckDB slot, with a per-caller cap and anonymous
+callers behind signed-in ones.
 
 ```json
 {
@@ -580,7 +582,9 @@ not a public endpoint.
   attempted repeatedly and given up on. `not-ingested` is not a cause: one side has no row-level snapshot
   and no key fault to name, which includes the ordinary window between a version being created and
   the load running for it. A cause may still be recorded on the version and still give this reason
-  — `noTableReason` settles four of them, and the version is where they are answered
+  — `noTableReason` settles four of them, and the version is where they are answered. The
+  `key-*` values and `ingest-failed` are returned only to editors of the owning dataset; any other
+  caller gets `not-ingested` in their place
 - `reasonVersion` says **which of the two the reason is about**, and it is **not necessarily the
   one asked for**: opening the version after a corrected key puts the refused one on the other end,
   and `not-ingested` is a property of one end just as easily. It is `null` only where no single
@@ -593,9 +597,7 @@ not a public endpoint.
 
 | Error | Condition                                                                                                                 |
 | ----- | ------------------------------------------------------------------------------------------------------------------------- |
-| `401` | Not authenticated                                                                                                         |
-| `403` | No editor permission on the owning dataset                                                                                |
-| `404` | Resource or version not found                                                                                             |
+| `404` | Resource or version not found, or the dataset is not visible to the caller (private)                                      |
 | `408` | Diff timed out                                                                                                            |
 | `429` | The caller's limit is exceeded, or the queue is full (shared with data queries). Retry after the seconds in `Retry-After` |
 

@@ -251,7 +251,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | ------ | ------------------------------------------ | ---------------------------------------------- | ----------- |
 | GET    | `/resources/{id}/versions`                 | 版の一覧（新しい順。削除済みも記録として残る） | 公開        |
 | GET    | `/resources/{id}/versions/{v}`             | 版の詳細                                       | 公開        |
-| GET    | `/resources/{id}/versions/{v}/diff`        | 直前の版との行差分。表形式のみ                 | 組織 editor |
+| GET    | `/resources/{id}/versions/{v}/diff`        | 直前の版との行差分。表形式のみ                 | 公開        |
 | GET    | `/resources/{id}/versions/{v}/download`    | その版のファイルをダウンロード                 | 公開        |
 | POST   | `/resources/{id}/versions/{v}/purge`       | 版の内容を完全削除（法的削除）                 | sysadmin    |
 | POST   | `/resources/{id}/versions/{v}/type-review` | 型の変化の確認を記録する（版ごとに 1 回）      | 組織 editor |
@@ -517,8 +517,9 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 
 **差分** — `GET /resources/{id}/versions/{v}/diff?from={v'}`（既定の `from` は直前の版）:
 
-対象データセットの **editor 権限**が必要です（両方のスナップショットを全走査するため、公開
-エンドポイントにはしていません）。
+可視性の判定は版の一覧・ダウンロードと同じです（非公開データセットは権限が必要）。両方の
+スナップショットを全走査するため、`POST /resources/{id}/query` と同じ DuckDB の枠で負荷を抑えます
+（呼び出し元ごとの上限、匿名はログイン中の呼び出しの後）。
 
 ```json
 {
@@ -551,7 +552,8 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
   意味します。`not-ingested` は原因ではありません — 片端に行レベルのスナップショットが
   無く、主キー由来の理由も無い、というだけで、版の作成から取り込みが走るまでの通常の待ち時間も
   含みます。**原因が版側に記録されていてもこの理由になります** — 解釈が決める 4 つは
-  `noTableReason` にあり、そちらが答えます
+  `noTableReason` にあり、そちらが答えます。`key-*` と `ingest-failed` は対象データセットの
+  editor 以上にだけ返し、それ以外の呼び出しには `not-ingested` として返します
 - `reasonVersion` は **その理由がどちらの版についてのものか**です。**開いた版とは限りません** —
   主キーを直した次の版を開けば断られたのは直前の版ですし、`not-ingested` も片端の性質です。
   比較対象が無い（`no-previous-version`）場合と、どちらの端が墓標でも同じく比較が成立しない
@@ -563,9 +565,7 @@ curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
 
 | エラー | 状況                                                                                                       |
 | ------ | ---------------------------------------------------------------------------------------------------------- |
-| `401`  | 未認証                                                                                                     |
-| `403`  | 対象データセットの editor 権限が無い                                                                       |
-| `404`  | リソースまたは版が存在しない                                                                               |
+| `404`  | リソースまたは版が存在しない、またはデータセットが見えない（非公開）                                       |
 | `408`  | 差分の実行タイムアウト                                                                                     |
 | `429`  | 呼び出し元ごとの上限を超えた、または待ち行列が満杯（クエリと共用）。`Retry-After` の秒数を待って再試行する |
 

@@ -308,7 +308,7 @@ the reason is shown.
 | Message                                                                                         | Meaning                                                        |
 | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | This is the first version, so there is nothing to compare against.                              | v1 has no predecessor                                          |
-| v○ has no row-level snapshot, so there is nothing to compare against.                           | A PDF and similar, or a version created before the migration   |
+| v○ cannot be compared row by row, so no diff is shown.                                          | A PDF and similar, or a version created before the migration   |
 | One of the versions has been deleted, so a diff is not available.                               | Either side was deleted                                        |
 | A key column is not in v○, so its rows cannot be identified and no diff is available.           | A column named in the primary key is missing from that version |
 | A key column of v○ has empty values, so its rows cannot be identified and no diff is available. | The key columns contain empty values                           |
@@ -317,6 +317,8 @@ the reason is shown.
 
 The three key-related reasons clear up **from the next version on** once the key is corrected.
 A version left out is never loaded retroactively.
+
+The same **Diff** is on the version history of the public resource page, open to anyone who can see the dataset. The three key-related reasons and a failed load are shown only to editors of the dataset; anyone else sees that the version cannot be compared row by row.
 
 ### Stopping and reverting
 
