@@ -96,8 +96,9 @@ export default defineConfig({
           // by side failed it four times out of four, one run passed three
           // times out of three. Raised like `lake` below, for the same reason
           // — these snapshots are the guard on the ADR-041 site layout, and a
-          // timeout that passes on rerun would have them ignored.
-          testTimeout: 30_000,
+          // timeout that passes on rerun would have them ignored. A case that
+          // synthesizes three stages went over 30s in CI with the other jobs.
+          testTimeout: 60_000,
         },
       },
       {
