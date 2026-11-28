@@ -1,9 +1,9 @@
 **/node_modules
 **/.next
 **/dist
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 .git
 .github
 .vscode

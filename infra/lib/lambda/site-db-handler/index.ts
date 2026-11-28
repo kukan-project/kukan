@@ -30,8 +30,12 @@ interface CustomResourceEvent {
 
 const secrets = new SecretsManagerClient({})
 
-/** Databases every cluster has that PUBLIC may connect to (template0 refuses connections). */
-const SHARED_DATABASES = ['postgres', 'template1']
+/**
+ * Databases every cluster has that PUBLIC may connect to (template0 refuses
+ * connections): PostgreSQL's own two, and `kukan`, the default database the
+ * cluster is created with, which no site uses.
+ */
+const SHARED_DATABASES = ['postgres', 'template1', 'kukan']
 /** Advisory lock key serializing the handlers' writes to the shared databases' ACLs. */
 const SHARED_DATABASES_LOCK = 0x6b756b61
 

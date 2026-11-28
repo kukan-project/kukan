@@ -14,7 +14,7 @@ import { buildPipelines } from '../stacks/pipeline-stack.js'
 import { stackTemplate, synthStage, testApp, TEST_ACCOUNT, TEST_REGION } from './helpers/synth.js'
 
 /** The ARN CloudFormation gives the global stack's WebACL: its logical ID plus a suffix. */
-const OWN_WAF_ARN = `arn:aws:wafv2:us-east-1:${TEST_ACCOUNT}:global/webacl/WafWebAclBE24253C-GdD7BNBt8GNP/1d587e44-1a92-4d9a-a326-6fafb3d40aeb`
+const OWN_WAF_ARN = `arn:aws:wafv2:us-east-1:${TEST_ACCOUNT}:global/webacl/WafWebAclBE24253C-EXAMPLE00000/00000000-0000-4000-8000-000000000001`
 const EXTERNAL_WAF_ARN = `arn:aws:wafv2:us-east-1:${TEST_ACCOUNT}:global/webacl/corporate-edge/00000000-0000-0000-0000-000000000000`
 const CERT_ARN = `arn:aws:acm:us-east-1:${TEST_ACCOUNT}:certificate/00000000-0000-0000-0000-000000000000`
 

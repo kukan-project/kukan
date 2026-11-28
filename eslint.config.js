@@ -26,7 +26,7 @@ export default tseslint.config(
     },
   },
   {
-    // The wrapper adds the Problem Details shaping the raw validator lacks (#285)
+    // The wrapper adds the Problem Details shaping the raw validator lacks
     files: ['packages/api/src/routes/**'],
     rules: {
       'no-restricted-imports': [

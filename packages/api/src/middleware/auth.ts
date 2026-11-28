@@ -112,7 +112,9 @@ export function ckanTokenAuth() {
 /**
  * Refuses a request signed in with an API token, for what must stay with a
  * session: anything a leaked token could use to outlive its own expiry and
- * revocation, or to do damage the owner cannot undo.
+ * revocation (tokens, accounts, opening registration), and the catalog wipe.
+ * The catalog's own operations, purges included, are what a token is for and
+ * stay within its owner's role, as any of the owner's requests do.
  */
 export function refuseApiToken(detail: string): MiddlewareHandler {
   return async (c, next) => {

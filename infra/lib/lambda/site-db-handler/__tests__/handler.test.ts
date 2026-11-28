@@ -132,6 +132,7 @@ describe('site-db-handler', () => {
       const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
       expect(sql).toContain('REVOKE CONNECT ON DATABASE postgres FROM PUBLIC')
       expect(sql).toContain('REVOKE CONNECT ON DATABASE template1 FROM PUBLIC')
+      expect(sql).toContain('REVOKE CONNECT ON DATABASE kukan FROM PUBLIC')
       // Serialized with the other sites' handlers, which write the same rows
       const lock = sql.findIndex((q) => q.startsWith('SELECT pg_advisory_lock'))
       expect(lock).toBeGreaterThanOrEqual(0)
@@ -166,7 +167,7 @@ describe('site-db-handler', () => {
     const check = queryMock.mock.calls.find((c: unknown[]) =>
       (c[0] as string).includes('has_database_privilege')
     )
-    expect(check?.[1]).toEqual([['postgres', 'template1'], 'kukan_citya'])
+    expect(check?.[1]).toEqual([['postgres', 'template1', 'kukan'], 'kukan_citya'])
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('kukan_citya can still connect to postgres')
     )

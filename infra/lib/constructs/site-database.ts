@@ -18,7 +18,7 @@ import { Construct } from 'constructs'
 import { POSTGRES_TLS_ENVIRONMENT, type DbAccess } from './database.js'
 
 /** Bump when the handler's SQL changes and existing sites must converge to it. */
-const SITE_DB_HANDLER_REVISION = '2'
+const SITE_DB_HANDLER_REVISION = '3'
 
 export interface SiteDatabaseProps {
   /** Validated site name (config.validateSites) — becomes `kukan_<site>` in PostgreSQL. */
