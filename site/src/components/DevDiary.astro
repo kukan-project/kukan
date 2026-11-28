@@ -13,6 +13,7 @@ import biAccess from '../assets/dev-diary/04-bi-access.png'
 import mcpPassages from '../assets/dev-diary/05-mcp-passages.png'
 import security from '../assets/dev-diary/06-security.png'
 import vocabulary from '../assets/dev-diary/07-vocabulary.png'
+import tableSettings from '../assets/dev-diary/08-table-settings.png'
 
 interface Article {
   url: string
@@ -72,6 +73,13 @@ const articles: Article[] = [
     image: vocabulary,
     ja: '「012025」が函館市だと、機械が気づくようになった — KUKAN が表の列に「語彙」を持たせる理由',
     en: "Machines can now recognize that '012025' is Hakodate City — Why KUKAN gives table columns a 'vocabulary'",
+  },
+  {
+    url: 'https://note.com/masagon73/n/n943e71dd1a81',
+    date: '2026-11-28',
+    image: tableSettings,
+    ja: '人口 959 人の町が、1 万人の町より上に並んだ — Excel の表を AI が読み違えないために、KUKAN がしていること',
+    en: 'A town of 959 people ranked above a town of 10,000 — What KUKAN does so AI does not misread Excel tables',
   },
 ]
 
